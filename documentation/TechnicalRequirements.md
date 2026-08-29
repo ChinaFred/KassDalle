@@ -3,2381 +3,9 @@
 
 > Version : 2.2 — 2 Juin 2026
 
-## Spécification technique — Modération des images
-
-> **Implémentée.** Moteur : **Google Cloud Vision** — SafeSearch Detection + Label
-> Detection. Pendant fonctionnel : *Spécification — Modération des images* dans
-> `FunctionalRequirements.md`.
->
-> **Prérequis d'exploitation** : `vision.googleapis.com` doit être activée sur le
-> projet. Sans elle, `analyseImage` lève, chaque image part en `pending`, et rien
-> ne se publie — le comportement est correct, la cause est ailleurs.
-
-### 1. Le terrain existant
-
-- **`quarantine/{uid}/{fichier}`** — zone d'atterrissage, `storage.rules` autorise
-  l'écriture au propriétaire approuvé, lecture par lui seul, 50 Mo.
-- **`scanAndPromoteUploadFn`** (`callable/geminiCallables.ts`) — télécharge, appelle
-  `scanUpload()`, copie vers `scans/{uid}/`, pose `quarantine_status` en métadonnée
-  Storage, rend l'URL de téléchargement, supprime la source.
-- **`utils/uploadSecurity.ts` — `scanUpload()`** juge le contenant : taille, extension,
-  type MIME, signature binaire, EICAR. Il ne regarde pas l'image.
-- **`scans/{uid}/`** est déjà en `allow write: if false` : la promotion serveur est un
-  schéma qui existe et qui marche. La modération le généralise, elle ne l'invente pas.
-
-### 2. Les quatre écritures directes à faire passer par la quarantaine
-
-| Chemin publié | Écrit aujourd'hui par | Règle actuelle |
-|---|---|---|
-| `covers/{bookId}/cover.jpg` | `book_repository.dart:160` | `canWriteSharedImages()` |
-| `recipes/{recipeId}/…` | `recipe_repository.uploadRecipePhoto():610` | `canWriteSharedImages()` |
-| `illustrations/{uid}/…` | `recipe_repository.uploadIllustration():595`, `draft_review_service.dart:207,229` | `isOwner(uid)` |
-| `users/{uid}/free_recipe_cover_*.jpg` | `auth_repository.dart:212` | `isOwner(uid)` |
-
-`book_repository._uploadAssetCover():176` écrit aussi dans `covers/`, mais depuis un asset
-du bundle : c'est notre propre image, elle n'a rien à faire dans une file de modération.
-La promotion serveur doit donc accepter une origine « asset » qui court-circuite l'analyse
-— sans quoi chaque création de livre remplira la file.
-
-**Cible** : ces quatre chemins passent en `allow write: if false`, comme `scans/`. Le
-client écrit dans `quarantine/{uid}/`, appelle la fonction de promotion avec la
-**destination voulue**, et reçoit soit l'URL publiée, soit un état d'attente.
-
-C'est le lot le plus coûteux et le seul qui touche du code partout. Il est aussi le seul
-qui ait une valeur propre : livré seul, sans aucune analyse, il ferme les portes et ne
-change rien pour l'utilisateur.
-
-### 3. Firestore — `image_moderation/{moderationId}`
-
-| Champ | Type | Rôle |
-|---|---|---|
-| `status` | `string` | `approved` / `rejected` / `manual_review` / `pending` |
-| `uid` | `string` | qui a envoyé |
-| `quarantine_path` | `string` | où le fichier attend |
-| `target_path` | `string` | où il ira s'il est approuvé |
-| `target_kind` | `string` | `book_cover` / `recipe_illustration` / `draft_illustration` / `free_recipe_cover` |
-| `owner_id` | `string?` | `bookId` ou `recipeId` selon `target_kind` |
-| `mime_type`, `size_bytes` | `string`, `number` | contexte de diagnostic |
-| `signals` | `map` | ce que le moteur a vu — voir §4 |
-| `engine`, `engine_version` | `string` | qui a jugé, dans quelle version |
-| `decision_reason` | `string` | clé de motif — voir §9 |
-| `preview_url` | `string?` | vignette signée, pour l'écran d'administration |
-| `created_at`, `decided_at` | `timestamp` | |
-| `reviewed_by`, `reviewed_at`, `review_note` | `string?`, `timestamp?`, `string?` | revue humaine |
-| `published_url` | `string?` | posé à la promotion |
-| `rejected_path` | `string?` | image conservée après un refus, sous `rejected/{uid}/` — `null` si le déplacement a échoué |
-| `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
-
-`status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
-un humain qui n'aurait rien à lire. Il se relance ; il ne se devine pas.
-
-**Un document par image, y compris pour les approuvées.** L'écran d'administration doit
-montrer ce que la modération laisse passer, pas seulement ce qu'elle bloque — et une
-approbation dont on n'a gardé aucune trace ne se vérifie jamais.
-
-**Règles Firestore** — lecture par `isAdmin()` ou `isOwner(uid)` (l'envoyeur doit voir
-l'état de son image), **écriture serveur uniquement** (`if false`). Une décision de
-modération que le client peut écrire n'est pas une décision.
-
-### 4. La couture du moteur — un seul fichier à remplacer
-
-```
-functions/src/moderation/
-├── engine.ts             # interface + résolution du moteur configuré
-├── vision.ts             # adaptateur Cloud Vision (seul importateur du SDK)
-├── decision.ts           # règles pures : signaux → état + motif
-├── promote.ts            # quarantaine → destination, métadonnées, URL
-└── moderateAndPromote.ts # le chemin complet : quarantaine → verdict → promotion
-```
-
-**`moderateAndPromote.ts` est le seul module qui décide si une image devient visible.**
-Il vivait dans le callable, où seul un client pouvait l'emprunter — le pipeline
-d'import, lui, écrivait ses découpes en direct avec l'Admin SDK, donc hors
-quarantaine et hors verdict. L'extraire est ce qui permet aux deux appelants de
-prendre le même chemin. Un second chemin de publication serait, tôt ou tard, un
-chemin sans verdict.
-
-Deux refus y sont des **erreurs typées** et non des verdicts : `ImageFormatRejected`
-et `QuarantineFileMissing`. Le callable les rend au client en `HttpsError` ; le
-pipeline écarte la découpe et poursuit l'import. C'est la raison pour laquelle le
-cœur ne lève pas de `HttpsError` lui-même — il ne sait pas qui l'appelle.
-
-- **`ModerationSignals`** — forme neutre, imposée à tout moteur :
-  `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
-  scores normalisés `0..1`. Vision rend cinq paliers (`VERY_UNLIKELY` … `VERY_LIKELY`) :
-  la projection sur cette échelle vit **dans `vision.ts`**, pas ailleurs. Les paliers
-  d'origine sont conservés tels quels dans `signals` pour l'affichage — c'est ce que le
-  moteur a réellement dit.
-- **`ImageModerationEngine.analyse(bytes, mimeType): Promise<ModerationSignals>`** — la
-  seule chose qu'un moteur doit savoir faire.
-- **`decideModeration(signals, thresholds): { status, reason }`** — fonction **pure**,
-  sans réseau, sans horloge. C'est là que vit l'arbitrage culinaire, et c'est ce qui se
-  teste.
-
-**`moderation/vision.ts` est le troisième fichier autorisé à importer un SDK de
-fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`.
-
-**Et il l'importe DYNAMIQUEMENT.** Le fichier ne garde qu'un `import type`, effacé à la
-compilation ; le SDK arrive par un `await import()` dans `visionClient()`, à la première
-analyse réellement demandée. Un import statique a fait échouer un déploiement — *« User
-code failed to load. Cannot determine backend specification. Timeout after 10000 »* : le
-SDK tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage d'`index.ts`, donc
-pour la cinquantaine de fonctions qui partagent le même bundle, y compris celles qui ne
-modèrent rien. Ce n'était pas seulement un risque au déploiement, c'était du démarrage à
-froid subi partout. **Ne pas le repasser en import statique.**
-
-**Ordre des règles, non commutatif — c'est lui qui porte le sens :**
-
-1. `adult ≥ seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
-   rattrape.
-2. `violence ≥ seuil_alerte` **et** contexte culinaire fort → `approved`, motif
-   `culinary_context`. Évalué **avant** le refus pour violence : une découpe de volaille
-   est une scène violente pour le moteur, et l'arbitrage du projet est qu'elle passe.
-3. `violence ≥ seuil_refus` → `rejected`, motif `violent_content`. Aucune recette n'a
-   besoin d'une scène de violence certaine ; l'envoyer en revue obligerait un
-   administrateur à la regarder pour conclure ce que les signaux disaient déjà.
-4. `violence ≥ seuil_alerte` sans contexte → `manual_review`, motif
-   `violence_no_culinary_context`.
-5. `racy ≥ seuil_revue` sans contexte → `manual_review`, motif `suggestive_content`.
-   **Jamais un refus.**
-6. sinon → `approved`, motif `no_signal`.
-
-**`adult` et `racy` sont deux critères, jamais un seul.** Ils ont été fusionnés par un
-`max()`, au prétexte qu'une image « racy » ne devait pas peser zéro. Le prix s'est vu sur
-une photo de violence conjugale : la victime portait un débardeur, `racy` a répondu
-`VERY_LIKELY`, et le verdict est tombé en *« contenu sexuel explicite »*. Le refus était
-mérité, le motif était faux — et c'est le motif qu'on lit à l'écran, celui qui oriente le
-réglage des seuils, celui qui fait rater la vraie raison.
-
-« Suggestif » et « explicite » ne demandent pas la même décision : le second refuse, le
-premier fait au plus réfléchir. Les additionner supprimait cette distinction avant que la
-règle puisse s'en servir. `racyReview` est haut par construction (`VERY_LIKELY`) : `racy`
-se déclenche sur des tenues d'été ordinaires, et une file pleine de faux positifs n'est
-pas relue.
-
-Le classement de la violence passe **avant** celui du suggestif, pour la même raison : le
-suggestif volerait le motif d'une image dont le vrai problème est ailleurs.
-
-Le **contexte culinaire fort** est un compte de labels d'une liste fermée (viande,
-volaille, poisson, planche, couteau de cuisine, ustensile, ingrédient, plat, cuisine…)
-dont le score dépasse un seuil. Un seul label faible ne fait pas un contexte : c'est ce
-qui distingue une cuisine d'une scène qui contiendrait un couteau.
-
-
-### 5. Les seuils vivent dans Firestore, avec des défauts
-
-`app_config/image_moderation` : seuils, liste des labels culinaires, moteur retenu, et un
-interrupteur global. Même mécanique que `app_config/ai_routing_policy` — un seuil trop
-strict se corrige en une minute, pas en un déploiement.
-
-**Des défauts existent dans le code**, et c'est voulu. Ce n'est pas la contradiction de la
-règle « pas de valeur de repli » : celle-ci vise les **données** qui doivent être exactes —
-un prix, un taux de change — dont une constante périmée ferait mentir un montant. Un seuil
-de modération est une **décision**, comme les plafonds de dépense quotidiens, qui protègent
-eux aussi avant tout réglage. L'absence de document ne doit pas vouloir dire « aucune
-modération ».
-
-### 6. Ce que la modération ne partage pas avec le client
-
-**Aucun jumeau Dart des règles de décision.** Elles n'existent que côté serveur : le client
-n'affiche pas de verdict, il en reçoit un. Écrire le jumeau « par symétrie » ajouterait une
-divergence possible sans rien rendre — c'est exactement ce qu'ont montré les règles de
-créneau du planning, qui ont fini par **quitter** le client.
-
-La fixture `test-fixtures/image_moderation_rules.json` est donc **serveur seul**, comme
-`planning_slot_rules.json`, et rejouée par `functions/src/tests/` uniquement. Ligne à
-ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « — ».
-
-**Les libellés, eux, sont côté client** (§9) : ce sont des mots d'écran, pas des règles.
-
-### 7. Cloud Functions
-
-- **`moderateAndPromoteImageFn`** (callable) — `{ quarantinePath, targetKind, ownerId }`.
-  Vérifie que le chemin appartient à l'appelant, télécharge, `scanUpload()` (le format
-  d'abord : inutile d'envoyer un exécutable renommé à un moteur d'analyse), puis
-  `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
-  Rend `{ status, url?, reason }`.
-- **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.
-  Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
-- **`retryPendingModerationFn`** (callable, `isAdmin`) — relance les `pending` restés en
-  panne de moteur. Un état qui ne se relance pas est une fuite.
-- **Le poste `_batch`** — un scan promeut douze illustrations d'un coup. Le groupage est un
-  poste à part entière (`image_moderation_batch`), comme ailleurs dans le projet : c'est le
-  seul moyen de vérifier que le groupage fait son office.
-- **`recipeProcessor`** (Cloud Tasks) emprunte le même cœur pour les illustrations qu'il
-  découpe dans un scan. Trois filtres **locaux** (`gemini/illustrationQuality.ts`) écartent
-  d'abord ce qui n'est manifestement pas une photographie — moins de 120 px de côté ou
-  moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans
-  couleur. Les deux conditions du dernier sont exigées ensemble : une photographie en noir
-  et blanc a une chroma nulle, mais jamais une luminance moyenne de papier.
-- **La vignette WebP n'est pas remodérée** : c'est la même image, réduite, et le verdict
-  vient d'être rendu sur son contenu. La repasser au moteur doublerait la facture pour la
-  même réponse.
-- **Une page qui rend plusieurs recettes est modérée une fois, puis copiée.** Chaque recette
-  au-delà de la première reçoit sa propre copie Storage (`copyPublishedImages`), pour qu'elle
-  en soit réellement propriétaire — deux recettes désignant le même objet est une panne qui
-  n'attend que la première suppression réelle du fichier. La copie est faite côté serveur et
-  conserve les métadonnées de la décision ; un échec de copie retombe sur l'adresse partagée,
-  journalisé.
-- **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
-  la suppression best-effort du fichier de quarantaine.
-
-### 8. Journalisation et rapports d'erreur
-
-- **`ModuleType` gagne `"MODERATION"`** (`functions/src/logging.ts:18`, aujourd'hui
-  `"IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN"`). Sans lui, les traces de modération
-  se rangeraient sous `IMPORT` et ne se filtreraient plus dans *Admin › Cloud Logging*.
-- **`logInfo`** à chaque verdict : `correlationId`, `uid`, `status`, `decision_reason`,
-  `engine`, `sizeBytes`, `targetKind`. Une décision de blocage doit pouvoir se rejouer
-  depuis les traces seules.
-- **`logError`** sur panne de moteur, refus de promotion, échec d'écriture — avec le motif,
-  jamais un `catch` muet.
-- **Le `correlationId` est stocké sur le document** (`correlation_id`, §3) : depuis l'écran
-  d'administration, on remonte à la trace ; depuis la trace, on retrouve la ligne.
-- **Côté client**, les trois issues et la panne passent par
-  `_errorReportService.reportError(feature: 'imageModeration.…')`, avec `sizeBytes`,
-  `mimeType` et `targetKind` en contexte — le même patron que
-  `scanUpload.uploadAndPromote`, dont l'expérience a montré que sans la taille et le
-  chemin, un refus ne se distingue pas d'un dépassement.
-
-### 8b. Les images refusées sont conservées, pas détruites
-
-`quarantineToRejected()` (`moderation/promote.ts`) copie l'octet vers
-`rejected/{uid}/…` puis retire le reliquat de quarantaine, et rend le chemin —
-ou `null` si la copie a échoué. Le document dit alors la vérité sur ce qui est
-réellement consultable ; il ne promet pas une image qui n'existe pas.
-
-`storage.rules` ouvre `rejected/` en lecture au seul `isAdmin()` — un nouvel
-helper, distinct de `canWriteSharedImages()` : ce dossier contient précisément ce
-qu'on a jugé impubliable, et un jeton sans claim n'y a pas accès.
-
-**La lecture de `quarantine/` est ouverte au même `isAdmin()`**, en plus du
-propriétaire. Une image `manual_review` y attend : sans cette ligne, l'administrateur
-qui doit trancher ne pouvait pas la voir — sauf s'il l'avait envoyée lui-même — et
-l'écran de revue se réduisait à des scores. `ModerationEntry.previewPath` choisit la
-source selon l'état : `rejected/` s'il existe, sinon la quarantaine pour `manual_review`
-et `pending`, sinon `null`. Ce `null` est affiché en toutes lettres — « image non
-conservée, refus antérieur à la conservation » — plutôt que laissé en blanc : un blanc
-passerait pour une panne alors que le fichier a bel et bien été supprimé, et ne
-reviendra pas.
-
-Une image qui attend une décision se charge **d'office** ; un refus déjà prononcé reste
-replié derrière un bouton. La distinction n'est pas cosmétique : dans le premier cas on
-vient pour regarder, dans le second on parcourt un journal.
-
-**Aucune URL n'est émise ni stockée.** L'écran lit les octets avec
-`FirebaseStorage.ref(path).getData()`, donc avec les droits de l'administrateur
-qui consulte. Appeler `getDownloadURL()` créerait un jeton permanent, partageable,
-qui survivrait au retrait du rôle — exactement ce qu'il ne faut pas pour ce
-contenu-là. Le rendu est un `Image.memory`, replié par défaut derrière un bouton :
-un journal qu'on parcourt ne doit pas exposer sans prévenir.
-
-La première version supprimait le fichier. C'était défendable et c'était faux :
-sans l'image, un administrateur ne peut pas juger si le refus était fondé, et ce
-sont les **faux refus** — une photo de rôti prise pour une scène violente — qu'on
-a le plus besoin de voir. Une modération qu'on ne peut pas évaluer ne se corrige
-jamais.
-
-La rétention de `rejected/` reste ouverte (§15) : à trancher le jour où le volume
-le justifie, par une règle de cycle de vie sur le bucket, jamais en effaçant les
-décisions elles-mêmes.
-
-### 9. Les libellés — pourquoi une image a été refusée
-
-L'écran ne montre jamais de clé technique. `features/moderation/domain/moderation_labels.dart`
-porte trois tables :
-
-| Table | Contenu |
-|---|---|
-| `kModerationCriteria` | `adult` → « Contenu adulte », `racy` → « Suggestif », `violence` → « Violence », `medical` → « Médical », `spoof` → « Montage » |
-| `kModerationLikelihoods` | `VERY_UNLIKELY` → « Très peu probable » … `VERY_LIKELY` → « Très probable » |
-| `kModerationReasons` | `sexual_explicit` → « Refusée : contenu sexuel explicite. » ; `violence_no_culinary_context` → « À revoir : violence détectée sans contexte culinaire. » ; `culinary_context` → « Approuvée : contexte culinaire reconnu malgré une alerte de violence. » ; `no_signal` → « Approuvée : aucun signal. » ; `engine_unavailable` → « Sans verdict : moteur injoignable. » ; `manual_approved` / `manual_rejected` → décision d'un administrateur |
-
-**Un motif retiré du code reste à la table**, exactement comme un poste de coût retiré
-reste au catalogue : les décisions déjà prises sous cette clé cesseraient sinon de
-s'expliquer. `test/moderation_labels_test.dart` garde la cohérence entre les clés servies
-par le serveur et celles que le client sait nommer — une clé inconnue doit s'afficher
-telle quelle et faire échouer le test, jamais disparaître en silence.
-
-Les labels de Vision arrivent en anglais. Ceux de notre liste culinaire portent leur
-libellé français (c'est notre liste) ; les autres s'affichent bruts avec leur score — les
-traduire à l'aveugle inventerait une précision qu'on n'a pas.
-
-### 10. Coûts et comptabilité
-
-**La grille sait déjà facturer à l'unité.** `AiModelPricing` porte `imageOutputPerUnit`,
-et `estimateAiCostUsd()` le multiplie par `imageOutputCount` — c'est ainsi que la
-génération d'image est chiffrée. La modération n'a donc **pas** besoin d'une grille à part,
-ni du repli « appels sans montant » : le montant est calculable, il doit être affiché.
-
-- **Un champ voisin, pas un détournement** : `analyzedImagePerUnit` s'ajoute à
-  `AiModelPricing` et se somme dans `estimateAiCostUsd`. Une image *produite* et une image
-  *analysée* sont deux produits à deux prix ; les faire passer par le même champ ferait
-  mentir le reporting le jour où l'un des deux bouge. Champ optionnel : les documents
-  existants ne le portent pas, il vaut zéro.
-- **Deux unités par image** — SafeSearch et Label sont facturés séparément. C'est le
-  nombre d'unités, pas d'images, qui est enregistré.
-- **`freeUnitsPerMonth` sur l'entrée de tarif** : le fournisseur offre mille unités par
-  mois. Les lignes d'appel restent **brutes** — ainsi elles ne dépendent pas de l'ordre
-  dans lequel on les relit, et deux appels simultanés ne se disputent pas un compteur. La
-  déduction se calcule **au mois**, dans l'écran des coûts, et s'affiche en ligne à part.
-  Un mois à zéro doit se lire « mille unités offertes ont couvert la dépense », pas
-  « rien n'a été analysé ».
-- **Le poste s'ajoute aux trois endroits, dans le même commit** : `ctx.feature`,
-  `ROUTABLE_FEATURES`, et `feature_catalog.dart` (`kFeatureCatalog` **et**
-  `kFeatureProcess`) — avec sa variante `_batch`.
-- **`ai_usage` et `ai_daily_spend`** reçoivent la ligne comme n'importe quel appel : c'est
-  ce qui alimente *Admin › Dépense par utilisateur*, donc le nombre d'analyses demandées
-  par personne.
-- **Hors plafond quotidien.** Un plafond atteint doit empêcher de *dépenser*, jamais de
-  *publier une image légitime* : sinon le contrôle punit celui qu'il protège. L'appel est
-  compté, chiffré, affiché — et exclu de `BudgetExceededError`. L'écran de dépense le
-  signale, faute de quoi l'écart entre « dépensé » et « décompté du plafond » passera pour
-  un bug.
-- **Ajouter la ligne à la fixture `ai_pricing.json`** avant d'écrire le code : elle est
-  rejouée par les deux suites, et c'est la seule barrière contre un écart de tarif
-  silencieux.
-
-### 11. Le moteur au choix des moteurs d'IA
-
-Vision est le seul choix acceptable aujourd'hui, et le poste figure quand même à
-`ROUTABLE_FEATURES` — dans un groupe **« Modération »** propre, pas dans
-« Illustrations — détection », dont les postes lisent une image pour l'extraire et non pour
-la juger.
-
-- `resolveProvider` apprend un troisième fournisseur, `vision`, et le poste déclare la
-  liste des fournisseurs qu'il accepte. L'écran rend le sélecteur **inactif** avec la
-  raison affichée plutôt que de masquer le poste : un poste absent de l'écran est un poste
-  qu'il faudra redéployer pour faire bouger.
-- **La modération ne passe pas par `callModel`.** Celui-ci raisonne en jetons et en
-  messages ; Vision rend des paliers. C'est la **politique** qui est partagée — un document
-  Firestore, un écran — pas l'exécution. `moderation/engine.ts` lit la même politique et
-  choisit son adaptateur.
-- **La clé Vision vit dans Secret Manager**, comme les autres, et **toute fonction qui
-  appelle un moteur déclare toutes les clés qu'elle peut avoir à utiliser**. C'est la règle
-  née de la panne de v0.19.79 : un secret non déclaré n'est pas monté, le repli s'applique
-  en silence, et l'écran continue d'affirmer que la clé est là.
-
-### 12. Client Flutter
-
-**Recette générée par l'IA — section photos.**
-`search/presentation/generated_recipe_illustrations.dart` ajoute un onglet *Photos*
-à `GeneratedRecipeScreen`, dans ses **deux** dispositions (étroite à quatre onglets,
-large à trois). Un seul `_illustrationsTab()` les sert : deux copies auraient
-divergé, et c'est l'onglet le plus facile à oublier.
-
-La recette n'a pas encore d'identifiant, et aucune des deux voies n'en a besoin —
-`generateRecipeIllustration` part du titre et d'un prompt, l'envoi d'une photo se
-range sous l'utilisateur. Les URL sont tenues en mémoire dans `_imageUrls` et
-partent avec la recette : `_buildCurrentRecipe()` ne code plus `imageUrls: const []`.
-
-Une photo envoyée passe par la modération ; une image produite par l'IA en est
-dispensée, et le serveur la dépose lui-même sous `illustrations/{uid}/` par l'Admin
-SDK — la fermeture en écriture des dossiers publiés ne l'affecte pas.
-
-- **`features/moderation/`** — `data/image_moderation_repository.dart`,
-  `domain/moderation_entry.dart`, `domain/moderation_labels.dart` (§9), `presentation/`.
-- **Les quatre appelants d'upload** (`book_repository`, `recipe_repository`,
-  `draft_review_service`, `auth_repository`) écrivent en quarantaine puis appellent la
-  promotion. Ils reçoivent trois issues au lieu d'une, et l'écran doit les rendre :
-  publiée, en attente, refusée.
-- **`pendingModerationCountProvider`** — `StreamProvider<int>` sur `image_moderation`
-  filtré `status == manual_review`, `limit(99)`. La file d'attente est courte par
-  construction : un flux suffit, un compteur maintenu par trigger serait une donnée dérivée
-  de plus à tenir juste. Le badge ne compte **pas** le journal entier.
-- **Badge** — `_AdminIcon` dans `core/presentation/app_shell.dart`, sur le même patron que
-  `_DraftsIcon` (masqué à zéro, `Semantics` explicite : « 3 » seul ne dit rien à l'oreille).
-  Rappel du même compte sur la tuile *Modération* de `admin_hub_screen.dart`.
-- **`AppRoutes.adminModeration` → `/admin/moderation`**, garde `isAdmin`, écran
-  `admin_moderation_screen.dart` :
-  - liste de **tous** les états, filtres par état et par date, tri par date ;
-  - par entrée : vignette, envoyeur, date, destination, moteur ;
-  - **les cinq critères avec leur libellé et leur palier en français**, les labels retenus
-    comme contexte culinaire mis en évidence ;
-  - **la phrase de motif** sous l'identification, tirée de `kModerationReasons` ;
-  - **Approuver** / **Refuser** (avec motif) sur les entrées en attente, **Relancer** sur
-    les `pending` ;
-  - lien vers la trace Cloud Logging par `correlation_id`.
-
-### 12b. Index Firestore
-
-Le journal filtre par état ET trie par date : c'est une égalité sur un champ plus un tri
-sur un autre, donc un **index composite** obligatoire. Sans lui, l'écran ne dégrade pas —
-il échoue, et le filtre « Publiées » rend « Journal de modération illisible ».
-
-```
-collectionGroup: image_moderation — status ASC, created_at DESC
-```
-
-Déclaré dans `firestore.indexes.json`, déployé par `deploy.ps1` avec les règles. Le même
-index sert les quatre filtres d'état, avec ou sans fenêtre de temps. Le badge n'en a pas
-besoin : une égalité seule, sans tri, tient sur l'index automatique.
-
-### 13. Tests
-
-| Quoi | Où |
-|---|---|
-| Règles de décision, ordre compris | `functions/src/tests/moderationDecision.test.ts` + fixture |
-| Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
-| Sexuel explicite → refusée quel que soit le contexte | même fixture |
-| Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/visionSignals.test.ts` |
-| Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
-| Coût d'un appel Vision, quota mensuel déduit | `ai_pricing.json` + `test/ai_pricing_test.dart` |
-| Poste présent aux trois endroits | `test/feature_catalog_test.dart` |
-| Toute clé de motif servie a un libellé | `test/moderation_labels_test.dart` |
-| Badge masqué à zéro, affiché sinon | `test/widgets/` |
-| Repository : lecture du journal, filtres, décision admin | `test/repositories/`, `fake_cloud_firestore` |
-
-### 14. Livraison en quatre lots
-
-1. **Fondation** — les quatre portes passent par la quarantaine, destinations fermées en
-   écriture, collection et promotion serveur. Aucune analyse. Rien ne change à l'usage.
-2. **Verdict** — Vision, seuils, quatre états, poste de coût aux trois endroits, tarif en
-   fixture, `ModuleType` et traces.
-3. **Revue** — écran Administration › Modération (tous états), libellés, badge, journal des
-   décisions.
-4. **Existant** — backfill des images déjà en ligne, ou décision assumée de ne pas le
-   faire.
-
-### 15. Ce qui reste ouvert
-
-- **Le backfill de l'existant** (lot 4).
-- **La latence perçue** : une illustration s'affiche aujourd'hui à la seconde. Avec la
-  quarantaine, elle attend un aller-retour serveur. C'est un changement d'usage visible, à
-  mesurer sur le lot 1 — avant que l'analyse ne s'y ajoute.
-- **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
-  jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
-
-### Mise à jour release (23/08/2026 — v0.21.102)
-
-#### Une durée sur deux était mal lue
-
-`parseTimeToMinutes` prenait le **premier nombre**, puis multipliait par soixante dès qu'un `h`
-traînait **quelque part** dans la chaîne. « 55 min, plus 4 h de réfrigération » rendait
-**3 300 minutes**. « 30 min de chauffe » en rendait 1 800, parce que « chauffe » porte un `h`.
-Aucune erreur levée, un chiffre absurde affiché comme un temps de préparation.
-
-La règle est maintenant : **le premier nombre, l'unité qui le suit immédiatement, et rien
-d'autre**. Ce qui suit la première durée n'appartient pas à ce champ — c'est une autre durée, et
-elle a le sien. Unités reconnues : heures, jours, nuits (douze heures), minutes, secondes
-(arrondies à la minute, jamais zéro). Un nombre nu se lit en minutes.
-
-Nouvelle section `durations` dans `test-fixtures/cooklang_parsing.json` — 23 cas, rejoués par les
-deux suites. La fonction est exportée des deux côtés pour ça.
-
-#### Le temps de repos
-
-Un champ, `rest_time`, pour **toutes** les attentes : marinade, réfrigération, levée, repos de
-pâte. Un seul et non un par sorte — un livre écrit « laisser mariner une nuit au frais » sans dire
-si c'est du repos ou de la réfrigération, et deux champs qui se confondent se remplissent mal tous
-les deux.
-
-Séparé de `prep_time` parce qu'on ne le passe pas à cuisiner. C'est aussi la seule des trois durées
-qui change la **date** de préparation plutôt que la durée du geste : quatre heures au frais veulent
-dire « commencer la veille », et c'est ce que le planning avait besoin de savoir.
-
-| Couche | Ce qui a changé |
-|---|---|
-| Modèle | `RecipeTags.restTime`, écrit **inconditionnellement** — une clé absente ne pourrait plus effacer une valeur |
-| Parseurs | trois alias, `temps_repos` → `rest_time` → `repos`, dans le **même ordre** des deux côtés |
-| Fixture | `restTime` sur les cinq cas de recette + section `restTimeAliases` qui fige la **priorité** |
-| Prompts | schéma de la passe 1, prose de recherche, rendu pour la passe 2, métadonnée CookLang, raffinage |
-| Affichage | puce « Repos » dans `CooklangMetaRow`, ligne dans l'export PDF |
-| Édition | champ dans `RecipeMetaPanel`, contrôleur dans le mixin, six appelants |
-| Planning | attribut « 12 h de repos AVANT de servir » dans le prompt |
-
-**Aucune migration** : `data['rest_time'] as int?` rend `null` sur les documents existants.
-
-#### Trois défauts trouvés en chemin
-
-**Le raffinage comptait la marinade deux fois.** `refiner.ts` disait au modèle « prep_time = durée
-totale AVANT cuisson (épluchage, découpe, **marinade**, etc.) ». Ajouter `rest_time` sans retirer ce
-mot aurait fait compter douze heures aux deux endroits. La règle est réécrite : `prep_time` est le
-temps de **main à la pâte**, le temps où rien ne se fait a son propre champ.
-
-**Le planning écrivait des clés que personne ne lit.** `planning.ts` demandait au modèle
-`>> prepTime:` et `>> cookTime:` en camelCase ; les parseurs lisent `temps_preparation`,
-`temps_préparation`, `prep_time`. Les brouillons du planning sortaient donc **sans durées**, depuis
-toujours, sans qu'aucune erreur ne le dise.
-
-**La puce de durée de la fiche recette ne lisait qu'un alias sur trois.** Elle testait
-`meta['prep_time']` quand le prompt écrit `>> temps_préparation:` : elle ne s'affichait jamais sur
-une recette importée. `_dureeDepuisMeta` lit maintenant les mêmes alias que le parseur, dans le même
-ordre.
-
-#### Le minuteur `~{1-2%minutes}` s'affichait en deux morceaux
-
-`cooklangNormalizeStepTimers` enveloppe les durées écrites en texte brut. Pour savoir s'il était
-déjà dans un jeton, il ne regardait que le **caractère précédent** — dans `~{1-2%minutes}`, c'est un
-tiret, qui passait la garde. Il produisait `~{1-~{2%minutes}}`, et l'étape affichait une puce
-« 1-~{2 min » suivie d'une accolade orpheline.
-
-Le texte est désormais **découpé sur les jetons existants**, et seuls les morceaux entre eux sont
-normalisés. Une garde de position ne peut pas dire « je suis dans des accolades » ; un découpage,
-si.
-
-Et la fourchette se lit : `formatTimerRange` écrit « 1 à 2 » là où le livre imprime « 1-2 ». Un
-tiret entre deux nombres se lit « moins » avant de se lire « à ».
-
-**Tests** : `test/timer_display_test.dart`, seize cas.
-
-### Mise à jour release (23/08/2026 — v0.21.101)
-
-#### Le reporting de coûts était figé depuis cinq jours
-
-`recordUsage` écrivait ses compteurs avec des **clés pointées** :
-
-```ts
-.set({ [`by_user.${uid}.cost_usd`]: FieldValue.increment(x) }, { merge: true })
-```
-
-`set()` du SDK Admin ne lit pas les points comme un chemin. Il a donc créé un champ **dont le nom
-contient des points**, à côté de la carte `by_user` que les écrans lisent. Les deux ont grandi dans
-le même document sans jamais se rencontrer : 618 champs plats qui suivaient chaque appel, et des
-cartes figées au dernier passage de `rebuildAiUsageMonthlyFn`.
-
-Constat au 23/08 sur `ai_usage_monthly/2026-08` :
-
-| | Coût | Appels |
-|---|---|---|
-| Carte imbriquée `by_user` (lue par les écrans) | 5,11 € | 1 041 |
-| Champs plats `by_user.…` (réalité) | 32,14 € | 2 354 |
-| `total_cost_usd` du même document | 38,66 € | 3 928 |
-
-`rebuilt_at` valait le 18/08 à 10:02. Aucune erreur nulle part : les trois chiffres étaient
-sincères, ils ne parlaient pas de la même chose. Le total du mois, lui, restait juste —
-`total_cost_usd` n'a pas de point dans son nom.
-
-**La correction.** `buildMonthlyAggregate()` (`ai/usage.ts`) construit des cartes imbriquées.
-`FieldValue.increment` fonctionne à n'importe quelle profondeur du moment que le chemin est fait
-d'objets. La fonction est **pure et exportée** pour la seule raison qui compte : la forme est ce qui
-s'est cassé, et une forme se teste sans base de données.
-
-**La réparation des mois passés** ne demande aucun code : `rebuildAiUsageMonthlyFn` écrit avec un
-`set()` **sans fusion**, qui remplace le document entier. Les 618 champs plats disparaissent d'
-eux-mêmes. Bouton « Reconstruire les agrégats », Admin → Coûts.
-
-**Tests** : `functions/src/tests/usageAggregate.test.ts`, six cas. Le premier interdit le point dans
-une clé **brute** — et non dans un chemin aplati, où un point est indiscernable de l'imbrication.
-C'est précisément la confusion qui a produit le défaut, et un test qui la reproduit ne prouve rien.
-
-`costsCallable` lit les mêmes cartes : tout le reporting par poste était figé de la même façon, et
-la même reconstruction le répare.
-
-#### Le tableau des dépenses se filtre et se trie
-
-Écran Admin → Dépense par utilisateur. Un filtre libre sur les noms — de compte **et** de poste : un
-compte est gardé s'il correspond lui-même ou si un de ses postes correspond, et seuls les postes qui
-correspondent s'affichent alors. Trois tris — coût, appels, nom — appliqués aux deux niveaux, avec
-inversion du sens. Décroissant par défaut : la première question posée à ce tableau est
-« qu'est-ce qui coûte le plus ».
-
-**Pas de tri par date, et ce n'est pas un oubli.** Une ligne de ce tableau est un compte ou un
-poste, agrégé sur toute la période ; aucune n'a de date propre. La date se choisit au-dessus, par
-les puces de période. Le jour où l'agrégat rendra une ligne par mois, le tri aura un sens.
-
-Le contrôleur du champ de filtre vit dans l'état de l'écran, pas dans le widget : construit dans
-`build`, il serait recréé à chaque frappe et le champ perdrait le focus après chaque lettre.
-
-### Mise à jour release (23/08/2026 — v0.21.100)
-
-#### « (sans titre) » n'était pas un titre, et s'affichait comme tel
-
-`renderTranscriptionForTagging` (`gemini/tagging.ts`) écrivait
-`-- section : (sans titre)` pour signaler une section anonyme au modèle. Le prompt lui demande
-par ailleurs de reprendre les titres de section **caractère pour caractère**. Il a obéi : des
-recettes portent une section réellement nommée « (sans titre) », affichée dans le livre, dans
-l'éditeur d'ingrédients et dans la liste normalisée.
-
-Même famille que l'exemple rempli dans un prompt — tout ce qui ressemble à une valeur finit
-recopié. Le marqueur devient `-- section --` : il marque une frontière, il ne propose plus rien
-à reprendre.
-
-**Deux garde-fous**, parce que le modèle peut produire un titre vide sans qu'on lui en souffle un.
-`nettoyerTitreSection` vide six libellés qui ne nomment rien — `(sans titre)`, `sans titre`,
-`(aucun)`, `aucun`, `-`, `—`. `nettoyerSectionsCooklang` retire du CookLang les lignes
-`== … ==` dont le titre en fait partie ; une ligne qui commence par `==` sans être un en-tête est
-laissée intacte.
-
-**Les recettes déjà importées sont réparées à la lecture, pas en base.**
-`RecipeIngredient.normalizeIngredientCategory` (`features/recipes/domain/recipe.dart`) rend `null`
-pour ces mêmes libellés, et `RecipeIngredient.fromMap` l'applique. `cooklang_preview_model.dart`
-fait de même pour les en-têtes `== … ==`. Rien à migrer, et rien à perdre si une migration se
-passait mal.
-
-**Tests** : `functions/src/tests/pageIllustrations.test.ts` (neuf cas, dont un en-tête qui
-disparaît, un vrai titre qui reste, et une ligne `==` au milieu d'une phrase qu'on ne touche pas)
-et `test/recipe_model_test.dart` (dix cas, dont la réparation d'un document Firestore existant).
-
-### Mise à jour release (23/08/2026 — v0.21.99)
-
-#### Le maintien de l'écran est réservé à l'APK Android
-
-`PlatformUtils.isAndroidApp` (nouveau) : `!kIsWeb && Platform.isAndroid`. L'ordre compte —
-`dart:io` n'existe pas sur le web, et `Platform.isAndroid` y lèverait ; le `&&` court-circuite
-avant d'y toucher. Même construction que `isMobile`. Distinct de `Platform.isAndroid` seul, qui
-répond vrai depuis un navigateur Android.
-
-`ScreenWakelock` prend un second paramètre injecté, `supported`, dont le défaut est
-`PlatformUtils.isAndroidApp`. Le garde est placé dans **`acquire()`** et non dans `_apply()` :
-hors Android le compteur ne bouge pas, donc `release()` et `refresh()` deviennent inertes
-d'eux-mêmes. Une seule ligne décide.
-
-**Injectable comme le basculement, et pour la même raison.** Sous `flutter test`, la plateforme
-hôte est Windows : un test écrit en dur aurait éteint le verrou dans tous les tests, qui seraient
-passés au vert sans plus rien vérifier. Les cinq cas existants passent `supported: true`, un
-sixième vérifie qu'avec `supported: false` la plateforme n'est jamais sollicitée.
-
-**Ce n'est pas une limite technique mais un choix.** Le plugin sait tenir l'écran sur Windows et,
-en principe, dans un navigateur. La fonctionnalité vise le téléphone posé sur le plan de travail.
-
-**Le web y était en plus cassé.** Son implémentation n'entrait pas dans le bundle : le fichier
-d'enregistrement des plugins web (`.dart_tool/flutter_build/…/web_plugin_registrant.dart`) date du
-17/08, la veille de l'ajout de `wakelock_plus`, et n'a jamais été régénéré. `main.dart.js` ne
-contient aucune trace de `assets/no_sleep.js`, seulement le nom du canal natif
-`dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle`. Chaque ouverture de
-recette envoyait donc l'appel vers un canal sans destinataire, d'où un `PlatformException`
-`channel-error` par session.
-
-Ce garde éteint la cause. **Le dossier de compilation reste périmé** : le prochain plugin web
-ajouté tombera dans le même trou, en silence. À corriger le jour où un plugin web s'ajoute.
-
-`wakelock_plus` reste dans `pubspec.yaml` — une dépendance Flutter n'est pas déclarable par
-plateforme. Elle n'est simplement plus appelée hors Android.
-
-### Mise à jour release (23/08/2026 — v0.21.98)
-
-#### Le balisage rendait parfois une réponse vide
-
-`TAGGING_MAX_TOKENS` passe de **24 000 à 36 000** (`gemini/tagging.ts`).
-
-Sur un import réel, Claude Sonnet 5 a dépensé les 24 000 jetons **en réflexion** et n'a pas écrit
-un caractère : `stop_reason` à `max_tokens`, `outputTokens` à 24 000 exactement, texte de longueur
-zéro. Le message d'erreur qui en découlait — « tagAndNormalize: réponse illisible », causé par
-`JSON.parse("")` — décrivait le symptôme et non la cause.
-
-La reprise Cloud Tasks a sauvé l'import, mais de justesse : 21 693 jetons au second essai, dont
-environ 20 000 de réflexion pour 1 700 de réponse. Le plafond était donc dépassé une fois sur deux
-sur cette recette.
-
-**36 000 est un palier d'essai, pas une certitude.** La réflexion est en mode `adaptive` : elle
-choisit sa longueur, et rien ne dit encore si elle grandit avec le budget qu'on lui laisse. Si un
-appel cale de nouveau, le levier n'est pas le plafond mais la réflexion elle-même —
-`thinking: { type: "enabled", budget_tokens: N }` garantit alors `max_tokens - N` à la réponse. Le
-SDK impose `budget_tokens ≥ 1024` et strictement inférieur à `max_tokens`.
-
-**Le plafond borne, il ne réserve pas.** Une réponse courte se facture courte. Ce qui suit le
-plafond, c'est le prix d'un échec : 0,47 € à 36 000 contre 0,32 € à 24 000, pour rien dans les deux
-cas. À comparer aux 0,11 € de toute la chaîne d'illustrations d'une page.
-
-**La transcription reste à 24 000** : ses appels observés plafonnent à 6 450 jetons de sortie, soit
-un quart de son budget.
-
-**Deux manques constatés au passage, non corrigés à ce stade.** Une réponse vide n'est pas traitée
-comme une erreur par `callAnthropic` : le routeur ne bascule donc pas sur Gemini, qui aurait su
-répondre. Et le budget de réflexion réglable dans Admin → Moteur d'IA n'est passé qu'au client
-Gemini (`router.ts`, `resolveThinkingBudget`) : le curseur existe et ne fait rien pour Claude.
-
-### Mise à jour release (23/08/2026 — v0.21.97)
-
-#### Extraction des illustrations d'une page importée
-
-La chaîne mise au point dans le bac à sable (Admin → Bac à sable → Importation d'image) est portée
-dans l'import de livre. Elle est **facultative** et **asynchrone** : cochée à l'import, elle
-s'exécute dans `recipeProcessor`, et l'écran d'import est rendu dès la mise en file — enchaîner dix
-pages n'attend jamais la fin du traitement de la première.
-
-**Le module — `functions/src/illustrations/`**
-
-| Fichier | Rôle |
-|---|---|
-| `prompts.ts` | Les cinq prompts, **copiés** du bac à sable, mot pour mot |
-| `sheet.ts` | La planche 2×2 des quatre orientations, composée avec Sharp |
-| `extract.ts` | La chaîne, de la photo brute aux découpes |
-| `ledger.ts` | Le journal en bloc : une ligne par étape, avec son coût, puis le total |
-| `store.ts` | Publication sous `illustrations/{uid}/` et bilan de relecture |
-
-**Ce qui part au modèle, et non seulement le prompt.** Les quatre textes de `prompts.ts` sont
-copiés du bac à sable au caractère près. Le message envoyé, lui, ne l'était pas : le bac à sable
-préfixe aux prompts de cadrage et de zones la ligne « L'image mesure X pixels de large et Y de
-haut. », et « Ce gros plan mesure … » pour la passe des coins. Le portage l'avait perdue, alors
-que le prompt des coins demande toujours de placer les sommets « au pixel près ». `sizeHeader()`
-la reconstruit à l'identique, et `test/pageIllustrations.test.ts` verrouille la phrase.
-L'orientation n'a jamais eu d'en-tête, des deux côtés : on y demande de reconnaître une vignette,
-pas de mesurer.
-
-**Le côté long envoyé au modèle est de 2048 px**, la valeur avec laquelle la chaîne a été mise au
-point. Le portage l'avait ramené à 1600 sans raison.
-
-**Les six étapes**
-
-1. **Pré-contrôle** (`page_illustrations_precheck`) — un appel sur la photo brute : cette page
-   porte-t-elle une photographie, un dessin, un schéma ? Non → la chaîne s'arrête, et les trois
-   postes suivants n'ont pas lieu. Le cas est fréquent : une page de recette sur deux ne porte
-   aucune image. C'est le seul poste dont on peut dire s'il rapporte plus qu'il ne coûte, et c'est
-   pour ça qu'il est compté à part.
-2. **Cadrage** (`page_illustrations_frame`, un à deux appels) — une **boîte droite** d'abord, puis
-   les **quatre coins** sur un gros plan de cette boîte (marge de 25 %). Deux questions et non une :
-   un modèle encadre bien et place mal des sommets libres. Sous 60 % de confiance, la passe des
-   coins est rejouée une fois et la réponse la mieux assumée gagne — les cadrages justes s'annoncent
-   au-dessus de 80 %, celui qui ne l'était pas à 42 %, donc une page facile ne repasse jamais par là.
-3. **Mise à plat** — `warpQuadrilateral` (`gemini/perspective.ts`), plafond porté à **4000 px** par
-   son nouvel argument `options`. Chiffre mesuré : à 2048 px, une double page sort à 650 px de large
-   et son corps de texte à cinq pixels de haut ; l'étape 4 n'y lit plus rien. Les coins subissent
-   d'abord une homothétie de **+2 %** — un liseré de décor ne gêne personne, un bord de photo rogné
-   est perdu. `isFullFrame` **saute cette étape** quand le cadre couvre déjà toute l'image, à
-   quinze millièmes près : un scan à plat ou une capture d'écran n'a rien à redresser, et
-   ré-échantillonner chaque pixel lui coûterait de la netteté pour rien.
-4. **Remise à l'endroit** (`page_illustrations_orientation`) — le programme compose une **planche
-   2×2** des quatre rotations, marquées A/B/C/D, et demande « dans laquelle sais-tu lire ». La
-   question précédente — « de combien de degrés tourner cette page » — recevait « zéro » à 98 % de
-   confiance devant une page couchée. Le programme applique le quart de tour ; le serveur ne connaît
-   même pas les degrés, il rend une lettre. Les glyphes sont des matrices 5 × 7 agrandies, et non du
-   texte rendu : le conteneur des Cloud Functions n'a aucune police installée.
-5. **Zones** (`page_illustrations_regions`) — des rectangles droits, la page étant déjà à plat et à
-   l'endroit. **Une zone = une photographie** : deux photos qui se touchent bord à bord valent deux
-   zones, une grande scène continue en vaut une. Le champ `bounded_by` est obligatoire et rend la
-   coupure vérifiable — un modèle qui scinde à tort une photo ne sait pas nommer ce qui sépare les
-   deux moitiés.
-6. **Découpe** — un simple recadrage sur la page pleine résolution. Rien n'est ré-échantillonné :
-   chaque pixel gardé est celui d'origine.
-
-**Le coût, en euros, en un bloc**
-
-`IllustrationLedger` écrit **une ligne par étape**, au fil de l'eau, toutes sous le même
-`correlationId` (`<corrélation du job>_p<numéro de page>`) et ordonnées par `stepIndex`. La ligne de
-clôture porte `stepIndex: 0` — elle se trie donc en tête — et donne le **total** du bloc, le nombre
-d'illustrations, le nombre d'appels et la durée. Chaque ligne porte `costEur`, `costUsd`, les jetons
-et l'`observed` du modèle.
-
-Aucun montant n'est inventé. Sans taux de change (`app_config/currency_rate`), la ligne affiche des
-**dollars** ; sans tarif pour le modèle, elle affiche « montant inconnu » et le total compte les
-étapes non chiffrées. Un coût manquant se voit, un coût faux ne se voit pas.
-
-**Le branchement — `pipeline/recipeProcessor.ts`, étape `design`**
-
-Deux chemins qui ne se cumulent jamais. **Coché** : la chaîne complète, jusqu'à cinq appels par page,
-et des images attachées à la recette. **Décoché** : `countPageImages`, un appel de **pré-contrôle**
-par page, qui compte les images sans rien extraire.
-
-Ce second chemin appelait d'abord `detectIllustrationRegions` et n'en gardait que `boxes.length`.
-Deux prompts posaient donc la même question — « cette page porte-t-elle des images, et combien » —,
-et celui-là était le plus lourd : il décrit un repère de coordonnées, des règles de cadrage et un
-format de boîte dont l'appelant ne faisait rien. Le pré-contrôle le remplace, et
-`detectIllustrationRegions` garde son vrai rôle : rendre des **boîtes à découper** pour l'atelier
-manuel (`detectAndCropIllustrationsFn`), qui, lui, en a besoin. Le poste `detect_illustrations` sort
-donc du pipeline et ne sert plus que la callable.
-
-**Et il est seul.** Quatre autres postes vivaient dans `gemini/detector.ts` : `detect_main_photo`,
-un repli qui ne partait plus depuis juillet, et la cascade `detect_grid_dims` →
-`detect_illustrations_crop` → `detect_illustrations_grid`, qui cherchait une grille de vignettes
-fusionnée dès que le modèle rendait deux à quatre zones dont une dépassait le quart de la page. Les
-compteurs mensuels ont tranché : cascade partie 109 fois en quatre mois, aboutie 3 fois à la
-première approche et 13 fois à la deuxième, le reste allant jusqu'au repli dont le résultat était
-jeté s'il ne rendait pas plus d'une zone. Les quatre sont retirés du code et de `ROUTABLE_FEATURES`,
-et **restent** au catalogue comptable.
-
-La callable renvoie désormais les **découpes**, pas les boîtes. Elle redresse la perspective
-(`warpQuadrilateral`) puis passe par `cropAndSelectIllustrations`, dont les trois filtres locaux
-écartent ce qui n'est pas une photographie. Le client lisait les boîtes et refaisait la découpe au
-rectangle avec le paquet Dart `image` : le redressement était calculé, facturé, puis jeté, et chaque
-illustration gardait ses deux coins de papier et de table.
-
-**`illustration_report.detectees` dit ce que la page PORTE, jamais ce qu'on en a tiré.** Les zones
-repérées à l'étape 5 quand la chaîne est allée au bout, le compte du pré-contrôle quand elle s'est
-arrêtée avant. C'est ce qui permet au bandeau de relecture de rester utile après un échec : « trois
-photos repérées, à extraire à la main » est exactement ce qu'il faut dire à ce moment-là. Un compte
-absent ou aberrant sur une page qui porte des images vaut 1 — zéro ferait dire au bandeau qu'il n'y
-a rien à prendre.
-
-`illustration_report` prend enfin des valeurs non nulles sur `retenues` et `publiees` : depuis le
-retrait de l'ancienne extraction automatique, `image_urls` était rempli d'une liste déclarée et
-jamais alimentée.
-
-**Le bac à sable reste en place, et diverge**
-
-`functions/src/sandbox/` porte toujours sa version. Les prompts ont été **copiés**, pas partagés :
-partagés, un essai raté du bac à sable changerait le comportement de la production. L'écran de
-l'expérience porte une bannière qui le dit, et le sous-titre du registre aussi — l'erreur à empêcher
-est de régler un seuil ici et de croire que l'application en profite.
-
-**Trois endroits, comme tout poste d'IA** : `ctx.feature` de l'appel, `ROUTABLE_FEATURES`
-(`callable/aiRoutingCallable.ts`, groupe « Extraction des illustrations d'une page »), et `feature_catalog.dart`
-(`kFeatureProcess` + `kFeatureCatalog`, processus « Illustrations d'une page »).
-
-### Mise à jour release (18/08/2026 — v0.20.28)
-
-#### Maintien de l'écran allumé sur la fiche recette
-
-- **`wakelock_plus: ^1.3.3`** (nouveau) — version retenue par la résolution : à partir de 1.6.1, wakelock_plus réclame `package_info_plus ^10.1.0` quand le projet est en `^8.0.0`. Monter l'un impose de monter l'autre — un autre chantier. Couvre Android, iOS, web et Windows ; aucune permission Android (le plugin pose `FLAG_KEEP_SCREEN_ON` sur la fenêtre, pas un `WakeLock` système).
-- **`core/services/screen_wakelock.dart`** (nouveau) : `ScreenWakelock` avec `acquire()` / `release()` / `refresh()` et une instance partagée `ScreenWakelock.instance`. Le maintien est **compté**, pas booléen : deux écrans superposés le demandent chacun, et le verrou ne tombe qu'au dernier `release()`. Une libération de trop ne descend pas sous zéro — sinon la prochaine prise n'appliquerait rien.
-- **`refresh()` existe parce que le verrou est révocable** : navigateurs et Android le relâchent au passage en arrière-plan sans le rendre. Sans reprise au `resume`, un appel téléphonique suffisait à éteindre l'écran pour le reste de la lecture.
-- **`WakelockToggle` injectable** — `Future<void> Function({required bool enable})`, par défaut `WakelockPlus.toggle` : le comptage se vérifie sans plugin ni binding.
-- **`mixin KeepScreenAwake<T extends StatefulWidget> on State<T>`** : `acquire()` en `initState`, `release()` en `dispose`, `AppLifecycleListener(onResume:)` pour la reprise. Mixé sur `_RecipeDetailScreenState` (`recipe_detail_screen.dart`), après `SingleTickerProviderStateMixin`.
-- **Le maintien couvre toute la fiche, pas le seul `_mobileKitchenMode`** : les ingrédients, la nutrition et les commentaires se lisent aussi les mains occupées.
-- **L'échec de plateforme est remonté une fois par session** (`reportUnexpectedError`, poste `screenWakelock.apply`, contexte `enable` + `holders`). Un refus vient de la plateforme — API absente, onglet en fond, navigateur qui refuse — et se reproduirait à chaque ouverture de recette : cent rapports identiques n'apprennent rien de plus que le premier et noient les autres. Ce n'est pas un `catch` silencieux, c'est un `catch` qui ne se répète pas.
-- **Le client desktop Windows n'est pas concerné par la limite App Check** : le maintien ne passe par aucun appel serveur.
-- **Tests** : `test/screen_wakelock_test.dart` — première prise seule appliquée, verrou conservé tant qu'un détenteur reste, libération excédentaire ignorée, reprise après arrière-plan, `refresh()` sans détenteur sans effet.
-
-### Mise à jour release (17/08/2026 — v0.20.11)
-
-#### Le conseil de conservation quitte le CookLang
-
-- **`storage_text.dart` ne sait plus qu'effacer.** `buildStorageSection()` et `applyStorageSection()` sont supprimés ; restent `hasStorageSection()` et `removeStorageSection()`, qui servent au nettoyage de l'existant. Le conseil n'est plus persisté que dans `recipes/{id}.storage_advice`.
-- **`hasStorageSection()` cherche le titre** au lieu de comparer les longueurs avant/après retrait. `removeStorageSection()` supprimant aussi les lignes vides finales, l'ancienne implémentation répondait vrai pour toute recette terminée par un saut de ligne — ce qui, branchée au nettoyage automatique, aurait déclenché une écriture Firestore sur presque chaque recette ouverte. Cas verrouillé dans `test/storage_text_test.dart`.
-- **`StorageRepository`** : `applyToRecipe()` remplacé par `stripSection({recipeId, rawCooklang})`, qui n'écrit que si la section est présente et rend un booléen. `ensure({recipeId})` perd son rappel `loadRawCooklang` et se réduit à `read() ?? generate()`.
-- **`recipe_detail_screen.dart` — `_stripLegacyStorageSection()`** : nettoyage opportuniste, une fois par recette et par session (`_strippedStorageIds`), conditionné à `canEdit` — un lecteur n'a pas le droit d'écrire et l'échec n'apprendrait rien. `updated_at` reste intact.
-- **`batch_planning_screen._generateStorageAdvice()`** ne réécrit plus le CookLang ni ne recopie de recette dans `_slots` ; il produit et affiche.
-- **`MealPrepBanner`** perd son paramètre `rawCooklang`.
-
-### Mise à jour release (17/08/2026 — v0.20.10)
-
-#### Contexte de préparation à l'avance porté par l'adresse de la recette
-
-- **`features/planning/domain/meal_prep_context.dart`** (nouveau) : `MealPrepContext { prepDate, mealDate }`, avec `daysAhead`, `mode`, `isAhead` et `instruction` délégués à `meal_storage_rules.dart`. Sérialisation `toQueryParameters()` / `fromQueryParameters()` sous les clés `prep` et `meal`, au format `YYYY-MM-DD`. Une date illisible rend `null` : la fiche s'ouvre sans contexte plutôt qu'avec une date devinée.
-- **Aucun stockage.** Le contexte n'est écrit ni sur `recipes/{id}`, ni sous `users/{uid}` : il suit la même voie que `portions`, en paramètre d'adresse, et meurt avec l'écran. Une recette est partagée et peut être planifiée à deux dates par deux membres du groupe.
-- **`planning_screen.dart` — `_recipeLocationFor()`** construit désormais l'URL via `Uri(path:, queryParameters:)` et y joint `prep`/`meal` quand `meal.prepDate != null`.
-- **`app_router.dart`** relit le contexte sur la route `/recipes/:recipeId` et le passe à `RecipeDetailScreen.prepContext`, propagé à `PrepareTab` (desktop) et `MobileUnifiedBody` (mobile) via le `topContent` de `CooklangPreview`.
-- **`features/planning/presentation/meal_prep_banner.dart`** (nouveau) : `MealPrepBanner`, affiché uniquement si `prepContext.isAhead`. Partie haute calculée (`mealStorageInstruction`), partie basse produite par l'IA et dépliable. Trois états : chargement, panne (message + « Réessayer », la consigne calculée restant affichée), conseil disponible.
-- **`StorageRepository.ensure({recipeId, loadRawCooklang})`** (nouveau) : `read` → `generate` si absent → `applyToRecipe` en best-effort avec `reportError('storage_advice_ensure_apply')`. `loadRawCooklang` est un rappel paresseux, appelé seulement quand il y a une section à recopier — relire la recette pour un conseil déjà stocké serait une lecture Firestore pour rien. `planning_screen._showStorageAdvice()` et le bandeau appellent tous deux cette méthode : la séquence n'existe plus qu'une fois.
-- **`features/planning/presentation/storage_advice_details.dart`** (nouveau) : `StorageAdviceDetails` extrait de `storage_advice_sheet.dart`, partagé par la feuille du planning et le bandeau. Deux rendus divergents du même conseil auraient été une divergence invisible.
-- **Aucun nouveau poste de coût** : le bandeau appelle `suggestStorageAdviceFn`, poste `storage_advice` déjà routable (`ROUTABLE_FEATURES`) et déjà au catalogue comptable.
-- **Tests** : `test/meal_prep_context_test.dart` — aller-retour par les paramètres d'adresse, refus des dates partielles ou illisibles, franchissement de la limite réfrigérateur/congélateur.
-
-### Mise à jour release (05/07/2026 — v0.18.0)
-
-#### Client Flutter — Version
-
-- **`pubspec.yaml`** : version `0.18.0+1`.
-
-#### Release engineering
-
-- **Build desktop Windows** : génération en mode release (`flutter build windows --release`) pour alimenter le livrable desktop.
-- **Déploiement unifié** : publication via le script racine `deploy.ps1` pour conserver un chemin de release unique et reproductible.
-
-### Mise à jour release (11/07/2026 — v0.19.18)
-
-#### Spécification technique — Gouvernance des unités ingrédients
-
-##### Objectif
-
-- Éliminer les divergences d'unités entre saisie manuelle, génération Gemini et import d'une page scannée.
-- Garantir une résolution canonique des unités avant tout calcul nutrition.
-- Réduire drastiquement les lignes nutrition sans score dues aux unités non reconnues.
-
-##### Référentiel d'unités (source de vérité)
-
-- Collection Firestore : `nutrition_units`.
-- Une unité canonique = un document unique (`normalized_unit`).
-- Champs attendus :
-  - `normalized_unit: string`
-  - `display_label: string`
-  - `aliases: string[]`
-  - `measurement_type: "weight" | "volume" | "count" | "unknown"`
-  - `grams_per_unit?: number`
-  - `volume_ml_per_unit?: number`
-  - `status: "known" | "unknown" | "pending_review" | "deprecated"`
-  - `source: "builtin" | "fallback_auto" | "admin_validated"`
-  - `seen_count: number`
-  - `first_seen_at`, `last_seen_at`, `updated_at`
-
-**`grams_per_unit` n'existe que sur une unité de POIDS.** Deux types d'unités
-n'ont pas de poids intrinsèque et n'en portent donc jamais :
-
-| Type | Ce qui est stocké | Ce qui fait le poids |
-|---|---|---|
-| `volume` | `volume_ml_per_unit` | `ml × densité(ingrédient)` |
-| `count` (« pièce ») | rien | `grams_per_piece` de l'**ingrédient** |
-
-La règle valait pour le volume depuis l'incident de la cuillère à soupe (une
-recette à l'huile figeait 13,8 g sur `c_a_s`, imposés ensuite au miel et à
-l'eau). Elle manquait pour le comptage, avec la même conséquence en pire : le
-premier ingrédient croisé en pièces — inconnu de la table, donc 100 g par
-défaut — figeait `grams_per_unit: 100` sur `piece`, et **tout** ce qui se
-compte à la pièce pesait dès lors 100 g. Un blanc d'œuf au lieu de 30 g, trois
-échalotes 300 g au lieu de 90.
-
-Le champ est désormais supprimé du document à chaque passage sur une unité de
-comptage : les référentiels déjà pollués se réparent seuls, sans backfill. Les
-deux implémentations (`resolveUnitFactorToGrams`, Dart et TypeScript) ignorent
-en outre un tel poids s'il subsiste, et les cas correspondants sont asservis
-dans `unit_to_grams.json`.
-
-##### Poids du couple ingrédient / unité
-
-La même maladie touche une famille entière d'unités : `branche`, `brin`, `tige`,
-`feuille`, `bouquet`, `filet`, `noisette`, `zeste`, `tranche`, `poignee`,
-`morceau`, `gousse` (`INGREDIENT_DEPENDENT_UNITS`). Aucune n'a de poids propre —
-une branche de thym pèse 1 g, une branche de céleri 60 — et la table intégrée
-n'en donnait qu'une moyenne : `branche: 15 g`, soit 60 g pour quatre branches de
-thym, soixante fois le poids réel.
-
-Le référentiel d'ingrédients porte donc `grams_per_unit: { branche: 1 }`, indexé
-par unité canonique. L'ordre de résolution, tenu par une seule fonction partagée
-et asservi par `unit_to_grams.json` :
-
-1. `grams_per_unit[unité]` de l'**ingrédient** — le poids du couple ;
-2. `grams_per_piece` de l'ingrédient, quand l'unité est « pièce » ou absente ;
-3. `volume_ml_per_unit` × densité, pour un volume ;
-4. `grams_per_unit` du référentiel d'**unités**, pour un poids ;
-5. la table intégrée, en dernier recours.
-
-Le poste d'IA `estimate_unit_couple_weights` alimente le niveau 1 à la
-normalisation, en ne demandant que les couples encore inconnus.
-
-##### Quantité absente : les assaisonnements
-
-« sel, poivre » en fin de liste d'ingrédients n'écrit ni nombre ni unité, et
-« une pincée de sel » s'écrit le plus souvent « sel, pincée » — l'unité seule,
-sans le « une ». Le poids valant `quantité × poids d'une unité`, ces lignes
-rendaient `null` **avant même** qu'on regarde l'unité, alors que la pincée vaut
-0,5 g dans la table comme dans le référentiel. Deux « ? » s'affichaient, la
-couverture restait partielle et la vue pour 100 g était masquée, pour un
-demi-gramme sans calories.
-
-`resolveWeighingInput` (Dart et TypeScript, asservie par `unit_to_grams.json`)
-rend la quantité et l'unité réellement pesées. Trois cas, et rien d'autre :
-
-1. la quantité se lit — rendue telle quelle, unité inchangée ;
-2. elle manque sur une petite mesure à poids fixe (`pincee`,
-   `pointe_de_couteau`) — on lit 1 ;
-3. elle manque **avec** l'unité, sur un assaisonnement connu
-   (`SEASONING_MATCHERS`) — on lit une pincée.
-
-Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. » est
-une donnée abîmée, pas une convention d'écriture : lui prêter un 1 inventerait
-un poids là où la recette attendait un nombre.
-
-Le cas 3 rend l'unité `pincee`, pas une constante en grammes : la surcharge du
-référentiel Firestore suit, et corriger le poids d'une pincée depuis
-Admin → Unités corrige les trois cas d'un coup.
-
-`SEASONING_MATCHERS` ne contient que ce qui se dose réellement par pincée —
-épices, herbes séchées, mélanges secs. Les herbes fraîches en bouquet (persil,
-basilic, menthe, coriandre) en sont absentes : elles pèsent trente grammes, pas
-un demi, et une approximation soixante fois trop basse ne vaut pas mieux qu'une
-case vide, elle la déguise. Les motifs se comparent **mot entier** sur la forme
-canonique : « selle d'agneau » ne pèse pas une pincée parce qu'elle commence par
-« sel ».
-
-Le déclencheur de synchronisation applique la même lecture pour sa validation
-des quantités, sans quoi l'écran d'administration continuerait de dénoncer
-« sel » comme une quantité abîmée alors que le calcul, lui, aboutit. Sur
-l'écran de détail, une pastille et une entrée de légende nomment les lignes
-comptées ainsi : un demi-gramme non expliqué se lit comme une donnée de la
-recette.
-
-Rien à relancer pour les recettes déjà calculées : le rattrapage de 5 h reprend
-toute recette dont `missing_ingredients` n'est pas vide, et ces lignes en
-sortent. La correction **économise** des appels — une pincée de sel suffisait à
-faire revenir la recette toutes les nuits.
-
-##### Sel et sodium : une grandeur, pas deux apports
-
-Le schéma d'enrichissement `per100g` réclame `sodium_mg` **et** `salt_g`. Le
-modèle répond les deux, cohérents entre eux — c'est la même chose dans deux
-unités, 1 g de sel valant 393,4 mg de sodium. `normalizeNutrients` les
-**additionnait** : la conversion du sel était ajoutée au sodium déjà fourni,
-puis le sel était recalculé depuis ce sodium doublé.
-
-Tout ingrédient salé du référentiel portait donc deux fois son sel réel. Le sel
-de table était stocké à 200 g pour 100 g, la sauce soja à 11 186 mg de sodium au
-lieu de 5 500, le lait à 88 au lieu de 44. 1 167 des 1 247 ingrédients du
-référentiel portent du sodium. Une portion d'ailes de poulet annonçait 10,3 g de
-sel — deux jours d'apport recommandé.
-
-Rien ne se levait, et rien ne paraissait incohérent : la seconde formule
-reconstruisait un `salt_g` parfaitement accordé au sodium faux. Le défaut ne se
-voyait qu'en comparant à une table de composition extérieure.
-
-Le doublement frappait deux fois : à l'écriture du référentiel, puis à chaque
-lecture, `recipeNutrition` renormalisant un profil déjà normalisé. La règle qui
-manquait est celle-là — **une normalisation doit être un point fixe** —, et
-c'est le test qui la garde aujourd'hui.
-
-La règle est désormais : le sodium fait foi quand il est fourni, c'est la mesure
-des tables de composition ; le sel n'en est qu'une conversion, et ne sert de
-source que s'il est seul. Deux écritures d'un même nutriment ne s'additionnent
-jamais non plus (`sodium` et `sodium_mg`, `kcal` et `calories`) : la forme
-canonique gagne, sinon la première rencontrée.
-
-`functions/src/tests/nutrients.test.ts` couvre les deux règles, l'idempotence et
-le rejet des valeurs nulles. Cette fonction n'avait aucun test : c'est par là que
-le défaut est passé.
-
-###### Réparer les données déjà écrites
-
-Corriger le code n'y suffit pas : après coup, un profil doublé est
-**indistinguable** d'un profil juste, puisque la formule fautive les rendait
-cohérents dans les deux cas. Aucune règle ne peut les séparer, et diviser par
-deux au hasard reviendrait à fausser les profils sains.
-
-Seule une nouvelle estimation répare. `backfillEnrichReferentialsFn` reçoit donc
-un mode `refreshSodium` (Admin → Backfills, « Reprendre le sel des
-ingrédients ») : au lieu des profils vides, il reprend ceux qui portent du
-sodium, remplace la carte `per100g` entière — `set(merge)` fusionnerait champ par
-champ et laisserait survivre l'ancienne valeur —, et saute la phase des poids
-d'unités, étrangère au problème. Curseur de reprise distinct, et poste de coût
-distinct (`backfill_refresh_sodium_per100g`) : cette dépense est ponctuelle et
-massive, la noyer dans le rattrapage courant aurait rendu son montant
-introuvable.
-
-##### Zéro certain contre valeur inconnue
-
-Le référentiel n'enregistre que les valeurs strictement positives : un profil ne
-liste pas ses zéros. L'écran de détail traduisait cette absence par « - », qui se
-lit « on ne sait pas ». Le sel affichait ainsi sept tirets pour sept zéros
-certains — il n'a ni calories, ni protéines, ni glucides —, alors que le total,
-lui, les additionnait déjà comme des zéros.
-
-Les métriques affichées partent maintenant de zéro pour tout profil retenu comme
-utilisable, et le profil les remplit. Un tiret ne subsiste que là où il n'y a
-vraiment aucun profil.
-
-##### Ingrédients non consommés
-
-`nutrition_ingredients.not_consumed` marque ce qui appartient à la recette mais
-pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
-marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
-reste, il rend le total de la recette inutilisable.
-
-##### Huile absorbée à la friture
-
-Écarter le bain est juste, mais incomplet : ce qu'on y plonge en ressort plus
-gras. Un poulet pané au panko absorbe environ 10 % de son poids en huile — sur
-600 g, 55 g de lipides et 500 kcal que la recette ne déclarait nulle part. La
-couverture affichait « complet » et le plat mentait de 40 % sur ses lipides.
-
-Le taux n'appartient pas au bain. La quantité d'huile écrite dans une recette
-est arbitraire (« 1 L pour la friture ») : en garder un pourcentage ferait
-dépendre le résultat de la façon dont l'auteur a rédigé sa ligne. Le taux
-appartient à l'**aliment frit** ; le bain déclaré sert de **plafond** — on
-n'absorbe pas plus d'huile qu'il n'y en a — et de source de profil, puisque
-c'est lui qui dit quelle huile est employée. À défaut, une huile végétale
-générique (900 kcal, 100 g de lipides, 13 g de saturés pour 100 g).
-
-Reste à savoir *ce qui* est frit : la liste d'ingrédients ne le dit pas — dans
-un poulet pané, le poulet, la farine, l'œuf et la chapelure passent au bain, la
-salade servie à côté non. Seul le texte de la recette le dit, d'où le poste
-`estimate_fry_absorption`, qui rend les indices des ingrédients frits et le
-pourcentage absorbé (borné à 30 %).
-
-L'appel n'est demandé que si `looksFried()` — déterministe, gratuit,
-`fryAbsorption.test.ts` — repère un signe de friture dans `raw_cooklang` ou dans
-les noms d'ingrédients. La recherche se fait par mots entiers : « frit » en
-sous-chaîne attrape « frittata », qui est une omelette. Une panure seule ne
-déclenche rien, le four existe.
-
-Le verdict vit dans le snapshot (`fry_verdict`, `fry_signature`) et se réutilise
-tant que la liste d'ingrédients et le texte n'ont pas changé. Il est stocké
-**séparément de son résultat** (`absorbed_oil`) : un poids d'ingrédient qui
-devient connu entre deux calculs doit produire de l'huile sans redemander le
-verdict.
-
-L'huile absorbée entre dans les totaux **et dans le poids total** — elle est
-mangée, donc elle pèse dans le dénominateur des valeurs pour 100 g. Elle
-n'entre pas dans la couverture : ce n'est pas un ingrédient. L'écran la montre
-comme une ligne dérivée, en italique et marquée « estimée », qui dit son taux et
-le poids frit dont il découle ; le tableau, qui refait ses totaux depuis les
-lignes, la compte comme le serveur — sans quoi son TOTAL contredirait les
-calories par portion affichées juste au-dessus.
-
-Elle se range **sous le bain dont elle sort** (`↳ dont absorbée`), reconnu par
-`source_name`, et ne tombe en fin de tableau que si la recette ne liste aucun
-corps gras écarté. Les deux lignes se lisent alors comme une seule idée : on
-jette le litre, on mange les 55 g.
-
-##### Quantité de repli des matières grasses de cuisson
-
-« Huile pour graisser le fond du plat » n'a pas de quantité et n'en aura jamais :
-c'est un geste, pas une pesée. Sans quantité, l'ingrédient sort du calcul — une
-centaine de kilocalories manquantes que rien ne signale.
-
-`defaultQuantityForMissing` applique donc, à la normalisation et **hors de toute
-dépendance à l'IA**, une quantité de repli : 1 c.à.s. pour les huiles et corps
-gras, 1 noisette pour le beurre et la margarine. La valeur est écrite dans la
-recette (elle apparaît donc dans la liste d'ingrédients), pas seulement dans le
-calcul.
-
-La liste est délibérément courte. Une absence de quantité a souvent un sens : un
-« poulet » listé sans quantité peut être l'intitulé d'une pièce dont la découpe
-est chiffrée plus bas, et lui inventer un poids fausserait la recette entière.
-Le repli ne couvre que les matières grasses de fond de plat ; `defaultQuantities.test.ts`
-garde cette frontière dans les deux sens.
-
-##### Lignes qui reprennent un ingrédient déjà listé
-
-Une recette qui achète 1,5 kg de côte puis en dresse « 4 tranches de viande »
-décrit le même aliment à deux stades ; le calcul additionnait les deux et
-doublait les apports.
-
-Un poste d'IA — `detect_duplicate_ingredients` — lisait la liste complète et
-désignait les reprises. Il n'existe plus. Il rattrapait une conséquence du
-balisage inline : tant que la liste du livre n'était jamais transcrite, chaque
-ingrédient devait être balisé quelque part dans les étapes, et le même aliment
-finissait déclaré deux fois. La transcription en deux passes recopie la liste du
-livre telle quelle, et le prompt interdit le double balisage. La cause a
-disparu, la rustine avec elle. Le poste reste au **catalogue comptable**, pour
-que les mois déjà comptabilisés continuent de le nommer, mais il a quitté
-`ROUTABLE_FEATURES` : plus aucun appel ne l'emprunte.
-
-Les verdicts déjà écrits sont conservés et relus. Le snapshot garde
-`duplicate_ingredients`, `duplicate_indices` et la **signature** de la liste qui
-les a produits : une recette importée avant ce changement continue d'écarter ses
-reprises, sans qu'aucun appel ne soit passé. Rien n'est écrit sur
-`recipes.ingredients` — une reprise n'est pas une propriété de l'ingrédient,
-elle n'existe que dans cette recette-ci.
-
-Ces ingrédients sortent des totaux, du poids total **et du dénominateur de
-couverture** : les compter comme manquants ferait passer pour incomplète une
-recette qui ne l'est pas. Ils restent listés dans
-`nutrition.not_consumed_ingredients` et s'affichent dans le tableau, atténués et
-marqués — un ingrédient qui disparaît sans explication est précisément ce que ce
-tableau doit éviter. Le poste `detect_not_consumed` renseigne le champ une seule
-fois par ingrédient, et le doute profite au calcul (`true` par défaut).
-
-##### Contrat ingrédient (recette)
-
-Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien d'autre :
-
-- `name`, `qty`, `unit` (l'unité telle qu'écrite / affichée)
-- `category?` — la section CookLang (`== Pour la pâte ==`) dont il relève
-- `note?` — ce que la ligne du livre dit **en plus** de la quantité
-
-**Une ligne du livre peut nommer DEUX ingrédients.** « 2 cuil. à café de moutarde à
-l'ancienne mélangée à 2 cuil. à café de miel » est un achat de moutarde **et** un achat de
-miel. La règle « une ligne, une entrée » obligeait à en choisir un, et le second sortait de
-la liste de courses comme du calcul nutritionnel sans qu'aucune erreur ne soit levée. Deux
-entrées portent alors la même ligne en `brut`, et le lien entre elles vit dans la `note`.
-Le contrôle vérifie donc une **couverture**, pas une égalité — et il compte les occurrences :
-« 1 bouquet d'aneth » présent dans deux sections demande deux entrées, sans quoi la fusion
-que ce contrôle traque passerait inaperçue.
-
-**La note se CALCULE quand le modèle la laisse vide** — `nutrition/ingredientNote.ts`,
-`noteFromRawLine`. Constater son absence ne suffisait pas : « avec la peau mais écaillée »
-est écrit dans le livre et doit finir dans la recette. C'est ce que la ligne dit **après**
-avoir nommé l'aliment et sa quantité — une soustraction, pas un jugement. La proposition du
-modèle reste prioritaire quand il en fait une : il sait reformuler un lien (« mélangée au
-miel ») là où la soustraction rend une bribe. Deux choix décident du résultat : on prend ce
-qui **suit** le dernier élément identifié et non ce qui reste après découpage — recoller les
-morceaux rendait « 1 de avec la peau mais écaillée », les trous du milieu se refermant sur
-des articles orphelins ; et la ponctuation n'est retirée qu'aux bords, pour que « cuil. à
-café » garde son point. Contrainte inverse, testée mot à mot : **chaque mot rendu vient de la
-ligne**. Une note inventée serait pire que pas de note, parce qu'on la croirait.
-
-**`note` n'est pas un commentaire, c'est la moitié de la ligne.** « 1 filet de
-saumon de 1,8 kg avec la peau mais écaillée » se sépare en une quantité, qui se
-compte, et une précision, qui se lit. Cette précision ne vivait nulle part :
-aucune accolade CookLang ne peut la porter, et le modèle réécrivait la phrase du
-livre pour la caser — c'est l'un des mécanismes par lesquels une recette
-s'écartait de son original. La transcription la sépare à la source ; elle est
-transportée sans être interprétée, ni par la normalisation, ni par le
-redimensionnement (« avec la peau mais écaillée » reste vrai pour deux parts
-comme pour douze), ni par l'éditeur, qui ne propose délibérément pas de champ
-pour elle — la retoucher dans un formulaire de quantités inviterait à la
-réécrire.
-
-**Aucune forme résolue n'est persistée sur la recette.** `unit_raw`,
-`unit_canonical`, `unit_resolution_*` et l'identité référentielle
-(`ingredient_ref_id`, `ingredient_ref_status`, `ingredient_canonical_name`,
-`ingredient_resolution_*`) sont des intermédiaires de calcul : ils se
-recalculent depuis `name` et `unit` partout où ils servent, de façon
-déterministe. Les stocker créait un champ que plusieurs traitements se
-disputaient et que personne ne relisait — la resynchronisation nutrition
-effaçait ainsi la catégorie écrite par la normalisation quelques secondes plus
-tôt.
-
-La traçabilité de résolution vit dans `nutrition_units` — chaque graphie
-observée y est enregistrée en `aliases`, avec `status` et `source` — et non
-recopiée sur chaque ligne de chaque recette.
-
-**Un seul écrivain pour `recipes.ingredients` : la normalisation référentiels.**
-Les déclencheurs (nutrition, liste de courses) écrivent leurs propres champs
-(`nutrition`, `nutrition_validation`, `shopping_products`) et n'y touchent pas.
-
-**Et réciproquement : la normalisation ne calcule pas la nutrition.** Elle l'a
-longtemps fait, ce qui produisait deux défauts d'un coup. Le contrat ci-dessus
-n'était pas tenu — deux écrivains pour `nutrition` — et surtout le calcul
-tombait au mauvais moment : à l'édition d'une recette, le client appelle la
-normalisation **avant** d'écrire, or `computeAndPersistRecipeNutrition` relit le
-document depuis Firestore. Elle calculait donc sur la version d'avant la
-modification et posait sur la recette une nutrition périmée, que le déclencheur
-remplaçait quelques secondes plus tard.
-
-La séparation est donc :
-
-| Étape | Qui | Ce qu'elle fait |
-|---|---|---|
-| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, et enrichit ce que la recette ne dit pas : poids d'une pièce, poids d'un couple ingrédient/unité, ingrédients non consommés. Ne touche ni au texte, ni à `nutrition`. La singularisation des unités et la complétion des quantités en sont parties : la passe 2 de l'extraction lit la liste du livre, où l'unité et la quantité **sont écrites** — les deviner reviendrait à ignorer ce qu'on a sous les yeux. |
-| 2. L'écriture | client ou `recipeProcessor` | écrit la recette normalisée |
-| 3. Après l'écriture | `onRecipeWritten` | enrichit **poids d'unités et `per100g`**, puis calcule `nutrition` et `shopping_products` |
-
-###### Un enrichissement, un seul propriétaire
-
-Deux passes vivaient des deux côtés : `enrichUnknownUnitsWithAI` et
-`enrichUnknownIngredientsWithAI`. La justification tenait sur le papier — ces
-fonctions ne traitent que les entrées **dépourvues** de valeur, donc le second
-passage ne trouve rien à faire.
-
-Elle est fausse dès qu'on regarde l'horloge. À l'import, `recipeProcessor`
-écrivait la recette **puis** la normalisait ; l'écriture réveillait
-`onRecipeWritten`, qui partait en parallèle. Les deux lisent le référentiel au même instant, y trouvent le
-même vide, et posent au modèle la même question. Le second n'arrive pas après le
-premier : il arrive **avec** lui. Résultat : chaque unité et chaque ingrédient
-inconnu payés deux fois, et un journal où la même passe apparaît en double sans
-qu'on puisse dire laquelle a servi.
-
-Les deux passes appartiennent désormais au **déclencheur, et à lui seul**. C'est
-le bon propriétaire pour deux raisons : il part sur **toutes** les écritures de
-recette — import, saisie manuelle, modification — là où la normalisation n'est
-qu'un chemin parmi d'autres ; et c'est lui qui a besoin de ces valeurs,
-immédiatement après, pour convertir les quantités et calculer la nutrition.
-Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
-
-La nutrition reste juste dès le premier affichage : le déclencheur enrichit et
-calcule dans la même exécution, dans cet ordre.
-
-**`recipes.nutrition_stale` et `recipes.nutrition_enrichment_attempts` ont
-disparu.** Ils bornaient les réveils que le déclencheur se provoquait à
-lui-même. La garde porte désormais sur ses entrées — voir « La garde porte sur
-les entrées, jamais sur la sortie » — les réveils n'ont plus lieu, et deux
-champs de contrôle qui ne contrôlaient rien ont quitté le schéma.
-
-##### Pipeline obligatoire de résolution unité
-
-1. **Normalisation stricte**
-  - lowercase, trim, suppression accents.
-  - suppression ponctuation / séparateurs non significatifs.
-  - uniformisation des graphies abrégées.
-
-2. **Résolution référentiel**
-  - lookup exact sur `normalized_unit` puis `aliases`.
-  - mapping synonymes contrôlés (table canonique backend).
-
-3. **Fallback contrôlé**
-  - uniquement si échec des étapes précédentes.
-  - création d'une entrée unique `unknown/pending_review` dans `nutrition_units`.
-  - jamais de création de doublon proche d'une unité connue.
-
-4. **Persist dans le référentiel, pas sur la recette**
-  - écrire la graphie observée dans `nutrition_units.aliases`, avec `status` et `source`.
-  - ne rien écrire de résolu sur `recipes.ingredients` (cf. contrat ingrédient).
-
-##### Règles anti-doublons (exigence critique)
-
-- Les variantes `CAC`, `cac`, `c.C`, `C.c`, `c.a.c`, `c à c`, `cuillère à café` doivent toutes converger vers `c_a_c`.
-- Les variantes `CAS`, `c.a.s`, `c à s`, `cuillère à soupe` doivent toutes converger vers `c_a_s`.
-- Une nouvelle entrée ne doit pas être créée si une unité canonique existante correspond déjà après normalisation.
-
-##### Intégration par canal
-
-- **Éditeur Flutter** : l'autocomplete unité doit être alimenté par `nutrition_units` et proposer en priorité les unités `known`.
-- **Gemini génération** : le prompt doit imposer un catalogue d'unités canoniques ; la sortie doit rester soumise au pipeline backend de résolution.
-- **Import d'une page scannée** : la sortie de la transcription doit passer par le même pipeline backend.
-- **Backfill** : ré-analyse des unités historiques avec fusion/normalisation vers canoniques.
-
-##### Administration
-
-- Écran admin unités requis avec :
-  - liste des unités `unknown/pending_review`,
-  - actions de fusion alias -> canonique,
-  - validation des conversions (`grams_per_unit`, `measurement_type`),
-  - journal des résolutions.
-
-##### Indicateurs/KPI de pilotage
-
-- Taux d'ingrédients convertibles nutrition.
-- Nombre de nouvelles unités fallback/jour.
-- Nombre d'unités inconnues non traitées.
-- Taux de lignes nutrition sans score par recette.
-
-##### Critères d'acceptation
-
-1. Même ingrédient/unité, quelle que soit la source (éditeur/Gemini/scan), se résout vers le même `normalized_unit` de `nutrition_units`.
-2. Les variantes de `cuillère à café` ne créent pas de nouvelles unités.
-3. Une unité réellement nouvelle (ex: `tige`) crée une seule entrée fallback réutilisable.
-4. Le taux de lignes nutrition à `-` diminue après migration/backfill.
-
-##### Plan de livraison recommandé
-
-- **Lot 1 (backend)** : normalisation stricte + résolution référentiel + fallback contrôlé.
-- **Lot 2 (Flutter)** : autocomplete dynamique sur référentiel + feedback de résolution.
-- **Lot 3 (Gemini/scan)** : prompts contraints + post-traitement unifié.
-- **Lot 4 (ops/admin)** : écran de revue unités + backfill historique + KPI.
-
-### Mise à jour release (04/07/2026 — v0.17.0)
-
-#### Client Flutter — Version
-
-- **`pubspec.yaml`** : version `0.17.0+1`.
-
-#### Retouche image — Atelier unifié
-
-- **`lib/core/presentation/image_enhancer_screen.dart`** :
-  - Nouveau mode `EnhancerMode.studio` (mode par défaut) en plus des modes compatibles `crop` et `color`.
-  - UI restructurée en panneaux `Cadre`, `Lumière`, `Détails`, `Presets`.
-  - Ajout d'un mode comparaison **avant/après** (appui long + toggle).
-  - Ajout d'un historique local **undo/redo** basé sur snapshots d'état (image, coins, réglages).
-  - Ajout des réglages `contrast` et `saturation` en plus de `brightness` et `sharpen`.
-
-- **`lib/core/presentation/image_enhancer_processing.dart`** :
-  - `WarpParams` étendu avec `contrast` et `saturation`.
-  - Pipeline `warpIsolate` mis à jour pour appliquer `adjustColor(brightness, contrast, saturation)` avant netteté.
-  - Ajout d'une analyse locale légère (`analyzeImageStatsIsolate`) pour suggérer un preset intelligent.
-
-- **`lib/core/presentation/image_action_card.dart`** :
-  - Simplification des actions en une entrée **Retoucher** ouvrant l'atelier unifié.
-
-- **`lib/features/recipes/presentation/drafts/draft_review_widgets.dart`** :
-  - Remplacement des actions séparées `onCrop` / `onColor` par une action unique `onEdit`.
-
-- **`lib/features/recipes/presentation/drafts/draft_review_body.dart`**,
-  **`lib/features/recipes/presentation/drafts/draft_review_screen.dart`**,
-  **`lib/features/recipes/presentation/edit/recipe_edit_screen.dart`** :
-  - Raccordement des boutons photos à `EnhancerMode.studio`.
-  - Titre overlay harmonisé (« Atelier de retouche »).
-
-### Mise à jour release (02/06/2026 — v0.15.31)
-
-#### Sécurité — Firestore Rules
-
-- **`recipe_ratings` — `allow create` restreint** :
-  ```
-  allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
-  ```
-  Avant : `allow create: if isAuthenticated();` — un utilisateur pouvait écrire un document avec le `user_id` d'un autre. Corrigé en ajoutant la vérification d'appartenance.
-
-#### Sécurité — Cloud Functions CORS
-
-- **`cors: true` → liste blanche** dans `geminiCallables.ts` et `deadLetterHandler.ts` :
-  ```typescript
-  const ALLOWED_ORIGINS = [
-    "https://kassdale-6d948.web.app",
-    "https://kassdale-6d948.firebaseapp.com",
-  ];
-  ```
-  Les fonctions callable ne répondent plus qu'aux origines connues.
-
-#### Nettoyage — PWA install programmatique supprimé
-
-- **Fichiers supprimés** : `lib/core/utils/web_install.dart`, `web_install_web.dart`, `web_install_stub.dart`. Ces fichiers n'étaient référencés nulle part dans l'UI (jamais importés).
-
-- **`web/index.html`** : suppression de `window._pwaPrompt` et du listener `beforeinstallprompt`. Le navigateur affiche nativement sa bannière d'installation sans capture JS supplémentaire. Le bloc service worker (skip-waiting, controllerchange, update) est conservé intact.
-
-#### Client Flutter — Version
-
-- **`pubspec.yaml`** : version `0.15.31+1`.
-- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.31'`.
-
-### Mise à jour release (01/06/2026 — v0.15.29)
-git 
-#### Client Flutter — Version
-
-- **`pubspec.yaml`** : version `0.15.29+1`.
-- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.29'`.
-
-#### Export PDF (`lib/core/services/`)
-
-- **`recipe_pdf_export.dart`** :
-  - `exportRecipeToPdf(Recipe, {bool includeImages})` retourne désormais `Future<({Uint8List bytes, String filename})>` au lieu de `Future<void>`. Le téléchargement est toujours effectué en interne (appel à `downloadPdf`), mais les bytes et le nom de fichier sont retournés pour permettre une réouverture post-export.
-  - `openPdf(Uint8List bytes, String filename)` : nouvelle fonction publique qui appelle `downloadPdf` — permet de ré-ouvrir le share sheet mobile depuis un snackbar.
-  - Import conditionnel : `pdf_download_stub.dart` si (dart.library.html) → `pdf_download_web.dart`.
-  - **Le dialogue d'export porte sur TOUT ce que la recette ajoute à sa méthode**, pas seulement sur les photos. `PdfExtraCounts.of(recipe, annotations)` compte les photos et les annotations **par type** ; le dialogue n'affiche un interrupteur que pour ce qui existe. Une case « Inclure les astuces » sur une recette qui n'en a aucune est un réglage sans objet, et laisse croire qu'il manque quelque chose au document. Quand la recette ne porte rien de plus, le dialogue n'apparaît pas : il ne sert qu'à trancher.
-  - `PdfExportChoice` porte les quatre décisions et `keeps(AnnotationType)` fait le tri. Les préférences (`pdf_include_images`, `pdf_include_notes`, `pdf_include_tips`, `pdf_include_corrections`) ne sont écrites que pour les catégories **réellement proposées** : une case absente de ce dialogue-ci ne doit pas écraser le choix d'un autre export.
-  - **Les annotations sont lues avant le dialogue, et un échec de lecture annule l'export.** Un PDF amputé de ses astuces sans que rien ne le dise est pire qu'un export refusé — c'est la même règle que le repli tarifaire : un manque se voit, une valeur fausse ne se voit pas.
-  - **La note de celui qui imprime s'affiche à côté du titre** — sa note personnelle sur 10, pas une moyenne. Le dénominateur est écrit : à l'écran, « ★ 8 » se comprend parce que le sélecteur de note est à un doigt ; sur une feuille posée sur un plan de travail, rien ne dit si l'échelle va à cinq ou à dix.
-  - **L'étoile est une `pw.Polygon` à dix points, pas un caractère.** Les polices du document sont les Helvetica intégrées au format PDF, qui s'arrêtent à Latin-1 : ★ (U+2605) n'y existe pas et sortirait en case vide. Embarquer une police pour un seul glyphe coûterait quelques centaines de kilo-octets par fichier ; le document reste entièrement hors-ligne.
-  - `buildRecipePdfBytes` est **public** et séparé du téléchargement, pour que `test/pdf_export_extras_test.dart` compose vraiment le document. C'est ce test qui a révélé que l'en-tête portait depuis toujours une `BoxDecoration` interdite — un liseré gauche **et** un rayon de coin, que le paquet `pdf` refuse par assertion. Elle ne se voyait pas : les assertions sont retirées du binaire de production, où la bordure était simplement dessinée de travers. Le rayon a été retiré.
-
-- **`pdf_download_stub.dart`** (mobile/desktop) : `downloadPdf` = `Printing.sharePdf(bytes: bytes, filename: filename)` — ouvre la share sheet système.
-- **`pdf_download_web.dart`** (web) : crée un `Blob` → `<a href download>` → click → revoke URL.
-
-#### Distribution APK — Firebase Hosting
-
-- **`firebase.json`** — bloc `headers` pour l'APK :
-  ```json
-  {
-    "source": "/app-release.apk",
-    "headers": [
-      { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
-      { "key": "Content-Disposition", "value": "attachment; filename=\"kass-dalle.apk\"" }
-    ]
-  }
-  ```
-  Ce bloc permet au navigateur Android de déclencher le téléchargement du fichier sans l'ouvrir en ligne.
-
-#### Installation PWA — `web/index.html`
-
-- L'événement `beforeinstallprompt` est **non intercepté** (`e.preventDefault()` absent) : Chrome affiche sa propre bannière d'installation native au moment qu'il juge opportun. Aucun code Flutter ne déclenche ni ne contrôle cette bannière. Les fichiers `web_install*.dart` ont été supprimés (code mort).
-
-#### Mise à jour applicative (`lib/core/presentation/app_shell.dart`)
-
-- `_checkForUpdate()` : sur la version web (`kIsWeb`), la vérification est court-circuitée (`return`) — Chrome gère nativement l'installation PWA. Sur Android natif, la fonction appelle `checkForAppUpdate()` et affiche un dialogue de mise à jour si une nouvelle version est disponible.
-
-#### Snackbar PDF (`lib/features/recipes/presentation/detail/recipe_detail_screen.dart`)
-
-- `_exportPdf()` : après `exportRecipeToPdf`, le snackbar succès (`duration: 8s`) affiche un `SnackBarAction(label: 'Ouvrir')` uniquement si `PlatformUtils.isMobile` (Android/iOS natif). L'action appelle `openPdf(result.bytes, result.filename)` pour ré-ouvrir la share sheet.
-
-#### Éditeur visuel CookLang (`lib/features/recipes/presentation/`)
-
-- **`cooklang_visual_editor.dart`** : éditeur bloc-par-bloc. Chaque bloc est une instance de `BlockType` (section, step, ingredient, utensil, note, image, comment, etc.). L'édition inline se fait via `TextField` focusés dynamiquement. Enter dans un bloc le divise. La sauvegarde écrit le CookLang reconstitué dans Firestore.
-
-- **`hybrid_recipe_editor.dart`** : toggle 3 modes (Texte / Visuel / Aperçu) via `SegmentedButton` ou icônes. Le mode est persisté dans `SharedPreferences`.
-
-#### Éditeur Markdown pages non-recette
-
-- **`markdown_page_editor.dart`** (nouveau) : `TextField` multiligne avec toolbar (H1/H2/H3/B/I/U/liste/image). Insertion d'images depuis la galerie du brouillon avec sélection position+largeur via `AlertDialog` + `ChoiceChip`.
-
-- **Sélecteur de type de page** : `PageType` enum (`recipe`, `technique`, `equipment`, `ingredientNote`, `other`) stocké dans le champ Firestore `page_type` sous sa forme à souligné (`ingredient_note`). Le prompt Gemini de classification utilise un pipeline en 2 appels : classify (chain-of-thought + reasoning) puis extract.
-  - **Un seul mapping libellé → type**, `parsePageTypeLabel`, côté Dart comme côté TypeScript. Il accepte les trois graphies qui circulent réellement pour la note d'ingrédient : `ingredient_note` (Firestore), `ingredient note` (saisie) et `ingredientNote` (`PageType.name` côté Dart). Chacune n'était auparavant reconnue que par un lecteur sur deux, si bien que la même page changeait de type selon l'endroit où on la lisait. Cas partagés : `test-fixtures/cooklang_parsing.json`, clé `pageTypeLabels`.
-
-#### Pipeline image — Client
-
-- **`flutter_image_compress`** : ajouté dans `pubspec.yaml`. Utilisé dans `scan_upload_service.dart` pour compresser les photos avant upload (qualité configurable, format JPEG/WebP).
-- **Thumbnails WebP** : les miniatures d'illustrations sont générées et stockées au format WebP dans Firebase Storage.
-- **Quality gate** : score calculé localement (netteté via Laplacien simulé, luminosité moyenne) avant envoi à Gemini — seuil configurable dans `image_quality_checker.dart`.
-
-#### Bibliothèque de livres
-
-- **Effet 3D couvertures** : `BookCoverWidget` applique `BoxDecoration` avec `BoxShadow` multiple (ombre portée + ombre de tranche) et un overlay gradient pour simuler le vernis. Rendu via `ClipRRect` + `Stack`.
-- **Assets par défaut** (`assets/covers/`) : images locales pour les livres système utilisées si `coverUrl` est null.
-
-#### Comptabilité (`lib/features/admin/`)
-
-- **`billing_screen.dart`** : deux onglets via `TabBar`. Onglet GCP : appel Cloud Function `getGcpCostsFn` (BigQuery). Onglet Gemini : `StreamProvider` sur `ai_usage` Firestore, agrégation par `uid+feature+month`, `DataTable` avec tri, total dynamique en bas.
-- **`GeminiPricing`** : map `feature → $/1M tokens` (input/output). Tarification images (`enhance_illustration`) : 0,0336 $/image (`gemini-3.1-flash-lite-image`, dit Nano Banana 2 Lite ; 0,04 $ sur `gemini-2.5-flash-image` jusqu'au 15/08/2026, entrée conservée pour relire les mois antérieurs).
-- **`backfillEnhanceUsageFn`** : Cloud Function HTTPS callable (admin) qui scanne `gs://kassdale-6d948.appspot.com/illustrations/` et backfille les documents manquants dans `ai_usage`.
-
-#### Gestion du cache web — `firebase.json`
-
-- Règle `headers` consolidée :
-  - `index.html` + `flutter_service_worker.js` : `Cache-Control: no-cache, no-store, must-revalidate` + `Pragma: no-cache` + `Expires: 0`.
-  - `canvaskit/**` : `Cache-Control: public, max-age=31536000, immutable`.
-  - `app-release.apk` : `Content-Type: application/vnd.android.package-archive` + `Content-Disposition: attachment`.
-  - **Ne jamais utiliser** `**/*.@(js|css|wasm)` avec cache long — le glob attrape `flutter_service_worker.js` et crée un conflit de headers `immutable` bloquant les mises à jour.
-
-### Mise à jour release (18/05/2026 — v0.13.62)
-
-#### Backend Cloud Functions (Node 20, TypeScript, 2nd gen, région `europe-west1`)
-
-- **Structure `kass_dalle/functions/src/`** :
-  - `index.ts` : exporte 15 fonctions (callables + handlers Cloud Tasks).
-  - `config.ts` : constantes `REGION`, `PROJECT_ID`, `LOG_NAME = "kass-dalle-pipeline"`, `QUEUE_NAME = "recipe-processing-queue"`, `GEMINI_SECRET = "GEMINI_API_KEY"`.
-  - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`). Les trois appellent aussi `assertAppCheck()` : c'est le seul endroit où l'attestation peut être exigée sans risquer d'oublier une callable.
-  - Toutes les entrées HTTPS portent `maxInstances: MAX_CALLABLE_INSTANCES` (10, dans `config.ts`). Sans plafond, une boucle ouvre jusqu'à cent instances, chacune servant quatre-vingts requêtes concurrentes vers Gemini ou Anthropic. Ce plafond borne le parallélisme, jamais le total dépensé.
-  - `security/appCheckPolicy.ts` : mode d'attestation lu dans `app_config/app_check_policy` (cache mémoire d'une minute), et décision pure `appCheckVerdict(mode, attested)`. Les fonctions gardent délibérément `enforceAppCheck` **non activé** : l'option se décide au déploiement, alors qu'un refus à tort doit se rouvrir en une minute. `req.app` non nul signifie jeton présent **et** valide — un jeton absent et un jeton invalide se présentent de la même façon et se traitent pareil.
-  - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
-  - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
-  - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → transcription → balisage → contrôle de fidélité → normalisation → **une seule** écriture Firestore).
-  - **Les coordonnées d'une boîte ne supposent plus un moteur.** Le repère `[y_min, x_min, y_max, x_max]` sur mille est la convention **native de Google** ; le prompt se contentait de l'énoncer (« entiers 0-1000 »), ce qui suffit à un modèle qui l'a apprise et à aucun autre. Basculer les cinq postes de détection sur Claude les rendait muets. Réserver le poste à Gemini aurait été la mauvaise réponse : un moteur ne doit pas être privilégié par un détail de format resté implicite. Le prompt **décrit** désormais le repère (haut = 0, bas = 1000, verticale d'abord, deux exemples) et porte les **dimensions réelles de l'image** ; `normalizeBox(vals, w, h)` accepte les trois unités qu'un modèle emploie spontanément — millièmes, 0-1, et **pixels** ramenés avec les dimensions, la verticale rapportée à la hauteur. Sans dimensions, on **borne** au lieu de deviner : un facteur imaginaire donnerait une découpe précise et fausse, une découpe bornée se fait écarter par le contrôle de qualité, ce qui se voit. Limite assumée et testée : **sous mille, pixels et millièmes sont indiscernables** — aucune heuristique ne peut trancher, c'est le prompt qui porte le reste.
-  - **La détection d'illustrations ne ment plus par omission.** Son `catch` était vide et rendait un tableau de boîtes : un refus du modèle, un plafond de dépense, un délai dépassé, une réponse illisible ou un format de coordonnées inconnu se présentaient tous comme « aucune photographie détectée ». La règle la plus stricte du projet, prise en défaut là où elle comptait le plus — une page sans photo et un appel en échec demandent des réactions opposées. L'erreur remonte désormais, la réponse brute est journalisée avec son moteur, et l'échec est absorbé **page par page** pour ne pas perdre les découpes déjà obtenues. Piste que cela rend vérifiable : le repère `[y_min, x_min, y_max, x_max]` sur mille est une convention **Google** ; un autre moteur ne la connaît pas et répond à côté sans lever d'erreur — une réponse non vide sans boîte exploitable est signalée comme telle, moteur nommé.
-  - **`recipes.illustration_report`** `{detectees, retenues, publiees, pagesEnEchec}` suit la recette et s'affiche à la relecture. Trois situations, trois phrases, trois réactions : rien repéré (ajouter à la main), repérées puis toutes écartées (filtres ou modération), détection en échec (réessayer). Rien n'est dit quand une photo a été publiée : elle se voit.
-  - **Les illustrations sont REDRESSÉES, pas seulement découpées** — `gemini/perspective.ts`. Une page photographiée à main levée est un trapèze : un cadre rectangulaire, aussi serré soit-il, garde deux coins de papier et de table. Le détecteur rend donc les **quatre coins** de chaque photographie (`DetectedQuad`, ordre haut-gauche → haut-droit → bas-droit → bas-gauche, en 0-1000), et `warpQuadrilateral` applique l'homographie qui les ramène sur un rectangle : normalisation de Hartley, système 8×8 par élimination de Gauss, interpolation bilinéaire — le même algorithme que l'atelier manuel (`image_enhancer_processing.dart`), porté côté serveur pour que la chaîne automatique rende ce que l'outil manuel rendait. Sharp redimensionne, tourne et découpe, mais ne projette pas : la boucle est en clair, 122 ms pour une photo de douze mégapixels. Une zone **déjà droite** (`isNearlyRectangular`) est découpée sans être redressée — la transformation ne changerait rien de visible et ré-échantillonnerait pour rien. `readQuad` accepte les deux formes de réponse, quatre coins ou boîte englobante : un modèle rend parfois la seconde par habitude, et la refuser perdrait une photo correctement repérée pour une question de forme. Deux détails qui séparent une image juste d'une image nette et fausse : l'**ordre des coins** décide quel côté sera le haut, et les dimensions de sortie prennent la **moyenne géométrique** des bords opposés — en perspective le bord proche est plus long que le lointain, retenir le maximum étirerait l'image.
-  - **Orientation EXIF : redresser AVANT de détecter.** `uprightImage(bytes)` (`gemini/detector.ts`) applique l'orientation EXIF et efface l'étiquette ; le buffer redressé sert ensuite à la détection **et** au découpage. Un modèle de vision reçoit l'image telle qu'elle s'affiche — le décodeur applique l'EXIF — et rend ses coordonnées dans ce repère ; Sharp découpe la grille de pixels stockée. Pour une photo de téléphone prise en portrait, les deux repères sont tournés de 90° : on demandait le plat, on obtenait un bout de table. Rien ne le signalait, la découpe étant techniquement valide (taille, rapport de forme) — elle passait les filtres puis se faisait refuser à la modération, ou pire, se publiait. C'est aussi l'explication du « toutes les photos rejetées » : un bout de table est clair et uniforme, donc écarté comme page blanche.
-  - **Les étapes affichées décrivent ce qui SE PASSE.** `current_step` : `import` → `gemini_call` (lecture de la page) → `parse` → `design` (illustrations) → `tagging` → `normalize` → `save` → `done`. `save` couvrait autrefois le balisage, le contrôle de fidélité et la normalisation des référentiels — jusqu'à sept minutes sous un mot qui en promet une seconde. Le calcul nutritionnel n'y figure délibérément pas : il a lieu après l'écriture, sur une recette déjà consultable.
-  - **Chaîne d'extraction en deux passes** — `gemini/transcription.ts`, `gemini/tagging.ts`, `gemini/fidelity.ts`, prompts dans `gemini/promptsExtraction.ts`.
-    - **Passe 1, `transcribePage`** (poste `transcription_page`) : un appel rend le **type** de la page et son contenu **recopié** en JSON — sections d'ingrédients (une ligne du livre = une ligne, entière), sections d'étapes (phrase par phrase), notes typées. Aucune balise, aucune décision de placement. Elle remplace `classify_page` + `scan_extraction` + `document_extraction`. Une réponse illisible **lève** : le repli optimiste d'avant supposait « recipe » et fabriquait une recette vide qu'il fallait ensuite retrouver dans les brouillons.
-    - **Passe 2, `tagAndNormalize`** (poste `recipe_tagging`) : texte seul, jamais d'image. Rend le CookLang balisé, la liste normalisée (`nom`, `qte`, `unite`, `note`, `section`) et les tags — ces derniers coûtaient un appel à eux seuls.
-    - **`checkFidelity`** : pure, testée, **sans appel de modèle**. Sept contrôles, tous mécaniques :
-
-      | Contrôle | Ce qu'il attrape | Niveau |
-      |---|---|---|
-      | `ingredients_compte` | une ligne du livre sans ingrédient correspondant | rupture |
-      | `etapes_compte` | un résumé — au-delà de 20 % d'écart | rupture si moins |
-      | `texte_perdu` | une clause disparue **à décompte égal** | rupture sous 55 % |
-      | `sections_titres` | « Pour la sauce à l'aneth et à la moutarde » raccourci | avertissement |
-      | `notes_perdues` | une astuce que rien d'autre ne porte | avertissement |
-      | `precision_perdue` | des mots de la ligne du livre qui ne sont ni dans le nom, ni dans l'unité, ni dans la note | avertissement |
-      | `ingredient_invente` | « aneth frais » devenu « aneth en poudre » | avertissement |
-      | `section_non_transcrite` et ses deux voisins | ce que la **passe 1** a perdu | avertissement |
-
-      Une *rupture* écarte le balisage : `verbatimCooklang` rend le texte de la passe 1, non balisé — mieux vaut exact et non balisé que balisé et faux. Un *avertissement* laisse passer. Le verdict est écrit sur la recette (`fidelity_level`, `fidelity_findings`), affiché par `FidelityBanner` **sur le seul écran de relecture d'un brouillon**, et effacé à la validation.
-    - **Le chapeau de la recette** — « Une méthode scandinave pour fumer le saumon dans le sel… » — a son propre champ, `introduction`. Il tombait sous la consigne de ne pas recopier les en-têtes de page : la distinction manquait, alors qu'un titre courant se répète de page en page tandis que ce paragraphe n'appartient qu'à cette recette. Il est transmis au balisage, écrit en note **avant la première étape** parce que le livre le met en premier, et compté dans le texte confronté au balisage — sans quoi son oubli ne produirait aucun signal.
-    - **L'erreur de LECTURE est d'une autre nature, et aucun contrôle ne peut la prouver.** « peau en dessous » lu « peu profonde en dessous » rend une phrase impeccable : décompte intact, couverture des mots parfaite, tout concorde — avec le mauvais mot. Les sept contrôles comparent la passe 2 à la passe 1 ; quand la passe 1 a mal lu, **elle est la référence corrompue**. Le seul moyen de la démasquer serait de relire l'image, donc un appel de plus. Trois leviers, aucun infaillible : la capture des pages de recette passe à `imageQuality: 100` (elle était à 92 quand les couvertures, qui se lisent de loin, étaient à 100 — les artefacts JPEG s'installent d'abord sur les petits caractères) ; le prompt interdit de « réparer » un mot mal lu en expression plus courante, avec ce contre-exemple exact ; et la transcription déclare ses `lectures_incertaines`, remontées sur la recette. Un doute affiché se vérifie en dix secondes.
-    - **`checkTranscriptionInventory`** ferme le seul trou que les autres ne pouvaient pas voir. Tous comparent la passe 2 à la passe 1 ; aucun ne voit ce que la **passe 1** a perdu — une page dont la première section n'aurait jamais été recopiée produit une chaîne cohérente de bout en bout. La passe 1 déclare donc son inventaire (titres de groupe vus, nombre de lignes, nombre d'étapes) **avant** de recopier, et le code compare l'annonce au résultat. Le verdict reste un avertissement : cette déclaration vient du modèle lui-même, et s'y fier pour jeter son travail reviendrait à lui demander de s'auto-condamner.
-    - **Comparer deux textes que le balisage rend méconnaissables.** `stripCooklangTags` retire la syntaxe en **gardant le contenu des accolades** : la première version le jetait, et accusait un balisage fidèle d'avoir perdu un tiers de la page — les quantités quittent légitimement la phrase pour entrer dans les accolades. `significantWords` ne retient que les mots d'au moins quatre lettres et écarte une liste fermée de nombres écrits en lettres et de mesures abrégées (« deux cuillères à café » → « 2 c. à café » : trois mots sur quatre changent sans que rien ne soit perdu). Les seuils — 70 % pour l'alerte, 55 % pour la rupture — se placent dans l'écart mesuré entre une perte légitime (~15 %) et une amputation réelle (>70 %). Une accusation à tort finit par se faire ignorer, ce qui coûte plus cher que de ne rien vérifier.
-    - **Pourquoi deux passes.** L'ancien prompt demandait de transcrire fidèlement *et* de restructurer en CookLang. La règle « la liste d'ingrédients ne se transcrit jamais, chaque ingrédient apparaît une seule fois à sa première mention dans les étapes » obligeait le modèle à **décider** où placer chaque ingrédient — donc à fusionner, déplacer, abréger — et rendait la précision d'une ligne (« avec la peau mais écaillée ») impossible à porter, ce qui poussait à réécrire la phrase du livre.
-    - **Pourquoi un appel de modèle et pas une bibliothèque OCR.** La page est **lue** par un appel de modèle, jamais par une reconnaissance de caractères locale. Un OCR rend un flux de caractères et des boîtes : il ignore que le bloc de gauche est la liste d'ingrédients et que l'encadré du bas est « Le conseil du chef ». Sur une page de livre de cuisine — deux colonnes, un encadré, des titres de groupe en petites capitales — il **devine** l'ordre de lecture, et se trompe souvent. Il faudrait ensuite un appel de modèle pour reconstruire la structure à partir de ce flux : on n'aurait pas retiré l'IA, on lui aurait retiré la **mise en page**, qui est précisément ce qui lui dit ce qu'elle lit. La passe 1 rend en un appel ce qu'un OCR ne rend jamais : le type de la page, les groupes et leurs titres, les notes typées.
-      - **Le témoin extérieur — étudié le 2026-08-29, abandonné.** L'OCR bat le modèle sur un point, et c'est le seul que la chaîne ne sait pas contrôler : il ne réécrit jamais. D'où la tentation de s'en servir non pour lire la page, mais pour **témoigner** contre l'erreur de lecture décrite plus haut — chercher chaque mot porteur de la transcription dans le flux OCR, et signaler l'inverse, un mot imprimé que la transcription ne porte nulle part. Trois raisons de ne pas le faire.
-      - **L'alerte serait sans issue.** `checkFidelity` a une action : une rupture retombe sur `verbatimCooklang`, exact et non balisé. Un texte OCR n'a pas de structure et ne reconstruit aucune section ; il ne saurait que dire « va revérifier ». Un avertissement de plus, sur un import que l'utilisateur croyait fini.
-      - **Le bruit coûterait plus cher que le contrôle.** La comparaison devrait être ensembliste et non séquentielle — l'OCR se trompe d'ordre dès qu'il y a deux colonnes —, tolérante (Levenshtein, sans accents), avec un seuil de fausse alerte à tenir. Sur une page mate déjà redressée par `perspective.ts` et passée en niveaux de gris par `sharp`, Tesseract lit correctement ; sur un titre fantaisie, du texte posé sur une photo, une page glacée avec reflet, il rend de la bouillie — et chaque bouillie devient une fausse alerte. Même raison que les seuils du tableau ci-dessus : une accusation à tort finit par se faire ignorer, ce qui coûte plus que de ne rien vérifier.
-      - **La taille du trou n'a jamais été mesurée.** `checkTranscriptionInventory` tourne déjà en production et ses codes de constat partent dans les journaux. Les compter ne coûte **rien** et tranche la question. Tant que ce comptage n'est pas fait, embarquer un WASM dans le bundle, un fichier de langue, des secondes de CPU par page et un seuil à régler achète une complexité certaine contre un gain supposé.
-      - **Ce qui aurait été employé, pour mémoire.** En Node 22, seul `tesseract.js` (Tesseract 5 compilé en WASM, pur JavaScript) tient : `node-tesseract-ocr` appelle un exécutable système absent du runtime Cloud Functions, et les portages Paddle ou EasyOCR sont natifs. Il se chargerait en `await import()` mémorisé, comme Vision et BigQuery, et `fra.traineddata` devrait voyager dans le bundle — sinon chaque démarrage à froid irait le chercher sur un CDN. Cloud Vision n'est pas une réponse à la question posée : c'est un **modèle hébergé** facturé à l'unité, donc le même témoin sans issue, augmenté d'un coût par page.
-    - **Le texte collé emprunte la même chaîne** — `gemini/extractor.ts`, `extractRecipeFromTextFn`. Coller un texte puis appuyer sur « IA » tenait en **un appel** : un prompt demandait de lire et de baliser en même temps, et rendait du CookLang sans liste d'ingrédients. C'est le défaut que les deux passes avaient supprimé côté scan, resté intact ici. La liste collée se dissolvait dans les étapes, « 2 gousses d'ail dégermées » y perdait « dégermées » — aucune accolade ne porte une précision — la liste stockée était reconstituée côté client en relisant les balises `@` (ni `note`, ni `source`, ni section d'origine), et rien n'était vérifié : ni inventaire, ni lectures incertaines, ni `checkFidelity`, ni repli. Trois métadonnées n'étaient même pas demandées au modèle : `temps_repos`, `dish_types`, les cuisines.
-    - **Passe 1 pour un texte, `transcribeText`** (poste `text_extraction`, inchangé) : **le même prompt que la page**, précédé de `TEXT_TRANSCRIPTION_PREAMBLE`. Écrire un second prompt aurait mis en double les règles qui font la valeur du premier — recopier sans réécrire, garder les sections, séparer les notes des étapes, débusquer le temps de repos, ne pas réparer un mot douteux — et la première amélioration n'aurait profité qu'à un seul des deux chemins. Le préambule pose la correspondance une fois (« lis *la page* comme *le texte reçu* ») et nomme les deux seules différences : `page` vaut null, et le mobilier à ignorer n'est plus un folio mais une barre de navigation, un « Imprimer la recette », des avis de lecteurs. Un test compare le prompt de scan avant et après : il est **inchangé au caractère près**.
-    - **Passe 2 et fidélité, sans une ligne de plus.** `tagAndNormalize` n'a jamais vu l'image : elle travaille sur une transcription, et une transcription venue d'un texte est de la même forme. `checkFidelity` compare la passe 2 à la passe 1 — les huit contrôles s'appliquent tels quels, sans appel de modèle. Le texte collé rend donc désormais ce qu'un scan rend : CookLang balisé, liste normalisée avec `note` et `source`, cuisines, types de plat, et la réserve de fidélité affichée par `FidelityBanner` sur le brouillon. Elle n'est pas écrite quand l'utilisateur clique « Créer et valider » : valider, c'est justement trancher.
-    - **Le poste de coût ne change pas de nom.** La passe 1 reste `text_extraction`, la passe 2 s'impute sur `recipe_tagging` comme celle d'un scan — c'est le même prompt, le même travail, et lui donner un second nom aurait coupé en deux une ligne comptable qui mesure une seule chose. Le coût passe d'un appel à deux ; le compte de `text_extraction` dit combien de fois le chemin a servi.
-  - `nutrition/shoppingDerivation.ts` : `deriveShoppingProducts`, pure et testée. Le regroupement en produits d'achat ne coûte plus d'appel : il demandait un jugement tant que la liste était reconstituée depuis les balises des étapes, où le même aliment apparaissait sous plusieurs orthographes. La liste venant du livre, regrouper est devenu une addition. Deux unités incompatibles restent **deux lignes** — additionner supposerait un taux de conversion, et un taux inventé produit une quantité fausse présentée comme exacte.
-  - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
-  - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
-  - `scheduled/aiReconciliationSchedule.ts` : réconciliation comptable mensuelle (Cloud Scheduler).
-  - `scheduled/nutritionCatchUpSchedule.ts` : rattrapage quotidien des recettes dont la nutrition manque ou reste incomplète (Cloud Scheduler).
-  - `billing/periods.ts` : périodes `YYYY-MM`, module pur et testé.
-
-##### Politique de calcul nutritionnel
-
-`app_config/nutrition_source_policy` porte les seuils qui décident de **ce que
-l'utilisateur voit** sur l'onglet Nutrition d'une recette. Le document n'est pas
-obligatoire : `getNutritionSourcePolicy()` retombe sur `DEFAULT_NUTRITION_POLICY`.
-
-| Réglage | Défaut | Effet observable |
-|---|---|---|
-| `quality_policy.minCoverageForPartial` | 0,7 | En dessous, le détail est remplacé par « Trop peu d'ingrédients ont un poids connu pour que le calcul soit représentatif » |
-| `quality_policy.minCoverageForPer100g` | 0,9 | En dessous, les valeurs **pour 100 g sont masquées** |
-| `quality_policy.kcalConsistencyWarnDeltaPct` | 0,15 | Au-delà de cet écart entre kcal annoncées et kcal recalculées depuis les macros, avertissement d'incohérence du référentiel |
-| `fallback_policy` | `strict` | Comportement quand aucune donnée n'est trouvée |
-| `source_priority` | validé‑utilisateur → interne → externe → IA | Quelle origine gagne quand un ingrédient en a plusieurs |
-
-Les trois seuils entrent aussi dans le **score de qualité A/B/C** de la recette.
-
-**Écran** : *Admin › Référentiels › Politique nutrition*. Les trois seuils s'y
-règlent au curseur, présentés par leur effet et non par leur nom technique.
-`source_priority` y est en lecture seule : le modifier demande de comprendre la
-chaîne d'enrichissement, pas de bouger un curseur.
-
-**Les bornes sont garanties côté serveur**, pas dans le formulaire :
-`setNutritionSourcePolicyFn` refuse une valeur hors de [0, 1], un
-`kcalConsistencyWarnDeltaPct` nul (il sert de dénominateur au score) et un
-`minCoverageForPer100g` inférieur à `minCoverageForPartial` — cette dernière
-combinaison ferait afficher un détail pour 100 g sur une recette que l'app
-déclare par ailleurs trop incomplète pour être représentative.
-
-Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, mais
-aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
-par défaut avaient jamais servi.
-
-##### Plafond de dépense d'IA
-
-`app_config/ai_budget_policy` borne ce qu'un compte peut dépenser en une journée.
-
-| Champ | Type | Effet |
-|---|---|---|
-| `daily_cost_eur_per_user` | `number` | Plafond quotidien en **euros**, par compte. `0` désactive ce critère |
-| `daily_calls_per_user` | `number` | Plafond quotidien d'appels, par compte. `0` désactive ce critère |
-| `monthly_alert_eur` | `number` | Seuil d'alerte mensuel en euros, tous comptes confondus. `0` = aucune alerte |
-| `enabled` | `bool` | Coupe les deux plafonds sans les effacer. Absent vaut `true` |
-
-**Pourquoi deux plafonds.** Le plafond monétaire dépend de deux données qui
-peuvent manquer : la **grille tarifaire** — le projet refuse alors de chiffrer,
-les appels partent en `pricing_unavailable` — et le **taux de change**, sans
-lequel une dépense stockée en dollars ne se compare à aucun plafond en euros.
-Dans les deux cas, un plafond uniquement monétaire s'ouvrirait en grand pendant
-l'incident. Le plafond en nombre d'appels ne dépend ni d'un prix ni d'un taux.
-
-**La monnaie.** Le plafond se règle en euros ; le coût d'un appel est calculé et
-stocké en dollars, comme le facturent les fournisseurs. La conversion se fait au
-moment de la comparaison, avec `app_config/currency_rate.usd_to_account_rate` —
-jamais avec une constante. Sans taux, `budgetDenial` ignore le critère monétaire,
-l'écran affiche des dollars plutôt qu'une conversion inventée, et un WARNING dit
-que seul le compteur d'appels protège.
-
-**Le compte fondateur a cinq fois le plafond** (`FOUNDER_DAILY_BUDGET_MULTIPLIER`),
-sur les deux critères — n'agir que sur l'argent laisserait le compteur d'appels
-bloquer précisément celui qui a le droit d'en faire cinq fois plus. Constante de
-code et non réglage de base : en base, tout administrateur pourrait s'octroyer le
-privilège. L'identifiant du fondateur est résolu par `getAuth().getUserByEmail`,
-mis en cache une heure, et **jamais** lu dans le champ `email` du document
-utilisateur, qu'un administrateur peut écrire.
-
-**Pourquoi un défaut dans le code**, alors que le projet interdit les valeurs de
-repli figées : cette interdiction porte sur les *mesures* — prix, taux de change
-—, où une constante produit un montant faux présenté comme vrai. Un plafond est
-une **décision**. Sans défaut, l'absence de document signifierait « aucune
-limite », c'est-à-dire la situation qu'on corrige.
-
-**Compteur** : `ai_daily_spend/{uid}_{AAAA-MM-JJ}` (`cost_usd`, `calls`,
-`unpriced_calls`), incrémenté par `recordUsage` au moment où le coût est connu.
-Un document par jour : la remise à zéro n'a besoin d'aucune tâche planifiée,
-puisque le lendemain écrit ailleurs. Lecture réservée à l'administrateur et au
-compte concerné, écriture fermée au client — ouverte, elle laisserait remettre
-son propre compteur à zéro.
-
-**Points d'application** — `assertWithinDailyBudget` est appelée à deux endroits,
-et deux seulement, parce que ce sont les deux d'où l'argent part :
-
-| Où | Ce que ça couvre |
-|---|---|
-| `callModel` (`ai/router.ts`) | tout le texte, Gemini comme Claude, callables **et pipeline asynchrone** |
-| `runImageModel` (`gemini/imageGenerator.ts`) | les trois postes qui produisent une image, qui ne passent pas par `callModel` |
-
-Placé dans les gardes HTTPS, le contrôle aurait laissé passer tout ce que Cloud
-Tasks déclenche — c'est-à-dire l'import, le plus gros consommateur.
-
-Le contrôle porte sur le **déjà-dépensé** : le coût exact n'est connu qu'après la
-réponse. Un appel peut donc dépasser légèrement la limite, jamais la doubler.
-
-`BudgetExceededError` se traduit en `resource-exhausted` côté callable — ni une
-panne ni un défaut de droits — et fait partir un job d'import **directement** en
-dead letter, sans réessai : le plafond ne se rouvrira pas dans les minutes qui
-viennent, et chaque tentative refait tout le travail qui précède l'appel d'IA.
-
-**Alerte** : `scheduledAiBudgetAlert` tourne tous les jours à 7 h (Europe/Paris),
-compare le cumul du mois en cours (`ai_usage_monthly/{période}.total_cost_usd`)
-au seuil, et n'écrit qu'une fois par mois — le drapeau vit dans
-`app_config/ai_budget_alert`, posé **après** l'alerte pour qu'un échec la fasse
-retenter le lendemain plutôt que de la perdre.
-
-##### Politique d'attestation App Check
-
-`app_config/app_check_policy` décide **ce qu'on fait d'un appel non attesté**. Un
-seul champ :
-
-| Champ | Type | Effet |
-|---|---|---|
-| `mode` | `"off"` \| `"monitor"` \| `"enforce"` | `off` ne vérifie rien ; `monitor` (défaut, y compris document absent ou illisible) laisse passer et journalise en `WARNING` avec le poste et l'agent utilisateur ; `enforce` refuse |
-
-**Écran** : *Admin › Attestation de l'application*. Il affiche si l'appel qui l'a
-chargé était lui-même attesté, et `setAppCheckPolicyFn` **refuse** `enforce`
-demandé depuis un appel non attesté — sans quoi l'administrateur se verrouillerait
-dehors, et la famille avec lui.
-
-Trois précisions qui expliquent la forme de ce document :
-
-- **Pourquoi pas `enforceAppCheck: true`** sur les callables : cette option se
-  décide au déploiement. Un refus à tort — clé mal posée, client resté en
-  arrière, fournisseur en panne — doit se rouvrir en une minute.
-- **Pourquoi un mode « observation »** : c'est le seul moyen de savoir *ce qu'on
-  couperait* avant de couper. Tant qu'il arrive des appels non attestés, leurs
-  traces nomment le client concerné.
-- **Pourquoi aucune exemption de plateforme**, alors que le client Windows ne
-  sait pas attester : la plateforme est déclarée par le client, donc par un
-  attaquant aussi. Une exemption « desktop » serait ouverte à tout le monde.
-
-Côté client, `core/services/app_check.dart` active l'attestation quand la
-plateforme a un vrai fournisseur (web, Android, iOS, macOS) et s'abstient
-sinon — sans jamais relancer : une attestation impossible ne doit pas empêcher
-l'application de démarrer, c'est la politique serveur qui décide des
-conséquences. La clé de site reCAPTCHA (`kAppCheckRecaptchaSiteKey`) est
-publique par nature et vit donc dans le code ; **vide, l'attestation web n'est
-pas activée**.
-
-##### Politique de routage entre fournisseurs d'IA
-
-`app_config/ai_routing_policy` décide **quel moteur sert quel poste**. Le
-document n'est pas obligatoire : `getAiRoutingPolicy()` retombe sur
-`DEFAULT_AI_ROUTING_POLICY`, c'est-à-dire Gemini partout — le code déployé ne
-change donc aucun comportement tant que personne n'a écrit la politique.
-
-| Champ | Type | Effet |
-|---|---|---|
-| `default_provider` | `"gemini"` \| `"anthropic"` | Moteur des postes sans choix explicite |
-| `features` | `Map<String, provider>` | Choix par poste ; la clé est celle du reporting de coûts |
-| `anthropic_model` | `String` | Modèle Claude servi quand le routage désigne Anthropic (défaut `claude-sonnet-5`) |
-| `fallback_enabled` | `bool` | Repli sur l'autre moteur en cas d'échec **technique** ; une réponse déclinée pour raison de sûreté n'est jamais rejouée ailleurs |
-
-**Écran** : *Admin › Moteur d'IA*. Les postes proposés viennent du serveur
-(`ROUTABLE_FEATURES`) et ne sont pas dupliqués côté client : une bascule vers un
-poste que le backend ignore ne produirait aucune erreur — elle ne routerait
-simplement rien. Ils y sont groupés par famille (Import, Illustrations,
-Rédaction, Recherche, Planning, Courses, Nutrition), chaque famille et l'écran
-entier basculant d'un geste.
-
-**Tout appel de texte ou de lecture d'image passe par `callModel`** : import et
-classification de page, extraction de document, couverture de livre, détection
-d'illustrations, rédaction et relecture, tags, recherche, planning, courses et
-toute la chaîne nutrition. Les deux seuls appels non routables sont ceux qui
-**produisent** une image (`enhance_illustration`,
-`generate_recipe_illustration`) — Claude n'en fabrique pas.
-
-La liste des postes n'est donc pas décorative : elle est exactement l'ensemble
-des `feature` passées à `callModel`. Elle a un temps promis six bascules alors
-qu'une seule était câblée, et une bascule sans effet se diagnostique très mal —
-elle ressemble à une panne du moteur.
-
-Deux garde-fous complètent le routage :
-
-- **Format de pièce jointe.** Claude lit les images JPEG/PNG/GIF/WebP et les
-  PDF ; il refuse le DOCX et les formats exotiques que Gemini accepte. Un poste
-  routé vers Claude avec un tel fichier part directement chez Gemini, sans
-  consommer un appel voué à l'échec ni écrire une erreur qui ressemblerait à une
-  panne.
-- **Poste littéral.** Chaque fonction impose son propre nom de poste au lieu de
-  reprendre celui de l'appelant. Un poste dont le nom varie selon le point
-  d'entrée ne peut être ni basculé ni comparé — et son coût se disperse sur
-  plusieurs lignes du reporting.
-
-**Garanties côté serveur** : `setAiRoutingPolicyFn` refuse un fournisseur
-inconnu, un poste hors catalogue et un modèle vide. Et surtout, `resolveProvider`
-sert avec Gemini tout poste routé vers Claude tant que la clé n'est pas posée :
-l'absence de secret ne prive jamais l'utilisateur du service. L'écran affiche
-explicitement cet état plutôt que de laisser croire à une bascule effective.
-
-Le fournisseur et le modèle réellement utilisés sont écrits sur chaque ligne de
-`ai_usage` (`provider`, `model`) et le coût est estimé au tarif de **ce**
-modèle : sans cela, un appel Claude serait facturé au tarif Gemini sans qu'aucun
-écran ne s'en aperçoive.
-
-##### Réconciliation comptable des coûts IA
-
-Répond à une question qu'on ne se pose pas spontanément : *le suivi de coûts
-dit-il la vérité ?* Une erreur de tarification ne lève aucune exception — elle
-produit un chiffre plausible. Seule la confrontation à la facture la révèle.
-
-Pour un mois donné, `runAiReconciliation` compare :
-
-- **l'estimé traçable** — somme des `estimated_cost_usd` de `ai_usage`, calculés
-  appel par appel avec la grille tarifaire (`gemini/pricing.ts`), **en dollars** ;
-- **le facturé réel** — requête BigQuery sur `billing_export`, filtrée sur
-  Vertex AI, Generative Language, le service **Gemini API** et les SKU Gemini,
-  hors assistance de console (*Code Assist*, *Gemini for Google Cloud*).
-
-**La devise n'est pas le dollar.** La colonne `cost` de l'export est libellée
-dans la devise du **compte de facturation** — l'euro pour ce projet. La comparer
-telle quelle à une grille tarifaire en dollars additionne deux monnaies et
-produit un écart faux, sans que rien n'échoue. Les deux requêtes divisent donc
-`cost` par `currency_conversion_rate` — le taux que Google a lui-même appliqué à
-la ligne — et conservent en parallèle le montant d'origine :
-
-| Champ | Sens |
-|---|---|
-| `billed_ia_usd` | facturé converti en dollars, seule forme comparable à l'estimé |
-| `billed_ia_native` | le chiffre de la facture, tel qu'il apparaît dans le Tableau des coûts |
-| `billing_currency` | devise du compte (`EUR`) ; absent = rapport d'avant cette prise en compte, à recalculer |
-
-Une ligne dépourvue de taux de change manque au total en dollars sans rien
-casser : elle est comptée, journalisée par `logError` et remontée en anomalie.
-
-**Le taux de change se relève avec les coûts.** Il n'existe plus de taux figé
-dans le code : `refreshCurrencyRate` calcule, sur la même période, la moyenne du
-taux pondérée par le coût — `SUM(cost) / SUM(cost / currency_conversion_rate)` —
-et l'écrit dans `app_config/currency_rate` (`usd_to_account_rate`, `currency`,
-`source_period`, `updated_at`). Un taux vieillit exactement au rythme des coûts
-qu'il convertit : le rafraîchir ailleurs serait une occasion de l'oublier.
-
-`validateCurrencyRate` (`billing/currencyRate.ts`, testé) refuse un taux hors de
-`[0.1, 10]`, sans devise, ou absent : le taux précédent reste alors en vigueur et
-le motif du refus part dans `logError`. Un taux aberrant accepté ne casserait
-rien — il changerait silencieusement l'échelle de tous les montants en euros.
-
-Côté client, `CurrencyRateRepository` lit ce document ; `GeminiPricing.usdToEurFallback`
-(0,92) ne sert plus que tant qu'aucune réconciliation n'a eu lieu, et l'onglet
-*Réconciliation* affiche alors explicitement qu'il convertit avec un repli.
-Les coûts GCP en euros ne sont plus convertis du tout : le compte facturant en
-euros, `costNative` **est** le montant de la facture.
-
-Le résultat part dans `ai_reconciliation_monthly/{YYYY-MM}` : `delta_usd`,
-`unattributed_usd`, ventilation `by_feature`, et `anomalies` en clair.
-
-| Déclenchement | Quand | Période |
-|---|---|---|
-| `scheduledAiReconciliation` (Cloud Scheduler) | le 4 de chaque mois, 6 h Europe/Paris | le **mois écoulé** |
-| `generateAiReconciliationMonthlyFn` (bouton admin) | à la demande | la période choisie |
-
-Les deux passent par le **même traitement**. Le rapport porte sur le mois écoulé
-et non sur le mois courant : l'export de facturation GCP se consolide avec
-quelques jours de retard, et un mois partiel produirait un écart qui ne dit rien.
-
-Le champ `billing_query_failed` distingue « Google n'a rien facturé » de « on
-n'a pas pu savoir ». Sans lui, une requête BigQuery en échec produisait un
-rapport affirmant un montant facturé nul, donc un écart négatif spectaculaire
-présenté comme un fait.
-
-**Écran** : onglet *Réconciliation* de l'écran Comptabilité.
-
-##### Le catalogue des postes — la liste qu'il ne faut pas oublier
-
-Un poste de coût existe à **trois** endroits, et rien ne relie les trois :
-
-| Où | Fichier | Ce qui casse s'il manque |
-|---|---|---|
-| L'appel | `ctx.feature` du `callModel` | rien — le coût est bien enregistré |
-| Le routage | `ROUTABLE_FEATURES` (`callable/aiRoutingCallable.ts`) | le poste ne peut pas être basculé vers Claude depuis Admin → Moteur d'IA |
-| La lecture | `kFeatureCatalog` / `kFeatureProcess` (`features/admin/data/feature_catalog.dart`) | le poste s'affiche sous sa **clé technique**, rangé dans « Autres » |
-
-Aucun de ces oublis ne lève d'erreur ni ne fausse un montant : le coût est
-compté, il est seulement illisible. C'est exactement le mode de panne de la
-tarification — le chiffre s'affiche, et il ment par omission de sens.
-
-L'oubli s'est produit en grand : **toute la chaîne nutrition** — quinze postes,
-dont les plus fréquents de l'application, puisqu'une seule écriture de recette
-peut interroger le moteur une dizaine de fois — vivait dans « Autres » sous des
-identifiants techniques, aux côtés de `polish_markdown` et
-`generate_recipe_illustration`.
-
-**Règle** : un nouveau poste s'ajoute aux trois endroits dans le même commit.
-Les variantes `_batch` sont des postes à part entière et se distinguent de leur
-version unitaire — c'est le seul moyen de vérifier que le groupage fait son
-office. Un poste disparu du code **reste** au catalogue : les mois déjà
-comptabilisés continuent de le nommer.
-
-##### Un seul importeur, un seul déclencheur par recette
-
-**L'import se fait entièrement côté backend.** Le client envoie le fichier dans
-`quarantine/`, crée un `processing_jobs/{id}` en `queued`, puis n'écoute plus
-que le statut. `jobDispatcher` réagit à l'**entrée** en `queued` — création
-comme relance — et enfile la tâche Cloud Tasks.
-
-Le client portait auparavant un second pipeline d'import complet, utilisé par la
-seule relance : le même fichier pouvait donner deux recettes différentes selon
-qu'il avait été importé ou relancé. Ce pipeline client est supprimé. Relancer,
-c'est désormais remettre le job en `queued` ; annuler, c'est poser
-`cancel_requested: true`, que `recipeProcessor` relit avant chaque tentative —
-le statut seul ne suffisait pas, le traitement backend l'écrasait en fin de
-course.
-
-**Un seul déclencheur écoute `recipes/{recipeId}` : `onRecipeWritten`.** Il
-évalue les gardes communes (suppression, type de page, empreinte des entrées)
-puis lance ensemble `refreshShoppingProducts` et `syncRecipeNutrition`,
-indépendants l'un de l'autre. Deux déclencheurs distincts écoutaient ce
-document, chacun le réécrivant en fin de traitement, donc chacun réveillant
-l'autre : une sauvegarde de recette coûtait quatre invocations de fonctions
-512 MiB au lieu d'une.
-
-##### La garde porte sur les entrées, jamais sur la sortie
-
-Ce déclencheur écrit dans la collection qu'il écoute : `shopping_products`
-d'abord, les champs de validation ensuite, `nutrition` en dernier — après les
-appels d'IA, donc jusqu'à plusieurs minutes plus tard. **Chacune de ces trois
-écritures le réveille.**
-
-Sa garde demandait « la nutrition existe-t-elle déjà ? ». Cette question est
-fausse deux fois. Elle répond non pendant toute la durée du calcul : un écho
-tombé dans cette fenêtre repartait pour une chaîne complète, écrivait à son
-tour, et en réveillait d'autres — un éventail, pas une chaîne. Et elle répond
-non pour toujours quand le calcul a échoué, puisque rien n'était alors écrit :
-la recette devenait un générateur d'appels sans borne, à chacune de ses
-écritures suivantes.
-
-Le compteur `nutrition_enrichment_attempts` était censé borner cela. Il n'était
-lu que dans la branche où la sortie existait déjà, c'est-à-dire jamais pendant
-la salve. Mesure d'août : **499 réveils ont appelé le modèle pour 68 recettes**,
-en 35 salves, dont une de 108 réveils en treize minutes.
-
-La garde compare désormais les champs que le déclencheur **consomme** —
-`ingredients`, `portions`, `page_type`, `raw_cooklang`
-(`recipeTriggerInputsFingerprint`, `triggers/recipeIngredients.ts`). Une
-écriture qui les laisse intacts ne peut pas changer le résultat : on rend la
-main. Aucune sortie du déclencheur n'entre dans l'empreinte, donc aucun de ses
-échos ne le relance. Une création n'a pas de `before` et passe toujours.
-`recipeTriggerGuard.test.ts` verrouille le point : ajouter `nutrition` ou
-`shopping_products` à un document ne doit pas changer son empreinte.
-
-Trois conséquences.
-
-**L'échec s'écrit.** `persistFailedNutritionSnapshot` pose un instantané
-`coverage_state: "failed"` portant la raison. Sans lui, une recette dont le
-calcul a échoué ressemble en tout point à une recette pas encore calculée.
-
-**Une valeur que le modèle ne sait pas donner n'est pas redemandée avant
-24 heures** (`ENRICHMENT_RETRY_AFTER_MS`). Une unité sans poids n'était marquée
-nulle part : chaque recette l'employant la redemandait, deux fois — premier
-essai puis relance —, à vie. Les ingrédients portaient déjà leur marque
-`estimation_failed`, mais le filtre ne regardait que la présence des valeurs.
-
-**Le rattrapage est devenu une tâche planifiée.** La garde supprime le
-recalcul opportuniste qui vivait sur les réveils ; il fallait le remplacer, pas
-seulement le retirer.
-
-##### Reprendre est une décision — le planifié et le demandé
-
-`scheduled/nutritionCatchUpSchedule.ts`, tous les jours à 5 h (Europe/Paris),
-avant l'alerte de dépense de 7 h pour que sa consommation soit déjà comptée
-quand elle regarde.
-
-Il parcourt les 246 recettes — quelques centaines de lectures, négligeables —
-et reprend celles que `needsNutritionCatchUp` désigne : aucun instantané, un
-instantané `failed`, ou des `missing_ingredients`. Ce qui coûte, ce sont les
-appels de modèle des recettes reprises, d'où un plafond sur celles-là seules
-(`MAX_RECIPES_PER_RUN` = 20).
-
-Trois bornes, et chacune ferme une porte :
-
-| Borne | Valeur | Ce qu'elle empêche |
-|---|---|---|
-| `RECENT_WRITE_GRACE_MS` | 30 min | Reprendre une recette dont le déclencheur calcule encore — deux chaînes en parallèle, la salve réintroduite par l'autre bout |
-| `MIN_SNAPSHOT_AGE_MS` | 20 h | Reprendre deux fois le même jour une recette que le passage d'hier a déjà tentée |
-| `MAX_CATCH_UP_ATTEMPTS` | 5 | Payer chaque jour, indéfiniment, pour une recette qu'aucun rattrapage ne peut compléter |
-
-Le compteur `recipes.nutrition_catch_up_attempts` porte la troisième.
-`syncRecipeNutrition` le remet à zéro dès qu'un vrai changement d'entrée
-relance le calcul : une liste modifiée mérite ses propres tentatives.
-
-**Deux entrées, une seule passe.** `runNutritionCatchUp` porte la mécanique ;
-`scheduled/nutritionCatchUpSchedule.ts` l'appelle tous les jours,
-`callable/nutritionBackfillCallable.ts` à la demande d'un administrateur —
-bouton « Reprendre la nutrition », écran Admin → Backfills.
-
-La différence tient en un mot : `forced`. Un administrateur qui vient de
-corriger un référentiel veut voir l'effet, pas l'attendre jusqu'au lendemain.
-Les deux bornes de **patience** sautent donc — `MIN_SNAPSHOT_AGE_MS` et
-`MAX_CATCH_UP_ATTEMPTS`. La borne de **prudence**, `RECENT_WRITE_GRACE_MS`, ne
-saute jamais : elle ne protège pas d'une impatience, elle protège de la salve.
-`nutritionCatchUp.test.ts` verrouille les trois cas.
-
-Le backfill ne tient pas dans le délai d'une fonction. Il reprend donc sur
-point de contrôle (`app_config/nutrition_catch_up_checkpoint`, mêmes helpers
-que les autres backfills, désormais partagés dans `callable/_backfillCursor.ts`),
-et le curseur ne revient au début que lorsqu'il ne reste **rien** : collection
-entière parcourue *et* aucune candidate laissée en route. Le remettre dès la fin
-du parcours ferait boucler un backfill qui a encore du travail.
-
-Le plafond de dépense est consulté **avant** chaque recette, pas après : passé
-le plafond, la chaîne échouerait recette après recette et chacune ressortirait
-marquée « encore incomplète », ce qui est faux — elle n'a pas été tentée, elle a
-été refusée. La réponse porte `stoppedByBudget`, et l'écran le dit.
-
-Ce que le passage ne reprend pas est **compté et journalisé** (`reportees`) :
-un plafond silencieux se lit comme « tout a été repris ».
-
-Le balayage écrit sur les recettes qu'il reprend, donc il réveille
-`onRecipeWritten` — qui rend la main aussitôt, aucune entrée n'ayant bougé.
-C'est la garde sur les entrées qui rend ce balayage possible : sans elle, il
-aurait relancé la salve à lui seul.
-
-- **Cloud Tasks `recipe-processing-queue`** :
-  - Région `europe-west1`, max-dispatches-per-second=2, max-concurrent-dispatches=5, max-attempts=3, min-backoff=10s, max-backoff=600s.
-  - Création via `gcloud tasks queues create` ; auth des tâches : OIDC du SA `{projectNumber}-compute@developer.gserviceaccount.com`.
-
-- **Secret Manager** :
-  - Secret `GEMINI_API_KEY` (v1) lu par les fonctions via `defineSecret("GEMINI_API_KEY").value()`.
-  - Accordé au SA runtime par défaut (`roles/secretmanager.secretAccessor`).
-  - Secret `ANTHROPIC_API_KEY` — **à créer avant d'activer Claude**. Lu par
-    `ai/anthropic.ts` via `process.env.ANTHROPIC_API_KEY`, et non via
-    `defineSecret`, tant qu'il n'existe pas : un secret déclaré et attaché mais
-    absent de Secret Manager fait échouer **tout** le déploiement, y compris les
-    fonctions qui n'en ont pas besoin. Activation en deux gestes, dans cet ordre :
-
-    ```powershell
-    # 1. Créer le secret (la commande demande la valeur en entrée standard)
-    firebase functions:secrets:set ANTHROPIC_API_KEY
-
-    # 2. Attacher le secret aux fonctions qui appellent la chaîne nutrition,
-    #    en ajoutant ANTHROPIC_API_KEY à leur liste `secrets: [...]` :
-    #      - onRecipeWritten            (triggers/recipeWritten.ts)
-    #      - normalizeRecipeReferentialsFn (callable/nutritionCallable.ts)
-    #      - recipeProcessor            (pipeline/recipeProcessor.ts)
-    #      - backfillEnrichReferentialsFn (callable/billingCallable.ts)
-    #      - backfillNutritionFn        (callable/nutritionBackfillCallable.ts)
-    #      - scheduledNutritionCatchUp  (scheduled/nutritionCatchUpSchedule.ts)
-    ```
-
-    Tant que l'étape 1 n'est pas faite, la politique de routage peut désigner
-    Claude sans risque : le routeur constate l'absence de clé et sert avec
-    Gemini, ce que l'écran Admin → Moteur d'IA affiche explicitement.
-
-- **Artifact Registry** :
-  - Policy de cleanup `1 day` sur l'image `gcr.io/kassdale-6d948/gcf-artifacts` (Container images des fonctions).
-
-#### Firestore
-
-- **Collection `processing_jobs/{jobId}`** :
-  - Champs : `user_id`, `file_path`, `correlation_id`, `task_name`, `status` (queued|processing|done|error), `created_at`, `updated_at`, `attempt_count`, `last_error?`, `recipe_id?`, `result?`.
-  - Règles : owner read ; write côté Admin SDK uniquement (`allow write: if false`).
-
-- **Collection `dead_letters/{dlqId}`** :
-  - Champs : `original_job_id`, `user_id`, `correlation_id`, `failure_reason`, `last_error`, `retry_count`, `file_path`, `failed_at` (Timestamp), `relaunched_at?`, `relaunched_by?`, `relaunched_into_job_id?`, `queue_name`.
-  - Règles : `allow read: if isAdmin();` `allow write: if false;` (écriture Admin SDK via DLQ handler / callables relaunch/delete).
-  - Aucun index composite requis (orderBy `failed_at desc` champ unique).
-
-#### Client Flutter
-
-- **`pubspec.yaml`** : `cloud_functions: ^6.1.2`. Version `0.13.62+1`.
-
-- **`lib/core/app_version.dart`** : `kAppVersion = '0.13.62'`.
-
-- **Suppression de la clé Gemini côté client** : `--dart-define=GEMINI_API_KEY` retiré de tous les builds et du script `deploy.ps1`. Sept fichiers nettoyés (constante `_geminiApiKey` et tests `isEmpty` supprimés) : `scan_upload_service.dart`, `search_providers.dart`, `planning_screen.dart`, `batch_planning_screen.dart`, `draft_review_screen.dart`, `recipe_create_screen.dart`, `recipe_edit_screen.dart`. Le `GeminiService` reçoit désormais une chaîne vide en clé — il n'est plus utilisé que comme façade de types ; les appels effectifs passent par `FirebaseFunctions.instanceFor(region: 'europe-west1').httpsCallable(...)`.
-
-- **`lib/features/admin/domain/dead_letter.dart`** : modèle `DeadLetter` avec `fromDoc(DocumentSnapshot)` (parse Timestamp `failed_at`/`relaunched_at`), getter `isRelaunched => relaunchedAt != null`.
-
-- **`lib/features/admin/data/dead_letter_repository.dart`** :
-  - `watchAll({int limit = 200})` : `_db.collection('dead_letters').orderBy('failed_at', descending: true).limit(limit).snapshots()` → `Stream<List<DeadLetter>>`.
-  - `relaunch(String dlqId)` : `httpsCallable('relaunchDeadLetterFn').call({'deadLetterId': dlqId})` → renvoie `data['newJobId'] as String`.
-  - `delete(String dlqId)` : `httpsCallable('deleteDeadLetterFn').call({'deadLetterId': dlqId})`.
-
-- **`lib/features/admin/presentation/dead_letters_screen.dart`** : `ConsumerWidget` avec `deadLettersStreamProvider = StreamProvider.autoDispose`. Liste d'`ExpansionTile` ; chaque ligne `_KeyValueRow` a un `IconButton(Icons.copy_outlined)`. Boutons d'action `Relancer` / `Supprimer` sous `AlertDialog` de confirmation. État relancé matérialisé par `Icons.replay` vert et bouton désactivé.
-
-- **`lib/features/admin/domain/log_entry.dart`** : `LogEntry.fromMap(Map)` avec champs `timestamp` (String), `severity` (String), `labels` (Map<String,String>), `payload` (Map). Getter `message` lit `payload['message']`. Getter `timestampDate => DateTime.tryParse(timestamp)`.
-
-- **`lib/features/admin/data/logs_repository.dart`** :
-  - `query({int timeRangeMinutes = 60, int pageSize = 100, String? severity, String? correlationId, String? jobId, String? userId, String? freeText})` → appelle `httpsCallable('queryLogsFn', HttpsCallableOptions(timeout: Duration(seconds: 60)))`.
-  - **`severity` est un seuil** côté `queryLogsFn` : `severity>=INFO|WARNING|ERROR`, sauf `DEBUG` qui reste une égalité stricte (`severity=DEBUG`) pour isoler l'instrumentation. `null` ⇒ aucun filtre. Défaut du `LogsFilter` : `'INFO'`.
-  - Côté Functions, `logDebug()` (`logging.ts`) écrit en severity `DEBUG` : « Appel IA démarré » (`gemini/client.ts`), « prompt envoyé à Gemini » et « réponse brute Gemini » (`nutrition/aiEnrichment.ts`). Un import passe ainsi d'une cinquantaine de lignes à une quinzaine.
-
-- **`lib/features/admin/presentation/logs_screen.dart`** :
-  - `LogsFilter` immuable avec `_sentinel` pattern dans `copyWith` pour distinguer "ne pas toucher" de "set null".
-  - `LogsFilterNotifier extends Notifier<LogsFilter>` (Riverpod 3 n'a plus `StateProvider`).
-  - `logsFilterProvider = NotifierProvider<LogsFilterNotifier, LogsFilter>(LogsFilterNotifier.new)`.
-  - `logsQueryProvider = FutureProvider.autoDispose<List<LogEntry>>` qui watch le filtre et le repo.
-  - UI : `ChoiceChip` (Tous/INFO/WARN/ERROR/DEBUG), `DropdownButton` (15/60/360/1440/10080 min), `TextField` × 4 (freeText/corr/job/user), `FilterChip` "Par traitement" (état local `_groupByTreatment`, actif par défaut), bouton `FilledButton` "Filtrer".
-  - Regroupement par traitement : `_groupByCorrelation(List<LogEntry>) → List<_TreatmentGroup>` indexe sur `labels['correlationId']` en conservant l'ordre d'apparition des groupes (le plus récent d'abord, comme le flux) et inverse les entrées à l'intérieur (déroulement chronologique). `_TreatmentGroup.label` retient **d'abord** la racine du `correlationId` — l'identifiant privé de son horodatage (`RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$')`), `null` si l'identifiant est un UUID, donc opaque — puis, à défaut seulement, `labels['feature']`, puis `labels['moduleType']` ; clé vide ⇒ « Hors traitement ». `feature` est le poste d'imputation d'un appel IA, pas le nom d'un traitement : en faire le titre étiquetait un import de recette « shopping_products_refresh ». La racine obtenue est ensuite **traduite** par `logTreatmentName` (`features/admin/domain/log_treatment_label.dart`) : elle est écrite pour le code, pas pour un lecteur.
-  - **Nommage d'un traitement.** `newCorrelationId(nom)` (`logging.ts`) fabrique `nom_horodatage_aléa` ; pour les callables c'est `requireAuth` / `requireAdmin` / `requireEditor` qui le pose, à partir du **nom passé en argument**. Ce paramètre valait `"call"` par défaut : toute fonction qui n'en choisissait pas un produisait un groupe intitulé « call », si bien que quatre groupes « call » représentaient quatre travaux différents et anonymes. Les dix-sept fonctions concernées nomment désormais leur traitement ; `test/log_treatment_label_test.dart` lit les sources TypeScript et échoue si un `requireX(req)` sans nom réapparaît, ou si un nom déclaré n'a pas sa traduction.
-  - **Qualification.** `qualify(nom, détail)` (`logging.ts`) rend `nom:détail-en-slug`. Le deux-points est la frontière que l'écran connaît : ce qui précède nomme l'étape, ce qui suit dit *laquelle*. `generateRecipeFn` s'en sert pour la variante demandée — l'écran Explorer lance trois générations simultanées, plus une relance en cas de doublon, et les groupes se lisent « … — Fidele », « … — Rapide », « … — Creative » au lieu de trois titres identiques.
-  - **Deux fils naissent hors callable.** `import_recette` est ouvert par `jobDispatcher` et **transmis** au payload Cloud Tasks : `recipeProcessor` ne fabrique le sien que si le payload n'en porte pas. Un import entier tient donc sous un seul titre — il s'appelait `disp`, du nom du déclencheur, et l'écran rangeait l'extraction et la normalisation sous « Mise en file du traitement ». Le dispatcher part par ailleurs à **chaque** écriture du job et n'a le plus souvent rien à faire ; ces constats se rattachent au `correlation_id` déjà porté par le document plutôt que d'ouvrir un fil chacun. `ecriture_recette` est ouvert par `onRecipeWritten`, qualifié par sa cause : `creation`, `ingredients-modifies`, `entrees-modifiees`. Il n'y a plus de cause « rien à recalculer » : depuis que la garde porte sur les entrées, le déclencheur ne se réveille plus pour rien.
-  - **Pagination.** `queryLogsFn` accepte un `pageToken` et rend un `nextPageToken` (`autoPaginate: false` — sans quoi le client Cloud Logging suit les pages jusqu'à épuisement et ignore `pageSize`). Côté écran, `LogsQueryNotifier.loadMore()` concatène ; le pied de liste annonce le nombre d'entrées lues et dit si la suite existe. Une liste tronquée en silence se lit comme une liste complète.
-  - **Traduction.** `kLogTreatmentLabels` associe chaque racine à un libellé français ; une racine inconnue est rendue **telle quelle**, jamais remplacée par un texte générique — un nom technique reste cherchable. La table vit côté client parce qu'elle ne sert qu'à l'affichage : l'identifiant, lui, doit rester stable et filtrable.
-  - Côté Functions, `onRecipeWritten` pose un `newCorrelationId("recipe-written")` unique et le passe à `refreshShoppingProducts` et `syncRecipeNutrition` — qui tiraient auparavant chacun un `randomUUID()`, produisant deux traitements anonymes par écriture de recette. `_TreatmentTile` est un `ExpansionTile` avec `initiallyExpanded: group.hasError`, icône/couleur dérivées de `hasError`/`hasWarning`, et un `IconButton(Icons.filter_alt_outlined)` qui reporte le `correlationId` dans le filtre exact.
-  - Entrée dépliable : icône+couleur selon sévérité (`Icons.error`/`warning`/`info`/`bug_report`), chips labels (module/corr/job) avec copie, `SelectableText` monospace pour JSON formaté via `JsonEncoder.withIndent('  ')`.
-
-- **`lib/core/router/app_router.dart`** : routes `/dead-letters` et `/logs` ajoutées avec leurs `GoRoute`. Imports correspondants.
-
-- **`lib/features/admin/presentation/admin_screen.dart`** : deux nouvelles tuiles `Card` cliquables — "Dead Letter Queue" (`Icons.report_problem_outlined`, `colorScheme.tertiary`) et "Cloud Logging" (`Icons.terminal`, `colorScheme.secondary`).
-
-#### Permissions Cloud
-
-- **SA runtime par défaut Cloud Functions** : `{projectNumber}-compute@developer.gserviceaccount.com` (rôle `roles/editor`) couvre `logging.logEntries.list` (utilisé par `queryLogsFn`), `cloudtasks.tasks.create` (utilisé par `createScanJobFn`), `datastore.documents.*` (Firestore via Admin SDK), `storage.objects.get`.
-- **Secret accessor** : ajouté explicitement pour `GEMINI_API_KEY`.
-
-### Mise à jour release (17/05/2026 — v0.13.53)
-
-- **Nouveau champ `recipes.import_version`** :
-  - Type : `String?`, clé Firestore : `import_version`.
-  - Renseigné automatiquement avec `kAppVersion` lors de chaque création de brouillon dans `scan_upload_service.dart` (deux constructeurs `Recipe` : page non-recette et recette standard).
-  - Absent sur les anciennes recettes → retourne `null` via `data['import_version'] as String?`.
-  - Modèle `Recipe` (`lib/features/recipes/domain/recipe.dart`) : champ `final String? importVersion` ; sérialisé dans `toFirestore()` uniquement si non-null ; désérialisé dans `fromFirestore()` ; paramètre optionnel dans `copyWith`.
-
-- **`recipe_meta_panel.dart` — affichage admin de la version d'import** :
-  - Consomme `isAdminProvider` via `ref.watch(isAdminProvider)`.
-  - Affiche un `Row` supplémentaire sous « Analysé le… » uniquement si `isAdmin && recipe.importVersion != null`.
-  - Icône `Icons.build_outlined` (size 16) + texte `'Importé avec v${recipe!.importVersion}'` en `bodySmall`, couleur `onSurfaceVariant`, italique.
-
-- **`draft_review_screen.dart` — images agrandissables dans l'Aperçu non-recette** :
-  - Nouveau champ d'état `final Set<String> _expandedApercuImages = {}` sur `_DraftReviewScreenState`.
-  - `buildPhoto(String photoUrl)` (fonction locale dans `_buildNonRecipeApercu`) : `Stack` contenant un `GestureDetector` global (tap = toggle expand), un `ConstrainedBox(maxHeight: 280)` si non-agrandi, un bouton `fullscreen`/`fullscreen_exit` positionné `Positioned(bottom: 6, right: isOwner ? 48 : 6)` (décalé pour ne pas masquer le bouton de suppression), et un bouton `delete_outline` `Positioned(top: 8, right: 8)` visible uniquement pour le propriétaire.
-
-### Mise à jour release (17/05/2026 — v0.13.52)
-
-- **`draft_review_widgets.dart` — bouton « Depuis l'original »** :
-  - `DraftIllustrationsTab` : nouveau paramètre `VoidCallback? onExtractFromOriginal`.
-  - Affiché comme `TextButton.icon(Icons.crop_outlined, 'Depuis l\'original')` dans la barre d'actions de l'onglet (coté droit, après le bouton « Ré-extraire ») si `isOwner && onExtractFromOriginal != null && _isImageSource(sourceFileUrl)`.
-  - Désactivé pendant `aiRefining || saving`.
-
-- **`draft_review_screen.dart` — `_startExtractFromOriginal(Recipe)`** :
-  - Télécharge le fichier source via `FirebaseStorage.instance.refFromURL(url).getData(20 * 1024 * 1024)`.
-  - Initialise l'enhancer : `_enhancerBytes = bytes`, `_enhancingIndex = null` (null = ajout d'une nouvelle illustration, pas remplacement d'une existante), `_enhancerMode = EnhancerMode.crop`, `_showingIllEnhancer = true`.
-  - `_onIllustrationEnhancerResult` : si `_enhancingIndex == null`, appelle `_addNewIllustration(resultBytes)` plutôt que de remplacer une illustration existante.
-  - Branché sur `onExtractFromOriginal:` de chaque instance `DraftIllustrationsTab` (4 occurrences dans les différents layouts narrow/wide).
-
-- **`cooklang_preview_helpers.dart` — suppression directe visible** :
-  - `CooklangIllustrationThumb` : bouton `delete_outline` rendu toujours visible en overlay (plus de longpress) dès que `onDelete != null`. Icône `Icons.delete_outline` (remplace `Icons.close`).
-
-- **`draft_review_widgets.dart` — `_IllustrationCard`** :
-  - Icône suppression : `Icons.delete_outline` (remplace `Icons.close`).
-
-### Mise à jour release (17/05/2026 — v0.13.51)
-
-- **`draft_review_screen.dart` — `_buildNonRecipeApercu(Recipe, {required bool isOwner})`** :
-  - Nouvelle méthode de rendu pour les brouillons non-recette (pages textuelles avec illustrations intercalées).
-  - Nettoyage syntaxe CookLang : regex `@([^{}]+)\{\}` → texte brut (retire les balises ingrédients).
-  - Découpe le texte sur les marqueurs `[schéma : …]` (regex `\[schéma\s*:[^\]]*\]`) ; insère l'illustration correspondante par index `photoIndex++` entre chaque bloc texte.
-  - Formatage textuel : lignes `#…` → `titleMedium` bold ; lignes `- …` ou `* …` → puce `• ` + texte ; lignes vides → `SizedBox(height: 8)` ; reste → `SelectableText` style `bodyMedium`.
-  - Rendu dans `SingleChildScrollView > Padding(16) > Column`.
-  - Affiché dans l'onglet « Aperçu » uniquement si la recette n'est pas une recette structurée Cooklang (détection basée sur l'absence d'ingrédients balisés `@`).
-
-### Mise à jour release (17/05/2026 — v0.13.50)
-
-- **Correction navigation enhancer → onglet Photos** : `_onIllustrationEnhancerResult` réinitialise `_showingIllEnhancer = false` en retournant toujours le `Stack` principal (préserve le `DefaultTabController`). L'écran ne remplace plus son widget racine par l'enhancer, il l'affiche en overlay dans le `Stack`.
-
-- **Build web `--no-tree-shake-icons`** : tous les builds web release intègrent désormais `--no-tree-shake-icons` pour éviter la suppression des glyphes Material par le compilateur Dart (`dart2js`). Commande standard : `flutter build web --release --no-tree-shake-icons`. La clé Gemini n'est plus passée au client : voir Secret Manager côté Cloud Functions.
-
-### Mise à jour release (15/05/2026 — v0.13.35)
-
-- **Extraction `scan_state.dart`** (`lib/features/recipes/data/scan_state.dart`) :
-  - `ScanStatus` (enum), `ScanIntent` (enum) et `ScanState` (classe immuable) extraits de `scan_upload_service.dart`.
-  - `scan_upload_service.dart` expose `export 'scan_state.dart'` pour compatibilité des imports existants (zéro modification des consommateurs).
-
-- **Extraction `cooklang_preview_helpers.dart`** (`lib/features/recipes/presentation/cooklang_preview_helpers.dart`) :
-  - Contient tous les helpers réutilisables du widget CookLang : `CooklangIngredient`, `CooklangStepGroup`, `CooklangIllustrationThumb`, `cooklangFormatTimer()`, `cooklangFormatIngredient()`, `cooklangNormalizeStepTimers()`.
-  - `cooklangFormatIngredient()` délègue l'accord à `core/utils/ingredient_display.dart`, partagé avec l'export PDF et la liste de courses : minuscule sur les libellés de référentiel, pluriel à partir de deux, liaison « de / d’ » avec l'exception des h aspirés, et disparition des unités qui comptent (« 2 carottes », pas « 2 pièces carotte »). **Règle d'affichage seulement** : le CookLang stocké n'est jamais réécrit, sous peine de casser l'identité dont dépendent nutrition, courses, index de recherche et catégories — et d'être effacé au prochain enregistrement par `rewriteCooklangWithReferentials`. Rendu client, donc **aucun jumeau TypeScript**.
-  - Tous les noms ont été rendus publics (prefixe `_` retiré) pour être accessibles hors du fichier.
-  - `cooklang_preview.dart` réduit de 877L à 728L ; `cached_network_image` importé uniquement dans le fichier helpers.
-
-- **Extraction `batch_planning_widgets.dart`** (`lib/features/planning/presentation/batch_planning_widgets.dart`) :
-  - `BatchSlotTile` (ex `_SlotTile`) : tuile StatelessWidget d'un créneau de planning. Paramètres : `index`, `date`, `recipe`, `prefs`, `slotTime`, `isGenerating`, `onAssign`, `onRemove`, `onDelete`, `onTimeChanged`, `onGenerateWithAI?`, `onExportToCalendar?`.
-  - `BatchRecipePickerSheet` (ex `_RecipePickerSheet`) : bottom sheet de recherche de recette avec champ de filtre textuel, suggestion IA et saisie de repas libre.
-  - `batch_planning_screen.dart` réduit de 785L à 488L.
-
-- **Qualité de code** :
-  - `withOpacity(x)` → `withValues(alpha: x)` : 7 occurrences dans 5 fichiers (`recipe_detail_widgets.dart`, `shopping_list_sheet.dart`, `draft_list_screen.dart`, `work_queue_widgets.dart`, `search_screen.dart`).
-  - Suppression de tous les `debugPrint` en code de production (`recipe_detail_screen.dart`, `recipe_detail_widgets.dart`).
-  - `use_build_context_synchronously` : ajout de `if (!context.mounted) return` dans `source_viewer.dart` ; capture de `ScaffoldMessenger` avant `await` dans `work_queue_screen.dart` ; utilisation de `this.context` après vérification `mounted` dans `recipe_list_screen.dart`.
-  - Corrections linter : accolades curly-brace, dangling doc comments → commentaires normaux, null-aware map entries (`'key': ?value` au lieu de `?'key': value`), empty catches documentés, wildcards `(_, _)` conformes Dart 3.7.
-  - Résultat `flutter analyze` : 0 error, 0 warning, 2 infos inévitables (`dart:html` legacy).
-
-### Mise à jour release (15/05/2026 — v0.13.27)
-
-- **Collection Firestore `planning_config`** :
-  - Document par utilisateur : `planning_config/{uid}`.
-  - Schéma : `meals_per_cycle: int` (défaut 7), `cycle_start_day: int` (1=Lundi, 7=Dimanche), `batch_cooking_day: int?`, `daily_constraints: Map<String, Map>` (clé = weekday en string), `global_constraints: String`, `default_meal_hour: int`, `default_meal_minute: int`, `calendar_id: String` (identifiant du calendrier Google cible, défaut `'primary'`).
-  - Chaque entrée de `daily_constraints` porte `max_prep_minutes`, `target_portions`, `is_batch_cooking`, `notes`, et **facultativement** `meal_hour` / `meal_minute`. Ces deux-là ne sont écrits que si le jour a son heure propre : une clé absente veut dire « comme les autres jours », là où un `null` stocké se confondrait avec minuit.
-  - `mealTimeFor(weekday)` est le **seul** endroit qui répond à « à quelle heure mange-t-on ce jour-là » — la sienne s'il en a une, celle par défaut sinon. Deux écrans qui recalculeraient cette règle finiraient par ne plus dire la même heure.
-  - `withDefaultMealTime(h, m)` change l'heure par défaut **et** rend tous les jours à elle. Sans cette remise à zéro, régler l'heure globale n'aurait plus d'effet visible dès qu'un seul jour aurait été personnalisé, et il faudrait deviner lesquels des sept résistent.
-  - `DayConstraint` : `max_prep_minutes: int`, `is_batch_cooking: bool`, `notes: String`.
-
-- **`PlanningPreferences`** (`lib/features/planning/domain/planning_preferences.dart`) :
-  - `nextCycleDates()` : génère la liste des `DateTime` du prochain cycle à partir du `cycleStartDay` et `mealsPerCycle`.
-  - `fromFirestore(Map)` / `toFirestore()`.
-  - `copyWith(...)`.
-
-- **`PlanningRepository`** — nouvelles méthodes :
-  - `addMeals(List<PlannedMeal>)` : batch Firestore pour l'ajout groupé.
-  - `updateMealRecipe(id, {recipeId, recipeTitre, durationMinutes, prepMinutes, cookMinutes})` : mise à jour de la recette assignée à un créneau.
-  - `updateMealTime(id, DateTime)` : mise à jour de l'heure du créneau.
-  - `watchPreferences()` : stream de `PlanningPreferences`.
-  - `savePreferences(PlanningPreferences)` : upsert dans `planning_config/{uid}`.
-  - `getValidatedRecipes()` : `Future<List<Recipe>>` — recettes validées de l'utilisateur.
-  - Providers nouveaux : `planningPreferencesProvider` (`StreamProvider<PlanningPreferences>`).
-
-- **`PlanningAiService`** (`lib/features/planning/services/planning_ai_service.dart`) :
-  - Modèle : `gemini-2.5-flash`.
-  - `suggestMealPlan({apiKey, recipes, slotDates, dailyConstraints, globalConstraints})` → `Future<List<Recipe?>>`.
-  - Prompt structuré : liste des recettes disponibles (titre, temps prep/cuisson, tags), liste des créneaux avec leur jour de la semaine et contraintes, contraintes globales. Retourne un JSON `{ "slots": [{"index": i, "recipe_title": "..."}] }`. Parse chaque entrée en cherchant la recette correspondante par titre normalisé.
-  - `suggestSingleSlot({...})` : variante pour un seul créneau.
-
-- **`BatchPlanningScreen`** (`lib/features/planning/presentation/batch_planning_screen.dart`) :
-  - Route `/batch-planning`.
-  - `ConsumerStatefulWidget`. État : `_slots: Map<int, Recipe?>`, `_slotTimes: Map<int, TimeOfDay>`, `_slotDates: List<DateTime>`.
-  - `_init()` : charge les recettes validées via `PlanningRepository.getValidatedRecipes()` et les préférences via `planningPreferencesProvider`.
-  - `_applyPrefs(PlanningPreferences)` : initialise les créneaux avec `prefs.nextCycleDates()`.
-  - Génération IA globale : appelle `PlanningAiService.suggestMealPlan()`, met à jour `_slots`.
-  - Génération IA individuelle : appelle `PlanningAiService.suggestSingleSlot()` pour un créneau (`_generatingSlot` indique l'index en cours).
-  - Picker recette : `RecipePickerDialog` avec filtre textuel et suggestion IA.
-  - Sauvegarde : `PlanningRepository.addMeals()` avec tous les créneaux non-nuls.
-
-- **`PlanningConfigScreen`** (`lib/features/planning/presentation/planning_config_screen.dart`) :
-  - Route `/planning-config`.
-  - Champs : `mealsPerCycle` (slider/champ), `cycleStartDay` (dropdown), `defaultMealHour`/`defaultMealMinute` (sélecteur heure), `globalConstraints` (TextField multilignes).
-  - Pour chaque jour (Lundi–Dimanche) : `maxPrepMinutes` (TextField numérique), `isBatchCooking` (Switch), `notes` (TextField).
-  - Sélection du calendrier Google : appelle `CalendarService.listCalendars(token)` → `DropdownButton` avec les calendriers disponibles (id + summary). Stocké dans `planningPreferences.calendarId`.
-  - Sauvegarde : `PlanningRepository.savePreferences()`.
-
-- **`CalendarService`** — évolutions :
-  - `listCalendars(token)` : GET `https://www.googleapis.com/calendar/v3/users/me/calendarList` avec scope `calendar.readonly`. Retourne `List<{id, summary}>`.
-  - `_getCalendarToken()` : cache le token en session (`static String? _cachedToken`) pour éviter les re-authentifications successives.
-  - `createEvent(...)` : utilise `calendarId` depuis les préférences (défaut `'primary'`).
-  - Durée des événements : toujours calculée depuis les préférences (`durationMinutes`) plutôt que depuis la recette seule.
-
-- **`GoogleTasksService`** — envoi de la liste de courses dans Google Tasks :
-  - scope `https://www.googleapis.com/auth/tasks`, même mécanique de jeton que `CalendarService` (cache de 55 min, popup web / `authorizationClient` mobile) ;
-  - `createShoppingList(title, groups)` : POST `users/@me/lists` puis une insertion par rayon (`lists/{id}/tasks`) et une par article avec `?parent={rayon}`. Les sous-tâches donnent la hiérarchie, les cases à cocher sont natives ;
-  - le paramètre `previous` conserve l'ordre : sans lui, chaque insertion se place en tête et la liste ressort à l'envers ;
-  - seuls les articles **non cochés** sont envoyés.
-
-  **Pourquoi pas Keep** : Keep n'expose aucune API d'écriture. L'export s'y fait par le presse-papier, et coller du texte dans une note ne produit jamais une liste cochable — la conversion est manuelle et aplatit les rayons. Le bouton Keep subsiste en action secondaire, en le disant.
-
-- **`PlanningScreen`** — évolutions :
-  - Agrégation d'ingrédients : `_normIngKey()` normalise les accents et pluriels. `_mergeQty()` additionne les quantités compatibles. La liste de courses agrégée (bottom sheet) affiche pour chaque ingrédient la liste des recettes sources.
-  - `_MealTile` : heure cliquable (`onTap` sur `CircleAvatar`) → `showTimePicker` → `PlanningRepository.updateMealTime()`.
-  - Bouton calendrier individuel sur `_MealTile` (hors kebab menu).
-  - Bouton export global calendrier dans l'AppBar : boucle sur tous les repas visibles et crée un événement par repas.
-  - Menu kebab `_MealTile` : "Changer la recette" → `RecipePickerDialog` puis `updateMealRecipe()` ; "Vider le créneau" → `updateMealRecipe()` avec `recipeId: null, recipeTitre: 'Repas libre'`.
-
-- **`TokenUsageScreen`** — ajout énergie estimée :
-  - Formule : `estimatedWh = totalTokens * 0.0000003` (estimation approximative basée sur consommation GPU).
-  - `_SummaryBanner` : affiche le total tokens + l'estimation en Wh ou mWh selon l'ordre de grandeur.
-
-- **Sélection multiple `BookListScreen` / `RecipeListScreen`** :
-  - Long press active `_isSelecting = true` + `_selected.add(id)`.
-  - AppBar contextuelle : count, `select_all`, `delete_outline` (confirmation rouge).
-  - `_batchDelete()` : appelle `BookRepository.deleteBook()` / `RecipeRepository.deleteRecipe()` en parallèle pour les ids sélectionnés.
-
-### Mise à jour release (14/05/2026 — v0.13.5)
-
-- **Collection Firestore `planned_meals`** :
-  - Schéma : `uid: String`, `recipe_id: String?`, `recipe_titre: String`, `planned_at: Timestamp`, `duration_minutes: int`, `created_at: Timestamp`.
-  - Indexation Firestore : requête `where('uid', isEqualTo: uid).orderBy('planned_at')`.
-
-- **`PlannedMeal`** (`lib/features/planning/domain/planned_meal.dart`) :
-  - Modèle immuable avec `fromFirestore(String id, Map data)` et `toFirestore()`.
-  - Champ `id` non inclus dans `toFirestore()` (géré par Firestore).
-
-- **`PlanningRepository`** (`lib/features/planning/presentation/planning_providers.dart`) :
-  - `watchMeals()` : stream de `List<PlannedMeal>` filtré par uid, ordonné par `planned_at` asc.
-  - `addMeal(PlannedMeal)` : ajoute dans `planned_meals` (id auto-généré).
-  - `deleteMeal(String id)` : supprime le document.
-  - Provider `planningRepositoryProvider` : `Provider<PlanningRepository?>` — `null` si utilisateur non connecté.
-  - Provider `plannedMealsProvider` : `StreamProvider.autoDispose<List<PlannedMeal>>`.
-
-- **`PlanningScreen`** (`lib/features/planning/presentation/planning_screen.dart`) :
-  - `ConsumerWidget` — route `/planning`.
-  - Groupement des repas par journée (date sans heure) via `Map<DateTime, List<PlannedMeal>>`.
-  - `_DayHeader` : affiche la date formatée (intl), "Aujourd'hui" si date du jour, couleur primaire si aujourd'hui, atténuée si passé.
-  - `_MealTile` : `Card` avec `CircleAvatar` affichant l'heure, titre, durée, bouton poubelle. Opacité 0.6 si passé. `onTap` → `context.push('/recipes/${meal.recipeId}')` si `recipeId != null`.
-  - Suppression : dialogue de confirmation avec `DateFormat('d MMMM à HH:mm', 'fr')`.
-
-- **`schedule_recipe_sheet.dart`** — évolutions :
-  - `_ScheduleSheet` devient `ConsumerStatefulWidget` / `_ScheduleSheetState extends ConsumerState`.
-  - Nouveau paramètre `String? recipeId` dans `showScheduleRecipeSheet()` et `_ScheduleSheet`.
-  - Après `CalendarService.createEvent()` réussi : lit `FirebaseAuth.instance.currentUser?.uid` puis `ref.read(planningRepositoryProvider)?.addMeal(PlannedMeal(...))`.
-
-- **Route `/planning`** dans `app_router.dart` : `AppRoutes.planning = '/planning'`, builder `PlanningScreen`.
-- **Navigation** dans `app_shell.dart` : entrée `_NavDestination(AppRoutes.planning, Icons.calendar_month_outlined, 'Planning')` insérée entre Recherche et Brouillons dans `_destinations()`.
-
-### Mise à jour release (13/05/2026 — v0.13.4)
-
-- **`CalendarService`** (`lib/features/planning/services/calendar_service.dart`) :
-  - Classe statique. Scope : `'https://www.googleapis.com/auth/calendar.events'`.
-  - `_getCalendarToken()` : Web → `FirebaseAuth.signInWithPopup(GoogleAuthProvider()..addScope(scope))` → `OAuthCredential.accessToken`. Mobile/Desktop → `GoogleSignIn.instance.authorizationClient.authorizationForScopes()` puis `authorizeScopes()` si null.
-  - `createEvent({titre, startTime, duration, description, reminderMinutes})` : POST `https://www.googleapis.com/calendar/v3/calendars/primary/events` avec header `Authorization: Bearer $token`. Corps JSON : `summary`, `description`, `start/end` en UTC ISO8601, `reminders.overrides` si `reminderMinutes > 0`. Lance `Exception` si statusCode ∉ {200, 201}.
-
-- **`schedule_recipe_sheet.dart`** :
-  - `showScheduleRecipeSheet(context, {titre, recipeId?, prepTimeMin, cookTimeMin, ingredients})`.
-  - `_ScheduleSheet` — bottom sheet avec : sélecteur de date (`showDatePicker`, firstDate = aujourd'hui - 1j), sélecteur d'heure (`showTimePicker`), champ "Rappel" (TextField numérique, pré-rempli avec `prepTimeMin ?? 30`). Bouton "Ajouter à Google Calendar" → `_addToCalendar()`.
-  - `_buildDescription()` : ligne préparation, ligne cuisson, section ingrédients avec `• nom (qty unité)`.
-
-- **`CooklangPreview`** — ajout paramètre `VoidCallback? onSchedule` :
-  - Dans `_buildSectionHeader(...)` de la section "Ingrédients" : `action:` devient une `Row` contenant `IconButton(calendar_month_outlined, 'Planifier')` + `IconButton(shopping_cart_outlined, 'Liste de courses')` si les callbacks respectifs sont non-null.
-
-- **`recipe_detail_screen.dart`** : passe `onSchedule:` et `recipeId:` à `CooklangPreview` et `showScheduleRecipeSheet`.
-
-- **Dépendances ajoutées** : `http: ^1.2.0` (POST Calendar API).
-
-
-
-- **`DraftListScreen` — filtre par livre** :
-  - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.
-  - Nouveau widget `_BookFilterBar` : barre horizontale de `FilterChip`s construite à partir des `bookId` distincts présents dans la liste `myDrafts`. Chips : "Tous" (selected si `_bookFilter == null`), "Sans livre" (selected si `_bookFilter == ''`), puis un chip par livre distinct (titre récupéré depuis `BookRepository`). Barre invisible si 0 ou 1 livre distinct. Placée au-dessus du `MaterialBanner` dans le `Column` body.
-  - Logique de filtrage appliquée dans le callback `data:` : renomme `myDrafts` en `myDraftsAll`, puis produit `myDrafts` filtré selon `_bookFilter` : `null` → `myDraftsAll`, `''` → recettes sans `bookId`, sinon → recettes dont `bookId == _bookFilter`.
-  - Appel `setState(() => _bookFilter = ...)` depuis les callbacks `onSelected` des chips.
-
-- **`RecipeListScreen` — suppression de livre depuis la liste** :
-  - Nouvelle méthode `Future<void> _confirmDeleteBook(BuildContext context)` sur `_RecipeListScreenState`.
-  - Dialogue `AlertDialog` avec 3 actions : "Annuler", "Détacher les recettes" (`_DeleteBookMode.detach`), "Supprimer aussi les recettes" (`_DeleteBookMode.deleteAll`).
-  - Mode `detach` : appelle `BookRepository.deleteBook(bookId, detachRecipes: true)` — met `bookId = null` sur toutes les recettes du livre avant de supprimer le document livre.
-  - Mode `deleteAll` : appelle `BookRepository.deleteBook(bookId, detachRecipes: false)` — supprime le livre et toutes ses recettes (requête `where('book_id', isEqualTo: bookId)`).
-  - `IconButton` avec `Icons.delete_outline` ajouté dans `actions` de l'AppBar, visible uniquement si `inBookContext && canEdit`.
-  - Après suppression : `context.go('/')` + `ScaffoldMessenger.showSnackBar` avec message de confirmation.
-  - `enum _DeleteBookMode { detach, deleteAll }` ajouté en bas du fichier.
-
-### Mise à jour release (13/05/2026 — v0.12.85)
-
-- **`DraftReviewScreen` — onglet "Photos"** :
-  - Nouveau widget `_IllustrationsTab` : affiche `recipe.imageUrls` dans une `GridView.builder` (crossAxisCount: 3).
-  - `_IllustrationCard` : affiche l'image via `CachedNetworkImage` avec un `IconButton` de suppression (visible si `isOwner`). La suppression appelle `RecipeRepository.updateRecipeIllustrations()` pour retirer l'URL du tableau `image_urls`.
-  - Bouton "Extraire les illustrations" / "Ré-extraire" : visible si `isOwner && recipe.sourceFileUrl != null && !sourceFileUrl.endsWith('.pdf')`. Appelle `_doExtractIllustrations()`.
-  - `_doExtractIllustrations()` : télécharge le fichier source via `http.get(sourceFileUrl)`, appelle `GeminiService.detectIllustrationRegions(bytes, mimeType)`, découpe chaque bounding box avec `img.copyCrop`, uploade chaque crop sous `illustrations/{uid}/{timestamp}_ill_{i}.jpg`, puis appelle `RecipeRepository.updateRecipeIllustrations(recipeId, newUrls)`.
-  - Onglet ajouté au `TabController` (index 3 en mode large, index 4 en mode étroit).
-
-- **`DraftReviewScreen` — bouton IA dans AppBar** :
-  - `IconButton` avec `Icons.auto_awesome` dans les `actions` de l'AppBar, visible uniquement si `isOwner`.
-  - Pendant le raffinage (`_aiRefining == true`), remplacé par `CircularProgressIndicator`.
-  - Appelle `_showRefineDialog(recipe)` : `AlertDialog` avec `TextField` (instructions libres) + `CheckboxListTile` "Extraire les illustrations" (visible si scan image disponible).
-  - `_doRefine()` : appelle `GeminiService.refineRecipe(currentCooklang, instructions)`, met à jour `_cooklangCtrl.text`, titre et ingrédients dans le formulaire.
-  - Si la case est cochée : `_doExtractIllustrations()` lancée en parallèle.
-  - `isOwner` contrôle la visibilité : bouton IA, bouton supprimer, bouton valider (propriétaire) vs bouton copier (non propriétaire).
-
-### Mise à jour release (13/05/2026 — v0.12.84)
-
-- **Collection Firestore `ai_usage`** :
-  - Schéma : `uid: String`, `feature: String`, `input_tokens: int`, `output_tokens: int`, `total_tokens: int`, `model: String`, `timestamp: Timestamp` (serverTimestamp).
-  - `feature` values : `scan_extraction`, `detect_illustrations`, `search`, `generate`, `refine`, `book_scan`, `recipe_generation`, `chat_refine`.
-
-- **`TokenUsageRepository`** :
-  - `logUsage({uid, feature, inputTokens, outputTokens, totalTokens, model})` : ajoute un document dans `ai_usage` avec `FieldValue.serverTimestamp()`.
-  - `watchByUser(uid)` : stream ordonné par `timestamp desc`, limit 500.
-  - `watchAll()` : stream admin, limit 1000.
-  - `static aggregate(records, {filterUid?})` : groupe par `(uid, feature)`, retourne `List<TokenUsageSummary>` triée par total décroissant.
-
-- **`TokenUsageScreen`** :
-  - Route `/usage` accessible depuis le menu compte (icône `bar_chart`).
-  - `_SummaryBanner` : total appels, total tokens (entrée + sortie).
-  - `_FiltersRow` : `DropdownButton` feature + (admin) `DropdownButton` utilisateur.
-  - `_SummaryTable` : `DataTable` colonnes : fonctionnalité, appels, tokens entrée, tokens sortie, total. Tri par total décroissant. Formatage avec séparateur milliers.
-  - Providers : `myTokenUsageProvider` (user), `allTokenUsageProvider` (admin).
-
-- **Intégration dans `GeminiService`** : chaque appel Gemini (extraction, détection, recherche, génération, raffinement) appelle `TokenUsageRepository.logUsage()` avec les `usageMetadata.inputTokenCount` / `outputTokenCount` de la réponse.
-
-### Mise à jour release (13/05/2026 — v0.12.74)
-
-- **`WorkQueueScreen`** (`lib/features/recipes/presentation/drafts/work_queue_screen.dart`) :
-  - Remplace les anciens écrans `DraftListScreen` et `ProcessingJobsScreen` séparés.
-  - Sealed class `_QueueItem` : `_JobItem(ProcessingJob)` et `_DraftItem(Recipe)` — modèle unifié pour la liste.
-  - `_Section` : regroupe les items par owner uid, avec flag `isCollapsed`.
-  - `_FilterMode` enum : `me`, `family`, `allUsers`.
-  - `_buildSections()` : fusionne jobs et brouillons, trie par date décroissante, regroupe par owner si famille/admin.
-  - `isVisible(ProcessingJob)` : un job `queued`/`processing` n'est affiché que **tant qu'il n'a produit aucun brouillon** (`createdRecipeIds.isEmpty`) — au-delà, le `_DraftItem` le représente et une seule ligne subsiste pour un import. Les statuts `error` et `rejected` restent visibles inconditionnellement, brouillon produit ou non.
-  - **Sélection multiple** : `Set<String> _selected` avec clés `'j:{jobId}'` ou `'d:{recipeId}'`. Actions groupées : `_batchValidate()`, `_batchRetry()`, `_batchDelete()`.
-  - **Providers utilisés** : `processingJobsProvider`, `draftsProvider`, `groupMemberDraftsProvider`, `allProcessingJobsProvider`, `allDraftsProvider`, `isAdminProvider`.
-  - Route `/work-queue` (remplace `/drafts` et `/processing-jobs`).
-
-### Mise à jour release (12/05/2026 — v0.12.67)
-
-- **`ImageEnhancerScreen` — détection automatique des coins** : à l'ouverture, `_runAutoDetect()` est appelée automatiquement. Elle lance `compute(_detectCornersIsolate, _DetectParams)` dans un isolate Dart dédié. Algorithme en 8 étapes :
-  1. Décodage et redimensionnement à max 512 px (`img.copyResize`).
-  2. Conversion niveaux de gris (`img.grayscale`).
-  3. Calcul de la magnitude du gradient Sobel 3×3 sur chaque pixel.
-  4. Seuil adaptatif = 85e percentile des magnitudes (borné à [5%, 60%] du max).
-  5. Scan depuis les 4 bords (marge 8%) : pour chaque colonne/ligne, premier pixel dépassant le seuil.
-  6. Élimination des outliers (trim 10%–90% par coordonnée projetée).
-  7. Régression PCA sur chaque nuage → 4 droites en forme générale `(px·x + py·y = r)`.
-  8. Intersections (règle de Cramer) → 4 coins ; validation convexité.
-  - Retourne `null` si < 10 points détectés sur un bord ou si quadrilatère non convexe → corners par défaut conservés.
-  - Indicateur visuel : `LinearProgressIndicator` orange en haut de l'image + bouton ⊕ (`center_focus_strong_outlined`) pour relance manuelle.
-  - Nouvelles classes/fonctions top-level : `_DetectParams`, `_detectCornersIsolate`, `_dcSobel`, `_dcTrim`, `_Line2D`, `_dcFitLine`, `_dcIntersect`, `_dcIsConvex`.
-  - Nouveau flag d'état : `bool _detecting` dans `_ImageEnhancerScreenState`.
-
-- **`DraftListScreen` — sélection batch** :
-  - Nouveau champ `Set<String> _selected` sur l'état.
-  - `get _isSelecting` : actif quand `_selected` non vide.
-  - Long press sur `_DraftTile` → `_selected.add(id)` → rebuild AppBar.
-  - AppBar contextuelle : bouton ✕ (cancel), count badge, `select_all` (tout sélectionner/désélectionner), `check_circle` (valider), `delete_outline` (supprimer).
-  - Valider : dialogue de confirmation → `recipeRepo.validateDraft()` pour chaque id sélectionné en parallèle.
-  - Supprimer : dialogue de confirmation (rouge) → `recipeRepo.deleteRecipe()`.
-  - `_DraftTile` : paramètres `isSelected`, `isSelecting`, `onTap`, `onLongPress` ajoutés. En mode sélection, le leading affiche une `Checkbox` à la place de l'avatar.
-  - FAB masqué pendant la sélection (`if (!_isSelecting) FloatingActionButton`).
-  - Les brouillons des membres du groupe n'ont pas de callback `onLongPress` (non sélectionnables).
-
-- **`GeminiService._ingredientKey()` / `Recipe._ingredientKey()`** : normalisation des apostrophes typographiques (`'`, `'` → `'`) et des caractères accentués français (é,è,ê→e ; à→a ; ç→c ; ù→u ; ô→o ; î→i ; â→a ; û→u) avant `toLowerCase()` et trimming des pluriels, pour éviter les doublons d'ingrédients dus aux variantes Unicode retournées par Gemini.
-
-### Mise à jour release (12/05/2026)
-
-- **`ProcessingJob`** : ajout de deux champs :
-  - `additional_file_urls: List<String>` — URLs Firebase Storage des pages supplémentaires (scan multi-pages).
-  - `current_step: String?` — étape courante du traitement ("Extraction du texte…", "Extraction des illustrations…") affichée dans `ProcessingJobsScreen`.
-- **`GeminiService.extractRecipes(bytes, mimeType, {additionalPages})`** : signature étendue pour envoyer plusieurs pages en un seul appel `Content.multi([DataPart, ..., TextPart])`.
-- **`GeminiService.detectIllustrationRegions(bytes, mimeType)`** : nouvelle méthode — détecte les bounding boxes de photographies culinaires dans une image de recette. Retourne `List<[yMin, xMin, yMax, xMax]>` en coordonnées 0-1000. Utilise `image: ^4.8.0` pour le découpage (`img.copyCrop`).
-- **`ScanStatus.pendingFiles`** : nouvel état d'accumulation multi-pages. L'utilisateur accède à cet état après la première sélection d'image pour recette. `isRunning` ne l'inclut pas (l'utilisateur est en contrôle).
-- **`ScanState.pendingPageNames: List<String>`** : noms des fichiers en attente, pour affichage dans `ScanScreen`.
-- **`ScanUploadNotifier.addPage()`** / **`addPageFromCamera()`** / **`processPages()`** : nouvelles méthodes pour le mode multi-pages.
-- **`RecipeRepository.updateRecipeIllustrations(recipeId, imageUrls)`** : met à jour le champ `image_urls` d'une recette après extraction des illustrations.
-- **`source_viewer.dart`** : bouton téléchargement ajouté (`url_launcher: ^6.3.1`) à côté du bouton prévisualisation.
-- **`RecipeCreateScreen`** : lors d'un traitement IA ("Mettre en forme avec l'IA"), le texte original collé est uploadé sur Firebase Storage (`scans/{uid}/texte_colle_{ts}.txt`) et attaché comme `sourceFileUrl`/`sourceFileName` lors de la sauvegarde.
-
-### Mise à jour release (08/05/2026)
-
-- **`RecipeRepository.copyRecipeAsDraft({recipe, newOwnerUid})`** : crée une copie d'une recette ou d'un brouillon pour un autre utilisateur. Si la recette source est `validated`, la copie est également `validated` et le contenu provient de `rawCooklang`. Si la source est un brouillon, la copie est `draft` et le contenu provient de `draftCooklang ?? rawCooklang`. Les images ne sont pas copiées (`imageUrls: []`), le livre source n'est pas hérité (`bookId: null`).
-- **`RecipeRepository.watchDraftsByOwners(List<String> ownerIds)`** : stream de brouillons (`draft` + `inReview`) pour une liste de propriétaires, filtré côté client.
-- **`RecipeRepository.validateDraft()`** : vérification d'appartenance avant écriture — lit `created_by` depuis Firestore et lève `StateError` si le caller n'est pas le propriétaire.
-- **`groupMemberDraftsProvider`** (Riverpod `StreamProvider`) : stream des brouillons des membres du groupe via `watchDraftsByOwners(memberIds)`.
-- **`DraftReviewScreen`** : refactorisé en `ConsumerStatefulWidget`. Toggle 👥 dans l'AppBar pour afficher les brouillons des membres du groupe, organisés par sections collapsibles par membre (`_MemberSectionHeader`). Affichage auteur (icône 👤 + nom) et livre source dans l'AppBar pour les recettes d'autrui. Bouton "Copier" (📋) visible uniquement si non-propriétaire ; boutons Valider/Supprimer uniquement si propriétaire.
-- **`RecipeDetailScreen`** : bouton "Copier" (📋) dans l'AppBar pour les recettes d'autrui. Dialogue de confirmation, puis redirection automatique vers la copie.
-- **`KassDalleCoverGenerator`** (`lib/core/utils/kassdale_cover_generator.dart`) : génère une image PNG 600×800 avec `dart:ui` (gradient sombre, étoiles, sparkles, texte centré). Utilisé par `BookRepository._uploadGeneratedCover()`.
-- **`BookRepository.findOrCreateKassDalleBook(uid)`** : retrouve ou crée le livre IA (`tag __kassdale_ia`), déclenche `_uploadGeneratedCover` si la couverture est absente.
-- **`BookRepository.ensureKassDalleBookHasCover(uid)`** : migration silencieuse appelée dans `initState` de `BookListScreen`.
-
-### Mise à jour release (03/05/2026)
-
-- Ajout de la collection Firestore `groups` pour les groupes familiaux multi-utilisateurs.
-- Nouveau domaine `FamilyGroup` (id, name, ownerId, memberIds, createdAt) + `GroupRepository` (watchMyGroups, createGroup, addMember, removeMember, renameGroup, deleteGroup, searchUsers).
-- Providers Riverpod : `myGroupsProvider`, `groupMemberIdsProvider`, `visibleUserIdsProvider` pour le calcul de visibilité cross-utilisateur.
-- `BookRepository.watchValidatedBooksByOwners(List<String>)` + `RecipeRepository.watchUnattachedByOwners(List<String>)` : requêtes `whereIn created_by` avec filtrage client-side pour éviter les index composites.
-- `book_providers` : `groupMemberBooksProvider`, `accessibleBooksProvider` (union mes livres + livres des membres).
-- `recipe_providers` : `groupMemberUnattachedRecipesProvider`.
-- `BookListScreen` et `RecipeListScreen` convertis en `ConsumerStatefulWidget` avec sections par propriétaire et toggles.
-- `ProcessingJobRepository.watchAll()` + `allProcessingJobsProvider` + `adminJobUserFilterProvider` + `filteredAdminJobsProvider`.
-- `ProcessingJobsScreen` : vue admin avec filtre utilisateur (dropdown) et affichage du propriétaire sur chaque tuile `_JobTile` (ConsumerWidget).
-- `GroupsScreen` : gestion complète des groupes (créer, renommer, supprimer, inviter/retirer membres via recherche temps réel).
-- Route `/groups` ajoutée dans `AppRouter`. Accès depuis le menu compte.
-- `app_shell.dart` : bouton "Télécharger l'APK Android" dans le menu compte (visible uniquement web/desktop), pointe vers `/app-release.apk` sur Firebase Hosting.
-- L'APK est désormais inclus dans chaque déploiement Firebase Hosting.
-
-### Mise a jour release (02/05/2026)
-
-- Ajout d'un pipeline de traitements asynchrones avec collection Firestore `processing_jobs`.
-- Refactor du scan pour supporter trois intentions : `recipeScan`, `bookCoverScan`, `bookDocumentScan`.
-- Ajout de la creation de brouillons livre via extraction Gemini sur page de garde.
-- Ajout d'un ecran de suivi des jobs de traitement et d'un indicateur de jobs actifs dans l'UI Brouillons.
-- Extension du schema `books` (statut de revue, metadonnees structurees, source IA).
-- Extension du flux de validation recette pour accepter les editions de champs structures (tags/temps/portions/ingredients).
-
-### Mise a jour release (01/05/2026)
-
-- Signature Android release activee via `android/key.properties` et `signingConfigs.release`.
-- Configuration Firebase Android mise a jour avec `google-services.json` incluant les clients OAuth Android.
-- Build targets validates pour release: Windows (`flutter build windows --release`), Web (`flutter build web --release --base-href /`), Android (`flutter build apk --release`).
-- Pipeline d'icones automatise via `flutter_launcher_icons` depuis `assets/icon.jpg` pour Android, iOS, Web, Windows et macOS.
-- Correctif de cycle de vie Flutter/Riverpod sur l'ecran de scan (suppression d'un acces `ref` apres `dispose`).
-
----
+> **Ce document décrit l'état actuel de l'application.** Ce qui a changé d'une version à
+> l'autre se lit dans [CHANGELOG.md](CHANGELOG.md), où 32 sections « Mise à jour
+> release » ont été déplacées telles quelles.
 
 ## 1. Architecture Générale
 
@@ -4334,3 +1962,453 @@ Le périmètre fonctionnel restant est décrit dans
 | Partage externe (lien public) | Faible | Une route non authentifiée, donc une décision sur ce qu'un lien expose et pour combien de temps ; les Security Rules actuelles ne connaissent que des comptes nommés |
 | Minuteur interactif depuis CookLang | Faible | Les durées sont déjà analysées (`timer_display.dart`) ; manquent un décompte et des notifications locales |
 | Attestation du client Windows | — | Sans solution : la seule voie serait un jeton de débogage dans un binaire distribué. Le passage d'App Check en *exigé* prive donc le desktop de l'IA, et c'est documenté comme tel |
+
+---
+
+## 15. Annexe — Modération des images (spécification technique détaillée)
+
+Le moteur, le schéma et les règles d'accès de la modération figurent aux chapitres 3, 4
+et 6. Cette annexe en donne le détail : projection des paliers Vision, décision, promotion,
+journalisation et coût.
+
+> **Implémentée.** Moteur : **Google Cloud Vision** — SafeSearch Detection + Label
+> Detection. Pendant fonctionnel : *Spécification — Modération des images* dans
+> `FunctionalRequirements.md`.
+>
+> **Prérequis d'exploitation** : `vision.googleapis.com` doit être activée sur le
+> projet. Sans elle, `analyseImage` lève, chaque image part en `pending`, et rien
+> ne se publie — le comportement est correct, la cause est ailleurs.
+
+### 1. Le terrain existant
+
+- **`quarantine/{uid}/{fichier}`** — zone d'atterrissage, `storage.rules` autorise
+  l'écriture au propriétaire approuvé, lecture par lui seul, 50 Mo.
+- **`scanAndPromoteUploadFn`** (`callable/geminiCallables.ts`) — télécharge, appelle
+  `scanUpload()`, copie vers `scans/{uid}/`, pose `quarantine_status` en métadonnée
+  Storage, rend l'URL de téléchargement, supprime la source.
+- **`utils/uploadSecurity.ts` — `scanUpload()`** juge le contenant : taille, extension,
+  type MIME, signature binaire, EICAR. Il ne regarde pas l'image.
+- **`scans/{uid}/`** est déjà en `allow write: if false` : la promotion serveur est un
+  schéma qui existe et qui marche. La modération le généralise, elle ne l'invente pas.
+
+### 2. Les quatre écritures directes à faire passer par la quarantaine
+
+| Chemin publié | Écrit aujourd'hui par | Règle actuelle |
+|---|---|---|
+| `covers/{bookId}/cover.jpg` | `book_repository.dart:160` | `canWriteSharedImages()` |
+| `recipes/{recipeId}/…` | `recipe_repository.uploadRecipePhoto():610` | `canWriteSharedImages()` |
+| `illustrations/{uid}/…` | `recipe_repository.uploadIllustration():595`, `draft_review_service.dart:207,229` | `isOwner(uid)` |
+| `users/{uid}/free_recipe_cover_*.jpg` | `auth_repository.dart:212` | `isOwner(uid)` |
+
+`book_repository._uploadAssetCover():176` écrit aussi dans `covers/`, mais depuis un asset
+du bundle : c'est notre propre image, elle n'a rien à faire dans une file de modération.
+La promotion serveur doit donc accepter une origine « asset » qui court-circuite l'analyse
+— sans quoi chaque création de livre remplira la file.
+
+**Cible** : ces quatre chemins passent en `allow write: if false`, comme `scans/`. Le
+client écrit dans `quarantine/{uid}/`, appelle la fonction de promotion avec la
+**destination voulue**, et reçoit soit l'URL publiée, soit un état d'attente.
+
+C'est le lot le plus coûteux et le seul qui touche du code partout. Il est aussi le seul
+qui ait une valeur propre : livré seul, sans aucune analyse, il ferme les portes et ne
+change rien pour l'utilisateur.
+
+### 3. Firestore — `image_moderation/{moderationId}`
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `status` | `string` | `approved` / `rejected` / `manual_review` / `pending` |
+| `uid` | `string` | qui a envoyé |
+| `quarantine_path` | `string` | où le fichier attend |
+| `target_path` | `string` | où il ira s'il est approuvé |
+| `target_kind` | `string` | `book_cover` / `recipe_illustration` / `draft_illustration` / `free_recipe_cover` |
+| `owner_id` | `string?` | `bookId` ou `recipeId` selon `target_kind` |
+| `mime_type`, `size_bytes` | `string`, `number` | contexte de diagnostic |
+| `signals` | `map` | ce que le moteur a vu — voir §4 |
+| `engine`, `engine_version` | `string` | qui a jugé, dans quelle version |
+| `decision_reason` | `string` | clé de motif — voir §9 |
+| `preview_url` | `string?` | vignette signée, pour l'écran d'administration |
+| `created_at`, `decided_at` | `timestamp` | |
+| `reviewed_by`, `reviewed_at`, `review_note` | `string?`, `timestamp?`, `string?` | revue humaine |
+| `published_url` | `string?` | posé à la promotion |
+| `rejected_path` | `string?` | image conservée après un refus, sous `rejected/{uid}/` — `null` si le déplacement a échoué |
+| `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
+
+`status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
+un humain qui n'aurait rien à lire. Il se relance ; il ne se devine pas.
+
+**Un document par image, y compris pour les approuvées.** L'écran d'administration doit
+montrer ce que la modération laisse passer, pas seulement ce qu'elle bloque — et une
+approbation dont on n'a gardé aucune trace ne se vérifie jamais.
+
+**Règles Firestore** — lecture par `isAdmin()` ou `isOwner(uid)` (l'envoyeur doit voir
+l'état de son image), **écriture serveur uniquement** (`if false`). Une décision de
+modération que le client peut écrire n'est pas une décision.
+
+### 4. La couture du moteur — un seul fichier à remplacer
+
+```
+functions/src/moderation/
+├── engine.ts             # interface + résolution du moteur configuré
+├── vision.ts             # adaptateur Cloud Vision (seul importateur du SDK)
+├── decision.ts           # règles pures : signaux → état + motif
+├── promote.ts            # quarantaine → destination, métadonnées, URL
+└── moderateAndPromote.ts # le chemin complet : quarantaine → verdict → promotion
+```
+
+**`moderateAndPromote.ts` est le seul module qui décide si une image devient visible.**
+Il vivait dans le callable, où seul un client pouvait l'emprunter — le pipeline
+d'import, lui, écrivait ses découpes en direct avec l'Admin SDK, donc hors
+quarantaine et hors verdict. L'extraire est ce qui permet aux deux appelants de
+prendre le même chemin. Un second chemin de publication serait, tôt ou tard, un
+chemin sans verdict.
+
+Deux refus y sont des **erreurs typées** et non des verdicts : `ImageFormatRejected`
+et `QuarantineFileMissing`. Le callable les rend au client en `HttpsError` ; le
+pipeline écarte la découpe et poursuit l'import. C'est la raison pour laquelle le
+cœur ne lève pas de `HttpsError` lui-même — il ne sait pas qui l'appelle.
+
+- **`ModerationSignals`** — forme neutre, imposée à tout moteur :
+  `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
+  scores normalisés `0..1`. Vision rend cinq paliers (`VERY_UNLIKELY` … `VERY_LIKELY`) :
+  la projection sur cette échelle vit **dans `vision.ts`**, pas ailleurs. Les paliers
+  d'origine sont conservés tels quels dans `signals` pour l'affichage — c'est ce que le
+  moteur a réellement dit.
+- **`ImageModerationEngine.analyse(bytes, mimeType): Promise<ModerationSignals>`** — la
+  seule chose qu'un moteur doit savoir faire.
+- **`decideModeration(signals, thresholds): { status, reason }`** — fonction **pure**,
+  sans réseau, sans horloge. C'est là que vit l'arbitrage culinaire, et c'est ce qui se
+  teste.
+
+**`moderation/vision.ts` est le troisième fichier autorisé à importer un SDK de
+fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`.
+
+**Et il l'importe DYNAMIQUEMENT.** Le fichier ne garde qu'un `import type`, effacé à la
+compilation ; le SDK arrive par un `await import()` dans `visionClient()`, à la première
+analyse réellement demandée. Un import statique a fait échouer un déploiement — *« User
+code failed to load. Cannot determine backend specification. Timeout after 10000 »* : le
+SDK tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage d'`index.ts`, donc
+pour la cinquantaine de fonctions qui partagent le même bundle, y compris celles qui ne
+modèrent rien. Ce n'était pas seulement un risque au déploiement, c'était du démarrage à
+froid subi partout. **Ne pas le repasser en import statique.**
+
+**Ordre des règles, non commutatif — c'est lui qui porte le sens :**
+
+1. `adult ≥ seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
+   rattrape.
+2. `violence ≥ seuil_alerte` **et** contexte culinaire fort → `approved`, motif
+   `culinary_context`. Évalué **avant** le refus pour violence : une découpe de volaille
+   est une scène violente pour le moteur, et l'arbitrage du projet est qu'elle passe.
+3. `violence ≥ seuil_refus` → `rejected`, motif `violent_content`. Aucune recette n'a
+   besoin d'une scène de violence certaine ; l'envoyer en revue obligerait un
+   administrateur à la regarder pour conclure ce que les signaux disaient déjà.
+4. `violence ≥ seuil_alerte` sans contexte → `manual_review`, motif
+   `violence_no_culinary_context`.
+5. `racy ≥ seuil_revue` sans contexte → `manual_review`, motif `suggestive_content`.
+   **Jamais un refus.**
+6. sinon → `approved`, motif `no_signal`.
+
+**`adult` et `racy` sont deux critères, jamais un seul.** Ils ont été fusionnés par un
+`max()`, au prétexte qu'une image « racy » ne devait pas peser zéro. Le prix s'est vu sur
+une photo de violence conjugale : la victime portait un débardeur, `racy` a répondu
+`VERY_LIKELY`, et le verdict est tombé en *« contenu sexuel explicite »*. Le refus était
+mérité, le motif était faux — et c'est le motif qu'on lit à l'écran, celui qui oriente le
+réglage des seuils, celui qui fait rater la vraie raison.
+
+« Suggestif » et « explicite » ne demandent pas la même décision : le second refuse, le
+premier fait au plus réfléchir. Les additionner supprimait cette distinction avant que la
+règle puisse s'en servir. `racyReview` est haut par construction (`VERY_LIKELY`) : `racy`
+se déclenche sur des tenues d'été ordinaires, et une file pleine de faux positifs n'est
+pas relue.
+
+Le classement de la violence passe **avant** celui du suggestif, pour la même raison : le
+suggestif volerait le motif d'une image dont le vrai problème est ailleurs.
+
+Le **contexte culinaire fort** est un compte de labels d'une liste fermée (viande,
+volaille, poisson, planche, couteau de cuisine, ustensile, ingrédient, plat, cuisine…)
+dont le score dépasse un seuil. Un seul label faible ne fait pas un contexte : c'est ce
+qui distingue une cuisine d'une scène qui contiendrait un couteau.
+
+### 5. Les seuils vivent dans Firestore, avec des défauts
+
+`app_config/image_moderation` : seuils, liste des labels culinaires, moteur retenu, et un
+interrupteur global. Même mécanique que `app_config/ai_routing_policy` — un seuil trop
+strict se corrige en une minute, pas en un déploiement.
+
+**Des défauts existent dans le code**, et c'est voulu. Ce n'est pas la contradiction de la
+règle « pas de valeur de repli » : celle-ci vise les **données** qui doivent être exactes —
+un prix, un taux de change — dont une constante périmée ferait mentir un montant. Un seuil
+de modération est une **décision**, comme les plafonds de dépense quotidiens, qui protègent
+eux aussi avant tout réglage. L'absence de document ne doit pas vouloir dire « aucune
+modération ».
+
+### 6. Ce que la modération ne partage pas avec le client
+
+**Aucun jumeau Dart des règles de décision.** Elles n'existent que côté serveur : le client
+n'affiche pas de verdict, il en reçoit un. Écrire le jumeau « par symétrie » ajouterait une
+divergence possible sans rien rendre — c'est exactement ce qu'ont montré les règles de
+créneau du planning, qui ont fini par **quitter** le client.
+
+La fixture `test-fixtures/image_moderation_rules.json` est donc **serveur seul**, comme
+`planning_slot_rules.json`, et rejouée par `functions/src/tests/` uniquement. Ligne à
+ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « — ».
+
+**Les libellés, eux, sont côté client** (§9) : ce sont des mots d'écran, pas des règles.
+
+### 7. Cloud Functions
+
+- **`moderateAndPromoteImageFn`** (callable) — `{ quarantinePath, targetKind, ownerId }`.
+  Vérifie que le chemin appartient à l'appelant, télécharge, `scanUpload()` (le format
+  d'abord : inutile d'envoyer un exécutable renommé à un moteur d'analyse), puis
+  `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
+  Rend `{ status, url?, reason }`.
+- **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.
+  Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
+- **`retryPendingModerationFn`** (callable, `isAdmin`) — relance les `pending` restés en
+  panne de moteur. Un état qui ne se relance pas est une fuite.
+- **Le poste `_batch`** — un scan promeut douze illustrations d'un coup. Le groupage est un
+  poste à part entière (`image_moderation_batch`), comme ailleurs dans le projet : c'est le
+  seul moyen de vérifier que le groupage fait son office.
+- **`recipeProcessor`** (Cloud Tasks) emprunte le même cœur pour les illustrations qu'il
+  découpe dans un scan. Trois filtres **locaux** (`gemini/illustrationQuality.ts`) écartent
+  d'abord ce qui n'est manifestement pas une photographie — moins de 120 px de côté ou
+  moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans
+  couleur. Les deux conditions du dernier sont exigées ensemble : une photographie en noir
+  et blanc a une chroma nulle, mais jamais une luminance moyenne de papier.
+- **La vignette WebP n'est pas remodérée** : c'est la même image, réduite, et le verdict
+  vient d'être rendu sur son contenu. La repasser au moteur doublerait la facture pour la
+  même réponse.
+- **Une page qui rend plusieurs recettes est modérée une fois, puis copiée.** Chaque recette
+  au-delà de la première reçoit sa propre copie Storage (`copyPublishedImages`), pour qu'elle
+  en soit réellement propriétaire — deux recettes désignant le même objet est une panne qui
+  n'attend que la première suppression réelle du fichier. La copie est faite côté serveur et
+  conserve les métadonnées de la décision ; un échec de copie retombe sur l'adresse partagée,
+  journalisé.
+- **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
+  la suppression best-effort du fichier de quarantaine.
+
+### 8. Journalisation et rapports d'erreur
+
+- **`ModuleType` gagne `"MODERATION"`** (`functions/src/logging.ts:18`, aujourd'hui
+  `"IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN"`). Sans lui, les traces de modération
+  se rangeraient sous `IMPORT` et ne se filtreraient plus dans *Admin › Cloud Logging*.
+- **`logInfo`** à chaque verdict : `correlationId`, `uid`, `status`, `decision_reason`,
+  `engine`, `sizeBytes`, `targetKind`. Une décision de blocage doit pouvoir se rejouer
+  depuis les traces seules.
+- **`logError`** sur panne de moteur, refus de promotion, échec d'écriture — avec le motif,
+  jamais un `catch` muet.
+- **Le `correlationId` est stocké sur le document** (`correlation_id`, §3) : depuis l'écran
+  d'administration, on remonte à la trace ; depuis la trace, on retrouve la ligne.
+- **Côté client**, les trois issues et la panne passent par
+  `_errorReportService.reportError(feature: 'imageModeration.…')`, avec `sizeBytes`,
+  `mimeType` et `targetKind` en contexte — le même patron que
+  `scanUpload.uploadAndPromote`, dont l'expérience a montré que sans la taille et le
+  chemin, un refus ne se distingue pas d'un dépassement.
+
+### 8b. Les images refusées sont conservées, pas détruites
+
+`quarantineToRejected()` (`moderation/promote.ts`) copie l'octet vers
+`rejected/{uid}/…` puis retire le reliquat de quarantaine, et rend le chemin —
+ou `null` si la copie a échoué. Le document dit alors la vérité sur ce qui est
+réellement consultable ; il ne promet pas une image qui n'existe pas.
+
+`storage.rules` ouvre `rejected/` en lecture au seul `isAdmin()` — un nouvel
+helper, distinct de `canWriteSharedImages()` : ce dossier contient précisément ce
+qu'on a jugé impubliable, et un jeton sans claim n'y a pas accès.
+
+**La lecture de `quarantine/` est ouverte au même `isAdmin()`**, en plus du
+propriétaire. Une image `manual_review` y attend : sans cette ligne, l'administrateur
+qui doit trancher ne pouvait pas la voir — sauf s'il l'avait envoyée lui-même — et
+l'écran de revue se réduisait à des scores. `ModerationEntry.previewPath` choisit la
+source selon l'état : `rejected/` s'il existe, sinon la quarantaine pour `manual_review`
+et `pending`, sinon `null`. Ce `null` est affiché en toutes lettres — « image non
+conservée, refus antérieur à la conservation » — plutôt que laissé en blanc : un blanc
+passerait pour une panne alors que le fichier a bel et bien été supprimé, et ne
+reviendra pas.
+
+Une image qui attend une décision se charge **d'office** ; un refus déjà prononcé reste
+replié derrière un bouton. La distinction n'est pas cosmétique : dans le premier cas on
+vient pour regarder, dans le second on parcourt un journal.
+
+**Aucune URL n'est émise ni stockée.** L'écran lit les octets avec
+`FirebaseStorage.ref(path).getData()`, donc avec les droits de l'administrateur
+qui consulte. Appeler `getDownloadURL()` créerait un jeton permanent, partageable,
+qui survivrait au retrait du rôle — exactement ce qu'il ne faut pas pour ce
+contenu-là. Le rendu est un `Image.memory`, replié par défaut derrière un bouton :
+un journal qu'on parcourt ne doit pas exposer sans prévenir.
+
+La première version supprimait le fichier. C'était défendable et c'était faux :
+sans l'image, un administrateur ne peut pas juger si le refus était fondé, et ce
+sont les **faux refus** — une photo de rôti prise pour une scène violente — qu'on
+a le plus besoin de voir. Une modération qu'on ne peut pas évaluer ne se corrige
+jamais.
+
+La rétention de `rejected/` reste ouverte (§15) : à trancher le jour où le volume
+le justifie, par une règle de cycle de vie sur le bucket, jamais en effaçant les
+décisions elles-mêmes.
+
+### 9. Les libellés — pourquoi une image a été refusée
+
+L'écran ne montre jamais de clé technique. `features/moderation/domain/moderation_labels.dart`
+porte trois tables :
+
+| Table | Contenu |
+|---|---|
+| `kModerationCriteria` | `adult` → « Contenu adulte », `racy` → « Suggestif », `violence` → « Violence », `medical` → « Médical », `spoof` → « Montage » |
+| `kModerationLikelihoods` | `VERY_UNLIKELY` → « Très peu probable » … `VERY_LIKELY` → « Très probable » |
+| `kModerationReasons` | `sexual_explicit` → « Refusée : contenu sexuel explicite. » ; `violence_no_culinary_context` → « À revoir : violence détectée sans contexte culinaire. » ; `culinary_context` → « Approuvée : contexte culinaire reconnu malgré une alerte de violence. » ; `no_signal` → « Approuvée : aucun signal. » ; `engine_unavailable` → « Sans verdict : moteur injoignable. » ; `manual_approved` / `manual_rejected` → décision d'un administrateur |
+
+**Un motif retiré du code reste à la table**, exactement comme un poste de coût retiré
+reste au catalogue : les décisions déjà prises sous cette clé cesseraient sinon de
+s'expliquer. `test/moderation_labels_test.dart` garde la cohérence entre les clés servies
+par le serveur et celles que le client sait nommer — une clé inconnue doit s'afficher
+telle quelle et faire échouer le test, jamais disparaître en silence.
+
+Les labels de Vision arrivent en anglais. Ceux de notre liste culinaire portent leur
+libellé français (c'est notre liste) ; les autres s'affichent bruts avec leur score — les
+traduire à l'aveugle inventerait une précision qu'on n'a pas.
+
+### 10. Coûts et comptabilité
+
+**La grille sait déjà facturer à l'unité.** `AiModelPricing` porte `imageOutputPerUnit`,
+et `estimateAiCostUsd()` le multiplie par `imageOutputCount` — c'est ainsi que la
+génération d'image est chiffrée. La modération n'a donc **pas** besoin d'une grille à part,
+ni du repli « appels sans montant » : le montant est calculable, il doit être affiché.
+
+- **Un champ voisin, pas un détournement** : `analyzedImagePerUnit` s'ajoute à
+  `AiModelPricing` et se somme dans `estimateAiCostUsd`. Une image *produite* et une image
+  *analysée* sont deux produits à deux prix ; les faire passer par le même champ ferait
+  mentir le reporting le jour où l'un des deux bouge. Champ optionnel : les documents
+  existants ne le portent pas, il vaut zéro.
+- **Deux unités par image** — SafeSearch et Label sont facturés séparément. C'est le
+  nombre d'unités, pas d'images, qui est enregistré.
+- **`freeUnitsPerMonth` sur l'entrée de tarif** : le fournisseur offre mille unités par
+  mois. Les lignes d'appel restent **brutes** — ainsi elles ne dépendent pas de l'ordre
+  dans lequel on les relit, et deux appels simultanés ne se disputent pas un compteur. La
+  déduction se calcule **au mois**, dans l'écran des coûts, et s'affiche en ligne à part.
+  Un mois à zéro doit se lire « mille unités offertes ont couvert la dépense », pas
+  « rien n'a été analysé ».
+- **Le poste s'ajoute aux trois endroits, dans le même commit** : `ctx.feature`,
+  `ROUTABLE_FEATURES`, et `feature_catalog.dart` (`kFeatureCatalog` **et**
+  `kFeatureProcess`) — avec sa variante `_batch`.
+- **`ai_usage` et `ai_daily_spend`** reçoivent la ligne comme n'importe quel appel : c'est
+  ce qui alimente *Admin › Dépense par utilisateur*, donc le nombre d'analyses demandées
+  par personne.
+- **Hors plafond quotidien.** Un plafond atteint doit empêcher de *dépenser*, jamais de
+  *publier une image légitime* : sinon le contrôle punit celui qu'il protège. L'appel est
+  compté, chiffré, affiché — et exclu de `BudgetExceededError`. L'écran de dépense le
+  signale, faute de quoi l'écart entre « dépensé » et « décompté du plafond » passera pour
+  un bug.
+- **Ajouter la ligne à la fixture `ai_pricing.json`** avant d'écrire le code : elle est
+  rejouée par les deux suites, et c'est la seule barrière contre un écart de tarif
+  silencieux.
+
+### 11. Le moteur au choix des moteurs d'IA
+
+Vision est le seul choix acceptable aujourd'hui, et le poste figure quand même à
+`ROUTABLE_FEATURES` — dans un groupe **« Modération »** propre, pas dans
+« Illustrations — détection », dont les postes lisent une image pour l'extraire et non pour
+la juger.
+
+- `resolveProvider` apprend un troisième fournisseur, `vision`, et le poste déclare la
+  liste des fournisseurs qu'il accepte. L'écran rend le sélecteur **inactif** avec la
+  raison affichée plutôt que de masquer le poste : un poste absent de l'écran est un poste
+  qu'il faudra redéployer pour faire bouger.
+- **La modération ne passe pas par `callModel`.** Celui-ci raisonne en jetons et en
+  messages ; Vision rend des paliers. C'est la **politique** qui est partagée — un document
+  Firestore, un écran — pas l'exécution. `moderation/engine.ts` lit la même politique et
+  choisit son adaptateur.
+- **La clé Vision vit dans Secret Manager**, comme les autres, et **toute fonction qui
+  appelle un moteur déclare toutes les clés qu'elle peut avoir à utiliser**. C'est la règle
+  née de la panne de v0.19.79 : un secret non déclaré n'est pas monté, le repli s'applique
+  en silence, et l'écran continue d'affirmer que la clé est là.
+
+### 12. Client Flutter
+
+**Recette générée par l'IA — section photos.**
+`search/presentation/generated_recipe_illustrations.dart` ajoute un onglet *Photos*
+à `GeneratedRecipeScreen`, dans ses **deux** dispositions (étroite à quatre onglets,
+large à trois). Un seul `_illustrationsTab()` les sert : deux copies auraient
+divergé, et c'est l'onglet le plus facile à oublier.
+
+La recette n'a pas encore d'identifiant, et aucune des deux voies n'en a besoin —
+`generateRecipeIllustration` part du titre et d'un prompt, l'envoi d'une photo se
+range sous l'utilisateur. Les URL sont tenues en mémoire dans `_imageUrls` et
+partent avec la recette : `_buildCurrentRecipe()` ne code plus `imageUrls: const []`.
+
+Une photo envoyée passe par la modération ; une image produite par l'IA en est
+dispensée, et le serveur la dépose lui-même sous `illustrations/{uid}/` par l'Admin
+SDK — la fermeture en écriture des dossiers publiés ne l'affecte pas.
+
+- **`features/moderation/`** — `data/image_moderation_repository.dart`,
+  `domain/moderation_entry.dart`, `domain/moderation_labels.dart` (§9), `presentation/`.
+- **Les quatre appelants d'upload** (`book_repository`, `recipe_repository`,
+  `draft_review_service`, `auth_repository`) écrivent en quarantaine puis appellent la
+  promotion. Ils reçoivent trois issues au lieu d'une, et l'écran doit les rendre :
+  publiée, en attente, refusée.
+- **`pendingModerationCountProvider`** — `StreamProvider<int>` sur `image_moderation`
+  filtré `status == manual_review`, `limit(99)`. La file d'attente est courte par
+  construction : un flux suffit, un compteur maintenu par trigger serait une donnée dérivée
+  de plus à tenir juste. Le badge ne compte **pas** le journal entier.
+- **Badge** — `_AdminIcon` dans `core/presentation/app_shell.dart`, sur le même patron que
+  `_DraftsIcon` (masqué à zéro, `Semantics` explicite : « 3 » seul ne dit rien à l'oreille).
+  Rappel du même compte sur la tuile *Modération* de `admin_hub_screen.dart`.
+- **`AppRoutes.adminModeration` → `/admin/moderation`**, garde `isAdmin`, écran
+  `admin_moderation_screen.dart` :
+  - liste de **tous** les états, filtres par état et par date, tri par date ;
+  - par entrée : vignette, envoyeur, date, destination, moteur ;
+  - **les cinq critères avec leur libellé et leur palier en français**, les labels retenus
+    comme contexte culinaire mis en évidence ;
+  - **la phrase de motif** sous l'identification, tirée de `kModerationReasons` ;
+  - **Approuver** / **Refuser** (avec motif) sur les entrées en attente, **Relancer** sur
+    les `pending` ;
+  - lien vers la trace Cloud Logging par `correlation_id`.
+
+### 12b. Index Firestore
+
+Le journal filtre par état ET trie par date : c'est une égalité sur un champ plus un tri
+sur un autre, donc un **index composite** obligatoire. Sans lui, l'écran ne dégrade pas —
+il échoue, et le filtre « Publiées » rend « Journal de modération illisible ».
+
+```
+collectionGroup: image_moderation — status ASC, created_at DESC
+```
+
+Déclaré dans `firestore.indexes.json`, déployé par `deploy.ps1` avec les règles. Le même
+index sert les quatre filtres d'état, avec ou sans fenêtre de temps. Le badge n'en a pas
+besoin : une égalité seule, sans tri, tient sur l'index automatique.
+
+### 13. Tests
+
+| Quoi | Où |
+|---|---|
+| Règles de décision, ordre compris | `functions/src/tests/moderationDecision.test.ts` + fixture |
+| Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
+| Sexuel explicite → refusée quel que soit le contexte | même fixture |
+| Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/visionSignals.test.ts` |
+| Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
+| Coût d'un appel Vision, quota mensuel déduit | `ai_pricing.json` + `test/ai_pricing_test.dart` |
+| Poste présent aux trois endroits | `test/feature_catalog_test.dart` |
+| Toute clé de motif servie a un libellé | `test/moderation_labels_test.dart` |
+| Badge masqué à zéro, affiché sinon | `test/widgets/` |
+| Repository : lecture du journal, filtres, décision admin | `test/repositories/`, `fake_cloud_firestore` |
+
+### 14. Livraison en quatre lots
+
+1. **Fondation** — les quatre portes passent par la quarantaine, destinations fermées en
+   écriture, collection et promotion serveur. Aucune analyse. Rien ne change à l'usage.
+2. **Verdict** — Vision, seuils, quatre états, poste de coût aux trois endroits, tarif en
+   fixture, `ModuleType` et traces.
+3. **Revue** — écran Administration › Modération (tous états), libellés, badge, journal des
+   décisions.
+4. **Existant** — backfill des images déjà en ligne, ou décision assumée de ne pas le
+   faire.
+
+### 15. Ce qui reste ouvert
+
+- **Le backfill de l'existant** (lot 4).
+- **La latence perçue** : une illustration s'affiche aujourd'hui à la seconde. Avec la
+  quarantaine, elle attend un aller-retour serveur. C'est un changement d'usage visible, à
+  mesurer sur le lot 1 — avant que l'analyse ne s'y ajoute.
+- **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
+  jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.

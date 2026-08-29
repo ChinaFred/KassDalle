@@ -1,0 +1,3923 @@
+# Historique des versions — Kass'Dalle
+
+Ce fichier reçoit les sections « Mise à jour release » qui vivaient dans
+`FunctionalRequirements.md` et `TechnicalRequirements.md`. Ces deux documents décrivent
+désormais **l'état actuel de l'application** et rien d'autre ; ce qui a changé d'une version
+à l'autre se lit ici.
+
+Les entrées sont classées de la plus récente à la plus ancienne. Chacune porte l'origine du
+texte : `fonctionnel` pour ce que voit l'utilisateur, `technique` pour ce qui touche à
+l'architecture, au schéma de données ou au déploiement.
+
+**Rien n'a été réécrit.** Les sections ont été déplacées telles quelles, y compris les entrées
+anciennes sans accents.
+
+---
+
+## 2026-08-28
+
+### v0.22.11 — fonctionnel
+
+#### Un livre ne disait pas de quelle bibliothèque il venait
+
+La bibliothèque réunit les livres de tous les membres du groupe familial. Une fois le livre ouvert,
+plus rien ne le rappelait. Le nom du propriétaire tenait entre parenthèses derrière le titre, et il
+n'y tenait pas longtemps : un titre un peu long le poussait dehors. Rien ne disait par quel groupe
+le livre arrivait.
+
+L'écran du livre porte maintenant une ligne sous son titre. Elle se lit : Issu du groupe familial
+« Les Kassbi », au travers de Fred. Un livre à soi affiche Ma bibliothèque. Sans groupe partagé —
+le cas d'un administrateur qui ouvre le livre d'un membre — la ligne se réduit à Bibliothèque de
+Fred. Sans nom lisible, elle disparaît : une phrase qui désigne un vide n'apprend rien.
+
+La même mention figure dans « À propos », en face du champ « Bibliothèque ». Elle y voisine avec
+« Auteur », qui reste celui du livre imprimé — les deux se confondaient jusqu'ici.
+
+#### Chacun choisit le nom sous lequel la famille le voit
+
+Les comptes Google portent des noms d'état civil. Dans une famille, ils partagent souvent le nom :
+« Livres de Frédéric Kassbi » et « Livres de Marie Kassbi » ne se distinguent qu'au deuxième mot.
+
+Un **nom préféré** s'ajoute au compte. Il vaut par défaut le prénom du compte Google — le premier
+mot du nom affiché — et se règle depuis **Profil et compte** pour soi, ou depuis **Admin → Gestion
+des utilisateurs** pour n'importe qui. Le laisser vide rend le compte à son prénom : la valeur par
+défaut n'est jamais écrite en base, elle se recalcule à chaque lecture, faute de quoi elle
+cesserait de suivre le compte Google.
+
+C'est ce nom qui identifie les bibliothèques : en-têtes « Livres de… » et « Recettes libres de… »,
+ligne d'origine du livre, propriétaire d'une recette, file de travail, membres d'un groupe. Le nom
+Google reste visible dans les écrans de compte, où c'est l'identité qui compte.
+
+## 2026-08-25
+
+### v0.22.9 — fonctionnel
+
+#### L'export PDF ne demandait que pour les photos
+
+Le dialogue d'export posait une seule question : « Inclure les photos ». Les remarques, les astuces
+et les corrections écrites par la famille n'étaient ni proposées, ni imprimées. Elles restaient à
+l'écran, et la feuille posée sur le plan de travail ne les portait pas — alors qu'une astuce vaut
+justement au moment où l'on cuisine.
+
+Le dialogue demande maintenant pour chacune, et seulement pour ce qui existe. Une recette avec une
+photo, deux astuces et une correction annonce ses quatre éléments et propose quatre interrupteurs.
+Une recette sans astuce n'affiche pas de case « Inclure les astuces » : un réglage sans objet laisse
+croire qu'il manque quelque chose au document. Une recette qui ne porte rien de plus n'ouvre pas de
+dialogue du tout.
+
+Chaque choix est retenu pour la fois suivante, mais seulement pour les catégories réellement
+proposées : une case absente d'un export ne doit pas effacer le choix fait sur un autre.
+
+Dans le document, les annotations retenues arrivent après la préparation et avant les photos,
+groupées en trois sections — Remarques, Astuces, Corrections — chacune avec le nom de son auteur.
+
+#### La note personnelle s'imprime à côté du titre
+
+La note attribuée par celui qui imprime apparaît en haut de la page, étoile et chiffre, dans un
+badge à côté du titre. C'est sa note à lui, pas une moyenne. Le dénominateur est écrit : à l'écran,
+« ★ 8 » se comprend parce que le sélecteur est à portée de doigt ; sur une feuille, rien ne dit si
+l'échelle va à cinq ou à dix.
+
+#### Un défaut trouvé au passage
+
+Le premier test qui compose réellement le document a révélé que l'en-tête portait depuis toujours
+une décoration interdite : un liseré à gauche et des coins arrondis à la fois, ce que le moteur PDF
+refuse. Le contrôle ne se déclenchait pas dans l'application publiée — il est retiré du binaire de
+production — et la bordure était simplement dessinée de travers. Le rayon a été supprimé.
+
+### v0.22.8 — fonctionnel
+
+#### Coller un texte et scanner une page donnent enfin le même résultat
+
+Les deux chemins ne se ressemblaient pas. L'import d'un scan déroulait trois étapes : le modèle
+recopie la page, un second appel balise ce qui a été recopié, et du code compare les deux sans
+rien coûter. Le bouton « IA » sur un texte collé tenait en un seul appel, avec un prompt qui
+demandait de lire et de baliser en même temps — exactement ce que l'import avait cessé de faire.
+
+**La liste d'ingrédients se dissolvait dans les étapes.** Le prompt du texte libre ne rendait que
+du CookLang, où les ingrédients vivent à l'intérieur des phrases. « 2 gousses d'ail dégermées »
+donnait un ingrédient, une quantité, une unité — et « dégermées » n'avait nulle part où aller. La
+liste affichée était ensuite reconstruite en relisant les balises : sans la précision, sans la
+ligne d'origine, sans la section d'où elle venait.
+
+**Rien n'était vérifié.** Pas d'inventaire annoncé avant de recopier, pas de mots signalés comme
+douteux, pas de contrôle de fidélité, pas de repli. Une étape résumée ou deux ingrédients fondus
+partaient en base sans que personne le sache.
+
+**Trois informations n'étaient même pas demandées** : le temps de repos, les types de plat et les
+cuisines. Les champs existaient, l'écran savait les afficher, le prompt ne les réclamait pas.
+
+Le texte collé emprunte désormais la même chaîne que la page scannée. Il en revient avec la liste
+d'ingrédients normalisée — précision et ligne d'origine comprises —, les tags, le temps de repos,
+et la réserve de fidélité affichée sur le brouillon quand le contrôle a quelque chose à dire. Un
+texte qui contient deux recettes le dit : la première est reprise, et l'écran l'annonce plutôt que
+de laisser découvrir l'absence de la seconde.
+
+Deux détails au passage. Les durées entrent dans les champs en minutes — « 20 min » recopié tel
+quel n'y tenait pas, et la recette partait sans temps de préparation. Et les métadonnées gérées par
+le formulaire quittent l'éditeur, comme sur un brouillon : sans cela, une correction de
+l'utilisateur restait sans effet, écrasée à la relecture par la ligne venue de l'IA.
+
+Le traitement coûte deux appels au lieu d'un. Le poste comptable ne change pas de nom.
+
+### v0.22.7 — fonctionnel
+
+#### Quatre appels de détection sur cinq ne servaient plus
+
+L'écran Moteur d'IA affichait cinq postes sous « Illustrations — détection ». Ils sortaient tous du
+même bouton : « Extraire les illustrations », dans la relecture de brouillon et dans l'édition. Les
+compteurs de `ai_usage_monthly` ont dit ce que chacun rendait.
+
+**Le repli « photo principale » ne partait plus.** Il ne sert que si la détection principale ne rend
+rien, ce qui n'est plus arrivé depuis juillet : cinq appels en quatre mois, zéro sur les deux
+derniers. Retiré, avec la Cloud Function qui le portait.
+
+**La cascade de subdivision dépensait trois appels pour rien.** Quand le modèle rendait deux à
+quatre zones dont une dépassait le quart de la page, trois appels supplémentaires cherchaient une
+grille de vignettes qu'il aurait fusionnée. Sur quatre mois : partie 109 fois, aboutie 3 fois à la
+première approche et 13 fois à la deuxième. Le reste allait jusqu'au dernier repli, dont le résultat
+était jeté s'il ne rendait pas plus d'une zone. Le prompt de détection demande déjà une boîte par
+vignette ; le lui redemander trois fois ne le lui apprend pas. Une détection coûte désormais un
+appel.
+
+**Le redressement était calculé, facturé, puis jeté.** Le serveur corrige la perspective de chaque
+zone — une page photographiée à main levée est un trapèze — et renvoyait les découpes redressées. Le
+client ne lisait que les boîtes et refaisait la découpe lui-même, au rectangle : chaque illustration
+gardait ses deux coins de papier et de table. Il prend maintenant les découpes du serveur, qui
+écarte au passage ce qui n'est manifestement pas une photographie.
+
+Les quatre postes retirés restent au catalogue comptable : les mois déjà facturés doivent continuer
+de les nommer.
+
+## 2026-08-23
+
+### v0.21.104 — fonctionnel
+
+#### Trois promesses retirées
+
+Un audit d'expérience a relevé trois endroits où l'application annonçait ce qu'elle ne fait pas.
+Aucun ne levait d'erreur — c'est ce qui les rendait coûteux : le texte s'affiche, il rassure, il est
+faux. Les trois sont retirés plutôt que réparés.
+
+**Le minuteur n'était pas un minuteur.** L'aide CookLang disait « Pour créer un minuteur interactif,
+utilisez le symbole ~ ». Le jeton `~{30%minutes}` est en réalité une étiquette : il met la durée en
+évidence dans l'étape et la reprend dans l'export PDF, il ne décompte rien. L'aide le dit maintenant
+ainsi. La syntaxe, elle, ne bouge pas.
+
+**La lecture hors ligne n'était vraie qu'à moitié.** « Connexion perdue » ajoutait « les recettes
+déjà consultées restent lisibles hors ligne ». La persistance Firestore est active par défaut sur
+Android natif et désactivée par défaut sur le web — la plateforme la plus utilisée, et la seule dont
+dispose un iPhone. La phrase était donc fausse une fois sur deux, et fausse précisément au moment où
+la panne survient. Le message se limite désormais à ce qu'il sait : vérifier la connexion, réessayer.
+
+**Le mode cuisine faisait l'inverse de ce qu'il promettait.** L'interrupteur agrandissait le texte de
+10 % — en *remplaçant* l'échelle du système au lieu de la multiplier. Quelqu'un ayant réglé son
+téléphone à 150 % tombait donc à 110 % en l'activant : le mode cuisine rapetissait le texte de qui en
+avait le plus besoin. Il masquait par ailleurs la barre de lecture, le bouton d'annotation et les
+boutons d'illustration sans l'annoncer, et s'oubliait à chaque ouverture de recette. Il est supprimé.
+La fiche garde tout ce qu'il masquait, et l'écran reste allumé comme avant — le maintien n'a jamais
+dépendu de lui.
+
+### v0.21.103 — fonctionnel
+
+#### Le message de mise en file gênait le doigt
+
+« Scan recette ajouté à la file de traitement » se posait au-dessus du bouton **Analyser**, juste où
+le doigt revient pour enchaîner la page suivante. Il fallait attendre qu'il s'efface, ou viser à
+côté. Une seconde perdue à chaque page.
+
+Il est retiré. L'écran dit déjà la même chose sans rien recouvrir : les imports en vol s'affichent
+en liste, la file des pages en attente se vide sous les yeux, et une puce compte les traitements en
+cours.
+
+Les deux autres messages restent — la couverture de livre et le document entier. Ils n'annoncent pas
+« c'est parti » mais **ce qui va se passer**, et ces imports ne s'enchaînent pas.
+
+### v0.21.102 — fonctionnel
+
+#### Une recette dit maintenant son temps de repos
+
+Marinade, réfrigération, levée, repos de pâte : le temps où **rien ne se fait**. Il est lu à
+l'import, affiché sur la fiche, modifiable dans l'éditeur, imprimé dans le PDF.
+
+Un seul champ pour toutes ces attentes. Un livre écrit « laisser mariner une nuit au frais » sans
+dire si c'est du repos ou de la réfrigération.
+
+**C'est au planning qu'il sert le plus.** Une recette qui demande quatre heures au frais se commence
+la veille — l'IA de planification le sait maintenant, alors que rien ne le disait avant d'ouvrir la
+recette le jour même.
+
+Il ne s'ajoute pas au temps de préparation, et c'est voulu : douze heures de marinade additionnées à
+la préparation donneraient une recette qui a l'air impraticable.
+
+#### Les durées étaient mal lues
+
+« 55 min, plus 4 h de réfrigération » devenait **3 300 minutes** de préparation. « 30 min de
+chauffe » en donnait 1 800. Le programme prenait le premier nombre et le multipliait par soixante
+dès qu'il voyait un `h` n'importe où dans la phrase, y compris au milieu d'un mot.
+
+Il lit maintenant le premier nombre et l'unité qui le suit. « 4 h 55 » vaut 295 minutes,
+« une nuit » vaut douze heures, « 2 jours » vaut deux jours.
+
+#### Le minuteur « 1 à 2 minutes » s'affichait en morceaux
+
+Une durée en fourchette apparaissait comme « 1-~{2 min » suivi d'une accolade. Elle s'affiche
+maintenant d'un seul tenant, et se lit « 1 à 2 min » plutôt que « 1-2 min ».
+
+#### Les durées du planning étaient perdues
+
+Une recette créée par la planification de repas sortait sans temps de préparation ni de cuisson.
+Elle les écrivait sous un nom que le reste de l'application ne reconnaissait pas.
+
+### v0.21.102 — technique
+
+#### Une durée sur deux était mal lue
+
+`parseTimeToMinutes` prenait le **premier nombre**, puis multipliait par soixante dès qu'un `h`
+traînait **quelque part** dans la chaîne. « 55 min, plus 4 h de réfrigération » rendait
+**3 300 minutes**. « 30 min de chauffe » en rendait 1 800, parce que « chauffe » porte un `h`.
+Aucune erreur levée, un chiffre absurde affiché comme un temps de préparation.
+
+La règle est maintenant : **le premier nombre, l'unité qui le suit immédiatement, et rien
+d'autre**. Ce qui suit la première durée n'appartient pas à ce champ — c'est une autre durée, et
+elle a le sien. Unités reconnues : heures, jours, nuits (douze heures), minutes, secondes
+(arrondies à la minute, jamais zéro). Un nombre nu se lit en minutes.
+
+Nouvelle section `durations` dans `test-fixtures/cooklang_parsing.json` — 23 cas, rejoués par les
+deux suites. La fonction est exportée des deux côtés pour ça.
+
+#### Le temps de repos
+
+Un champ, `rest_time`, pour **toutes** les attentes : marinade, réfrigération, levée, repos de
+pâte. Un seul et non un par sorte — un livre écrit « laisser mariner une nuit au frais » sans dire
+si c'est du repos ou de la réfrigération, et deux champs qui se confondent se remplissent mal tous
+les deux.
+
+Séparé de `prep_time` parce qu'on ne le passe pas à cuisiner. C'est aussi la seule des trois durées
+qui change la **date** de préparation plutôt que la durée du geste : quatre heures au frais veulent
+dire « commencer la veille », et c'est ce que le planning avait besoin de savoir.
+
+| Couche | Ce qui a changé |
+|---|---|
+| Modèle | `RecipeTags.restTime`, écrit **inconditionnellement** — une clé absente ne pourrait plus effacer une valeur |
+| Parseurs | trois alias, `temps_repos` → `rest_time` → `repos`, dans le **même ordre** des deux côtés |
+| Fixture | `restTime` sur les cinq cas de recette + section `restTimeAliases` qui fige la **priorité** |
+| Prompts | schéma de la passe 1, prose de recherche, rendu pour la passe 2, métadonnée CookLang, raffinage |
+| Affichage | puce « Repos » dans `CooklangMetaRow`, ligne dans l'export PDF |
+| Édition | champ dans `RecipeMetaPanel`, contrôleur dans le mixin, six appelants |
+| Planning | attribut « 12 h de repos AVANT de servir » dans le prompt |
+
+**Aucune migration** : `data['rest_time'] as int?` rend `null` sur les documents existants.
+
+#### Trois défauts trouvés en chemin
+
+**Le raffinage comptait la marinade deux fois.** `refiner.ts` disait au modèle « prep_time = durée
+totale AVANT cuisson (épluchage, découpe, **marinade**, etc.) ». Ajouter `rest_time` sans retirer ce
+mot aurait fait compter douze heures aux deux endroits. La règle est réécrite : `prep_time` est le
+temps de **main à la pâte**, le temps où rien ne se fait a son propre champ.
+
+**Le planning écrivait des clés que personne ne lit.** `planning.ts` demandait au modèle
+`>> prepTime:` et `>> cookTime:` en camelCase ; les parseurs lisent `temps_preparation`,
+`temps_préparation`, `prep_time`. Les brouillons du planning sortaient donc **sans durées**, depuis
+toujours, sans qu'aucune erreur ne le dise.
+
+**La puce de durée de la fiche recette ne lisait qu'un alias sur trois.** Elle testait
+`meta['prep_time']` quand le prompt écrit `>> temps_préparation:` : elle ne s'affichait jamais sur
+une recette importée. `_dureeDepuisMeta` lit maintenant les mêmes alias que le parseur, dans le même
+ordre.
+
+#### Le minuteur `~{1-2%minutes}` s'affichait en deux morceaux
+
+`cooklangNormalizeStepTimers` enveloppe les durées écrites en texte brut. Pour savoir s'il était
+déjà dans un jeton, il ne regardait que le **caractère précédent** — dans `~{1-2%minutes}`, c'est un
+tiret, qui passait la garde. Il produisait `~{1-~{2%minutes}}`, et l'étape affichait une puce
+« 1-~{2 min » suivie d'une accolade orpheline.
+
+Le texte est désormais **découpé sur les jetons existants**, et seuls les morceaux entre eux sont
+normalisés. Une garde de position ne peut pas dire « je suis dans des accolades » ; un découpage,
+si.
+
+Et la fourchette se lit : `formatTimerRange` écrit « 1 à 2 » là où le livre imprime « 1-2 ». Un
+tiret entre deux nombres se lit « moins » avant de se lire « à ».
+
+**Tests** : `test/timer_display_test.dart`, seize cas.
+
+### v0.21.101 — technique
+
+#### Le reporting de coûts était figé depuis cinq jours
+
+`recordUsage` écrivait ses compteurs avec des **clés pointées** :
+
+```ts
+.set({ [`by_user.${uid}.cost_usd`]: FieldValue.increment(x) }, { merge: true })
+```
+
+`set()` du SDK Admin ne lit pas les points comme un chemin. Il a donc créé un champ **dont le nom
+contient des points**, à côté de la carte `by_user` que les écrans lisent. Les deux ont grandi dans
+le même document sans jamais se rencontrer : 618 champs plats qui suivaient chaque appel, et des
+cartes figées au dernier passage de `rebuildAiUsageMonthlyFn`.
+
+Constat au 23/08 sur `ai_usage_monthly/2026-08` :
+
+| | Coût | Appels |
+|---|---|---|
+| Carte imbriquée `by_user` (lue par les écrans) | 5,11 € | 1 041 |
+| Champs plats `by_user.…` (réalité) | 32,14 € | 2 354 |
+| `total_cost_usd` du même document | 38,66 € | 3 928 |
+
+`rebuilt_at` valait le 18/08 à 10:02. Aucune erreur nulle part : les trois chiffres étaient
+sincères, ils ne parlaient pas de la même chose. Le total du mois, lui, restait juste —
+`total_cost_usd` n'a pas de point dans son nom.
+
+**La correction.** `buildMonthlyAggregate()` (`ai/usage.ts`) construit des cartes imbriquées.
+`FieldValue.increment` fonctionne à n'importe quelle profondeur du moment que le chemin est fait
+d'objets. La fonction est **pure et exportée** pour la seule raison qui compte : la forme est ce qui
+s'est cassé, et une forme se teste sans base de données.
+
+**La réparation des mois passés** ne demande aucun code : `rebuildAiUsageMonthlyFn` écrit avec un
+`set()` **sans fusion**, qui remplace le document entier. Les 618 champs plats disparaissent d'
+eux-mêmes. Bouton « Reconstruire les agrégats », Admin → Coûts.
+
+**Tests** : `functions/src/tests/usageAggregate.test.ts`, six cas. Le premier interdit le point dans
+une clé **brute** — et non dans un chemin aplati, où un point est indiscernable de l'imbrication.
+C'est précisément la confusion qui a produit le défaut, et un test qui la reproduit ne prouve rien.
+
+`costsCallable` lit les mêmes cartes : tout le reporting par poste était figé de la même façon, et
+la même reconstruction le répare.
+
+#### Le tableau des dépenses se filtre et se trie
+
+Écran Admin → Dépense par utilisateur. Un filtre libre sur les noms — de compte **et** de poste : un
+compte est gardé s'il correspond lui-même ou si un de ses postes correspond, et seuls les postes qui
+correspondent s'affichent alors. Trois tris — coût, appels, nom — appliqués aux deux niveaux, avec
+inversion du sens. Décroissant par défaut : la première question posée à ce tableau est
+« qu'est-ce qui coûte le plus ».
+
+**Pas de tri par date, et ce n'est pas un oubli.** Une ligne de ce tableau est un compte ou un
+poste, agrégé sur toute la période ; aucune n'a de date propre. La date se choisit au-dessus, par
+les puces de période. Le jour où l'agrégat rendra une ligne par mois, le tri aura un sens.
+
+Le contrôleur du champ de filtre vit dans l'état de l'écran, pas dans le widget : construit dans
+`build`, il serait recréé à chaque frappe et le champ perdrait le focus après chaque lettre.
+
+### v0.21.100 — technique
+
+#### « (sans titre) » n'était pas un titre, et s'affichait comme tel
+
+`renderTranscriptionForTagging` (`gemini/tagging.ts`) écrivait
+`-- section : (sans titre)` pour signaler une section anonyme au modèle. Le prompt lui demande
+par ailleurs de reprendre les titres de section **caractère pour caractère**. Il a obéi : des
+recettes portent une section réellement nommée « (sans titre) », affichée dans le livre, dans
+l'éditeur d'ingrédients et dans la liste normalisée.
+
+Même famille que l'exemple rempli dans un prompt — tout ce qui ressemble à une valeur finit
+recopié. Le marqueur devient `-- section --` : il marque une frontière, il ne propose plus rien
+à reprendre.
+
+**Deux garde-fous**, parce que le modèle peut produire un titre vide sans qu'on lui en souffle un.
+`nettoyerTitreSection` vide six libellés qui ne nomment rien — `(sans titre)`, `sans titre`,
+`(aucun)`, `aucun`, `-`, `—`. `nettoyerSectionsCooklang` retire du CookLang les lignes
+`== … ==` dont le titre en fait partie ; une ligne qui commence par `==` sans être un en-tête est
+laissée intacte.
+
+**Les recettes déjà importées sont réparées à la lecture, pas en base.**
+`RecipeIngredient.normalizeIngredientCategory` (`features/recipes/domain/recipe.dart`) rend `null`
+pour ces mêmes libellés, et `RecipeIngredient.fromMap` l'applique. `cooklang_preview_model.dart`
+fait de même pour les en-têtes `== … ==`. Rien à migrer, et rien à perdre si une migration se
+passait mal.
+
+**Tests** : `functions/src/tests/pageIllustrations.test.ts` (neuf cas, dont un en-tête qui
+disparaît, un vrai titre qui reste, et une ligne `==` au milieu d'une phrase qu'on ne touche pas)
+et `test/recipe_model_test.dart` (dix cas, dont la réparation d'un document Firestore existant).
+
+### v0.21.99 — fonctionnel
+
+#### L'écran ne reste allumé que sur le téléphone Android
+
+La fiche recette empêche l'écran de s'éteindre pendant qu'on cuisine. Ce maintien est désormais
+**réservé à l'application Android**.
+
+C'est là qu'il sert : le téléphone posé sur le plan de travail, les mains dans la pâte. Sur un
+navigateur ou sur le client Windows, l'écran se comporte de nouveau comme celui de n'importe quelle
+page.
+
+Sur le web, la fonction ne marchait de toute façon pas : elle échouait à chaque ouverture de
+recette et remplissait les rapports d'erreurs sans jamais tenir l'écran allumé.
+
+### v0.21.99 — technique
+
+#### Le maintien de l'écran est réservé à l'APK Android
+
+`PlatformUtils.isAndroidApp` (nouveau) : `!kIsWeb && Platform.isAndroid`. L'ordre compte —
+`dart:io` n'existe pas sur le web, et `Platform.isAndroid` y lèverait ; le `&&` court-circuite
+avant d'y toucher. Même construction que `isMobile`. Distinct de `Platform.isAndroid` seul, qui
+répond vrai depuis un navigateur Android.
+
+`ScreenWakelock` prend un second paramètre injecté, `supported`, dont le défaut est
+`PlatformUtils.isAndroidApp`. Le garde est placé dans **`acquire()`** et non dans `_apply()` :
+hors Android le compteur ne bouge pas, donc `release()` et `refresh()` deviennent inertes
+d'eux-mêmes. Une seule ligne décide.
+
+**Injectable comme le basculement, et pour la même raison.** Sous `flutter test`, la plateforme
+hôte est Windows : un test écrit en dur aurait éteint le verrou dans tous les tests, qui seraient
+passés au vert sans plus rien vérifier. Les cinq cas existants passent `supported: true`, un
+sixième vérifie qu'avec `supported: false` la plateforme n'est jamais sollicitée.
+
+**Ce n'est pas une limite technique mais un choix.** Le plugin sait tenir l'écran sur Windows et,
+en principe, dans un navigateur. La fonctionnalité vise le téléphone posé sur le plan de travail.
+
+**Le web y était en plus cassé.** Son implémentation n'entrait pas dans le bundle : le fichier
+d'enregistrement des plugins web (`.dart_tool/flutter_build/…/web_plugin_registrant.dart`) date du
+17/08, la veille de l'ajout de `wakelock_plus`, et n'a jamais été régénéré. `main.dart.js` ne
+contient aucune trace de `assets/no_sleep.js`, seulement le nom du canal natif
+`dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle`. Chaque ouverture de
+recette envoyait donc l'appel vers un canal sans destinataire, d'où un `PlatformException`
+`channel-error` par session.
+
+Ce garde éteint la cause. **Le dossier de compilation reste périmé** : le prochain plugin web
+ajouté tombera dans le même trou, en silence. À corriger le jour où un plugin web s'ajoute.
+
+`wakelock_plus` reste dans `pubspec.yaml` — une dépendance Flutter n'est pas déclarable par
+plateforme. Elle n'est simplement plus appelée hors Android.
+
+### v0.21.98 — technique
+
+#### Le balisage rendait parfois une réponse vide
+
+`TAGGING_MAX_TOKENS` passe de **24 000 à 36 000** (`gemini/tagging.ts`).
+
+Sur un import réel, Claude Sonnet 5 a dépensé les 24 000 jetons **en réflexion** et n'a pas écrit
+un caractère : `stop_reason` à `max_tokens`, `outputTokens` à 24 000 exactement, texte de longueur
+zéro. Le message d'erreur qui en découlait — « tagAndNormalize: réponse illisible », causé par
+`JSON.parse("")` — décrivait le symptôme et non la cause.
+
+La reprise Cloud Tasks a sauvé l'import, mais de justesse : 21 693 jetons au second essai, dont
+environ 20 000 de réflexion pour 1 700 de réponse. Le plafond était donc dépassé une fois sur deux
+sur cette recette.
+
+**36 000 est un palier d'essai, pas une certitude.** La réflexion est en mode `adaptive` : elle
+choisit sa longueur, et rien ne dit encore si elle grandit avec le budget qu'on lui laisse. Si un
+appel cale de nouveau, le levier n'est pas le plafond mais la réflexion elle-même —
+`thinking: { type: "enabled", budget_tokens: N }` garantit alors `max_tokens - N` à la réponse. Le
+SDK impose `budget_tokens ≥ 1024` et strictement inférieur à `max_tokens`.
+
+**Le plafond borne, il ne réserve pas.** Une réponse courte se facture courte. Ce qui suit le
+plafond, c'est le prix d'un échec : 0,47 € à 36 000 contre 0,32 € à 24 000, pour rien dans les deux
+cas. À comparer aux 0,11 € de toute la chaîne d'illustrations d'une page.
+
+**La transcription reste à 24 000** : ses appels observés plafonnent à 6 450 jetons de sortie, soit
+un quart de son budget.
+
+**Deux manques constatés au passage, non corrigés à ce stade.** Une réponse vide n'est pas traitée
+comme une erreur par `callAnthropic` : le routeur ne bascule donc pas sur Gemini, qui aurait su
+répondre. Et le budget de réflexion réglable dans Admin → Moteur d'IA n'est passé qu'au client
+Gemini (`router.ts`, `resolveThinkingBudget`) : le curseur existe et ne fait rien pour Claude.
+
+### v0.21.97 — fonctionnel
+
+#### Un import peut rapporter les photos de la page
+
+L'écran d'import porte une case **« Extraire les illustrations »**. Cochée, l'import repère les
+photographies et les dessins imprimés sur la page, les découpe, et les attache à la recette. Il
+faut pour cela redresser la page, la remettre à l'endroit, et distinguer une photographie du texte
+qui l'entoure — l'application le fait maintenant seule.
+
+**L'import ne se met pas en attente.** La case part avec le fichier, le traitement se fait en
+arrière-plan, et l'écran redevient disponible aussitôt. On peut enchaîner dix pages sans attendre
+la première.
+
+**Une page de texte s'arrête tout de suite.** L'application regarde d'abord si la page porte quelque
+chose à prendre. Quand elle n'en porte pas — une page de recette sur deux — elle ne fait rien de
+plus. Décochée, la case laisse l'import exactement comme avant : les photographies sont comptées
+pour la relecture, aucune n'est extraite, et l'atelier manuel reste là pour les prendre à la main.
+
+**Le compte est donné même quand l'extraction rate.** L'écran de relecture continue d'annoncer
+« trois photos repérées sur cette page » et de renvoyer vers l'atelier manuel. C'est précisément le
+moment où ce chiffre sert : sans lui, une recette partirait sans image et rien ne dirait qu'il y en
+avait à prendre.
+
+#### Préférences, dans le menu
+
+Le menu du compte compte une entrée de plus : **Profil et compte · Préférences · Groupes familiaux ·
+Se déconnecter**.
+
+**Préférences** rassemble les réglages du compte : l'extraction des illustrations par défaut, et les
+préférences de planification — qui étaient enterrées dans l'écran de profil. Un réglage qu'on ne
+trouve pas est un réglage qui n'existe pas.
+
+Le réglage des illustrations est un **défaut**, pas un verrou. L'écran d'import s'ouvre dessus, et la
+case s'y change import par import sans que ce choix remonte au profil. Elle garde sa valeur d'un
+import au suivant, et retombe sur le défaut quand on revient sur l'écran.
+
+### v0.21.97 — technique
+
+#### Extraction des illustrations d'une page importée
+
+La chaîne mise au point dans le bac à sable (Admin → Bac à sable → Importation d'image) est portée
+dans l'import de livre. Elle est **facultative** et **asynchrone** : cochée à l'import, elle
+s'exécute dans `recipeProcessor`, et l'écran d'import est rendu dès la mise en file — enchaîner dix
+pages n'attend jamais la fin du traitement de la première.
+
+**Le module — `functions/src/illustrations/`**
+
+| Fichier | Rôle |
+|---|---|
+| `prompts.ts` | Les cinq prompts, **copiés** du bac à sable, mot pour mot |
+| `sheet.ts` | La planche 2×2 des quatre orientations, composée avec Sharp |
+| `extract.ts` | La chaîne, de la photo brute aux découpes |
+| `ledger.ts` | Le journal en bloc : une ligne par étape, avec son coût, puis le total |
+| `store.ts` | Publication sous `illustrations/{uid}/` et bilan de relecture |
+
+**Ce qui part au modèle, et non seulement le prompt.** Les quatre textes de `prompts.ts` sont
+copiés du bac à sable au caractère près. Le message envoyé, lui, ne l'était pas : le bac à sable
+préfixe aux prompts de cadrage et de zones la ligne « L'image mesure X pixels de large et Y de
+haut. », et « Ce gros plan mesure … » pour la passe des coins. Le portage l'avait perdue, alors
+que le prompt des coins demande toujours de placer les sommets « au pixel près ». `sizeHeader()`
+la reconstruit à l'identique, et `test/pageIllustrations.test.ts` verrouille la phrase.
+L'orientation n'a jamais eu d'en-tête, des deux côtés : on y demande de reconnaître une vignette,
+pas de mesurer.
+
+**Le côté long envoyé au modèle est de 2048 px**, la valeur avec laquelle la chaîne a été mise au
+point. Le portage l'avait ramené à 1600 sans raison.
+
+**Les six étapes**
+
+1. **Pré-contrôle** (`page_illustrations_precheck`) — un appel sur la photo brute : cette page
+   porte-t-elle une photographie, un dessin, un schéma ? Non → la chaîne s'arrête, et les trois
+   postes suivants n'ont pas lieu. Le cas est fréquent : une page de recette sur deux ne porte
+   aucune image. C'est le seul poste dont on peut dire s'il rapporte plus qu'il ne coûte, et c'est
+   pour ça qu'il est compté à part.
+2. **Cadrage** (`page_illustrations_frame`, un à deux appels) — une **boîte droite** d'abord, puis
+   les **quatre coins** sur un gros plan de cette boîte (marge de 25 %). Deux questions et non une :
+   un modèle encadre bien et place mal des sommets libres. Sous 60 % de confiance, la passe des
+   coins est rejouée une fois et la réponse la mieux assumée gagne — les cadrages justes s'annoncent
+   au-dessus de 80 %, celui qui ne l'était pas à 42 %, donc une page facile ne repasse jamais par là.
+3. **Mise à plat** — `warpQuadrilateral` (`gemini/perspective.ts`), plafond porté à **4000 px** par
+   son nouvel argument `options`. Chiffre mesuré : à 2048 px, une double page sort à 650 px de large
+   et son corps de texte à cinq pixels de haut ; l'étape 4 n'y lit plus rien. Les coins subissent
+   d'abord une homothétie de **+2 %** — un liseré de décor ne gêne personne, un bord de photo rogné
+   est perdu. `isFullFrame` **saute cette étape** quand le cadre couvre déjà toute l'image, à
+   quinze millièmes près : un scan à plat ou une capture d'écran n'a rien à redresser, et
+   ré-échantillonner chaque pixel lui coûterait de la netteté pour rien.
+4. **Remise à l'endroit** (`page_illustrations_orientation`) — le programme compose une **planche
+   2×2** des quatre rotations, marquées A/B/C/D, et demande « dans laquelle sais-tu lire ». La
+   question précédente — « de combien de degrés tourner cette page » — recevait « zéro » à 98 % de
+   confiance devant une page couchée. Le programme applique le quart de tour ; le serveur ne connaît
+   même pas les degrés, il rend une lettre. Les glyphes sont des matrices 5 × 7 agrandies, et non du
+   texte rendu : le conteneur des Cloud Functions n'a aucune police installée.
+5. **Zones** (`page_illustrations_regions`) — des rectangles droits, la page étant déjà à plat et à
+   l'endroit. **Une zone = une photographie** : deux photos qui se touchent bord à bord valent deux
+   zones, une grande scène continue en vaut une. Le champ `bounded_by` est obligatoire et rend la
+   coupure vérifiable — un modèle qui scinde à tort une photo ne sait pas nommer ce qui sépare les
+   deux moitiés.
+6. **Découpe** — un simple recadrage sur la page pleine résolution. Rien n'est ré-échantillonné :
+   chaque pixel gardé est celui d'origine.
+
+**Le coût, en euros, en un bloc**
+
+`IllustrationLedger` écrit **une ligne par étape**, au fil de l'eau, toutes sous le même
+`correlationId` (`<corrélation du job>_p<numéro de page>`) et ordonnées par `stepIndex`. La ligne de
+clôture porte `stepIndex: 0` — elle se trie donc en tête — et donne le **total** du bloc, le nombre
+d'illustrations, le nombre d'appels et la durée. Chaque ligne porte `costEur`, `costUsd`, les jetons
+et l'`observed` du modèle.
+
+Aucun montant n'est inventé. Sans taux de change (`app_config/currency_rate`), la ligne affiche des
+**dollars** ; sans tarif pour le modèle, elle affiche « montant inconnu » et le total compte les
+étapes non chiffrées. Un coût manquant se voit, un coût faux ne se voit pas.
+
+**Le branchement — `pipeline/recipeProcessor.ts`, étape `design`**
+
+Deux chemins qui ne se cumulent jamais. **Coché** : la chaîne complète, jusqu'à cinq appels par page,
+et des images attachées à la recette. **Décoché** : `countPageImages`, un appel de **pré-contrôle**
+par page, qui compte les images sans rien extraire.
+
+Ce second chemin appelait d'abord `detectIllustrationRegions` et n'en gardait que `boxes.length`.
+Deux prompts posaient donc la même question — « cette page porte-t-elle des images, et combien » —,
+et celui-là était le plus lourd : il décrit un repère de coordonnées, des règles de cadrage et un
+format de boîte dont l'appelant ne faisait rien. Le pré-contrôle le remplace, et
+`detectIllustrationRegions` garde son vrai rôle : rendre des **boîtes à découper** pour l'atelier
+manuel (`detectAndCropIllustrationsFn`), qui, lui, en a besoin. Le poste `detect_illustrations` sort
+donc du pipeline et ne sert plus que la callable.
+
+**Et il est seul.** Quatre autres postes vivaient dans `gemini/detector.ts` : `detect_main_photo`,
+un repli qui ne partait plus depuis juillet, et la cascade `detect_grid_dims` →
+`detect_illustrations_crop` → `detect_illustrations_grid`, qui cherchait une grille de vignettes
+fusionnée dès que le modèle rendait deux à quatre zones dont une dépassait le quart de la page. Les
+compteurs mensuels ont tranché : cascade partie 109 fois en quatre mois, aboutie 3 fois à la
+première approche et 13 fois à la deuxième, le reste allant jusqu'au repli dont le résultat était
+jeté s'il ne rendait pas plus d'une zone. Les quatre sont retirés du code et de `ROUTABLE_FEATURES`,
+et **restent** au catalogue comptable.
+
+La callable renvoie désormais les **découpes**, pas les boîtes. Elle redresse la perspective
+(`warpQuadrilateral`) puis passe par `cropAndSelectIllustrations`, dont les trois filtres locaux
+écartent ce qui n'est pas une photographie. Le client lisait les boîtes et refaisait la découpe au
+rectangle avec le paquet Dart `image` : le redressement était calculé, facturé, puis jeté, et chaque
+illustration gardait ses deux coins de papier et de table.
+
+**`illustration_report.detectees` dit ce que la page PORTE, jamais ce qu'on en a tiré.** Les zones
+repérées à l'étape 5 quand la chaîne est allée au bout, le compte du pré-contrôle quand elle s'est
+arrêtée avant. C'est ce qui permet au bandeau de relecture de rester utile après un échec : « trois
+photos repérées, à extraire à la main » est exactement ce qu'il faut dire à ce moment-là. Un compte
+absent ou aberrant sur une page qui porte des images vaut 1 — zéro ferait dire au bandeau qu'il n'y
+a rien à prendre.
+
+`illustration_report` prend enfin des valeurs non nulles sur `retenues` et `publiees` : depuis le
+retrait de l'ancienne extraction automatique, `image_urls` était rempli d'une liste déclarée et
+jamais alimentée.
+
+**Le bac à sable reste en place, et diverge**
+
+`functions/src/sandbox/` porte toujours sa version. Les prompts ont été **copiés**, pas partagés :
+partagés, un essai raté du bac à sable changerait le comportement de la production. L'écran de
+l'expérience porte une bannière qui le dit, et le sous-titre du registre aussi — l'erreur à empêcher
+est de régler un seuil ici et de croire que l'application en profite.
+
+**Trois endroits, comme tout poste d'IA** : `ctx.feature` de l'appel, `ROUTABLE_FEATURES`
+(`callable/aiRoutingCallable.ts`, groupe « Extraction des illustrations d'une page »), et `feature_catalog.dart`
+(`kFeatureProcess` + `kFeatureCatalog`, processus « Illustrations d'une page »).
+
+## 2026-08-22
+
+### v0.21.60 — fonctionnel
+
+#### L'atelier s'ouvrait sur un outil déjà choisi
+
+« Cadre » était sélectionné dès l'ouverture. Le premier geste possible était donc de cliquer sur une puce déjà active, qui ne faisait rien.
+
+L'écran s'ouvre maintenant sans panneau. L'image d'abord, les outils quand on les demande.
+
+#### « Cadre » arme le recadrage
+
+La puce ouvrait un panneau, qui offrait un bouton « Recadrer ». Deux clics pour un geste. Et le premier ne montrait rien, puisque la puce était déjà sélectionnée.
+
+La puce arme maintenant le cadre directement. La désélectionner l'abandonne : le même geste, dans l'autre sens.
+
+Le bouton « Recadrer » reste dans le mode recadrage seul, qui n'a pas de puces. Là, c'est lui qui arme.
+
+#### La coche gênait l'icône
+
+Les puces affichaient une coche à la sélection, par-dessus leur propre icône. Deux signes pour la même information, et le plus utile des deux caché.
+
+La coche est retirée. Le fond coloré suffit à dire ce qui est actif.
+
+### v0.21.59 — fonctionnel
+
+#### Le bas de l'onglet Photos était hors d'atteinte
+
+Sur téléphone, l'état vide dépasse la hauteur disponible : icône, titre, deux lignes de texte et deux boutons. Le bas passait sous la barre de navigation, et rien ne défilait.
+
+Les boutons existaient et étaient cliquables. Ils n'étaient simplement pas atteignables.
+
+Le bloc est maintenant dans un `SingleChildScrollView`, avec un `ConstrainedBox(minHeight)` qui garde le centrage quand la place suffit.
+
+#### « Cadrez-les vous-même » sans dire par où
+
+Le message annonçait trois photos sur la page et invitait à les cadrer soi-même. Mais « Ajouter » ouvre la galerie du téléphone, pas le scan du livre. Une consigne sans porte.
+
+Un bouton **Cadrer depuis le scan** ouvre l'atelier de retouche directement sur la page scannée. Il apparaît dans la barre d'actions et, sur l'état vide, en action principale — devant « Ajouter une photo », puisque c'est là que sont les photos annoncées.
+
+Le chemin existait déjà dans le code. Son bouton était parti avec l'extraction automatique, alors que ce n'est pas la même chose : l'extraction décidait du cadrage, celui-ci le laisse à qui regarde la page.
+
+Le bouton ne s'affiche pas si le scan est un PDF : l'atelier ne l'ouvrirait pas, et le clic échouerait sans rien dire.
+
+## 2026-08-21
+
+### v0.21.58 — fonctionnel
+
+#### La note se corrige
+
+Elle était transportée sans être modifiable. Le motif : elle vient du livre, la retoucher inviterait à la réécrire.
+
+Le motif était faux. La note ne vient pas du livre. Elle est **déduite** de la ligne du livre, par un découpage qui se trompe. « concassées » pour des grains de coriandre, « mélangée » sans son complément. Une valeur devinée qu'on ne peut pas corriger est pire qu'un champ vide.
+
+L'éditeur d'ingrédients porte donc une ligne de plus sous chaque ingrédient. Sans bordure, en italique : c'est une légende, pas un champ de formulaire. Elle est toujours visible, même vide — cet écran sert à confronter la recette à la page, et ce qui doit se corriger doit d'abord se voir.
+
+La flèche à gauche porte la ligne du livre en infobulle. De quoi vérifier la précision sans rouvrir le livre.
+
+#### Les astérisques disparaissent
+
+La note se lisait en renvoi, à la façon des livres de cuisine : un astérisque sur la puce, la note en bas du groupe. Trois défauts à l'usage.
+
+Les marqueurs s'empilent — `*`, `**`, `***`, `****` — et deviennent illisibles au quatrième. Ils repartent de zéro à chaque section, si bien qu'un même astérisque désigne deux choses sur la même page. Et lire la recette demande un aller-retour entre la puce et le bas du bloc, pour quatre mots.
+
+Les notes sont courtes. « concassés », « hachées », « avec la peau ». Elles tiennent sous le libellé, dans la puce, en plus petit et en italique.
+
+Le bloc « À savoir sur les ingrédients » est retiré. Il répétait ce que la puce dit maintenant.
+
+### v0.21.57 — fonctionnel
+
+#### « à 3 » n'est pas une précision du livre
+
+Le miel portait une note : `à 3`. Reste de « 2 à 3 cuil. à café de miel », un intervalle dont le parseur n'a gardé que la borne basse — le modèle a rendu la queue comme précision. Elle ne précise rien, et une note qui ne dit rien fait douter de celles qui disent quelque chose.
+
+Une note doit désormais porter **au moins un mot de trois lettres**, sinon elle est écartée avant même le calcul de repli. Le seuil est d'un mot et non de deux : « concassés », « hachées », « dégermées » tiennent en un mot et disent l'essentiel. C'est le calcul — plus exigeant parce qu'il devine — qui en réclame deux.
+
+#### Ce que la moutarde et le miel ne rendront pas
+
+Le livre écrit une seule ligne : « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 à 3 cuil. à café de miel ». La transcription en fait **deux entrées** — et c'est juste, ce sont deux ingrédients, deux quantités, deux entrées de courses. Mais la relation entre eux se coupe au découpage : la moutarde garde « mélangée », le miel ne garde rien.
+
+Ce n'est pas un défaut d'affichage, et aucune règle de lecture ne le répare : l'information n'existe plus dans la ligne rattachée. La rendre demanderait que la transcription conserve la ligne entière **en plus** des deux entrées. C'est identifié, ce n'est pas fait.
+
+### v0.21.56 — fonctionnel
+
+#### La note était écrite, et jetée à l'ouverture
+
+Trois versions à la chercher dans l'import, dans le prompt, dans le balisage. Elle y était. Le document `recipes/2XPkj61VmU4l07Xeh99k` porte les seize ingrédients, seize `source` et six `note` :
+
+```
+filet de saumon  1.8 kg   note: "avec la peau, mais écaillée"
+grains de poivre 1.5 c.s. note: "concassés"
+moutarde         2   c.c. note: "mélangée"
+```
+
+Elle se perdait au dernier mètre. `_dedupeStructuredIngredients`, appelée par `Recipe.fromFirestore`, **reconstruit** chaque ingrédient pour n'en garder que la version rognée — et recopiait quatre champs sur six. `note` et `source` tombaient là, entre Firestore et l'écran, sans erreur et sans trace.
+
+D'où le bloc « À savoir » invisible : la liste qu'il consulte n'avait plus rien à dire. Et d'où la ligne de constat qui annonçait *« 0 avec une précision du livre »* — elle lisait le même objet amputé. Cette ligne a fait son travail : la question était insoluble en raisonnement, elle s'est tranchée d'un chiffre. Elle est retirée.
+
+La leçon dépasse ce cas : **une recopie champ par champ est une liste qui vieillit mal**. Tout champ ajouté au modèle et oublié dans une de ces reconstructions disparaît en silence. `test/recipe_model_test.dart` verrouille la traversée.
+
+#### Une consigne n'est pas une alerte
+
+Le bandeau portait un triangle orange sur « 3 photos repérées — à extraire à la main ». Le contrôle n'avait pourtant **rien** à redire du texte : c'était une consigne, présentée comme une faute de lecture. Elle s'affiche désormais en bleu, sous une icône de photothèque, titrée « Photos de cette page ». Confondre les deux apprend à ignorer les vraies alertes.
+
+### v0.21.55 — fonctionnel
+
+#### Le bandeau prenait toute la place
+
+Il s'ouvrait en grand, au motif qu'une réserve qu'il faut aller chercher n'est pas une réserve. C'était juste tant qu'il tenait en trois lignes. Il porte depuis le compte des photos, l'état de la donnée, cinq constats et leurs puces : déplié, il occupait l'écran entier **avant qu'on ait vu un ingrédient**.
+
+Il part maintenant replié, et son titre porte le signal : *« Écart constaté avec la page du livre · 4 points »*. Le nombre décide si l'on ouvre — « écart constaté » seul ne distingue pas un titre de section raccourci, qu'on peut ignorer, d'une recette amputée.
+
+#### Un reproche à tort de moins
+
+> • miel (ingrédient 10) : cuil, melangee
+
+Faux positif. Le miel est nommé en **fin** de sa ligne — « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » — et les mots réclamés appartiennent à la moutarde, qui les porte déjà dans sa propre note.
+
+Le contrôle comparait **tous** les mots de la ligne. Il ne regarde plus que ce qui **suit** l'ingrédient, exactement comme la déduction de la note : les deux partagent désormais la même fonction, et ne peuvent plus diverger. Un reproche à tort finit par faire ignorer le bandeau entier — y compris les constats qui comptent.
+
+### v0.21.54 — fonctionnel
+
+#### La donnée se lit à l'écran, au lieu de se raisonner
+
+Trois versions passées à chercher pourquoi une note ne s'affichait pas, **sans jamais pouvoir dire si elle existait**. Le code l'écrit — on peut le lire ligne à ligne — mais personne ne pouvait le constater depuis l'application, et un raisonnement qu'on ne peut pas confronter à la donnée finit par tourner en rond.
+
+Le bandeau de relecture porte désormais une ligne de constat :
+
+> *Sur 12 ingrédients : 2 avec une précision du livre, 12 avec la ligne d'origine.*
+
+Si elle annonce zéro, la chaîne d'import est en cause. Si elle annonce deux et qu'on ne voit rien, c'est l'affichage. Une question tranchée d'un coup d'œil, au lieu d'un aller-retour.
+
+#### « À savoir sur les ingrédients »
+
+Ce que le livre dit en plus des quantités est rassemblé sous la liste, dans un bloc à part :
+
+> **Filet de saumon** avec la peau mais écaillée
+> **Moutarde à l'ancienne** mélangée à 2 cuil. à café de miel
+
+La quantité se compte, la précision se lit — et elle se lit **avant** d'aller acheter, pas au milieu de la recette. Le discriminant est sans ambiguïté : un ingrédient dont le champ `note` n'est pas vide. Rien n'est déduit à l'affichage, rien n'est demandé à un modèle — la note a été calculée à l'import, depuis la ligne du livre.
+
+Le bloc disparaît quand aucun ingrédient n'en porte : une rubrique vide occupe la place et apprend à ne plus regarder.
+
+### v0.21.53 — fonctionnel
+
+#### « Extraction des illustrations » annonçait un travail supprimé
+
+L'étape s'affichait encore sous ce nom alors que l'extraction avait été retirée. Vérification faite, **aucune extraction ne subsistait** : la liste d'images de l'import est une constante vide, et tout ce qui la suivait tournait à vide. C'était l'étiquette qui mentait — mais une étiquette qui annonce un travail supprimé fait attendre un résultat qui ne viendra pas, et c'est une raison suffisante de douter du reste.
+
+Elle dit maintenant ce qui se passe : **« Recherche de photos sur la page… »**.
+
+#### Et le code qui la faisait croire est parti
+
+Trois morceaux tournaient encore à vide, et le prochain lecteur y aurait vu la preuve qu'une extraction se produit :
+
+- la **copie des illustrations** pour la seconde recette d'une même page — un soin réel tant que deux recettes ne pouvaient pas partager un objet Storage sans que la suppression de l'une vide l'autre, sans objet depuis que l'import ne publie rien ;
+- la mise en quarantaine et la génération de vignettes, déjà retirées ;
+- les imports qui les servaient.
+
+Du code mort n'est pas neutre quand il raconte une histoire fausse.
+
+### v0.21.52 — fonctionnel
+
+#### La note manquait parce qu'elle était demandée au modèle
+
+Trois versions à chercher au mauvais endroit. La cause est une erreur de conception, et elle tient en une phrase : **la ligne du livre était demandée au modèle.**
+
+La note se déduit de cette ligne — c'est ce que la page dit après avoir nommé l'aliment et sa quantité. Mais le champ qui la portait, `brut`, faisait partie de ce que la passe de balisage devait **recopier dans sa réponse**. Quand elle ne le faisait pas — et elle ne le faisait pas toujours — la ligne était perdue, la note ne pouvait plus s'en déduire, et l'écran n'avait rien à montrer. Aucune erreur, aucun signal : un champ vide, indistinguable d'une ligne qui ne disait rien.
+
+**Or cette ligne, nous l'avons déjà : c'est la transcription.** La demander au modèle était l'erreur. Elle est désormais rattachée par le code, et la note calculée ensuite.
+
+Deux précautions, parce qu'un rattachement faux serait pire que l'absence :
+
+- **Le rang est vérifié avant d'être cru.** Des comptes égaux ne prouvent pas l'alignement : une ligne qui nomme deux aliments et une autre que le modèle a fondue donnent le même total sans le même ordre. L'aliment doit se retrouver dans la ligne qu'on s'apprête à lui attribuer — sans quoi la moutarde héritait de la ligne du sel, avec une note plausible et personne pour s'en douter.
+- **Un nom que deux lignes réclament ne s'attache à aucune.** « Aneth » pour le saumon et « aneth » pour la sauce ne se départagent pas par le nom seul. Une note attachée au mauvais ingrédient serait pire qu'aucune note, parce qu'on la croirait.
+
+La note proposée par le modèle reste prioritaire quand il en fait une : il sait reformuler un lien — « mélangée au miel » — là où la soustraction rend une bribe. Mais son silence ne fait plus perdre le texte.
+
+### v0.21.51 — fonctionnel
+
+#### Le modèle Claude se choisit poste par poste
+
+Le **fournisseur** se choisissait poste par poste ; le **modèle**, non. Basculer un poste sur Claude imposait donc le même modèle à tous les autres — le mauvais grain, parce que les postes n'ont pas les mêmes exigences.
+
+Transcrire une page de livre demande de la précision et se paie à la page. Estimer les calories d'une carotte est un rappel de connaissances, répété quinze fois par recette. Un seul modèle pour les deux, c'était soit payer Opus pour la carotte, soit lire le livre avec Haiku.
+
+**Admin → Moteur d'IA** propose désormais, sous chaque poste routé vers Claude, le choix entre **Opus 5**, **Sonnet 5** et **Haiku 4.5** — avec, sous le sélecteur, ce à quoi chacun sert. Le choix ne se devine pas depuis un identifiant technique, et le mauvais choix ne se voit ni dans un sens ni dans l'autre : un modèle trop petit rend une page abîmée qui a l'air correcte, un modèle trop grand rend une facture qui a l'air normale.
+
+Trois décisions dans le détail :
+
+- **Le sélecteur n'apparaît que sous un poste effectivement routé vers Claude.** L'afficher inactif ailleurs ferait croire qu'il manque un réglage, alors qu'il manque une bascule.
+- **Un poste réglé sur le modèle par défaut n'écrit rien.** Garder l'exception figerait ce poste le jour où le défaut change, sans que personne s'en souvienne. Le défaut porte d'ailleurs la mention « défaut » : la différence entre *ce poste suit le réglage général* et *ce poste a choisi la même chose* compte le jour où le général bouge.
+- **Seuls les modèles de la grille tarifaire sont acceptés**, à l'écriture comme à l'écran. Un identifiant hors grille se facturerait sans montant et gonflerait `total_unpriced_calls` — un coût invisible, exactement ce que ce projet refuse. Un test le vérifie modèle par modèle.
+
+### v0.21.50 — fonctionnel
+
+#### La ligne du livre suit l'ingrédient jusqu'en base
+
+Trois tours de recherche pour la même note : d'abord dans l'affichage, puis dans le modèle, puis dans la persistance. À chaque fois, la même impasse — **une note vide était indistinguable d'une ligne qui ne disait rien de plus.**
+
+La ligne du livre est désormais stockée avec l'ingrédient (`source`). Elle n'est pas calculée, elle est la pièce à conviction : la note s'en déduit, et quand la note manque, c'est elle qui dit si le livre avait quelque chose à ajouter.
+
+Conséquence immédiate à l'écran : **l'éditeur affiche la note si elle existe, la ligne du livre sinon.** Il ne peut plus rien y avoir de vide sans qu'on sache pourquoi.
+
+#### « Extraire » quitte l'onglet Photos
+
+Les deux boutons appelaient la même détection que le pipeline d'import, avec les mêmes résultats : un cadrage qui rend le bureau avec le plat. Un bouton qui ne tient pas sa promesse coûte plus qu'il ne rend — on le presse, on attend, on jette.
+
+L'import dit combien de photos la page porte ; « Ajouter » et l'atelier de retouche font le reste, en dix secondes et sans surprise.
+
+#### Deux réparations d'écran
+
+- **Le conseil renvoyait vers « Raffiner », qui n'existe pas.** La fonction s'appelle « Améliorer » et ne fait que de la mise en forme CookLang : elle ne relance ni la lecture de la page ni le balisage. Envoyer quelqu'un vers un bouton qui ne répare pas ce qu'on lui reproche, c'est lui faire perdre son temps deux fois. Le bandeau dit maintenant : *corrigez à la main ci-dessous, en confrontant à la page du livre.*
+- **Sur mobile, les dernières actions de l'onglet Photos sortaient de l'écran.** Elles existaient, elles étaient cliquables, elles n'étaient simplement pas visibles — la pire des trois situations, parce qu'on ne cherche pas ce qu'on ne soupçonne pas. Elles passent à la ligne.
+
+### v0.21.49 — fonctionnel
+
+#### Deux écrans qui se contredisaient sur le même scan
+
+Le bandeau annonçait « 5 photos repérées », l'onglet Photos affichait « Aucune photo détectée ». Deux affirmations contraires, sur la même page.
+
+Ils ne parlaient pas de la même chose : l'onglet constatait qu'aucune image n'était **attachée**, et en concluait qu'il n'y en avait pas à prendre. Depuis le retrait de l'extraction automatique, les deux n'ont plus rien à voir — l'import **repère**, il n'attache plus. L'onglet lit maintenant le même compte que le bandeau, et dit quoi faire : *le scan en contient, cadrez-les vous-même depuis l'original*.
+
+#### Deux faux positifs dans les écarts
+
+- **« Conseil du chef » signalé comme section manquante alors qu'il était là.** L'inventaire du modèle appelle « section » tout ce qui porte un intertitre sur la page — y compris ce qui est transcrit comme une **note**. Ne comparer qu'aux sections faisait passer chaque note pour une section perdue : un reproche à tort, sur ce qui était précisément présent.
+- **« SAUCE À L'ANETH ET À LA MOUTARDE » signalée comme titre raccourci.** Un livre groupe souvent ses **ingrédients** sous un intertitre sans que la méthode, elle, ait une partie séparée. Exiger ce titre dans le texte balisé reprochait au balisage une section que la page ne porte pas dans ses étapes — un faux positif systématique sur toute recette dont la liste est plus découpée que la méthode. Seules les sections d'**étapes** sont désormais attendues.
+
+Un reproche à tort coûte plus cher qu'une absence de contrôle : il apprend à ne plus lire le bandeau.
+
+#### Et la note, enfin : elle est bien produite
+
+Vérifiée de bout en bout sur les cas réels — « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » donne bien *mélangée à 2 cuil. à café de miel*, et « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » donne *avec la peau mais écaillée*. Le journal d'enregistrement compte désormais **combien d'ingrédients portent une note** : cherchée deux fois au mauvais endroit — dans l'affichage, puis dans le modèle — faute de savoir si elle existait.
+
+### v0.21.48 — fonctionnel
+
+#### Pourquoi votre recette est repartie sans balise
+
+Le bandeau disait tout. La page portait **une** ligne : « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel ». La transcription l'a **coupée en deux** — ingrédient 9 et ingrédient 10 — tandis que le balisage a gardé la ligne **entière** dans son champ d'origine.
+
+Aucune des deux moitiés n'était égale à l'ensemble. Le rapprochement, qui exigeait l'égalité, a conclu que les deux lignes n'avaient pas d'ingrédient correspondant. Verdict : rupture, et tout le balisage jeté — alors que les deux ingrédients étaient bel et bien là.
+
+Deux défauts, deux corrections :
+
+- **Le rapprochement tolère la coupure et la fusion.** Une ligne est couverte dès qu'une entrée la contient, ou qu'elle la contient.
+- **Et il ne rompt plus.** Ce contrôle rapproche des **chaînes de caractères** : il constate une correspondance manquante, pas une perte de contenu. La perte réelle est prouvée par un autre — celui qui compare les mots de la page à ceux du texte balisé. C'est lui qui a le droit de jeter, parce qu'il démontre. Le premier signale, et laisse relire.
+
+#### L'extraction automatique des images est retirée
+
+Elle enchaînait détection, découpage, trois filtres de qualité, correction de perspective, modération Cloud Vision et publication — et rendait des images que personne ne gardait. Chaque maillon a été corrigé tour à tour : l'orientation EXIF, le seuil de subdivision, le cadrage, le repère de coordonnées, l'homographie. Le résultat restait en deçà de ce qu'un recadrage à la main donne en dix secondes.
+
+**Ce qui reste vaut, lui, son appel : savoir qu'il y a une photo.** Sans cette ligne, une recette part sans image et rien ne dit qu'il y en avait une à prendre. L'écran de relecture l'annonce :
+
+> *2 photos repérées sur cette page — à extraire à la main depuis l'onglet Photos.*
+
+Et quand la détection elle-même échoue, elle le dit — c'est une autre situation, qui appelle une autre réaction.
+
+L'atelier de retouche manuel, qui n'a jamais démérité, fait le reste. Le pipeline d'import perd au passage le découpage, les filtres, la modération de découpes et la génération de vignettes : moins de code, moins d'appels, et une promesse qu'on tient.
+
+### v0.21.47 — fonctionnel
+
+#### Un constat dit toujours OÙ regarder
+
+Une seule ligne portait sa position — « peau en dessous **(étape 1)** » — et c'est celle qui servait. Un écart sans emplacement oblige à relire la page entière pour le retrouver, et une vérification coûteuse ne se fait pas. C'est devenu la règle, partout :
+
+| Constat | Ce qu'il dit maintenant |
+|---|---|
+| Ligne d'ingrédient perdue | « 1 bouquet d'aneth » (ingrédient 3, Pour le saumon) — 1 sur 2 attendue(s) |
+| Précision perdue | filet de saumon (ingrédient 1, Pour le saumon) : peau, écaillée |
+| Note perdue | Le conseil du chef — « Se conserve trois jours au frais. » |
+| Écart d'étapes | Pour le saumon : 3 étape(s) sur la page — section par section |
+| Mot mal lu | le modèle doit désormais terminer chaque doute par sa position : *(étape 3)*, *(ingrédient 2)*, *(titre de section)*… |
+
+#### Et les accents reviennent
+
+Le titre de section s'affichait sous sa forme **comparable** — « sauce a l aneth et a la moutarde », qu'on lit comme une faute de frappe et non comme le titre du livre. Cette forme est mise à plat pour que « POUR LA SAUCE » et « Pour la sauce » se reconnaissent : elle sert à **comparer**, jamais à afficher. Le message rend maintenant le titre tel que le livre l'écrit.
+
+### v0.21.46 — fonctionnel
+
+#### La note d'un ingrédient ne dépend plus du modèle : elle se calcule
+
+Constater qu'une précision manquait ne suffisait pas. « Avec la peau mais écaillée » est écrit dans le livre, et devait finir dans la recette — signaler son absence, c'était s'accommoder de la perte.
+
+**Or elle se calcule.** C'est ce que la ligne dit après avoir nommé l'aliment et sa quantité : une soustraction, pas un jugement, et une soustraction ne se demande pas à un modèle.
+
+| Ligne du livre | Ingrédient | Note déduite |
+|---|---|---|
+| 1 filet de saumon de 1,8 kg avec la peau mais écaillée | filet de saumon | avec la peau mais écaillée |
+| 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel | moutarde à l'ancienne | mélangée à 2 cuil. à café de miel |
+| 250 g de porc haché | porc haché | *(aucune, et c'est le cas normal)* |
+
+**Ce que la fonction ne fait pas : inventer.** Chaque mot rendu vient de la ligne, dans son ordre — un test le vérifie mot à mot. Une note inventée serait pire que pas de note, parce qu'on la croirait.
+
+**La proposition du modèle reste prioritaire** quand il en fait une : il sait reformuler un lien — « mélangée au miel » — là où la soustraction rend une bribe. Mais son silence ne fait plus perdre le texte.
+
+Deux détails qui décident du résultat : on prend ce qui **suit** le dernier élément identifié, et non ce qui reste après découpage — recoller les morceaux rendait « 1 de avec la peau mais écaillée », les trous du milieu se refermant sur des articles orphelins. Et la ponctuation n'est retirée qu'aux bords : « cuil. à café » garde son point, parce qu'une note se lit comme le livre l'écrit.
+
+### v0.21.45 — fonctionnel
+
+#### Les illustrations sont redressées, pas seulement découpées
+
+Une page de livre photographiée à main levée n'est pas un rectangle, c'est un **trapèze**. Un cadre rectangulaire, aussi serré soit-il, garde forcément deux coins de papier et de table : c'est une limite de la forme, qu'aucun prompt ne lève. Seule une projection l'efface.
+
+- **Le détecteur rend désormais les quatre coins** de chaque photographie — haut-gauche, haut-droit, bas-droit, bas-gauche — et non un rectangle englobant. La consigne est explicite : *ne redresse rien toi-même, donne les coins tels que tu les VOIS, de travers s'ils le sont ; c'est le programme qui redressera.*
+- **La correction de perspective vit maintenant côté serveur** (`gemini/perspective.ts`) : le même algorithme que l'atelier de retouche manuel — normalisation de Hartley, résolution du système 8×8, interpolation bilinéaire. La chaîne automatique rend enfin ce que l'outil manuel rendait.
+- **Pourquoi une homographie et pas une rotation** : une rotation redresse l'inclinaison mais laisse la déformation en trapèze, celle qui vient de photographier une page depuis un angle. Les deux bords opposés n'ont alors pas la même longueur, et seule une projection les égalise.
+- **Une zone déjà droite n'est pas redressée** — un scan à plat, une capture d'écran. La transformation ne changerait rien de visible, et le découpage préserve la netteté d'origine sans ré-échantillonner.
+- **Les deux formes de réponse sont acceptées** : quatre coins, ou une boîte convertie en son rectangle. Un modèle rend parfois la boîte englobante par habitude, et la refuser reviendrait à perdre une photo correctement repérée pour une question de forme.
+- **Le coût mesuré** : 122 ms pour une photo de téléphone de douze mégapixels. La boucle est en clair — Sharp redimensionne, tourne et découpe, mais ne projette pas.
+
+Deux détails qui font la différence entre une image juste et une image nette mais fausse : l'**ordre des coins** décide quel côté sera le haut (deux coins intervertis donnent un résultat impeccable et retourné), et les dimensions de sortie prennent la **moyenne géométrique** des bords opposés — retenir le plus grand étirerait l'image dans un sens.
+
+### v0.21.44 — fonctionnel
+
+#### Le détecteur croyait regarder une page ; il regarde une photo de page
+
+La détection fonctionne enfin — et la découpe rendait le bureau et le clavier avec la photo. Le prompt disait « cette image de livre », et le modèle cadrait en conséquence : large, comme on cadre une page.
+
+Or ce qu'il reçoit est **une photo de page** : le livre a été posé sur un bureau et photographié à main levée. Autour de la page il y a du décor — le plateau de la table, un clavier, une souris, une ombre, souvent la page d'en face — et le livre est de travers, ses bords non parallèles à ceux de l'image.
+
+Le prompt le dit maintenant, et énumère ce qui doit rester dehors : pas un centimètre de bureau, pas la marge blanche du papier, pas la page voisine, pas la reliure. Avec la conséquence, qui est le vrai argument : **une boîte trop large est inutilisable, puisqu'elle sera publiée telle quelle, décor compris.** Et un repère de vraisemblance : sur une photo de page prise à main levée, la photographie imprimée occupe rarement plus des deux tiers du cadre — une boîte qui couvre presque tout est presque toujours fausse.
+
+**Ce qui reste à faire, et qui n'est pas fait :** redresser la perspective. Une page photographiée de biais est un trapèze ; un cadre rectangulaire, aussi serré soit-il, garde deux coins de papier. Le corriger demande les quatre coins de la photographie et une transformation homographique — l'outil manuel « Améliorer » le fait déjà, la chaîne automatique non.
+
+### v0.21.43 — fonctionnel
+
+#### La note d'ingrédient : arrêter de deviner, la rendre constatable
+
+La note ne s'affichait toujours pas — et la bonne question n'était pas « où l'afficher » mais **« est-elle produite ? »**. Le chemin de données était vérifié de bout en bout : le modèle ne la remplissait tout simplement pas.
+
+- **Un contrôle mécanique le dit maintenant.** Pour chaque ingrédient, les mots de la ligne du livre sont confrontés à ceux du nom, de l'unité et de la note. Ce qui reste n'est allé nulle part : « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » sans note laisse « peau », « écaillée » orphelins — et rien ne le signalait, puisque la ligne compte pour une, le nom est correct et la quantité aussi. Seuil à **deux mots** : un mot isolé est presque toujours un article, et le bruit fait ignorer le signal.
+- **La règle du prompt était formulée à l'envers.** Elle insistait sur « n'invente jamais une note », et le modèle jouait la sécurité en la laissant vide. Elle est désormais positive et donne une méthode : *tu as écrit la quantité, l'unité et le nom — relis la ligne, et tout ce qui reste va dans la note*. Avec les trois cas, dont celui où il ne reste rien, qui est fréquent et normal.
+- **Et la note occupe sa propre ligne** dans l'éditeur, avec sa marge et sa flèche de renvoi. Glissée dans l'interligne, elle passait inaperçue au milieu des champs bordés.
+
+### v0.21.42 — fonctionnel
+
+#### La détection d'images marche avec les deux moteurs
+
+Les cinq postes de détection étaient passés sur Claude, et ne rendaient plus rien. La cause n'est pas le moteur : **le repère `[y_min, x_min, y_max, x_max]` sur mille est la convention native de Google**, et le prompt se contentait de l'énoncer — « entiers 0-1000 ». Cela suffit à un modèle qui l'a apprise, pas à un autre.
+
+La réponse facile aurait été de réserver ce poste à Gemini. Elle était mauvaise : un moteur ne doit pas être privilégié par un détail de format resté implicite.
+
+- **Le prompt décrit le repère au lieu de l'énoncer** : haut = 0, bas = 1000, gauche = 0, droite = 1000, la verticale d'abord, avec deux exemples — une demi-page à droite, une pleine page. Et il porte les **dimensions réelles de l'image**, pour que le modèle sache ce qu'il regarde.
+- **La lecture accepte les trois unités** qu'un modèle peut spontanément employer : millièmes, valeurs entre 0 et 1, et **pixels** — ces derniers ramenés avec les dimensions, en respectant que la verticale se rapporte à la hauteur. Intervertir les deux axes produit un rectangle plausible et faux, donc invisible.
+- **Sans dimensions, on borne au lieu de deviner.** Un facteur imaginaire donnerait une découpe précise et fausse ; une découpe bornée sera écartée par le contrôle de qualité, ce qui se voit.
+- **Une limite, nommée plutôt que masquée** : sous mille, pixels et millièmes sont indiscernables — aucune heuristique ne peut trancher. C'est précisément pourquoi le prompt décrit le repère et donne les dimensions. Le code fait ce qu'il peut ; le prompt fait le reste. Un test le dit noir sur blanc.
+- **Situer des rectangles demande du soin** : la détection passe en effort élevé, comme la transcription. Le réglage par défaut venait de la chaîne nutrition, où deviner des calories ne réclame aucun raisonnement.
+- **Le repli « photo principale » ne se tait plus** non plus : il ne sert que si la détection principale n'a rien rendu, et l'échec des deux ensemble est justement ce qu'il faut pouvoir constater.
+
+### v0.21.41 — fonctionnel
+
+#### « Aucune photo détectée » cachait un `catch` vide
+
+En cherchant pourquoi une page riche en photographies n'en rendait aucune, la vraie cause est apparue — et ce n'était pas la détection : **le code avalait l'erreur.**
+
+```
+} catch {
+  return [];
+}
+```
+
+Un refus du modèle, un plafond de dépense atteint, un délai dépassé, une réponse illisible, un format de coordonnées inconnu : tout se présentait à l'identique, sous la forme « aucune photographie détectée ». C'est la règle la plus stricte de ce projet, prise en défaut à l'endroit exact où elle comptait — **impossible de distinguer une page sans photo d'un appel qui a échoué**, alors que les deux demandent des réactions opposées.
+
+- **L'erreur est journalisée et remonte.** La réponse brute du détecteur l'est aussi, avec son moteur et son modèle.
+- **Une piste que cela rend enfin vérifiable** : le repère `[y_min, x_min, y_max, x_max]` sur mille est une convention **Google**. Un autre moteur ne la connaît pas et répond à côté, sans lever d'erreur. Une réponse non vide qui ne donne aucune boîte exploitable est désormais signalée comme telle, moteur nommé — si le poste `detect_illustrations` a basculé sur Claude, cela se verra au premier scan.
+- **Une page qui échoue n'emporte plus les autres** : l'échec est absorbé page par page, sans quoi la panne de la seconde ferait perdre les découpes de la première.
+
+#### Et l'écran le dit, au lieu de laisser deviner
+
+Le bilan suit la recette et s'affiche à la relecture, avec la réaction qui convient :
+
+| Ce qui s'est passé | Ce que l'écran dit |
+|---|---|
+| rien repéré | « Aucune photo repérée sur cette page. Si le livre en porte une, ajoutez-la à la main. » |
+| repérées puis toutes écartées | « 3 photo(s) repérée(s), aucune retenue — trop petite, mal découpée, ou refusée à la modération. » |
+| la détection a échoué | « La recherche a échoué sur 2 page(s). Ce n'est pas la page qui est en cause : réessayez. » |
+| au moins une publiée | rien — elle se voit, l'annoncer serait du bruit |
+
+### v0.21.40 — fonctionnel
+
+#### La réserve se lit en puces, et se replie
+
+- **Sept mots mal lus concaténés dans une phrase forment un pavé qu'on ne relit pas** — et une alerte qu'on ne relit pas ne sert à rien. Chaque constat porte désormais ses éléments à part, rendus en liste à puces.
+- **Le bandeau se replie d'un chevron.** Il occupe le haut de l'écran de relecture, et l'on vient d'abord y relire la recette. Ouvert au premier affichage : une réserve qu'il faut aller chercher n'est pas une réserve.
+- Les brouillons importés avant ce changement portent l'ancien format — une simple liste de phrases — et restent lisibles.
+
+#### La note d'un ingrédient se voit enfin
+
+« Mélangée au miel » existait bien en base, mais nulle part à l'écran.
+
+- **Dans l'éditeur** : en italique sous le nom qu'elle précise. Elle ne se saisit toujours pas — la mettre dans un champ inviterait à la réécrire, et l'entrer dans le nom la ferait passer au référentiel des ingrédients et à la liste de courses.
+- **Dans la recette** : un astérisque sur la pastille, et le renvoi sous le groupe — la convention des livres de cuisine eux-mêmes. La glisser sous chaque pastille cassait l'alignement : les puces cessaient de former des lignes régulières dès qu'une seule portait une note.
+
+#### Une pleine page n'est pas une grille
+
+La détection tentait encore de découper une photo pleine page en cases, et les tranches tombaient sur la nappe et le coin de bureau qui entourent le livre photographié.
+
+**La subdivision ne s'applique plus quand le modèle n'a vu qu'une seule zone.** Il a compté une photo : on le croit. Une grille, il en voit les cases du premier coup — c'est précisément ce que son prompt lui demande. Chercher des cases dans une pleine page, c'est en trouver.
+
+### v0.21.39 — fonctionnel
+
+#### Le découpage des illustrations tombait à côté — l'orientation
+
+**Le défaut, et il explique presque tout.** Un modèle de vision reçoit l'image telle qu'elle **s'affiche** : le décodeur applique l'orientation EXIF. Il rend donc des coordonnées dans ce repère-là. Sharp, lui, découpe la grille de pixels **stockée**. Pour une photo prise en portrait avec un capteur paysage — le cas de tout téléphone — les deux repères sont tournés de quatre-vingt-dix degrés l'un par rapport à l'autre.
+
+On demandait le plat, on obtenait un bout de bureau. Et rien ne le signalait, parce que la découpe était techniquement valide : bonne taille, bon rapport de forme. Elle passait les filtres, puis se faisait refuser à la modération — d'où le « toutes les photos ont été rejetées », qui n'était pas un excès de sévérité mais la conséquence : **un bout de table est clair et uniforme, donc écarté comme page blanche.**
+
+L'image est désormais redressée **une fois**, puis sert à la détection ET au découpage : les deux repères ne peuvent plus diverger. Corrigé dans le pipeline d'import comme dans l'extraction manuelle.
+
+#### « Enregistrement » ne dure plus sept minutes
+
+L'étiquette couvrait le balisage par l'IA, le contrôle de fidélité, la normalisation des référentiels et l'écriture. Un mot qui promet une seconde posé sur sept minutes, sans aucun moyen de savoir ce qui tournait.
+
+Les étapes disent maintenant ce qui se passe : **Lecture de la page par l'IA**, **Extraction des illustrations**, **Balisage de la recette par l'IA**, **Enrichissement des ingrédients par l'IA**, puis **Enregistrement** — la dernière, et la plus brève.
+
+Le calcul nutritionnel n'y figure pas volontairement : il a lieu **après** l'écriture, sur une recette déjà consultable. L'annoncer comme une étape laisserait croire qu'il faut l'attendre.
+
+#### Atelier de retouche
+
+- **Le cadre de recadrage s'imposait d'emblée.** Venu simplement pivoter une photo, on repartait avec un recadrage qu'on n'avait pas demandé — et rien ne le disait, puisque le cadre couvrait toute l'image et paraissait inoffensif. Il faut désormais l'**armer** par un bouton ; tant qu'il ne l'est pas, la validation n'applique que ce qui a été touché.
+- **Le bouton de validation ne promet plus « Recadrer »** mais « Appliquer » : il valide ce qui a été fait, quoi que ce soit.
+- **Les panneaux portent des icônes** : cadre, lumière, détails, presets.
+
+### v0.21.38 — fonctionnel
+
+#### La réserve de fidélité appartient au brouillon
+
+- **Elle s'affichait sur la recette elle-même.** C'est un outil de **relecture** : il sert à décider si la recette est fidèle au livre, pas à cuisiner. Le bandeau vit désormais dans l'écran de relecture d'un brouillon, et nulle part ailleurs.
+- **Et il disparaît à la validation.** La réserve a fait son office : elle a dit où regarder, quelqu'un a regardé et a tranché — c'est le sens même de valider. La rappeler ensuite reviendrait à contester cette décision chaque fois que le plat s'ouvre, et une alerte qui ne s'éteint jamais cesse d'être lue, y compris sur les brouillons où elle compte.
+- **La réserve est levée, pas seulement masquée.** `validateDraft` efface `fidelity_level` et `fidelity_findings`. Les garder en base reviendrait à conserver un doute que plus personne ne peut lever, et à rouvrir le débat au premier écran qui déciderait de l'afficher.
+
+#### Le chapeau de la recette se perdait
+
+« Une méthode scandinave pour fumer le saumon dans le sel… » : beaucoup de recettes s'ouvrent par un paragraphe qui dit d'où vient le plat et pourquoi il vaut la peine.
+
+- **Il tombait sous la consigne de ne pas recopier les en-têtes de page.** La distinction manquait : un titre courant ou un folio se répètent de page en page et ne parlent pas du plat ; le chapeau n'appartient qu'à cette recette.
+- **Il a désormais son champ**, transcrit mot pour mot, transmis au balisage, et écrit en note **avant la première étape** — parce que le livre le met en premier. Dans le doute, la consigne est de le recopier : une phrase de trop se supprime en un geste, une phrase perdue ne se retrouve pas.
+- **Et sa perte est constatée** : il compte dans le texte confronté au balisage. Sans cela, un chapeau oublié disparaîtrait comme avant — aucune étape en moins, aucun ingrédient en moins, aucun signal.
+
+## 2026-08-20
+
+### v0.21.37 — fonctionnel
+
+#### Une ligne du livre peut nommer deux ingrédients
+
+- **« 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » : le miel disparaissait.** Ma règle disait « une ligne du livre, une entrée — ni plus, ni moins ». Elle est fausse : cette ligne, c'est deux aliments, deux quantités, **deux achats**. La règle du compte exact obligeait à en choisir un, et le miel sortait de la liste de courses comme du calcul nutritionnel, sans un mot.
+- **Deux entrées, et le lien vit dans la note** — « mélangée au miel », « mélangé à la moutarde à l'ancienne ». C'est exactement à cela que sert ce champ.
+- **Le contrôle vérifie désormais une couverture, pas une égalité.** Aucune ligne ne peut rester orpheline ; deux entrées pour une ligne sont légitimes. Et il **compte les occurrences** : « 1 bouquet d'aneth » figurant dans deux sections, c'est deux achats — se contenter de vérifier que la ligne « existe quelque part » laisserait passer leur fusion, celle-là même que ce contrôle existe pour attraper.
+
+#### Une légende de photo n'est ni une étape ni un conseil
+
+« Gravlax (en haut) et gravlax à la betterave et à la moutarde » décrit l'image, pas le plat à faire. C'est du **mobilier de page**, au même titre qu'un folio ou un titre courant — et cela rejoint la liste de ce qu'on ne recopie pas.
+
+#### L'en-tête du brouillon coupait sa dernière ligne
+
+La barre gardait la hauteur d'une barre à une ligne — cinquante-six pixels — pour un titre qui en compte de deux à quatre : le titre, la pastille « Brouillon », le livre et sa page, le propriétaire. La hauteur se calcule maintenant sur ce qui est réellement affiché. Une valeur fixe généreuse ne vaudrait pas mieux : elle laisserait un vide sous les brouillons courts.
+
+#### Les illustrations : un défaut trouvé, et de quoi trancher
+
+- **Toute boîte dépassant 8 % de la page était soupçonnée d'être une grille** et découpée en morceaux. C'est la taille d'une photographie ordinaire dans un livre de cuisine : presque chaque photo réelle passait à la découpe, et une pleine page ressortait en tranches. Le seuil passe à **un quart de page** — la taille à laquelle les vraies grilles d'étapes se présentent.
+- **Le prompt était écrit pour les grilles d'étapes seulement.** Il nomme maintenant les trois cas, en commençant par le plus fréquent : une grande photo demi-page ou pleine page (**une** boîte, pas quatre), une photo en bandeau, et seulement ensuite la grille.
+- **Et surtout, on saura enfin où elles se perdent.** Une page revenait « sans illustration » sans qu'on puisse dire si le modèle n'avait rien vu, si les filtres avaient tout écarté, ou si la modération avait refusé — trois causes, trois corrections opposées, aucune trace pour choisir. Un décompte des quatre étapes est journalisé : détectées, retenues par les filtres, publiées après modération, avec les raisons des refus. C'est ce chiffre qui dira si ces appels valent leur prix.
+
+### v0.21.36 — fonctionnel
+
+#### Le modèle transcrivait en mode économique
+
+« Avant modifications cela fonctionnait » était le renseignement décisif. Il ne s'agissait ni de la qualité de la photo, ni du prompt : **Claude transcrivait avec `effort: "low"`**.
+
+- **Ce réglage était figé pour tout le monde**, avec une justification qui ne vaut que pour la nutrition : estimer les calories d'un ingrédient est un rappel de connaissances, pas un problème de raisonnement, et les jetons de réflexion se facturent au tarif de sortie. C'était juste — là.
+- **Transcrire une page de livre est l'exact contraire.** Il faut suivre une mise en page, rattacher « en poudre » au bon ingrédient, ne pas résumer « les grains de poivre et les graines de coriandre » en « les épices ». Un modèle pressé fait précisément cela : il rend une phrase élégante et fausse.
+- **Et la panne n'est apparue qu'en v0.21.33.** Jusque-là Claude échouait sur la transcription — le défaut de streaming — et Gemini prenait le relais. En réparant l'appel, on a confié la lecture à un moteur réglé pour aller vite. Le correctif précédent a révélé celui-ci.
+- **Le soin se choisit désormais par poste.** `low` reste le défaut ; transcription et balisage passent à `high`. Côté Gemini, le levier équivalent existait déjà et se règle depuis Admin → Moteur d'IA (budget de réflexion par poste).
+
+Deux abrègements silencieux sont par ailleurs nommés dans le prompt, avec leurs contre-exemples réels : **l'énumération résumée** (« les épices » fait disparaître deux ingrédients de la liste de courses) et **le qualificatif recollé au mauvais mot** (« en poudre » portait sur les épices, pas sur l'aneth, qui est frais). Un mot déplacé d'un cran change l'ingrédient.
+
+**Sur la photo : il n'y a plus rien à gagner.** La capture est déjà à `imageQuality: 100` — aucune recompression — et aucune réduction de taille n'est appliquée : c'est la résolution complète du capteur qui part. Au-delà, le format ne propose rien de plus.
+
+### v0.21.35 — fonctionnel
+
+#### « peau en dessous » lu « peu profonde en dessous » : la panne que rien ne pouvait prouver
+
+Un scan a rendu « étalez sur une plaque ou une assiette **peu profonde** en dessous » là où le livre écrit « une assiette, **peau** en dessous ». Ce n'est pas un défaut de restructuration : c'est une erreur de **lecture**, et elle appartient à une classe que tout l'appareil de contrôle ne pouvait pas voir.
+
+**Pourquoi aucun contrôle ne l'attrape.** Les sept vérifications comparent la passe 2 à la passe 1. Quand la passe 1 a mal lu, **elle est la référence corrompue** : la phrase rendue est impeccable, le décompte des étapes intact, la couverture des mots parfaite. Tout concorde, avec le mauvais mot. Le seul moyen de le prouver serait de relire l'image — un appel de plus.
+
+Trois corrections, du plus concret au plus honnête :
+
+- **La qualité de capture était à l'envers.** Les couvertures de livre étaient photographiées à qualité 100, les **pages de recette** à 92. Une couverture se lit de loin, une page de recette se lit au mot près — et les artefacts JPEG s'installent d'abord sur les petits caractères. C'est ainsi qu'un « peau » devient un « peu ». Les pages passent à 100, sans recompression.
+- **Le modèle ne doit plus « réparer » un mot qu'il lit mal.** C'est le second temps de la panne : ayant lu « peu », il complète en « peu profonde » — une expression plus courante, qui a l'air juste. Le prompt porte désormais l'interdiction et ce contre-exemple exact : écris ce que tu VOIS, même si le résultat te paraît étrange.
+- **Et quand un doute subsiste, il est affiché.** La transcription déclare ses `lectures_incertaines`, qui remontent sur la recette. Ce n'est pas une garantie — un modèle sûr de lui ne signalera rien — mais un doute affiché se vérifie en dix secondes, là où le même doute tu se découvre en ratant le plat.
+
+### v0.21.34 — fonctionnel
+
+#### Le contrôle de fidélité voyait trois choses ; il en voit sept
+
+Un premier scan a montré ce que le contrôle ne pouvait pas attraper : une section entière absente, un ingrédient devenu un autre produit, une clause disparue d'une étape. Trois défauts, trois angles morts.
+
+- **Le trou principal : le contrôle comparait la passe 2 à la passe 1.** Il était donc aveugle à ce que la **passe 1** avait perdu. Une page dont la première section n'aurait jamais été recopiée produit une chaîne parfaitement cohérente de bout en bout — et personne ne s'en aperçoit avant de rouvrir le livre. La passe 1 **déclare maintenant son inventaire** avant de recopier : les titres de groupe qu'elle voit, le nombre de lignes d'ingrédients, le nombre d'étapes. Le code compare l'annonce au résultat. Un modèle qui déclare trois sections et en rend deux est pris en défaut par sa propre déclaration. Aucun appel de plus.
+- **Le décompte des étapes ne dit rien de leur contenu.** « la moutarde mélangée à deux cuillères à café de miel » réduite à « la moutarde » ne change pas le nombre de lignes, et fait disparaître un ingrédient de la recette comme des courses. Les mots porteurs de sens de la transcription sont désormais confrontés à ceux du texte balisé.
+- **Un ingrédient que sa propre ligne dément est nommé.** « 4 cuil. à soupe d'aneth frais » ne peut pas donner « aneth en poudre » : ce n'est pas une reformulation, c'est un autre produit, qui ne s'achète pas au même rayon et ne pèse pas la même chose. Chaque mot du nom doit figurer dans la ligne du livre, conservée à cette fin.
+- **Une note perdue est signalée.** Rien d'autre ne la porte : ni les étapes, ni les ingrédients. Une « Astuce » que le balisage oublie disparaissait sans laisser de trace — et c'est souvent la seule phrase du livre qui dit comment réussir le plat.
+
+**Sur les seuils, une leçon.** La première version de la comparaison de texte jetait le contenu des accolades — et accusait un balisage parfaitement fidèle d'avoir perdu un tiers de la page, parce que les quantités quittent légitimement la phrase pour y entrer. Les accolades sont conservées, les nombres écrits en lettres et les mesures abrégées écartés du comptage. Une accusation à tort finit par se faire ignorer, ce qui coûte plus cher que de ne rien vérifier.
+
+### v0.21.33 — fonctionnel
+
+#### Claude n'échoue plus sur la transcription
+
+- **« Streaming is required for operations that may take longer than 10 minutes »** n'était pas une durée constatée. Le SDK Anthropic refuse un appel non-streamé dès que `max_tokens` dépasse **128 000 / 6 ≈ 21 333** : au-delà, il estime que la réponse *pourrait* demander plus de dix minutes, et lève avant même d'envoyer quoi que ce soit.
+- La transcription d'une page en réclame **24 000** — pour ne pas tronquer un JSON verbeux. Elle échouait donc **systématiquement** sur Claude, et se repliait sur Gemini à chaque import. Le repli fonctionnait ; il masquait la panne.
+- **Baisser le plafond aurait été la mauvaise réponse** : `max_tokens` ne réserve rien, il borne. Le réduire n'aurait pas accéléré l'appel, il aurait tronqué les pages longues. Les réponses Claude sont donc **streamées**, comme le SDK le demande ; `finalMessage()` rend exactement l'objet attendu, jetons et `stop_reason` compris.
+
+#### Les journaux du déclencheur d'écriture
+
+- **« Premier calcul » ne disait pas de quoi.** Nutrition ? courses ? les deux ? Les précisions nomment maintenant le travail : « Nutrition et courses à calculer », « Ingrédients modifiés », « Rien à recalculer ». Elles sont traduites, accents compris — « Ingredients modifies » se lisait comme une faute.
+- **Deux réveils sur trois ne disaient rien et le disaient longuement.** Ce déclencheur se réveille lui-même en écrivant les courses, puis la nutrition : trois groupes de journaux par recette, dont deux pour constater qu'il n'y a rien à faire — chacun traînant douze mille caractères de recette, parce que la trace du texte était posée **avant** la garde. Elle est passée après : un journal qui répète le texte pour dire qu'il ne s'est rien passé rend illisibles ceux qui parlent.
+
+### v0.21.32 — fonctionnel
+
+#### Le déploiement ne rate plus sa première tentative
+
+- **Ce n'était pas une panne du code, c'était une attente trop courte.** Avant de déployer, la CLI charge le bundle dans un processus à part pour savoir quelles fonctions il déclare. Ce chargement a **dix secondes** par défaut — et la première tentative les dépassait à chaque déploiement, invariablement suivie d'une relance qui, elle, passait. La différence entre les deux n'est pas le code : ce sont les cinquante fichiers que `tsc` vient de réécrire, encore froids sur le disque.
+- **Le budget de découverte passe à deux minutes** (`FUNCTIONS_DISCOVERY_TIMEOUT`). Un échec systématique qu'on rattrape par une relance finit par masquer le jour où l'échec est réel.
+- **Et le bundle s'allège vraiment**, pour ne plus frôler la limite : **547 ms → 328 ms**, quatre dixièmes de moins. Trois SDK lourds ne se chargent plus au démarrage mais au premier usage — Cloud Logging côté écriture (gRPC et protobuf, le plus coûteux du lot), Cloud Logging côté lecture, et BigQuery, qui ne sert qu'aux écrans de comptabilité. Même règle que le SDK Vision : ce qu'on ne charge pas au démarrage ne ralentit ni le déploiement ni le premier appel des autres fonctions.
+
+#### Un écart avec le livre se voit maintenant sur la recette
+
+- **Le contrôle de fidélité écrivait son verdict et personne ne le lisait.** C'est exactement le défaut que ce projet traque ailleurs : une donnée produite et jamais affichée finit par mentir sans que quiconque s'en aperçoive.
+- **Un bandeau le dit, à l'endroit où l'on relit la recette.** En cas de **rupture** : « Texte du livre conservé, sans balise » — la recette est exacte, mais ses ingrédients et ustensiles ne sont pas mis en évidence, et l'on sait enfin pourquoi les puces manquent. En cas d'**avertissement** : le constat, et le balisage est conservé.
+- **Dans les deux cas, la réponse est écrite** : relancer « Raffiner » depuis l'éditeur, ou corriger à la main.
+
+### v0.21.31 — fonctionnel
+
+#### La chaîne d'extraction est refaite : deux passes, et la fidélité est vérifiée
+
+**Le défaut.** Le prompt de scan demandait deux travaux incompatibles dans un seul appel — transcrire fidèlement *et* restructurer en CookLang — et perdait le premier au profit du second. Une règle faisait tout le dégât : « la liste d'ingrédients ne se transcrit jamais, chaque ingrédient apparaît une seule fois, à sa première mention dans les étapes ». Elle oblige le modèle à **décider** où placer chaque ingrédient, donc à fusionner des phrases, à en déplacer, à en abréger. Et rien ne vérifiait le résultat : cent cinquante lignes de prompt demandaient la fidélité, aucune ligne de code ne la constatait.
+
+**Passe 1 — transcription.** Un appel rend le type de la page *et* son contenu recopié, en JSON : sections d'ingrédients (une ligne du livre = une ligne), sections d'étapes (phrase par phrase), notes typées (astuce, conseil du chef, variante, conservation). Aucune balise, aucune décision de placement. Elle remplace à elle seule `classify_page`, `scan_extraction` et `document_extraction`.
+
+**Passe 2 — balisage et normalisation.** Elle ne voit jamais l'image : elle travaille sur ce que la passe 1 a recopié. Elle rend le CookLang balisé, la liste normalisée, et les tags — ces derniers coûtaient un appel à eux seuls.
+
+**Le contrôle de fidélité, sans un appel de plus.** Autant d'ingrédients que de lignes dans le livre ? autant d'étapes qu'à la transcription ? titres de section entiers ? Une **rupture** — ingrédients fusionnés, étapes disparues — écarte le balisage et retombe sur le texte verbatim : mieux vaut une recette exacte et non balisée qu'une recette balisée et fausse. Un **avertissement** — un titre raccourci, un ingrédient de trop — se journalise et laisse passer. L'écart est écrit sur la recette elle-même, pas seulement dans les journaux d'un import déjà oublié.
+
+**La note explicative d'un ingrédient.** « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » devient un ingrédient de 1,8 kg **et** une note « avec la peau mais écaillée ». La quantité se compte, la précision se lit. Elle ne vivait nulle part : aucune accolade ne pouvait la porter, et le modèle réécrivait la phrase du livre pour la caser. Elle survit au redimensionnement et à l'édition des quantités.
+
+**Une seule écriture de la recette.** La normalisation contre les référentiels a lieu **avant** l'écriture, sur un identifiant réservé. Le déclencheur d'écriture ne part donc qu'une fois, et le texte de la recette n'est plus jamais retouché après la passe 2.
+
+**Cinq passes d'IA disparaissent**, toutes devenues sans objet :
+
+| Passe | Pourquoi elle disparaît |
+|---|---|
+| `classify_page` | champ de la passe 1 |
+| `suggest_tags` | champ de la passe 2 |
+| singularisation des unités | la passe 2 écrit l'unité au singulier |
+| complétion des quantités | la passe 2 lit la liste du livre, où la quantité est écrite |
+| détection de doublons | elle rattrapait les doublons créés par le balisage inline ; une entrée par ligne de livre, il n'y a plus rien à dédoublonner |
+| consolidation des courses | regrouper est devenu une addition — et une addition ne se demande pas à un modèle |
+
+**Le décompte**, pour une page à quinze ingrédients neufs : de **14–23 appels** à **4–8**, et **3** sur un référentiel mûr (transcription, balisage, illustrations).
+
+### v0.21.30 — fonctionnel
+
+#### Un import, un titre — et le calcul ne se fait plus deux fois
+
+- **« Mise en file du traitement » nommait le couloir, pas le voyage.** Le fil s'appelait `disp`, du nom du déclencheur qui l'ouvre — mais il est **transmis** au processeur, qui journalise dessous l'extraction, la normalisation et l'enregistrement. La partie « importation » n'était donc pas absente : elle était rangée sous un titre qui ne la nommait pas. Le fil s'appelle désormais **Import d'une recette**, du début à la fin.
+- **Ce déclencheur part à chaque écriture du job** — `queued`, `processing`, `done` — et n'a presque jamais rien à faire. Chacun de ces constats ouvrait son propre fil : trois groupes d'un message pour un import mis en file une seule fois. Ils se rattachent maintenant au fil que le job porte déjà.
+- **La recette n'est plus calculée deux fois.** L'import écrit la recette dès l'extraction — pour que le brouillon soit consultable tout de suite — puis normalise et réécrit la liste d'ingrédients. Le déclencheur d'écriture partait donc **deux fois** : une première sur les ingrédients bruts (courses consolidées, nutrition calculée, doublons détectés par IA), une seconde sur les ingrédients normalisés, qui jetait tout le travail de la première. D'où les `refreshShoppingProducts` et `detectDuplicateIngredientsWithAI` en double.
+- **Un drapeau `nutrition_hold`** posé à la création demande au déclencheur d'attendre la liste définitive. Il est retiré dans tous les cas, succès **comme échec** de la normalisation : c'est ce retrait qui déclenche le calcul, une fois. Sans cette précaution, une normalisation ratée aurait laissé la recette sans nutrition à jamais, en silence.
+- **« Après écriture d'une recette » dit maintenant laquelle** : `— Ingredients modifies`, `— Premier calcul`, `— Sans changement`. On voit d'un coup d'œil quel réveil a travaillé et lequel n'a fait que constater.
+- **La détection de doublons montre ce qu'elle lit.** Elle ne journalisait qu'un verdict — « 2 reprises sur 14 lignes » — sans dire sur quoi, et sous un fil à elle. Elle rejoint le fil du traitement et trace la liste soumise. Précision utile : cette passe ne voit pas la recette, elle ne voit que la **liste** ; c'est donc la liste qui est tracée, et non le texte, qui laisserait croire qu'elle en dispose.
+- **Les journaux se paginent.** L'écran n'affichait qu'une page et rien ne le disait : au-delà, les entrées manquaient en silence, et un import bavard semblait s'arrêter en chemin. Un pied de liste annonce désormais le nombre d'entrées lues, dit si la suite existe, et la charge sur demande.
+
+### v0.21.29 — fonctionnel
+
+#### Les journaux disent enfin quel travail ils racontent
+
+- **Un groupe titré « generate » ou « call » ne nomme rien.** L'écran regroupait correctement — toutes les entrées d'un même traitement ensemble — mais titrait le groupe avec le nom que le code s'était donné.
+- **« call » était pire qu'obscur : c'était le nom par défaut.** Toute fonction appelable qui n'en choisissait pas un s'appelait ainsi. Quatre ou cinq groupes « call » n'étaient donc pas quatre exécutions d'un même travail, mais **quatre travaux différents et anonymes** — lecture de la grille tarifaire, calcul nutritionnel, consultation des journaux, normalisation. Dix-sept fonctions nomment désormais leur traitement, et un test échoue si l'une d'elles l'oublie.
+- **Chaque nom technique est traduit en français à l'affichage** : « Génération d'une recette par l'IA », « Mise en file du traitement », « Poids des unités inconnues ». La traduction vit côté écran, pas côté serveur : l'identifiant doit rester stable et filtrable — c'est lui qu'on colle pour isoler un traitement — un libellé peut changer sans rien casser. Une racine inconnue est rendue telle quelle : un nom technique reste cherchable, « traitement inconnu » ne l'est pas.
+- **Pourquoi trois ou quatre « generate ».** Ce n'est pas une boucle : l'écran Explorer lance **trois** générations indépendantes — Fidèle, Rapide, Créative — puis en relance une quand deux propositions se ressemblent trop. Trois ou quatre appels, donc trois ou quatre fils, donc autant de groupes. Ils portent maintenant leur variante : « Génération d'une recette par l'IA — Creative ».
+- **Un traitement peut désormais se qualifier** par une précision après un deux-points (`generation_recette:creative`), que l'écran affiche après le libellé. C'est ce qui rend lisibles plusieurs départs simultanés d'un même travail.
+- **Deux fils qui se perdaient sont rebranchés** : la normalisation demandée à la *sauvegarde* d'une recette et le calcul nutritionnel à la demande jetaient le fil reçu et en fabriquaient un par passe interne.
+- **Nouveau diagramme de séquence** — `documentation/diagrammes-de-sequence.html`, section 11 : naissance d'un fil, propagation, regroupement et nommage à l'écran.
+
+## 2026-08-19
+
+### v0.21.28 — fonctionnel
+
+#### Le double enrichissement est supprimé
+
+- **Deux chemins posaient au modèle exactement la même question, au même instant.** `enrichUnknownUnitsWithAI` — le poids d'une unité inconnue — et `enrichUnknownIngredientsWithAI` — les valeurs pour 100 g d'un ingrédient — vivaient à la fois dans la normalisation et dans le déclencheur `onRecipeWritten`.
+- **La justification écrite tenait sur le papier, pas à l'horloge.** Ces fonctions ne traitent que ce qui n'a pas encore de valeur, donc le second passage était censé ne rien trouver à faire. Sauf qu'à l'import il n'y a pas de « second » : l'écriture de la recette réveille le déclencheur, la normalisation part en parallèle, et les deux lisent le référentiel au même moment, également vide. Chaque unité et chaque ingrédient inconnu étaient payés deux fois.
+- **Le déclencheur les garde, seul.** Il part sur *toutes* les écritures de recette — import, saisie manuelle, modification — là où la normalisation n'est qu'un chemin parmi d'autres ; et c'est lui qui a besoin de ces valeurs, quelques lignes plus bas, pour convertir les quantités et calculer la nutrition. Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
+- **La nutrition reste juste dès le premier affichage**, puisque enrichissement et calcul se suivent dans la même exécution.
+- **Ce que la normalisation continue de faire** : résoudre unités et identités, estimer le poids d'une pièce, celui d'un couple ingrédient/unité, repérer les ingrédients qui ne finissent pas dans l'assiette, compléter les quantités manquantes. Quatre passes au lieu de six, aucune en double.
+- **Effet visible dans les journaux** : la même passe n'apparaît plus deux fois sous un même import. Ce qui reste en double y est délibéré et documenté — la relance insistante sur une unité revenue sans poids.
+
+### v0.21.27 — fonctionnel
+
+#### Un import produisait huit journaux sans lien entre eux
+
+- **Chaque passe d'enrichissement fabriquait son propre identifiant de traitement** — « enrich-units-… », « enrich-ing-… », « piece-weights-… », « complete-qty-… » et quatre autres. Un seul scan produisait donc huit groupes de journaux, sans lien entre eux ni avec le job qui les avait déclenchés. Suivre un import de bout en bout était impossible, ce qui donnait à juste titre l'impression d'un traitement hors de contrôle.
+- **Le fil reçu prime désormais sur celui qu'on fabrique.** L'import passe le sien à la normalisation, qui le passe aux enrichissements ; le déclencheur passe le sien de la même façon. Un identifiant, un scan.
+- **Le déclencheur trace enfin le texte de la recette à son entrée.** Ses journaux ne portaient que des compteurs — treize ingrédients, douze références mises à jour — et pas une ligne de recette : impossible de dire si le texte arrivait déjà abîmé ou s'il l'était plus loin. Ce traitement ne touchant pas au texte, ce qu'on lit à son seuil est exactement ce que l'étape précédente a produit.
+- **Et le plafond d'appels expliquait le reste.** Les répétitions observées ne sont pas une boucle : ce sont deux chemins qui font le même travail — la normalisation pendant l'import, puis le déclencheur à l'écriture — et une relance délibérée quand une unité revient sans poids. Elles se lisent maintenant sous le même fil, et se comptent.
+
+### v0.21.25 — fonctionnel
+
+#### On voit enfin ce que le modèle répond
+
+- **Les journaux disaient qu'un appel avait eu lieu, jamais ce qu'il avait produit.** Poste, moteur, jetons, durée — tout, sauf le texte. Quand une recette s'écarte du livre, ces journaux-là prouvent que l'appel a réussi ; ils ne disent pas quelle étape a interprété.
+- **Chaque texte est désormais tracé à sa sortie**, sous le même identifiant de corrélation que l'import : la réponse de classification, le texte d'extraction tel quel, le texte finalement écrit en base, et l'avant / après de chaque retouche demandée à la main (polissage, raffinement). Les entrées d'un même scan se lisent dans l'ordre, et l'on voit le texte évoluer d'un traitement au suivant — ou ne pas évoluer, ce qui est souvent l'information qu'on cherche.
+- **Un seul endroit décide de ce qu'on garde** : douze mille caractères, de quoi couvrir une page de livre entière ; au-delà le texte est coupé, et l'entrée le dit plutôt que de laisser croire à une réponse courte.
+- **Le plafond d'IA du compte fondateur passe de cinq à dix fois le plafond commun.** Il est **par compte et par jour** : personne d'autre n'était bloqué. Mettre au point l'extraction demande de rescanner la même page des dizaines de fois, et la coupure tombait au milieu d'une session d'essais — le seul moment où l'on a besoin d'appeler beaucoup, et le seul où être coupé ne protège de rien.
+- **Le diagramme de séquence de l'import** montre maintenant chaque appel de modèle, chaque trace de texte, et le fait que la normalisation n'écrit plus que la liste d'ingrédients.
+
+### v0.21.24 — fonctionnel
+
+#### Le texte de la recette appartient au livre, plus personne ne le réécrit
+
+- **La normalisation des référentiels réécrivait la recette**, automatiquement, à chaque import et à chaque enregistrement. Ce n'était ni le polissage ni le raffinement — ceux-là ne partent que sur un bouton. C'était un traitement que rien n'annonçait, et qui écrasait le texte dès qu'un seul ingrédient ou une seule unité avait été renommé, c'est-à-dire presque toujours.
+- **Trois façons de faire dire au livre ce qu'il n'a pas écrit** : le nom de l'auteur remplacé DANS ses phrases par le nom canonique du référentiel ; des quantités estimées par l'IA insérées là où le livre n'en donnait aucune ; un titre de section remplacé par une catégorie calculée — « Pour la sauce à l'aneth et à la moutarde » perdant la moitié de son nom.
+- **Son travail est la LISTE, pas la prose.** Les noms canoniques et les quantités complétées vivent dans la liste d'ingrédients résolue, celle qui nourrit la nutrition et les courses. C'est là qu'ils servent. Le texte, lui, reste celui du livre.
+- **Une centaine de lignes disparaissent avec la réécriture** — elles relisaient le référentiel une seconde fois, par ingrédient, pour produire un texte que plus personne ne doit produire.
+- **Ce qu'on perd, et c'est assumé** : une quantité absente du livre reste absente du texte affiché, tout en étant présente dans la liste. Et une catégorie créée depuis l'éditeur n'est plus recopiée dans le CookLang. L'honnêteté du texte passe avant le confort de l'affichage.
+
+### v0.21.23 — fonctionnel
+
+#### La transcription fidèle avait pris la liste d'ingrédients pour du texte
+
+- **Trois symptômes, une seule cause.** La règle « transcris tout, ne retire rien » de la version précédente ne disait pas sur QUOI elle portait. Le modèle s'est mis à transcrire aussi la **liste d'ingrédients** du livre — et comme une autre règle interdit de baliser deux fois le même aliment, il a cessé de les baliser dans les étapes. D'où les ingrédients en double ou en triple, le bloc incompréhensible en fin de recette, et les ingrédients absents du texte des étapes.
+- **La règle porte désormais sur les ÉTAPES, explicitement.** Une page a deux parties : une liste et une méthode. La liste ne se transcrit jamais — elle sert à connaître les quantités. Les étapes se transcrivent mot pour mot, et c'est **dans elles** que chaque ingrédient est balisé, une seule fois.
+- **Un ingrédient listé mais utilisé dans aucune étape** reçoit une ligne unique en fin de section — « Prévoir également … » — au lieu de laisser le modèle improviser un bloc.
+- **Les titres de section étaient raccourcis parce que le prompt l'enseignait.** Son exemple de référence montrait « POUR LA SAUCE DE TREMPAGE » rendu en « == Pour la sauce == » : le modèle a appris à couper. « Pour la sauce à l'aneth et à la moutarde » devenait « sauce à la moutarde ». L'exemple est corrigé, et le nom d'une section se recopie maintenant mot pour mot — raccourcir un titre, c'est perdre l'ingrédient qui distingue cette sauce de toutes les autres.
+- **Six questions de vérification** ferment le prompt au lieu de trois : les trois premières sur la fidélité des étapes, les trois nouvelles sur les ingrédients balisés, les doublons, et les titres de section entiers.
+
+### v0.21.22 — fonctionnel
+
+#### L'extraction transcrit le livre, elle ne le réécrit plus
+
+- **Une étape de sept phrases en rendait deux.** Le livre fait blanchir la poitrine à l'eau, la rince, la découpe, l'égoutte, glace les oignons au beurre et au sucre jusqu'à évaporation ; l'extraction rendait « faites revenir la poitrine dans une poêle, ajoutez les oignons et le sucre ». Ce n'est pas une recette plus propre, c'est une **recette fausse** : elle ne donne pas le plat du livre.
+- **La consigne de fidélité existait, mais elle demandait « aussi proche que possible »** — une formulation qui autorise la dérive, noyée sous cent cinquante lignes de règles de mise en forme que le modèle, lui, applique à la lettre. Elle devient un contrat vérifiable : phrase par phrase, étape par étape, même nombre d'étapes que le livre, aucune méthode de cuisson remplacée.
+- **Le seul changement autorisé sur le texte du livre est l'ajout des balises.** Rien à retirer, rien à fusionner, rien à raccourcir.
+- **Un contre-exemple, tiré du cas réel**, montre la sortie interdite à côté de la sortie attendue — le prompt en utilisait déjà pour les balises, pas pour la fidélité.
+- **Trois questions avant de répondre** : autant d'étapes que le livre ? toutes les phrases de la plus longue ? chaque geste figure-t-il dans le livre ? Placées en toute fin, là où la consigne pèse le plus.
+
+### v0.21.21 — fonctionnel
+
+#### Un import marchait sur les pieds du suivant, et une vinaigrette volait la vedette au plat
+
+- **Régression de la v0.21.20, corrigée.** Depuis que l'écran reste disponible pendant l'envoi, la file des pages était partagée entre l'import qui part et celui qu'on prépare : les pages ajoutées ensuite s'empilaient derrière celles déjà en vol, et le vidage de fin d'envoi — qui arrive après le contrôle de sécurité — les effaçait sans un mot. Les pages quittent maintenant la file **au départ** de leur import ; celles qui restent appartiennent au suivant, et rien ne les touche.
+- **Une sous-préparation n'est plus prise pour une recette.** Une vinaigrette, une sauce, une marinade, une pâte ou une garniture qui sert le plat de la page en fait **partie** : elle reste dans le même bloc, sous une section. Le prompt définissait ce qu'est une recette — des étapes, des verbes d'action — et une vinaigrette coche ces cases. Rien ne disait qu'elle appartient au plat.
+- **Et surtout : interdiction d'extraire la sauce en oubliant le plat.** C'est ce qui s'était produit — la vinaigrette enregistrée comme recette, le ceviche nulle part. Le titre du bloc est désormais celui du plat servi, jamais celui de sa sauce, et dans le doute une seule recette : deux ne se justifient que si la page présente visiblement deux plats.
+
+### v0.21.20 — fonctionnel
+
+#### L'envoi d'un scan ne confisque plus l'écran
+
+- **« Analyser » faisait disparaître les boutons** le temps de l'envoi et du contrôle de sécurité, puis les rendait. Quelques secondes, mais elles interdisaient de préparer l'import suivant — alors que le vrai travail, l'extraction, se fait déjà en file sans bloquer personne.
+- **L'écran revient immédiatement à sa position de départ**, et l'envoi se poursuit **sous** les boutons : une ligne par envoi, avec son nom de fichier, sa phase et sa progression. On peut enchaîner les imports sans attendre.
+- **Plusieurs envois peuvent voler ensemble** : chacun a sa ligne. Un envoi en vol survit à toute remise à zéro de l'écran — l'effacer afficherait un écran au repos pendant que des octets montent encore.
+- **L'annonce « mis en file » suit le job, plus le statut de l'écran.** Un import peut désormais aboutir alors que l'écran prépare déjà le suivant : c'est le job qui vient d'entrer en file qui mérite le message, pas un état d'écran qui n'a pas bougé.
+- **Et le succès n'efface plus ce qu'on préparait** : les pages empilées pour l'import suivant restaient effacées sous les doigts quand le précédent aboutissait.
+
+### v0.21.19 — fonctionnel
+
+#### Les recettes déjà orphelines rentrent au bercail
+
+- **Le rattachement tournait déjà, à chaque ouverture de la bibliothèque** — et sans rien dire. Un traitement automatique et muet ne se vérifie pas : on ne sait ni s'il a tourné, ni combien il a déplacé. Il est désormais lançable à la main depuis *Admin › Backfills*, et rend un compte.
+- **Il lui manquait la moitié des orphelines.** Il cherchait les recettes dont le champ `book_id` est **absent** ; une recette écrite avec un champ **vide** n'est pas la même chose pour Firestore, et lui échappait — pour toujours, tout en s'affichant exactement comme les autres. Les deux formes d'absence sont maintenant cherchées.
+- **L'échec cesse d'être silencieux.** La migration avalait son erreur et rendait la main comme si tout allait bien. Elle la laisse remonter à celui qui l'a demandée ; l'exécution automatique, elle, reste tolérante — ouvrir la bibliothèque ne doit pas échouer parce qu'une recette n'a pas pu être rattachée.
+
+### v0.21.18 — fonctionnel
+
+#### Toute recette a un livre — et les livres système ne se suppriment pas
+
+- **Les recettes conçues par l'IA pour le planning atterrissaient sans livre**, donc en recette libre. Elles rejoignent « Mes créations Kass'Dalle », comme celles de la recherche : la bibliothèque distingue de nouveau ce que la maison a inventé de ce qu'on y a soi-même écrit, et le livre prévu pour ça cesse d'être vide à côté de ses propres recettes.
+- **Une recette sans livre n'existe plus.** Le choix « Aucun livre » disparaît des formulaires : sans choix, la recette rejoint « Mes recettes libres ». La règle est posée à l'entonnoir de création, dans le repository — un défaut appliqué à un seul écran n'est pas une règle, c'est une habitude. Elle vaut donc aussi pour une copie de recette d'un proche et pour un import de scan.
+- **Pour l'import, le livre est résolu côté client** et voyage avec le job. Le serveur reçoit un livre et n'a pas à savoir qu'il existe des livres système : c'est ce qui évite d'écrire une seconde fois, en TypeScript, la logique qui trouve ou crée ce livre.
+- **Les livres système se renomment, jamais ne se suppriment.** Le menu masquait déjà « Supprimer », mais une règle qui ne vit que dans un menu est à un appel de distance d'être enfreinte : le refus est maintenant dans le repository **et** dans les Security Rules, la seule barrière qu'un client ne peut pas contourner. Renommer reste possible — c'est le tag interne qui identifie le livre, pas son titre.
+- **L'import d'un livre entier garde son « Aucun livre »** : il en crée un, le laisser vide y a un sens.
+
+### v0.21.17 — fonctionnel
+
+#### Sept conceptions aveugles les unes aux autres — et quatre autres manques du planning
+
+- **« Je veux de la variété » donnait six poulets et deux tajines.** Quand l'IA *conçoit* les plats d'un cycle, elle est appelée **une fois par créneau** — et chaque appel ne voyait que son jour. Sept fois la même question, sept fois le même réflexe : une contrainte de variété que chaque appel respectait pourtant, isolément. Chaque conception reçoit désormais la liste de ce qui est déjà prévu, et doit s'en distinguer par la protéine, le féculent **et** le style de cuisine. Le garde-fou serveur ne voyait rien non plus : il dédoublonnait par identifiant de recette, or sept recettes inventées sont sept identifiants différents.
+- **Le « pourquoi ce plat, ce jour-là » survit maintenant à la validation.** Il était écrit à chaque suggestion, affiché pendant la planification, puis jeté au moment d'enregistrer — l'écran qu'on relit ensuite n'en gardait rien. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle ; écrit sur la recette, il aurait menti au prochain qui la planifie.
+- **Un plat cuisiné à l'avance arrive avec sa consigne de conservation.** Le conseil — comment le garder, comment le réchauffer — ne se produisait qu'à la demande, d'un bouton que rien n'invitait à presser. Il est désormais produit à la validation, pour les seuls repas qui ont un jour de préparation, et une seule fois par recette.
+- **L'historique du planning se consulte enfin.** Rien n'effaçait les repas passés : c'est leur *lecture* qui s'arrêtait à quatre-vingt-dix jours, la borne du flux temps réel — sans elle, l'écran relit à chaque ouverture la totalité des repas jamais planifiés. Le calendrier remonte maintenant jusqu'à deux ans, en lisant un mois à la demande, une seule fois par mois visité.
+- **Une icône pour ce que la machine a produit, une autre pour l'action de le demander.** Le petit robot marque un contenu écrit par l'IA — une raison de recherche, une valeur nutritionnelle estimée, une recette conçue, le pourquoi d'un repas. Les étoiles et la baguette restent des **verbes** : générer, suggérer, affiner. Les deux se confondaient, et l'on ne savait plus si une étoile annonçait un bouton ou un constat.
+
+### v0.21.16 — fonctionnel
+
+#### Une heure de repas par jour, et un libellé qui cesse d’être coupé
+
+- **Chaque jour peut avoir son heure.** Le samedi à midi, le vendredi à 20 h : le planning ne connaissait qu'une heure unique, appliquée aux sept jours. L'heure du jour s'ouvre dans la contrainte quotidienne, à côté du temps de préparation et des parts.
+- **Changer l'heure globale ramène tous les jours à elle**, et l'écran le dit avant de le faire — « remet les 2 jour(s) personnalisé(s) à cette heure ». Sans cette remise à zéro, régler l'heure par défaut n'aurait plus d'effet visible dès qu'un seul jour aurait été personnalisé, et il faudrait deviner lesquels des sept résistent.
+- **Un jour qui suit le défaut ne stocke rien.** Recopier l'heure globale sur les sept jours aurait figé sept valeurs que plus rien ne ramènerait ensemble. Le résumé du jour n'affiche l'heure que si elle lui est propre, et une flèche de retour n'apparaît que là où il y a quelque chose à annuler.
+- **Le planning obéit à ces heures** : un créneau prend l'heure de son jour de semaine, y compris un jour ajouté après coup ou comblé au milieu du cycle.
+- **Le libellé « Temps de préparation max (min) » n'est plus coupé en deux.** Le champ bordé fait flotter son libellé au-dessus de sa bordure ; le bloc n'avait aucune marge haute, et l'en-tête du jour le tranchait net.
+
+### v0.21.15 — fonctionnel
+
+#### Planifier une semaine pose enfin la même question que planifier un jour
+
+- **Le bouton global ignorait les sources.** Générer un créneau isolé demandait où chercher — mes recettes validées, mes brouillons, celles de la famille, et faut-il inventer si rien ne convient. Générer le cycle entier ne demandait rien et cherchait toujours dans les seules recettes validées. Deux comportements pour une même action, dont un que rien à l'écran n'annonçait.
+- **La même feuille est désormais posée dans les deux cas**, par le même widget : c'est le même choix, il n'avait aucune raison d'avoir deux versions.
+- **La question vient avant tout effacement.** *Tout regénérer* vidait l'écran d'abord ; annuler la feuille laissait donc un écran vide, sans le moindre moyen de revenir en arrière.
+- **« Conception IA (si aucun résultat) » est honorée pour le cycle**, et pas seulement pour un jour : chaque créneau que rien n'a pu remplir reçoit une recette inventée, enregistrée en brouillon pour exister ailleurs que dans l'écran. Une case cochée qui ne fait rien est pire qu'une case absente.
+- **Un cycle sans la moindre suggestion le dit** au lieu d'annoncer un succès devant un écran resté vide.
+
+### v0.21.14 — fonctionnel
+
+#### L'action principale du planning cesse de se cacher dans une baguette
+
+- **Sur grand écran, une icône dans un coin de la barre de titre n'apprend rien.** C'était pourtant l'action principale de l'écran *Nouveau planning* : sans elle, les créneaux restent vides et il n'y a rien à valider. Elle devient un bouton nommé — *Planifier avec l'IA* — posé là où se prennent les décisions de cet écran, juste au-dessus de *Valider le planning*.
+- **Le bouton annonce ce qui reste à faire** : « 3 créneaux vides ». Quand tout est rempli, il ne compte plus rien — un zéro affiché n'aiderait personne.
+- **Sur mobile, la baguette reste** : la barre basse y porte déjà le bouton de validation, et un second bouton pleine largeur mangerait la liste des créneaux, qui est ce qu'on vient lire.
+- **Les deux façons de générer restent distinctes**, quel que soit l'écran : compléter les créneaux vides, ou tout regénérer. La seconde efface le travail déjà fait à l'écran — ce choix ne doit pas se faire par mégarde, et il ne se fait donc pas d'un simple appui.
+- **Pendant la génération, le bouton le dit** au lieu de disparaître.
+
+### v0.21.13 — fonctionnel
+
+#### Deux recettes sur une page ne se partagent plus une seule photo
+
+- **Elles pointaient le même fichier.** Une page de livre qui porte deux recettes leur donnait les mêmes illustrations — non pas deux images identiques, mais **un seul objet** désigné deux fois. Rien ne casse aujourd'hui, parce que supprimer une illustration se contente d'oublier son adresse ; mais la première ligne de code qui supprimera vraiment le fichier viderait l'image de l'autre recette, sans erreur, sans coupable, et c'est l'ordre des suppressions qui déciderait laquelle perd sa photo.
+- **Chaque recette au-delà de la première reçoit désormais sa copie**, faite côté serveur — aucun octet ne transite, et les métadonnées de la décision de modération suivent l'objet.
+- **Un seul verdict pour toutes les copies** : c'est la même image, jugée une fois. La repasser au moteur doublerait la facture pour la même réponse.
+- **Si la copie échoue, la recette garde l'adresse partagée** plutôt que de perdre sa photo, et l'échec est journalisé. Un partage est un risque futur ; une illustration manquante est une perte immédiate.
+
+### v0.21.12 — fonctionnel
+
+#### Les photos découpées dans un scan passent enfin devant la modération
+
+- **Le pipeline d'import publiait sans verdict.** Il découpait les photographies d'une page de livre et les écrivait en direct dans le dossier publié, avec les droits de l'Admin SDK : ni règles Storage, ni quarantaine, ni Cloud Vision. Nous venions de fermer les quatre portes clientes ; celle-ci restait ouverte, et c'est pourtant la même chose qui y passe — une photo choisie par une personne.
+- **Un seul chemin, désormais, pour les deux appelants.** Le cœur de la modération a quitté le callable pour un module que le client et le pipeline empruntent tous les deux. Un second chemin de publication serait, tôt ou tard, un chemin sans verdict.
+- **Une découpe refusée n'apparaît pas dans la recette**, et une découpe laissée en attente non plus — moteur injoignable, on ne publie pas. Le journal dit combien et pourquoi.
+- **Trois filtres locaux écartent ce qui n'est pas une photographie**, avant même la modération : moins de 120 pixels de côté ou moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans couleur — du papier, ou du texte sur du papier. Les boîtes viennent d'un modèle, pas d'un détecteur géométrique : une boîte fantaisiste produisait jusqu'ici une bande de texte, téléversée comme photo du plat et conservée pour toujours.
+- **Les deux conditions du dernier filtre sont exigées ensemble**, et c'est délibéré : une photographie en noir et blanc a bien une couleur nulle, mais jamais une luminance moyenne de papier. Un filtre qui l'aurait jetée aurait coûté plus qu'il ne rapporte.
+- **Toutes les pages sont examinées.** Le texte d'un scan multi-pages était lu en entier ; ses photographies, elles, ne l'étaient que sur la première page — une recette étalée sur trois pages perdait les photos des deux suivantes, sans un mot. Chaque page coûte une détection : c'est le prix de ne pas les perdre.
+
+### v0.21.11 — fonctionnel
+
+#### Le calendrier tenait l'écran entier, il tient maintenant dans une bande
+
+- **Les cases faisaient deux cents pixels de côté.** La grille s'étirait sur toute la largeur disponible : sur un écran de bureau, une seule semaine occupait la moitié de la page et le détail du jour se trouvait hors champ. Une grille qu'on doit faire défiler pour voir le mois n'est plus un calendrier, c'est une liste très aérée.
+- **Une bande, trois mois** : le mois courant au centre, le précédent et le suivant à ses côtés en plus petit. Un mois de contexte de chaque côté, c'est ce qu'on regarde en préparant une fin de mois ou un début de vacances.
+- **La bande occupe le tiers haut de l'écran, l'agenda du jour occupe le reste.** Le calendrier est un repère, le détail est ce qu'on lit.
+- **La taille d'une case se déduit des deux contraintes** — la hauteur reçue et la largeur qui reste une fois les flèches posées — jamais d'une seule. Ne regarder que la largeur donnait les cases géantes ; ne regarder que la hauteur faisait déborder le téléphone de seize pixels.
+- **Sous une certaine largeur, seul le mois central reste.** Les flèches mènent toujours aux autres.
+- **Choisir un jour dans un mois latéral ne fait plus sauter la bande** : le regard vient d'y aller, la recentrer le perdrait.
+
+### v0.21.10 — fonctionnel
+
+#### Le planning se lit aussi au mois
+
+- **Un second onglet, *Calendrier*, à côté de la liste** — qui, elle, ne bouge pas. Une liste chronologique répond à « qu'est-ce qu'on mange bientôt » ; elle ne répond pas à « à quoi ressemble le mois », question qu'on se pose en préparant des courses ou un week-end. Deux questions, deux lectures, les mêmes repas.
+- **Les jours porteurs de repas sont surlignés**, avec une pastille par repas. Trois au plus par case : au-delà, un « +2 » dit qu'il y a plus sans prétendre le montrer — une ligne de sept points dans une case de quarante pixels ne se compte pas.
+- **Un appui ouvre l'agenda du jour, sous la grille**, avec les mêmes actions que dans la liste : changer la recette, vider le créneau, l'heure, l'export calendrier, le conseil de conservation. Aucune feuille modale : on choisit un jour et on lit, sans quitter l'écran.
+- **Les jours de préparation comptent aussi.** Un plat cuisiné le mardi pour le jeudi marque le mardi d'une pastille creuse et se retrouve dans l'agenda de ce jour-là, sous « À préparer ce jour-là ». Une grille qui ne montrerait que les jours de service mentirait sur la charge réelle de la semaine.
+- **Les pastilles ne rejouent aucune règle.** Elles se lisent entièrement dans des champs stockés — la recette est là ou non, la date de préparation est là ou non. Colorier midi et soir aurait demandé de ramener côté client les règles de créneau, que le serveur porte seul depuis qu'elles ont quitté le client.
+- **Aucun document créé, aucune requête nouvelle** : la vue range par jour les repas déjà chargés. Un mois est une position de lecture, pas une donnée du planning.
+- **La flèche vers le passé s'arrête où s'arrête l'historique** — quatre-vingt-dix jours, la borne du stream. Sans ce refus, un mois vide faute de chargement se lirait comme un mois sans repas.
+
+### v0.21.9 — fonctionnel
+
+#### Les outils d'amorçage quittent la maison
+
+- **Trois entrées n'existaient que pour un travail déjà fait** : l'amorçage des rôles dans les jetons, l'audit des identifiants du référentiel d'ingrédients, et le versement de la table des poids à la pièce. Chacune a tourné, a rendu son compte, et n'avait plus d'appelant. Elles restaient déployées, gardées `admin`, à portée d'un clic — et un outil qui fusionne des documents du référentiel ne demande qu'à être relancé par distraction.
+- **Une fonction déployée est une surface, pas un souvenir.** Ce qu'elles ont réparé est dans les données, pas dans le code : le garder revenait à conserver l'échafaudage après la façade.
+- **L'écran *Admin › Backfills* ne propose plus que ce qui sert encore** — les KPIs du référentiel et l'enrichissement des unités et ingrédients, qui, eux, ont un usage régulier.
+- **Une troisième opération y est entrée : *Reprendre la nutrition*.** Un passage automatique recalcule chaque nuit à 5 h les recettes dont la nutrition manque, a échoué, ou reste incomplète. Il s'impose deux garde-fous : vingt heures entre deux tentatives sur la même recette, et cinq essais au plus. Le bouton lève les deux — il sert juste après une correction de référentiel, quand on veut voir l'effet sans attendre le lendemain. Il rend un compte : combien complétées, combien encore incomplètes, combien laissées pour la prochaine passe, et s'il s'est arrêté sur le plafond de dépense.
+- La documentation qui les nommait a suivi dans le même commit : une doc qui décrit une fonction disparue envoie chercher une porte qui n'existe plus.
+
+### v0.21.8 — fonctionnel
+
+#### Un filtre textuel sur le poste
+
+- **Un champ de recherche au-dessus du tableau** ne garde que les postes dont le libellé contient ce qu'on tape. Insensible à la casse **et aux accents** : « generation » trouve « Génération de recette ». Personne ne tape les accents dans un filtre, et l'exiger transformerait l'aide en obstacle.
+- **Le total sous le tableau n'additionne que ce qui est affiché**, et le dit : « Total filtré », avec le nombre de lignes retenues. Laisser le total de la période sous une liste filtrée afficherait une somme que les lignes au-dessus ne font pas — un chiffre faux qu'on ne remarque jamais, parce qu'il reste plausible.
+- **Le chiffre en tête d'écran, lui, ne bouge pas.** C'est le coût de la période, sa référence ; un filtre de lecture ne réécrit pas ce qu'on a dépensé.
+- **Sans correspondance, le champ reste affiché** avec un message qui nomme la recherche. C'est lui qu'il faut corriger : le masquer enfermerait dans le vide qu'on cherche à quitter.
+- Une croix efface le filtre d'un geste.
+
+### v0.21.7 — fonctionnel
+
+#### Le tableau des coûts d'IA se trie par ses en-têtes
+
+- **Chaque colonne est cliquable** : poste, appels, coût unitaire, total, pour Claude, pour Gemini et pour l'ensemble. Un second clic inverse le sens. Par défaut, le plus cher en tête — c'est la question qu'on se pose en ouvrant cet écran.
+- **Une colonne vide reste en bas, dans les deux sens.** Un poste qui n'a jamais appelé Claude affiche « — », et « — » ne veut pas dire zéro : il n'a pas de coût unitaire, il n'en a aucun. Le trier comme un zéro l'aurait placé en tête d'un tri croissant, c'est-à-dire présenté comme le moins cher — exactement le contraire de la vérité.
+- **Les égalités se départagent par le libellé.** Deux postes au même montant gardaient sinon un ordre arbitraire, qui changeait à chaque rafraîchissement de l'écran.
+- **La ligne de total reste en bas**, quel que soit le tri : c'est une somme, pas une ligne comme les autres.
+- Le tri survit au passage de « Par poste » à « Par processus » : on change d'axe de lecture, pas de question.
+
+## 2026-08-18
+
+### v0.20.28 — fonctionnel
+
+#### L'écran ne s'éteint plus pendant qu'on cuisine
+
+- **Une recette ouverte garde l'écran allumé.** On cuisine les mains occupées, farineuses ou mouillées : la fiche restait affichée sans qu'on la touche, l'écran s'éteignait au milieu d'une étape, et c'est le seul moment où on ne peut pas le rallumer.
+- **Le maintien vaut pour toute la fiche**, pas seulement pour le mode cuisine : on lit aussi les ingrédients, la nutrition et les commentaires sans toucher l'appareil.
+- **Il s'arrête en quittant la recette** — et pas avant. Deux recettes ouvertes l'une sur l'autre le demandent chacune ; refermer celle du dessus n'éteint pas l'écran de celle qui reste.
+- **Revenir d'un appel ou d'un autre onglet le rétablit** : navigateurs et Android relâchent ce verrou dès que l'application passe en fond, sans jamais le rendre d'eux-mêmes.
+- Android, iOS, web et Windows. Si la plateforme refuse — un navigateur peut le faire — la recette s'affiche normalement, l'écran s'éteint comme avant, et le refus est remonté une fois.
+
+### v0.20.28 — technique
+
+#### Maintien de l'écran allumé sur la fiche recette
+
+- **`wakelock_plus: ^1.3.3`** (nouveau) — version retenue par la résolution : à partir de 1.6.1, wakelock_plus réclame `package_info_plus ^10.1.0` quand le projet est en `^8.0.0`. Monter l'un impose de monter l'autre — un autre chantier. Couvre Android, iOS, web et Windows ; aucune permission Android (le plugin pose `FLAG_KEEP_SCREEN_ON` sur la fenêtre, pas un `WakeLock` système).
+- **`core/services/screen_wakelock.dart`** (nouveau) : `ScreenWakelock` avec `acquire()` / `release()` / `refresh()` et une instance partagée `ScreenWakelock.instance`. Le maintien est **compté**, pas booléen : deux écrans superposés le demandent chacun, et le verrou ne tombe qu'au dernier `release()`. Une libération de trop ne descend pas sous zéro — sinon la prochaine prise n'appliquerait rien.
+- **`refresh()` existe parce que le verrou est révocable** : navigateurs et Android le relâchent au passage en arrière-plan sans le rendre. Sans reprise au `resume`, un appel téléphonique suffisait à éteindre l'écran pour le reste de la lecture.
+- **`WakelockToggle` injectable** — `Future<void> Function({required bool enable})`, par défaut `WakelockPlus.toggle` : le comptage se vérifie sans plugin ni binding.
+- **`mixin KeepScreenAwake<T extends StatefulWidget> on State<T>`** : `acquire()` en `initState`, `release()` en `dispose`, `AppLifecycleListener(onResume:)` pour la reprise. Mixé sur `_RecipeDetailScreenState` (`recipe_detail_screen.dart`), après `SingleTickerProviderStateMixin`.
+- **Le maintien couvre toute la fiche, pas le seul `_mobileKitchenMode`** : les ingrédients, la nutrition et les commentaires se lisent aussi les mains occupées.
+- **L'échec de plateforme est remonté une fois par session** (`reportUnexpectedError`, poste `screenWakelock.apply`, contexte `enable` + `holders`). Un refus vient de la plateforme — API absente, onglet en fond, navigateur qui refuse — et se reproduirait à chaque ouverture de recette : cent rapports identiques n'apprennent rien de plus que le premier et noient les autres. Ce n'est pas un `catch` silencieux, c'est un `catch` qui ne se répète pas.
+- **Le client desktop Windows n'est pas concerné par la limite App Check** : le maintien ne passe par aucun appel serveur.
+- **Tests** : `test/screen_wakelock_test.dart` — première prise seule appliquée, verrou conservé tant qu'un détenteur reste, libération excédentaire ignorée, reprise après arrière-plan, `refresh()` sans détenteur sans effet.
+
+### v0.20.27 — fonctionnel
+
+#### L'envoi vers Tasks ouvre les tâches
+
+- **Un onglet s'ouvre sur vos tâches** dès que la liste est partie — c'est là qu'on va ensuite. Sur mobile, l'application Google Tasks capte le lien si elle est installée.
+- **Le bandeau garde un bouton « Ouvrir »**, parce qu'un navigateur peut refuser une ouverture qui ne suit pas immédiatement un geste : après une trentaine d'appels réseau, le lien n'est plus considéré comme déclenché par vous. Ce bouton-là, lui, l'est.
+- Il n'existe pas d'adresse stable vers une liste précise — l'identifiant rendu par l'API n'est pas celui de l'interface. On ouvre donc les tâches, où la liste du jour figure en tête du sélecteur.
+
+### v0.20.26 — fonctionnel
+
+#### La liste de courses part dans Google Tasks, cochable et rangée
+
+- **Keep n'a pas d'API d'écriture.** L'envoi passait donc par le presse-papier : à vous de créer la note, de la convertir en cases à cocher, et de refaire les rayons — que Keep aplatit en une ligne par article, en-têtes compris. Ce n'était pas un défaut de l'application, c'était la seule chose que Keep permet.
+- **Google Tasks, lui, reçoit exactement ce qu'on veut lui donner** : un **rayon par tâche**, un **article par sous-tâche**, tout cochable. Une liste prête, sans une manipulation.
+- **L'ordre des rayons est conservé** — celui de la liste, donc celui du magasin. Sans précaution, l'API place chaque insertion en tête et rend la liste à l'envers.
+- **Seuls les articles non cochés partent** : ce qui est déjà dans le panier n'a rien à faire sur une liste de courses.
+- **Le bouton Keep reste**, en second, pour qui vit dans Keep — et il dit maintenant franchement ce qu'il faudra faire à la main.
+- L'autorisation suit la même mécanique que l'export vers Google Agenda : un consentement au premier envoi, puis un jeton gardé le temps de la session.
+
+#### La correction orthographique par IA est retirée
+
+- **Elle ne tenait pas ses promesses**, et une fonction qui échoue à chaque essai vaut moins que pas de fonction. Retirée entièrement : module, prompt, entrée HTTPS, bouton, et la fonction déployée elle-même — aucun code mort, ni dans le dépôt, ni dans le projet Firebase.
+- **Le poste reste au catalogue des coûts**, marqué « retiré ». C'est la règle du projet : des appels ont été comptabilisés sous cette clé, et un mois déjà chiffré ne doit pas perdre le nom de ce qu'il a payé.
+- Le défaut de lecture qui l'avait motivée — « les carotte » sur une fiche imprimée — est réglé autrement, par les badges du PDF.
+
+### v0.20.25 — fonctionnel
+
+#### Le PDF porte les mêmes badges que l'écran
+
+- **Le PDF imprimait le CookLang débarrassé de sa syntaxe.** « Émincer finement le poivron, les carotte » : rien ne disait au lecteur que « carotte » n'était pas un mot de la phrase, mais une **référence structurée** reprise de la liste d'ingrédients. Deux gênes d'un coup — une faute d'accord apparente, et une syntaxe devenue invisible.
+- **Les jetons sont désormais des badges**, comme les puces de l'application : ingrédients sur fond d'accent clair, matériel et minuteurs sur fond gris. « les ⟦2 carottes⟧ » se lit sans heurt, parce qu'un badge s'annonce comme une donnée et non comme un mot accordé.
+- **Le badge porte la même chose que la puce** : la quantité accordée pour un ingrédient, le nom pour un ustensile, la durée en clair pour un minuteur — « 12 minutes », plus « 0:12:00 ».
+- **Les notes aussi**, dans leur ton propre.
+
+#### Et la correction de prose lit enfin la réponse du moteur
+
+- **« Réponse pas exploitable » à chaque essai.** La passe appelait `JSON.parse` sur la réponse brute : un simple bloc de code Markdown suffisait à tout faire échouer. Elle passe désormais par `askJson`, le seul endroit du projet qui sait lire une réponse de modèle — enrobage, phrase d'introduction, virgule finale.
+- **Les fragments sont numérotés dans la réponse**, et non plus attendus dans l'ordre : un modèle qui fusionnait deux fragments minuscules faisait abandonner toute la passe. Un fragment manquant ne coûte plus que lui-même.
+- **Un abandon laisse une trace** dans les journaux, avec sa cause. Sans elle, « pas exploitable » restait un message d'écran sans explication.
+
+C'est la réponse la moins coûteuse au problème d'accord : là où l'écran ne posait de question à personne, le papier en posait une — parce qu'il avait perdu la distinction entre le texte et les données. Le badge la lui rend.
+
+### v0.20.24 — fonctionnel
+
+#### Une correction orthographique qui ne peut pas casser une recette
+
+Le rendu ne corrigera jamais une faute écrite **dans** le texte — « Chauffer l'poêle » est dans la recette, pas dans son affichage. D'où cette passe, et d'où sa forme.
+
+- **Un nouveau bouton dans l'éditeur** (icône correcteur, à côté du bouton IA) : *Corriger l'orthographe du texte des étapes*.
+- **Le modèle ne voit jamais la recette.** Il reçoit une liste numérotée de **fragments de texte** extraits d'entre les balises, et rend la même liste corrigée. Le réassemblage est mécanique : chaque `@ingrédient{}`, `#matériel{}`, `~minuteur{}`, chaque métadonnée `>>`, chaque en-tête de section et chaque image ressort **identique, octet pour octet**. La sûreté ne vient pas d'une consigne de prudence donnée au modèle, mais du fait qu'on ne lui met aucun balisage entre les mains.
+- **Trois garde-fous, tous vérifiables.** Une liste d'une autre longueur est rejetée en bloc. Un fragment qui revient avec `@`, `#`, `~`, `{` ou `}` alors qu'il n'en avait pas est ignoré — le modèle a inventé une balise. Un fragment qui double ou disparaît est ignoré : une correction orthographique ne réécrit pas une phrase. Un fragment refusé garde sa version d'origine.
+- **Rien n'est appliqué sans que vous l'ayez vu.** Une fenêtre montre les lignes concernées, avant et après, et vous appliquez ou non. Une correction automatique qu'on découvre à l'impression n'est plus une correction, c'est une surprise.
+- **Une passe qui ne change rien le dit**, et une passe abandonnée aussi — plutôt qu'un succès silencieux qui laisserait croire la recette relue.
+
+**Pourquoi ne pas avoir réutilisé la relecture existante** : `polishCooklang` réécrit le document entier, noms d'ingrédients compris. C'est utile sur un brouillon brut, et destructeur ensuite — le nom d'un ingrédient est son identité, celle dont dépendent la nutrition, la liste de courses, la recherche et les catégories. Et la correction ne tiendrait pas : la normalisation référentielle réécrit chaque balise depuis le référentiel au prochain enregistrement.
+
+Le poste **Orthographe de la prose** apparaît dans les coûts et bascule entre Gemini et Claude depuis *Admin › Moteur d'IA*, comme tous les autres.
+
+### v0.20.23 — fonctionnel
+
+#### C'est l'article qui donne le nombre, et les minuteurs se lisent
+
+- **« les carotte » survivait à la correction précédente.** Celle-ci accordait le nom d'après la quantité du jeton — or dans la prose, un ingrédient s'écrit le plus souvent **sans quantité** : `les @carotte{}`, la quantité vivant dans la liste. Sans quantité, pas d'accord. C'est désormais **l'article qui précède** qui commande : « les » met au pluriel, « le », « la », « l' » gardent le singulier, et un numéral compte comme un pluriel. C'est le signal que lit un humain — il tient dans les deux mots d'avant, et il est toujours là.
+- **L'article l'emporte sur la quantité.** Une recette peut annoncer deux poivrons dans sa liste et n'en mettre qu'un dans une étape : c'est la phrase qui a raison.
+- **Les minuteurs se lisent enfin dans le PDF** : « Cuire 12 minutes » au lieu de « Cuire 0:12:00 ». La valeur brute du jeton y était imprimée telle quelle, alors que l'application la met en forme depuis toujours. Le formatage a quitté la couche présentation pour que les deux s'en servent.
+
+**Ce que le rendu ne corrigera jamais** : une faute d'écriture dans la prose libre. « Chauffer l'poêle » est dans le texte de la recette, pas dans son affichage — et choisir entre « le » et « la » demande un genre que l'application ne connaît pas. Cela se corrige à la main dans l'éditeur, ou par une passe d'IA limitée aux segments de texte **entre** les jetons.
+
+### v0.20.22 — fonctionnel
+
+#### Les ingrédients s'accordent enfin
+
+Une fiche imprimée disait « 3 Cuillère à soupe sauce soja », « 1 pièces poivron », « 2 gousse ail », et dans une étape « Émincer finement le poivron, les carotte ». Aucune de ces lignes n'était une faute de l'IA : c'étaient des **identifiants affichés comme du texte**.
+
+- **`Cuillère à soupe` est un libellé de référentiel**, écrit pour un tableau d'administration — majuscule et singulier. Dans une phrase, il se lit désormais « 3 cuillères à soupe **de** sauce soja ».
+- **`carotte` est le nom canonique de l'ingrédient**, celui qui sert à l'appariement nutritionnel, à la liste de courses et à la recherche. Il s'accorde maintenant à l'affichage — « les carottes » — sans que rien ne change en base.
+- **L'unité qui compte disparaît** : on écrit « 2 carottes », jamais « 2 pièces carotte ». C'est le nom qui porte le nombre.
+- **La liaison est faite** : « 2 gousses **d'**ail », « 500 g **d'**émincé de bœuf », mais « 200 g **de** haricots verts » — le h aspiré ne s'élide pas.
+- **Un symbole reste un symbole** : « 500 g », jamais « 500 gs ».
+- **Le singulier tient jusqu'à deux**, comme en français : « 1,5 litre ». Une quantité illisible — « quelques » — laisse le singulier plutôt que de deviner.
+
+**Rien n'est réécrit dans la recette.** Corriger le CookLang aurait cassé l'identité dont dépendent quatre chaînes — nutrition, courses, index de recherche, catégories — et aurait de toute façon été effacé au prochain enregistrement, puisque la normalisation référentielle réécrit chaque `@nom{}` à partir du référentiel. C'est **le rendu** qui a été corrigé : la fiche, les étapes, la liste de courses et l'export PDF partagent la même règle, et **toutes les recettes déjà en base sont corrigées d'un coup**, réimpression comprise.
+
+Règles d'affichage, donc **client uniquement** : le serveur n'affiche rien, et en écrire un jumeau TypeScript n'ajouterait qu'une divergence possible.
+
+### v0.20.21 — fonctionnel
+
+#### La dépense par utilisateur a son écran, et le plafond passe en euros
+
+- **Un écran à part**, *Admin › Dépense par utilisateur*, au lieu d'une carte posée en haut des coûts mensuels. Les deux questions ne se posent pas au même moment : les coûts mensuels disent **combien l'application coûte**, celui-ci dit **qui dépense, à quoi, et jusqu'où il peut aller**. La seconde a besoin de place — une ligne par compte, un détail par poste.
+- **Le détail par service, compte par compte.** Chaque personne se déplie sur la liste de ses postes — scan, nutrition, dressage, planning — du plus cher au moins cher. Cette ventilation n'existait nulle part : l'agrégat mensuel savait dire le total d'un compte et le total d'un poste, jamais lequel des deux enfants fait tourner le générateur d'images.
+- **Le même sélecteur de période que les deux autres onglets** — ce mois, 3, 6, 12 mois, depuis le début — et le même réglage : une période choisie ici se retrouve là-bas.
+- **Les mois antérieurs n'ont pas ce détail** et l'écran le dit, plutôt que d'afficher un vide qui se lirait « rien dépensé ». Une reconstruction des agrégats les rattrape.
+- **Le plafond se règle désormais en euros**, la monnaie du foyer, et non plus en dollars. Les fournisseurs facturant en dollars, la comparaison passe par le taux relevé sur la facture. **Sans taux, le plafond en euros ne s'applique pas** : le projet refuse d'inventer un taux, et c'est le plafond en nombre d'appels qui protège seul — l'écran l'annonce en clair, et le journal aussi.
+- **Le compte fondateur dispose de cinq fois le plafond.** Règle écrite dans le code et non en base : elle dit que le propriétaire du projet est aussi celui qui l'éprouve — c'est lui qui importe des livres entiers et régénère des séries de visuels. La poser en base en ferait un privilège transmissible par n'importe quel administrateur. Le multiplicateur porte sur **les deux** plafonds, sans quoi le compteur d'appels bloquerait précisément celui qui a le droit d'en faire cinq fois plus. Et il reste un plafond : cinq fois plus haut, pas illimité.
+- **L'identité du fondateur est lue dans Auth**, jamais dans le champ `email` du document utilisateur — qu'un administrateur peut écrire. Un privilège ne se fonde pas sur une donnée qu'un tiers peut poser.
+- **L'alerte mensuelle est en euros** elle aussi, et se tait en le disant quand aucun taux ne permet de la calculer : un silence se lirait « rien à signaler ».
+
+## 2026-08-17
+
+### v0.20.20 — fonctionnel
+
+#### La dépense d'IA a enfin un plafond
+
+- **Le projet mesurait au centime sans jamais limiter.** Le contrôle d'accès dit *qui* appelle, l'attestation dit *quel programme* appelle ; aucun des deux ne dit **combien de fois**. Restaient entiers : un jeton égaré sur l'appareil d'un membre de la famille, un membre qui s'amuse, et surtout une boucle dans notre propre code — celle-là, aucune attestation ne l'arrêtera jamais.
+- **Deux plafonds par compte et par jour**, et non un seul. Le plafond en dollars est le naturel ; mais quand la grille tarifaire est illisible, le projet refuse de chiffrer et les appels sont enregistrés **sans montant**. Un plafond uniquement monétaire s'ouvrirait donc en grand exactement pendant la panne où plus rien n'est chiffré. Le second plafond compte les **appels**, et ne dépend d'aucun prix. Le premier des deux atteint ferme la porte.
+- **Le refus arrive avant la dépense**, aux deux seuls endroits d'où l'argent part : le routeur de texte — donc aussi tout ce que déclenche le pipeline d'import, que les gardes HTTPS ne voient pas — et la production d'image. Le message dit ce qui est atteint et quand cela se rouvre, sans jargon.
+- **Un plafond atteint ne touche que ce compte.** Les autres continuent de cuisiner.
+- **Un import coupé par le plafond ne se réessaie pas** : il part directement en dead letter, avec le motif, d'où un administrateur le relance demain — ou après avoir relevé la limite. Réessayer trois fois refait tout le travail qui précède l'appel d'IA pour se heurter au même mur.
+- **Les réglages vivent dans Firestore**, pas dans le code : *Admin › Coûts* affiche ce que chaque compte a consommé aujourd'hui, la part de plafond déjà mangée, et permet de relever la limite en une minute — le jour où un import massif se fait couper au milieu, il ne faut pas attendre un déploiement. Un interrupteur coupe les deux plafonds sans les effacer.
+- **Les défauts protègent avant tout réglage** : deux dollars et quatre cents appels par compte et par jour. Une soixantaine de visuels de dressage, des milliers d'appels de texte — personne ne les atteindra en cuisinant, une boucle les atteint en quelques secondes. C'est un défaut assumé : un plafond est une *décision*, pas une mesure, et l'absence de document ne doit pas vouloir dire « aucune limite ».
+- **Une alerte mensuelle**, vérifiée chaque matin plutôt que le mois suivant : une alerte qui arrive après la facture n'est pas une alerte. Elle se déclenche une fois par mois au franchissement du seuil, et signale au passage combien d'appels sont restés sans montant — un mois traversé par une panne de grille paraîtrait sinon simplement économe.
+
+### v0.20.19 — fonctionnel
+
+#### L'interrupteur d'arrêt ne dépend plus de ce qu'il coupe
+
+- **L'écran d'attestation passait lui-même par le contrôle d'attestation.** En mode *Exigé*, un client non attesté — le téléphone, le desktop — ne pouvait donc plus ni lire le mode ni le changer : il affichait « Politique illisible ». Tant qu'un autre client atteste, il reste une issue ; le jour où l'attestation refuse à tort — reCAPTCHA en panne, clé expirée —, *Exigé* devenait définitif pour tout le monde. La clé était enfermée dans la pièce.
+- **Les deux postes qui lisent et écrivent le mode sont désormais exemptés**, en toutes circonstances. Ils exigent toujours le rôle administrateur, ne coûtent rien, et n'exposent qu'un mot parmi trois. L'appel reste journalisé : savoir qu'un client non attesté vient changer le mode a de la valeur.
+- **Passer en *Exigé* reste impossible depuis un client non attesté.** L'exemption ouvre la marche arrière, pas la marche avant.
+
+### v0.20.18 — fonctionnel
+
+#### Trois portes de dépense refermées
+
+- **Générer une illustration redevient un geste d'éditeur.** Le poste coûte 0,0336 $ l'image et se contentait d'un compte connecté, alors que le visuel de dressage exigeait déjà le rôle éditeur et que l'amélioration de photo est réservée aux administrateurs. Un lecteur pouvait donc dépenser en boucle ce que la même famille de postes lui refusait à côté. Le bouton disparaît aussi de l'onglet Illustrations pour qui n'est pas éditeur : proposer une action que le serveur refusera ne donne qu'un message d'erreur sans explication.
+- **Chaque entrée HTTPS est plafonnée à dix instances simultanées.** Sans plafond, une boucle — la nôtre autant qu'une malveillante — ouvrait autant d'instances que le projet l'autorise, cent par défaut, chacune servant quatre-vingts requêtes qui partent toutes chez Gemini ou Anthropic. Dix tiennent largement une famille. Ce plafond borne le *parallélisme*, pas le total dépensé : le plafond par compte reste à écrire.
+- **La quarantaine n'accepte plus que ce qu'un import produit** — photo, PDF, document Word, texte collé. Elle prenait n'importe quel fichier jusqu'à cinquante mégaoctets : le bucket servait d'hébergement gratuit à qui possédait un compte, et rien dans le suivi de stockage n'aurait distingué ces octets-là des recettes de la famille. Le fichier reste inspecté par le serveur avant d'être promu ; ce contrôle-ci évite seulement que le dépôt serve à autre chose.
+
+### v0.20.17 — fonctionnel
+
+#### La clé était dans le code, pas dans le déploiement
+
+- **Le bundle web publié en v0.20.16 ne contenait pas la clé reCAPTCHA.** Le compilateur web incrémental n'avait pas repris la modification : `flutter build web` a rendu un `main.dart.js` antérieur à l'édition, sans le signaler, et le déploiement l'a publié. Le client ne pouvait donc produire aucun jeton — le serveur voyait `app: MISSING`, et l'écran d'attestation restait rouge sans raison apparente.
+- **Le symptôme s'était pourtant laissé lire dans le binaire** : la constante de clé était absente du bundle, ainsi que toute trace du fournisseur reCAPTCHA. Une constante qui disparaît d'un build alors que le code qui l'entoure y figure signale que personne ne la lit — ici, que l'attestation n'était pas compilée du tout.
+- **Le déploiement était sain, le build ne l'était pas.** `flutter clean` échouait lui-même sur un dossier verrouillé (`windows/flutter/ephemeral`) et laissait le cache de build intact : la reconstruction « réussissait » en 1,7 seconde sans rien recompiler. Il a fallu supprimer `build/web` et `.dart_tool/flutter_build` à la main.
+- **Vérification retenue** : après un build, la présence de la clé dans `build/web/main.dart.js` se contrôle en une commande. Un bundle qui compile n'est pas un bundle à jour.
+
+### v0.20.16 — fonctionnel
+
+#### Le client web atteste pour de bon
+
+- **La clé reCAPTCHA est posée.** Le mécanisme d'attestation était complet depuis la version précédente, mais inerte sur le web faute de clé de site : tous les appels partaient non attestés. Le client web produit désormais un jeton d'attestation à chaque appel.
+- **La clé vit dans le code, et c'est correct.** Une clé de *site* s'affiche dans la page, comme celle de n'importe quel formulaire protégé par reCAPTCHA — la mettre en secret n'aurait rien caché, et aurait ajouté un `--dart-define` au déploiement pour une donnée que le navigateur reçoit de toute façon. La clé *secrète*, elle, n'existe pas dans ce mode : reCAPTCHA Enterprise n'en délivre pas.
+- **Rien n'est encore exigé.** Le mode reste *Observation* : les journaux vont maintenant dire lesquels des clients attestent — web, Android, desktop — avant toute décision de refuser.
+
+### v0.20.15 — fonctionnel
+
+#### L'application s'atteste — App Check
+
+- **Le contrôle d'accès savait qui appelle, pas quoi appelle.** Une Cloud Function callable est une URL HTTPS publique et devinable ; la seule chose qu'elle exigeait était un jeton d'identité, lequel s'obtient avec la clé web — publique par conception — ou se recopie depuis le navigateur d'un membre de la famille. L'application et une boucle dans un terminal étaient indiscernables côté serveur, et chaque appel part chez Gemini ou Anthropic. La liste d'origines CORS ne protège de rien ici : c'est une règle que les navigateurs s'imposent, et un script n'en a pas.
+- **Le client atteste désormais son authenticité** : reCAPTCHA Enterprise sur le web, Play Integrity sur Android, DeviceCheck sur iOS. Le jeton d'attestation accompagne chaque appel, et les trois gardes des Cloud Functions le vérifient — donc les vingt-sept entrées d'un coup, administration comprise.
+- **Trois modes, pilotés depuis *Admin › Attestation de l'application*, pas par un déploiement.** *Désactivé* ne vérifie rien ; *Observation* — le défaut — ne refuse rien mais journalise chaque appel non attesté, avec le poste et l'agent utilisateur ; *Exigé* refuse. Le silence des traces d'observation est la condition pour exiger : ce sont elles qui disent ce qu'on couperait. Une bascule prend effet en moins d'une minute, dans les deux sens — le jour où l'attestation refuse à tort, il faut rouvrir tout de suite, et un interrupteur qui demande un déploiement n'est pas un interrupteur.
+- **L'écran refuse de vous verrouiller dehors.** Il affiche si l'appel qui l'a chargé était lui-même attesté, et le serveur rejette le passage en *Exigé* demandé depuis un client non attesté. C'est la leçon de la clé Anthropic : une bascule sans effet reste une énigme pour celui qui l'a demandée.
+- **Le client Windows desktop n'atteste pas**, et le dit franchement : sa seule voie serait un jeton de débogage, c'est-à-dire un secret partagé dans un binaire distribué. Passer en *Exigé* le prive donc de l'IA. Cette limite ne se contourne pas par une exemption de plateforme — la plateforme est déclarée par le client, donc par un attaquant aussi.
+- **Rien n'est encore exigé.** Le mode par défaut observe : un déploiement qui se mettrait à refuser des appels sans que personne l'ait demandé serait une panne, pas une sécurisation. L'attestation web attend par ailleurs sa clé reCAPTCHA, à créer dans la console Firebase.
+- **Ce qu'App Check ne fait pas** : il vérifie *quel programme* appelle, jamais *combien de fois*. Un plafond de dépense par compte reste à faire, et c'est lui qui protégerait aussi de nos propres bugs.
+
+### v0.20.14 — fonctionnel
+
+#### Le rôle ne se choisit plus soi-même, et la bibliothèque a une porte
+
+- **N'importe qui pouvait devenir administrateur.** Le rôle d'un compte neuf était décidé par l'application — elle comptait la collection `users` et s'attribuait `admin` si elle la trouvait vide — et les règles Firestore ne contrôlaient aucun champ à la création. Il suffisait donc de se connecter avec un compte Google et d'écrire soi-même son propre document avec `role: "admin"`, hors application, pour obtenir tous les droits : le déclencheur qui recopie le rôle dans le jeton faisait confiance au document. Les règles imposent désormais `pending` à la création, ainsi que l'adresse du jeton, et **seul un administrateur nomme**.
+- **Le compte fondateur est le seul administrateur d'origine.** Un déclencheur serveur lui rend le rôle `admin` en vérifiant l'adresse du compte *Auth* — jamais celle inscrite dans le document, qu'un client a pu écrire. Il le rétablit aussi s'il est rabaissé ou révoqué, et les règles interdisent à quiconque d'autre de toucher à son rôle : un administrateur adoubé ne peut pas destituer celui qui l'a nommé.
+- **Être connecté ne donne plus accès à rien.** Tout compte Google qui se connectait lisait aussitôt l'intégralité des livres et des recettes de la famille. Un compte neuf attend maintenant d'être nommé : il voit une salle d'attente qui affiche son adresse, et rien d'autre. L'écran se referme de lui-même dès l'approbation. L'écran d'administration met ces demandes en tête de liste, sous un bandeau qui les compte.
+- **Révoquer un éditeur ou un administrateur ne faisait rien.** Le contrôle de révocation n'était appliqué qu'aux lecteurs : un éditeur révoqué continuait d'écrire livres, recettes et référentiels, et un administrateur révoqué gardait l'administration. La révocation vaut désormais pour tous les rôles, côté règles comme côté Cloud Functions.
+- **Les vingt-sept entrées d'IA ne sont plus gardées par la seule présence d'un compte.** Elles dépensent de l'argent à chaque appel : un compte en attente ou révoqué les atteignait aussi bien qu'un membre de la famille. Chaque appel vérifie maintenant le rôle porté par le jeton, et relit le document quand le jeton n'en porte pas encore — une lecture Firestore vaut moins qu'un appel d'IA laissé passer.
+- **Les lignes de coût d'IA ne peuvent plus être fabriquées par un client.** Seules les Cloud Functions les écrivent, mais la règle de création leur était ouverte : n'importe quel compte pouvait inscrire des dépenses imaginaires que la réconciliation mensuelle aurait présentées comme réelles. Un montant faux ne se voit pas.
+- **Les dépôts de fichiers suivent la même règle.** Les règles Storage laissaient écrire tout jeton sans claim de rôle — précaution du temps de la migration, aujourd'hui périmée, et qui aurait suffi à un compte en attente pour déposer des images dans les dossiers partagés. Les envois exigent désormais un rôle explicite. Les *lectures*, elles, restent ouvertes à tout compte actif : les fermer ferait clignoter les images de qui n'a pas encore renouvelé son jeton, pour un gain nul.
+
+### v0.20.13 — fonctionnel
+
+#### Toutes les sections de la fiche se replient
+
+- **Nutrition, Dressage et Communauté** portent désormais le même en-tête que Catégorisation, Ingrédients et Préparation : icône, titre, chevron, et un appui qui les replie. Elles étaient les seules à s'imposer en entier — sur un téléphone, quatre sections dépliées font un écran qu'on parcourt au pouce sans jamais retrouver la préparation.
+- **Chacune s'ouvre dépliée**, comme les autres : replier reste un geste, jamais un état imposé à l'ouverture.
+- **« Voir tout » de la section Communauté reste dans l'en-tête**, donc joignable même repliée.
+
+### v0.20.12 — fonctionnel
+
+#### L'affichage compact cesse d'être une version amoindrie
+
+- **La recette d'abord, puis nutrition, dressage et communauté.** En affichage compact, la fiche s'ouvrait sur le détail nutritionnel — avant même les ingrédients — et le **dressage n'existait tout simplement pas** hors mode cuisine, où il prenait la place de la communauté. Les quatre sections sont désormais empilées dans l'ordre de lecture : la recette, puis Nutrition, Dressage et Communauté, chacune sous son titre, et **aucune ne dépend plus du mode cuisine**. C'est le même contenu que les quatre onglets du grand écran.
+- **Le document original est de nouveau joignable.** Le bouton « Voir / télécharger l'original » vivait dans la barre du grand format ; sous 700 px de large, le scan d'où venait la recette n'apparaissait nulle part. Il est maintenant dans la barre compacte, comme sur la page de livre et sur le brouillon, qui l'avaient toujours gardé.
+- **La couverture d'une recette libre se change depuis le menu.** Le geste n'existait que sur la vignette de la barre large, absente en compact : son propriétaire ne pouvait plus la remplacer. Une entrée de menu le permet, et annonce l'envoi en cours.
+- **Les puces de note, de remarques, d'astuces et de corrections reviennent à côté du titre.** Elles disaient d'un coup d'œil ce que la recette avait accumulé ; en compact, il fallait ouvrir la feuille communauté pour le découvrir. Un appui sur une puce y mène toujours.
+
+### v0.20.11 — fonctionnel
+
+#### Le conseil de conservation ne s'écrit plus en double
+
+- **La section en fin de recette disparaît.** Le conseil y était recopié sous « Conservation et réchauffage ». Depuis que le bandeau le montre là où la question se pose, cette copie n'apportait rien — et elle s'affichait mal : le rendu numérotait son titre et son résumé comme les étapes **6** et **7** de la préparation, à la suite de la vraie recette.
+- **Il ne vit plus qu'à un seul endroit**, sur la recette, et se lit dans le bandeau et dans la feuille du planning. Deux copies d'un même conseil, c'était deux versions à tenir d'accord qu'une régénération pouvait faire diverger.
+- **Les recettes qui portent encore la section s'en débarrassent seules**, à leur première ouverture par quelqu'un qui a le droit de les modifier. Une section « Conservation » que vous auriez écrite à la main n'est jamais touchée : seul le titre exact posé par l'application est reconnu.
+- **Générer la conservation depuis la planification** ne modifie plus le texte de la recette : le conseil est produit, stocké, affiché, et c'est tout.
+
+### v0.20.11 — technique
+
+#### Le conseil de conservation quitte le CookLang
+
+- **`storage_text.dart` ne sait plus qu'effacer.** `buildStorageSection()` et `applyStorageSection()` sont supprimés ; restent `hasStorageSection()` et `removeStorageSection()`, qui servent au nettoyage de l'existant. Le conseil n'est plus persisté que dans `recipes/{id}.storage_advice`.
+- **`hasStorageSection()` cherche le titre** au lieu de comparer les longueurs avant/après retrait. `removeStorageSection()` supprimant aussi les lignes vides finales, l'ancienne implémentation répondait vrai pour toute recette terminée par un saut de ligne — ce qui, branchée au nettoyage automatique, aurait déclenché une écriture Firestore sur presque chaque recette ouverte. Cas verrouillé dans `test/storage_text_test.dart`.
+- **`StorageRepository`** : `applyToRecipe()` remplacé par `stripSection({recipeId, rawCooklang})`, qui n'écrit que si la section est présente et rend un booléen. `ensure({recipeId})` perd son rappel `loadRawCooklang` et se réduit à `read() ?? generate()`.
+- **`recipe_detail_screen.dart` — `_stripLegacyStorageSection()`** : nettoyage opportuniste, une fois par recette et par session (`_strippedStorageIds`), conditionné à `canEdit` — un lecteur n'a pas le droit d'écrire et l'échec n'apprendrait rien. `updated_at` reste intact.
+- **`batch_planning_screen._generateStorageAdvice()`** ne réécrit plus le CookLang ni ne recopie de recette dans `_slots` ; il produit et affiche.
+- **`MealPrepBanner`** perd son paramètre `rawCooklang`.
+
+### v0.20.10 — fonctionnel
+
+#### La recette d'un plat cuisiné à l'avance le dit dès son ouverture
+
+- **Le contexte du repas suivait la recette à moitié.** Le planning marquait bien « Préparé le dimanche 23 · réfrigérateur », mais ouvrir la recette depuis ce créneau donnait la fiche ordinaire : ni refroidissement, ni durée de garde, ni réchauffage, ni ce qu'il faut garder pour le dernier moment. Toute la question de la conservation restait sur l'écran précédent, celui qu'on a justement quitté pour aller cuisiner.
+- **Un bandeau ouvre désormais la fiche** quand elle vient d'un repas préparé un autre jour : le jour de préparation, le jour du repas, le mode imposé par le délai réel — réfrigérateur jusqu'à trois jours, congélateur au-delà — et la consigne complète. Cette partie est **calculée**, comme dans le planning : elle s'affiche même si l'IA ne répond pas.
+- **Le conseil propre au plat se produit tout seul**, à la première ouverture depuis un tel créneau, et se déplie sous le bandeau : contenant, ce qui se dégrade en premier, congélation possible ou non, méthode et température de réchauffage, ce qu'il vaut mieux ajouter au dernier moment, signes qu'il ne faut plus le manger. Il n'était jusqu'ici accessible que par le menu d'un repas au planning.
+- **Il ne se repaie jamais.** Le conseil décrit le plat et non le créneau : produit une fois, il sert à toutes les planifications de cette recette et à toutes ses lectures.
+- **Rien n'est écrit sur la recette partagée.** Les deux dates voyagent dans l'adresse, exactement comme les portions du repas : la même recette ouverte depuis un livre, ou depuis le repas d'un autre membre de la famille prévu un autre jour, reste ce qu'elle est.
+- **En panne d'IA, le bandeau le dit** et propose de réessayer, sans jamais remplacer le conseil manquant par un texte générique — la consigne calculée, elle, reste affichée.
+
+### v0.20.10 — technique
+
+#### Contexte de préparation à l'avance porté par l'adresse de la recette
+
+- **`features/planning/domain/meal_prep_context.dart`** (nouveau) : `MealPrepContext { prepDate, mealDate }`, avec `daysAhead`, `mode`, `isAhead` et `instruction` délégués à `meal_storage_rules.dart`. Sérialisation `toQueryParameters()` / `fromQueryParameters()` sous les clés `prep` et `meal`, au format `YYYY-MM-DD`. Une date illisible rend `null` : la fiche s'ouvre sans contexte plutôt qu'avec une date devinée.
+- **Aucun stockage.** Le contexte n'est écrit ni sur `recipes/{id}`, ni sous `users/{uid}` : il suit la même voie que `portions`, en paramètre d'adresse, et meurt avec l'écran. Une recette est partagée et peut être planifiée à deux dates par deux membres du groupe.
+- **`planning_screen.dart` — `_recipeLocationFor()`** construit désormais l'URL via `Uri(path:, queryParameters:)` et y joint `prep`/`meal` quand `meal.prepDate != null`.
+- **`app_router.dart`** relit le contexte sur la route `/recipes/:recipeId` et le passe à `RecipeDetailScreen.prepContext`, propagé à `PrepareTab` (desktop) et `MobileUnifiedBody` (mobile) via le `topContent` de `CooklangPreview`.
+- **`features/planning/presentation/meal_prep_banner.dart`** (nouveau) : `MealPrepBanner`, affiché uniquement si `prepContext.isAhead`. Partie haute calculée (`mealStorageInstruction`), partie basse produite par l'IA et dépliable. Trois états : chargement, panne (message + « Réessayer », la consigne calculée restant affichée), conseil disponible.
+- **`StorageRepository.ensure({recipeId, loadRawCooklang})`** (nouveau) : `read` → `generate` si absent → `applyToRecipe` en best-effort avec `reportError('storage_advice_ensure_apply')`. `loadRawCooklang` est un rappel paresseux, appelé seulement quand il y a une section à recopier — relire la recette pour un conseil déjà stocké serait une lecture Firestore pour rien. `planning_screen._showStorageAdvice()` et le bandeau appellent tous deux cette méthode : la séquence n'existe plus qu'une fois.
+- **`features/planning/presentation/storage_advice_details.dart`** (nouveau) : `StorageAdviceDetails` extrait de `storage_advice_sheet.dart`, partagé par la feuille du planning et le bandeau. Deux rendus divergents du même conseil auraient été une divergence invisible.
+- **Aucun nouveau poste de coût** : le bandeau appelle `suggestStorageAdviceFn`, poste `storage_advice` déjà routable (`ROUTABLE_FEATURES`) et déjà au catalogue comptable.
+- **Tests** : `test/meal_prep_context_test.dart` — aller-retour par les paramètres d'adresse, refus des dates partielles ou illisibles, franchissement de la limite réfrigérateur/congélateur.
+
+## 2026-08-15
+
+### v0.20.7 — fonctionnel
+
+#### Trois duplications de moins, et le dernier chiffre figé dans le code
+
+- **Le taux de change n'a plus de valeur de secours.** Un `0.92` dormait dans le code, prêt à convertir des dollars en euros dès que le taux réel manquerait — le même défaut que les prix, appliqué à la devise. Il est supprimé. Sans taux relevé, les montants restent affichés **en dollars**, ce qui est vrai. C'était le dernier chiffre de facturation figé dans le code.
+- **Le planning ne rejoue plus les règles du serveur.** Quand l'IA laissait un créneau vide, l'application le comblait elle-même en rejouant les règles de variété, de dessert et de jour de préparation. Ce filet coûtait la duplication entière de ces règles pour un service douteux : il **masquait** qu'aucune suggestion n'avait été rendue, et la recette qu'il choisissait s'affichait comme une décision de l'IA. Un créneau reste désormais vide — et le menu ✨ sait le compléter à la demande.
+- **Le calcul du mois de facturation n'existe plus qu'une fois côté serveur.** Il vivait en quatre exemplaires : consommation, coûts Anthropic, agrégats mensuels, périodes de facturation. Quatre copies de trois lignes dont personne n'aurait remarqué la divergence — un mois décalé ne casse rien, il compare simplement deux périodes différentes et présente l'écart comme un fait.
+
+### v0.20.6 — fonctionnel
+
+#### Un prix faux ne vaut pas mieux qu'un prix absent
+
+- **Plus aucun tarif de secours.** La version précédente affichait les prix livrés avec le code quand la grille était illisible. C'était un mauvais réflexe : un tarif périmé présenté comme le tarif réel produit un montant crédible et faux, exactement ce que le suivi des coûts existe pour empêcher. Désormais, une grille illisible affiche **« Tarifs en panne »**, avec un bouton pour réessayer, et aucun prix.
+- **Les appels passés pendant une panne sont enregistrés sans montant.** Leurs jetons sont connus, leur coût ne l'est pas : ils sont comptés séparément plutôt qu'ajoutés à zéro. Un mois traversé par une panne affichait sinon un total plus bas — et parfaitement crédible.
+- **La confirmation avant dépense le dit aussi.** Avant une série de visuels de dressage, si la grille est indisponible, l'écran annonce qu'il ne peut pas chiffrer plutôt que d'avancer un montant inventé.
+- **La reconstruction des agrégats refuse de tourner** sans grille : elle réécrirait des montants déjà publiés à partir de rien.
+- **Les prix ne sont plus écrits qu'à un seul endroit.** L'application ne porte plus aucune table de tarifs : elle lit celle du serveur. La table du code ne sert qu'une fois, à créer le document la première fois. C'était la dernière duplication de prix du projet, et la plus sournoise.
+
+### v0.20.5 — fonctionnel
+
+#### Les tarifs d'IA se corrigent sans redéployer
+
+- **La grille tarifaire quitte le code.** Les prix des modèles vivaient en dur, en deux exemplaires — un côté application, un côté serveur. Corriger un tarif après un changement de fournisseur demandait un déploiement, et jusque-là le reporting chiffrait faux sans que rien ne le signale. La grille en vigueur est désormais un document Firestore, éditable depuis *Admin › Moteur d'IA*, comme le routage entre Gemini et Claude.
+- **Un tarif modifié prend effet en moins d'une minute**, et ne chiffre que les appels à venir. Les montants déjà enregistrés restent figés au tarif qui avait cours au moment de l'appel : un historique de dépense ne se réécrit pas.
+- **Les prix livrés avec le code deviennent le repli.** Table injoignable, document absent, modèle jamais renseigné : le calcul continue avec la valeur d'origine. Un coût tombé à zéro dans le silence serait pris pour une bonne nouvelle.
+- **Une saisie invalide est refusée, jamais devinée.** Un tarif non numérique ou négatif fait rejeter l'entrée entière et écrire un avertissement dans les logs, avec le nom du modèle concerné. Retenir la moitié d'une entrée reviendrait à facturer l'autre moitié à zéro.
+- **Une promotion sans date de fin lisible est ignorée** : sans borne, une remise devient un tarif permanent le jour où elle expire.
+- **L'écran distingue ce qui a été modifié** de ce qui vient du code, et un bouton rend la main au tarif d'origine. On peut aussi ajouter un modèle absent de la grille — utile le jour où un fournisseur en sort un nouveau.
+- **L'annonce de coût avant dépense lit la même grille** : la confirmation qui précède une série de visuels de dressage ne peut plus citer un ancien prix.
+
+### v0.20.4 — fonctionnel
+
+#### Vos portions n'écrasent plus celles des autres
+
+- **Changer le nombre de parts réécrivait la recette de tout le monde.** Le recalcul nutritionnel écrivait son résultat sur le document de la recette, estampillé du nombre de parts de celui qui avait bougé le curseur en dernier. Sur une recette de famille, vous passiez à 8 parts, quelqu'un repassait à 2, et votre fiche affichait les valeurs pour 2. Aucune erreur, aucune alerte : la valeur changeait simplement de propriétaire.
+- **Il n'y avait rien à déplacer, seulement à cesser d'écrire.** Sur tout le bloc nutritionnel — totaux, poids, couverture, fiabilité, ingrédients manquants, huile absorbée — **une seule valeur** dépendait du nombre de parts : la division des totaux. Elle se fait désormais à l'affichage, pour le contexte qui la demande : votre lecture, ou votre repas de mercredi prévu pour 8.
+- **La recette ne porte plus que ce qui la décrit** : ses totaux, calculés à ses propres portions, vrais pour tous ses lecteurs. Votre choix de parts reste enregistré sous votre compte, comme avant.
+- **Bouger le curseur ne coûte plus rien.** Chaque changement de portions déclenchait un appel de Cloud Function et une écriture. Il n'en déclenche plus aucun : l'affichage se met à jour instantanément, et le recalcul reste disponible à la demande quand le contenu de la recette a changé.
+- **Les recettes déjà en base restent justes** sans migration : les valeurs affichées sont dérivées des totaux, qui n'ont jamais dépendu de personne.
+
+### v0.20.3 — fonctionnel
+
+#### Deux corrections signalées à l'usage
+
+- **Valider un planning n'empile plus les repas.** Enregistrer un nouveau cycle ajoutait ses repas par-dessus ceux déjà planifiés sur les mêmes jours : le planning en affichait deux par créneau, sans rien dire. La validation regarde désormais ce que le cycle recouvre et propose de **remplacer** les repas existants ou de les **compléter** — le nombre de repas remplacés est annoncé.
+- **« Tout regénérer » dit ce qu'il fait.** Le menu annonçait « efface les choix en cours », ce qui laissait croire qu'il effaçait le planning enregistré. Il vide les créneaux de l'écran, et le libellé le dit.
+- **La conservation était introuvable.** Le bouton n'apparaissait que sur un créneau ayant un jour de préparation calculé — donc uniquement avec un jour de batch cooking configuré **et** un jour coché « Réchauffage ». Il s'affiche maintenant dès qu'une recette est posée sur un créneau : on décide souvent de garder un plat après avoir choisi la recette, pas avant.
+- **Le conseil est accessible depuis le planning**, par le menu d'un repas — l'écran où l'on se trouve trois jours plus tard, au moment de réchauffer. Il s'ouvre dans une feuille qui distingue nettement la consigne **calculée** (délai réel, réfrigérateur ou congélateur) du conseil produit par l'IA.
+- **Un conseil déjà produit n'est jamais repayé** : il est relu avant toute génération, des deux écrans.
+
+### v0.20.2 — fonctionnel
+
+#### On cuisine la quantité prévue, et on sait ce que devient le plat en attendant
+
+- **La recette s'ouvre à l'échelle du repas.** Depuis le planning, une recette prévue pour 8 parts s'affichait avec ses portions d'origine : le nombre saisi ne servait qu'à la liste de courses et disparaissait au moment de cuisiner. La fiche s'ouvre désormais aux parts du repas, ingrédients recalculés. **Rien n'est écrit** : ni sur la recette, ni sur vos préférences de portions. Ajuster les parts depuis cette ouverture reste volant et ne devient pas votre réglage permanent pour cette recette.
+- **Un plat préparé à l'avance dit comment il se garde.** Le planning affiche, pour chaque créneau préparé un autre jour, le délai réel et ce qu'il impose : réfrigérateur jusqu'à trois jours, congélateur au-delà. Cette consigne est **calculée, pas générée** — elle s'affiche toujours, sans le moindre appel d'IA, parce qu'un plat gardé trop longtemps au froid n'a pas mauvais goût et n'alerte personne.
+- **Le jour de préparation ne se perd plus.** Il était calculé pendant la planification, affiché, puis oublié à l'enregistrement. Il est maintenant conservé avec le repas, et c'est lui qui porte toute la question de la conservation.
+- **Un conseil propre au plat, à la demande** : contenant et conditionnement, ce qui se dégrade en premier, durée réelle quand elle est plus courte que la règle générale (riz cuit, poisson, viande hachée), congélation possible ou déconseillée et pourquoi, méthode et température de réchauffage, ce qu'il vaut mieux ajouter au dernier moment, et les signes qu'il ne faut plus le manger. Un bouton le produit depuis le créneau concerné.
+- **Il s'écrit en conclusion de la recette**, sous une section « Conservation et réchauffage », à côté du dressage. Le relire trois jours plus tard ne demande donc pas de rouvrir le planning. Une seconde génération remplace la section au lieu de l'empiler.
+- **Produit une fois, valable pour tous les repas.** Le conseil décrit le plat, pas un créneau : il donne le réfrigérateur *et* le congélateur d'un coup, et le planning retient la moitié qui s'applique. Replanifier la même recette ne le repaie pas.
+- **Le poste « Conservation et réchauffage » apparaît dans les coûts** et peut basculer entre Gemini et Claude depuis *Admin › Moteur d'IA*, comme tous les autres.
+
+### v0.20.1 — fonctionnel
+
+#### Moteur d'IA : l'écran laissait croire que Claude retouchait les images
+
+- **La famille « Illustrations » s'appelle désormais « Illustrations — détection ».** Ses cinq postes *lisent* une image — repérer la photo principale, délimiter les illustrations, mesurer une grille — et Claude les sert très bien. Sous l'ancien titre, les voir tous basculés sur Claude donnait à penser que la retouche d'image y était partie aussi.
+- **Les trois postes qui produisent une image apparaissent enfin**, dans une section qui ne se bascule pas : illustration de recette, visuel de dressage, amélioration de photo. Ils affichent le moteur qui les sert — Nano Banana 2 Lite — sous forme de puce et non de commutateur, parce qu'il n'y a rien à choisir : aucun modèle Claude ne fabrique d'image. Leur absence pure et simple était l'incohérence, pas leur non-basculement.
+- **Aucun troisième fournisseur n'a été ajouté.** Ces postes sont du Gemini, comme la colonne de gauche, sur un modèle différent de celui du texte — et leur coût se lit dans Comptabilité aux mêmes clés qu'avant.
+
+### v0.20.0 — fonctionnel
+
+#### Les images changent de moteur, et le compteur suit
+
+- **Nano Banana 2 Lite remplace l'ancien modèle d'image.** Illustrations de recette, visuels de dressage et amélioration de photo passent de `gemini-2.5-flash-image` à `gemini-3.1-flash-lite-image` : **0,0336 $ l'image au lieu de 0,04 $**, et une génération annoncée autour de quatre secondes. Claude, pour mémoire, ne produit aucune image — la génération visuelle reste chez Google par nécessité, pas par habitude.
+- **L'ancien tarif reste au catalogue.** Les mois déjà consommés portent l'ancien identifiant de modèle : le retirer aurait relu leur coût au tarif par défaut, c'est-à-dire images gratuites. Un historique de dépense ne se réécrit pas quand on change de fournisseur.
+- **Le modèle facturé ne peut plus diverger du modèle appelé.** L'identifiant vivait en trois exemplaires : deux modules choisissaient le modèle appelé, un troisième choisissait le modèle *facturé*. Un oubli dans ce dernier aurait imputé la dépense à l'ancien tarif sans qu'aucun écran ne bronche. Il n'existe désormais qu'une seule déclaration.
+- **L'écran des coûts annonce le bon prix avant de dépenser.** La confirmation qui précède une série de visuels de dressage chiffrait encore l'ancienne grille.
+
+### v0.19.99 — fonctionnel
+
+#### Planification : les contraintes que vous saisissiez n'arrivaient nulle part
+
+- **La contrainte du jour, dans l'écran de planning, n'était jamais transmise.** Le champ « Contrainte spécifique » ne s'enregistrait qu'à la validation clavier — impossible sur un champ multiligne. « Repas léger, sport le soir » restait à l'écran et ne quittait jamais le téléphone. Les champs *Prépa max* et *Parts à préparer* se perdaient de la même façon dès qu'on cliquait ailleurs. Chaque frappe compte désormais.
+- **« Parts à préparer » n'existait pas côté serveur.** Le nombre était bien enregistré et servait à mettre la liste de courses à l'échelle, mais l'IA ne le voyait pas : elle pouvait proposer une recette individuelle pour un dîner de huit. Le créneau annonce maintenant ses parts, et l'IA signale quand elle a dû redimensionner.
+- **Une réponse illisible du modèle passait pour « aucune idée ».** Le serveur avalait l'erreur sans un mot ; l'application comblait alors tous les créneaux avec un « complément automatique », et l'on croyait à une IA qui choisit mal — alors qu'elle n'avait rien choisi du tout. Ces échecs sont désormais tracés, nommés, et visibles dans les logs.
+- **La régénération globale n'écrase plus vos choix.** Elle envoyait au modèle vos sélections manuelles comme « à éviter », puis les remplaçait quand même. Le bouton ✨ propose maintenant **Compléter les créneaux vides** ou **Tout regénérer**, qui prévient qu'il efface.
+- **Les contraintes redeviennent modifiables après une génération.** Elles se figeaient définitivement, sans moyen d'ajuster puis de relancer.
+- **Un cycle de plus de sept jours ne s'écrase plus lui-même** : deux créneaux tombant le même jour de semaine gardent chacun leurs contraintes.
+- **Le calendrier choisi est enfin utilisé partout.** Deux des trois chemins d'export écrivaient toujours dans l'agenda principal en ignorant le calendrier configuré, sa durée par défaut et l'heure de repas. L'événement retrouve aussi son intitulé « Préparer : … », réduit à une espace par un accident d'encodage.
+- **La liste de courses ne perd plus de repas.** Elle ne connaissait que vos recettes validées : un repas planifié depuis un brouillon ou une recette de la famille en disparaissait sans un mot. Elle est aussi limitée aux repas à venir — elle listait jusqu'ici les courses de repas déjà mangés.
+- **Vos préférences ne sont plus écrasées par les valeurs par défaut.** L'écran de configuration pouvait s'ouvrir sur un état vide venu du cache, puis réenregistrer ces défauts par-dessus vos vrais réglages.
+- **Le cycle peut démarrer aujourd'hui.** Ouvrir l'écran un vendredi quand le cycle commence le vendredi proposait le vendredi suivant.
+- **Le planning charge les 90 derniers jours** au lieu de la totalité de l'historique à chaque ouverture.
+
+### v0.19.98 — fonctionnel
+
+#### La chaîne nutrition dépensait sous des noms de code
+
+- **Quinze postes de coût s'affichaient sous leur identifiant technique**, tous rangés dans « Autres » : `detect_not_consumed`, `estimate_piece_weights`, `nutrition_ingredients_enrichment_batch`… soit toute la chaîne nutritionnelle, c'est-à-dire les appels les plus fréquents de l'application — une seule écriture de recette peut en déclencher une dizaine. Le montant était juste ; il était simplement impossible de savoir ce qu'on payait. Ils forment désormais le processus **« Valeurs nutritionnelles »**, chaque poste portant son nom et sa description.
+- **Deux autres postes rentrent dans le rang** : la relecture d'un document Markdown et l'illustration de recette, oubliées elles aussi.
+- **Les variantes par lot se distinguent de leur version unitaire.** Un lot coûte bien moins qu'une série d'appels isolés : les confondre revenait à s'interdire de vérifier que le groupage sert à quelque chose.
+- **La règle est écrite et testée** : un poste d'IA vit à trois endroits — l'appel, le routage, le catalogue de lecture — et s'ajoute aux trois dans le même commit. Aucun de ces oublis ne lève d'erreur, ce qui est précisément le problème.
+- **Diagrammes à jour** : le diagramme de classes porte `RecipeAbsorbedOil`, et le diagramme de séquence du recalcul nutritionnel montre l'appel de friture et son garde-fou gratuit.
+
+### v0.19.97 — fonctionnel
+
+#### Le bain et ce qu'il laisse derrière lui se lisent ensemble
+
+- **L'huile absorbée se range sous le bain dont elle sort**, en « ↳ dont absorbée », au lieu de fermer le tableau à dix lignes de distance. Le bain dit ce qu'on jette, la ligne en dessous dit ce qu'on garde : deux lignes, une seule idée. Reléguée en fin de liste, l'huile absorbée ressemblait à un ingrédient qu'on aurait oublié de ranger.
+- **Elle ne ferme le tableau que si la recette ne nomme aucun bain** — huile absente de la liste, ou nommée autrement. Dans ce cas elle reprend son nom complet, puisqu'elle n'a plus de parent pour la présenter.
+
+### v0.19.96 — fonctionnel
+
+#### On ne mange pas le bain de friture, mais on mange ce qu'on y trempe
+
+- **Un poulet pané frit déclarait les lipides d'un poulet pané cru.** Le bain de friture est écarté du calcul — un litre d'huile pèse 8280 kcal, le compter rendrait toute recette illisible — mais ce qu'on y plonge en ressort plus gras : environ 10 % de son poids en huile. Sur 600 g de poulet pané, ce sont **55 g de lipides et 500 kcal** que la recette n'annonçait nulle part, avec une couverture affichée « complète » et un bon score de fiabilité.
+- **Le taux d'absorption suit l'aliment, pas le bain.** Garder un pourcentage de l'huile déclarée aurait fait dépendre le résultat de la rédaction de la ligne : « 1 L pour la friture » n'a aucun rapport avec ce qui est mangé. Le calcul part du poids des ingrédients frits, panure comprise, et se plafonne à l'huile que la recette met réellement dans la poêle.
+- **Une ligne dérivée dit d'où viennent ces lipides** : « huile de tournesol absorbée · 55 g », en italique et marquée estimée, sous les ingrédients. Au survol, son taux et le poids frit dont il découle. Le bain garde sa mention « non consommé » : les deux lignes coexistent et racontent la vérité — on jette le litre, on mange les 55 g.
+- **Seules les recettes qui sentent la friture paient un appel d'IA.** Un test gratuit sur le texte et les ingrédients sert de portier ; une panure seule ne déclenche rien, le four existe. Le verdict est conservé et n'est redemandé que si la recette change.
+
+## 2026-08-14
+
+### v0.19.93 — fonctionnel
+
+#### Un total nommé, et un écart qui cesse de crier au loup
+
+- **« Invoice » n'est pas le total de l'infrastructure**, malgré son nom : c'est une ligne de facturation Google comme les autres — taxes et ajustements de facture. L'arithmétique le montre : sur juillet, 3,65 € d'« Invoice » plus les autres services font les 3,96 € de la section. Un **« Total infrastructure »** en gras est donc ajouté en fin de liste : la somme méritait d'être nommée plutôt que devinée.
+- **Un écart dont la cause est connue et irréparable n'est plus signalé en rouge.** Les mois clos avant le 14 août sont antérieurs au comptage des jetons de raisonnement : Gemini les facture, l'application ne les lisait pas, et aucune reconstruction ne fera apparaître une donnée qui n'a jamais été enregistrée. L'écran le dit en une phrase, au lieu de demander indéfiniment d'enquêter sur une cause déjà établie — et de noyer le jour où un vrai écart se produira.
+- **Le mois d'août est signalé comme à cheval** : ses premiers appels ne portent pas le raisonnement, les derniers oui. L'écart s'y résorbera de lui-même en septembre.
+
+### v0.19.92 — fonctionnel
+
+#### L'écart affiché comparait deux instants différents
+
+- **Un montant facturé est une photographie ; nos compteurs sont vivants.** Le relevé Anthropic est mis en cache six heures ; pendant ce temps, les appels continuent d'être comptés. L'écran soustrayait donc un total à jour d'un total périmé, et attribuait la différence à la grille tarifaire — alors qu'elle ne mesurait qu'un décalage d'horloge.
+- **L'âge du relevé est désormais affiché** à côté du montant facturé : « relevé il y a 12 min ».
+- **Au-delà de deux heures, l'écart n'est plus signalé en rouge** mais accompagné d'une phrase : les appels comptés depuis ne figurent pas dans le relevé, il faut relire le mois pour comparer deux chiffres du même instant.
+
+### v0.19.91 — fonctionnel
+
+#### La lecture Anthropic marche, et elle a immédiatement trouvé une erreur
+
+- **Nous surestimions Claude de 50 %.** La confrontation à la vraie facture d'août — 0,80 € facturés contre 1,20 € estimés — l'a montrée en une lecture. La cause : **Claude Sonnet 5 bénéficie d'un tarif d'introduction** (2,00 / 10,00 au lieu de 3,00 / 15,00) jusqu'au 31 août 2026, que la grille ignorait volontairement — l'idée étant qu'une surestimation valait mieux qu'une sous-estimation. C'était une erreur de raisonnement : un écart de moitié rend le rapprochement inutilisable **dans les deux sens**, et masquerait un vrai défaut de comptage le jour où il s'en produirait un. Une marge de sécurité posée sur un instrument de mesure ne le sécurise pas, elle le casse.
+- **La grille est désormais datée** : un tarif promotionnel s'applique tant qu'il court, le tarif plein reprend automatiquement le jour où il expire. Et un appel est facturé au tarif **du jour où il a eu lieu**, jamais à celui du jour où l'on relit le rapport.
+- **Le message d'écart se lit dans les deux sens.** Il n'expliquait que le cas « le fournisseur facture plus que nous ne comptons » et envoyait chercher des jetons manquants là où il n'en manquait aucun. Il distingue maintenant la consommation invisible d'une grille trop chère.
+- **« Rechiffrer aussi les appels »**, case à cocher de la reconstruction : applique la grille corrigée aux mois déjà enregistrés. C'est la seule façon de réparer août — et parce qu'elle réécrit des montants déjà publiés, elle reste un choix explicite, jamais coché d'avance.
+
+### v0.19.90 — fonctionnel
+
+#### La lecture Anthropic avance par tranches au lieu d'échouer en entier
+
+- **Le blocage était une boucle fermée.** Douze mois faisaient douze requêtes d'un bloc ; l'échec empêchait d'écrire quoi que ce soit ; l'affichage suivant repartait donc de zéro et rallumait la limite de débit. Rien ne pouvait en sortir.
+- **Ce qui est lu est désormais conservé**, même quand la lecture s'arrête en chemin. Chaque ouverture de l'écran relève **quatre mois**, **les plus récents d'abord** — le mois en cours étant le seul qu'on regarde vraiment. En trois ouvertures, l'année est complète.
+- **Cinq minutes de pause après un refus.** Sans elle, chaque ouverture relançait la lecture et repoussait d'autant le retour à la normale : le remède entretenait la panne. Le bouton « Relire ce mois » passe outre.
+- **Le message ne parle plus de panne** quand il n'y en a pas : « les mois sont relevés par tranches, ce qui est affiché est acquis, le reste se complètera ».
+
+### v0.19.89 — fonctionnel
+
+#### Anthropic : la vraie cause du refus, et un bouton pour vérifier un mois
+
+- **Le 429 venait d'abord de la taille de page.** Le rapport de coûts d'Anthropic rend des **journées**, et une page en vaut **7 par défaut** — pour un maximum autorisé de **31**. Une année d'historique coûtait donc près de **soixante** requêtes là où elle en coûte désormais **treize**. Pire : notre garde-fou s'arrêtait à quarante pages, ce qui aurait tronqué la lecture sans le dire.
+- **Anthropic recommande une interrogation par minute** en régime établi, et conseille explicitement de mettre les résultats en cache pour un tableau de bord. C'est exactement ce que fait désormais l'écran.
+- **Un bouton « Relire ce mois chez Anthropic »**, placé dans le mois plutôt qu'en tête d'écran : c'est ce montant-là qu'on veut vérifier. Il ne relit **qu'un mois** — une requête, au lieu de treize pour l'année. Sans lui, un avoir ou une correction rétroactive resterait masqué par le cache indéfiniment.
+
+### v0.19.88 — fonctionnel
+
+#### La clé Anthropic fonctionnait : c'est l'écran qui demandait trop
+
+- **Le « facturé par Anthropic : — » n'était pas un refus de clé, mais un `HTTP 429`** — limite de débit atteinte. L'API d'administration d'Anthropic rend des **journées** : afficher une année en demandait des dizaines de pages, à chaque ouverture de l'écran.
+- **Les montants sont désormais mémorisés.** Un mois clos est lu une fois pour toutes — sa facture ne bougera plus. Seul le mois courant est redemandé, et au plus toutes les six heures. Ouvrir l'écran dix fois ne coûte plus dix lectures, mais zéro.
+- **Un 429 n'est plus traité comme une panne** : c'est une demande d'attendre. L'appel patiente le temps indiqué par Anthropic et retente deux fois.
+- **Un échec ne fait plus disparaître ce qu'on savait déjà.** Les montants du dernier relevé réussi restent affichés, signalés comme tels. Auparavant, une seconde de trop effaçait une facture de plusieurs euros.
+- **Le message distingue enfin les trois cas** — clé absente (Secret Manager), clé refusée (console Anthropic), débit limité (rien à faire, sinon attendre) — parce qu'ils se règlent à trois endroits différents.
+
+### v0.19.87 — fonctionnel
+
+#### Un chiffre, un seul endroit
+
+- **La ventilation par poste disparaît de l'écran mensuel.** Elle faisait doublon avec l'onglet « Par service IA », qui la donne en mieux — nombre d'appels et coût unitaire, moteur par moteur. Deux lectures du même chiffre dans deux formats différents finissent par diverger, et c'est toujours la plus pauvre qu'on lit en premier.
+- **« Par service IA » a désormais son propre filtre de période**, avec les mêmes puces que l'écran mensuel (Ce mois / 3 / 6 / 12 mois / Depuis le début). Il fallait auparavant revenir sur l'autre onglet pour changer la période de celui-ci : le geste le plus fréquent était devenu le plus long. Deux onglets réglés sur la même profondeur se partagent toujours une seule lecture serveur.
+- Le filtre reste affiché quand le tableau est vide — une période trop courte étant la première cause d'un tableau vide, la masquer enfermait dans l'écran qu'on cherchait à quitter.
+
+### v0.19.86 — fonctionnel
+
+#### L'écart se chiffre, se règle, et l'écran cesse de mentir par omission
+
+- **L'écart est désormais chiffré en jetons, pas seulement en euros.** La facture Google indique 2 457 734 jetons de sortie pour août ; l'application en comptait 323 900. Les 2 133 834 manquants — du raisonnement — valent 4,67 €, pour un écart affiché de 4,62 €. **La cause explique la totalité de l'écart.** L'écran le dit maintenant lui-même, en rapprochant ses compteurs des lignes de la facture.
+- **Un réglage pour le résorber** — *Admin → Moteur d'IA → Raisonnement de Gemini* : « le modèle décide » (défaut, inchangé), coupé, ou plafonné à 512 / 2 048 / 8 192 jetons. Le raisonnement représentait près de neuf dixièmes de la ligne la plus chère de la facture Gemini. Beaucoup de postes n'en ont aucun besoin — classer une page, deviner les dimensions d'une grille, proposer des tags ne demandent pas de délibération. Si l'API refuse le plafond, l'appel est rejoué sans lui : une facture plus lourde vaut mieux qu'un poste qui ne répond plus.
+- **Claude dit enfin pourquoi il ne se confronte à rien.** « La clé n'est pas posée **ou** la lecture a échoué » laissait chercher du mauvais côté. L'écran distingue les deux et affiche l'erreur exacte renvoyée par Anthropic.
+- **L'onglet « Contrôle Gemini » disparaît.** Il ne comparait que la part que Google facture : on y cherchait Claude et l'infrastructure sans les trouver, et un contrôle portant sur la moitié de la dépense se lit comme un contrôle sur la totalité. La confrontation à la facture vit dans « Mois par mois », où les deux moteurs ont la même forme et l'infrastructure sa section.
+
+### v0.19.85 — fonctionnel
+
+#### L'écart de facturation avait une cause, et ce n'était pas le tarif
+
+- **Le suivi comptait 2,13 € là où Google facturait 17,06 €.** La cause n'est ni un tarif ni un arrondi : **Gemini 2.5 Flash réfléchit avant de répondre**, et ces jetons de réflexion sont facturés au prix de la sortie — huit fois l'entrée — sans jamais apparaître dans la réponse. Le backend ne lisait que les jetons du texte rendu. Sur un appel d'extraction ordinaire, le raisonnement représente plusieurs fois le texte produit : le coût affiché valait donc une fraction du coût réel. Aucune erreur nulle part, juste un chiffre plausible et faux.
+- **Ils sont désormais comptés**, et affichés à part : chaque moteur montre ses jetons d'entrée, de sortie **et de raisonnement**. Un poste qui coûte cher parce qu'il fait beaucoup réfléchir ne se corrige pas comme un poste qui produit beaucoup.
+- **Un appel échoué est un appel facturé.** Un dépassement de délai n'arrête pas le calcul chez le fournisseur, et le repli sur l'autre moteur en ajoute un second. Ces appels étaient invisibles ; ils apparaissent maintenant, et le nombre d'appels en échec est affiché sur le mois.
+- **La facture Google est décomposée ligne par ligne** sous la section Gemini — jetons d'entrée, jetons de sortie, génération d'images — avec les quantités facturées. Un écart réduit à un seul nombre rouge ne se diagnostique pas ; en regard des lignes de la facture, il désigne le poste en cause.
+- **L'onglet « Réconciliation » s'appelle « Contrôle Gemini »** et dit ce qu'il couvre. On y cherchait Claude et l'infrastructure sans les trouver : il ne compare que la part que Google facture. Claude, facturé par Anthropic, et l'infrastructure se lisent dans « Mois par mois », qui les confronte eux aussi à leur facture.
+
+> Les mois passés resteront sous-estimés même après reconstruction : les jetons de raisonnement n'ont pas été enregistrés à l'époque, il n'y a rien à relire. L'écart se referme à partir de maintenant.
+
+### v0.19.84 — fonctionnel
+
+#### Coûts : des euros, deux moteurs à égalité, et le coût d'un appel
+
+- **Tout est en euros, en notation européenne** : virgule pour les décimales, espace pour les milliers. La conversion utilise **le taux du mois concerné**, celui que Google a lui-même appliqué à sa facture — et non un cours du jour plaqué sur tout l'historique, qui donnerait pour l'an dernier un total que personne n'a payé. Les petits montants gardent quatre décimales : à deux, la plupart des appels d'IA s'afficheraient « 0,00 € ».
+- **Trois blocs par mois : Claude, Gemini, infrastructure.** Gemini était jusqu'ici une ligne parmi les services Google, parce que c'est Google qui le facture. Il a désormais sa section, dans le même format que Claude — estimé par l'application, facturé par le fournisseur, écart en montant et en pourcentage. Deux moteurs présentés dans deux formats différents ne se comparent pas ; c'était pourtant la seule question qui compte au moment de basculer un poste de l'un vers l'autre.
+- **Le total du mois retient le facturé quand il existe**, l'estimation seulement à défaut. Les deux ne sont jamais additionnés.
+- **Un nouvel onglet « Par service IA »** : pour chaque poste — ou chaque processus, au choix — le **nombre d'appels**, le **coût unitaire** et le **total**, en trois colonnes distinctes : Claude, Gemini, et l'ensemble. Deux postes de même montant n'ont pas le même remède : l'un appelé mille fois pour trois fois rien se corrige en appelant moins, l'autre appelé trois fois pour un montant lourd en changeant de modèle. Le total seul ne les distingue pas.
+- **L'estimation d'empreinte énergétique est de retour**, disparue avec l'ancien écran d'usage des tokens : nombre de jetons et énergie estimée (~0,001 Wh pour mille jetons) sur le total de la période, sur chaque mois, et sur chaque moteur. C'est un ordre de grandeur, pas une mesure — mais une consommation qu'aucun écran ne montre est une consommation qui ne baisse jamais.
+- **Un écart entre estimé et facturé au-delà de 10 % est mis en évidence** au lieu de rester un chiffre parmi d'autres.
+
+> Un mois d'août affichant « estimé 0,00 € » face à un montant facturé par Anthropic n'est pas un bug de tarification : ce sont des appels enregistrés avant la mise en place des agrégats mensuels. Le bouton **Reconstruire les agrégats** les rattrape depuis les lignes d'appel.
+
+## 2026-08-13
+
+### v0.19.83 — fonctionnel
+
+#### Coûts : Anthropic entre dans le tableau, et l'historique s'ouvre
+
+- **Où était Anthropic ? Nulle part, et pour une raison structurelle** : la facturation Google ne contient pas les appels Claude — Anthropic les facture directement. L'écran ne pouvait donc pas les montrer comme facturés, seulement estimés.
+- **Le facturé Claude est désormais lu chez Anthropic** : chaque mois affiche l'estimation de l'application, le montant réellement facturé, et l'écart entre les deux. Un écart supérieur à un dollar est mis en évidence.
+- **Cette lecture demande une clé d'administration Anthropic** (`sk-ant-admin…`), distincte de la clé d'inférence, à poser dans Secret Manager sous le nom `ANTHROPIC_ADMIN_KEY`. Sans elle, l'écran affiche l'estimation et dit franchement qu'elle n'est confrontée à rien — il n'invente pas un zéro.
+- **Quatre profondeurs** : ce mois, 3 mois, 6 mois, 12 mois, et **depuis le début** — qui remonte au premier appel jamais enregistré.
+- **Deux lectures** : par mois, ou par année repliée avec ses mois à l'intérieur.
+- **Une répartition en tête d'écran** : ce que coûtent Gemini, Claude, les postes internes et l'infrastructure, sur toute la période choisie.
+- **Une limite dite plutôt que masquée** : la facturation Google ne remonte que sur sa fenêtre d'export. « Depuis le début » couvre donc toute l'IA, mais l'infrastructure s'arrête là où l'export s'arrête — et l'écran le signale au lieu de laisser croire à une infrastructure gratuite.
+
+### v0.19.82 — fonctionnel
+
+#### Cloud Logging : un traitement porte le nom de son poste
+
+- **Fini les groupes tous intitulés « call »** : chaque appel HTTPS fabriquait son identifiant de corrélation avec le même préfixe générique. L'écran regroupait donc correctement… une dizaine de traitements portant tous le même nom, ce qui obligeait à ouvrir chacun pour savoir de quoi il s'agissait.
+- **Le nom du poste devient la racine de l'identifiant** : « Extraction depuis un texte libre », « Conseil de dressage », « Amélioration photo » se distinguent désormais au premier regard, et le filtre par identifiant exact isole un traitement précis.
+
+### v0.19.81 — fonctionnel
+
+#### Refonte du suivi des coûts : ce que coûte l'application, mois par mois
+
+- **Un seul écran** — *Admin › Coûts de l'application* — remplace « Comptabilité » et « Usage des tokens IA ». Il montre les douze derniers mois, chacun dépliable : coût total, part IA et part infrastructure, ventilation par poste fonctionnel, par moteur, et par service Google.
+- **Les totaux affichés sont enfin des totaux.** L'écran précédent lisait les mille derniers appels et présentait leur somme comme le total du mois. Au-delà de mille appels, il se trompait sans le dire. Les chiffres viennent désormais d'agrégats mensuels tenus à jour à chaque appel.
+- **Un seul chiffrage.** Le coût d'un appel est fixé au moment où il a lieu, par la grille tarifaire du serveur. L'écran l'affiche, il ne le recalcule plus — deux grilles pour un même appel finissent toujours par diverger.
+- **Plus aucun appel invisible.** Un appel dont le moteur ne renvoyait pas ses métadonnées n'était pas compté du tout, alors qu'il était bien facturé. Il l'est désormais, avec zéro jeton, et reste visible.
+- **Le scan de sécurité n'est plus compté comme de l'IA Google.** Il apparaît sous le moteur « Interne », et sort du rapprochement avec la facturation Gemini.
+- **La réconciliation dit la vérité en multi-moteur.** Elle sépare la part Gemini — la seule que Google facture et qu'on peut donc vérifier — de la part Claude, facturée par Anthropic, et le signale explicitement dans ses anomalies. Jusqu'ici, activer Claude creusait un écart artificiel présenté comme un fait.
+- **Reconstruire les agrégats** : un bouton recalcule les mois affichés depuis les lignes d'appel. Il sert à rattraper l'historique antérieur au suivi mensuel, ou à réparer un mois dont les compteurs auraient dérivé. Aucun coût d'IA n'est engagé.
+
+### v0.19.80 — fonctionnel
+
+#### Le dressage retourne dans la recette
+
+- **Intégrer à la recette** remplace le bouton de copie : le conseil s'écrit en fin de recette sous une section **Dressage**, visuels compris en images flottantes alternées.
+- **Intégrer deux fois ne double rien** : la section précédente est remplacée, y compris ses visuels. Trois régénérations suivies de trois intégrations ne laissent qu'une seule section — celle du dernier conseil.
+- **Avec une réserve annoncée** : si vous aviez retouché la section à la main, l'intégration suivante écrase vos modifications. Le dialogue de confirmation le dit explicitement avant d'écrire, et affiche le texte exact qui sera inséré.
+- **Une section « Cuisson et dressage » écrite par vous n'est jamais touchée** : seule la section produite par l'IA, au titre exact, est reconnue.
+- **Retirer le dressage de la recette** reste disponible dès qu'une section existe.
+
+### v0.19.79 — fonctionnel
+
+#### La bascule vers Claude s'appliquait à moitié
+
+- **Onze postes ignoraient la configuration** : extraction depuis un scan ou un texte, relecture CookLang et Markdown, modification et génération de recette, recherche, couverture de livre, planning, courses, suggestion de tags, conseil de dressage. Choisir Claude — par poste ou par défaut — n'avait aucun effet sur eux : ils continuaient d'être servis par Gemini.
+- **Pourquoi c'était invisible** : ces fonctions ne recevaient pas la clé Claude. Pour elles, la clé était donc « absente », situation dans laquelle le routeur sert l'autre moteur sans la signaler comme une panne — c'est le comportement voulu entre le déploiement du code et la création de la clé. Pendant ce temps, l'écran *Moteur d'IA* affirmait que la clé était présente, car il la reçoit, lui.
+- **Ce qui change** : ces postes obéissent désormais à la configuration. Un basculement resté sans effet écrit maintenant un **avertissement** dans les logs, avec le nom du poste concerné : le silence est ce qui avait rendu cette panne indéchiffrable.
+- **Le reporting de coûts reflétera la bascule** : jusqu'ici, la comptabilité était juste — elle mesurait bien du Gemini — mais elle mesurait un moteur que vous croyiez avoir quitté.
+
+### v0.19.78 — fonctionnel
+
+#### Les générations d'image rejoignent leur traitement dans les logs
+
+- **Un visuel généré n'est plus orphelin** : la ligne de consommation d'une image portait un `correlation_id` nul, si bien qu'elle apparaissait sous « Hors traitement » dans l'écran Cloud Logging, à côté de l'appel qui l'avait pourtant provoquée. Elle est désormais rattachée à son traitement.
+- **Le poste nomme le groupe** : le champ `feature` était rangé dans les données annexes du log au lieu du premier niveau — l'écran ne pouvait donc ni l'afficher en titre ni filtrer dessus. Corrigé pour toutes les générations d'image (visuels de dressage et illustrations de recette).
+- La comptabilisation elle-même était juste : chaque image reste facturée 0,04 $ sur son poste (« Visuel de montage », « Génération d'image »), et le conseil de dressage au tarif du modèle qui a réellement répondu.
+
+### v0.19.76 — fonctionnel
+
+#### Dressage : une seule génération à la fois
+
+- **Les autres actions sont suspendues pendant qu'un visuel se fabrique** : les boutons des autres étapes, *Regénérer* et *Réinitialiser les visuels* deviennent inertes jusqu'à la fin. Deux générations lancées de front produiraient deux assiettes concurrentes, et la série cesserait de raconter un montage.
+- **Les boutons restent visibles, seulement grisés** : les faire disparaître laisserait croire que l'action n'existe pas. *Copier le texte* reste actif — c'est la seule action qui ne touche à rien.
+
+### v0.19.75 — fonctionnel
+
+#### Dressage : les visuels ne peuvent plus être produits dans le désordre
+
+- **Illustrer une étape produit celles qui manquent avant elle** : chaque image se construit sur la précédente ; demander la troisième sans les deux premières donnait une assiette née de rien, sans rapport avec celles qu'on générait ensuite. Un clic sur l'étape 3 génère donc 1, 2 puis 3, dans l'ordre.
+- **Le coût est annoncé avant** : quand plus d'un visuel est nécessaire, un dialogue indique combien seront créés et pour quel montant. Le tarif vient de la grille tarifaire du projet, pas d'un chiffre écrit à la main.
+- **Seul le dernier visuel peut être refait** : reprendre une étape du milieu laisserait derrière elle des images descendant d'une assiette qui n'existe plus. Les étapes antérieures n'ont plus de bouton.
+- **Réinitialiser les visuels** : un bouton en bas de l'onglet efface toute la série pour repartir d'une assiette vide. C'est la seule façon — et une façon explicite — de refaire une étape ancienne. Le conseil et son texte ne sont pas touchés.
+- **Une série interrompue reprend où elle s'est arrêtée** : si une génération échoue au milieu, les visuels déjà produits sont conservés et le clic suivant comble le trou.
+
+### v0.19.74 — fonctionnel
+
+#### Dressage : tout se passe dans l'assiette
+
+- **Plus rien à côté du contenant** : le modèle d'image posait spontanément la sauce dans une coupelle à côté de l'assiette, ajoutait une planche, débordait sur la table. Un guide de dressage montre ce qu'il y a *dans* l'assiette ; le reste est du décor de magazine, et il ment sur le geste à reproduire. La consigne est désormais explicite, à la génération comme à la description : un seul contenant, aucun ramequin annexe, une sauce d'accompagnement se pose en touche dans l'assiette.
+- **Le visuel de résultat final est supprimé** : puisque chaque image part de la précédente et qu'on demande d'y ajouter quelque chose, un visuel « final » de plus ne pouvait qu'ajouter un objet — c'est ce qu'il faisait. La dernière étape du dressage **est** le résultat, et elle s'illustre comme les autres.
+
+### v0.19.73 — fonctionnel
+
+#### Le dressage a son propre texte
+
+- **Il n'est plus recopié dans la recette** : le dressage n'est pas une étape de cuisson, c'est ce qu'on fait une fois la recette finie. Fondu dans les étapes, il allongeait la recette de gestes qu'on ne lit pas en cuisinant, et une régénération réécrivait un contenu que l'utilisateur avait pu retoucher. Il vit dans son onglet, avec ses visuels.
+- **Copier le texte** : un bouton met le dressage complet — intention, contenant, gestes numérotés, pièges, finitions — dans le presse-papier, prêt à être collé ou envoyé.
+- **Nettoyage des essais précédents** : sur une recette où le dressage avait été inséré, un bouton **Retirer le dressage de la recette** supprime la section. Une section « Cuisson et dressage » écrite à la main n'est jamais touchée.
+
+### v0.19.72 — fonctionnel
+
+#### Dressage : les visuels se construisent l'un sur l'autre
+
+- **La matière est respectée** : le conseil décrit désormais la consistance de chaque élément (émulsion épaisse qui tient au ruban, purée mate, jus sirupeux), et le générateur d'image a consigne de la tenir. Une anchoïade montée à l'huile ressortait en bouillon : un modèle d'image livré à lui-même peint toutes les sauces en liquide clair.
+- **Chaque visuel complète le précédent** : illustrer l'étape 2 part de l'image de l'étape 1 et n'y ajoute que le geste en cours, cadrage et lumière inchangés. Chaque étape était auparavant refabriquée de zéro, ce qui donnait quatre assiettes sans rapport au lieu d'un montage.
+- **Toutes les étapes sont illustrables**, y compris les dernières — celles où le dressage se joue vraiment.
+- **Le résultat dressé** : un bloc en bas de l'onglet génère le visuel du plat terminé, dans la continuité des étapes déjà illustrées. Il s'insère en pleine largeur à la fin de la section Dressage de la recette.
+- **Les visuels accompagnent le texte** : l'image se place en regard du geste plutôt qu'en pleine largeur, et s'agrandit d'un clic. En pleine largeur, elle chassait la consigne hors de l'écran.
+
+### v0.19.71 — fonctionnel
+
+#### Onglet Dressage : un conseil de cette recette, pas du dressage en général
+
+- **Ce qui disparaît** : l'onglet produisait ses conseils sur place, en cherchant des mots-clés dans les noms d'ingrédients. « Persil détecté » donnait « les herbes soulignent le mouvement du dressage ». C'était vrai de tous les plats, donc utile pour aucun.
+- **Un conseil demandé, pas subi** : l'onglet s'ouvre sur un bouton **Demander un dressage sur mesure**, avec un champ libre pour le contexte de service (« assiettes creuses », « buffet froid », « à emporter »). Rien n'est appelé tant que l'utilisateur ne le décide pas.
+- **Ce que le moteur rend** : le contenant conseillé et pourquoi, l'ordre des gestes de montage nommant les éléments réels de la recette, les pièges propres à ce plat (ce qui détrempe, ce qui fige, ce qui ternit), et ce qui se pose au dernier moment.
+- **Refus du passe-partout** : une réponse dont les gestes ne citent aucun ingrédient de la recette est refusée et redemandée. Un conseil générique ne lève aucune erreur et s'affiche parfaitement — c'est pour cela qu'il est détecté à la production, pas à la lecture.
+- **Visuels de montage** : sur les dressages complexes, le moteur propose jusqu'à trois étapes à illustrer. L'image montre l'assiette **en cours de montage**, pas le plat fini. Chaque visuel se génère à la demande, étape par étape, jamais en lot (0,0336 $ l'image). Réservé aux rôles éditeur et administrateur.
+- **Intégration à la recette** : un éditeur peut recopier le conseil dans la recette elle-même, sous une section **Dressage**, visuels compris en images flottantes alternées. Un aperçu du texte exact précède l'écriture ; une seconde intégration remplace la précédente au lieu de l'empiler.
+- **Un appel par recette** : le conseil est conservé sur la recette et profite à tous les lecteurs. Un bouton **Regénérer** permet de le refaire, en changeant éventuellement le contexte de service.
+- **Moteur nommé, jamais déguisé** : le conseil affiche en pied de page le moteur qui a répondu (Claude ou Gemini) et son modèle. Le poste est basculable depuis *Admin › Moteur d'IA*, sans redéploiement.
+
+## 2026-08-12
+
+### v0.19.59 — fonctionnel
+
+#### Écran « Cloud Logging » : le bruit passe en DEBUG
+
+- **Instrumentation séparée des événements** : « Appel IA démarré », « prompt envoyé à Gemini » et « réponse brute Gemini » sont journalisés en **DEBUG** et non plus en INFO. Un import écrivait une cinquantaine de lignes dont une quinzaine seulement portait une information : l'ouverture d'un appel n'apprend rien que sa clôture ne dise, durée et jetons compris.
+- **Chips de sévérité en seuils** : « INFO+ » affiche INFO, WARN et ERROR ; « WARN+ » affiche WARN et ERROR ; « ERROR » les erreurs seules ; « DEBUG seul » isole l'instrumentation ; « Tout » ne filtre rien. L'égalité stricte précédente était un piège — sélectionner INFO masquait les erreurs, c'est-à-dire précisément ce qu'on cherchait.
+- **Filtre par défaut : INFO+**. Le détail technique reste à un clic.
+
+### v0.19.58 — fonctionnel
+
+#### Un traitement porte le nom du travail, pas celui d'un appel
+
+- **Une écriture de recette = un traitement** : le recalcul des produits d'achat et la synchronisation nutrition tiraient chacun un identifiant de corrélation aléatoire. L'écran de logs y voyait deux traitements anonymes, sans lien entre eux ni avec l'écriture qui les avait déclenchés. Les deux partagent désormais le `correlationId` posé par `onRecipeWritten` et se lisent comme un seul bloc.
+- **Titre du groupe** : le libellé vient d'abord de la racine du `correlationId`, qui nomme le traitement. Le poste (`feature`) n'est plus qu'un repli, et seulement pour les entrées dont l'identifiant est opaque : l'utiliser en titre faisait passer l'import d'une recette pour un « shopping_products_refresh », du nom du premier appel IA qu'il déclenchait.
+
+### v0.19.57 — fonctionnel
+
+#### File de travail : un import, une ligne
+
+- **Le brouillon remplace son traitement dès qu'il existe** : la pipeline d'import publie le brouillon, puis poursuit plusieurs minutes de normalisation des référentiels en arrière-plan. Pendant cette phase, la file de travail affichait deux lignes pour un seul import — le traitement en cours et le brouillon qu'il venait de produire. Le traitement disparaît désormais de la file dès qu'il a créé un brouillon : c'est le brouillon que l'utilisateur ouvre, et lui seul reste affiché. Les jobs en **erreur** ou **rejetés** restent visibles même s'ils ont produit un brouillon, sans quoi la panne disparaîtrait de l'écran.
+
+#### Écran admin « Cloud Logging » : lecture par traitement
+
+- **Regroupement par traitement** : un chip « Par traitement » (activé par défaut) regroupe les entrées partageant un même `correlationId`. Un import, un backfill ou un enrichissement se lit alors comme un bloc unique — replié, avec son libellé, son nombre de messages et sa date — au lieu d'être dispersé dans le flux entre les messages des autres traitements.
+- **Ordre de lecture inversé dans le groupe** : le flux global présente le plus récent en premier, mais un traitement se déroule dans le temps : ses messages sont donc affichés du plus ancien au plus récent.
+- **Les échecs s'ouvrent d'eux-mêmes** : un groupe contenant au moins une entrée `ERROR` est déplié à l'affichage et porte l'icône et la couleur d'erreur ; un groupe contenant un `WARNING` porte la couleur d'avertissement.
+- **Isoler un traitement** : un bouton entonnoir sur l'en-tête du groupe reporte son `correlationId` dans le filtre exact et relance la requête.
+- **Libellé lisible** : le groupe s'intitule par le poste fonctionnel (`feature`) quand il est connu, sinon par le module, sinon par la racine du `correlationId` débarrassée de son horodatage. Les entrées sans corrélation sont réunies sous « Hors traitement ».
+- Le chip peut être désactivé pour retrouver la liste plate d'origine.
+
+## 2026-07-11
+
+### v0.19.18 — fonctionnel
+
+#### Gouvernance unifiée des unités ingrédients (éditeur + IA + scan)
+
+- **Source de vérité unique** : la gestion des unités repose sur un référentiel central (`nutrition_units`). Toute unité d'ingrédient saisie, générée par IA ou extraite par scan doit être résolue par ce référentiel avant d'être exploitée pour la nutrition.
+
+- **Règle métier prioritaire** : la composition recette doit d'abord **piocher dans la liste du référentiel**. La création d'une nouvelle unité n'est autorisée qu'en **fallback** si aucune correspondance n'existe après normalisation.
+
+- **Normalisation stricte anti-doublons** : différentes écritures d'une même unité doivent converger vers une forme canonique unique. Exemple attendu : `CAC`, `cac`, `c.C`, `C.c`, `c.a.c` et `cuillère à café` doivent toutes référencer la même unité canonique (`c_a_c`).
+
+- **Fallback contrôlé** : lorsqu'une unité légitime absente du référentiel apparaît (ex: `tige`), elle est ajoutée automatiquement en entrée `unknown/pending_review` et réutilisée ensuite telle quelle (pas de duplication proche).
+
+- **Couverture multi-canaux obligatoire** : ces règles s'appliquent uniformément à :
+  - l'éditeur manuel d'ingrédients,
+  - la génération de recettes via Gemini,
+  - l'extraction/scan OCR,
+  - les flux de backfill/recompute nutrition.
+
+- **Traçabilité de résolution** : chaque graphie d'unité rencontrée est conservée dans le référentiel `nutrition_units` (`aliases`, `status`, `source`), avec sa provenance. Elle n'est **pas** recopiée sur chaque ingrédient de chaque recette : une recette ne stocke que ce qu'elle dit (`name`, `qty`, `unit`, `category`), la résolution se recalcule à la demande.
+
+- **Contrôle qualité opérationnel** : l'admin doit pouvoir visualiser les unités inconnues, valider/fusionner les alias, et suivre la baisse des ingrédients non convertibles en nutrition.
+
+### v0.19.18 — technique
+
+#### Spécification technique — Gouvernance des unités ingrédients
+
+##### Objectif
+
+- Éliminer les divergences d'unités entre saisie manuelle, génération Gemini et import d'une page scannée.
+- Garantir une résolution canonique des unités avant tout calcul nutrition.
+- Réduire drastiquement les lignes nutrition sans score dues aux unités non reconnues.
+
+##### Référentiel d'unités (source de vérité)
+
+- Collection Firestore : `nutrition_units`.
+- Une unité canonique = un document unique (`normalized_unit`).
+- Champs attendus :
+  - `normalized_unit: string`
+  - `display_label: string`
+  - `aliases: string[]`
+  - `measurement_type: "weight" | "volume" | "count" | "unknown"`
+  - `grams_per_unit?: number`
+  - `volume_ml_per_unit?: number`
+  - `status: "known" | "unknown" | "pending_review" | "deprecated"`
+  - `source: "builtin" | "fallback_auto" | "admin_validated"`
+  - `seen_count: number`
+  - `first_seen_at`, `last_seen_at`, `updated_at`
+
+**`grams_per_unit` n'existe que sur une unité de POIDS.** Deux types d'unités
+n'ont pas de poids intrinsèque et n'en portent donc jamais :
+
+| Type | Ce qui est stocké | Ce qui fait le poids |
+|---|---|---|
+| `volume` | `volume_ml_per_unit` | `ml × densité(ingrédient)` |
+| `count` (« pièce ») | rien | `grams_per_piece` de l'**ingrédient** |
+
+La règle valait pour le volume depuis l'incident de la cuillère à soupe (une
+recette à l'huile figeait 13,8 g sur `c_a_s`, imposés ensuite au miel et à
+l'eau). Elle manquait pour le comptage, avec la même conséquence en pire : le
+premier ingrédient croisé en pièces — inconnu de la table, donc 100 g par
+défaut — figeait `grams_per_unit: 100` sur `piece`, et **tout** ce qui se
+compte à la pièce pesait dès lors 100 g. Un blanc d'œuf au lieu de 30 g, trois
+échalotes 300 g au lieu de 90.
+
+Le champ est désormais supprimé du document à chaque passage sur une unité de
+comptage : les référentiels déjà pollués se réparent seuls, sans backfill. Les
+deux implémentations (`resolveUnitFactorToGrams`, Dart et TypeScript) ignorent
+en outre un tel poids s'il subsiste, et les cas correspondants sont asservis
+dans `unit_to_grams.json`.
+
+##### Poids du couple ingrédient / unité
+
+La même maladie touche une famille entière d'unités : `branche`, `brin`, `tige`,
+`feuille`, `bouquet`, `filet`, `noisette`, `zeste`, `tranche`, `poignee`,
+`morceau`, `gousse` (`INGREDIENT_DEPENDENT_UNITS`). Aucune n'a de poids propre —
+une branche de thym pèse 1 g, une branche de céleri 60 — et la table intégrée
+n'en donnait qu'une moyenne : `branche: 15 g`, soit 60 g pour quatre branches de
+thym, soixante fois le poids réel.
+
+Le référentiel d'ingrédients porte donc `grams_per_unit: { branche: 1 }`, indexé
+par unité canonique. L'ordre de résolution, tenu par une seule fonction partagée
+et asservi par `unit_to_grams.json` :
+
+1. `grams_per_unit[unité]` de l'**ingrédient** — le poids du couple ;
+2. `grams_per_piece` de l'ingrédient, quand l'unité est « pièce » ou absente ;
+3. `volume_ml_per_unit` × densité, pour un volume ;
+4. `grams_per_unit` du référentiel d'**unités**, pour un poids ;
+5. la table intégrée, en dernier recours.
+
+Le poste d'IA `estimate_unit_couple_weights` alimente le niveau 1 à la
+normalisation, en ne demandant que les couples encore inconnus.
+
+##### Quantité absente : les assaisonnements
+
+« sel, poivre » en fin de liste d'ingrédients n'écrit ni nombre ni unité, et
+« une pincée de sel » s'écrit le plus souvent « sel, pincée » — l'unité seule,
+sans le « une ». Le poids valant `quantité × poids d'une unité`, ces lignes
+rendaient `null` **avant même** qu'on regarde l'unité, alors que la pincée vaut
+0,5 g dans la table comme dans le référentiel. Deux « ? » s'affichaient, la
+couverture restait partielle et la vue pour 100 g était masquée, pour un
+demi-gramme sans calories.
+
+`resolveWeighingInput` (Dart et TypeScript, asservie par `unit_to_grams.json`)
+rend la quantité et l'unité réellement pesées. Trois cas, et rien d'autre :
+
+1. la quantité se lit — rendue telle quelle, unité inchangée ;
+2. elle manque sur une petite mesure à poids fixe (`pincee`,
+   `pointe_de_couteau`) — on lit 1 ;
+3. elle manque **avec** l'unité, sur un assaisonnement connu
+   (`SEASONING_MATCHERS`) — on lit une pincée.
+
+Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. » est
+une donnée abîmée, pas une convention d'écriture : lui prêter un 1 inventerait
+un poids là où la recette attendait un nombre.
+
+Le cas 3 rend l'unité `pincee`, pas une constante en grammes : la surcharge du
+référentiel Firestore suit, et corriger le poids d'une pincée depuis
+Admin → Unités corrige les trois cas d'un coup.
+
+`SEASONING_MATCHERS` ne contient que ce qui se dose réellement par pincée —
+épices, herbes séchées, mélanges secs. Les herbes fraîches en bouquet (persil,
+basilic, menthe, coriandre) en sont absentes : elles pèsent trente grammes, pas
+un demi, et une approximation soixante fois trop basse ne vaut pas mieux qu'une
+case vide, elle la déguise. Les motifs se comparent **mot entier** sur la forme
+canonique : « selle d'agneau » ne pèse pas une pincée parce qu'elle commence par
+« sel ».
+
+Le déclencheur de synchronisation applique la même lecture pour sa validation
+des quantités, sans quoi l'écran d'administration continuerait de dénoncer
+« sel » comme une quantité abîmée alors que le calcul, lui, aboutit. Sur
+l'écran de détail, une pastille et une entrée de légende nomment les lignes
+comptées ainsi : un demi-gramme non expliqué se lit comme une donnée de la
+recette.
+
+Rien à relancer pour les recettes déjà calculées : le rattrapage de 5 h reprend
+toute recette dont `missing_ingredients` n'est pas vide, et ces lignes en
+sortent. La correction **économise** des appels — une pincée de sel suffisait à
+faire revenir la recette toutes les nuits.
+
+##### Sel et sodium : une grandeur, pas deux apports
+
+Le schéma d'enrichissement `per100g` réclame `sodium_mg` **et** `salt_g`. Le
+modèle répond les deux, cohérents entre eux — c'est la même chose dans deux
+unités, 1 g de sel valant 393,4 mg de sodium. `normalizeNutrients` les
+**additionnait** : la conversion du sel était ajoutée au sodium déjà fourni,
+puis le sel était recalculé depuis ce sodium doublé.
+
+Tout ingrédient salé du référentiel portait donc deux fois son sel réel. Le sel
+de table était stocké à 200 g pour 100 g, la sauce soja à 11 186 mg de sodium au
+lieu de 5 500, le lait à 88 au lieu de 44. 1 167 des 1 247 ingrédients du
+référentiel portent du sodium. Une portion d'ailes de poulet annonçait 10,3 g de
+sel — deux jours d'apport recommandé.
+
+Rien ne se levait, et rien ne paraissait incohérent : la seconde formule
+reconstruisait un `salt_g` parfaitement accordé au sodium faux. Le défaut ne se
+voyait qu'en comparant à une table de composition extérieure.
+
+Le doublement frappait deux fois : à l'écriture du référentiel, puis à chaque
+lecture, `recipeNutrition` renormalisant un profil déjà normalisé. La règle qui
+manquait est celle-là — **une normalisation doit être un point fixe** —, et
+c'est le test qui la garde aujourd'hui.
+
+La règle est désormais : le sodium fait foi quand il est fourni, c'est la mesure
+des tables de composition ; le sel n'en est qu'une conversion, et ne sert de
+source que s'il est seul. Deux écritures d'un même nutriment ne s'additionnent
+jamais non plus (`sodium` et `sodium_mg`, `kcal` et `calories`) : la forme
+canonique gagne, sinon la première rencontrée.
+
+`functions/src/tests/nutrients.test.ts` couvre les deux règles, l'idempotence et
+le rejet des valeurs nulles. Cette fonction n'avait aucun test : c'est par là que
+le défaut est passé.
+
+###### Réparer les données déjà écrites
+
+Corriger le code n'y suffit pas : après coup, un profil doublé est
+**indistinguable** d'un profil juste, puisque la formule fautive les rendait
+cohérents dans les deux cas. Aucune règle ne peut les séparer, et diviser par
+deux au hasard reviendrait à fausser les profils sains.
+
+Seule une nouvelle estimation répare. `backfillEnrichReferentialsFn` reçoit donc
+un mode `refreshSodium` (Admin → Backfills, « Reprendre le sel des
+ingrédients ») : au lieu des profils vides, il reprend ceux qui portent du
+sodium, remplace la carte `per100g` entière — `set(merge)` fusionnerait champ par
+champ et laisserait survivre l'ancienne valeur —, et saute la phase des poids
+d'unités, étrangère au problème. Curseur de reprise distinct, et poste de coût
+distinct (`backfill_refresh_sodium_per100g`) : cette dépense est ponctuelle et
+massive, la noyer dans le rattrapage courant aurait rendu son montant
+introuvable.
+
+##### Zéro certain contre valeur inconnue
+
+Le référentiel n'enregistre que les valeurs strictement positives : un profil ne
+liste pas ses zéros. L'écran de détail traduisait cette absence par « - », qui se
+lit « on ne sait pas ». Le sel affichait ainsi sept tirets pour sept zéros
+certains — il n'a ni calories, ni protéines, ni glucides —, alors que le total,
+lui, les additionnait déjà comme des zéros.
+
+Les métriques affichées partent maintenant de zéro pour tout profil retenu comme
+utilisable, et le profil les remplit. Un tiret ne subsiste que là où il n'y a
+vraiment aucun profil.
+
+##### Ingrédients non consommés
+
+`nutrition_ingredients.not_consumed` marque ce qui appartient à la recette mais
+pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
+marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
+reste, il rend le total de la recette inutilisable.
+
+##### Huile absorbée à la friture
+
+Écarter le bain est juste, mais incomplet : ce qu'on y plonge en ressort plus
+gras. Un poulet pané au panko absorbe environ 10 % de son poids en huile — sur
+600 g, 55 g de lipides et 500 kcal que la recette ne déclarait nulle part. La
+couverture affichait « complet » et le plat mentait de 40 % sur ses lipides.
+
+Le taux n'appartient pas au bain. La quantité d'huile écrite dans une recette
+est arbitraire (« 1 L pour la friture ») : en garder un pourcentage ferait
+dépendre le résultat de la façon dont l'auteur a rédigé sa ligne. Le taux
+appartient à l'**aliment frit** ; le bain déclaré sert de **plafond** — on
+n'absorbe pas plus d'huile qu'il n'y en a — et de source de profil, puisque
+c'est lui qui dit quelle huile est employée. À défaut, une huile végétale
+générique (900 kcal, 100 g de lipides, 13 g de saturés pour 100 g).
+
+Reste à savoir *ce qui* est frit : la liste d'ingrédients ne le dit pas — dans
+un poulet pané, le poulet, la farine, l'œuf et la chapelure passent au bain, la
+salade servie à côté non. Seul le texte de la recette le dit, d'où le poste
+`estimate_fry_absorption`, qui rend les indices des ingrédients frits et le
+pourcentage absorbé (borné à 30 %).
+
+L'appel n'est demandé que si `looksFried()` — déterministe, gratuit,
+`fryAbsorption.test.ts` — repère un signe de friture dans `raw_cooklang` ou dans
+les noms d'ingrédients. La recherche se fait par mots entiers : « frit » en
+sous-chaîne attrape « frittata », qui est une omelette. Une panure seule ne
+déclenche rien, le four existe.
+
+Le verdict vit dans le snapshot (`fry_verdict`, `fry_signature`) et se réutilise
+tant que la liste d'ingrédients et le texte n'ont pas changé. Il est stocké
+**séparément de son résultat** (`absorbed_oil`) : un poids d'ingrédient qui
+devient connu entre deux calculs doit produire de l'huile sans redemander le
+verdict.
+
+L'huile absorbée entre dans les totaux **et dans le poids total** — elle est
+mangée, donc elle pèse dans le dénominateur des valeurs pour 100 g. Elle
+n'entre pas dans la couverture : ce n'est pas un ingrédient. L'écran la montre
+comme une ligne dérivée, en italique et marquée « estimée », qui dit son taux et
+le poids frit dont il découle ; le tableau, qui refait ses totaux depuis les
+lignes, la compte comme le serveur — sans quoi son TOTAL contredirait les
+calories par portion affichées juste au-dessus.
+
+Elle se range **sous le bain dont elle sort** (`↳ dont absorbée`), reconnu par
+`source_name`, et ne tombe en fin de tableau que si la recette ne liste aucun
+corps gras écarté. Les deux lignes se lisent alors comme une seule idée : on
+jette le litre, on mange les 55 g.
+
+##### Quantité de repli des matières grasses de cuisson
+
+« Huile pour graisser le fond du plat » n'a pas de quantité et n'en aura jamais :
+c'est un geste, pas une pesée. Sans quantité, l'ingrédient sort du calcul — une
+centaine de kilocalories manquantes que rien ne signale.
+
+`defaultQuantityForMissing` applique donc, à la normalisation et **hors de toute
+dépendance à l'IA**, une quantité de repli : 1 c.à.s. pour les huiles et corps
+gras, 1 noisette pour le beurre et la margarine. La valeur est écrite dans la
+recette (elle apparaît donc dans la liste d'ingrédients), pas seulement dans le
+calcul.
+
+La liste est délibérément courte. Une absence de quantité a souvent un sens : un
+« poulet » listé sans quantité peut être l'intitulé d'une pièce dont la découpe
+est chiffrée plus bas, et lui inventer un poids fausserait la recette entière.
+Le repli ne couvre que les matières grasses de fond de plat ; `defaultQuantities.test.ts`
+garde cette frontière dans les deux sens.
+
+##### Lignes qui reprennent un ingrédient déjà listé
+
+Une recette qui achète 1,5 kg de côte puis en dresse « 4 tranches de viande »
+décrit le même aliment à deux stades ; le calcul additionnait les deux et
+doublait les apports.
+
+Un poste d'IA — `detect_duplicate_ingredients` — lisait la liste complète et
+désignait les reprises. Il n'existe plus. Il rattrapait une conséquence du
+balisage inline : tant que la liste du livre n'était jamais transcrite, chaque
+ingrédient devait être balisé quelque part dans les étapes, et le même aliment
+finissait déclaré deux fois. La transcription en deux passes recopie la liste du
+livre telle quelle, et le prompt interdit le double balisage. La cause a
+disparu, la rustine avec elle. Le poste reste au **catalogue comptable**, pour
+que les mois déjà comptabilisés continuent de le nommer, mais il a quitté
+`ROUTABLE_FEATURES` : plus aucun appel ne l'emprunte.
+
+Les verdicts déjà écrits sont conservés et relus. Le snapshot garde
+`duplicate_ingredients`, `duplicate_indices` et la **signature** de la liste qui
+les a produits : une recette importée avant ce changement continue d'écarter ses
+reprises, sans qu'aucun appel ne soit passé. Rien n'est écrit sur
+`recipes.ingredients` — une reprise n'est pas une propriété de l'ingrédient,
+elle n'existe que dans cette recette-ci.
+
+Ces ingrédients sortent des totaux, du poids total **et du dénominateur de
+couverture** : les compter comme manquants ferait passer pour incomplète une
+recette qui ne l'est pas. Ils restent listés dans
+`nutrition.not_consumed_ingredients` et s'affichent dans le tableau, atténués et
+marqués — un ingrédient qui disparaît sans explication est précisément ce que ce
+tableau doit éviter. Le poste `detect_not_consumed` renseigne le champ une seule
+fois par ingrédient, et le doute profite au calcul (`true` par défaut).
+
+##### Contrat ingrédient (recette)
+
+Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien d'autre :
+
+- `name`, `qty`, `unit` (l'unité telle qu'écrite / affichée)
+- `category?` — la section CookLang (`== Pour la pâte ==`) dont il relève
+- `note?` — ce que la ligne du livre dit **en plus** de la quantité
+
+**Une ligne du livre peut nommer DEUX ingrédients.** « 2 cuil. à café de moutarde à
+l'ancienne mélangée à 2 cuil. à café de miel » est un achat de moutarde **et** un achat de
+miel. La règle « une ligne, une entrée » obligeait à en choisir un, et le second sortait de
+la liste de courses comme du calcul nutritionnel sans qu'aucune erreur ne soit levée. Deux
+entrées portent alors la même ligne en `brut`, et le lien entre elles vit dans la `note`.
+Le contrôle vérifie donc une **couverture**, pas une égalité — et il compte les occurrences :
+« 1 bouquet d'aneth » présent dans deux sections demande deux entrées, sans quoi la fusion
+que ce contrôle traque passerait inaperçue.
+
+**La note se CALCULE quand le modèle la laisse vide** — `nutrition/ingredientNote.ts`,
+`noteFromRawLine`. Constater son absence ne suffisait pas : « avec la peau mais écaillée »
+est écrit dans le livre et doit finir dans la recette. C'est ce que la ligne dit **après**
+avoir nommé l'aliment et sa quantité — une soustraction, pas un jugement. La proposition du
+modèle reste prioritaire quand il en fait une : il sait reformuler un lien (« mélangée au
+miel ») là où la soustraction rend une bribe. Deux choix décident du résultat : on prend ce
+qui **suit** le dernier élément identifié et non ce qui reste après découpage — recoller les
+morceaux rendait « 1 de avec la peau mais écaillée », les trous du milieu se refermant sur
+des articles orphelins ; et la ponctuation n'est retirée qu'aux bords, pour que « cuil. à
+café » garde son point. Contrainte inverse, testée mot à mot : **chaque mot rendu vient de la
+ligne**. Une note inventée serait pire que pas de note, parce qu'on la croirait.
+
+**`note` n'est pas un commentaire, c'est la moitié de la ligne.** « 1 filet de
+saumon de 1,8 kg avec la peau mais écaillée » se sépare en une quantité, qui se
+compte, et une précision, qui se lit. Cette précision ne vivait nulle part :
+aucune accolade CookLang ne peut la porter, et le modèle réécrivait la phrase du
+livre pour la caser — c'est l'un des mécanismes par lesquels une recette
+s'écartait de son original. La transcription la sépare à la source ; elle est
+transportée sans être interprétée, ni par la normalisation, ni par le
+redimensionnement (« avec la peau mais écaillée » reste vrai pour deux parts
+comme pour douze), ni par l'éditeur, qui ne propose délibérément pas de champ
+pour elle — la retoucher dans un formulaire de quantités inviterait à la
+réécrire.
+
+**Aucune forme résolue n'est persistée sur la recette.** `unit_raw`,
+`unit_canonical`, `unit_resolution_*` et l'identité référentielle
+(`ingredient_ref_id`, `ingredient_ref_status`, `ingredient_canonical_name`,
+`ingredient_resolution_*`) sont des intermédiaires de calcul : ils se
+recalculent depuis `name` et `unit` partout où ils servent, de façon
+déterministe. Les stocker créait un champ que plusieurs traitements se
+disputaient et que personne ne relisait — la resynchronisation nutrition
+effaçait ainsi la catégorie écrite par la normalisation quelques secondes plus
+tôt.
+
+La traçabilité de résolution vit dans `nutrition_units` — chaque graphie
+observée y est enregistrée en `aliases`, avec `status` et `source` — et non
+recopiée sur chaque ligne de chaque recette.
+
+**Un seul écrivain pour `recipes.ingredients` : la normalisation référentiels.**
+Les déclencheurs (nutrition, liste de courses) écrivent leurs propres champs
+(`nutrition`, `nutrition_validation`, `shopping_products`) et n'y touchent pas.
+
+**Et réciproquement : la normalisation ne calcule pas la nutrition.** Elle l'a
+longtemps fait, ce qui produisait deux défauts d'un coup. Le contrat ci-dessus
+n'était pas tenu — deux écrivains pour `nutrition` — et surtout le calcul
+tombait au mauvais moment : à l'édition d'une recette, le client appelle la
+normalisation **avant** d'écrire, or `computeAndPersistRecipeNutrition` relit le
+document depuis Firestore. Elle calculait donc sur la version d'avant la
+modification et posait sur la recette une nutrition périmée, que le déclencheur
+remplaçait quelques secondes plus tard.
+
+La séparation est donc :
+
+| Étape | Qui | Ce qu'elle fait |
+|---|---|---|
+| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, et enrichit ce que la recette ne dit pas : poids d'une pièce, poids d'un couple ingrédient/unité, ingrédients non consommés. Ne touche ni au texte, ni à `nutrition`. La singularisation des unités et la complétion des quantités en sont parties : la passe 2 de l'extraction lit la liste du livre, où l'unité et la quantité **sont écrites** — les deviner reviendrait à ignorer ce qu'on a sous les yeux. |
+| 2. L'écriture | client ou `recipeProcessor` | écrit la recette normalisée |
+| 3. Après l'écriture | `onRecipeWritten` | enrichit **poids d'unités et `per100g`**, puis calcule `nutrition` et `shopping_products` |
+
+###### Un enrichissement, un seul propriétaire
+
+Deux passes vivaient des deux côtés : `enrichUnknownUnitsWithAI` et
+`enrichUnknownIngredientsWithAI`. La justification tenait sur le papier — ces
+fonctions ne traitent que les entrées **dépourvues** de valeur, donc le second
+passage ne trouve rien à faire.
+
+Elle est fausse dès qu'on regarde l'horloge. À l'import, `recipeProcessor`
+écrivait la recette **puis** la normalisait ; l'écriture réveillait
+`onRecipeWritten`, qui partait en parallèle. Les deux lisent le référentiel au même instant, y trouvent le
+même vide, et posent au modèle la même question. Le second n'arrive pas après le
+premier : il arrive **avec** lui. Résultat : chaque unité et chaque ingrédient
+inconnu payés deux fois, et un journal où la même passe apparaît en double sans
+qu'on puisse dire laquelle a servi.
+
+Les deux passes appartiennent désormais au **déclencheur, et à lui seul**. C'est
+le bon propriétaire pour deux raisons : il part sur **toutes** les écritures de
+recette — import, saisie manuelle, modification — là où la normalisation n'est
+qu'un chemin parmi d'autres ; et c'est lui qui a besoin de ces valeurs,
+immédiatement après, pour convertir les quantités et calculer la nutrition.
+Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
+
+La nutrition reste juste dès le premier affichage : le déclencheur enrichit et
+calcule dans la même exécution, dans cet ordre.
+
+**`recipes.nutrition_stale` et `recipes.nutrition_enrichment_attempts` ont
+disparu.** Ils bornaient les réveils que le déclencheur se provoquait à
+lui-même. La garde porte désormais sur ses entrées — voir « La garde porte sur
+les entrées, jamais sur la sortie » — les réveils n'ont plus lieu, et deux
+champs de contrôle qui ne contrôlaient rien ont quitté le schéma.
+
+##### Pipeline obligatoire de résolution unité
+
+1. **Normalisation stricte**
+  - lowercase, trim, suppression accents.
+  - suppression ponctuation / séparateurs non significatifs.
+  - uniformisation des graphies abrégées.
+
+2. **Résolution référentiel**
+  - lookup exact sur `normalized_unit` puis `aliases`.
+  - mapping synonymes contrôlés (table canonique backend).
+
+3. **Fallback contrôlé**
+  - uniquement si échec des étapes précédentes.
+  - création d'une entrée unique `unknown/pending_review` dans `nutrition_units`.
+  - jamais de création de doublon proche d'une unité connue.
+
+4. **Persist dans le référentiel, pas sur la recette**
+  - écrire la graphie observée dans `nutrition_units.aliases`, avec `status` et `source`.
+  - ne rien écrire de résolu sur `recipes.ingredients` (cf. contrat ingrédient).
+
+##### Règles anti-doublons (exigence critique)
+
+- Les variantes `CAC`, `cac`, `c.C`, `C.c`, `c.a.c`, `c à c`, `cuillère à café` doivent toutes converger vers `c_a_c`.
+- Les variantes `CAS`, `c.a.s`, `c à s`, `cuillère à soupe` doivent toutes converger vers `c_a_s`.
+- Une nouvelle entrée ne doit pas être créée si une unité canonique existante correspond déjà après normalisation.
+
+##### Intégration par canal
+
+- **Éditeur Flutter** : l'autocomplete unité doit être alimenté par `nutrition_units` et proposer en priorité les unités `known`.
+- **Gemini génération** : le prompt doit imposer un catalogue d'unités canoniques ; la sortie doit rester soumise au pipeline backend de résolution.
+- **Import d'une page scannée** : la sortie de la transcription doit passer par le même pipeline backend.
+- **Backfill** : ré-analyse des unités historiques avec fusion/normalisation vers canoniques.
+
+##### Administration
+
+- Écran admin unités requis avec :
+  - liste des unités `unknown/pending_review`,
+  - actions de fusion alias -> canonique,
+  - validation des conversions (`grams_per_unit`, `measurement_type`),
+  - journal des résolutions.
+
+##### Indicateurs/KPI de pilotage
+
+- Taux d'ingrédients convertibles nutrition.
+- Nombre de nouvelles unités fallback/jour.
+- Nombre d'unités inconnues non traitées.
+- Taux de lignes nutrition sans score par recette.
+
+##### Critères d'acceptation
+
+1. Même ingrédient/unité, quelle que soit la source (éditeur/Gemini/scan), se résout vers le même `normalized_unit` de `nutrition_units`.
+2. Les variantes de `cuillère à café` ne créent pas de nouvelles unités.
+3. Une unité réellement nouvelle (ex: `tige`) crée une seule entrée fallback réutilisable.
+4. Le taux de lignes nutrition à `-` diminue après migration/backfill.
+
+##### Plan de livraison recommandé
+
+- **Lot 1 (backend)** : normalisation stricte + résolution référentiel + fallback contrôlé.
+- **Lot 2 (Flutter)** : autocomplete dynamique sur référentiel + feedback de résolution.
+- **Lot 3 (Gemini/scan)** : prompts contraints + post-traitement unifié.
+- **Lot 4 (ops/admin)** : écran de revue unités + backfill historique + KPI.
+
+## 2026-07-05
+
+### v0.18.0 — fonctionnel
+
+#### Stabilisation de release multi-plateforme
+
+- **Version applicative harmonisée** : la version affichée dans la documentation produit et les supports d'installation est alignée sur **v0.18.0** pour éviter toute ambiguïté entre web, mobile et desktop.
+- **Diffusion cohérente** : la release est préparée pour les trois canaux cibles (mobile Android/iOS, web et desktop Windows) avec le pipeline standard de déploiement.
+
+### v0.18.0 — technique
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.18.0+1`.
+
+#### Release engineering
+
+- **Build desktop Windows** : génération en mode release (`flutter build windows --release`) pour alimenter le livrable desktop.
+- **Déploiement unifié** : publication via le script racine `deploy.ps1` pour conserver un chemin de release unique et reproductible.
+
+## 2026-07-04
+
+### v0.17.0 — fonctionnel
+
+#### Retouche image — expérience unifiée
+
+- **Atelier de retouche unique** : les actions de retouche photo sont regroupées dans un seul écran « Atelier de retouche », avec un parcours cohérent au lieu d'actions dispersées (recadrage d'un côté, couleur de l'autre).
+- **Panneaux orientés intention** : l'atelier expose des sections claires côté utilisateur : **Cadre**, **Lumière**, **Détails**, **Presets**.
+- **Comparaison avant/après** : l'utilisateur peut comparer l'original et la retouche en appui long (ou via bascule) sans quitter l'écran.
+- **Historique immédiat** : l'atelier propose **Annuler / Refaire** pour sécuriser les essais et réduire la peur de se tromper.
+- **Presets intelligents** : des presets rapides sont proposés avec une recommandation automatique basée sur l'analyse locale de l'image (lisibilité, naturel, couleurs pop, doux).
+- **Point d'entrée simplifié dans les galeries** : dans les onglets photos des écrans d'édition/révision, une seule action **Retoucher** remplace les boutons dispersés Crop/Couleur.
+
+### v0.17.0 — technique
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.17.0+1`.
+
+#### Retouche image — Atelier unifié
+
+- **`lib/core/presentation/image_enhancer_screen.dart`** :
+  - Nouveau mode `EnhancerMode.studio` (mode par défaut) en plus des modes compatibles `crop` et `color`.
+  - UI restructurée en panneaux `Cadre`, `Lumière`, `Détails`, `Presets`.
+  - Ajout d'un mode comparaison **avant/après** (appui long + toggle).
+  - Ajout d'un historique local **undo/redo** basé sur snapshots d'état (image, coins, réglages).
+  - Ajout des réglages `contrast` et `saturation` en plus de `brightness` et `sharpen`.
+
+- **`lib/core/presentation/image_enhancer_processing.dart`** :
+  - `WarpParams` étendu avec `contrast` et `saturation`.
+  - Pipeline `warpIsolate` mis à jour pour appliquer `adjustColor(brightness, contrast, saturation)` avant netteté.
+  - Ajout d'une analyse locale légère (`analyzeImageStatsIsolate`) pour suggérer un preset intelligent.
+
+- **`lib/core/presentation/image_action_card.dart`** :
+  - Simplification des actions en une entrée **Retoucher** ouvrant l'atelier unifié.
+
+- **`lib/features/recipes/presentation/drafts/draft_review_widgets.dart`** :
+  - Remplacement des actions séparées `onCrop` / `onColor` par une action unique `onEdit`.
+
+- **`lib/features/recipes/presentation/drafts/draft_review_body.dart`**,
+  **`lib/features/recipes/presentation/drafts/draft_review_screen.dart`**,
+  **`lib/features/recipes/presentation/edit/recipe_edit_screen.dart`** :
+  - Raccordement des boutons photos à `EnhancerMode.studio`.
+  - Titre overlay harmonisé (« Atelier de retouche »).
+
+## 2026-06-28
+
+### v0.15.90 — fonctionnel
+
+#### Traçabilité des fichiers rejetés par le scan de sécurité
+
+- **Job au statut « Rejeté »** : lorsqu'un fichier importé (recette, couverture ou document de livre) est bloqué par le scan de sécurité, une entrée est désormais créée dans l'écran « Brouillons & Traitements » avec le statut **Rejeté** (badge rouge). Auparavant, le motif du blocage n'était affiché qu'éphémèrement à l'utilisateur et n'était conservé nulle part de consultable dans l'application.
+- **Motif visible** : chaque entrée rejetée affiche le nom du fichier, son type et la **raison du rejet** retournée par le scan (incohérence de format, type non autorisé, signature antivirus, etc.). Le détail est consultable et copiable via un appui long.
+- **Actions** : seule l'action **Supprimer** est proposée sur une entrée rejetée (pas de **Relancer**, car re-scanner le même fichier produirait le même rejet). Le fichier source reste en quarantaine et n'est pas exposé.
+
+## 2026-06-02
+
+### v0.15.31 — fonctionnel
+
+#### Sécurité — Corrections de règles et nettoyage
+
+- **Notes de recettes (`recipe_ratings`) — création restreinte** : la règle Firestore `allow create` sur la collection `recipe_ratings` exige désormais que le champ `user_id` du document créé corresponde à l'uid de l'utilisateur connecté (`request.resource.data.user_id == request.auth.uid`). Auparavant, un utilisateur authentifié pouvait créer une note avec l'identifiant d'un autre utilisateur.
+
+- **CORS Cloud Functions restreint** : les fonctions HTTPS Callable (wrappers Gemini et admin) n'acceptent plus toutes les origines (`cors: true`) mais uniquement les domaines Firebase connus : `kassdale-6d948.web.app` et `kassdale-6d948.firebaseapp.com`.
+
+#### Nettoyage — Code mort PWA retiré
+
+- **Suppression du système d'installation PWA programmatique** : les fichiers `web_install.dart`, `web_install_web.dart` et `web_install_stub.dart` ont été supprimés. Ces fichiers exposaient `isPwaInstallAvailable()` et `triggerPwaInstall()` mais n'étaient importés nulle part dans l'UI. La capture de `window._pwaPrompt` dans `index.html` a également été retirée. Chrome gère nativement l'installation PWA via sa bannière `beforeinstallprompt` sans intervention Flutter.
+
+### v0.15.31 — technique
+
+#### Sécurité — Firestore Rules
+
+- **`recipe_ratings` — `allow create` restreint** :
+  ```
+  allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+  ```
+  Avant : `allow create: if isAuthenticated();` — un utilisateur pouvait écrire un document avec le `user_id` d'un autre. Corrigé en ajoutant la vérification d'appartenance.
+
+#### Sécurité — Cloud Functions CORS
+
+- **`cors: true` → liste blanche** dans `geminiCallables.ts` et `deadLetterHandler.ts` :
+  ```typescript
+  const ALLOWED_ORIGINS = [
+    "https://kassdale-6d948.web.app",
+    "https://kassdale-6d948.firebaseapp.com",
+  ];
+  ```
+  Les fonctions callable ne répondent plus qu'aux origines connues.
+
+#### Nettoyage — PWA install programmatique supprimé
+
+- **Fichiers supprimés** : `lib/core/utils/web_install.dart`, `web_install_web.dart`, `web_install_stub.dart`. Ces fichiers n'étaient référencés nulle part dans l'UI (jamais importés).
+
+- **`web/index.html`** : suppression de `window._pwaPrompt` et du listener `beforeinstallprompt`. Le navigateur affiche nativement sa bannière d'installation sans capture JS supplémentaire. Le bloc service worker (skip-waiting, controllerchange, update) est conservé intact.
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.15.31+1`.
+- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.31'`.
+
+## 2026-06-01
+
+### v0.15.29 — fonctionnel
+
+#### Distribution & Installation de l'application
+
+- **Téléchargement de l'APK depuis le web (Android)** : sur la version web ouverte sur Android, un bandeau ou une vérification automatique au lancement détecte si une mise à jour est disponible. Le téléchargement de l'APK est déclenché via un lien direct servi par Firebase Hosting (`/app-release.apk`) avec les headers HTTP corrects (`Content-Type: application/vnd.android.package-archive`, `Content-Disposition: attachment; filename="kass-dalle.apk"`). Le fichier se télécharge directement dans le dossier Téléchargements du téléphone.
+
+- **Installation PWA (Progressive Web App) native** : sur Chrome Android et Chrome Desktop, le mécanisme standard `beforeinstallprompt` du navigateur est utilisé. L'événement est capturé dans `index.html` **sans** appel à `preventDefault()`, ce qui laisse Chrome afficher sa propre bannière d'installation native. Aucune interface personnalisée n'est imposée — l'utilisateur voit la proposition d'installation standard du navigateur au moment opportun.
+
+#### Export PDF
+
+- **Export d'une recette en PDF imprimable** : depuis la fiche d'une recette validée, un bouton PDF (icône dans l'AppBar) permet d'exporter la recette au format PDF. L'export génère un document paginé avec : entête coloré (orange profond), titre, métadonnées (portions, difficulté, temps), liste des ingrédients, étapes numérotées, et optionnellement les photos de la recette. Un dialogue demande à l'utilisateur s'il souhaite inclure les images avant génération.
+
+- **Positionnement des images dans le PDF** : les images sont positionnées selon leur marqueur dans le texte CookLang (`![left|40%](url)`, `![right|30%](url)`, `![after|80%](url)`). Le PDF respecte l'alignement gauche/droite/centré et le pourcentage de largeur déclaré dans le contenu.
+
+- **Snackbar "Ouvrir" après export PDF sur mobile** : après génération et partage du PDF (via la share sheet système Android/iOS), un snackbar succès affiché pendant 8 secondes propose un bouton **OUVRIR** permettant de ré-ouvrir la share sheet avec le même document. Ce bouton n'apparaît que sur les plateformes mobiles natives (non-web) ; sur web, le PDF est déjà dans les Téléchargements du navigateur et aucun bouton supplémentaire n'est affiché.
+
+#### Éditeur de recettes — Mode visuel (WYSIWYG)
+
+- **Éditeur hybride CookLang** : l'éditeur de brouillon propose trois modes via des icônes de toggle : **Texte** (saisie CookLang brute avec coloration syntaxique), **Visuel** (édition bloc-par-bloc WYSIWYG), et **Aperçu** (rendu final de la recette). Le mode peut être changé à tout moment.
+
+- **Édition bloc-par-bloc** : en mode visuel, chaque ligne ou section du CookLang est un bloc cliquable et éditable inline. Les types de blocs supportés : titre, ingrédient (`@nom{quantité}`), ustensile (`#outil{}`), section (`== Titre ==`), étape, conseil/note (`> texte`), commentaire (`-- texte`), image (`![pos|width](url)`).
+
+- **Toolbar d'insertion** : une barre d'outils flottante permet d'insérer au curseur : section, étape, ingrédient, ustensile, conseil, liste, image (avec sélection depuis la galerie du brouillon). Chaque insertion se positionne précisément à la ligne active.
+
+- **Réordonnancement par drag-and-drop** : les blocs peuvent être réordonnés par glisser-déposer dans l'éditeur visuel, modifiant directement l'ordre dans le CookLang sous-jacent.
+
+- **Insertion d'images avec choix de position et largeur** : lors de l'insertion d'une image depuis la galerie, l'utilisateur choisit le positionnement (gauche / droite / après / pleine largeur) et la largeur en pourcentage (5 % à 80 %) via des `ChoiceChip`. Le tag CookLang correspondant est généré automatiquement.
+
+- **Enter pour diviser un bloc** : dans l'éditeur visuel, appuyer sur Entrée dans un bloc le divise en deux blocs distincts. Un bouton de suppression de ligne (icône corbeille) est disponible sur chaque bloc.
+
+#### Éditeur Markdown — Pages non-recette
+
+- **Éditeur Markdown riche** : les pages non-recette (techniques culinaires, méthodes, notes) disposent d'un éditeur Markdown dédié avec toolbar : titres (H1/H2/H3), gras, italique, souligné, listes à puces, insertion d'images avec position (gauche/droite/après) et largeur en %.
+
+- **Sélecteur de type de page** : dans l'éditeur d'un brouillon, un sélecteur permet de qualifier le type de contenu : recette structurée, page de technique, méthode, note ou autre. Ce choix influe sur le rendu affiché (vue recette CookLang vs aperçu Markdown), les champs du formulaire visibles, et le comportement du prompt IA.
+
+- **Aperçu Markdown intégré** : un onglet Aperçu affiche le contenu Markdown rendu typographiquement avec les illustrations intercalées à leurs positions déclarées.
+
+#### Bibliothèque de livres
+
+- **Effet 3D sur les couvertures** : les vignettes de couverture de livres affichent un effet livre 3D avec ombres portées, tranche simulée et vernis. Ce rendu est appliqué à la liste des livres et à l'écran de détail.
+
+- **Livres système avec couvertures par défaut** : les livres système (KassDalle, Recettes libres) disposent de couvertures illustrées par des assets locaux. Si aucune couverture personnalisée n'est définie, l'asset par défaut est utilisé.
+
+- **Filtre de contenu dans un livre** : dans l'écran d'un livre, un `SegmentedButton` permet de filtrer l'affichage : Tout / Recettes / Autre (pages non-recette). Ce filtre remplace l'ancien bouton cyclique.
+
+- **Sélection multiple** : un appui long sur un livre ou une recette libre active le mode sélection multiple. L'AppBar contextuelle propose "Tout sélectionner" et "Supprimer" (avec confirmation). La sélection est limitée aux éléments de l'utilisateur connecté.
+
+#### Planning des repas — Améliorations
+
+- **Préférences planning accessibles depuis le profil** : les préférences de planning (nombre de repas, contraintes, heures) sont accessibles depuis l'écran Profil en plus de l'icône engrenage dans l'écran Planning.
+
+- **Sections repliables dans les préférences** : les sections de configuration du planning (contraintes globales, contraintes par jour) sont repliables pour simplifier l'interface.
+
+- **Justification IA des suggestions** : lors d'une suggestion IA de planning, chaque repas proposé affiche la justification du choix IA (pourquoi cette recette à ce moment).
+
+- **Sélection des sources pour les suggestions** : lors du batch planning, l'utilisateur peut sélectionner quels livres ou sources doivent être utilisés par l'IA pour les suggestions.
+
+#### Écran Explorer (Recherche & Création)
+
+- **Refonte en écran Explorer** : l'écran de recherche est renommé « Explorer » et propose trois actions clairement distinctes : **Chercher** (recherche dans la base), **Créer** (génération IA d'une nouvelle recette), **Web** (recherche web). La saisie du texte et la validation par Enter déclenchent la recherche.
+
+- **Tri par pertinence** : les résultats de recherche sont triés par score de pertinence décroissant.
+
+- **Diff des modifications après raffinement IA** : après un raffinement IA d'une recette, un écran de diff affiche les modifications apportées (ajouts en vert, suppressions en rouge) permettant de valider ou annuler avant sauvegarde.
+
+- **Sauvegarde directe d'une recette générée par IA** : depuis l'écran de génération IA, la sauvegarde d'une recette validée crée directement la recette sans passer par un brouillon intermédiaire, et navigue vers la fiche de la recette créée.
+
+#### Pipeline image — Améliorations qualité
+
+- **Traitement Sharp côté serveur** : avant l'envoi à Gemini pour l'extraction de couverture ou la détection d'illustrations, les images passent par un pré-traitement Sharp (deskew, CLAHE, normalisation des niveaux) côté Cloud Function pour améliorer la lisibilité des scans.
+
+- **Compression mobile** : sur Android/iOS, `flutter_image_compress` est utilisé pour réduire la taille des photos avant upload, avec un plafond configurable. Les thumbnails sont générés au format WebP.
+
+- **Quality gate Gemini** : avant d'envoyer une image à Gemini pour l'analyse, un score de qualité est calculé (netteté, luminosité, contraste). Si le score est insuffisant, un avertissement est affiché à l'utilisateur avant de continuer.
+
+#### Comptabilité & Suivi IA
+
+- **Page Comptabilité** : accessible depuis le menu Admin, cette page présente deux onglets : **GCP** (coûts Cloud Functions, Storage, Tasks issus de BigQuery) et **Gemini** (tableau croisé coûts Gemini par utilisateur × feature × période mensuelle). Chaque ligne du tableau Gemini affiche le nombre d'appels, le volume de tokens et le coût estimé en euros.
+
+- **Suivi usage tokens par feature** : l'écran "Usage IA" affiche un tableau filtrable par période mensuelle, avec une colonne "Période" pour l'agrégation. Un bandeau résume la période active. Une estimation de l'énergie consommée (en Wh) est calculée à partir du nombre total de tokens.
+
+- **Backfill historique améliorations images** : une Cloud Function `backfillEnhanceUsageFn` scanne le Storage et reconstruit les données d'usage des améliorations d'images manquantes. Un bouton "Reconstruire données images" est disponible dans la page Comptabilité (admin).
+
+### v0.15.29 — technique
+
+git 
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.15.29+1`.
+- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.29'`.
+
+#### Export PDF (`lib/core/services/`)
+
+- **`recipe_pdf_export.dart`** :
+  - `exportRecipeToPdf(Recipe, {bool includeImages})` retourne désormais `Future<({Uint8List bytes, String filename})>` au lieu de `Future<void>`. Le téléchargement est toujours effectué en interne (appel à `downloadPdf`), mais les bytes et le nom de fichier sont retournés pour permettre une réouverture post-export.
+  - `openPdf(Uint8List bytes, String filename)` : nouvelle fonction publique qui appelle `downloadPdf` — permet de ré-ouvrir le share sheet mobile depuis un snackbar.
+  - Import conditionnel : `pdf_download_stub.dart` si (dart.library.html) → `pdf_download_web.dart`.
+  - **Le dialogue d'export porte sur TOUT ce que la recette ajoute à sa méthode**, pas seulement sur les photos. `PdfExtraCounts.of(recipe, annotations)` compte les photos et les annotations **par type** ; le dialogue n'affiche un interrupteur que pour ce qui existe. Une case « Inclure les astuces » sur une recette qui n'en a aucune est un réglage sans objet, et laisse croire qu'il manque quelque chose au document. Quand la recette ne porte rien de plus, le dialogue n'apparaît pas : il ne sert qu'à trancher.
+  - `PdfExportChoice` porte les quatre décisions et `keeps(AnnotationType)` fait le tri. Les préférences (`pdf_include_images`, `pdf_include_notes`, `pdf_include_tips`, `pdf_include_corrections`) ne sont écrites que pour les catégories **réellement proposées** : une case absente de ce dialogue-ci ne doit pas écraser le choix d'un autre export.
+  - **Les annotations sont lues avant le dialogue, et un échec de lecture annule l'export.** Un PDF amputé de ses astuces sans que rien ne le dise est pire qu'un export refusé — c'est la même règle que le repli tarifaire : un manque se voit, une valeur fausse ne se voit pas.
+  - **La note de celui qui imprime s'affiche à côté du titre** — sa note personnelle sur 10, pas une moyenne. Le dénominateur est écrit : à l'écran, « ★ 8 » se comprend parce que le sélecteur de note est à un doigt ; sur une feuille posée sur un plan de travail, rien ne dit si l'échelle va à cinq ou à dix.
+  - **L'étoile est une `pw.Polygon` à dix points, pas un caractère.** Les polices du document sont les Helvetica intégrées au format PDF, qui s'arrêtent à Latin-1 : ★ (U+2605) n'y existe pas et sortirait en case vide. Embarquer une police pour un seul glyphe coûterait quelques centaines de kilo-octets par fichier ; le document reste entièrement hors-ligne.
+  - `buildRecipePdfBytes` est **public** et séparé du téléchargement, pour que `test/pdf_export_extras_test.dart` compose vraiment le document. C'est ce test qui a révélé que l'en-tête portait depuis toujours une `BoxDecoration` interdite — un liseré gauche **et** un rayon de coin, que le paquet `pdf` refuse par assertion. Elle ne se voyait pas : les assertions sont retirées du binaire de production, où la bordure était simplement dessinée de travers. Le rayon a été retiré.
+
+- **`pdf_download_stub.dart`** (mobile/desktop) : `downloadPdf` = `Printing.sharePdf(bytes: bytes, filename: filename)` — ouvre la share sheet système.
+- **`pdf_download_web.dart`** (web) : crée un `Blob` → `<a href download>` → click → revoke URL.
+
+#### Distribution APK — Firebase Hosting
+
+- **`firebase.json`** — bloc `headers` pour l'APK :
+  ```json
+  {
+    "source": "/app-release.apk",
+    "headers": [
+      { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+      { "key": "Content-Disposition", "value": "attachment; filename=\"kass-dalle.apk\"" }
+    ]
+  }
+  ```
+  Ce bloc permet au navigateur Android de déclencher le téléchargement du fichier sans l'ouvrir en ligne.
+
+#### Installation PWA — `web/index.html`
+
+- L'événement `beforeinstallprompt` est **non intercepté** (`e.preventDefault()` absent) : Chrome affiche sa propre bannière d'installation native au moment qu'il juge opportun. Aucun code Flutter ne déclenche ni ne contrôle cette bannière. Les fichiers `web_install*.dart` ont été supprimés (code mort).
+
+#### Mise à jour applicative (`lib/core/presentation/app_shell.dart`)
+
+- `_checkForUpdate()` : sur la version web (`kIsWeb`), la vérification est court-circuitée (`return`) — Chrome gère nativement l'installation PWA. Sur Android natif, la fonction appelle `checkForAppUpdate()` et affiche un dialogue de mise à jour si une nouvelle version est disponible.
+
+#### Snackbar PDF (`lib/features/recipes/presentation/detail/recipe_detail_screen.dart`)
+
+- `_exportPdf()` : après `exportRecipeToPdf`, le snackbar succès (`duration: 8s`) affiche un `SnackBarAction(label: 'Ouvrir')` uniquement si `PlatformUtils.isMobile` (Android/iOS natif). L'action appelle `openPdf(result.bytes, result.filename)` pour ré-ouvrir la share sheet.
+
+#### Éditeur visuel CookLang (`lib/features/recipes/presentation/`)
+
+- **`cooklang_visual_editor.dart`** : éditeur bloc-par-bloc. Chaque bloc est une instance de `BlockType` (section, step, ingredient, utensil, note, image, comment, etc.). L'édition inline se fait via `TextField` focusés dynamiquement. Enter dans un bloc le divise. La sauvegarde écrit le CookLang reconstitué dans Firestore.
+
+- **`hybrid_recipe_editor.dart`** : toggle 3 modes (Texte / Visuel / Aperçu) via `SegmentedButton` ou icônes. Le mode est persisté dans `SharedPreferences`.
+
+#### Éditeur Markdown pages non-recette
+
+- **`markdown_page_editor.dart`** (nouveau) : `TextField` multiligne avec toolbar (H1/H2/H3/B/I/U/liste/image). Insertion d'images depuis la galerie du brouillon avec sélection position+largeur via `AlertDialog` + `ChoiceChip`.
+
+- **Sélecteur de type de page** : `PageType` enum (`recipe`, `technique`, `equipment`, `ingredientNote`, `other`) stocké dans le champ Firestore `page_type` sous sa forme à souligné (`ingredient_note`). Le prompt Gemini de classification utilise un pipeline en 2 appels : classify (chain-of-thought + reasoning) puis extract.
+  - **Un seul mapping libellé → type**, `parsePageTypeLabel`, côté Dart comme côté TypeScript. Il accepte les trois graphies qui circulent réellement pour la note d'ingrédient : `ingredient_note` (Firestore), `ingredient note` (saisie) et `ingredientNote` (`PageType.name` côté Dart). Chacune n'était auparavant reconnue que par un lecteur sur deux, si bien que la même page changeait de type selon l'endroit où on la lisait. Cas partagés : `test-fixtures/cooklang_parsing.json`, clé `pageTypeLabels`.
+
+#### Pipeline image — Client
+
+- **`flutter_image_compress`** : ajouté dans `pubspec.yaml`. Utilisé dans `scan_upload_service.dart` pour compresser les photos avant upload (qualité configurable, format JPEG/WebP).
+- **Thumbnails WebP** : les miniatures d'illustrations sont générées et stockées au format WebP dans Firebase Storage.
+- **Quality gate** : score calculé localement (netteté via Laplacien simulé, luminosité moyenne) avant envoi à Gemini — seuil configurable dans `image_quality_checker.dart`.
+
+#### Bibliothèque de livres
+
+- **Effet 3D couvertures** : `BookCoverWidget` applique `BoxDecoration` avec `BoxShadow` multiple (ombre portée + ombre de tranche) et un overlay gradient pour simuler le vernis. Rendu via `ClipRRect` + `Stack`.
+- **Assets par défaut** (`assets/covers/`) : images locales pour les livres système utilisées si `coverUrl` est null.
+
+#### Comptabilité (`lib/features/admin/`)
+
+- **`billing_screen.dart`** : deux onglets via `TabBar`. Onglet GCP : appel Cloud Function `getGcpCostsFn` (BigQuery). Onglet Gemini : `StreamProvider` sur `ai_usage` Firestore, agrégation par `uid+feature+month`, `DataTable` avec tri, total dynamique en bas.
+- **`GeminiPricing`** : map `feature → $/1M tokens` (input/output). Tarification images (`enhance_illustration`) : 0,0336 $/image (`gemini-3.1-flash-lite-image`, dit Nano Banana 2 Lite ; 0,04 $ sur `gemini-2.5-flash-image` jusqu'au 15/08/2026, entrée conservée pour relire les mois antérieurs).
+- **`backfillEnhanceUsageFn`** : Cloud Function HTTPS callable (admin) qui scanne `gs://kassdale-6d948.appspot.com/illustrations/` et backfille les documents manquants dans `ai_usage`.
+
+#### Gestion du cache web — `firebase.json`
+
+- Règle `headers` consolidée :
+  - `index.html` + `flutter_service_worker.js` : `Cache-Control: no-cache, no-store, must-revalidate` + `Pragma: no-cache` + `Expires: 0`.
+  - `canvaskit/**` : `Cache-Control: public, max-age=31536000, immutable`.
+  - `app-release.apk` : `Content-Type: application/vnd.android.package-archive` + `Content-Disposition: attachment`.
+  - **Ne jamais utiliser** `**/*.@(js|css|wasm)` avec cache long — le glob attrape `flutter_service_worker.js` et crée un conflit de headers `immutable` bloquant les mises à jour.
+
+## 2026-05-18
+
+### v0.13.62 — fonctionnel
+
+- **Architecture serveur pour le traitement IA** : tous les appels Gemini (extraction de recettes, raffinement, recherche, suggestion de planning, génération de recette, polissage Cooklang, extraction de couverture, détection d'illustrations, etc.) sont désormais exécutés côté serveur via des Cloud Functions. La clé API Gemini n'est plus présente sur les clients (web, mobile, desktop) ; elle est stockée dans Google Secret Manager. Conséquences fonctionnelles : les imports volumineux (PDF multi-pages, scans de livres) ne dépendent plus de la connexion du téléphone — l'utilisateur peut fermer l'app, le traitement continue.
+
+- **File d'attente avec traitement parallèle** : les imports de recettes et de couvertures de livres sont mis en file d'attente Cloud Tasks (5 jobs en parallèle, 2 par seconde, 3 tentatives en cas d'échec transitoire). Le statut du job (queued → processing → done/error) est suivi en temps réel sur le mobile via le panneau d'imports. Si un job échoue 3 fois, il est déplacé dans une "Dead Letter Queue" (DLQ) accessible aux administrateurs.
+
+- **Écran admin "Dead Letter Queue"** : accessible depuis l'écran Administration (icône problème). Liste les jobs ayant échoué après 3 tentatives, plus récents d'abord. Pour chaque entrée : raison de l'échec, date, nombre de tentatives, dernier message d'erreur (sélectionnable + copiable), identifiants original_job_id / user_id / correlation_id / file_path / queue_name (avec bouton copier). Deux actions par entrée (avec confirmation) : **Relancer** (recrée un job neuf dans la file ; l'entrée DLQ est marquée comme relancée et conserve l'historique avec le nouveau jobId) et **Supprimer** (suppression définitive). Une entrée déjà relancée affiche l'icône "replay" verte et le bouton Relancer est désactivé.
+
+- **Écran admin "Cloud Logging"** : accessible depuis l'écran Administration (icône terminal). Permet de filtrer les logs structurés du pipeline IA :
+  - **Sévérité** (chips) : Tous / INFO / WARN / ERROR / DEBUG.
+  - **Fenêtre temporelle** (déroulant) : 15 min / 1 h / 6 h / 24 h / 7 j.
+  - **Recherche libre** dans le message.
+  - **Filtres exacts** par correlationId, jobId, userId.
+  - Chaque entrée est dépliable : labels avec bouton copier par valeur + payload JSON complet en monospace sélectionnable.
+  - Affichage avec icône et couleur selon la sévérité, badges pour le module et les identifiants.
+
+- **Suppression de la clé Gemini côté client** : les builds web/mobile/desktop ne nécessitent plus l'argument `--dart-define=GEMINI_API_KEY=...`. Toute fonctionnalité IA passe désormais par les Cloud Functions authentifiées.
+
+### v0.13.62 — technique
+
+#### Backend Cloud Functions (Node 20, TypeScript, 2nd gen, région `europe-west1`)
+
+- **Structure `kass_dalle/functions/src/`** :
+  - `index.ts` : exporte 15 fonctions (callables + handlers Cloud Tasks).
+  - `config.ts` : constantes `REGION`, `PROJECT_ID`, `LOG_NAME = "kass-dalle-pipeline"`, `QUEUE_NAME = "recipe-processing-queue"`, `GEMINI_SECRET = "GEMINI_API_KEY"`.
+  - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`). Les trois appellent aussi `assertAppCheck()` : c'est le seul endroit où l'attestation peut être exigée sans risquer d'oublier une callable.
+  - Toutes les entrées HTTPS portent `maxInstances: MAX_CALLABLE_INSTANCES` (10, dans `config.ts`). Sans plafond, une boucle ouvre jusqu'à cent instances, chacune servant quatre-vingts requêtes concurrentes vers Gemini ou Anthropic. Ce plafond borne le parallélisme, jamais le total dépensé.
+  - `security/appCheckPolicy.ts` : mode d'attestation lu dans `app_config/app_check_policy` (cache mémoire d'une minute), et décision pure `appCheckVerdict(mode, attested)`. Les fonctions gardent délibérément `enforceAppCheck` **non activé** : l'option se décide au déploiement, alors qu'un refus à tort doit se rouvrir en une minute. `req.app` non nul signifie jeton présent **et** valide — un jeton absent et un jeton invalide se présentent de la même façon et se traitent pareil.
+  - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
+  - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
+  - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → transcription → balisage → contrôle de fidélité → normalisation → **une seule** écriture Firestore).
+  - **Les coordonnées d'une boîte ne supposent plus un moteur.** Le repère `[y_min, x_min, y_max, x_max]` sur mille est la convention **native de Google** ; le prompt se contentait de l'énoncer (« entiers 0-1000 »), ce qui suffit à un modèle qui l'a apprise et à aucun autre. Basculer les cinq postes de détection sur Claude les rendait muets. Réserver le poste à Gemini aurait été la mauvaise réponse : un moteur ne doit pas être privilégié par un détail de format resté implicite. Le prompt **décrit** désormais le repère (haut = 0, bas = 1000, verticale d'abord, deux exemples) et porte les **dimensions réelles de l'image** ; `normalizeBox(vals, w, h)` accepte les trois unités qu'un modèle emploie spontanément — millièmes, 0-1, et **pixels** ramenés avec les dimensions, la verticale rapportée à la hauteur. Sans dimensions, on **borne** au lieu de deviner : un facteur imaginaire donnerait une découpe précise et fausse, une découpe bornée se fait écarter par le contrôle de qualité, ce qui se voit. Limite assumée et testée : **sous mille, pixels et millièmes sont indiscernables** — aucune heuristique ne peut trancher, c'est le prompt qui porte le reste.
+  - **La détection d'illustrations ne ment plus par omission.** Son `catch` était vide et rendait un tableau de boîtes : un refus du modèle, un plafond de dépense, un délai dépassé, une réponse illisible ou un format de coordonnées inconnu se présentaient tous comme « aucune photographie détectée ». La règle la plus stricte du projet, prise en défaut là où elle comptait le plus — une page sans photo et un appel en échec demandent des réactions opposées. L'erreur remonte désormais, la réponse brute est journalisée avec son moteur, et l'échec est absorbé **page par page** pour ne pas perdre les découpes déjà obtenues. Piste que cela rend vérifiable : le repère `[y_min, x_min, y_max, x_max]` sur mille est une convention **Google** ; un autre moteur ne la connaît pas et répond à côté sans lever d'erreur — une réponse non vide sans boîte exploitable est signalée comme telle, moteur nommé.
+  - **`recipes.illustration_report`** `{detectees, retenues, publiees, pagesEnEchec}` suit la recette et s'affiche à la relecture. Trois situations, trois phrases, trois réactions : rien repéré (ajouter à la main), repérées puis toutes écartées (filtres ou modération), détection en échec (réessayer). Rien n'est dit quand une photo a été publiée : elle se voit.
+  - **Les illustrations sont REDRESSÉES, pas seulement découpées** — `gemini/perspective.ts`. Une page photographiée à main levée est un trapèze : un cadre rectangulaire, aussi serré soit-il, garde deux coins de papier et de table. Le détecteur rend donc les **quatre coins** de chaque photographie (`DetectedQuad`, ordre haut-gauche → haut-droit → bas-droit → bas-gauche, en 0-1000), et `warpQuadrilateral` applique l'homographie qui les ramène sur un rectangle : normalisation de Hartley, système 8×8 par élimination de Gauss, interpolation bilinéaire — le même algorithme que l'atelier manuel (`image_enhancer_processing.dart`), porté côté serveur pour que la chaîne automatique rende ce que l'outil manuel rendait. Sharp redimensionne, tourne et découpe, mais ne projette pas : la boucle est en clair, 122 ms pour une photo de douze mégapixels. Une zone **déjà droite** (`isNearlyRectangular`) est découpée sans être redressée — la transformation ne changerait rien de visible et ré-échantillonnerait pour rien. `readQuad` accepte les deux formes de réponse, quatre coins ou boîte englobante : un modèle rend parfois la seconde par habitude, et la refuser perdrait une photo correctement repérée pour une question de forme. Deux détails qui séparent une image juste d'une image nette et fausse : l'**ordre des coins** décide quel côté sera le haut, et les dimensions de sortie prennent la **moyenne géométrique** des bords opposés — en perspective le bord proche est plus long que le lointain, retenir le maximum étirerait l'image.
+  - **Orientation EXIF : redresser AVANT de détecter.** `uprightImage(bytes)` (`gemini/detector.ts`) applique l'orientation EXIF et efface l'étiquette ; le buffer redressé sert ensuite à la détection **et** au découpage. Un modèle de vision reçoit l'image telle qu'elle s'affiche — le décodeur applique l'EXIF — et rend ses coordonnées dans ce repère ; Sharp découpe la grille de pixels stockée. Pour une photo de téléphone prise en portrait, les deux repères sont tournés de 90° : on demandait le plat, on obtenait un bout de table. Rien ne le signalait, la découpe étant techniquement valide (taille, rapport de forme) — elle passait les filtres puis se faisait refuser à la modération, ou pire, se publiait. C'est aussi l'explication du « toutes les photos rejetées » : un bout de table est clair et uniforme, donc écarté comme page blanche.
+  - **Les étapes affichées décrivent ce qui SE PASSE.** `current_step` : `import` → `gemini_call` (lecture de la page) → `parse` → `design` (illustrations) → `tagging` → `normalize` → `save` → `done`. `save` couvrait autrefois le balisage, le contrôle de fidélité et la normalisation des référentiels — jusqu'à sept minutes sous un mot qui en promet une seconde. Le calcul nutritionnel n'y figure délibérément pas : il a lieu après l'écriture, sur une recette déjà consultable.
+  - **Chaîne d'extraction en deux passes** — `gemini/transcription.ts`, `gemini/tagging.ts`, `gemini/fidelity.ts`, prompts dans `gemini/promptsExtraction.ts`.
+    - **Passe 1, `transcribePage`** (poste `transcription_page`) : un appel rend le **type** de la page et son contenu **recopié** en JSON — sections d'ingrédients (une ligne du livre = une ligne, entière), sections d'étapes (phrase par phrase), notes typées. Aucune balise, aucune décision de placement. Elle remplace `classify_page` + `scan_extraction` + `document_extraction`. Une réponse illisible **lève** : le repli optimiste d'avant supposait « recipe » et fabriquait une recette vide qu'il fallait ensuite retrouver dans les brouillons.
+    - **Passe 2, `tagAndNormalize`** (poste `recipe_tagging`) : texte seul, jamais d'image. Rend le CookLang balisé, la liste normalisée (`nom`, `qte`, `unite`, `note`, `section`) et les tags — ces derniers coûtaient un appel à eux seuls.
+    - **`checkFidelity`** : pure, testée, **sans appel de modèle**. Sept contrôles, tous mécaniques :
+
+      | Contrôle | Ce qu'il attrape | Niveau |
+      |---|---|---|
+      | `ingredients_compte` | une ligne du livre sans ingrédient correspondant | rupture |
+      | `etapes_compte` | un résumé — au-delà de 20 % d'écart | rupture si moins |
+      | `texte_perdu` | une clause disparue **à décompte égal** | rupture sous 55 % |
+      | `sections_titres` | « Pour la sauce à l'aneth et à la moutarde » raccourci | avertissement |
+      | `notes_perdues` | une astuce que rien d'autre ne porte | avertissement |
+      | `precision_perdue` | des mots de la ligne du livre qui ne sont ni dans le nom, ni dans l'unité, ni dans la note | avertissement |
+      | `ingredient_invente` | « aneth frais » devenu « aneth en poudre » | avertissement |
+      | `section_non_transcrite` et ses deux voisins | ce que la **passe 1** a perdu | avertissement |
+
+      Une *rupture* écarte le balisage : `verbatimCooklang` rend le texte de la passe 1, non balisé — mieux vaut exact et non balisé que balisé et faux. Un *avertissement* laisse passer. Le verdict est écrit sur la recette (`fidelity_level`, `fidelity_findings`), affiché par `FidelityBanner` **sur le seul écran de relecture d'un brouillon**, et effacé à la validation.
+    - **Le chapeau de la recette** — « Une méthode scandinave pour fumer le saumon dans le sel… » — a son propre champ, `introduction`. Il tombait sous la consigne de ne pas recopier les en-têtes de page : la distinction manquait, alors qu'un titre courant se répète de page en page tandis que ce paragraphe n'appartient qu'à cette recette. Il est transmis au balisage, écrit en note **avant la première étape** parce que le livre le met en premier, et compté dans le texte confronté au balisage — sans quoi son oubli ne produirait aucun signal.
+    - **L'erreur de LECTURE est d'une autre nature, et aucun contrôle ne peut la prouver.** « peau en dessous » lu « peu profonde en dessous » rend une phrase impeccable : décompte intact, couverture des mots parfaite, tout concorde — avec le mauvais mot. Les sept contrôles comparent la passe 2 à la passe 1 ; quand la passe 1 a mal lu, **elle est la référence corrompue**. Le seul moyen de la démasquer serait de relire l'image, donc un appel de plus. Trois leviers, aucun infaillible : la capture des pages de recette passe à `imageQuality: 100` (elle était à 92 quand les couvertures, qui se lisent de loin, étaient à 100 — les artefacts JPEG s'installent d'abord sur les petits caractères) ; le prompt interdit de « réparer » un mot mal lu en expression plus courante, avec ce contre-exemple exact ; et la transcription déclare ses `lectures_incertaines`, remontées sur la recette. Un doute affiché se vérifie en dix secondes.
+    - **`checkTranscriptionInventory`** ferme le seul trou que les autres ne pouvaient pas voir. Tous comparent la passe 2 à la passe 1 ; aucun ne voit ce que la **passe 1** a perdu — une page dont la première section n'aurait jamais été recopiée produit une chaîne cohérente de bout en bout. La passe 1 déclare donc son inventaire (titres de groupe vus, nombre de lignes, nombre d'étapes) **avant** de recopier, et le code compare l'annonce au résultat. Le verdict reste un avertissement : cette déclaration vient du modèle lui-même, et s'y fier pour jeter son travail reviendrait à lui demander de s'auto-condamner.
+    - **Comparer deux textes que le balisage rend méconnaissables.** `stripCooklangTags` retire la syntaxe en **gardant le contenu des accolades** : la première version le jetait, et accusait un balisage fidèle d'avoir perdu un tiers de la page — les quantités quittent légitimement la phrase pour entrer dans les accolades. `significantWords` ne retient que les mots d'au moins quatre lettres et écarte une liste fermée de nombres écrits en lettres et de mesures abrégées (« deux cuillères à café » → « 2 c. à café » : trois mots sur quatre changent sans que rien ne soit perdu). Les seuils — 70 % pour l'alerte, 55 % pour la rupture — se placent dans l'écart mesuré entre une perte légitime (~15 %) et une amputation réelle (>70 %). Une accusation à tort finit par se faire ignorer, ce qui coûte plus cher que de ne rien vérifier.
+    - **Pourquoi deux passes.** L'ancien prompt demandait de transcrire fidèlement *et* de restructurer en CookLang. La règle « la liste d'ingrédients ne se transcrit jamais, chaque ingrédient apparaît une seule fois à sa première mention dans les étapes » obligeait le modèle à **décider** où placer chaque ingrédient — donc à fusionner, déplacer, abréger — et rendait la précision d'une ligne (« avec la peau mais écaillée ») impossible à porter, ce qui poussait à réécrire la phrase du livre.
+    - **Pourquoi un appel de modèle et pas une bibliothèque OCR.** La page est **lue** par un appel de modèle, jamais par une reconnaissance de caractères locale. Un OCR rend un flux de caractères et des boîtes : il ignore que le bloc de gauche est la liste d'ingrédients et que l'encadré du bas est « Le conseil du chef ». Sur une page de livre de cuisine — deux colonnes, un encadré, des titres de groupe en petites capitales — il **devine** l'ordre de lecture, et se trompe souvent. Il faudrait ensuite un appel de modèle pour reconstruire la structure à partir de ce flux : on n'aurait pas retiré l'IA, on lui aurait retiré la **mise en page**, qui est précisément ce qui lui dit ce qu'elle lit. La passe 1 rend en un appel ce qu'un OCR ne rend jamais : le type de la page, les groupes et leurs titres, les notes typées.
+      - **Le témoin extérieur — étudié le 2026-08-29, abandonné.** L'OCR bat le modèle sur un point, et c'est le seul que la chaîne ne sait pas contrôler : il ne réécrit jamais. D'où la tentation de s'en servir non pour lire la page, mais pour **témoigner** contre l'erreur de lecture décrite plus haut — chercher chaque mot porteur de la transcription dans le flux OCR, et signaler l'inverse, un mot imprimé que la transcription ne porte nulle part. Trois raisons de ne pas le faire.
+      - **L'alerte serait sans issue.** `checkFidelity` a une action : une rupture retombe sur `verbatimCooklang`, exact et non balisé. Un texte OCR n'a pas de structure et ne reconstruit aucune section ; il ne saurait que dire « va revérifier ». Un avertissement de plus, sur un import que l'utilisateur croyait fini.
+      - **Le bruit coûterait plus cher que le contrôle.** La comparaison devrait être ensembliste et non séquentielle — l'OCR se trompe d'ordre dès qu'il y a deux colonnes —, tolérante (Levenshtein, sans accents), avec un seuil de fausse alerte à tenir. Sur une page mate déjà redressée par `perspective.ts` et passée en niveaux de gris par `sharp`, Tesseract lit correctement ; sur un titre fantaisie, du texte posé sur une photo, une page glacée avec reflet, il rend de la bouillie — et chaque bouillie devient une fausse alerte. Même raison que les seuils du tableau ci-dessus : une accusation à tort finit par se faire ignorer, ce qui coûte plus que de ne rien vérifier.
+      - **La taille du trou n'a jamais été mesurée.** `checkTranscriptionInventory` tourne déjà en production et ses codes de constat partent dans les journaux. Les compter ne coûte **rien** et tranche la question. Tant que ce comptage n'est pas fait, embarquer un WASM dans le bundle, un fichier de langue, des secondes de CPU par page et un seuil à régler achète une complexité certaine contre un gain supposé.
+      - **Ce qui aurait été employé, pour mémoire.** En Node 22, seul `tesseract.js` (Tesseract 5 compilé en WASM, pur JavaScript) tient : `node-tesseract-ocr` appelle un exécutable système absent du runtime Cloud Functions, et les portages Paddle ou EasyOCR sont natifs. Il se chargerait en `await import()` mémorisé, comme Vision et BigQuery, et `fra.traineddata` devrait voyager dans le bundle — sinon chaque démarrage à froid irait le chercher sur un CDN. Cloud Vision n'est pas une réponse à la question posée : c'est un **modèle hébergé** facturé à l'unité, donc le même témoin sans issue, augmenté d'un coût par page.
+    - **Le texte collé emprunte la même chaîne** — `gemini/extractor.ts`, `extractRecipeFromTextFn`. Coller un texte puis appuyer sur « IA » tenait en **un appel** : un prompt demandait de lire et de baliser en même temps, et rendait du CookLang sans liste d'ingrédients. C'est le défaut que les deux passes avaient supprimé côté scan, resté intact ici. La liste collée se dissolvait dans les étapes, « 2 gousses d'ail dégermées » y perdait « dégermées » — aucune accolade ne porte une précision — la liste stockée était reconstituée côté client en relisant les balises `@` (ni `note`, ni `source`, ni section d'origine), et rien n'était vérifié : ni inventaire, ni lectures incertaines, ni `checkFidelity`, ni repli. Trois métadonnées n'étaient même pas demandées au modèle : `temps_repos`, `dish_types`, les cuisines.
+    - **Passe 1 pour un texte, `transcribeText`** (poste `text_extraction`, inchangé) : **le même prompt que la page**, précédé de `TEXT_TRANSCRIPTION_PREAMBLE`. Écrire un second prompt aurait mis en double les règles qui font la valeur du premier — recopier sans réécrire, garder les sections, séparer les notes des étapes, débusquer le temps de repos, ne pas réparer un mot douteux — et la première amélioration n'aurait profité qu'à un seul des deux chemins. Le préambule pose la correspondance une fois (« lis *la page* comme *le texte reçu* ») et nomme les deux seules différences : `page` vaut null, et le mobilier à ignorer n'est plus un folio mais une barre de navigation, un « Imprimer la recette », des avis de lecteurs. Un test compare le prompt de scan avant et après : il est **inchangé au caractère près**.
+    - **Passe 2 et fidélité, sans une ligne de plus.** `tagAndNormalize` n'a jamais vu l'image : elle travaille sur une transcription, et une transcription venue d'un texte est de la même forme. `checkFidelity` compare la passe 2 à la passe 1 — les huit contrôles s'appliquent tels quels, sans appel de modèle. Le texte collé rend donc désormais ce qu'un scan rend : CookLang balisé, liste normalisée avec `note` et `source`, cuisines, types de plat, et la réserve de fidélité affichée par `FidelityBanner` sur le brouillon. Elle n'est pas écrite quand l'utilisateur clique « Créer et valider » : valider, c'est justement trancher.
+    - **Le poste de coût ne change pas de nom.** La passe 1 reste `text_extraction`, la passe 2 s'impute sur `recipe_tagging` comme celle d'un scan — c'est le même prompt, le même travail, et lui donner un second nom aurait coupé en deux une ligne comptable qui mesure une seule chose. Le coût passe d'un appel à deux ; le compte de `text_extraction` dit combien de fois le chemin a servi.
+  - `nutrition/shoppingDerivation.ts` : `deriveShoppingProducts`, pure et testée. Le regroupement en produits d'achat ne coûte plus d'appel : il demandait un jugement tant que la liste était reconstituée depuis les balises des étapes, où le même aliment apparaissait sous plusieurs orthographes. La liste venant du livre, regrouper est devenu une addition. Deux unités incompatibles restent **deux lignes** — additionner supposerait un taux de conversion, et un taux inventé produit une quantité fausse présentée comme exacte.
+  - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
+  - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
+  - `scheduled/aiReconciliationSchedule.ts` : réconciliation comptable mensuelle (Cloud Scheduler).
+  - `scheduled/nutritionCatchUpSchedule.ts` : rattrapage quotidien des recettes dont la nutrition manque ou reste incomplète (Cloud Scheduler).
+  - `billing/periods.ts` : périodes `YYYY-MM`, module pur et testé.
+
+##### Politique de calcul nutritionnel
+
+`app_config/nutrition_source_policy` porte les seuils qui décident de **ce que
+l'utilisateur voit** sur l'onglet Nutrition d'une recette. Le document n'est pas
+obligatoire : `getNutritionSourcePolicy()` retombe sur `DEFAULT_NUTRITION_POLICY`.
+
+| Réglage | Défaut | Effet observable |
+|---|---|---|
+| `quality_policy.minCoverageForPartial` | 0,7 | En dessous, le détail est remplacé par « Trop peu d'ingrédients ont un poids connu pour que le calcul soit représentatif » |
+| `quality_policy.minCoverageForPer100g` | 0,9 | En dessous, les valeurs **pour 100 g sont masquées** |
+| `quality_policy.kcalConsistencyWarnDeltaPct` | 0,15 | Au-delà de cet écart entre kcal annoncées et kcal recalculées depuis les macros, avertissement d'incohérence du référentiel |
+| `fallback_policy` | `strict` | Comportement quand aucune donnée n'est trouvée |
+| `source_priority` | validé‑utilisateur → interne → externe → IA | Quelle origine gagne quand un ingrédient en a plusieurs |
+
+Les trois seuils entrent aussi dans le **score de qualité A/B/C** de la recette.
+
+**Écran** : *Admin › Référentiels › Politique nutrition*. Les trois seuils s'y
+règlent au curseur, présentés par leur effet et non par leur nom technique.
+`source_priority` y est en lecture seule : le modifier demande de comprendre la
+chaîne d'enrichissement, pas de bouger un curseur.
+
+**Les bornes sont garanties côté serveur**, pas dans le formulaire :
+`setNutritionSourcePolicyFn` refuse une valeur hors de [0, 1], un
+`kcalConsistencyWarnDeltaPct` nul (il sert de dénominateur au score) et un
+`minCoverageForPer100g` inférieur à `minCoverageForPartial` — cette dernière
+combinaison ferait afficher un détail pour 100 g sur une recette que l'app
+déclare par ailleurs trop incomplète pour être représentative.
+
+Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, mais
+aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
+par défaut avaient jamais servi.
+
+##### Plafond de dépense d'IA
+
+`app_config/ai_budget_policy` borne ce qu'un compte peut dépenser en une journée.
+
+| Champ | Type | Effet |
+|---|---|---|
+| `daily_cost_eur_per_user` | `number` | Plafond quotidien en **euros**, par compte. `0` désactive ce critère |
+| `daily_calls_per_user` | `number` | Plafond quotidien d'appels, par compte. `0` désactive ce critère |
+| `monthly_alert_eur` | `number` | Seuil d'alerte mensuel en euros, tous comptes confondus. `0` = aucune alerte |
+| `enabled` | `bool` | Coupe les deux plafonds sans les effacer. Absent vaut `true` |
+
+**Pourquoi deux plafonds.** Le plafond monétaire dépend de deux données qui
+peuvent manquer : la **grille tarifaire** — le projet refuse alors de chiffrer,
+les appels partent en `pricing_unavailable` — et le **taux de change**, sans
+lequel une dépense stockée en dollars ne se compare à aucun plafond en euros.
+Dans les deux cas, un plafond uniquement monétaire s'ouvrirait en grand pendant
+l'incident. Le plafond en nombre d'appels ne dépend ni d'un prix ni d'un taux.
+
+**La monnaie.** Le plafond se règle en euros ; le coût d'un appel est calculé et
+stocké en dollars, comme le facturent les fournisseurs. La conversion se fait au
+moment de la comparaison, avec `app_config/currency_rate.usd_to_account_rate` —
+jamais avec une constante. Sans taux, `budgetDenial` ignore le critère monétaire,
+l'écran affiche des dollars plutôt qu'une conversion inventée, et un WARNING dit
+que seul le compteur d'appels protège.
+
+**Le compte fondateur a cinq fois le plafond** (`FOUNDER_DAILY_BUDGET_MULTIPLIER`),
+sur les deux critères — n'agir que sur l'argent laisserait le compteur d'appels
+bloquer précisément celui qui a le droit d'en faire cinq fois plus. Constante de
+code et non réglage de base : en base, tout administrateur pourrait s'octroyer le
+privilège. L'identifiant du fondateur est résolu par `getAuth().getUserByEmail`,
+mis en cache une heure, et **jamais** lu dans le champ `email` du document
+utilisateur, qu'un administrateur peut écrire.
+
+**Pourquoi un défaut dans le code**, alors que le projet interdit les valeurs de
+repli figées : cette interdiction porte sur les *mesures* — prix, taux de change
+—, où une constante produit un montant faux présenté comme vrai. Un plafond est
+une **décision**. Sans défaut, l'absence de document signifierait « aucune
+limite », c'est-à-dire la situation qu'on corrige.
+
+**Compteur** : `ai_daily_spend/{uid}_{AAAA-MM-JJ}` (`cost_usd`, `calls`,
+`unpriced_calls`), incrémenté par `recordUsage` au moment où le coût est connu.
+Un document par jour : la remise à zéro n'a besoin d'aucune tâche planifiée,
+puisque le lendemain écrit ailleurs. Lecture réservée à l'administrateur et au
+compte concerné, écriture fermée au client — ouverte, elle laisserait remettre
+son propre compteur à zéro.
+
+**Points d'application** — `assertWithinDailyBudget` est appelée à deux endroits,
+et deux seulement, parce que ce sont les deux d'où l'argent part :
+
+| Où | Ce que ça couvre |
+|---|---|
+| `callModel` (`ai/router.ts`) | tout le texte, Gemini comme Claude, callables **et pipeline asynchrone** |
+| `runImageModel` (`gemini/imageGenerator.ts`) | les trois postes qui produisent une image, qui ne passent pas par `callModel` |
+
+Placé dans les gardes HTTPS, le contrôle aurait laissé passer tout ce que Cloud
+Tasks déclenche — c'est-à-dire l'import, le plus gros consommateur.
+
+Le contrôle porte sur le **déjà-dépensé** : le coût exact n'est connu qu'après la
+réponse. Un appel peut donc dépasser légèrement la limite, jamais la doubler.
+
+`BudgetExceededError` se traduit en `resource-exhausted` côté callable — ni une
+panne ni un défaut de droits — et fait partir un job d'import **directement** en
+dead letter, sans réessai : le plafond ne se rouvrira pas dans les minutes qui
+viennent, et chaque tentative refait tout le travail qui précède l'appel d'IA.
+
+**Alerte** : `scheduledAiBudgetAlert` tourne tous les jours à 7 h (Europe/Paris),
+compare le cumul du mois en cours (`ai_usage_monthly/{période}.total_cost_usd`)
+au seuil, et n'écrit qu'une fois par mois — le drapeau vit dans
+`app_config/ai_budget_alert`, posé **après** l'alerte pour qu'un échec la fasse
+retenter le lendemain plutôt que de la perdre.
+
+##### Politique d'attestation App Check
+
+`app_config/app_check_policy` décide **ce qu'on fait d'un appel non attesté**. Un
+seul champ :
+
+| Champ | Type | Effet |
+|---|---|---|
+| `mode` | `"off"` \| `"monitor"` \| `"enforce"` | `off` ne vérifie rien ; `monitor` (défaut, y compris document absent ou illisible) laisse passer et journalise en `WARNING` avec le poste et l'agent utilisateur ; `enforce` refuse |
+
+**Écran** : *Admin › Attestation de l'application*. Il affiche si l'appel qui l'a
+chargé était lui-même attesté, et `setAppCheckPolicyFn` **refuse** `enforce`
+demandé depuis un appel non attesté — sans quoi l'administrateur se verrouillerait
+dehors, et la famille avec lui.
+
+Trois précisions qui expliquent la forme de ce document :
+
+- **Pourquoi pas `enforceAppCheck: true`** sur les callables : cette option se
+  décide au déploiement. Un refus à tort — clé mal posée, client resté en
+  arrière, fournisseur en panne — doit se rouvrir en une minute.
+- **Pourquoi un mode « observation »** : c'est le seul moyen de savoir *ce qu'on
+  couperait* avant de couper. Tant qu'il arrive des appels non attestés, leurs
+  traces nomment le client concerné.
+- **Pourquoi aucune exemption de plateforme**, alors que le client Windows ne
+  sait pas attester : la plateforme est déclarée par le client, donc par un
+  attaquant aussi. Une exemption « desktop » serait ouverte à tout le monde.
+
+Côté client, `core/services/app_check.dart` active l'attestation quand la
+plateforme a un vrai fournisseur (web, Android, iOS, macOS) et s'abstient
+sinon — sans jamais relancer : une attestation impossible ne doit pas empêcher
+l'application de démarrer, c'est la politique serveur qui décide des
+conséquences. La clé de site reCAPTCHA (`kAppCheckRecaptchaSiteKey`) est
+publique par nature et vit donc dans le code ; **vide, l'attestation web n'est
+pas activée**.
+
+##### Politique de routage entre fournisseurs d'IA
+
+`app_config/ai_routing_policy` décide **quel moteur sert quel poste**. Le
+document n'est pas obligatoire : `getAiRoutingPolicy()` retombe sur
+`DEFAULT_AI_ROUTING_POLICY`, c'est-à-dire Gemini partout — le code déployé ne
+change donc aucun comportement tant que personne n'a écrit la politique.
+
+| Champ | Type | Effet |
+|---|---|---|
+| `default_provider` | `"gemini"` \| `"anthropic"` | Moteur des postes sans choix explicite |
+| `features` | `Map<String, provider>` | Choix par poste ; la clé est celle du reporting de coûts |
+| `anthropic_model` | `String` | Modèle Claude servi quand le routage désigne Anthropic (défaut `claude-sonnet-5`) |
+| `fallback_enabled` | `bool` | Repli sur l'autre moteur en cas d'échec **technique** ; une réponse déclinée pour raison de sûreté n'est jamais rejouée ailleurs |
+
+**Écran** : *Admin › Moteur d'IA*. Les postes proposés viennent du serveur
+(`ROUTABLE_FEATURES`) et ne sont pas dupliqués côté client : une bascule vers un
+poste que le backend ignore ne produirait aucune erreur — elle ne routerait
+simplement rien. Ils y sont groupés par famille (Import, Illustrations,
+Rédaction, Recherche, Planning, Courses, Nutrition), chaque famille et l'écran
+entier basculant d'un geste.
+
+**Tout appel de texte ou de lecture d'image passe par `callModel`** : import et
+classification de page, extraction de document, couverture de livre, détection
+d'illustrations, rédaction et relecture, tags, recherche, planning, courses et
+toute la chaîne nutrition. Les deux seuls appels non routables sont ceux qui
+**produisent** une image (`enhance_illustration`,
+`generate_recipe_illustration`) — Claude n'en fabrique pas.
+
+La liste des postes n'est donc pas décorative : elle est exactement l'ensemble
+des `feature` passées à `callModel`. Elle a un temps promis six bascules alors
+qu'une seule était câblée, et une bascule sans effet se diagnostique très mal —
+elle ressemble à une panne du moteur.
+
+Deux garde-fous complètent le routage :
+
+- **Format de pièce jointe.** Claude lit les images JPEG/PNG/GIF/WebP et les
+  PDF ; il refuse le DOCX et les formats exotiques que Gemini accepte. Un poste
+  routé vers Claude avec un tel fichier part directement chez Gemini, sans
+  consommer un appel voué à l'échec ni écrire une erreur qui ressemblerait à une
+  panne.
+- **Poste littéral.** Chaque fonction impose son propre nom de poste au lieu de
+  reprendre celui de l'appelant. Un poste dont le nom varie selon le point
+  d'entrée ne peut être ni basculé ni comparé — et son coût se disperse sur
+  plusieurs lignes du reporting.
+
+**Garanties côté serveur** : `setAiRoutingPolicyFn` refuse un fournisseur
+inconnu, un poste hors catalogue et un modèle vide. Et surtout, `resolveProvider`
+sert avec Gemini tout poste routé vers Claude tant que la clé n'est pas posée :
+l'absence de secret ne prive jamais l'utilisateur du service. L'écran affiche
+explicitement cet état plutôt que de laisser croire à une bascule effective.
+
+Le fournisseur et le modèle réellement utilisés sont écrits sur chaque ligne de
+`ai_usage` (`provider`, `model`) et le coût est estimé au tarif de **ce**
+modèle : sans cela, un appel Claude serait facturé au tarif Gemini sans qu'aucun
+écran ne s'en aperçoive.
+
+##### Réconciliation comptable des coûts IA
+
+Répond à une question qu'on ne se pose pas spontanément : *le suivi de coûts
+dit-il la vérité ?* Une erreur de tarification ne lève aucune exception — elle
+produit un chiffre plausible. Seule la confrontation à la facture la révèle.
+
+Pour un mois donné, `runAiReconciliation` compare :
+
+- **l'estimé traçable** — somme des `estimated_cost_usd` de `ai_usage`, calculés
+  appel par appel avec la grille tarifaire (`gemini/pricing.ts`), **en dollars** ;
+- **le facturé réel** — requête BigQuery sur `billing_export`, filtrée sur
+  Vertex AI, Generative Language, le service **Gemini API** et les SKU Gemini,
+  hors assistance de console (*Code Assist*, *Gemini for Google Cloud*).
+
+**La devise n'est pas le dollar.** La colonne `cost` de l'export est libellée
+dans la devise du **compte de facturation** — l'euro pour ce projet. La comparer
+telle quelle à une grille tarifaire en dollars additionne deux monnaies et
+produit un écart faux, sans que rien n'échoue. Les deux requêtes divisent donc
+`cost` par `currency_conversion_rate` — le taux que Google a lui-même appliqué à
+la ligne — et conservent en parallèle le montant d'origine :
+
+| Champ | Sens |
+|---|---|
+| `billed_ia_usd` | facturé converti en dollars, seule forme comparable à l'estimé |
+| `billed_ia_native` | le chiffre de la facture, tel qu'il apparaît dans le Tableau des coûts |
+| `billing_currency` | devise du compte (`EUR`) ; absent = rapport d'avant cette prise en compte, à recalculer |
+
+Une ligne dépourvue de taux de change manque au total en dollars sans rien
+casser : elle est comptée, journalisée par `logError` et remontée en anomalie.
+
+**Le taux de change se relève avec les coûts.** Il n'existe plus de taux figé
+dans le code : `refreshCurrencyRate` calcule, sur la même période, la moyenne du
+taux pondérée par le coût — `SUM(cost) / SUM(cost / currency_conversion_rate)` —
+et l'écrit dans `app_config/currency_rate` (`usd_to_account_rate`, `currency`,
+`source_period`, `updated_at`). Un taux vieillit exactement au rythme des coûts
+qu'il convertit : le rafraîchir ailleurs serait une occasion de l'oublier.
+
+`validateCurrencyRate` (`billing/currencyRate.ts`, testé) refuse un taux hors de
+`[0.1, 10]`, sans devise, ou absent : le taux précédent reste alors en vigueur et
+le motif du refus part dans `logError`. Un taux aberrant accepté ne casserait
+rien — il changerait silencieusement l'échelle de tous les montants en euros.
+
+Côté client, `CurrencyRateRepository` lit ce document ; `GeminiPricing.usdToEurFallback`
+(0,92) ne sert plus que tant qu'aucune réconciliation n'a eu lieu, et l'onglet
+*Réconciliation* affiche alors explicitement qu'il convertit avec un repli.
+Les coûts GCP en euros ne sont plus convertis du tout : le compte facturant en
+euros, `costNative` **est** le montant de la facture.
+
+Le résultat part dans `ai_reconciliation_monthly/{YYYY-MM}` : `delta_usd`,
+`unattributed_usd`, ventilation `by_feature`, et `anomalies` en clair.
+
+| Déclenchement | Quand | Période |
+|---|---|---|
+| `scheduledAiReconciliation` (Cloud Scheduler) | le 4 de chaque mois, 6 h Europe/Paris | le **mois écoulé** |
+| `generateAiReconciliationMonthlyFn` (bouton admin) | à la demande | la période choisie |
+
+Les deux passent par le **même traitement**. Le rapport porte sur le mois écoulé
+et non sur le mois courant : l'export de facturation GCP se consolide avec
+quelques jours de retard, et un mois partiel produirait un écart qui ne dit rien.
+
+Le champ `billing_query_failed` distingue « Google n'a rien facturé » de « on
+n'a pas pu savoir ». Sans lui, une requête BigQuery en échec produisait un
+rapport affirmant un montant facturé nul, donc un écart négatif spectaculaire
+présenté comme un fait.
+
+**Écran** : onglet *Réconciliation* de l'écran Comptabilité.
+
+##### Le catalogue des postes — la liste qu'il ne faut pas oublier
+
+Un poste de coût existe à **trois** endroits, et rien ne relie les trois :
+
+| Où | Fichier | Ce qui casse s'il manque |
+|---|---|---|
+| L'appel | `ctx.feature` du `callModel` | rien — le coût est bien enregistré |
+| Le routage | `ROUTABLE_FEATURES` (`callable/aiRoutingCallable.ts`) | le poste ne peut pas être basculé vers Claude depuis Admin → Moteur d'IA |
+| La lecture | `kFeatureCatalog` / `kFeatureProcess` (`features/admin/data/feature_catalog.dart`) | le poste s'affiche sous sa **clé technique**, rangé dans « Autres » |
+
+Aucun de ces oublis ne lève d'erreur ni ne fausse un montant : le coût est
+compté, il est seulement illisible. C'est exactement le mode de panne de la
+tarification — le chiffre s'affiche, et il ment par omission de sens.
+
+L'oubli s'est produit en grand : **toute la chaîne nutrition** — quinze postes,
+dont les plus fréquents de l'application, puisqu'une seule écriture de recette
+peut interroger le moteur une dizaine de fois — vivait dans « Autres » sous des
+identifiants techniques, aux côtés de `polish_markdown` et
+`generate_recipe_illustration`.
+
+**Règle** : un nouveau poste s'ajoute aux trois endroits dans le même commit.
+Les variantes `_batch` sont des postes à part entière et se distinguent de leur
+version unitaire — c'est le seul moyen de vérifier que le groupage fait son
+office. Un poste disparu du code **reste** au catalogue : les mois déjà
+comptabilisés continuent de le nommer.
+
+##### Un seul importeur, un seul déclencheur par recette
+
+**L'import se fait entièrement côté backend.** Le client envoie le fichier dans
+`quarantine/`, crée un `processing_jobs/{id}` en `queued`, puis n'écoute plus
+que le statut. `jobDispatcher` réagit à l'**entrée** en `queued` — création
+comme relance — et enfile la tâche Cloud Tasks.
+
+Le client portait auparavant un second pipeline d'import complet, utilisé par la
+seule relance : le même fichier pouvait donner deux recettes différentes selon
+qu'il avait été importé ou relancé. Ce pipeline client est supprimé. Relancer,
+c'est désormais remettre le job en `queued` ; annuler, c'est poser
+`cancel_requested: true`, que `recipeProcessor` relit avant chaque tentative —
+le statut seul ne suffisait pas, le traitement backend l'écrasait en fin de
+course.
+
+**Un seul déclencheur écoute `recipes/{recipeId}` : `onRecipeWritten`.** Il
+évalue les gardes communes (suppression, type de page, empreinte des entrées)
+puis lance ensemble `refreshShoppingProducts` et `syncRecipeNutrition`,
+indépendants l'un de l'autre. Deux déclencheurs distincts écoutaient ce
+document, chacun le réécrivant en fin de traitement, donc chacun réveillant
+l'autre : une sauvegarde de recette coûtait quatre invocations de fonctions
+512 MiB au lieu d'une.
+
+##### La garde porte sur les entrées, jamais sur la sortie
+
+Ce déclencheur écrit dans la collection qu'il écoute : `shopping_products`
+d'abord, les champs de validation ensuite, `nutrition` en dernier — après les
+appels d'IA, donc jusqu'à plusieurs minutes plus tard. **Chacune de ces trois
+écritures le réveille.**
+
+Sa garde demandait « la nutrition existe-t-elle déjà ? ». Cette question est
+fausse deux fois. Elle répond non pendant toute la durée du calcul : un écho
+tombé dans cette fenêtre repartait pour une chaîne complète, écrivait à son
+tour, et en réveillait d'autres — un éventail, pas une chaîne. Et elle répond
+non pour toujours quand le calcul a échoué, puisque rien n'était alors écrit :
+la recette devenait un générateur d'appels sans borne, à chacune de ses
+écritures suivantes.
+
+Le compteur `nutrition_enrichment_attempts` était censé borner cela. Il n'était
+lu que dans la branche où la sortie existait déjà, c'est-à-dire jamais pendant
+la salve. Mesure d'août : **499 réveils ont appelé le modèle pour 68 recettes**,
+en 35 salves, dont une de 108 réveils en treize minutes.
+
+La garde compare désormais les champs que le déclencheur **consomme** —
+`ingredients`, `portions`, `page_type`, `raw_cooklang`
+(`recipeTriggerInputsFingerprint`, `triggers/recipeIngredients.ts`). Une
+écriture qui les laisse intacts ne peut pas changer le résultat : on rend la
+main. Aucune sortie du déclencheur n'entre dans l'empreinte, donc aucun de ses
+échos ne le relance. Une création n'a pas de `before` et passe toujours.
+`recipeTriggerGuard.test.ts` verrouille le point : ajouter `nutrition` ou
+`shopping_products` à un document ne doit pas changer son empreinte.
+
+Trois conséquences.
+
+**L'échec s'écrit.** `persistFailedNutritionSnapshot` pose un instantané
+`coverage_state: "failed"` portant la raison. Sans lui, une recette dont le
+calcul a échoué ressemble en tout point à une recette pas encore calculée.
+
+**Une valeur que le modèle ne sait pas donner n'est pas redemandée avant
+24 heures** (`ENRICHMENT_RETRY_AFTER_MS`). Une unité sans poids n'était marquée
+nulle part : chaque recette l'employant la redemandait, deux fois — premier
+essai puis relance —, à vie. Les ingrédients portaient déjà leur marque
+`estimation_failed`, mais le filtre ne regardait que la présence des valeurs.
+
+**Le rattrapage est devenu une tâche planifiée.** La garde supprime le
+recalcul opportuniste qui vivait sur les réveils ; il fallait le remplacer, pas
+seulement le retirer.
+
+##### Reprendre est une décision — le planifié et le demandé
+
+`scheduled/nutritionCatchUpSchedule.ts`, tous les jours à 5 h (Europe/Paris),
+avant l'alerte de dépense de 7 h pour que sa consommation soit déjà comptée
+quand elle regarde.
+
+Il parcourt les 246 recettes — quelques centaines de lectures, négligeables —
+et reprend celles que `needsNutritionCatchUp` désigne : aucun instantané, un
+instantané `failed`, ou des `missing_ingredients`. Ce qui coûte, ce sont les
+appels de modèle des recettes reprises, d'où un plafond sur celles-là seules
+(`MAX_RECIPES_PER_RUN` = 20).
+
+Trois bornes, et chacune ferme une porte :
+
+| Borne | Valeur | Ce qu'elle empêche |
+|---|---|---|
+| `RECENT_WRITE_GRACE_MS` | 30 min | Reprendre une recette dont le déclencheur calcule encore — deux chaînes en parallèle, la salve réintroduite par l'autre bout |
+| `MIN_SNAPSHOT_AGE_MS` | 20 h | Reprendre deux fois le même jour une recette que le passage d'hier a déjà tentée |
+| `MAX_CATCH_UP_ATTEMPTS` | 5 | Payer chaque jour, indéfiniment, pour une recette qu'aucun rattrapage ne peut compléter |
+
+Le compteur `recipes.nutrition_catch_up_attempts` porte la troisième.
+`syncRecipeNutrition` le remet à zéro dès qu'un vrai changement d'entrée
+relance le calcul : une liste modifiée mérite ses propres tentatives.
+
+**Deux entrées, une seule passe.** `runNutritionCatchUp` porte la mécanique ;
+`scheduled/nutritionCatchUpSchedule.ts` l'appelle tous les jours,
+`callable/nutritionBackfillCallable.ts` à la demande d'un administrateur —
+bouton « Reprendre la nutrition », écran Admin → Backfills.
+
+La différence tient en un mot : `forced`. Un administrateur qui vient de
+corriger un référentiel veut voir l'effet, pas l'attendre jusqu'au lendemain.
+Les deux bornes de **patience** sautent donc — `MIN_SNAPSHOT_AGE_MS` et
+`MAX_CATCH_UP_ATTEMPTS`. La borne de **prudence**, `RECENT_WRITE_GRACE_MS`, ne
+saute jamais : elle ne protège pas d'une impatience, elle protège de la salve.
+`nutritionCatchUp.test.ts` verrouille les trois cas.
+
+Le backfill ne tient pas dans le délai d'une fonction. Il reprend donc sur
+point de contrôle (`app_config/nutrition_catch_up_checkpoint`, mêmes helpers
+que les autres backfills, désormais partagés dans `callable/_backfillCursor.ts`),
+et le curseur ne revient au début que lorsqu'il ne reste **rien** : collection
+entière parcourue *et* aucune candidate laissée en route. Le remettre dès la fin
+du parcours ferait boucler un backfill qui a encore du travail.
+
+Le plafond de dépense est consulté **avant** chaque recette, pas après : passé
+le plafond, la chaîne échouerait recette après recette et chacune ressortirait
+marquée « encore incomplète », ce qui est faux — elle n'a pas été tentée, elle a
+été refusée. La réponse porte `stoppedByBudget`, et l'écran le dit.
+
+Ce que le passage ne reprend pas est **compté et journalisé** (`reportees`) :
+un plafond silencieux se lit comme « tout a été repris ».
+
+Le balayage écrit sur les recettes qu'il reprend, donc il réveille
+`onRecipeWritten` — qui rend la main aussitôt, aucune entrée n'ayant bougé.
+C'est la garde sur les entrées qui rend ce balayage possible : sans elle, il
+aurait relancé la salve à lui seul.
+
+- **Cloud Tasks `recipe-processing-queue`** :
+  - Région `europe-west1`, max-dispatches-per-second=2, max-concurrent-dispatches=5, max-attempts=3, min-backoff=10s, max-backoff=600s.
+  - Création via `gcloud tasks queues create` ; auth des tâches : OIDC du SA `{projectNumber}-compute@developer.gserviceaccount.com`.
+
+- **Secret Manager** :
+  - Secret `GEMINI_API_KEY` (v1) lu par les fonctions via `defineSecret("GEMINI_API_KEY").value()`.
+  - Accordé au SA runtime par défaut (`roles/secretmanager.secretAccessor`).
+  - Secret `ANTHROPIC_API_KEY` — **à créer avant d'activer Claude**. Lu par
+    `ai/anthropic.ts` via `process.env.ANTHROPIC_API_KEY`, et non via
+    `defineSecret`, tant qu'il n'existe pas : un secret déclaré et attaché mais
+    absent de Secret Manager fait échouer **tout** le déploiement, y compris les
+    fonctions qui n'en ont pas besoin. Activation en deux gestes, dans cet ordre :
+
+    ```powershell
+    # 1. Créer le secret (la commande demande la valeur en entrée standard)
+    firebase functions:secrets:set ANTHROPIC_API_KEY
+
+    # 2. Attacher le secret aux fonctions qui appellent la chaîne nutrition,
+    #    en ajoutant ANTHROPIC_API_KEY à leur liste `secrets: [...]` :
+    #      - onRecipeWritten            (triggers/recipeWritten.ts)
+    #      - normalizeRecipeReferentialsFn (callable/nutritionCallable.ts)
+    #      - recipeProcessor            (pipeline/recipeProcessor.ts)
+    #      - backfillEnrichReferentialsFn (callable/billingCallable.ts)
+    #      - backfillNutritionFn        (callable/nutritionBackfillCallable.ts)
+    #      - scheduledNutritionCatchUp  (scheduled/nutritionCatchUpSchedule.ts)
+    ```
+
+    Tant que l'étape 1 n'est pas faite, la politique de routage peut désigner
+    Claude sans risque : le routeur constate l'absence de clé et sert avec
+    Gemini, ce que l'écran Admin → Moteur d'IA affiche explicitement.
+
+- **Artifact Registry** :
+  - Policy de cleanup `1 day` sur l'image `gcr.io/kassdale-6d948/gcf-artifacts` (Container images des fonctions).
+
+#### Firestore
+
+- **Collection `processing_jobs/{jobId}`** :
+  - Champs : `user_id`, `file_path`, `correlation_id`, `task_name`, `status` (queued|processing|done|error), `created_at`, `updated_at`, `attempt_count`, `last_error?`, `recipe_id?`, `result?`.
+  - Règles : owner read ; write côté Admin SDK uniquement (`allow write: if false`).
+
+- **Collection `dead_letters/{dlqId}`** :
+  - Champs : `original_job_id`, `user_id`, `correlation_id`, `failure_reason`, `last_error`, `retry_count`, `file_path`, `failed_at` (Timestamp), `relaunched_at?`, `relaunched_by?`, `relaunched_into_job_id?`, `queue_name`.
+  - Règles : `allow read: if isAdmin();` `allow write: if false;` (écriture Admin SDK via DLQ handler / callables relaunch/delete).
+  - Aucun index composite requis (orderBy `failed_at desc` champ unique).
+
+#### Client Flutter
+
+- **`pubspec.yaml`** : `cloud_functions: ^6.1.2`. Version `0.13.62+1`.
+
+- **`lib/core/app_version.dart`** : `kAppVersion = '0.13.62'`.
+
+- **Suppression de la clé Gemini côté client** : `--dart-define=GEMINI_API_KEY` retiré de tous les builds et du script `deploy.ps1`. Sept fichiers nettoyés (constante `_geminiApiKey` et tests `isEmpty` supprimés) : `scan_upload_service.dart`, `search_providers.dart`, `planning_screen.dart`, `batch_planning_screen.dart`, `draft_review_screen.dart`, `recipe_create_screen.dart`, `recipe_edit_screen.dart`. Le `GeminiService` reçoit désormais une chaîne vide en clé — il n'est plus utilisé que comme façade de types ; les appels effectifs passent par `FirebaseFunctions.instanceFor(region: 'europe-west1').httpsCallable(...)`.
+
+- **`lib/features/admin/domain/dead_letter.dart`** : modèle `DeadLetter` avec `fromDoc(DocumentSnapshot)` (parse Timestamp `failed_at`/`relaunched_at`), getter `isRelaunched => relaunchedAt != null`.
+
+- **`lib/features/admin/data/dead_letter_repository.dart`** :
+  - `watchAll({int limit = 200})` : `_db.collection('dead_letters').orderBy('failed_at', descending: true).limit(limit).snapshots()` → `Stream<List<DeadLetter>>`.
+  - `relaunch(String dlqId)` : `httpsCallable('relaunchDeadLetterFn').call({'deadLetterId': dlqId})` → renvoie `data['newJobId'] as String`.
+  - `delete(String dlqId)` : `httpsCallable('deleteDeadLetterFn').call({'deadLetterId': dlqId})`.
+
+- **`lib/features/admin/presentation/dead_letters_screen.dart`** : `ConsumerWidget` avec `deadLettersStreamProvider = StreamProvider.autoDispose`. Liste d'`ExpansionTile` ; chaque ligne `_KeyValueRow` a un `IconButton(Icons.copy_outlined)`. Boutons d'action `Relancer` / `Supprimer` sous `AlertDialog` de confirmation. État relancé matérialisé par `Icons.replay` vert et bouton désactivé.
+
+- **`lib/features/admin/domain/log_entry.dart`** : `LogEntry.fromMap(Map)` avec champs `timestamp` (String), `severity` (String), `labels` (Map<String,String>), `payload` (Map). Getter `message` lit `payload['message']`. Getter `timestampDate => DateTime.tryParse(timestamp)`.
+
+- **`lib/features/admin/data/logs_repository.dart`** :
+  - `query({int timeRangeMinutes = 60, int pageSize = 100, String? severity, String? correlationId, String? jobId, String? userId, String? freeText})` → appelle `httpsCallable('queryLogsFn', HttpsCallableOptions(timeout: Duration(seconds: 60)))`.
+  - **`severity` est un seuil** côté `queryLogsFn` : `severity>=INFO|WARNING|ERROR`, sauf `DEBUG` qui reste une égalité stricte (`severity=DEBUG`) pour isoler l'instrumentation. `null` ⇒ aucun filtre. Défaut du `LogsFilter` : `'INFO'`.
+  - Côté Functions, `logDebug()` (`logging.ts`) écrit en severity `DEBUG` : « Appel IA démarré » (`gemini/client.ts`), « prompt envoyé à Gemini » et « réponse brute Gemini » (`nutrition/aiEnrichment.ts`). Un import passe ainsi d'une cinquantaine de lignes à une quinzaine.
+
+- **`lib/features/admin/presentation/logs_screen.dart`** :
+  - `LogsFilter` immuable avec `_sentinel` pattern dans `copyWith` pour distinguer "ne pas toucher" de "set null".
+  - `LogsFilterNotifier extends Notifier<LogsFilter>` (Riverpod 3 n'a plus `StateProvider`).
+  - `logsFilterProvider = NotifierProvider<LogsFilterNotifier, LogsFilter>(LogsFilterNotifier.new)`.
+  - `logsQueryProvider = FutureProvider.autoDispose<List<LogEntry>>` qui watch le filtre et le repo.
+  - UI : `ChoiceChip` (Tous/INFO/WARN/ERROR/DEBUG), `DropdownButton` (15/60/360/1440/10080 min), `TextField` × 4 (freeText/corr/job/user), `FilterChip` "Par traitement" (état local `_groupByTreatment`, actif par défaut), bouton `FilledButton` "Filtrer".
+  - Regroupement par traitement : `_groupByCorrelation(List<LogEntry>) → List<_TreatmentGroup>` indexe sur `labels['correlationId']` en conservant l'ordre d'apparition des groupes (le plus récent d'abord, comme le flux) et inverse les entrées à l'intérieur (déroulement chronologique). `_TreatmentGroup.label` retient **d'abord** la racine du `correlationId` — l'identifiant privé de son horodatage (`RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$')`), `null` si l'identifiant est un UUID, donc opaque — puis, à défaut seulement, `labels['feature']`, puis `labels['moduleType']` ; clé vide ⇒ « Hors traitement ». `feature` est le poste d'imputation d'un appel IA, pas le nom d'un traitement : en faire le titre étiquetait un import de recette « shopping_products_refresh ». La racine obtenue est ensuite **traduite** par `logTreatmentName` (`features/admin/domain/log_treatment_label.dart`) : elle est écrite pour le code, pas pour un lecteur.
+  - **Nommage d'un traitement.** `newCorrelationId(nom)` (`logging.ts`) fabrique `nom_horodatage_aléa` ; pour les callables c'est `requireAuth` / `requireAdmin` / `requireEditor` qui le pose, à partir du **nom passé en argument**. Ce paramètre valait `"call"` par défaut : toute fonction qui n'en choisissait pas un produisait un groupe intitulé « call », si bien que quatre groupes « call » représentaient quatre travaux différents et anonymes. Les dix-sept fonctions concernées nomment désormais leur traitement ; `test/log_treatment_label_test.dart` lit les sources TypeScript et échoue si un `requireX(req)` sans nom réapparaît, ou si un nom déclaré n'a pas sa traduction.
+  - **Qualification.** `qualify(nom, détail)` (`logging.ts`) rend `nom:détail-en-slug`. Le deux-points est la frontière que l'écran connaît : ce qui précède nomme l'étape, ce qui suit dit *laquelle*. `generateRecipeFn` s'en sert pour la variante demandée — l'écran Explorer lance trois générations simultanées, plus une relance en cas de doublon, et les groupes se lisent « … — Fidele », « … — Rapide », « … — Creative » au lieu de trois titres identiques.
+  - **Deux fils naissent hors callable.** `import_recette` est ouvert par `jobDispatcher` et **transmis** au payload Cloud Tasks : `recipeProcessor` ne fabrique le sien que si le payload n'en porte pas. Un import entier tient donc sous un seul titre — il s'appelait `disp`, du nom du déclencheur, et l'écran rangeait l'extraction et la normalisation sous « Mise en file du traitement ». Le dispatcher part par ailleurs à **chaque** écriture du job et n'a le plus souvent rien à faire ; ces constats se rattachent au `correlation_id` déjà porté par le document plutôt que d'ouvrir un fil chacun. `ecriture_recette` est ouvert par `onRecipeWritten`, qualifié par sa cause : `creation`, `ingredients-modifies`, `entrees-modifiees`. Il n'y a plus de cause « rien à recalculer » : depuis que la garde porte sur les entrées, le déclencheur ne se réveille plus pour rien.
+  - **Pagination.** `queryLogsFn` accepte un `pageToken` et rend un `nextPageToken` (`autoPaginate: false` — sans quoi le client Cloud Logging suit les pages jusqu'à épuisement et ignore `pageSize`). Côté écran, `LogsQueryNotifier.loadMore()` concatène ; le pied de liste annonce le nombre d'entrées lues et dit si la suite existe. Une liste tronquée en silence se lit comme une liste complète.
+  - **Traduction.** `kLogTreatmentLabels` associe chaque racine à un libellé français ; une racine inconnue est rendue **telle quelle**, jamais remplacée par un texte générique — un nom technique reste cherchable. La table vit côté client parce qu'elle ne sert qu'à l'affichage : l'identifiant, lui, doit rester stable et filtrable.
+  - Côté Functions, `onRecipeWritten` pose un `newCorrelationId("recipe-written")` unique et le passe à `refreshShoppingProducts` et `syncRecipeNutrition` — qui tiraient auparavant chacun un `randomUUID()`, produisant deux traitements anonymes par écriture de recette. `_TreatmentTile` est un `ExpansionTile` avec `initiallyExpanded: group.hasError`, icône/couleur dérivées de `hasError`/`hasWarning`, et un `IconButton(Icons.filter_alt_outlined)` qui reporte le `correlationId` dans le filtre exact.
+  - Entrée dépliable : icône+couleur selon sévérité (`Icons.error`/`warning`/`info`/`bug_report`), chips labels (module/corr/job) avec copie, `SelectableText` monospace pour JSON formaté via `JsonEncoder.withIndent('  ')`.
+
+- **`lib/core/router/app_router.dart`** : routes `/dead-letters` et `/logs` ajoutées avec leurs `GoRoute`. Imports correspondants.
+
+- **`lib/features/admin/presentation/admin_screen.dart`** : deux nouvelles tuiles `Card` cliquables — "Dead Letter Queue" (`Icons.report_problem_outlined`, `colorScheme.tertiary`) et "Cloud Logging" (`Icons.terminal`, `colorScheme.secondary`).
+
+#### Permissions Cloud
+
+- **SA runtime par défaut Cloud Functions** : `{projectNumber}-compute@developer.gserviceaccount.com` (rôle `roles/editor`) couvre `logging.logEntries.list` (utilisé par `queryLogsFn`), `cloudtasks.tasks.create` (utilisé par `createScanJobFn`), `datastore.documents.*` (Firestore via Admin SDK), `storage.objects.get`.
+- **Secret accessor** : ajouté explicitement pour `GEMINI_API_KEY`.
+
+## 2026-05-17
+
+### v0.13.53 — fonctionnel
+
+- **Images agrandissables dans l'Aperçu des pages non-recette** : les illustrations affichées dans l'onglet Aperçu d'une page non-recette sont limitées à 280 px de hauteur par défaut. Un tap sur l'image ou sur le bouton fullscreen (visible en bas à droite de chaque photo) permet d'agrandir l'image en pleine hauteur ou de la réduire. Chaque image garde son état agrandi/réduit indépendamment des autres.
+
+- **Suivi de la version d'import (admin)** : lors de chaque import ou scan d'une recette ou page, la version de l'application est enregistrée dans le champ `import_version` du document Firestore de la recette. Dans l'écran de révision d'un brouillon, les administrateurs voient s'afficher en dessous de « Analysé le… » une ligne « Importé avec vX.Y.Z » (icône clé, texte italique). Ce champ est invisible pour les Editors et Readers. Les anciennes recettes importées avant cette version ne possèdent pas ce champ ; la ligne n'est alors pas affichée.
+
+### v0.13.53 — technique
+
+- **Nouveau champ `recipes.import_version`** :
+  - Type : `String?`, clé Firestore : `import_version`.
+  - Renseigné automatiquement avec `kAppVersion` lors de chaque création de brouillon dans `scan_upload_service.dart` (deux constructeurs `Recipe` : page non-recette et recette standard).
+  - Absent sur les anciennes recettes → retourne `null` via `data['import_version'] as String?`.
+  - Modèle `Recipe` (`lib/features/recipes/domain/recipe.dart`) : champ `final String? importVersion` ; sérialisé dans `toFirestore()` uniquement si non-null ; désérialisé dans `fromFirestore()` ; paramètre optionnel dans `copyWith`.
+
+- **`recipe_meta_panel.dart` — affichage admin de la version d'import** :
+  - Consomme `isAdminProvider` via `ref.watch(isAdminProvider)`.
+  - Affiche un `Row` supplémentaire sous « Analysé le… » uniquement si `isAdmin && recipe.importVersion != null`.
+  - Icône `Icons.build_outlined` (size 16) + texte `'Importé avec v${recipe!.importVersion}'` en `bodySmall`, couleur `onSurfaceVariant`, italique.
+
+- **`draft_review_screen.dart` — images agrandissables dans l'Aperçu non-recette** :
+  - Nouveau champ d'état `final Set<String> _expandedApercuImages = {}` sur `_DraftReviewScreenState`.
+  - `buildPhoto(String photoUrl)` (fonction locale dans `_buildNonRecipeApercu`) : `Stack` contenant un `GestureDetector` global (tap = toggle expand), un `ConstrainedBox(maxHeight: 280)` si non-agrandi, un bouton `fullscreen`/`fullscreen_exit` positionné `Positioned(bottom: 6, right: isOwner ? 48 : 6)` (décalé pour ne pas masquer le bouton de suppression), et un bouton `delete_outline` `Positioned(top: 8, right: 8)` visible uniquement pour le propriétaire.
+
+### v0.13.52 — fonctionnel
+
+- **Extraction d'illustration depuis l'original** : dans l'onglet Photos d'un brouillon disposant d'un scan image source, un bouton « Depuis l'original » est affiché à côté du bouton « Ré-extraire ». Ce bouton télécharge le fichier source, ouvre l'outil d'amélioration d'image en mode recadrage et permet au propriétaire de sélectionner manuellement une zone du scan pour l'ajouter comme nouvelle illustration. Le résultat est ajouté à la liste des illustrations sans remplacer les existantes.
+
+- **Suppression directe des illustrations** : l'icône poubelle est désormais visible en permanence sur chaque illustration dans l'onglet Photos, dans la prévisualisation Cooklang et dans l'Aperçu des pages non-recette. Un appui long n'est plus nécessaire. La suppression n'est disponible que pour le propriétaire du brouillon.
+
+- **Icône poubelle unifiée** : l'icône de suppression de photo est harmonisée (`delete_outline`) sur l'ensemble de l'application, en remplacement de l'icône ✕ précédemment utilisée.
+
+### v0.13.52 — technique
+
+- **`draft_review_widgets.dart` — bouton « Depuis l'original »** :
+  - `DraftIllustrationsTab` : nouveau paramètre `VoidCallback? onExtractFromOriginal`.
+  - Affiché comme `TextButton.icon(Icons.crop_outlined, 'Depuis l\'original')` dans la barre d'actions de l'onglet (coté droit, après le bouton « Ré-extraire ») si `isOwner && onExtractFromOriginal != null && _isImageSource(sourceFileUrl)`.
+  - Désactivé pendant `aiRefining || saving`.
+
+- **`draft_review_screen.dart` — `_startExtractFromOriginal(Recipe)`** :
+  - Télécharge le fichier source via `FirebaseStorage.instance.refFromURL(url).getData(20 * 1024 * 1024)`.
+  - Initialise l'enhancer : `_enhancerBytes = bytes`, `_enhancingIndex = null` (null = ajout d'une nouvelle illustration, pas remplacement d'une existante), `_enhancerMode = EnhancerMode.crop`, `_showingIllEnhancer = true`.
+  - `_onIllustrationEnhancerResult` : si `_enhancingIndex == null`, appelle `_addNewIllustration(resultBytes)` plutôt que de remplacer une illustration existante.
+  - Branché sur `onExtractFromOriginal:` de chaque instance `DraftIllustrationsTab` (4 occurrences dans les différents layouts narrow/wide).
+
+- **`cooklang_preview_helpers.dart` — suppression directe visible** :
+  - `CooklangIllustrationThumb` : bouton `delete_outline` rendu toujours visible en overlay (plus de longpress) dès que `onDelete != null`. Icône `Icons.delete_outline` (remplace `Icons.close`).
+
+- **`draft_review_widgets.dart` — `_IllustrationCard`** :
+  - Icône suppression : `Icons.delete_outline` (remplace `Icons.close`).
+
+### v0.13.51 — fonctionnel
+
+- **Onglet « Aperçu » pour les pages non-recette** : les brouillons de type page de technique culinaire, méthode ou autre contenu textuel non structuré bénéficient d'un onglet « Aperçu » dédié. Cet onglet affiche le texte de la page formaté typographiquement (titres en gras, listes à puces, paragraphes) et intercale chaque illustration à sa position déclarée par un marqueur `[schéma : …]` dans le texte. Le propriétaire peut supprimer chaque illustration directement depuis cet onglet. Pour les brouillons de recettes structurées (avec ingrédients Cooklang), l'Aperçu existant basé sur le rendu Cooklang interactif est conservé.
+
+### v0.13.51 — technique
+
+- **`draft_review_screen.dart` — `_buildNonRecipeApercu(Recipe, {required bool isOwner})`** :
+  - Nouvelle méthode de rendu pour les brouillons non-recette (pages textuelles avec illustrations intercalées).
+  - Nettoyage syntaxe CookLang : regex `@([^{}]+)\{\}` → texte brut (retire les balises ingrédients).
+  - Découpe le texte sur les marqueurs `[schéma : …]` (regex `\[schéma\s*:[^\]]*\]`) ; insère l'illustration correspondante par index `photoIndex++` entre chaque bloc texte.
+  - Formatage textuel : lignes `#…` → `titleMedium` bold ; lignes `- …` ou `* …` → puce `• ` + texte ; lignes vides → `SizedBox(height: 8)` ; reste → `SelectableText` style `bodyMedium`.
+  - Rendu dans `SingleChildScrollView > Padding(16) > Column`.
+  - Affiché dans l'onglet « Aperçu » uniquement si la recette n'est pas une recette structurée Cooklang (détection basée sur l'absence d'ingrédients balisés `@`).
+
+### v0.13.50 — fonctionnel
+
+- **Correction de navigation après l'éditeur d'image** : fermer ou valider l'outil d'amélioration d'image (recadrage, correction de couleur) depuis un brouillon ramène désormais systématiquement à l'onglet Photos du brouillon, quelle que soit la façon dont l'outil a été ouvert.
+
+- **Correction des icônes Material sur le web (build release)** : les icônes Material Design étaient absentes dans les builds web release en raison du tree-shaking Flutter. Tous les builds web utilisent désormais l'option `--no-tree-shake-icons` pour garantir l'affichage correct de l'ensemble des glyphes.
+
+### v0.13.50 — technique
+
+- **Correction navigation enhancer → onglet Photos** : `_onIllustrationEnhancerResult` réinitialise `_showingIllEnhancer = false` en retournant toujours le `Stack` principal (préserve le `DefaultTabController`). L'écran ne remplace plus son widget racine par l'enhancer, il l'affiche en overlay dans le `Stack`.
+
+- **Build web `--no-tree-shake-icons`** : tous les builds web release intègrent désormais `--no-tree-shake-icons` pour éviter la suppression des glyphes Material par le compilateur Dart (`dart2js`). Commande standard : `flutter build web --release --no-tree-shake-icons`. La clé Gemini n'est plus passée au client : voir Secret Manager côté Cloud Functions.
+
+## 2026-05-15
+
+### v0.13.35 — fonctionnel
+
+- **Refactoring interne (aucun changement fonctionnel)** : nettoyage global de la qualité de code. Toutes les API dépréciées (`withOpacity` → `withValues(alpha:)`) ont été mises à jour, les `debugPrint` retirés du code de production, les avertissements `use_build_context_synchronously` corrigés, et les règles du linter Dart strictement respectées. Résultat : analyse statique propre (0 warning, 0 erreur ; 2 infos inévitables liées à `dart:html` legacy). Aucun comportement visible n'est modifié.
+
+### v0.13.35 — technique
+
+- **Extraction `scan_state.dart`** (`lib/features/recipes/data/scan_state.dart`) :
+  - `ScanStatus` (enum), `ScanIntent` (enum) et `ScanState` (classe immuable) extraits de `scan_upload_service.dart`.
+  - `scan_upload_service.dart` expose `export 'scan_state.dart'` pour compatibilité des imports existants (zéro modification des consommateurs).
+
+- **Extraction `cooklang_preview_helpers.dart`** (`lib/features/recipes/presentation/cooklang_preview_helpers.dart`) :
+  - Contient tous les helpers réutilisables du widget CookLang : `CooklangIngredient`, `CooklangStepGroup`, `CooklangIllustrationThumb`, `cooklangFormatTimer()`, `cooklangFormatIngredient()`, `cooklangNormalizeStepTimers()`.
+  - `cooklangFormatIngredient()` délègue l'accord à `core/utils/ingredient_display.dart`, partagé avec l'export PDF et la liste de courses : minuscule sur les libellés de référentiel, pluriel à partir de deux, liaison « de / d’ » avec l'exception des h aspirés, et disparition des unités qui comptent (« 2 carottes », pas « 2 pièces carotte »). **Règle d'affichage seulement** : le CookLang stocké n'est jamais réécrit, sous peine de casser l'identité dont dépendent nutrition, courses, index de recherche et catégories — et d'être effacé au prochain enregistrement par `rewriteCooklangWithReferentials`. Rendu client, donc **aucun jumeau TypeScript**.
+  - Tous les noms ont été rendus publics (prefixe `_` retiré) pour être accessibles hors du fichier.
+  - `cooklang_preview.dart` réduit de 877L à 728L ; `cached_network_image` importé uniquement dans le fichier helpers.
+
+- **Extraction `batch_planning_widgets.dart`** (`lib/features/planning/presentation/batch_planning_widgets.dart`) :
+  - `BatchSlotTile` (ex `_SlotTile`) : tuile StatelessWidget d'un créneau de planning. Paramètres : `index`, `date`, `recipe`, `prefs`, `slotTime`, `isGenerating`, `onAssign`, `onRemove`, `onDelete`, `onTimeChanged`, `onGenerateWithAI?`, `onExportToCalendar?`.
+  - `BatchRecipePickerSheet` (ex `_RecipePickerSheet`) : bottom sheet de recherche de recette avec champ de filtre textuel, suggestion IA et saisie de repas libre.
+  - `batch_planning_screen.dart` réduit de 785L à 488L.
+
+- **Qualité de code** :
+  - `withOpacity(x)` → `withValues(alpha: x)` : 7 occurrences dans 5 fichiers (`recipe_detail_widgets.dart`, `shopping_list_sheet.dart`, `draft_list_screen.dart`, `work_queue_widgets.dart`, `search_screen.dart`).
+  - Suppression de tous les `debugPrint` en code de production (`recipe_detail_screen.dart`, `recipe_detail_widgets.dart`).
+  - `use_build_context_synchronously` : ajout de `if (!context.mounted) return` dans `source_viewer.dart` ; capture de `ScaffoldMessenger` avant `await` dans `work_queue_screen.dart` ; utilisation de `this.context` après vérification `mounted` dans `recipe_list_screen.dart`.
+  - Corrections linter : accolades curly-brace, dangling doc comments → commentaires normaux, null-aware map entries (`'key': ?value` au lieu de `?'key': value`), empty catches documentés, wildcards `(_, _)` conformes Dart 3.7.
+  - Résultat `flutter analyze` : 0 error, 0 warning, 2 infos inévitables (`dart:html` legacy).
+
+### v0.13.27 — fonctionnel
+
+- **Batch planning hebdomadaire** : depuis l'écran Planning, un bouton "Nouveau planning" ouvre `BatchPlanningScreen`. L'écran génère automatiquement les créneaux du prochain cycle (ex : 7 jours) à partir des préférences configurées. Pour chaque créneau, l'utilisateur peut : laisser l'IA suggérer une recette (bouton ✨), choisir manuellement une recette (icône loupe → picker avec recherche textuelle + suggestion IA), saisir un repas libre (texte libre), ou laisser le créneau vide. Une suggestion IA globale génère d'un coup tout le planning en respectant les contraintes. L'heure de chaque repas est réglable indépendamment via un sélecteur. Un bouton "Enregistrer" ajoute tous les repas non-vides en lot dans Firestore.
+
+- **Configuration du planning (Préférences)** : un écran dédié `PlanningConfigScreen` est accessible depuis l'icône engrenage de l'écran Planning. Il permet de configurer : le nombre de repas par cycle (défaut : 7), le jour de démarrage du cycle (Lundi–Dimanche), l'heure et les minutes par défaut des repas, les contraintes globales en langage naturel (ex : "Pas de poisson deux fois dans la semaine"), et les contraintes par jour de la semaine (durée max de préparation en minutes, flag "batch cooking / réchauffage", note libre). Le calendrier Google cible (parmi les calendriers du compte) peut également être sélectionné depuis cet écran.
+
+- **Export calendrier global** : dans l'écran Planning, un bouton calendrier dans l'AppBar exporte en lot tous les repas visibles vers Google Calendar (calendrier configuré dans les préférences). Chaque repas est créé comme événement individuel. Un bouton calendrier est également disponible sur chaque tuile de repas pour un export individuel.
+
+- **Heure repas cliquable** : dans l'écran Planning, l'heure affichée sur chaque repas est cliquable et ouvre un sélecteur d'heure pour modifier le créneau directement.
+
+- **Changer / vider une recette depuis le planning** : un menu contextuel (kebab) sur chaque tuile de repas propose "Changer la recette" (ouvre le picker) et "Vider le créneau" (supprime la recette sans supprimer le créneau).
+
+- **Liste de courses multi-recettes** : dans la liste de courses (bottom sheet), chaque ingrédient agrégé affiche en sous-titre la ou les recettes sources, permettant de savoir d'où provient chaque quantité.
+
+- **Sélection multiple dans livres et recettes libres** : un appui long sur un livre ou une recette libre active le mode sélection multiple. L'AppBar contextuelle propose "Tout sélectionner" et "Supprimer" (avec confirmation). La sélection est limitée aux éléments de l'utilisateur connecté.
+
+- **Affichage toutes les pages d'un livre** : dans l'écran "Recettes d'un livre", toutes les recettes (pages normales) sont désormais visibles par défaut, sans toggle. Le regroupement par sections reste disponible pour les membres du groupe.
+
+- **Compteur d'énergie estimée (token usage)** : l'écran "Usage IA" affiche désormais une estimation de l'énergie consommée (en Wh) calculée à partir du nombre total de tokens, pour sensibiliser à l'empreinte énergétique des appels IA.
+
+### v0.13.27 — technique
+
+- **Collection Firestore `planning_config`** :
+  - Document par utilisateur : `planning_config/{uid}`.
+  - Schéma : `meals_per_cycle: int` (défaut 7), `cycle_start_day: int` (1=Lundi, 7=Dimanche), `batch_cooking_day: int?`, `daily_constraints: Map<String, Map>` (clé = weekday en string), `global_constraints: String`, `default_meal_hour: int`, `default_meal_minute: int`, `calendar_id: String` (identifiant du calendrier Google cible, défaut `'primary'`).
+  - Chaque entrée de `daily_constraints` porte `max_prep_minutes`, `target_portions`, `is_batch_cooking`, `notes`, et **facultativement** `meal_hour` / `meal_minute`. Ces deux-là ne sont écrits que si le jour a son heure propre : une clé absente veut dire « comme les autres jours », là où un `null` stocké se confondrait avec minuit.
+  - `mealTimeFor(weekday)` est le **seul** endroit qui répond à « à quelle heure mange-t-on ce jour-là » — la sienne s'il en a une, celle par défaut sinon. Deux écrans qui recalculeraient cette règle finiraient par ne plus dire la même heure.
+  - `withDefaultMealTime(h, m)` change l'heure par défaut **et** rend tous les jours à elle. Sans cette remise à zéro, régler l'heure globale n'aurait plus d'effet visible dès qu'un seul jour aurait été personnalisé, et il faudrait deviner lesquels des sept résistent.
+  - `DayConstraint` : `max_prep_minutes: int`, `is_batch_cooking: bool`, `notes: String`.
+
+- **`PlanningPreferences`** (`lib/features/planning/domain/planning_preferences.dart`) :
+  - `nextCycleDates()` : génère la liste des `DateTime` du prochain cycle à partir du `cycleStartDay` et `mealsPerCycle`.
+  - `fromFirestore(Map)` / `toFirestore()`.
+  - `copyWith(...)`.
+
+- **`PlanningRepository`** — nouvelles méthodes :
+  - `addMeals(List<PlannedMeal>)` : batch Firestore pour l'ajout groupé.
+  - `updateMealRecipe(id, {recipeId, recipeTitre, durationMinutes, prepMinutes, cookMinutes})` : mise à jour de la recette assignée à un créneau.
+  - `updateMealTime(id, DateTime)` : mise à jour de l'heure du créneau.
+  - `watchPreferences()` : stream de `PlanningPreferences`.
+  - `savePreferences(PlanningPreferences)` : upsert dans `planning_config/{uid}`.
+  - `getValidatedRecipes()` : `Future<List<Recipe>>` — recettes validées de l'utilisateur.
+  - Providers nouveaux : `planningPreferencesProvider` (`StreamProvider<PlanningPreferences>`).
+
+- **`PlanningAiService`** (`lib/features/planning/services/planning_ai_service.dart`) :
+  - Modèle : `gemini-2.5-flash`.
+  - `suggestMealPlan({apiKey, recipes, slotDates, dailyConstraints, globalConstraints})` → `Future<List<Recipe?>>`.
+  - Prompt structuré : liste des recettes disponibles (titre, temps prep/cuisson, tags), liste des créneaux avec leur jour de la semaine et contraintes, contraintes globales. Retourne un JSON `{ "slots": [{"index": i, "recipe_title": "..."}] }`. Parse chaque entrée en cherchant la recette correspondante par titre normalisé.
+  - `suggestSingleSlot({...})` : variante pour un seul créneau.
+
+- **`BatchPlanningScreen`** (`lib/features/planning/presentation/batch_planning_screen.dart`) :
+  - Route `/batch-planning`.
+  - `ConsumerStatefulWidget`. État : `_slots: Map<int, Recipe?>`, `_slotTimes: Map<int, TimeOfDay>`, `_slotDates: List<DateTime>`.
+  - `_init()` : charge les recettes validées via `PlanningRepository.getValidatedRecipes()` et les préférences via `planningPreferencesProvider`.
+  - `_applyPrefs(PlanningPreferences)` : initialise les créneaux avec `prefs.nextCycleDates()`.
+  - Génération IA globale : appelle `PlanningAiService.suggestMealPlan()`, met à jour `_slots`.
+  - Génération IA individuelle : appelle `PlanningAiService.suggestSingleSlot()` pour un créneau (`_generatingSlot` indique l'index en cours).
+  - Picker recette : `RecipePickerDialog` avec filtre textuel et suggestion IA.
+  - Sauvegarde : `PlanningRepository.addMeals()` avec tous les créneaux non-nuls.
+
+- **`PlanningConfigScreen`** (`lib/features/planning/presentation/planning_config_screen.dart`) :
+  - Route `/planning-config`.
+  - Champs : `mealsPerCycle` (slider/champ), `cycleStartDay` (dropdown), `defaultMealHour`/`defaultMealMinute` (sélecteur heure), `globalConstraints` (TextField multilignes).
+  - Pour chaque jour (Lundi–Dimanche) : `maxPrepMinutes` (TextField numérique), `isBatchCooking` (Switch), `notes` (TextField).
+  - Sélection du calendrier Google : appelle `CalendarService.listCalendars(token)` → `DropdownButton` avec les calendriers disponibles (id + summary). Stocké dans `planningPreferences.calendarId`.
+  - Sauvegarde : `PlanningRepository.savePreferences()`.
+
+- **`CalendarService`** — évolutions :
+  - `listCalendars(token)` : GET `https://www.googleapis.com/calendar/v3/users/me/calendarList` avec scope `calendar.readonly`. Retourne `List<{id, summary}>`.
+  - `_getCalendarToken()` : cache le token en session (`static String? _cachedToken`) pour éviter les re-authentifications successives.
+  - `createEvent(...)` : utilise `calendarId` depuis les préférences (défaut `'primary'`).
+  - Durée des événements : toujours calculée depuis les préférences (`durationMinutes`) plutôt que depuis la recette seule.
+
+- **`GoogleTasksService`** — envoi de la liste de courses dans Google Tasks :
+  - scope `https://www.googleapis.com/auth/tasks`, même mécanique de jeton que `CalendarService` (cache de 55 min, popup web / `authorizationClient` mobile) ;
+  - `createShoppingList(title, groups)` : POST `users/@me/lists` puis une insertion par rayon (`lists/{id}/tasks`) et une par article avec `?parent={rayon}`. Les sous-tâches donnent la hiérarchie, les cases à cocher sont natives ;
+  - le paramètre `previous` conserve l'ordre : sans lui, chaque insertion se place en tête et la liste ressort à l'envers ;
+  - seuls les articles **non cochés** sont envoyés.
+
+  **Pourquoi pas Keep** : Keep n'expose aucune API d'écriture. L'export s'y fait par le presse-papier, et coller du texte dans une note ne produit jamais une liste cochable — la conversion est manuelle et aplatit les rayons. Le bouton Keep subsiste en action secondaire, en le disant.
+
+- **`PlanningScreen`** — évolutions :
+  - Agrégation d'ingrédients : `_normIngKey()` normalise les accents et pluriels. `_mergeQty()` additionne les quantités compatibles. La liste de courses agrégée (bottom sheet) affiche pour chaque ingrédient la liste des recettes sources.
+  - `_MealTile` : heure cliquable (`onTap` sur `CircleAvatar`) → `showTimePicker` → `PlanningRepository.updateMealTime()`.
+  - Bouton calendrier individuel sur `_MealTile` (hors kebab menu).
+  - Bouton export global calendrier dans l'AppBar : boucle sur tous les repas visibles et crée un événement par repas.
+  - Menu kebab `_MealTile` : "Changer la recette" → `RecipePickerDialog` puis `updateMealRecipe()` ; "Vider le créneau" → `updateMealRecipe()` avec `recipeId: null, recipeTitre: 'Repas libre'`.
+
+- **`TokenUsageScreen`** — ajout énergie estimée :
+  - Formule : `estimatedWh = totalTokens * 0.0000003` (estimation approximative basée sur consommation GPU).
+  - `_SummaryBanner` : affiche le total tokens + l'estimation en Wh ou mWh selon l'ordre de grandeur.
+
+- **Sélection multiple `BookListScreen` / `RecipeListScreen`** :
+  - Long press active `_isSelecting = true` + `_selected.add(id)`.
+  - AppBar contextuelle : count, `select_all`, `delete_outline` (confirmation rouge).
+  - `_batchDelete()` : appelle `BookRepository.deleteBook()` / `RecipeRepository.deleteRecipe()` en parallèle pour les ids sélectionnés.
+
+## 2026-05-14
+
+### v0.13.5 — fonctionnel
+
+- **Écran "Planning des repas"** : un nouvel écran est accessible depuis la barre de navigation principale (5e entrée, icône calendrier, entre Recherche et Brouillons). Il affiche la liste chronologique des repas planifiés de l'utilisateur connecté, groupés par date. Chaque repas affiche l'heure, le titre de la recette et la durée totale. Un appui sur un repas ouvre directement la fiche recette associée. Un bouton poubelle permet de supprimer un repas planifié après confirmation. Les repas passés sont affichés en mode atténué (opacité réduite). Si aucun repas n'est planifié, un écran vide avec message explicatif est affiché.
+- **Sauvegarde locale en Firestore** : lors de chaque planification depuis la fiche recette (via le bottom sheet Google Calendar), le repas est désormais également sauvegardé dans Firestore (collection `planned_meals`) avec : identifiant utilisateur, identifiant et titre de la recette, date/heure planifiée, durée totale. Cette sauvegarde alimente l'écran Planning en temps réel via un stream Firestore.
+
+### v0.13.5 — technique
+
+- **Collection Firestore `planned_meals`** :
+  - Schéma : `uid: String`, `recipe_id: String?`, `recipe_titre: String`, `planned_at: Timestamp`, `duration_minutes: int`, `created_at: Timestamp`.
+  - Indexation Firestore : requête `where('uid', isEqualTo: uid).orderBy('planned_at')`.
+
+- **`PlannedMeal`** (`lib/features/planning/domain/planned_meal.dart`) :
+  - Modèle immuable avec `fromFirestore(String id, Map data)` et `toFirestore()`.
+  - Champ `id` non inclus dans `toFirestore()` (géré par Firestore).
+
+- **`PlanningRepository`** (`lib/features/planning/presentation/planning_providers.dart`) :
+  - `watchMeals()` : stream de `List<PlannedMeal>` filtré par uid, ordonné par `planned_at` asc.
+  - `addMeal(PlannedMeal)` : ajoute dans `planned_meals` (id auto-généré).
+  - `deleteMeal(String id)` : supprime le document.
+  - Provider `planningRepositoryProvider` : `Provider<PlanningRepository?>` — `null` si utilisateur non connecté.
+  - Provider `plannedMealsProvider` : `StreamProvider.autoDispose<List<PlannedMeal>>`.
+
+- **`PlanningScreen`** (`lib/features/planning/presentation/planning_screen.dart`) :
+  - `ConsumerWidget` — route `/planning`.
+  - Groupement des repas par journée (date sans heure) via `Map<DateTime, List<PlannedMeal>>`.
+  - `_DayHeader` : affiche la date formatée (intl), "Aujourd'hui" si date du jour, couleur primaire si aujourd'hui, atténuée si passé.
+  - `_MealTile` : `Card` avec `CircleAvatar` affichant l'heure, titre, durée, bouton poubelle. Opacité 0.6 si passé. `onTap` → `context.push('/recipes/${meal.recipeId}')` si `recipeId != null`.
+  - Suppression : dialogue de confirmation avec `DateFormat('d MMMM à HH:mm', 'fr')`.
+
+- **`schedule_recipe_sheet.dart`** — évolutions :
+  - `_ScheduleSheet` devient `ConsumerStatefulWidget` / `_ScheduleSheetState extends ConsumerState`.
+  - Nouveau paramètre `String? recipeId` dans `showScheduleRecipeSheet()` et `_ScheduleSheet`.
+  - Après `CalendarService.createEvent()` réussi : lit `FirebaseAuth.instance.currentUser?.uid` puis `ref.read(planningRepositoryProvider)?.addMeal(PlannedMeal(...))`.
+
+- **Route `/planning`** dans `app_router.dart` : `AppRoutes.planning = '/planning'`, builder `PlanningScreen`.
+- **Navigation** dans `app_shell.dart` : entrée `_NavDestination(AppRoutes.planning, Icons.calendar_month_outlined, 'Planning')` insérée entre Recherche et Brouillons dans `_destinations()`.
+
+## 2026-05-13
+
+### v0.13.4 — fonctionnel
+
+- **Bouton "Planifier" dans la fiche recette** : un bouton avec icône calendrier (`calendar_month_outlined`) apparaît dans l'en-tête de la section Ingrédients de la fiche recette, uniquement si la recette possède des ingrédients structurés. Il s'affiche côte à côte avec le bouton "Liste de courses" existant.
+- **Bottom sheet de planification** : un appui sur le bouton Planifier ouvre un bottom sheet permettant de : choisir la date (sélecteur de date, par défaut aujourd'hui), choisir l'heure (sélecteur d'heure, par défaut 19h00), configurer le rappel en minutes (pré-rempli avec le temps de préparation de la recette). La durée est calculée automatiquement à partir des champs `prepTime` et `cookTime` de la recette. Un bouton "Ajouter à Google Calendar" déclenche la création de l'événement.
+- **Intégration Google Calendar (API REST OAuth)** : la planification crée un événement "Préparer : [titre]" dans le calendrier Google principal de l'utilisateur, avec description contenant les ingrédients, les temps de préparation/cuisson et un rappel popup configurable. Sur web : OAuth via `FirebaseAuth.signInWithPopup` avec le scope `calendar.events`. Sur mobile/desktop : via `GoogleSignIn.instance.authorizationClient`.
+
+
+- **Filtre par livre dans la page Brouillons** : dans l'écran "Brouillons", une barre de filtres défilable horizontalement apparaît lorsque les brouillons appartiennent à plusieurs livres différents. Les chips disponibles sont : "Tous" (vue par défaut), "Sans livre" (brouillons non rattachés à un livre), et un chip par livre distinct présent dans la liste. La barre est masquée si tous les brouillons appartiennent au même contexte (zéro ou un seul livre distinct). La sélection d'un chip filtre immédiatement la liste affichée.
+- **Suppression d'un livre depuis la liste de ses recettes** : dans l'AppBar de l'écran "Recettes d'un livre", un bouton poubelle apparaît pour les Editors et Admins. Il déclenche un dialogue de confirmation à trois options : Annuler, "Détacher les recettes" (supprime le livre mais conserve toutes les recettes, qui deviennent des recettes libres), "Supprimer aussi les recettes" (supprime le livre ET toutes ses recettes de façon irréversible). Après suppression, l'utilisateur est redirigé vers l'écran d'accueil avec un message de confirmation.
+
+### v0.13.4 — technique
+
+- **`CalendarService`** (`lib/features/planning/services/calendar_service.dart`) :
+  - Classe statique. Scope : `'https://www.googleapis.com/auth/calendar.events'`.
+  - `_getCalendarToken()` : Web → `FirebaseAuth.signInWithPopup(GoogleAuthProvider()..addScope(scope))` → `OAuthCredential.accessToken`. Mobile/Desktop → `GoogleSignIn.instance.authorizationClient.authorizationForScopes()` puis `authorizeScopes()` si null.
+  - `createEvent({titre, startTime, duration, description, reminderMinutes})` : POST `https://www.googleapis.com/calendar/v3/calendars/primary/events` avec header `Authorization: Bearer $token`. Corps JSON : `summary`, `description`, `start/end` en UTC ISO8601, `reminders.overrides` si `reminderMinutes > 0`. Lance `Exception` si statusCode ∉ {200, 201}.
+
+- **`schedule_recipe_sheet.dart`** :
+  - `showScheduleRecipeSheet(context, {titre, recipeId?, prepTimeMin, cookTimeMin, ingredients})`.
+  - `_ScheduleSheet` — bottom sheet avec : sélecteur de date (`showDatePicker`, firstDate = aujourd'hui - 1j), sélecteur d'heure (`showTimePicker`), champ "Rappel" (TextField numérique, pré-rempli avec `prepTimeMin ?? 30`). Bouton "Ajouter à Google Calendar" → `_addToCalendar()`.
+  - `_buildDescription()` : ligne préparation, ligne cuisson, section ingrédients avec `• nom (qty unité)`.
+
+- **`CooklangPreview`** — ajout paramètre `VoidCallback? onSchedule` :
+  - Dans `_buildSectionHeader(...)` de la section "Ingrédients" : `action:` devient une `Row` contenant `IconButton(calendar_month_outlined, 'Planifier')` + `IconButton(shopping_cart_outlined, 'Liste de courses')` si les callbacks respectifs sont non-null.
+
+- **`recipe_detail_screen.dart`** : passe `onSchedule:` et `recipeId:` à `CooklangPreview` et `showScheduleRecipeSheet`.
+
+- **Dépendances ajoutées** : `http: ^1.2.0` (POST Calendar API).
+
+
+
+- **`DraftListScreen` — filtre par livre** :
+  - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.
+  - Nouveau widget `_BookFilterBar` : barre horizontale de `FilterChip`s construite à partir des `bookId` distincts présents dans la liste `myDrafts`. Chips : "Tous" (selected si `_bookFilter == null`), "Sans livre" (selected si `_bookFilter == ''`), puis un chip par livre distinct (titre récupéré depuis `BookRepository`). Barre invisible si 0 ou 1 livre distinct. Placée au-dessus du `MaterialBanner` dans le `Column` body.
+  - Logique de filtrage appliquée dans le callback `data:` : renomme `myDrafts` en `myDraftsAll`, puis produit `myDrafts` filtré selon `_bookFilter` : `null` → `myDraftsAll`, `''` → recettes sans `bookId`, sinon → recettes dont `bookId == _bookFilter`.
+  - Appel `setState(() => _bookFilter = ...)` depuis les callbacks `onSelected` des chips.
+
+- **`RecipeListScreen` — suppression de livre depuis la liste** :
+  - Nouvelle méthode `Future<void> _confirmDeleteBook(BuildContext context)` sur `_RecipeListScreenState`.
+  - Dialogue `AlertDialog` avec 3 actions : "Annuler", "Détacher les recettes" (`_DeleteBookMode.detach`), "Supprimer aussi les recettes" (`_DeleteBookMode.deleteAll`).
+  - Mode `detach` : appelle `BookRepository.deleteBook(bookId, detachRecipes: true)` — met `bookId = null` sur toutes les recettes du livre avant de supprimer le document livre.
+  - Mode `deleteAll` : appelle `BookRepository.deleteBook(bookId, detachRecipes: false)` — supprime le livre et toutes ses recettes (requête `where('book_id', isEqualTo: bookId)`).
+  - `IconButton` avec `Icons.delete_outline` ajouté dans `actions` de l'AppBar, visible uniquement si `inBookContext && canEdit`.
+  - Après suppression : `context.go('/')` + `ScaffoldMessenger.showSnackBar` avec message de confirmation.
+  - `enum _DeleteBookMode { detach, deleteAll }` ajouté en bas du fichier.
+
+### v0.12.85 — fonctionnel
+
+- **Onglet "Photos" dans le brouillon** : un quatrième onglet "Photos" est disponible dans l'écran de révision des brouillons (`DraftReviewScreen`), visible pour tous. Il affiche les illustrations associées à la recette dans une grille. Le propriétaire peut supprimer individuellement chaque photo. Si la recette possède un fichier source image (scan), un bouton "Extraire les illustrations" (ou "Ré-extraire" si des illustrations existent déjà) permet de lancer l'extraction automatique via l'IA.
+- **Bouton IA dans l'AppBar du brouillon** : le propriétaire d'un brouillon dispose d'un bouton ✨ ("Améliorer avec l'IA") dans l'AppBar de l'écran de révision. Un appui ouvre un dialogue permettant de saisir des instructions libres (ex : "Reformate en style Cooklang strict", "Corrige les quantités"). Si la recette a un scan image source, une case à cocher optionnelle "Extraire les illustrations" est proposée. L'IA raffine alors le CookLang + titre + ingrédients selon les instructions, et met à jour le brouillon en place.
+
+### v0.12.85 — technique
+
+- **`DraftReviewScreen` — onglet "Photos"** :
+  - Nouveau widget `_IllustrationsTab` : affiche `recipe.imageUrls` dans une `GridView.builder` (crossAxisCount: 3).
+  - `_IllustrationCard` : affiche l'image via `CachedNetworkImage` avec un `IconButton` de suppression (visible si `isOwner`). La suppression appelle `RecipeRepository.updateRecipeIllustrations()` pour retirer l'URL du tableau `image_urls`.
+  - Bouton "Extraire les illustrations" / "Ré-extraire" : visible si `isOwner && recipe.sourceFileUrl != null && !sourceFileUrl.endsWith('.pdf')`. Appelle `_doExtractIllustrations()`.
+  - `_doExtractIllustrations()` : télécharge le fichier source via `http.get(sourceFileUrl)`, appelle `GeminiService.detectIllustrationRegions(bytes, mimeType)`, découpe chaque bounding box avec `img.copyCrop`, uploade chaque crop sous `illustrations/{uid}/{timestamp}_ill_{i}.jpg`, puis appelle `RecipeRepository.updateRecipeIllustrations(recipeId, newUrls)`.
+  - Onglet ajouté au `TabController` (index 3 en mode large, index 4 en mode étroit).
+
+- **`DraftReviewScreen` — bouton IA dans AppBar** :
+  - `IconButton` avec `Icons.auto_awesome` dans les `actions` de l'AppBar, visible uniquement si `isOwner`.
+  - Pendant le raffinage (`_aiRefining == true`), remplacé par `CircularProgressIndicator`.
+  - Appelle `_showRefineDialog(recipe)` : `AlertDialog` avec `TextField` (instructions libres) + `CheckboxListTile` "Extraire les illustrations" (visible si scan image disponible).
+  - `_doRefine()` : appelle `GeminiService.refineRecipe(currentCooklang, instructions)`, met à jour `_cooklangCtrl.text`, titre et ingrédients dans le formulaire.
+  - Si la case est cochée : `_doExtractIllustrations()` lancée en parallèle.
+  - `isOwner` contrôle la visibilité : bouton IA, bouton supprimer, bouton valider (propriétaire) vs bouton copier (non propriétaire).
+
+### v0.12.84 — fonctionnel
+
+- **Suivi des tokens IA** : chaque appel Gemini (extraction de recette, détection d'illustrations, recherche, génération, raffinement, etc.) est enregistré dans Firestore sous la collection `ai_usage`. Chaque enregistrement contient : uid utilisateur, fonctionnalité (feature), nombre de tokens en entrée/sortie/total, modèle utilisé, et horodatage.
+- **Page "Usage IA"** : accessible depuis le menu compte (icône graphique), elle affiche un tableau récapitulatif de la consommation de tokens, filtrable par fonctionnalité. Les Admins peuvent également filtrer par utilisateur et voir la consommation globale de tous les membres. La page affiche le total d'appels, tokens d'entrée, de sortie et total, agrégés par feature.
+- **Suppression du cache** : un bouton "Vider le cache" est disponible dans les paramètres, permettant de forcer la recharge des données depuis Firestore.
+
+### v0.12.84 — technique
+
+- **Collection Firestore `ai_usage`** :
+  - Schéma : `uid: String`, `feature: String`, `input_tokens: int`, `output_tokens: int`, `total_tokens: int`, `model: String`, `timestamp: Timestamp` (serverTimestamp).
+  - `feature` values : `scan_extraction`, `detect_illustrations`, `search`, `generate`, `refine`, `book_scan`, `recipe_generation`, `chat_refine`.
+
+- **`TokenUsageRepository`** :
+  - `logUsage({uid, feature, inputTokens, outputTokens, totalTokens, model})` : ajoute un document dans `ai_usage` avec `FieldValue.serverTimestamp()`.
+  - `watchByUser(uid)` : stream ordonné par `timestamp desc`, limit 500.
+  - `watchAll()` : stream admin, limit 1000.
+  - `static aggregate(records, {filterUid?})` : groupe par `(uid, feature)`, retourne `List<TokenUsageSummary>` triée par total décroissant.
+
+- **`TokenUsageScreen`** :
+  - Route `/usage` accessible depuis le menu compte (icône `bar_chart`).
+  - `_SummaryBanner` : total appels, total tokens (entrée + sortie).
+  - `_FiltersRow` : `DropdownButton` feature + (admin) `DropdownButton` utilisateur.
+  - `_SummaryTable` : `DataTable` colonnes : fonctionnalité, appels, tokens entrée, tokens sortie, total. Tri par total décroissant. Formatage avec séparateur milliers.
+  - Providers : `myTokenUsageProvider` (user), `allTokenUsageProvider` (admin).
+
+- **Intégration dans `GeminiService`** : chaque appel Gemini (extraction, détection, recherche, génération, raffinement) appelle `TokenUsageRepository.logUsage()` avec les `usageMetadata.inputTokenCount` / `outputTokenCount` de la réponse.
+
+### v0.12.83 — fonctionnel
+
+- **Illustrations dans le brouillon** : les illustrations extraites par l'IA lors du scan (ou extraites manuellement depuis l'onglet Photos) sont stockées dans Firebase Storage sous `illustrations/{uid}/` et associées à la recette via le champ `image_urls`. Elles sont visibles dans l'onglet Photos du brouillon et persistent après validation.
+- **Extraction IA depuis le scan** : depuis l'onglet Photos du brouillon, si la recette possède un scan image source, Gemini détecte automatiquement les zones de photographies culinaires dans l'image, découpe chaque région et l'uploade comme illustration séparée. Les illustrations existantes sont remplacées lors d'une ré-extraction.
+
+### v0.12.74 — fonctionnel
+
+- **Fusion "Brouillons & Traitements" en WorkQueue** : les anciens onglets séparés "Brouillons" et "Traitements" sont fusionnés en une seule vue unifiée `WorkQueueScreen`. Cette vue affiche, dans une liste chronologique, à la fois les jobs de traitement en cours/terminés/en erreur et les brouillons de recettes non validés. Trois modes de filtrage sont disponibles : "Mes éléments" (vue par défaut), "Famille" (éléments des membres du groupe), "Tous" (admin uniquement — tous les utilisateurs). En mode famille et admin, les éléments sont regroupés par propriétaire dans des sections rétractables. La sélection multiple reste disponible pour les actions groupées (valider, réessayer, supprimer).
+
+### v0.12.74 — technique
+
+- **`WorkQueueScreen`** (`lib/features/recipes/presentation/drafts/work_queue_screen.dart`) :
+  - Remplace les anciens écrans `DraftListScreen` et `ProcessingJobsScreen` séparés.
+  - Sealed class `_QueueItem` : `_JobItem(ProcessingJob)` et `_DraftItem(Recipe)` — modèle unifié pour la liste.
+  - `_Section` : regroupe les items par owner uid, avec flag `isCollapsed`.
+  - `_FilterMode` enum : `me`, `family`, `allUsers`.
+  - `_buildSections()` : fusionne jobs et brouillons, trie par date décroissante, regroupe par owner si famille/admin.
+  - `isVisible(ProcessingJob)` : un job `queued`/`processing` n'est affiché que **tant qu'il n'a produit aucun brouillon** (`createdRecipeIds.isEmpty`) — au-delà, le `_DraftItem` le représente et une seule ligne subsiste pour un import. Les statuts `error` et `rejected` restent visibles inconditionnellement, brouillon produit ou non.
+  - **Sélection multiple** : `Set<String> _selected` avec clés `'j:{jobId}'` ou `'d:{recipeId}'`. Actions groupées : `_batchValidate()`, `_batchRetry()`, `_batchDelete()`.
+  - **Providers utilisés** : `processingJobsProvider`, `draftsProvider`, `groupMemberDraftsProvider`, `allProcessingJobsProvider`, `allDraftsProvider`, `isAdminProvider`.
+  - Route `/work-queue` (remplace `/drafts` et `/processing-jobs`).
+
+## 2026-05-12
+
+### v0.12.67 — fonctionnel
+
+- **Détection automatique des coins de document** : à l'ouverture de l'écran de recadrage (amélioration d'image), les 4 coins de la page ou du livre visible sont automatiquement détectés par analyse de gradient (Sobel + régression PCA). Une barre de progression orange apparaît en haut de l'image pendant l'analyse (~0,5 s). L'utilisateur peut ensuite affiner manuellement chaque coin. Un bouton ⊕ permet de relancer la détection à tout moment. Si le document n'est pas détectable (fond homogène, faible contraste), les coins reviennent à la position par défaut.
+- **Sélection multiple de brouillons** : dans la liste des brouillons, un appui long sur un brouillon active le mode de sélection multiple. L'AppBar contextuelle affiche le nombre de sélections, avec actions "tout sélectionner", "valider" (✓) et "supprimer" (🗑). La validation nécessite une confirmation par dialogue ; la suppression idem (bouton rouge). Le FAB est masqué en mode sélection. Les brouillons des autres membres du groupe restent non sélectionnables (lecture seule).
+- **Correction de la déduplication d'ingrédients** : les apostrophes typographiques (' ') et les caractères accentués français (é, è, ê, à, ç, ù, ô, î, â, û) sont normalisés avant le calcul de la clé d'ingrédient, évitant les doublons comme "tronçon d'asperge" × 2 causés par des apostrophes Unicode différentes retournées par Gemini.
+
+### v0.12.67 — technique
+
+- **`ImageEnhancerScreen` — détection automatique des coins** : à l'ouverture, `_runAutoDetect()` est appelée automatiquement. Elle lance `compute(_detectCornersIsolate, _DetectParams)` dans un isolate Dart dédié. Algorithme en 8 étapes :
+  1. Décodage et redimensionnement à max 512 px (`img.copyResize`).
+  2. Conversion niveaux de gris (`img.grayscale`).
+  3. Calcul de la magnitude du gradient Sobel 3×3 sur chaque pixel.
+  4. Seuil adaptatif = 85e percentile des magnitudes (borné à [5%, 60%] du max).
+  5. Scan depuis les 4 bords (marge 8%) : pour chaque colonne/ligne, premier pixel dépassant le seuil.
+  6. Élimination des outliers (trim 10%–90% par coordonnée projetée).
+  7. Régression PCA sur chaque nuage → 4 droites en forme générale `(px·x + py·y = r)`.
+  8. Intersections (règle de Cramer) → 4 coins ; validation convexité.
+  - Retourne `null` si < 10 points détectés sur un bord ou si quadrilatère non convexe → corners par défaut conservés.
+  - Indicateur visuel : `LinearProgressIndicator` orange en haut de l'image + bouton ⊕ (`center_focus_strong_outlined`) pour relance manuelle.
+  - Nouvelles classes/fonctions top-level : `_DetectParams`, `_detectCornersIsolate`, `_dcSobel`, `_dcTrim`, `_Line2D`, `_dcFitLine`, `_dcIntersect`, `_dcIsConvex`.
+  - Nouveau flag d'état : `bool _detecting` dans `_ImageEnhancerScreenState`.
+
+- **`DraftListScreen` — sélection batch** :
+  - Nouveau champ `Set<String> _selected` sur l'état.
+  - `get _isSelecting` : actif quand `_selected` non vide.
+  - Long press sur `_DraftTile` → `_selected.add(id)` → rebuild AppBar.
+  - AppBar contextuelle : bouton ✕ (cancel), count badge, `select_all` (tout sélectionner/désélectionner), `check_circle` (valider), `delete_outline` (supprimer).
+  - Valider : dialogue de confirmation → `recipeRepo.validateDraft()` pour chaque id sélectionné en parallèle.
+  - Supprimer : dialogue de confirmation (rouge) → `recipeRepo.deleteRecipe()`.
+  - `_DraftTile` : paramètres `isSelected`, `isSelecting`, `onTap`, `onLongPress` ajoutés. En mode sélection, le leading affiche une `Checkbox` à la place de l'avatar.
+  - FAB masqué pendant la sélection (`if (!_isSelecting) FloatingActionButton`).
+  - Les brouillons des membres du groupe n'ont pas de callback `onLongPress` (non sélectionnables).
+
+- **`GeminiService._ingredientKey()` / `Recipe._ingredientKey()`** : normalisation des apostrophes typographiques (`'`, `'` → `'`) et des caractères accentués français (é,è,ê→e ; à→a ; ç→c ; ù→u ; ô→o ; î→i ; â→a ; û→u) avant `toLowerCase()` et trimming des pluriels, pour éviter les doublons d'ingrédients dus aux variantes Unicode retournées par Gemini.
+
+### 12/05/2026 — fonctionnel
+
+- **Téléchargement du scan original** : un bouton de téléchargement est disponible à côté du bouton de prévisualisation dans l'en-tête de toute recette disposant d'un fichier source.
+- **Scan multi-pages** : lors de l'import d'une recette, l'utilisateur arrive dans un mode "Pages en attente" plutôt qu'un déclenchement immédiat. Il peut accumuler autant de pages qu'il souhaite (via fichier ou caméra), puis lancer l'analyse de toutes les pages en un seul appel Gemini multi-part.
+- **Extraction automatique d'illustrations** : pour les scans image (JPEG/PNG), Gemini détecte automatiquement les zones de photographies culinaires. Chaque zone est découpée et uploadée sur Firebase Storage (`illustrations/`), puis associée à la recette créée.
+- **Progression détaillée** : dans l'écran "Traitements", le job affiche l'étape courante ("Extraction du texte…", "Extraction des illustrations…") en italique pendant le traitement.
+- **Texte collé conservé comme source** : lorsqu'un utilisateur colle un texte dans l'écran "Nouvelle recette" et le met en forme avec l'IA, le texte original est automatiquement uploadé sur Firebase Storage (`scans/`) et attaché à la recette comme fichier source (`sourceFileUrl`). Le bouton de téléchargement de l'original est alors disponible sur la fiche recette, exactement comme pour un scan.
+
+### 12/05/2026 — technique
+
+- **`ProcessingJob`** : ajout de deux champs :
+  - `additional_file_urls: List<String>` — URLs Firebase Storage des pages supplémentaires (scan multi-pages).
+  - `current_step: String?` — étape courante du traitement ("Extraction du texte…", "Extraction des illustrations…") affichée dans `ProcessingJobsScreen`.
+- **`GeminiService.extractRecipes(bytes, mimeType, {additionalPages})`** : signature étendue pour envoyer plusieurs pages en un seul appel `Content.multi([DataPart, ..., TextPart])`.
+- **`GeminiService.detectIllustrationRegions(bytes, mimeType)`** : nouvelle méthode — détecte les bounding boxes de photographies culinaires dans une image de recette. Retourne `List<[yMin, xMin, yMax, xMax]>` en coordonnées 0-1000. Utilise `image: ^4.8.0` pour le découpage (`img.copyCrop`).
+- **`ScanStatus.pendingFiles`** : nouvel état d'accumulation multi-pages. L'utilisateur accède à cet état après la première sélection d'image pour recette. `isRunning` ne l'inclut pas (l'utilisateur est en contrôle).
+- **`ScanState.pendingPageNames: List<String>`** : noms des fichiers en attente, pour affichage dans `ScanScreen`.
+- **`ScanUploadNotifier.addPage()`** / **`addPageFromCamera()`** / **`processPages()`** : nouvelles méthodes pour le mode multi-pages.
+- **`RecipeRepository.updateRecipeIllustrations(recipeId, imageUrls)`** : met à jour le champ `image_urls` d'une recette après extraction des illustrations.
+- **`source_viewer.dart`** : bouton téléchargement ajouté (`url_launcher: ^6.3.1`) à côté du bouton prévisualisation.
+- **`RecipeCreateScreen`** : lors d'un traitement IA ("Mettre en forme avec l'IA"), le texte original collé est uploadé sur Firebase Storage (`scans/{uid}/texte_colle_{ts}.txt`) et attaché comme `sourceFileUrl`/`sourceFileName` lors de la sauvegarde.
+
+## 2026-05-08
+
+### 08/05/2026 — fonctionnel
+
+- **Copie cross-utilisateur de recettes/brouillons** : un utilisateur peut copier la recette validée ou le brouillon d'un membre de son groupe dans sa propre collection. La copie d'une recette validée est immédiatement disponible dans les recettes, sans validation nécessaire. La copie d'un brouillon crée un brouillon dans ses brouillons, à valider. La redirection est automatique vers la copie créée.
+- **Affichage de l'origine** (auteur + livre) : dans l'AppBar de l'écran brouillon (DraftReviewScreen) et de l'écran détail recette, le nom de l'auteur (icône 👤) et le titre du livre source sont affichés sous le titre si la recette n'appartient pas à l'utilisateur connecté.
+- **Protection des validations** : seul le propriétaire d'un brouillon peut le valider ou le supprimer (garde UI + vérification côté dépôt avant écriture). Un non-propriétaire voit uniquement le bouton "Copier".
+- **Brouillons des membres du groupe** : l'écran Brouillons propose un toggle 👥 pour afficher les brouillons des membres du groupe, organisés par sections collapsibles par membre.
+- **Cover automatique "Mes créations Kass'Dalle ✨"** : le livre IA est créé automatiquement au premier scan. Sa couverture est générée programmatiquement (dart:ui) et uploadée sur Firebase Storage. La migration silencieuse est déclenchée à l'ouverture de la bibliothèque.
+
+### 08/05/2026 — technique
+
+- **`RecipeRepository.copyRecipeAsDraft({recipe, newOwnerUid})`** : crée une copie d'une recette ou d'un brouillon pour un autre utilisateur. Si la recette source est `validated`, la copie est également `validated` et le contenu provient de `rawCooklang`. Si la source est un brouillon, la copie est `draft` et le contenu provient de `draftCooklang ?? rawCooklang`. Les images ne sont pas copiées (`imageUrls: []`), le livre source n'est pas hérité (`bookId: null`).
+- **`RecipeRepository.watchDraftsByOwners(List<String> ownerIds)`** : stream de brouillons (`draft` + `inReview`) pour une liste de propriétaires, filtré côté client.
+- **`RecipeRepository.validateDraft()`** : vérification d'appartenance avant écriture — lit `created_by` depuis Firestore et lève `StateError` si le caller n'est pas le propriétaire.
+- **`groupMemberDraftsProvider`** (Riverpod `StreamProvider`) : stream des brouillons des membres du groupe via `watchDraftsByOwners(memberIds)`.
+- **`DraftReviewScreen`** : refactorisé en `ConsumerStatefulWidget`. Toggle 👥 dans l'AppBar pour afficher les brouillons des membres du groupe, organisés par sections collapsibles par membre (`_MemberSectionHeader`). Affichage auteur (icône 👤 + nom) et livre source dans l'AppBar pour les recettes d'autrui. Bouton "Copier" (📋) visible uniquement si non-propriétaire ; boutons Valider/Supprimer uniquement si propriétaire.
+- **`RecipeDetailScreen`** : bouton "Copier" (📋) dans l'AppBar pour les recettes d'autrui. Dialogue de confirmation, puis redirection automatique vers la copie.
+- **`KassDalleCoverGenerator`** (`lib/core/utils/kassdale_cover_generator.dart`) : génère une image PNG 600×800 avec `dart:ui` (gradient sombre, étoiles, sparkles, texte centré). Utilisé par `BookRepository._uploadGeneratedCover()`.
+- **`BookRepository.findOrCreateKassDalleBook(uid)`** : retrouve ou crée le livre IA (`tag __kassdale_ia`), déclenche `_uploadGeneratedCover` si la couverture est absente.
+- **`BookRepository.ensureKassDalleBookHasCover(uid)`** : migration silencieuse appelée dans `initState` de `BookListScreen`.
+
+## 2026-05-03
+
+### 03/05/2026 — fonctionnel
+
+- Groupes familiaux : chaque utilisateur gère ses propres livres et recettes. Un utilisateur peut créer un groupe familial, y inviter d'autres membres (recherche par nom/email). Une fois dans un groupe, les livres et recettes validés des autres membres sont visibles par sections dans la bibliothèque et dans les recettes libres.
+- Bibliothèque : sections "Mes livres" + "Livres de [membre]" avec toggles par section. Chaque section affiche une grille de livres.
+- Recettes libres : sections "Mes recettes" + "Recettes de [membre]" avec toggles par section.
+- Brouillons : visibles uniquement pour l'utilisateur connecté (inchangé).
+- Traitements (admin) : l'admin voit tous les traitements de tous les utilisateurs avec filtre par utilisateur et affichage du propriétaire sur chaque tuile.
+- Téléchargement APK : bouton "Télécharger l'APK Android" dans le menu compte, visible uniquement sur web/desktop. Pointe vers la dernière version intégrée au déploiement Firebase Hosting.
+- Déploiement web : l'APK est désormais inclus dans chaque déploiement Firebase Hosting (`app-release.apk` servi sur le même domaine).
+
+### 03/05/2026 — technique
+
+- Ajout de la collection Firestore `groups` pour les groupes familiaux multi-utilisateurs.
+- Nouveau domaine `FamilyGroup` (id, name, ownerId, memberIds, createdAt) + `GroupRepository` (watchMyGroups, createGroup, addMember, removeMember, renameGroup, deleteGroup, searchUsers).
+- Providers Riverpod : `myGroupsProvider`, `groupMemberIdsProvider`, `visibleUserIdsProvider` pour le calcul de visibilité cross-utilisateur.
+- `BookRepository.watchValidatedBooksByOwners(List<String>)` + `RecipeRepository.watchUnattachedByOwners(List<String>)` : requêtes `whereIn created_by` avec filtrage client-side pour éviter les index composites.
+- `book_providers` : `groupMemberBooksProvider`, `accessibleBooksProvider` (union mes livres + livres des membres).
+- `recipe_providers` : `groupMemberUnattachedRecipesProvider`.
+- `BookListScreen` et `RecipeListScreen` convertis en `ConsumerStatefulWidget` avec sections par propriétaire et toggles.
+- `ProcessingJobRepository.watchAll()` + `allProcessingJobsProvider` + `adminJobUserFilterProvider` + `filteredAdminJobsProvider`.
+- `ProcessingJobsScreen` : vue admin avec filtre utilisateur (dropdown) et affichage du propriétaire sur chaque tuile `_JobTile` (ConsumerWidget).
+- `GroupsScreen` : gestion complète des groupes (créer, renommer, supprimer, inviter/retirer membres via recherche temps réel).
+- Route `/groups` ajoutée dans `AppRouter`. Accès depuis le menu compte.
+- `app_shell.dart` : bouton "Télécharger l'APK Android" dans le menu compte (visible uniquement web/desktop), pointe vers `/app-release.apk` sur Firebase Hosting.
+- L'APK est désormais inclus dans chaque déploiement Firebase Hosting.
+
+## 2026-05-02
+
+### 02/05/2026 — fonctionnel
+
+- Ajout d'un mode de scan multi-intentions : recettes, couverture de livre, livre complet.
+- Creation de brouillons livre a partir d'une photo de page de garde avec validation explicite.
+- Ajout d'un traitement asynchrone en file d'attente : plusieurs imports peuvent etre lances sans attendre la fin du precedent.
+- Ajout d'une page "Etat des traitements" pour suivre les scans en cours, termines et en erreur.
+- Rattachement automatique des recettes extraites d'un document complet au livre cible, y compris en statut brouillon.
+- Ajout/edition des champs structures en brouillon recette : portions, difficulte, temps preparation/cuisson, ingredients structures.
+- Ajout/edition des champs structures en brouillon livre : sous-titre, editeur, serie, ISBN, description, tags.
+
+### 02/05/2026 — technique
+
+- Ajout d'un pipeline de traitements asynchrones avec collection Firestore `processing_jobs`.
+- Refactor du scan pour supporter trois intentions : `recipeScan`, `bookCoverScan`, `bookDocumentScan`.
+- Ajout de la creation de brouillons livre via extraction Gemini sur page de garde.
+- Ajout d'un ecran de suivi des jobs de traitement et d'un indicateur de jobs actifs dans l'UI Brouillons.
+- Extension du schema `books` (statut de revue, metadonnees structurees, source IA).
+- Extension du flux de validation recette pour accepter les editions de champs structures (tags/temps/portions/ingredients).
+
+## 2026-05-01
+
+### 01/05/2026 — fonctionnel
+
+- Activation complete du parcours Android Google Sign-In (certificats debug/release et configuration Firebase Android).
+- Ajout d'un profil utilisateur detaille (role, permissions, identite, activite, deconnexion).
+- Ajout d'un visualiseur de source recette (image zoomable ou ouverture externe PDF/DOCX).
+- Stabilisation du flux d'import scan (correction d'un crash Riverpod lors de la fermeture d'ecran).
+- Uniformisation des icones applicatives a partir de l'asset `assets/icon.jpg` pour Android, iOS, Web, Windows et macOS.
+
+---
+
+### 01/05/2026 — technique
+
+- Signature Android release activee via `android/key.properties` et `signingConfigs.release`.
+- Configuration Firebase Android mise a jour avec `google-services.json` incluant les clients OAuth Android.
+- Build targets validates pour release: Windows (`flutter build windows --release`), Web (`flutter build web --release --base-href /`), Android (`flutter build apk --release`).
+- Pipeline d'icones automatise via `flutter_launcher_icons` depuis `assets/icon.jpg` pour Android, iOS, Web, Windows et macOS.
+- Correctif de cycle de vie Flutter/Riverpod sur l'ecran de scan (suppression d'un acces `ref` apres `dispose`).
+
+---
+
