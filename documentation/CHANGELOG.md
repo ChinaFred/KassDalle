@@ -14,6 +14,24 @@ anciennes sans accents.
 
 ---
 
+## 2026-08-29
+
+### v0.22.14 — fonctionnel
+
+#### Les photos d'une recette avaient la taille d'une icône
+
+Les illustrations d'une recette s'affichaient en vignettes de 48 pixels, posées dans le bandeau
+de l'onglet « Préparer », entre la puce des portions et celle du temps de cuisson. À cette taille
+une photo de plat ne se distingue pas d'une icône, et rien n'annonçait qu'il y en avait.
+
+Un onglet **Photos** s'ajoute après « Communauté », sur grand écran. Il montre les illustrations
+en grille, chacune ouvrable en plein écran, avec le compte en tête. Un éditeur y ajoute une photo
+et supprime celles qui ne servent plus, sans passer par le bandeau. Les vignettes du bandeau
+restent en place ; mobile, qui n'a pas d'onglets, garde le même affichage qu'avant.
+
+Au passage : le raccourci « aller aux annotations » ouvrait l'onglet « Dressage ». Il visait
+l'index 2 alors que « Communauté » est le quatrième onglet.
+
 ## 2026-08-28
 
 ### v0.22.11 — fonctionnel

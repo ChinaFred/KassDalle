@@ -49,7 +49,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
 | **Editor** | Création, modification et suppression de livres et de recettes. Validation des brouillons IA. Peut annoter. |
-| **Reader** | Consultation uniquement. Peut annoter les recettes (notes personnelles) mais ne peut pas modifier le contenu des recettes. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Crée, modifie et valide ses propres recettes** : `firestore.rules` autorise la création et la mise à jour par le créateur, quel que soit son rôle. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
@@ -110,20 +110,23 @@ Comportement asynchrone :
 **Étape 3 — Traitement IA (pipeline asynchrone)**
 - Les images sont déposées dans la **quarantaine** (`quarantine/{uid}/`), inspectées côté serveur — type MIME, signature binaire, taille — puis promues. Aucune image ne rejoint un dossier publié sans être passée par la modération.
 - Le client crée un job dans `processing_jobs/` et n'attend rien : `jobDispatcher` le met en file Cloud Tasks, `recipeProcessor` déroule le pipeline.
-- Deux à cinq appels d'IA sont déclenchés avec des prompts structurés. **Le moteur n'est pas figé dans le code** : chaque poste est routé vers Gemini ou Claude selon `app_config/ai_routing_policy`, modifiable depuis *Admin › Moteur d'IA* sans déploiement. Par défaut, Gemini.
-- Le moteur retourne une réponse JSON contenant :
-  - Le titre détecté de la recette
-  - La langue détectée
-  - Le contenu de la recette formaté directement en **Cooklang**
-  - Des suggestions de tags (thèmes, type de cuisine, difficulté, temps de préparation, temps de cuisson)
+- **Le moteur n'est pas figé dans le code** : chaque poste est routé vers Gemini ou Claude selon `app_config/ai_routing_policy`, modifiable depuis *Admin › Moteur d'IA* sans déploiement. Par défaut, Gemini.
+- **Le texte est lu en deux passes, jamais en une.** Un seul appel qui transcrivait *et* restructurait perdait la transcription au profit de la mise en forme : ingrédients fusionnés, précisions déplacées, énumérations abrégées.
+  - **Passe 1 — transcription.** Un appel rend le **type** de la page (`recipe`, `ingredient_note`, `technique`, `equipment`, `other`, `no_recipe`) et son contenu **recopié** en JSON : sections d'ingrédients ligne à ligne, sections d'étapes phrase par phrase, notes typées, chapeau de la recette. Aucune balise. Toutes les pages d'un même scan partent dans le **même** appel.
+  - **Passe 2 — balisage.** Un second appel, sur du texte seul, produit le **Cooklang**, la liste normalisée (`nom`, `qte`, `unite`, `note`, `section`), les cuisines et les types de plat.
+  - **Contrôle de fidélité, sans appel supplémentaire.** Du code compare la passe 2 à la passe 1 — disparitions, fusions, titres de section raccourcis, précisions perdues. Une *rupture* écarte le balisage et conserve le texte exact, non balisé. Un *avertissement* laisse passer et s'affiche sur le brouillon.
+- **La lecture d'une page ne se fait jamais par un OCR local.** Le choix est motivé dans `TechnicalRequirements.md` § 7 et § 8 : un OCR rend un flux de caractères sans structure, et il faudrait de toute façon un appel de modèle derrière pour la reconstruire.
+- **Les illustrations coûtent jusqu'à cinq appels de plus par page**, et seulement si la case a été cochée à l'import.
 - L'étape courante du job (`current_step`) est affichée dans l'écran *Traitements*. Un import complet prend de quelques dizaines de secondes à quelques minutes ; l'utilisateur peut en lancer un second pendant ce temps.
 - Après trois échecs, le job part en `dead_letters/`, d'où un administrateur le relance depuis *Admin › File d'échecs*.
 
 **Étape 4 — Écran de Révision (Split View)**
-- L'utilisateur arrive sur un écran divisé en deux panneaux :
-  - **Panneau gauche** : éditeur de texte Cooklang brut (modifiable directement, avec coloration syntaxique basique).
-  - **Panneau droit** : rendu interactif en temps réel de la recette (liste d'ingrédients + instructions formatées).
-- L'utilisateur peut corriger le Cooklang directement dans le panneau gauche ; le rendu se met à jour en temps réel.
+- L'éditeur (`HybridRecipeEditor`) offre **trois modes**, permutables par une barre de bascule :
+  - **Texte** : champ monospace en CookLang brut, avec coloration syntaxique en direct.
+  - **Visuel** : éditeur WYSIWYG par blocs, où ingrédients, ustensiles et minuteurs sont des pastilles cliquables.
+  - **Aperçu** : le rendu de la recette tel qu'il sera lu.
+- **Les trois modes partagent le même contrôleur de texte**, qui est la vérité. Basculer est instantané et ne perd rien : le mode visuel analyse le CookLang en blocs, chaque bloc garde sa ligne source, et la recomposition rejoint les lignes source telles quelles.
+- Sur écran étroit, les modes s'empilent en onglets ; sur grand écran, l'aperçu peut rester à côté.
 - Un bouton **"Voir l'original"** (icône scanner) est toujours présent dans la barre d'actions :
   - Si le fichier source est une image (jpg/png) : affiche une visionneuse plein écran zoomable.
   - Si le fichier est un PDF ou un DOCX : ouvre le document dans le navigateur ou le lecteur système.
@@ -138,13 +141,14 @@ Comportement asynchrone :
 
 ### 4.3 Saisie Manuelle d'une Recette (Web / Desktop / Mobile)
 
-**Qui :** Editor ou Admin.
+**Qui :** tout compte nommé. Un `reader` crée et valide ses propres recettes.
 
 Pour les recettes sans photo source (recettes mémorisées, recettes tapées manuellement) :
 - L'utilisateur accède à un formulaire de création de recette.
 - Il saisit directement le contenu en Cooklang dans l'éditeur avec rendu split view.
 - Les métadonnées sont saisies manuellement.
-- Un bouton **"Mettre en forme avec l'IA"** permet de coller un texte brut (texte web, note, etc.) et de le convertir automatiquement en CookLang via Gemini.
+- Un bouton **"Mettre en forme avec l'IA"** permet de coller un texte brut (texte web, note, etc.) et de le convertir en CookLang. **Le texte collé emprunte exactement la même chaîne que la page scannée** : transcription, puis balisage, puis contrôle de fidélité. Seule l'entrée de la passe 1 diffère — du texte au lieu d'une image. Le passage par un appel unique perdait la liste d'ingrédients, qui se dissolvait dans les étapes.
+- Le nombre de recettes trouvées dans le texte est rendu à l'écran : une seule est reprise, et l'utilisateur doit l'apprendre plutôt que de découvrir la seconde absente.
 - **Le texte original collé est automatiquement conservé** : il est uploadé sur Firebase Storage et attaché à la recette comme fichier source. Le bouton de téléchargement de l'original apparaît ensuite dans l'en-tête de la recette, comme pour un scan.
 - Si l'IA n'est pas utilisée (saisie CookLang directe), aucun fichier source n'est attaché.
 
@@ -155,13 +159,14 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 **Qui :** Tout utilisateur authentifié (Reader, Editor, Admin).
 
 1. L'utilisateur navigue dans la bibliothèque (vue par livre ou vue globale).
-2. Il peut filtrer/rechercher par : titre, ingrédient, tag, livre, type de cuisine.
+2. La liste d'un livre ne porte ni filtre ni champ de recherche : chercher se fait depuis l'écran **Recherche** dédié (5.5).
 3. Il clique sur une recette et accède à la fiche détaillée :
    - **En-tête** : titre, livre source, page, langue, tags.
    - **Portions** : affichées sous forme de chip (ex : « 4 portions ») si renseignées dans les métadonnées CookLang (`>> portions: 4`). Ce champ est également stocké comme donnée structurée dans Firestore (`portions: int?`).
    - **Ingrédients** : liste structurée extraite du Cooklang, avec quantités et unités bien formatées. Chaque ingrédient est stocké dans Firestore sous forme d'objet `{ name, qty, unit }` (champ `ingredients`).
    - **Instructions** : étapes numérotées, avec mise en valeur des ingrédients et du matériel (rendu Cooklang interactif).
    - **Document original** : bouton "Voir l'original" (icône scanner) toujours visible dans la barre d'actions. Ouvre l'image en plein écran zoomable ou le PDF dans le navigateur.
+   - **Photos** : sur grand écran, un onglet **Photos** — placé après Communauté — montre les illustrations de la recette en grille, ouvre chacune en plein écran, et laisse un éditeur en ajouter ou en supprimer. Elles restent aussi visibles en vignettes dans le bandeau de l'onglet Préparer, et en vignettes sur mobile, qui n'a pas d'onglets.
    - **Annotations** : section en bas de fiche pour consulter et ajouter des notes personnelles.
 
 ---
@@ -206,18 +211,20 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 - Accès caméra natif sur mobile, `getUserMedia` sur le web ; l'import de fichier (photo, PDF, DOCX, texte collé) est disponible sur les quatre plateformes.
 - Recadrage et correction de perspective avant envoi.
-- **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages sont envoyées en un seul appel Gemini multi-part.
-- Déclenchement de l'appel Gemini.
+- **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste.
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
-  - **Trois filtres locaux** écartent d'abord ce qui n'est manifestement pas une photo : trop petit, bande plutôt qu'image, ou presque blanc et sans couleur — c'est-à-dire du papier ou du texte. Ils ne coûtent aucun appel d'IA, et sont volontairement conservateurs : jeter une vraie photo est irrattrapable.
-  - **Les découpes passent par la modération**, comme toute image vue par la famille. Une découpe refusée, ou laissée en attente parce que le moteur est injoignable, n'apparaît simplement pas dans la recette : pas de repli.
+  - **Six étapes par page**, détaillées dans les diagrammes de séquence : pré-contrôle (la page porte-t-elle des images ?), cadrage, mise à plat par homographie, remise à l'endroit, repérage des zones, découpe. Le pré-contrôle arrête la chaîne sur une page sans photo — une page de recette sur deux — et les quatre appels suivants n'ont pas lieu.
+  - **Une découpe est écrite directement sous `illustrations/{uid}/`, sans quarantaine ni Cloud Vision.** Le fichier source est déjà passé par le scan de sécurité à l'envoi, et la découpe est un JPEG produit par Sharp trois lignes plus haut. La modération garde son rôle sur les images qu'une personne **envoie** depuis l'application ; une découpe d'un scan déjà accepté n'en est pas une.
+  - **Une panne d'extraction ne fait jamais échouer un import.** La chaîne journalise et rend une liste vide ; la recette est déjà transcrite quand elle s'exécute.
+  - **Le compte affiché est celui de ce que la page porte, pas de ce qu'on en a tiré.** Le bandeau de relecture peut annoncer « trois photos repérées, à extraire à la main » alors que rien n'a été extrait.
   - **Quand une page porte plusieurs recettes, chacune reçoit sa propre copie des photos.** Elles se partageaient le même fichier : invisible tant que supprimer une illustration se contente d'oublier son adresse, mais le jour où l'on supprime vraiment le fichier, la première suppression viderait l'image de l'autre recette sans un mot. La modération, elle, n'a lieu qu'une fois — c'est la même image.
 - **Progression affichée** : l'écran Traitements affiche l'étape courante du traitement en cours.
 
 ### 5.3 Module Révision et Édition (tous les clients)
 
-- Éditeur Cooklang brut avec coloration syntaxique basique.
-- Rendu interactif Cooklang en temps réel (panneau split).
+- Éditeur hybride à trois modes — texte CookLang coloré, éditeur visuel par blocs à pastilles, aperçu — partageant un seul contenu.
+- Barre d'outils d'insertion : ingrédient, ustensile, minuteur, section, image, métadonnée.
+- Page d'aide CookLang accessible depuis l'éditeur.
 - Visualisation du scan original.
 - Gestion des métadonnées (titre, tags, page, langue, statut).
 - Edition directe des champs structures recette (portions, difficulte, temps, ingredients structures) en brouillon.
@@ -231,27 +238,90 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 
-### 5.5 Module Recherche et Filtres (tous les clients)
+### 5.5 Module Recherche (tous les clients)
 
-- Recherche textuelle full-text sur : titre, ingrédients (champ `ingredients_index`).
-- Filtres combinables : livre, type de cuisine, thème, difficulté, statut.
-- Tri par : date de création, titre alphabétique.
+Écran dédié `/search`. **Ce n'est pas une recherche plein texte.** La bibliothèque
+n'est pas interrogée par mots-clés : les recettes accessibles sont résumées, envoyées
+au moteur, et c'est lui qui décide lesquelles répondent à la demande.
+
+**Quatre portées**, en puces de choix — l'écran annonce ce que chacune déclenche :
+
+| Portée | Ce qui part |
+|---|---|
+| **Tout** | la bibliothèque, trois idées d'IA et une ouverture web, en parallèle |
+| **Bibliothèque** | uniquement les recettes accessibles |
+| **IA** | trois propositions à comparer |
+| **Web** | une requête Google optimisée, rien d'autre |
+
+**Trois cases de périmètre**, hors portée *Web* : « Mes recettes », « Ma famille »,
+« Mes brouillons ».
+
+**La piste bibliothèque.** Chaque recette est résumée — identifiant, titre, livre,
+vingt premiers ingrédients de l'index, thèmes, cuisines, difficulté, statut — et le
+lot part dans un seul appel. Le moteur rend les identifiants retenus, **classés par
+pertinence**, chacun avec sa **raison** en une phrase. Une raison affichée peut se
+discuter ; un classement muet, non. Quand rien ne correspond, il rend une
+**reformulation** plutôt qu'une liste vide.
+
+**Les notes de l'utilisateur entrent dans la demande.** Les recettes qu'il a notées
+partent avec leur note sur 10, et le prompt donne la clé de lecture : ≥ 8 aime
+beaucoup, 5–7 apprécie, ≤ 4 n'aime pas. Quand un goût se dégage, le moteur le formule
+dans `preference_insight`, affiché à part.
+
+**La piste IA** produit **trois** propositions, chacune par un angle différent, en
+parallèle. Chaque proposition porte son **libellé de variante** et sa
+**justification**. Une proposition en double est **rejouée une fois**, en lui
+interdisant les titres déjà rendus ; si le doublon persiste, elle est abandonnée
+plutôt que répétée. Une proposition retenue s'enregistre en recette, qui rejoint
+« Mes créations Kass'Dalle ».
+
+**La piste web ne lit pas le web.** Elle demande au moteur une requête mieux
+formulée, y ajoute le mot « recette », et rend un lien Google. L'utilisateur va
+chercher lui-même. Rien n'est téléchargé, rien n'est analysé.
+
+**Les listes de recettes ne filtrent pas.** Ni la bibliothèque, ni la liste d'un
+livre, ni la vue « toutes les recettes » ne portent de champ de recherche ou de
+filtre : chercher se fait ici.
+
+**Ce qui est écarté du corpus** : les recettes d'un livre privé d'un autre membre.
+Elles y remontaient, la recherche chargeant les recettes validées des membres sans
+regarder le livre porteur.
+
+---
 
 ### 5.6 Module Administration (Admin uniquement)
 
-Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouvertes sur mobile : rien n'est réservé au grand écran.
+L'accueil d'administration range **treize entrées en cinq groupes**. Toutes sont
+ouvertes sur mobile : rien n'est réservé au grand écran.
 
-- **Utilisateurs** : liste, attribution de rôle, révocation. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation.
-- **Brouillons et annotations** : vue sur les recettes en statut `draft` et sur l'ensemble des annotations de toutes les recettes.
-- **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
-- **Grille tarifaire** : le prix de chaque modèle, sur son propre écran, accessible depuis *Coûts de l'application*. Elle vivait au bas de *Moteur d'IA*, après quarante-cinq postes, et rien n'annonçait sa présence — un tarif qu'on ne trouve pas est un tarif qu'on ne corrige pas. Sa place est à côté des montants qu'elle produit.
-- **Coûts** : dépense d'IA par poste, par processus, par moteur et par compte, sur la période choisie ; coûts d'infrastructure GCP par service ; réconciliation mensuelle entre l'estimé et le facturé. Le tableau se trie par ses en-têtes et se filtre par le libellé du poste.
-- **Plafonds de dépense** : deux limites par compte et par jour — en euros et en nombre d'appels. La seconde protège pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Une alerte mensuelle est vérifiée chaque matin.
+**Gestion**
+
+- **Gestion des utilisateurs** : liste, attribution de rôle, révocation, nom préféré. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation.
+- **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul (seuils d'affichage, repli, priorité des sources). Trois écrans en dépendent : ingrédients, unités, politique.
+- **Backfills** : reprises ponctuelles sur l'existant — nutrition, confidentialité des recettes, sel des ingrédients, rattachement des recettes orphelines.
+- **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
+- **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
-- **Modération des images** : journal complet de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
-- **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul nutritionnel (seuils d'affichage, repli, priorité des sources).
-- **File d'échecs** : jobs d'import abandonnés après trois tentatives, avec leur motif — relance ou purge.
-- **Logs** : explorateur de Cloud Logging, filtré INFO+ par défaut.
+
+**Comptabilité**
+
+- **Coûts de l'application** : dépense d'IA par poste, par processus, par moteur et par compte, sur la période choisie ; coûts d'infrastructure GCP par service ; réconciliation mensuelle entre l'estimé et le facturé. Le tableau se trie par ses en-têtes et se filtre par le libellé du poste.
+- **Dépense par utilisateur** : la même dépense vue par compte et par service, et les **plafonds quotidiens** — deux limites par compte et par jour, en euros et en nombre d'appels. La seconde protège pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Une alerte mensuelle est vérifiée chaque matin.
+- **Grille tarifaire** : le prix de chaque modèle, sur son propre écran. Elle vivait au bas de *Moteur d'IA*, après quarante-cinq postes, et rien n'annonçait sa présence. Sa place est à côté des montants qu'elle produit.
+
+**Monitoring**
+
+- **Rapports d'erreurs** : ce que le client Flutter a remonté — étape, type d'exception, message, pile tronquée, version de l'application, contexte.
+- **Dead Letter Queue** : jobs d'import abandonnés après trois tentatives, avec leur motif — relance ou purge.
+- **Journaux (Cloud Logging)** : explorateur filtré par sévérité, `correlationId`, `jobId`, `userId` ou texte libre. Les entrées sont groupées par traitement, et `DEBUG` est masqué par défaut.
+
+**Laboratoire**
+
+- **Bac à sable** : expériences réservées à l'administrateur. Rien de ce qui y vit n'est promis à l'utilisateur et une expérience peut disparaître d'une version à l'autre ; le module ne fait partie d'aucune release.
+
+**Outils**
+
+- **Télécharger l'APK Android** : le paquet servi par le même déploiement Firebase Hosting.
 
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
@@ -341,7 +411,7 @@ déjà transmise continue de fonctionner.
 ### 5.11 Module Modération des images (tous les clients — revue réservée à l'Admin)
 
 - **Toute image passe par la quarantaine**, puis par Cloud Vision, avant d'être publiée. Les quatre portes qui publiaient en direct — couverture de livre, illustration de recette, illustration de brouillon, couverture de recette libre — sont fermées en écriture côté Storage.
-- **Le serveur ne fait pas exception.** Les illustrations découpées dans un scan par le pipeline d'import empruntent la même porte : elles sont déposées en quarantaine, jugées, puis promues. Elles écrivaient auparavant en direct avec les droits de l'Admin SDK — donc sans verdict, alors que ce sont des photographies choisies par une personne.
+- **Deux exceptions assumées, toutes deux côté serveur.** Les illustrations découpées dans un scan par le pipeline d'import et les images produites par l'IA (illustration de recette, visuel de dressage) sont écrites en direct sous `illustrations/{uid}/`, avec les droits de l'Admin SDK. Pour les premières, le fichier source est déjà passé par le scan de sécurité à l'envoi et la découpe est un JPEG que le serveur vient d'encoder ; pour les secondes, aucune personne n'a choisi l'image. Ce qui reste modéré, c'est tout ce qu'une personne **envoie** depuis l'application.
 - Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
@@ -374,7 +444,7 @@ déjà transmise continue de fonctionner.
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
 | Une contrainte d'ensemble se donne à chaque appel | L'IA conçoit les plats **un créneau à la fois**. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque appel voit ce que les autres ont déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
-| Aucune image publiée sans modération | Les dossiers publiés sont fermés en écriture côté Storage. La seule porte est la quarantaine, suivie d'un verdict. Une image sans verdict attend : ni publiée, ni refusée. |
+| Aucune image *envoyée* n'est publiée sans modération | Les dossiers publiés sont fermés en écriture aux **clients** côté Storage. La seule porte ouverte à un client est la quarantaine, suivie d'un verdict ; une image sans verdict attend, ni publiée ni refusée. Le serveur écrit en direct dans deux cas nommés en 5.11 — découpes d'un scan déjà accepté, images produites par l'IA. |
 | Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense ; un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
@@ -388,7 +458,7 @@ déjà transmise continue de fonctionner.
 - CRUD livres et recettes, groupes familiaux
 - Import (photo, PDF, DOCX, texte collé) → CookLang, par un pipeline asynchrone
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
-- Recherche et filtres, annotations, notes personnelles
+- Recherche assistée par IA — bibliothèque, propositions, requête web — annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation
 - Liste de courses des repas à venir, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
 - Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
@@ -518,8 +588,10 @@ stateDiagram-v2
 ### 8.4 Diagramme de séquence — Import et validation d'une recette
 
 Ce diagramme couvre le flux complet depuis la sélection du fichier jusqu'à la validation de la
-recette par un Editor ou Admin. **Le client ne parle à aucun moteur d'IA** : il dépose un fichier
-et écoute un document.
+recette. **Le client ne parle à aucun moteur d'IA** : il dépose un fichier et écoute un document.
+
+Le détail des six étapes d'extraction des illustrations vit dans les diagrammes de séquence,
+séquence 12.
 
 ```mermaid
 sequenceDiagram
@@ -547,11 +619,28 @@ sequenceDiagram
     App->>User: Rend la main — l'écran Traitements suit l'avancement
 
     Firestore->>Worker: jobDispatcher → Cloud Tasks → recipeProcessor
-    Worker->>Router: extraction, tags, illustrations
     Router->>Router: lit app_config/ai_routing_policy\net le plafond du compte
-    Router->>Model: prompt structuré (Gemini par défaut, Claude si désigné)
-    Model-->>Router: JSON { titre, langue, cooklang, tags }
+
+    Worker->>Router: passe 1 — transcription (toutes les pages en un appel)
+    Router->>Model: recopie la page, ne balise rien
+    Model-->>Router: JSON { page_type, inventaire, sections, étapes, notes }
     Router->>Firestore: recordUsage — appel, moteur, modèle, coût
+
+    Worker->>Router: passe 2 — balisage (texte seul, plus d'image)
+    Router->>Model: transforme la transcription en CookLang
+    Model-->>Router: JSON { cooklang, ingrédients normalisés, cuisines, types }
+    Router->>Firestore: recordUsage
+
+    Worker->>Worker: checkFidelity — compare passe 2 à passe 1\naucun appel de modèle
+    alt rupture
+        Worker->>Worker: écarte le balisage, garde le texte exact
+    end
+
+    opt case « illustrations » cochée
+        Worker->>Router: jusqu'à 5 appels par page
+        Worker->>Storage: écrit les découpes sous illustrations/{uid}/
+    end
+
     Worker->>Firestore: createRecipe(status: draft, rawCooklang…)
     Worker->>Firestore: current_step: done
 
@@ -559,7 +648,7 @@ sequenceDiagram
 
     Firestore-->>App: le brouillon apparaît (stream temps réel)
     User->>App: Ouvre DraftReviewScreen
-    Note over User,App: Split view : éditeur Cooklang (gauche)\n+ rendu interactif (droite)
+    Note over User,App: Éditeur hybride : texte CookLang coloré,\néditeur visuel par blocs, aperçu — un seul contenu
 
     User->>App: Corrige le Cooklang\net les métadonnées (titre, tags, livre, page)
 
