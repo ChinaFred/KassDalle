@@ -21,8 +21,21 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
 - **Pas de phrases alambiquées.** Pas de tournure qui se retourne sur elle-même, pas d'incise dans
   l'incise, pas de subordonnée en cascade.
 - **Pas de formule à effet.** Interdit : « la promesse et elle n'est pas tenue », « X, et c'est
-  précisément le problème », « non pas A mais B », « et c'est là que ». Dire les choses,
-  pas les mettre en scène.
+  précisément le problème », « non pas A mais B », « et c'est là que ». Interdite aussi la
+  correction en deux temps qui insiste : « ce n'est pas le même contrôle, c'est un second »
+  s'écrit « c'est un second contrôle ». Dire les choses, pas les mettre en scène.
+- **Pas de métaphore pour décrire un fait technique.** Un inventaire ne « ferme qu'à moitié »
+  et il n'y a pas de « trou » : il manque douze lignes sur trente. Une image remplace un
+  chiffre par une impression, et le lecteur doit deviner ce qui a été mesuré. Dire quoi,
+  combien, où.
+- **Le code n'est pas un personnage.** Un prompt ne « combat » rien, une règle n'« attrape » pas
+  une faute, un test ne « traque » pas un bug, une fonction ne « sait » pas. Les verbes justes :
+  vérifie, rejette, détecte, empêche, échoue.
+- **Pas d'adverbe d'insistance.** « précisément », « exactement », « justement », « vraiment »
+  n'ajoutent rien au constat qu'ils accompagnent. Les supprimer ne change pas le sens.
+- **Pas de dramatisation.** Un bug n'est ni « sournois » ni « silencieux » dans une réponse :
+  il produit tel résultat faux, dans tel cas. Décrire l'effet observable, sans qualifier
+  sa gravité par un adjectif.
 - **Du français simple.** Le mot courant plutôt que le mot rare. Pas de vocabulaire littéraire pour
   décrire un bug.
 - **Ponctuer normalement.** Un point à la fin de chaque phrase. Le tiret cadratin — comme celui-ci —
@@ -35,7 +48,9 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
   qu'on parle de facturation. Le mot juste : « coûte » pour du temps, « facturé » pour de
   l'argent, « n'a pas lieu » pour un appel évité.
 
-Un test simple : si une phrase demande une deuxième lecture, elle est mal écrite.
+Deux tests. Si une phrase demande une deuxième lecture, elle est mal écrite. Si elle sonne
+bien à voix haute mais ne contient ni chiffre, ni nom de fichier, ni verbe d'action, elle
+n'apporte rien : la supprimer.
 
 ### Une question appelle une réponse, pas du code — règle absolue
 

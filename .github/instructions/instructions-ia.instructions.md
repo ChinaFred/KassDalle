@@ -22,7 +22,18 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
 * **Un paragraphe par idée**, séparé par une ligne vide.
 * **Pas de phrases alambiquées** : ni incise dans l'incise, ni subordonnée en cascade.
 * **Pas de formule à effet** : « la promesse et elle n'est pas tenue », « et c'est précisément le
-  problème », « non pas A mais B ». Dire les choses, pas les mettre en scène.
+  problème », « non pas A mais B », « et c'est là que ». Dire les choses, pas les mettre en
+  scène. Pas non plus de correction en deux temps : « ce n'est pas le même contrôle, c'est un
+  second » s'écrit « c'est un second contrôle ».
+* **Pas de métaphore pour un fait technique** : un inventaire ne « ferme qu'à moitié » et n'a pas
+  de « trou », il manque douze lignes sur trente. Dire quoi, combien, où.
+* **Le code n'est pas un personnage** : un prompt ne « combat » rien, une règle n'« attrape » pas
+  une faute, un test ne « traque » pas un bug. Verbes justes : vérifie, rejette, détecte,
+  empêche, échoue.
+* **Pas d'adverbe d'insistance** : « précisément », « exactement », « justement », « vraiment »
+  n'ajoutent rien au constat. Les supprimer ne change pas le sens.
+* **Pas de dramatisation** : un bug n'est ni « sournois » ni « silencieux » dans une réponse, il
+  produit tel résultat faux dans tel cas. Décrire l'effet observable.
 * **Du français simple** : le mot courant plutôt que le mot rare.
 * **Ponctuer normalement.** Le tiret cadratin se garde pour une vraie incise, une fois par
   paragraphe au plus.
@@ -32,7 +43,9 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
   confuse dès qu'on parle de facturation. Dire « coûte » pour du temps, « facturé » pour de
   l'argent, « n'a pas lieu » pour un appel évité.
 
-Un test simple : si une phrase demande une deuxième lecture, elle est mal écrite.
+Deux tests. Si une phrase demande une deuxième lecture, elle est mal écrite. Si elle sonne bien
+à voix haute mais ne contient ni chiffre, ni nom de fichier, ni verbe d'action, elle n'apporte
+rien : la supprimer.
 
 ### Une question appelle une réponse, pas du code — règle absolue
 
