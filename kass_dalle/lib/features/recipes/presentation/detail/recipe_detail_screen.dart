@@ -25,6 +25,7 @@ import 'tabs/community_tab.dart';
 import 'tabs/dressing_tab.dart';
 import 'tabs/mobile_unified_body.dart';
 import 'tabs/nutrition_tab.dart';
+import 'tabs/photos_tab.dart';
 import 'tabs/prepare_tab.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
@@ -86,7 +87,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
       initialIndex: widget.scrollToAnnotations ? 3 : 0,
     );
@@ -109,7 +110,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       unawaited(_openCommunitySheet());
       return;
     }
-    _tabController.animateTo(2);
+    _tabController.animateTo(3);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _annotationsKey.currentContext;
       if (ctx != null) {
@@ -485,6 +486,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                               icon: Icon(Icons.forum_outlined),
                               text: 'Communaute',
                             ),
+                            Tab(
+                              icon: Icon(Icons.photo_library_outlined),
+                              text: 'Photos',
+                            ),
                           ],
                         ),
                       ),
@@ -514,6 +519,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                             CommunityTab(
                               recipeId: recipeId,
                               annotationsKey: _annotationsKey,
+                            ),
+                            PhotosTab(
+                              recipeId: recipeId,
+                              recipe: recipe,
+                              canEdit: canEdit,
                             ),
                           ],
                         ),
