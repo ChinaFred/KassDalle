@@ -183,6 +183,7 @@ Créée automatiquement à la première connexion Google.
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
+| `free_recipe_cover_url` | `String?` | Couverture choisie pour « Mes recettes libres ». Écrite par `auth_repository.dart` sous `users/{uid}/free_recipe_cover_*.jpg` ; le fichier précédent est supprimé au remplacement |
 | `import_illustrations` | `Boolean` | Défaut de la case « Extraire les illustrations » de l'écran d'import. Absent = `true`. Écrit par **Préférences** (`features/auth/presentation/preferences_screen.dart`), lu par `UserPreferencesRepository`. C'est un **défaut**, pas un verrou : chaque import peut le changer pour lui seul, sans que ce choix remonte ici. |
 
 **Nom préféré et nom Google :** `display_name` est réécrit à chaque connexion depuis le compte
@@ -260,6 +261,7 @@ Document principal d'une recette.
 | `additional_source_file_urls` | `List<String>` | Pages supplémentaires d'un scan multi-pages |
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 | `portions` | `int?` | Nombre de portions extrait/saisi |
+| `rest_time` | `int?` | Temps de repos en minutes, distinct de la préparation et de la cuisson. Une pâte qui lève trois heures ne se prépare pas en trois heures |
 | `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?, note?}` — cf. « Contrat ingrédient ». `note` porte ce que la ligne du livre dit en plus de la quantité (« avec la peau mais écaillée ») : la quantité se compte, la précision se lit |
 | `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
@@ -272,7 +274,35 @@ Document principal d'une recette.
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
+| `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
 | `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`. Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
+
+#### Détail du champ `nutrition` (Map imbriqué)
+
+Écrit par `computeRecipeNutritionFn` et par `onRecipeWritten`. **Tout ce qu'il contient décrit
+la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_portions` parts.
+
+| Clé | Type | Rôle |
+|---|---|---|
+| `selected_portions` | `int` | Les portions **de la recette**, pas celles d'un lecteur. Y écrire le choix d'un utilisateur faisait que chaque membre de la famille écrasait l'affichage des autres, en silence |
+| `total_weight_g` | `double` | Poids total des ingrédients reconnus |
+| `coverage` | `double` | Part des ingrédients couverts par le référentiel, de 0 à 1 |
+| `coverage_state` | `String` | `full` quand le per-100 g est publiable, `partial` au-dessus du seuil d'affichage partiel, `low` en dessous — les deux seuils viennent de `app_config`. Une quatrième valeur, `failed`, marque un calcul qui n'a pas abouti |
+| `totals` | `Map<String, double>` | Les nutriments pour la recette entière |
+| `per_portion` | `Map<String, double>` | `totals` divisé par `selected_portions` |
+| `per_100g` | `Map<String, double>?` | Valeurs ramenées à 100 g. Absent quand le poids total n'est pas connu |
+| `quality` | `Map` | `{score: int, level: String, warnings: List<String>}` — `level` vaut `A` au-dessus de 80, `B` au-dessus de 60, `C` en dessous. Trois niveaux seulement, pas cinq |
+| `missing_ingredients` | `List<String>` | Ce que le référentiel ne sait pas peser ni chiffrer |
+| `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
+| `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
+
+**Une valeur dérivable ne se stocke pas.** Les calories par portion valent `totals / N` : la
+division a lieu au moment de l'affichage, pour le nombre de parts que le lecteur a choisi. C'est
+ainsi que la nutrition a cessé d'écrire le choix d'un lecteur dans une recette partagée — aucun
+nouveau document, un champ de moins, et un appel serveur en moins à chaque coup de curseur.
+
+Le nombre de parts retenu par un lecteur vit sous lui, dans
+`users/{uid}/nutrition_portion_overrides/{recipeId}`.
 
 #### Détail du champ `plating_advice` (Map imbriqué)
 
@@ -963,6 +993,20 @@ service cloud.firestore {
                           && request.resource.data.email == resource.data.email);
 
       allow delete: if isAdmin() && !targetIsFounder();
+
+      // Deux sous-collections, et la même règle pour les deux : ce sont des
+      // choix de LECTEUR. Ils n'appartiennent qu'à leur propriétaire et
+      // n'existent pas dans les documents partagés.
+      //
+      // `nutrition_portion_overrides/{recipeId}` : le nombre de parts retenu
+      // pour cette recette-là. `preferences/{prefId}` : l'affichage, dont
+      // `book_order`, le rangement de la bibliothèque.
+      match /nutrition_portion_overrides/{recipeId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
+      match /preferences/{prefId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
     }
 
     // Collection books
@@ -1628,64 +1672,99 @@ le fournisseur puis échoue est facturé : ne rien écrire ferait disparaître d
 dépense réelle, et le repli sur l'autre moteur en ajouterait une seconde par-dessus.
 
 ---
-## 8. Parsing et Rendu Cooklang
+## 8. Parsing et Rendu CookLang
 
-### Parsing
+### Le parseur est une implémentation maison, jumelée
 
-Utilisation du package Dart `cooklang` pour analyser le texte brut :
+**Il n'existe pas de paquet Dart `cooklang` dans ce projet.** Le parseur vit dans
+`core/services/cooklang_parser.dart`, et son jumeau TypeScript dans
+`functions/src/cooklang/parser.ts`. Les deux rejouent la fixture
+`test-fixtures/cooklang_parsing.json` — corriger un bug d'un seul côté fait échouer la CI de
+l'autre.
 
-```dart
-final recipe = CooklangRecipe.parse(rawCooklang);
-// → recipe.ingredients : List<Ingredient>
-// → recipe.steps : List<Step>
-// → recipe.cookware : List<Cookware>
-```
+Le client en a besoin pour afficher et travailler hors connexion ; le serveur pour décider sans
+lui, à l'import. C'est le seul motif qui justifie la duplication.
 
-Le champ `ingredients_index` stocké en Firestore est dérivé du parsing :
-```dart
-final ingredients = recipe.ingredients
-    .map((i) => i.name.toLowerCase().trim())
-    .toList();
-// Stocké dans recipes.ingredients_index pour la recherche Firestore
-```
+### Ce que le parseur rend
 
-### Rendu Interactif
+| Fonction | Ce qu'elle produit |
+|---|---|
+| `parseCooklangMeta(cooklang)` | les métadonnées `>> clé: valeur` en `Map<String, String>` |
+| `extractIngredients(cooklang)` | les noms `@ingrédient`, dans l'ordre d'apparition, sans doublon |
+| `extractIngredientsStructured(cooklang)` | la liste `RecipeIngredient` — nom, quantité, unité, catégorie |
+| `buildIngredientsIndex(ingredients)` | `ingredients_index`, l'index de recherche |
+| `ingredientKey(nom)` | la clé de déduplication |
+| `extractPortions(cooklang)` | l'entier de `>> portions: N` |
 
-Le rendu Cooklang est construit en widgets Flutter :
-- Chaque `Ingredient` est affiché avec sa quantité, unité et nom.
-- Dans les instructions, les références aux ingrédients sont colorisées (chips inline).
-- Les références au matériel sont différenciées visuellement.
-- Les timers sont affichés avec une icône et peuvent déclencher un compte à rebours (V2).
+Deux syntaxes de section coexistent et sont **toutes deux** reconnues : `== Nom ==`, écrite par
+l'éditeur visuel, et `## Nom`, écrite à la main ou par le balisage. N'en reconnaître qu'une
+suffisait à laisser une section en double après une seconde insertion.
+
+### Trois règles qui ne se devinent pas
+
+**`buildIngredientsIndex` est l'écrivain unique de `ingredients_index`.** Il en a existé trois,
+qui ne produisaient pas la même chose : les noms normalisés par le référentiel à la création et à
+la mise à jour, les noms bruts du CookLang à la validation, et les noms du formulaire sans mise en
+minuscules à la création libre. Une même recette était indexée différemment selon la façon dont
+elle avait été enregistrée, et la recherche par ingrédient répondait en conséquence.
+
+**`ingredientKey` normalise pour comparer, pas pour afficher.** Minuscules, apostrophes
+typographiques ramenées à l'apostrophe droite, accents retirés, `s` final de chaque mot supprimé.
+Sans le dernier point, « oeufs » et « oeuf » comptaient pour deux ingrédients.
+
+**Une température n'est pas un ingrédient.** Un jeton dont le nom ressemble à `180°c` ou commence
+par un chiffre est écarté. Sans cette garde, l'index de recherche se remplissait de degrés.
+
+Un même ingrédient qui apparaît avec deux quantités différentes voit ses quantités **combinées** —
+« 45 g + une poignée » — plutôt que dédoublé.
+
+### Rendu
+
+Le rendu est construit en widgets Flutter, jamais en HTML :
+
+- chaque ingrédient, ustensile et minuteur devient une **pastille** (`cooklang_chip_widgets.dart`),
+  distinguée par sa couleur et son icône ;
+- les étapes sont numérotées, une ligne préfixée `+` prolongeant la précédente **sous le même
+  numéro** ;
+- les minuteurs sont lus et affichés avec leur durée. **Rien ne décompte** : un minuteur interactif
+  demanderait des notifications locales, et figure dans « ce qui reste à construire ».
 
 ---
 
-## 9. Écran de Révision — Split View
+## 9. Écran de relecture d'un brouillon
 
-### Layout
+`draft_review_screen.dart` et `draft_review_body.dart`. **Il n'y a pas de panneau éditeur et de
+panneau rendu côte à côte** : le rendu est un mode de l'éditeur, pas un voisin.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  AppBar : [← Retour]  [Titre éditable]  [Brouillon] [✓ Valider] │
-├───────────────────────────┬────────────────────────────────┤
-│  ÉDITEUR COOKLANG (brut)  │  RENDU INTERACTIF             │
-│                           │                                │
-│  @oeufs{3}                │  Ingrédients                  │
-│  @farine{200%g}           │  • 3 oeufs                   │
-│  ...                      │  • 200g de farine             │
-│                           │  ...                           │
-│  Mélanger les             │  Instructions                  │
-│  @oeufs{3} avec la        │  1. Mélanger les oeufs avec   │
-│  @farine{200%g}           │     la farine...               │
-│                           │                                │
-│  [Saisie responsive]      │  [Lecture seule]               │
-├───────────────────────────┴────────────────────────────────┤
-│  [Tags] [Page] [Langue]  [📷 Voir scan original]           │
-└────────────────────────────────────────────────────────────┘
-```
+### Quatre dispositions, selon la largeur et selon la page
 
-- Sur **Mobile** : les deux panneaux sont scrollables en mode column (l'éditeur en haut, le rendu en dessous) ou en tabs.
-- Sur **Web / Desktop** : les deux panneaux sont côte à côte (Row), divisés par un splitter redimensionnable.
-- Le rendu se met à jour en temps réel à chaque modification du texte Cooklang (debounce 300ms).
+La bascule se fait sur `PlatformUtils.compactDetailBreakpoint`. La nature de la page — recette ou
+document — décide du reste : une page classée `ingredient_note`, `technique` ou `other` n'a pas
+d'ingrédients à relire.
+
+| Largeur | Page | Disposition |
+|---|---|---|
+| large | recette | panneau de métadonnées à gauche, onglets **Ingrédients · Recette · Photos** à droite |
+| large | document | panneau de métadonnées à gauche, onglets **Éditeur · Photos** à droite (`MarkdownEditor`) |
+| étroite | recette | onglets **Informations · Ingrédients · Recette · Photos** |
+| étroite | document | onglets **Informations · Éditeur · Photos** |
+
+### L'onglet Recette
+
+Il porte un `HybridRecipeEditor`, décrit au chapitre 13. Trois modes permutables par une barre de
+bascule — **texte** CookLang monospace avec coloration en direct, **visuel** WYSIWYG par blocs à
+pastilles, **aperçu** (`CooklangPreview`) — partageant un seul `TextEditingController`. Basculer
+est instantané et ne perd rien : chaque bloc garde sa ligne source, et la recomposition rejoint
+ces lignes telles quelles.
+
+### Ce qui reste hors onglets
+
+- La barre d'actions : titre éditable, **Enregistrer en brouillon**, **Créer et valider**.
+- Le bouton **« Voir l'original »** — visionneuse plein écran zoomable pour une image, ouverture
+  système pour un PDF ou un DOCX. Le document source est lié à vie à la recette.
+- Le `FidelityBanner`, quand le contrôle de fidélité a émis une réserve. Il n'apparaît **que**
+  sur cet écran, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. Valider
+  l'efface — valider, c'est avoir relu et tranché.
 
 ---
 
@@ -2340,7 +2419,7 @@ Une photo envoyée passe par la modération ; une image produite par l'IA en est
 dispensée, et le serveur la dépose lui-même sous `illustrations/{uid}/` par l'Admin
 SDK — la fermeture en écriture des dossiers publiés ne l'affecte pas.
 
-- **`features/moderation/`** — `data/image_moderation_repository.dart`,
+- **`features/moderation/`** — `data/moderation_repository.dart`,
   `domain/moderation_entry.dart`, `domain/moderation_labels.dart` (§9), `presentation/`.
 - **Les quatre appelants d'upload** (`book_repository`, `recipe_repository`,
   `draft_review_service`, `auth_repository`) écrivent en quarantaine puis appellent la
@@ -2385,7 +2464,7 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 | Règles de décision, ordre compris | `functions/src/tests/moderationDecision.test.ts` + fixture |
 | Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
 | Sexuel explicite → refusée quel que soit le contexte | même fixture |
-| Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/visionSignals.test.ts` |
+| Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/moderationDecision.test.ts`, sur la fixture `image_moderation_rules.json` |
 | Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
 | Coût d'un appel Vision, quota mensuel déduit | `ai_pricing.json` + `test/ai_pricing_test.dart` |
 | Poste présent aux trois endroits | `test/feature_catalog_test.dart` |
