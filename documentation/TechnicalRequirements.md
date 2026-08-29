@@ -248,7 +248,7 @@ Document principal d'une recette.
 | `raw_cooklang` | `String` | Contenu Cooklang validé (version finale) |
 | `draft_cooklang` | `String?` | Version en cours de révision (avant validation) |
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
-| `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre que `image_urls`**. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
+| `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre et même longueur que `image_urls`** — voir « L'alignement des vignettes » ci-dessous. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
 | `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
 | `is_private` | `bool` | Confidentialité **recopiée du livre porteur**, écrite par le serveur seul (`onRecipeWritten`, `onBookWritten`, `backfillRecipePrivacyFn`). Une recette sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
 | `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
@@ -629,6 +629,25 @@ minuscules) : la même recette n'était pas indexée de la même façon selon la
 manière dont elle avait été enregistrée, et la recherche par ingrédient
 répondait en conséquence. Cas de test partagés dans
 `test-fixtures/cooklang_parsing.json`, clé `index`.
+
+**L'alignement des vignettes.** L'onglet Photos lit `thumbnail_urls[i]` pour la
+photo `i`. Deux listes de tailles différentes ne laissent pas la fin sans
+vignette : elles décalent, et la première carte affiche la photo d'une autre.
+Trois recettes ont fini avec deux photos et une seule vignette — celle de la
+seconde —, chaque fois après un ajout d'illustration sur un brouillon qui
+n'avait aucune vignette : la liste des vignettes partait vide et l'ajout
+atterrissait en position 0.
+
+`RecipeRepository.alignThumbnails(imageUrls, thumbnailUrls)` tranche à
+l'écriture : longueurs égales, la liste passe ; longueurs différentes, rien ne
+dit à quelle photo chaque vignette appartient, et ce sont les URLs pleine
+résolution qui sont écrites. Les sept appelants — ajout, remplacement,
+suppression unitaire, suppression multiple, génération par IA, ajout manuel,
+atelier de retouche — partent de cette liste alignée avant de modifier. Côté
+lecture, `draft_illustrations_tab.dart` n'utilise `thumbnail_urls` que si sa
+longueur égale celle de `image_urls` : c'est ce qui rend leur bon affichage aux
+documents déjà écrits, sans migration. Cas de test dans
+`test/repositories/recipe_repository_test.dart`.
 
 #### Détail du champ `tags` (Map imbriqué)
 
@@ -1909,6 +1928,7 @@ est nette dans le dépôt, et une réimplémentation ne doit pas prendre le seco
 | Signature | `android/key.properties` et `signingConfigs.release` |
 | Empreintes | SHA-1 et SHA-256 enregistrées dans la console Firebase |
 | Attestation | Play Integrity |
+| Icône | Adaptative — `mipmap-anydpi-v26/ic_launcher.xml`, fond `#6B7B3A` dans `values/colors.xml`, couches `drawable-*dpi/ic_launcher_foreground.png` |
 | Distribution | `app-release.apk` servi par le même déploiement Firebase Hosting, avec un `Content-Disposition: attachment` |
 
 `READ_MEDIA_IMAGES` **n'est pas déclarée**. Le choix d'une photo passe par le sélecteur du
@@ -1920,6 +1940,22 @@ accès dont l'application n'a pas besoin.
 L'APK de release fonctionnait par effet de bord, la fusion des manifestes des plugins
 Firebase la réintroduisant. Elle est déclarée ici pour que ce soit une intention, pas une
 chance.
+
+**L'icône est adaptative, et elle ne l'a pas toujours été.** `flutter_launcher_icons`
+n'avait que `image_path` : il produisait la seule icône ancienne, carrée, en RGB — la
+transparence de `assets/Icon.png` aplatie sur du blanc. Le lanceur d'Android 8 et au-delà
+posait son masque rond sur ce carré, et le blanc dépassant du médaillon faisait un liseré.
+`adaptive_icon_background` et `adaptive_icon_foreground` dans `pubspec.yaml` créent les
+deux couches attendues ; le fond d'une icône adaptative est toujours dessiné et ne peut pas
+rester transparent, d'où le choix de l'olive du thème (`AppTheme._seed`). Le XML rentre la
+couche avant de 16 %, pour une zone garantie visible de 66,7 %.
+
+`remove_alpha_ios: true` accompagne le changement : la transparence conservée pour Android
+avait introduit un canal alpha dans les vingt et une icônes iOS, que l'App Store refuse.
+
+Les icônes sont **versionnées, pas régénérées au build** : après avoir changé
+`assets/Icon.png`, il faut relancer `dart run flutter_launcher_icons`. Et une icône ne se met
+à jour sur un téléphone qu'à la réinstallation de l'APK.
 
 ### iOS — déclaré, pas configuré
 

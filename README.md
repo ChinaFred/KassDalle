@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.21.103**  
+**Version actuelle : 0.22.17**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**  
 **APK Android : [télécharger](https://kassdale-6d948.web.app/app-release.apk)**
 
@@ -58,12 +58,16 @@ Tout est dans [`documentation/`](documentation/) — sommaire :
 |---|---|
 | [Exigences fonctionnelles](documentation/FunctionalRequirements.md) | Intention, parcours, modules, rôles |
 | [Exigences techniques](documentation/TechnicalRequirements.md) | Architecture, schéma Firestore, Security Rules, prompts Gemini |
+| [Historique des versions](documentation/CHANGELOG.md) | Ce qui a changé d'une version à l'autre |
 | [Architecture](documentation/architecture.html) | Composants, pipeline d'import, Cloud Functions, collections |
 | [Diagramme de classes](documentation/diagramme-de-classes.html) | Modèle de domaine et couche d'accès |
 | [Cas d'utilisation](documentation/cas-d-utilisation.html) | Cas par rôle et vérification des droits |
-| [Diagrammes de séquence](documentation/diagrammes-de-sequence.html) | Huit opérations détaillées |
+| [Diagrammes de séquence](documentation/diagrammes-de-sequence.html) | Vingt-trois opérations détaillées |
 
 ## Déploiement
 
 - **Web** : Firebase Hosting — `https://kassdale-6d948.web.app`
 - **Android** : APK disponible sur `https://kassdale-6d948.web.app/app-release.apk`
+- **Windows** : `flutter build windows --release`, copié dans `Release/desktop`. Construit à la
+  main, hors `deploy.ps1`, et non distribué en ligne
+- **iOS** : déclaré dans le dépôt, jamais construit — voir `TechnicalRequirements.md` § 12

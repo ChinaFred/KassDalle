@@ -16,6 +16,55 @@ anciennes sans accents.
 
 ## 2026-08-29
 
+### v0.22.17 — technique
+
+#### Release complète : web, APK, Windows
+
+Rien de neuf pour l'utilisateur. Le desktop Windows est rebuild et déposé dans
+`Release/desktop`, et la documentation rattrape les deux versions précédentes : la règle
+d'alignement des vignettes au chapitre 3, l'icône adaptative au chapitre 12, la version des
+deux `README.md`, qui annonçaient encore la 0.21.103.
+
+### v0.22.16 — technique
+
+#### L'icône Android perdait sa transparence et affichait un liseré blanc
+
+`assets/Icon.png` a un fond transparent. Les cinq `ic_launcher.png` produits étaient en RGB,
+sans canal alpha : `flutter_launcher_icons` n'avait que `image_path`, il ne fabriquait donc que
+l'icône ancienne, carrée, et aplatissait la transparence sur du blanc. Le lanceur d'Android 8
+et au-delà posait ensuite son masque rond sur ce carré blanc, et ce qui dépassait du médaillon
+faisait le liseré.
+
+`adaptive_icon_background: "#6B7B3A"` — l'olive du thème — et
+`adaptive_icon_foreground: "assets/Icon.png"` créent l'icône adaptative :
+`mipmap-anydpi-v26/ic_launcher.xml`, `values/colors.xml`, et les cinq couches
+`drawable-*dpi/ic_launcher_foreground.png`. Les `ic_launcher.png` sont désormais en RGBA. Le
+fond d'une icône adaptative est toujours dessiné : il ne pouvait pas rester transparent.
+
+`remove_alpha_ios: true` complète le lot. La transparence conservée pour Android avait
+introduit un canal alpha dans les vingt et une icônes iOS, ce que l'App Store refuse.
+
+L'icône ne change sur un téléphone qu'à la réinstallation de l'APK.
+
+### v0.22.15 — fonctionnel
+
+#### La première photo d'un brouillon prenait l'apparence d'une autre
+
+Après un passage à l'atelier de retouche, la première vignette de l'onglet Photos affichait une
+autre photo que la sienne. L'illustration n'était pas modifiée : c'est l'affichage qui mentait.
+
+L'onglet lit `thumbnail_urls[i]` pour la photo `i`. Quand les deux listes n'ont pas la même
+longueur, il n'y a pas une vignette manquante à la fin : tout est décalé. Les écrans
+empilaient la vignette d'une photo ajoutée sur une liste de vignettes vide, qui atterrissait
+donc en position 0. Trois recettes de la base sont dans cet état — deux photos, une vignette,
+celle de la seconde.
+
+`RecipeRepository.alignThumbnails` tranche à l'écriture : longueurs différentes, ce sont les
+URLs pleine résolution qui sont écrites, parce que rien ne dit plus à quelle photo chaque
+vignette appartient. Les sept appelants partent de cette liste alignée. Côté lecture, l'onglet
+n'utilise les vignettes que si elles sont aussi nombreuses que les photos, ce qui rend leur bon
+affichage aux trois recettes déjà écrites sans migration.
+
 ### v0.22.14 — fonctionnel
 
 #### Les photos d'une recette avaient la taille d'une icône
