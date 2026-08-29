@@ -1306,25 +1306,61 @@ c'est le silence de ce cas qui avait rendu une panne indéchiffrable. **Toute fo
 appelle `callModel` doit déclarer les deux secrets** — un secret non déclaré n'est pas monté
 dans `process.env`, et le repli est alors silencieux.
 
-### L'extraction, en deux temps
+### La lecture d'une page, en deux passes
 
-`gemini/extractor.ts` classifie d'abord la page, puis n'extrait que si elle contient une
-recette. Le modèle rend du **CookLang**, pas du JSON : les métadonnées voyagent dans les
-lignes `>>` du document lui-même (`titre`, `page`, `portions`, `difficulté`,
-`temps_préparation`, `temps_cuisson`, `dish_types`), plusieurs recettes d'une même page sont
-séparées par une ligne de tirets, et une page sans recette rend `NO_RECIPE`.
+Le détail vit au chapitre 8 de `FunctionalRequirements.md` et dans les séquences 01 et 22.
+Ce qui compte ici, c'est ce que chaque passe demande au moteur :
 
-Les prompts vivent dans `functions/src/gemini/prompts.ts` et **ne sont pas recopiés ici** :
-un prompt dupliqué dans la documentation diverge en une semaine. Ce qui est stable, et qui
-mérite d'être écrit, ce sont les invariants qu'ils imposent :
+| Passe | Fichier | Poste | Entrée | Sortie |
+|---|---|---|---|---|
+| 1 — transcription | `gemini/transcription.ts` | `transcription_page` (scan) ou `text_extraction` (texte collé) | l'image, ou le texte | **du JSON** — type de page, inventaire déclaré, sections d'ingrédients, sections d'étapes, notes, chapeau |
+| 2 — balisage | `gemini/tagging.ts` | `recipe_tagging` | la transcription, **jamais l'image** | **du CookLang**, plus la liste normalisée, les cuisines et les types de plat |
 
-- **Copie fidèle** : les étapes restent aussi proches que possible de l'original. Ne pas
-  reformuler, ne pas résumer, n'inventer ni ingrédient ni quantité.
-- **Une orthographe par aliment** dans toute la recette — sans quoi le même ingrédient
-  compte deux fois dans l'index de recherche, la nutrition et la liste de courses.
+Un seul appel faisait autrefois les deux, et rendait du CookLang directement. Il perdait la
+transcription au profit de la mise en forme : ingrédients fusionnés, précisions déplacées,
+énumérations abrégées. La classification n'est plus un appel séparé — c'est un champ de la
+réponse de la passe 1, ce qui garantit que le verdict porte sur ce qui a été lu. `NO_RECIPE`
+a disparu au profit de `page_type: "no_recipe"`.
+
+`gemini/extractor.ts` ne porte plus que l'entrée « texte collé ». Les trois anciens appels
+qui vivaient là — classification, extraction depuis une image, extraction d'un document — ont
+été remplacés par la passe 1. Leurs trois postes de coût **restent au catalogue comptable**,
+sans quoi les mois déjà comptabilisés cesseraient de les nommer, mais ils ont quitté
+`ROUTABLE_FEATURES` : un sélecteur de moteur qui ne commande aucun appel fait croire à un
+réglage.
+
+Deux réglages tiennent à ce que ces passes demandent :
+
+- **`effort: "high"`** sur `transcription_page`, `text_extraction` et `recipe_tagging`. Le
+  défaut `low` venait de la chaîne nutrition, où estimer des calories est un rappel de
+  connaissances. Appliqué à une page de livre, il donnait un modèle pressé : « en poudre »
+  recollé au mauvais ingrédient, une énumération de grains de poivre et de graines de
+  coriandre résumée en « les épices ».
+- **`maxTokens: 24 000`** sur la transcription, qui ne résume rien. C'est ce plafond qui
+  impose le streaming côté Claude (chapitre 1).
+
+### Où vivent les prompts
+
+| Fichier | Ce qu'il porte |
+|---|---|
+| `gemini/promptsExtraction.ts` | `TRANSCRIPTION_PROMPT`, `TEXT_TRANSCRIPTION_PREAMBLE`, `TAGGING_PROMPT` |
+| `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
+| `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
+
+**Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
+semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu'ils imposent :
+
+- **Copie fidèle** : recopier, ne pas reformuler, ne pas résumer, n'inventer ni ingrédient ni
+  quantité, ne pas « réparer » un mot mal lu en expression plus courante.
+- **Une orthographe par aliment** dans toute la recette — sans quoi le même ingrédient compte
+  deux fois dans l'index de recherche, la nutrition et la liste de courses.
 - **Ustensile ou ingrédient**, jamais les deux : `#moule à tarte{}` contre `@moule{}`.
 - **Accolades jamais vides quand la quantité est connue** ; vides quand la quantité n'est
   qu'un contexte (« pour la cuisson », « à volonté »).
+- **Aucun exemple rempli** dans un prompt qui n'en a pas besoin : le modèle recopiait la
+  réponse d'exemple, sa valeur de confiance comprise.
+- **Exiger une preuve vérifiable** plutôt qu'une justification — les trois mots réellement lus
+  se contrôlent d'un coup d'œil, une justification non.
 
 ### Les réponses JSON
 
@@ -1926,11 +1962,15 @@ Côté Functions :
 
 ```
 functions/src/
+├── index.ts       # les 53 exports déployés — rien d'autre n'est joignable
+├── config.ts      # région, file d'attente, plafonds de reprise, nom du journal
+├── logging.ts     # le journal structuré — cf. chapitre 7
 ├── ai/            # types neutres, routeur, client Claude, tarification, budget, usage
 ├── billing/       # coûts GCP (BigQuery), réconciliation mensuelle
 ├── callable/      # entrées HTTPS callable + gardes (_auth.ts)
 ├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
-├── gemini/        # client Gemini et prompts par poste
+├── gemini/        # client Gemini, transcription, balisage, fidélité, prompts par poste
+├── illustrations/ # extraction en six étapes, écriture, journal de coût
 ├── moderation/    # décision pure, moteur Cloud Vision, promotion
 ├── nutrition/     # per100g, conversions, référentiels, huile de friture
 ├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
@@ -1939,7 +1979,7 @@ functions/src/
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
 ├── triggers/      # onRecipeWritten, syncUserClaims, enforceFounderRole
-└── utils/         # sécurité d'upload, journalisation
+└── utils/         # sécurité d'upload, DOCX, images
 ```
 
 ---
