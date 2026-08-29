@@ -1376,7 +1376,7 @@ ne se réessaie pas, la seconde oui.
 ### Gestion des erreurs
 
 Le tableau complet — ce qui se rejoue, ce qui ne se rejoue pas, et ce qui est comptabilisé
-malgré l'échec — vit au chapitre 7, section 7.10. Il y est écrit une seule fois : dupliqué
+malgré l'échec — vit au chapitre 7, section 7.11. Il y est écrit une seule fois : dupliqué
 ici, il divergeait à la première correction.
 
 Un point appartient en propre à l'intégration des moteurs :
@@ -1688,7 +1688,27 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
 `queued` avec `attempt_count: 0` et horodate `relaunched_at` sur la dead letter.
 `deleteDeadLetterFn` purge. Les deux sont exposées dans *Admin › File d'échecs*.
 
-### 7.10 Les échecs qui ne se rejouent pas
+### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
+
+Trois tâches planifiées (Cloud Scheduler) et trois reprises manuelles. Aucune n'est
+déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlationId`.
+
+| Fonction | Cadence | Ce qu'elle fait |
+|---|---|---|
+| `scheduledNutritionCatchUp` | `0 5 * * *` — chaque jour à 5 h | reprend les recettes dont la nutrition n'a pas abouti. Cinq tentatives au plus par liste d'ingrédients (`nutrition_catch_up_attempts`), remises à zéro dès qu'une entrée change. C'est ce compteur qui transforme un échec permanent en dépense finie |
+| `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
+| `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
+
+| Reprise manuelle | Réservée à | Ce qu'elle traite |
+|---|---|---|
+| `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
+| `backfillRecipePrivacyFn` | `admin` | recopie `is_private` du livre porteur sur ses recettes, même point de reprise |
+| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
+
+Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
+où il s'est arrêté, et l'appel suivant repart de là.
+
+### 7.11 Les échecs qui ne se rejouent pas
 
 Tous les échecs ne méritent pas une seconde tentative. La distinction est explicite dans le
 code, et une réimplémentation doit la reproduire :
