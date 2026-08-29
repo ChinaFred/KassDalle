@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.22.15+250
+version: 0.22.16+251
 
 environment:
   sdk: ^3.11.4
@@ -134,7 +134,21 @@ flutter:
 flutter_launcher_icons:
   image_path: "assets/Icon.png"
   android: true
+  # Icône adaptative Android 8+.
+  #
+  # Sans ces deux couches, `flutter_launcher_icons` n'écrit qu'une icône
+  # ancienne, carrée, où la transparence de `Icon.png` est aplatie sur du
+  # blanc. Le lanceur y applique ensuite son masque rond, et le blanc qui
+  # dépasse du médaillon devient un liseré.
+  #
+  # Le fond d'une icône adaptative est toujours dessiné : il ne peut pas
+  # rester transparent. C'est l'olive du thème (`AppTheme._seed`).
+  adaptive_icon_background: "#6B7B3A"
+  adaptive_icon_foreground: "assets/Icon.png"
   ios: true
+  # L'App Store refuse une icône avec canal alpha. La transparence conservée
+  # pour Android l'avait introduite dans les vingt et une icônes iOS.
+  remove_alpha_ios: true
   web:
     generate: true
   windows:
