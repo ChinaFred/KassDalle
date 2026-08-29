@@ -71,8 +71,18 @@
        scroll-margin-top: 24px; }
   h2 .n { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
           font-size: 13px; color: var(--ink-mute); margin-right: 10px; }
+  h3 { margin: 32px 0 6px; font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
   .sec-note { margin: 0 0 18px; color: var(--ink-mute); font-size: 15px; max-width: 70ch; }
   p { max-width: 70ch; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 0 0 8px;
+          display: block; overflow-x: auto; background: var(--surface);
+          border: 1px solid var(--rule); border-radius: 3px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule-soft);
+           vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--ink-mute); font-weight: 600; font-size: 13px;
+       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+       letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 
   figure.fig {
     margin: 0 0 8px; background: var(--surface); border: 1px solid var(--rule);
@@ -118,9 +128,10 @@
     <div class="eyebrow">Kass'Dalle · documentation · 4 / 4</div>
     <h1>Diagrammes de séquence</h1>
     <p class="standfirst">
-      Dix opérations, du dépôt d'un fichier à la recette validée, et de la publication d'une image
-      à sa relecture. Chaque diagramme nomme les classes et les fonctions réelles : vous pouvez
-      suivre une flèche jusqu'à la ligne de code qui la produit.
+      Douze opérations, du dépôt d'un fichier à la recette validée, de la publication d'une image
+      à sa relecture, jusqu'au détail des six étapes qui découpent les illustrations d'une page.
+      Chaque diagramme nomme les classes et les fonctions réelles : vous pouvez suivre une flèche
+      jusqu'à la ligne de code qui la produit.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
       <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
@@ -143,6 +154,7 @@
       <li><a href="#dressage">Conseil de dressage et visuels de montage</a></li>
       <li><a href="#moderation">Publication d'une image</a></li>
       <li><a href="#journaux">Nommage et regroupement d’un journal</a></li>
+      <li><a href="#illustrations">Import d'une page avec ses illustrations</a></li>
     </ol>
   </nav>
 
@@ -155,8 +167,7 @@
       <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
       gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts,
       illustrations/extract.ts</span>
-      <br/>Le détail des six étapes d'extraction :
-      <a href="import-page-illustrations.html">import-page-illustrations.html</a>.
+      <br/>Le détail des six étapes d'extraction : <a href="#illustrations">séquence 12</a>.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1118,6 +1129,281 @@ sequenceDiagram
       processing, done) et n'a le plus souvent rien à faire ; ces constats ouvraient chacun leur
       fil. Ils se rattachent désormais au <code>correlation_id</code> déjà porté par le job.
     </span>
+  </section>
+
+
+  <section>
+    <h2 id="illustrations"><span class="n">12</span>Import d'une page avec ses illustrations</h2>
+    <p class="sec-note">
+      Le détail de ce que la séquence 01 résume en une boucle. De la case cochée à l'écran
+      d'import jusqu'aux photographies découpées et attachées à la recette : six étapes, jusqu'à
+      cinq appels de modèle par page, et un seul bloc de journal pour dire ce que la page a coûté.
+      <span class="path">scan_screen.dart → scan_upload_service.dart → jobDispatcher.ts →
+      recipeProcessor.ts → illustrations/extract.ts, illustrations/store.ts,
+      illustrations/ledger.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant SC as ScanScreen
+  participant PR as Préférences du compte<br/>import_illustrations
+  participant S as ScanUploadNotifier
+  participant ST as Cloud Storage
+  participant J as processing_jobs
+  participant P as recipeProcessor
+  participant X as illustrations/extract.ts
+  participant G as Modèle (Gemini ou Claude)
+  participant L as Cloud Logging
+  participant R as recipes
+
+  U->>SC: ouvre l'écran d'import
+  SC->>PR: lit le défaut du compte
+  PR-->>SC: import_illustrations
+  Note over SC: la case s'ouvre sur le défaut<br/>puis appartient à l'écran
+
+  U->>SC: ajoute des pages, coche ou décoche
+  U->>SC: Analyser
+  SC->>S: processPages(importIllustrations)
+  S->>ST: dépôt en quarantaine, scan de sécurité, promotion
+  S->>J: createJob — import_illustrations voyage AVEC le job
+  S-->>U: mis en file, l'écran se libère
+  Note over SC,U: la case garde sa valeur : on enchaîne<br/>la page suivante sans rien recocher
+
+  J-->>P: dispatch Cloud Tasks
+  P->>ST: download des pages
+  P->>G: transcription, puis balisage du texte
+  P->>J: current_step design
+
+  alt import_illustrations = false
+    loop chaque page
+      P->>G: pré-contrôle — combien d'images sur cette page ?
+      G-->>P: has_images + count
+    end
+    Note over P: on compte, on n'extrait pas :<br/>l'atelier manuel prendra le relais
+
+  else import_illustrations = true
+    loop chaque page du scan
+      P->>X: extractPageIllustrations(page)
+
+      X->>G: 1 · pré-contrôle sur la photo brute
+      G-->>X: observed, count, has_images
+      X->>L: étape 1 — coût en €
+
+      alt aucune image sur la page
+        X-->>P: liste vide, chaîne arrêtée
+        Note over X,G: les quatre appels suivants<br/>n'ont pas lieu
+      else au moins une image
+        X->>G: 2a · la BOÎTE de la page (rectangle droit)
+        G-->>X: box + kind (page, double_page, feuille)
+        X->>X: gros plan sur la boîte, marge 25 %
+        X->>G: 2b · les QUATRE COINS dans ce gros plan
+        G-->>X: quad + cut + confidence
+
+        opt confidence &lt; 0,60
+          X->>G: 2c · second essai, même image
+          G-->>X: la réponse la mieux assumée gagne
+        end
+        X->>L: étape 2 — coût en €
+
+        X->>X: 3 · homothétie +2 %, puis homographie 4000 px
+        Note over X: normalisation de Hartley, Gauss 8×8,<br/>interpolation bilinéaire — aucun modèle
+
+        X->>X: compose la planche 2×2 des quatre rotations
+        X->>G: 4 · dans laquelle sais-tu lire ? A, B, C ou D
+        G-->>X: choice + reading (les trois mots lus) + basis
+        X->>X: applique le quart de tour
+        X->>L: étape 4 — coût en €
+
+        X->>G: 5 · les zones imagées de la page à plat
+        G-->>X: boîtes + kind + label + bounded_by
+        X->>L: étape 5 — coût en €
+
+        X->>X: 6 · découpe sur la page pleine résolution
+        X-->>P: les découpes
+      end
+      X->>L: TOTAL du bloc — € , nombre d'appels, durée
+    end
+
+    opt au moins une découpe
+      P->>ST: écriture directe sous illustrations/{uid}/
+    end
+  end
+
+  P->>R: écriture — texte, image_urls, illustration_report
+  P->>J: status done
+  Note over SC,J: le client réécoute processing_jobs<br/>et affiche l'avancement
+</pre>
+      </div>
+      <figcaption>
+        <b>Le pré-contrôle est le seul poste qui peut rapporter plus qu'il ne coûte.</b> Une page
+        de recette sur deux ne porte aucune image : un appel y remplace quatre. C'est pour pouvoir
+        répondre à cette question qu'il est compté à part, et non fondu dans un poste unique.
+        <span class="expect">
+          <b>Le cadrage se fait en deux questions, jamais en une.</b> Demander d'emblée quatre
+          coins libres rendait un rectangle horizontal plus petit que la page, qui ne correspondait
+          à aucun objet. Un modèle encadre bien et place mal des sommets libres — sommé de rendre
+          des coins, il rend quand même une boîte, en moins bon. On lui demande donc la boîte, puis
+          les coins sur un gros plan où la page remplit le cadre : placer un sommet devient une
+          question locale.
+        </span>
+        <span class="expect">
+          <b>« Dans laquelle sais-tu lire » a remplacé « de combien de degrés ».</b> La seconde
+          question recevait « zéro » à 98 % de confiance devant une page couchée, assortie de la
+          description d'un texte horizontal qui ne l'était pas. On demandait de faire tourner une
+          image dans sa tête puis d'en décrire le résultat. La planche 2×2 ne demande plus rien à
+          tourner — elle demande de reconnaître.
+        </span>
+        <span class="expect">
+          <b>Rien n'attend.</b> L'écran d'import rend la main à la mise en file. Les cinq appels de
+          modèle ont lieu dans <code>recipeProcessor</code>, déclenché par Cloud Tasks, longtemps
+          après que l'utilisateur est passé à la page suivante.
+        </span>
+        <span class="expect">
+          <b>La case voyage avec le job, jamais relue depuis le profil.</b> Le serveur traite ce
+          job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment
+          de l'import est ce qui est fait.
+        </span>
+        <span class="expect warn">
+          <b>Une panne d'extraction ne fait jamais échouer un import.</b> Toute la chaîne est
+          best-effort : elle journalise et rend une liste vide. La recette est déjà transcrite
+          quand elle s'exécute — une recette sans image vaut mieux qu'un import perdu.
+        </span>
+        <span class="expect warn">
+          <b>Une extraction ratée dit quand même ce qu'elle a manqué.</b>
+          <code>illustration_report.detectees</code> porte ce que la page <b>contient</b>, jamais
+          ce qu'on en a tiré : les zones repérées à l'étape 5 quand la chaîne va au bout, le compte
+          du pré-contrôle quand elle s'arrête avant. Le bandeau de relecture peut donc annoncer
+          « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait —
+          c'est le seul moment où ce chiffre compte vraiment.
+        </span>
+        <span class="expect">
+          <b>Une découpe est écrite directement, sans quarantaine ni Cloud Vision.</b> Le fichier
+          source est déjà passé par le scan de sécurité à l'envoi, et la découpe est un JPEG que
+          Sharp vient d'encoder : en vérifier le format reviendrait à vérifier notre propre
+          encodeur. L'analyse de contenu porterait sur un morceau d'une photo que le compte a
+          lui-même envoyée, et elle est facturée à l'image. Les visuels produits par l'IA écrivent
+          déjà au même endroit, de la même façon.
+        </span>
+      </figcaption>
+    </figure>
+
+    <h3>Ce que chaque étape coûte, et où le lire</h3>
+    <p class="sec-note">
+      Cinq appels dispersés dans Cloud Logging au milieu des autres jobs ne disent rien. Les lignes
+      d'une même page partagent donc un <code>correlationId</code> et s'ordonnent par
+      <code>stepIndex</code> : un filtre les rassemble, dans l'ordre.
+      <span class="path">illustrations/ledger.ts</span>
+    </p>
+    <table>
+      <tr><th>Étape</th><th>Poste de coût</th><th>Appels</th><th>Ce qu'elle rend</th></tr>
+      <tr>
+        <td>1 · Pré-contrôle</td>
+        <td><code>page_illustrations_precheck</code></td>
+        <td>1</td>
+        <td>La page porte-t-elle des images, et combien. Seul appel du chemin « case décochée »</td>
+      </tr>
+      <tr>
+        <td>2 · Cadrage</td>
+        <td><code>page_illustrations_frame</code></td>
+        <td>2, parfois 3</td>
+        <td>La boîte de la page, puis ses quatre coins</td>
+      </tr>
+      <tr>
+        <td>3 · Mise à plat</td>
+        <td>—</td>
+        <td>0</td>
+        <td>La page redressée à 4000 px, par homographie</td>
+      </tr>
+      <tr>
+        <td>4 · Orientation</td>
+        <td><code>page_illustrations_orientation</code></td>
+        <td>1</td>
+        <td>La lettre de la vignette qui se lit</td>
+      </tr>
+      <tr>
+        <td>5 · Zones</td>
+        <td><code>page_illustrations_regions</code></td>
+        <td>1</td>
+        <td>Un rectangle par photographie</td>
+      </tr>
+      <tr>
+        <td>6 · Découpe</td>
+        <td>—</td>
+        <td>0</td>
+        <td>Les illustrations, pixel pour pixel</td>
+      </tr>
+      <tr>
+        <td>Écriture</td>
+        <td>—</td>
+        <td>0</td>
+        <td>Les URL publiques sous <code>illustrations/{uid}/</code></td>
+      </tr>
+    </table>
+    <span class="expect">
+      <b>La ligne de total porte <code>stepIndex: 0</code></b> et se trie donc en tête du bloc, là
+      où on la cherche : total en euros, nombre d'illustrations, nombre d'appels, durée. Sans
+      elle, répondre à « combien a coûté cette page » demanderait d'additionner à la main cinq
+      montants à quatre décimales.
+    </span>
+    <span class="expect warn">
+      <b>Aucun montant n'est inventé.</b> Sans taux de change dans
+      <code>app_config/currency_rate</code>, la ligne affiche des <b>dollars</b>. Sans tarif connu
+      pour le modèle, elle affiche « montant inconnu », et le total dit combien d'étapes n'ont pas
+      pu être chiffrées. Un coût manquant se voit ; un coût faux ne se voit pas.
+    </span>
+
+    <h3>Ce que le programme fait, et ce que le modèle fait</h3>
+    <p class="sec-note">
+      La règle qui traverse toute la chaîne. Elle a coûté une dizaine d'essais ratés.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  subgraph M[Le modèle — questions de sens]
+    M1[Cette page porte-t-elle<br/>des images ?]
+    M2[Où est le papier,<br/>et qu'y a-t-il dessous ?]
+    M3[Dans laquelle de ces quatre<br/>vignettes sais-tu lire ?]
+    M4[Est-ce une photographie<br/>ou deux ?]
+  end
+
+  subgraph P[Le programme — questions de géométrie]
+    P1[Homographie<br/>Hartley + Gauss + bilinéaire]
+    P2[Quart de tour<br/>permutation de pixels]
+    P3[Composition de la planche 2×2]
+    P4[Découpe rectangulaire]
+  end
+
+  M2 --> P1
+  P3 --> M3
+  M3 --> P2
+  M4 --> P4
+</pre>
+      </div>
+      <figcaption>
+        <b>Chaque échec de la mise au point venait d'une question géométrique posée au modèle.</b>
+        Des degrés à calculer, des sommets libres à placer, une image à faire tourner mentalement.
+        Chaque correction a consisté à la reformuler en reconnaissance, et à laisser le calcul au
+        programme.
+        <span class="expect">
+          <b>Deux règles de prompt valent d'être retenues.</b> D'abord : <b>aucun exemple rempli</b>
+          dans un prompt qui n'en a pas besoin — le modèle recopiait la réponse d'exemple, sa valeur
+          de confiance comprise. Ensuite : <b>exiger une preuve vérifiable</b> plutôt qu'une
+          justification. Les trois mots réellement lus dans la vignette, ou ce qui atteste une
+          coupure entre deux photos, se contrôlent d'un coup d'œil ; une justification, non.
+        </span>
+        <span class="expect warn">
+          <b>Le bac à sable garde sa copie, et elle va diverger.</b>
+          <code>functions/src/sandbox/</code> porte toujours cette chaîne, prompts compris —
+          <b>copiés</b>, jamais partagés : partagés, un essai raté du bac à sable changerait le
+          comportement de la production. L'écran de l'expérience porte une bannière qui le dit.
+          Régler un seuil là-bas ne change rien ici.
+        </span>
+      </figcaption>
+    </figure>
   </section>
 
   <footer class="doc">

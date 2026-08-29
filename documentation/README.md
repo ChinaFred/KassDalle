@@ -12,10 +12,9 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [architecture.html](architecture.html) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
 | [diagramme-de-classes.html](diagramme-de-classes.html) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
 | [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
-| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Dix opérations détaillées, de l'import à la publication d'une image | HTML + Mermaid |
-| [import-page-illustrations.html](import-page-illustrations.html) | Séquence détaillée de l'import d'une page **avec extraction des illustrations** : les six étapes, le coût de chacune en euros, et le partage entre ce que fait le modèle et ce que fait le programme | HTML + Mermaid |
+| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Douze opérations détaillées, de l'import à la publication d'une image, jusqu'au détail des six étapes d'extraction des illustrations | HTML + Mermaid |
 
-## Les dix séquences documentées
+## Les douze séquences documentées
 
 1. Import d'une page de livre — quarantaine, Cloud Tasks, pipeline, dead letters
 2. Chargement d'un brouillon — flux temps réel et garde d'initialisation du formulaire
@@ -27,6 +26,9 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 8. Génération d'une recette par IA — trois variantes et déduplication
 9. Conseil de dressage et visuels de montage — un appel par recette, une image par clic
 10. Publication d'une image — quarantaine, Cloud Vision, verdict, revue humaine
+11. Nommage et regroupement d'un journal — la racine du `correlationId` fait le titre
+12. Import d'une page **avec ses illustrations** — les six étapes, le coût de chacune en
+    euros, et le partage entre ce que fait le modèle et ce que fait le programme
 
 ## Versions publiées en ligne
 
@@ -61,9 +63,10 @@ commit** :
 | Une méthode de repository ou de service | `diagramme-de-classes.html` |
 | Une Cloud Function ajoutée, supprimée ou dont la garde change | `architecture.html` |
 | Une étape du pipeline d'import | `architecture.html`, `diagrammes-de-sequence.html` |
-| Une étape de l'extraction des illustrations | `import-page-illustrations.html`, `diagrammes-de-sequence.html` |
-| Une route ou une redirection du routeur | `cas-d-utilisation.html` |
+| Une étape de l'extraction des illustrations | `diagrammes-de-sequence.html` § 12 |
+| Une route ou une redirection du routeur | `cas-d-utilisation.html`, `TechnicalRequirements.md` § 13.1 |
 | Une règle Firestore ou Storage | `cas-d-utilisation.html`, `TechnicalRequirements.md` |
+| Un champ de journal, un code d'erreur, une politique de reprise | `TechnicalRequirements.md` § 7 |
 | Un poste d'IA ajouté ou routé autrement | `architecture.html`, `TechnicalRequirements.md` — et les trois endroits listés dans `CLAUDE.md`, sans quoi le coût devient illisible |
 | Une décision déplacée du code vers Firestore | `TechnicalRequirements.md` § 3.13, `cas-d-utilisation.html` |
 | Un flux utilisateur | `diagrammes-de-sequence.html`, `FunctionalRequirements.md` |
