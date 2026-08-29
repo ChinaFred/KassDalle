@@ -1806,6 +1806,13 @@ Dans `kass_dalle/firebase.json` :
   `main.dart.js` et `version.json` restent en `no-cache, no-store, must-revalidate`
   (+ `Pragma: no-cache` et `Expires: 0` pour `index.html` et le service worker).
 
+- `app-release.apk` porte les mêmes en-têtes anti-cache, plus
+  `Content-Type: application/vnd.android.package-archive` et un
+  `Content-Disposition: attachment` qui le nomme `kass-dalle.apk`. Sans le premier, le
+  navigateur affiche le fichier au lieu de le télécharger ; sans les seconds, l'utilisateur
+  réinstalle la version de la semaine dernière en croyant se mettre à jour.
+- Une seule règle de réécriture, `** → /index.html`, comme toute application à route unique.
+
 Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne version.
 
 ### Build et déploiement
@@ -1831,30 +1838,52 @@ Deux pièges connus, tous deux silencieux :
 
 ---
 
-## 12. Application Mobile (iOS / Android)
+## 12. Application Mobile
 
-### Spécificités iOS
+**Android est construit et distribué. iOS est déclaré, jamais construit.** La distinction
+est nette dans le dépôt, et une réimplémentation ne doit pas prendre le second pour acquis.
 
-- `NSCameraUsageDescription` dans `Info.plist`
-- `NSPhotoLibraryUsageDescription` dans `Info.plist`
-- Google Sign-In configuré via `GoogleService-Info.plist`
+### Android
 
-### Spécificités Android
+| Élément | État |
+|---|---|
+| Permissions déclarées | `INTERNET` et `CAMERA` dans `android/app/src/main/AndroidManifest.xml` |
+| Caméra | `<uses-feature android:name="android.hardware.camera.any" android:required="false" />` — l'absence de caméra n'empêche pas l'installation |
+| Configuration Firebase | `android/app/google-services.json`, présent |
+| Signature | `android/key.properties` et `signingConfigs.release` |
+| Empreintes | SHA-1 et SHA-256 enregistrées dans la console Firebase |
+| Attestation | Play Integrity |
+| Distribution | `app-release.apk` servi par le même déploiement Firebase Hosting, avec un `Content-Disposition: attachment` |
 
-- Permissions `CAMERA` et `READ_MEDIA_IMAGES` dans `AndroidManifest.xml`
-- Google Sign-In configuré via `google-services.json`
-- SHA-1 et SHA-256 enregistrés dans la Firebase Console
+`READ_MEDIA_IMAGES` **n'est pas déclarée**. Le choix d'une photo passe par le sélecteur du
+système, qui rend un accès ponctuel sans permission — c'est le comportement voulu depuis
+Android 13, et déclarer la permission demanderait une justification au Play Store pour un
+accès dont l'application n'a pas besoin.
 
-### Build Mobile
+`INTERNET` était autrefois déclarée dans les seuls manifestes `debug/` et `profile/`.
+L'APK de release fonctionnait par effet de bord, la fusion des manifestes des plugins
+Firebase la réintroduisant. Elle est déclarée ici pour que ce soit une intention, pas une
+chance.
 
-```bash
-# Android
-flutter build apk --release
-flutter build appbundle --release
+### iOS — déclaré, pas configuré
 
-# iOS
-flutter build ipa --release
-```
+Ce qui existe : le projet Xcode (`ios/Runner.xcodeproj`), le bundle
+`dev.kassbi.kassDalle`, et une entrée `FirebaseOptions.ios` complète dans
+`lib/firebase_options.dart`.
+
+Ce qui manque, et sans quoi une compilation ne servirait à rien :
+
+| Manquant | Conséquence |
+|---|---|
+| `ios/Runner/GoogleService-Info.plist` | Firebase ne s'initialise pas |
+| Le schéma d'URL du `REVERSED_CLIENT_ID` dans `Info.plist` | Google Sign-In ne revient jamais dans l'application |
+| `NSCameraUsageDescription` | l'accès caméra fait terminer le processus |
+| `NSPhotoLibraryUsageDescription` | l'accès à la photothèque fait terminer le processus |
+| `ios/Podfile` | aucune installation de dépendances n'a jamais eu lieu |
+
+**`deploy.ps1` ne construit ni iOS ni l'app bundle Android** : ses cibles sont le web et
+l'APK. Une release iOS demanderait un poste macOS, un compte développeur et les cinq points
+ci-dessus.
 
 ---
 
