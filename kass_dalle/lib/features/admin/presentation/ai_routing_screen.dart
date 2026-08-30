@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
+import '../domain/ai_routing_diff.dart';
 import 'ai_console_links.dart';
 import '../../../core/widgets/error_message.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -36,6 +38,14 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
   AiRoutingPolicy? _draft;
   Object? _loadError;
   bool _saving = false;
+
+  /// Configuration choisie dans la liste, `null` tant qu'aucune ne l'est.
+  ///
+  /// Ce n'est pas « la configuration en vigueur » : une configuration ne
+  /// commande rien, elle sert à remplir le brouillon. Rien dans Firestore ne
+  /// dit qu'une politique vient de l'une d'elles.
+  String? _selectedPresetId;
+  bool _presetBusy = false;
 
   @override
   void initState() {
@@ -73,14 +83,14 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
           .save(_withoutLockedFeatures(draft));
       if (!mounted) return;
       setState(() {
-        _snapshot = AiRoutingSnapshot(
+        // L'écriture ne renvoie ni les postes, ni les modèles, ni les
+        // configurations : `copyWith` garde ce qu'elle ne rapporte pas.
+        // Reconstruire le snapshot champ par champ faisait disparaître de
+        // l'écran, jusqu'au rechargement suivant, tout champ ajouté ici et
+        // oublié là.
+        _snapshot = _snapshot?.copyWith(
           policy: saved.policy,
           anthropicKeyPresent: saved.anthropicKeyPresent,
-          routableFeatures: _snapshot?.routableFeatures ?? const [],
-          imageGenerationFeatures:
-              _snapshot?.imageGenerationFeatures ?? const [],
-          imageModel: _snapshot?.imageModel ?? '',
-          imageModelLabel: _snapshot?.imageModelLabel ?? '',
         );
         _draft = saved.policy;
       });
@@ -162,6 +172,489 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     setState(() => _draft = draft.copyWith(anthropicModels: models));
   }
 
+  // ── Configurations enregistrées ────────────────────────────────────────────
+
+  AiRoutingPreset? get _selectedPreset {
+    final id = _selectedPresetId;
+    if (id == null) return null;
+    for (final preset in _snapshot?.presets ?? const <AiRoutingPreset>[]) {
+      if (preset.id == id) return preset;
+    }
+    return null;
+  }
+
+  /// Écart entre le brouillon courant et une configuration.
+  AiRoutingDiff _diffWith(AiRoutingPolicy other) {
+    return AiRoutingDiff.between(
+      current: _draft!,
+      next: other,
+      features: _snapshot?.routableFeatures ?? const [],
+    );
+  }
+
+  /// Charge une configuration dans le brouillon.
+  ///
+  /// Le remplacement est intégral : un poste absent de la configuration
+  /// retombe sur le moteur par défaut. Une fusion rendrait le résultat
+  /// dépendant de ce qui était en place avant, et deux essais successifs ne
+  /// seraient plus comparables.
+  ///
+  /// Rien n'est écrit ici. Le brouillon rempli fait apparaître la barre
+  /// d'enregistrement, et c'est elle qui décide.
+  Future<void> _loadPreset(AiRoutingPreset preset) async {
+    if (_draft == null) return;
+    final diff = _diffWith(preset.policy);
+
+    if (diff.isEmpty) {
+      context.showSuccessSnackBar(
+        '« ${preset.name} » est déjà le réglage affiché.',
+      );
+      return;
+    }
+
+    final go = await _confirmLoad(preset, diff);
+    if (!go || !mounted) return;
+
+    setState(() => _draft = preset.policy);
+    if (!mounted) return;
+    context.showSuccessSnackBar(
+      '« ${preset.name} » chargée. Rien n\'est écrit tant que vous '
+      'n\'enregistrez pas.',
+    );
+  }
+
+  Future<void> _createPreset() async {
+    final draft = _draft;
+    if (draft == null) return;
+
+    final name = await _askName(
+      title: 'Enregistrer la configuration',
+      initial: '',
+    );
+    if (name == null || !mounted) return;
+
+    // Un nom déjà pris vaut mise à jour : le serveur refuse deux homonymes, et
+    // renvoyer l'administrateur choisir un autre nom l'obligerait à deviner
+    // lequel des deux gestes il voulait.
+    final existing = _snapshot?.presets
+        .where((p) => p.name.toLowerCase() == name.toLowerCase())
+        .firstOrNull;
+
+    if (existing != null) {
+      final overwrite = await _confirmAction(
+        title: 'Écraser « ${existing.name} » ?',
+        message:
+            'Une configuration porte déjà ce nom. Son contenu sera remplacé '
+            'par les réglages affichés.',
+        confirmLabel: 'Écraser',
+      );
+      if (!overwrite || !mounted) return;
+      await _runPresetAction(
+        () => ref
+            .read(aiRoutingRepositoryProvider)
+            .updatePreset(id: existing.id, policy: draft),
+        success: '« ${existing.name} » mise à jour.',
+        selectId: existing.id,
+      );
+      return;
+    }
+
+    await _runPresetAction(
+      () => ref
+          .read(aiRoutingRepositoryProvider)
+          .createPreset(name: name, policy: draft),
+      success: '« $name » enregistrée.',
+      selectName: name,
+    );
+  }
+
+  Future<void> _updateSelectedPreset() async {
+    final draft = _draft;
+    final preset = _selectedPreset;
+    if (draft == null || preset == null) return;
+
+    final diff = _diffWith(preset.policy);
+    final go = await _confirmAction(
+      title: 'Mettre à jour « ${preset.name} » ?',
+      message: diff.isEmpty
+          ? 'Les réglages affichés sont déjà ceux de cette configuration.'
+          : 'Cette configuration prendra les réglages affichés :\n\n'
+                '${diff.lines.map((l) => '• $l').join('\n')}',
+      confirmLabel: 'Mettre à jour',
+    );
+    if (!go || !mounted) return;
+
+    await _runPresetAction(
+      () => ref
+          .read(aiRoutingRepositoryProvider)
+          .updatePreset(id: preset.id, policy: draft),
+      success: '« ${preset.name} » mise à jour.',
+      selectId: preset.id,
+    );
+  }
+
+  Future<void> _renameSelectedPreset() async {
+    final preset = _selectedPreset;
+    if (preset == null) return;
+
+    final name = await _askName(
+      title: 'Renommer la configuration',
+      initial: preset.name,
+    );
+    if (name == null || name == preset.name || !mounted) return;
+
+    await _runPresetAction(
+      () => ref
+          .read(aiRoutingRepositoryProvider)
+          .renamePreset(id: preset.id, name: name),
+      success: 'Configuration renommée en « $name ».',
+      selectId: preset.id,
+    );
+  }
+
+  Future<void> _deleteSelectedPreset() async {
+    final preset = _selectedPreset;
+    if (preset == null) return;
+
+    final go = await _confirmAction(
+      title: 'Supprimer « ${preset.name} » ?',
+      message:
+          'La configuration disparaît définitivement. Le routage en vigueur '
+          'ne change pas.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    );
+    if (!go || !mounted) return;
+
+    await _runPresetAction(
+      () => ref.read(aiRoutingRepositoryProvider).deletePreset(preset.id),
+      success: '« ${preset.name} » supprimée.',
+    );
+  }
+
+  /// Exécute un geste sur les configurations et remplace la liste affichée.
+  ///
+  /// La réponse rapporte la liste entière : garder l'ancienne montrerait un
+  /// état d'avant l'écriture, ce qu'aucune erreur ne viendrait démentir.
+  Future<void> _runPresetAction(
+    Future<List<AiRoutingPreset>> Function() action, {
+    required String success,
+    String? selectId,
+    String? selectName,
+  }) async {
+    setState(() => _presetBusy = true);
+    try {
+      final presets = await action();
+      if (!mounted) return;
+      setState(() {
+        _snapshot = _snapshot?.copyWith(presets: presets, presetsFailed: false);
+        if (selectName != null) {
+          _selectedPresetId = presets
+              .where((p) => p.name == selectName)
+              .firstOrNull
+              ?.id;
+        } else if (selectId != null) {
+          _selectedPresetId = selectId;
+        }
+        // Une configuration supprimée ne reste pas sélectionnée : les boutons
+        // agiraient sur un document qui n'existe plus.
+        if (!presets.any((p) => p.id == _selectedPresetId)) {
+          _selectedPresetId = null;
+        }
+      });
+      context.showSuccessSnackBar(success);
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'admin.aiRoutingPreset',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      context.showErrorSnackBar(
+        'Action impossible — ${shortErrorMessage(error)}',
+      );
+    } finally {
+      if (mounted) setState(() => _presetBusy = false);
+    }
+  }
+
+  Future<bool> _confirmLoad(AiRoutingPreset preset, AiRoutingDiff diff) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Charger « ${preset.name} » ?'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Ce chargement change :'),
+              const SizedBox(height: 8),
+              for (final line in diff.lines) Text('• $line'),
+              const SizedBox(height: 12),
+              Text(
+                'Les postes que la configuration ne nomme pas repartent au '
+                'moteur par défaut. Rien n\'est écrit avant l\'enregistrement.',
+                style: Theme.of(dialogContext).textTheme.bodySmall,
+              ),
+              if (preset.stale.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Écarté, faute d\'exister encore :',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+                for (final line in preset.stale)
+                  Text(
+                    '• $line',
+                    style: Theme.of(dialogContext).textTheme.bodySmall,
+                  ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Charger'),
+          ),
+        ],
+      ),
+    );
+    return go ?? false;
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool destructive = false,
+  }) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(child: Text(message)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: destructive
+                ? FilledButton.styleFrom(
+                    backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                    foregroundColor: Theme.of(
+                      dialogContext,
+                    ).colorScheme.onError,
+                  )
+                : null,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return go ?? false;
+  }
+
+  Future<String?> _askName({
+    required String title,
+    required String initial,
+  }) async {
+    final controller = TextEditingController(text: initial);
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 60,
+            decoration: const InputDecoration(
+              labelText: 'Nom',
+              hintText: 'Économique, Import soigné, Tout Gemini…',
+            ),
+            onSubmitted: (value) =>
+                Navigator.of(dialogContext).pop(value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Valider'),
+            ),
+          ],
+        ),
+      );
+      if (name == null || name.isEmpty) return null;
+      return name;
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  /// Le bandeau des configurations, en tête d'écran.
+  ///
+  /// Il est placé avant les réglages parce qu'on choisit un état complet avant
+  /// de le retoucher, jamais l'inverse.
+  Widget _buildPresetsCard(
+    ThemeData theme,
+    AiRoutingSnapshot snapshot,
+    AiRoutingPolicy draft,
+  ) {
+    final presets = snapshot.presets;
+    final selected = _selectedPreset;
+    final busy = _presetBusy;
+    final ecart = selected == null ? null : _diffWith(selected.policy);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Configurations',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                if (busy)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Les sept réglages de cet écran, enregistrés sous un nom. '
+              'Charger remplit le formulaire ; le routage ne change qu\'à '
+              'l\'enregistrement.',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (snapshot.presetsFailed) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Configurations illisibles : la liste ci-dessous est '
+                'incomplète. En enregistrer une par-dessus risquerait d\'en '
+                'écraser une autre.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            if (presets.isEmpty)
+              Text(
+                'Aucune configuration enregistrée.',
+                style: theme.textTheme.bodyMedium,
+              )
+            else
+              DropdownButton<String>(
+                isExpanded: true,
+                value: _selectedPresetId,
+                hint: const Text('Choisir une configuration'),
+                onChanged: busy
+                    ? null
+                    : (value) => setState(() => _selectedPresetId = value),
+                items: [
+                  for (final preset in presets)
+                    DropdownMenuItem(
+                      value: preset.id,
+                      child: Text(preset.name, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+              ),
+            if (selected != null) ...[
+              const SizedBox(height: 4),
+              Text(_presetSubtitle(selected), style: theme.textTheme.bodySmall),
+              if (ecart != null && ecart.isNotEmpty)
+                Text(
+                  'Les réglages affichés s\'écartent de cette configuration '
+                  '(${ecart.lines.length} ${ecart.lines.length > 1 ? 'différences' : 'différence'}).',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              if (selected.stale.isNotEmpty)
+                Text(
+                  '${selected.stale.length} réglage${selected.stale.length > 1 ? 's' : ''} '
+                  'de cette configuration ne correspond${selected.stale.length > 1 ? 'ent' : ''} '
+                  'plus à rien et ${selected.stale.length > 1 ? 'seront écartés' : 'sera écarté'} '
+                  'au chargement.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+            ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: busy || selected == null
+                      ? null
+                      : () => _loadPreset(selected),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Charger'),
+                ),
+                OutlinedButton(
+                  onPressed: busy || selected == null
+                      ? null
+                      : _updateSelectedPreset,
+                  child: const Text('Mettre à jour'),
+                ),
+                OutlinedButton(
+                  onPressed: busy || selected == null
+                      ? null
+                      : _renameSelectedPreset,
+                  child: const Text('Renommer'),
+                ),
+                OutlinedButton(
+                  onPressed: busy || selected == null
+                      ? null
+                      : _deleteSelectedPreset,
+                  child: const Text('Supprimer'),
+                ),
+                FilledButton.icon(
+                  onPressed: busy ? null : _createPreset,
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Enregistrer sous…'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _presetSubtitle(AiRoutingPreset preset) {
+    final quand = preset.updatedAt;
+    final qui = preset.updatedBy;
+    if (quand == null && qui == null) return preset.name;
+    final date = quand == null
+        ? null
+        : DateFormat('dd/MM/yy HH:mm').format(quand);
+    if (date != null && qui != null) return 'Modifiée le $date par $qui';
+    if (date != null) return 'Modifiée le $date';
+    return 'Modifiée par $qui';
+  }
+
   bool get _dirty {
     final draft = _draft;
     final loaded = _snapshot?.policy;
@@ -181,6 +674,16 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     }
     for (final entry in draft.anthropicModels.entries) {
       if (loaded.anthropicModels[entry.key] != entry.value) return true;
+    }
+    // Le plafond par poste compte aussi. L'écran ne le règle pas encore, mais
+    // une configuration chargée peut en porter : sans cette comparaison, elle
+    // se chargerait sans que la barre d'enregistrement apparaisse, et le
+    // réglage serait perdu au retour.
+    if (draft.thinkingBudgets.length != loaded.thinkingBudgets.length) {
+      return true;
+    }
+    for (final entry in draft.thinkingBudgets.entries) {
+      if (loaded.thinkingBudgets[entry.key] != entry.value) return true;
     }
     return false;
   }
@@ -271,6 +774,8 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   ),
                 const AiConsoleLinks(),
                 const SizedBox(height: 8),
+                _buildPresetsCard(theme, snapshot, draft),
+                const SizedBox(height: 20),
                 Text('Réglages généraux', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Card(

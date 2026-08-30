@@ -230,6 +230,42 @@ class AnthropicModelChoice {
   final String hint;
 }
 
+/// Une configuration de routage enregistrée.
+///
+/// Elle porte les sept réglages de l'écran, moteur par défaut compris. La
+/// charger REMPLACE le brouillon en entier : un poste absent de la
+/// configuration retombe sur le moteur par défaut, il ne conserve pas sa valeur
+/// courante. Une fusion rendrait le résultat dépendant de ce qui était en place
+/// avant, et deux essais successifs ne seraient plus comparables.
+class AiRoutingPreset {
+  final String id;
+  final String name;
+  final AiRoutingPolicy policy;
+
+  /// Ce que le serveur a écarté en relisant cette configuration : postes
+  /// retirés depuis, modèles Claude sortis de la grille tarifaire.
+  ///
+  /// La liste des postes routables perd des entrées à chaque version. Une
+  /// configuration de juillet reste chargeable, amputée de ce qui n'existe
+  /// plus — et elle le dit, plutôt que d'appliquer en silence un état qui
+  /// n'est plus le sien.
+  final List<String> stale;
+
+  final DateTime? updatedAt;
+
+  /// Nom d'affichage de l'auteur, jamais son identifiant technique.
+  final String? updatedBy;
+
+  const AiRoutingPreset({
+    required this.id,
+    required this.name,
+    required this.policy,
+    this.stale = const [],
+    this.updatedAt,
+    this.updatedBy,
+  });
+}
+
 class AiRoutingSnapshot {
   final AiRoutingPolicy policy;
   final bool anthropicKeyPresent;
@@ -255,6 +291,16 @@ class AiRoutingSnapshot {
   /// Nom commercial du même modèle, pour l'écran.
   final String imageModelLabel;
 
+  /// Configurations enregistrées, par ordre alphabétique.
+  final List<AiRoutingPreset> presets;
+
+  /// Vrai quand le serveur n'a pas su lire les configurations.
+  ///
+  /// La liste est alors vide, et une liste vide se lit « aucune configuration
+  /// enregistrée » — ce qui est faux, et pousse à en recréer une par-dessus.
+  /// L'écran annonce la panne au lieu d'afficher un état plausible.
+  final bool presetsFailed;
+
   const AiRoutingSnapshot({
     required this.policy,
     required this.anthropicKeyPresent,
@@ -263,7 +309,33 @@ class AiRoutingSnapshot {
     this.imageGenerationFeatures = const [],
     this.imageModel = '',
     this.imageModelLabel = '',
+    this.presets = const [],
+    this.presetsFailed = false,
   });
+
+  /// Remplace ce que l'écriture rapporte, garde ce qu'elle ne renvoie pas.
+  ///
+  /// L'écran reconstruisait ce snapshot champ par champ après chaque
+  /// enregistrement : un champ ajouté ici et oublié là-bas disparaissait de
+  /// l'écran jusqu'au rechargement suivant, sans erreur.
+  AiRoutingSnapshot copyWith({
+    AiRoutingPolicy? policy,
+    bool? anthropicKeyPresent,
+    List<AiRoutingPreset>? presets,
+    bool? presetsFailed,
+  }) {
+    return AiRoutingSnapshot(
+      policy: policy ?? this.policy,
+      anthropicKeyPresent: anthropicKeyPresent ?? this.anthropicKeyPresent,
+      routableFeatures: routableFeatures,
+      anthropicModelChoices: anthropicModelChoices,
+      imageGenerationFeatures: imageGenerationFeatures,
+      imageModel: imageModel,
+      imageModelLabel: imageModelLabel,
+      presets: presets ?? this.presets,
+      presetsFailed: presetsFailed ?? this.presetsFailed,
+    );
+  }
 }
 
 class AiRoutingRepository {
@@ -318,6 +390,52 @@ class AiRoutingRepository {
     }
   }
 
+  /// Enregistre le brouillon courant sous un nouveau nom.
+  Future<List<AiRoutingPreset>> createPreset({
+    required String name,
+    required AiRoutingPolicy policy,
+  }) => _presetAction('save', {'name': name, 'policy': policy.toMap()});
+
+  /// Écrase une configuration existante par le brouillon courant.
+  Future<List<AiRoutingPreset>> updatePreset({
+    required String id,
+    required AiRoutingPolicy policy,
+  }) => _presetAction('update', {'id': id, 'policy': policy.toMap()});
+
+  Future<List<AiRoutingPreset>> renamePreset({
+    required String id,
+    required String name,
+  }) => _presetAction('rename', {'id': id, 'name': name});
+
+  Future<List<AiRoutingPreset>> deletePreset(String id) =>
+      _presetAction('delete', {'id': id});
+
+  /// Un seul point d'entrée HTTPS pour les quatre gestes, aiguillé sur
+  /// « action » : le bundle porte déjà cinquante fonctions, et le budget de
+  /// découverte du déploiement est de dix secondes.
+  ///
+  /// La réponse rapporte la liste entière. Sans elle, chaque geste demanderait
+  /// un second aller-retour, et l'écran afficherait un état d'avant l'écriture.
+  Future<List<AiRoutingPreset>> _presetAction(
+    String action,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final raw = await _functions
+          .httpsCallable('aiRoutingPresetsFn')
+          .call<Map<String, dynamic>>({'action': action, ...payload});
+      final data = Map<String, dynamic>.from(raw.data);
+      return parsePresets(data['presets']);
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'aiRouting.preset.$action',
+        error: e,
+        stackTrace: st,
+      );
+      rethrow;
+    }
+  }
+
   AiRoutingSnapshot _parse(Map<String, dynamic> data) {
     final features = _parseFeatures(data['routableFeatures']);
     // Une liste absente n'est pas une anomalie : elle signale un backend
@@ -335,6 +453,8 @@ class AiRoutingRepository {
       imageGenerationFeatures: imageFeatures,
       imageModel: data['imageModel'] as String? ?? '',
       imageModelLabel: data['imageModelLabel'] as String? ?? '',
+      presets: parsePresets(data['presets']),
+      presetsFailed: data['presetsFailed'] == true,
     );
   }
 
@@ -356,32 +476,72 @@ class AiRoutingRepository {
   List<RoutableFeature> _parseFeatures(Object? raw) =>
       parseRoutableFeatures(raw);
 
-  AiRoutingPolicy _parsePolicy(Map<String, dynamic> data) {
-    final rawFeatures = Map<String, dynamic>.from(
-      data['features'] as Map? ?? const {},
-    );
-    return AiRoutingPolicy(
-      defaultProvider: AiProvider.fromWire(data['defaultProvider'] as String?),
-      features: {
-        for (final entry in rawFeatures.entries)
-          entry.key: AiProvider.fromWire(entry.value as String?),
-      },
-      anthropicModel: data['anthropicModel'] as String? ?? 'claude-sonnet-5',
-      fallbackEnabled: data['fallbackEnabled'] != false,
-      thinkingBudget: (data['thinkingBudget'] as num?)?.toInt(),
-      thinkingBudgets: {
-        for (final entry in Map<String, dynamic>.from(
-          data['thinkingBudgets'] as Map? ?? const {},
-        ).entries)
-          if (entry.value is num) entry.key: (entry.value as num).toInt(),
-      },
-      anthropicModels: {
-        for (final entry in Map<String, dynamic>.from(
-          data['anthropicModels'] as Map? ?? const {},
-        ).entries)
-          if (entry.value is String && (entry.value as String).isNotEmpty)
-            entry.key: entry.value as String,
-      },
-    );
-  }
+  AiRoutingPolicy _parsePolicy(Map<String, dynamic> data) =>
+      parseRoutingPolicy(data);
+}
+
+/// Lit une politique de routage telle que le serveur l'envoie.
+///
+/// Fonction de module, comme [parseRoutableFeatures] et [parsePresets] : un
+/// champ oublié ici ne lève aucune erreur, il disparaît et laisse une valeur
+/// plausible. Une configuration relue sans son plafond de raisonnement ne se
+/// verrait qu'à la facture du mois suivant.
+AiRoutingPolicy parseRoutingPolicy(Map<String, dynamic> data) {
+  final rawFeatures = Map<String, dynamic>.from(
+    data['features'] as Map? ?? const {},
+  );
+  return AiRoutingPolicy(
+    defaultProvider: AiProvider.fromWire(data['defaultProvider'] as String?),
+    features: {
+      for (final entry in rawFeatures.entries)
+        entry.key: AiProvider.fromWire(entry.value as String?),
+    },
+    anthropicModel: data['anthropicModel'] as String? ?? 'claude-sonnet-5',
+    fallbackEnabled: data['fallbackEnabled'] != false,
+    thinkingBudget: (data['thinkingBudget'] as num?)?.toInt(),
+    thinkingBudgets: {
+      for (final entry in Map<String, dynamic>.from(
+        data['thinkingBudgets'] as Map? ?? const {},
+      ).entries)
+        if (entry.value is num) entry.key: (entry.value as num).toInt(),
+    },
+    anthropicModels: {
+      for (final entry in Map<String, dynamic>.from(
+        data['anthropicModels'] as Map? ?? const {},
+      ).entries)
+        if (entry.value is String && (entry.value as String).isNotEmpty)
+          entry.key: entry.value as String,
+    },
+  );
+}
+
+/// Lit la liste des configurations déclarée par le serveur.
+///
+/// Fonction de module plutôt que méthode privée, pour la même raison que
+/// [parseRoutableFeatures] : c'est ici qu'un champ oublié ne lève aucune
+/// erreur — il disparaît, et l'écran affiche une valeur plausible à la place.
+/// Un test la rejoue donc directement.
+List<AiRoutingPreset> parsePresets(Object? raw) {
+  return (raw as List? ?? const [])
+      .whereType<Map>()
+      .map((e) {
+        final map = Map<String, dynamic>.from(e);
+        final updatedAt = map['updatedAt'];
+        return AiRoutingPreset(
+          id: map['id'] as String? ?? '',
+          name: map['name'] as String? ?? '',
+          policy: parseRoutingPolicy(
+            Map<String, dynamic>.from(map['policy'] as Map? ?? const {}),
+          ),
+          stale: (map['stale'] as List? ?? const []).whereType<String>().toList(
+            growable: false,
+          ),
+          updatedAt: updatedAt is String
+              ? DateTime.tryParse(updatedAt)?.toLocal()
+              : null,
+          updatedBy: map['updatedBy'] as String?,
+        );
+      })
+      .where((p) => p.id.isNotEmpty)
+      .toList(growable: false);
 }

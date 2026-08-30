@@ -851,6 +851,59 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
 
+`ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
+jour où la politique en vigueur a été recopiée dans une première configuration.
+Elle empêche cette configuration de revenir après une suppression volontaire.
+
+---
+
+### 3.13 bis Collection `ai_routing_presets` — les configurations de routage
+
+Un document par configuration enregistrée. Chacun porte `name`, `name_key` (le
+nom en minuscules, qui interdit deux homonymes), `policy` — les sept réglages de
+l'écran, aux mêmes clés que `ai_routing_policy` —, `created_at`, `updated_at` et
+`updated_by`.
+
+**Une configuration ne commande rien.** La politique en vigueur reste
+`app_config/ai_routing_policy`, et elle seule. Charger une configuration remplit
+le formulaire de l'écran ; c'est `setAiRoutingPolicyFn` qui écrit, après que
+l'administrateur a vu l'écart et enregistré. Un chargement ne doit pas pouvoir
+déplacer quarante-trois postes sans que personne l'ait lu.
+
+**Le chargement est un remplacement, pas une fusion.** Un poste absent de la
+configuration repart au moteur par défaut. Une fusion rendrait le résultat
+dépendant de ce qui était en place avant, et deux essais successifs ne seraient
+plus comparables — ce qui est le seul usage de cet écran.
+
+**Une configuration vieillit.** La liste des postes routables perd des entrées à
+chaque version : huit sont déjà parties avec le code qui les appelait. Une
+configuration écrite en juillet qui nomme `detect_illustrations` reste
+chargeable ; le poste disparu est écarté et la raison remonte à l'écran, dans
+`stale`. La refuser en bloc laisserait un état ancien inatteignable sans dire
+lequel des quarante-trois postes bloque.
+
+Une même fonction de lecture juge les deux cas, `readRoutingPolicy`
+(`ai/routingPresets.ts`), sur deux modes : `reject` pour ce que l'écran écrit —
+un poste inconnu refuse la politique entière — et `drop` pour la relecture d'une
+configuration. Sans ce partage, une configuration s'enregistrerait valide et se
+chargerait invalide.
+
+**Une seule fonction déployée**, `aiRoutingPresetsFn`, aiguillée sur un champ
+`action` : `save`, `update`, `rename`, `delete`. Le bundle porte déjà cinquante
+fonctions et le budget de découverte du déploiement est de dix secondes. La
+liste des configurations part avec `getAiRoutingPolicyFn`, dont la panne
+n'interrompt pas l'écran : elle s'annonce par `presetsFailed`.
+
+Au premier affichage de l'écran, la politique en vigueur est recopiée dans une
+configuration nommée **« Haute performance »**. Sans elle, essayer une autre
+configuration demanderait d'abord de penser à enregistrer l'état courant, et
+personne n'y penserait avant de l'avoir perdu.
+
+Règle Firestore : lecture administrateur, **écriture serveur uniquement**. Une
+configuration écrite directement par le client échapperait au contrôle contre le
+catalogue de postes, et se chargerait ensuite amputée sans que personne sache
+pourquoi.
+
 ---
 
 ### 3.14 Le reste

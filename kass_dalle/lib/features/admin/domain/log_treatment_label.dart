@@ -90,6 +90,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'grille_tarifaire_ecriture': 'Modification de la grille tarifaire',
   'routage_ia_lecture': 'Lecture du routage IA',
   'routage_ia_ecriture': 'Modification du routage IA',
+  'configurations_routage': 'Configurations de routage IA',
   'app_check_policy': 'Attestation de l\'application',
   'ai_budget_policy': 'Plafonds de dépense IA',
   'couts_gcp': 'Coûts d\'infrastructure',
