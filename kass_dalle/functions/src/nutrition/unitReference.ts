@@ -85,15 +85,18 @@ export async function upsertNutritionUnitReference(args: {
         ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
         updated_at: FieldValue.serverTimestamp(),
         // Même règle qu'à la création : pas de grammes figés sur une unité de
-        // volume ni de comptage. Sur un comptage, le champ est en plus SUPPRIMÉ —
-        // les documents déjà pollués par un `grams_per_unit: 100` se réparent
-        // ainsi d'eux-mêmes au premier ingrédient revu, sans backfill.
+        // volume ni de comptage. Le champ est en plus SUPPRIMÉ dans les deux cas —
+        // les documents déjà pollués se réparent ainsi d'eux-mêmes au premier
+        // ingrédient revu, sans backfill.
         ...(metadata
           ? metadata.measurementType === "volume"
             ? {
                 status: "known",
                 measurement_type: metadata.measurementType,
                 ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
+                // L'enrichissement IA avait rempli ces documents : 1 g sur `ml`,
+                // 13,8 sur `c_a_s`, 215 sur `tasse`.
+                grams_per_unit: FieldValue.delete(),
                 conversion_source: metadata.source,
               }
             : metadata.measurementType === "count"

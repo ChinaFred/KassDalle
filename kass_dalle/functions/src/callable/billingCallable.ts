@@ -26,7 +26,7 @@ import {
   COLL_AI_RECONCILIATION_MONTHLY,
   MAX_CALLABLE_INSTANCES,
 } from "../config";
-import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
+import { enrichUnknownUnitsWithAI, unitAcceptsOwnWeight } from "../nutrition/aiEnrichment";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import {
@@ -948,6 +948,10 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         for (const doc of snap.docs) {
           cursor = doc.id;
           scannedUnits++;
+          // Comptage et volume n'ont pas de poids propre. Les compter ici parmi
+          // les unités « sans poids » gonflait un reste qui ne descend jamais :
+          // l'enrichissement les écarte, le rapport les réclamait encore.
+          if (!unitAcceptsOwnWeight(doc.id)) continue;
           const data = doc.data() as Record<string, unknown>;
           const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
           if (hasGrams) continue;

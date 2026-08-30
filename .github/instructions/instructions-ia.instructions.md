@@ -25,6 +25,10 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
   problème », « non pas A mais B », « et c'est là que ». Dire les choses, pas les mettre en
   scène. Pas non plus de correction en deux temps : « ce n'est pas le même contrôle, c'est un
   second » s'écrit « c'est un second contrôle ».
+* **Pas de phrase de chute** : une phrase courte posée en fin de paragraphe pour l'effet ne dit
+  pas son sujet. « La valeur payée n'est jamais lue » ne nomme ni le champ ni la fonction qui
+  l'écarte. Écrire « `resolveUnitFactorToGrams` écarte `grams_per_unit` quand l'unité est un
+  comptage ». Nommer le sujet dans la phrase, pas dans celle d'avant.
 * **Pas de métaphore pour un fait technique** : un inventaire ne « ferme qu'à moitié » et n'a pas
   de « trou », il manque douze lignes sur trente. Dire quoi, combien, où.
 * **Le code n'est pas un personnage** : un prompt ne « combat » rien, une règle n'« attrape » pas

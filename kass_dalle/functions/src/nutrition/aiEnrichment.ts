@@ -32,7 +32,7 @@ import {
   hasPer100gValues,
   type Per100gEnrichmentTarget,
 } from "./per100gEnrichment";
-import { normalizeObservedUnit } from "./quantityConversion";
+import { getKnownUnitMetadata, normalizeObservedUnit } from "./quantityConversion";
 
 // ── Redemander, mais pas tout le temps ───────────────────────────────────────
 
@@ -89,6 +89,31 @@ export function enrichmentAttemptIsRecent(lastAttempt: unknown, nowMs: number): 
 }
 
 // ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
+
+/**
+ * Vrai quand un poids par unité a un sens pour cette unité canonique.
+ *
+ * Une unité de COMPTAGE — « pièce » — n'a pas de poids propre : c'est
+ * l'ingrédient compté qui en a un, un blanc d'œuf 30 g et une échalote 30 g
+ * aussi, mais une aubergine 300. Une unité de VOLUME n'en a pas davantage :
+ * ses grammes sont le produit de son volume par la densité de l'ingrédient.
+ * Dans les deux cas `resolveUnitFactorToGrams` écarte `grams_per_unit` à la
+ * lecture, et `upsertNutritionUnitReference` refuse de l'écrire.
+ *
+ * Sans ce test, l'enrichissement ne regardait qu'une chose : `grams_per_unit`
+ * absent du document. Il trouvait donc, sur « pièce », le champ que l'écriture
+ * du référentiel venait de supprimer trente lignes plus haut, et reposait la
+ * question au modèle à chaque écriture de recette — 850 appels en août 2026,
+ * pour une réponse qu'aucun calcul ne lit.
+ *
+ * Une unité que la table ignore reste enrichissable : c'est le cas qui
+ * justifie cette passe.
+ */
+export function unitAcceptsOwnWeight(canonicalUnit: string): boolean {
+  const metadata = getKnownUnitMetadata(canonicalUnit);
+  if (metadata == null) return true;
+  return metadata.measurementType === "weight";
+}
 
 /**
  * Construit la demande d'estimation des poids d'unités.
@@ -320,6 +345,9 @@ export async function enrichUnknownUnitsWithAI(args: {
   const unitsNeedingEnrichment: UnitNeedingWeight[] = [];
   for (const snap of snaps) {
     if (!snap.exists) continue;
+    // Comptage et volume n'ont pas de poids propre : rien à demander, et une
+    // réponse ne serait lue par aucun calcul.
+    if (!unitAcceptsOwnWeight(snap.id)) continue;
     const data = snap.data() as Record<string, unknown>;
     const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
     if (!hasGrams) {

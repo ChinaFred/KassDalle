@@ -10,7 +10,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildUnitWeightPrompt, stripUnitContext, unitMatchKeys } from "../nutrition/aiEnrichment";
+import {
+  buildUnitWeightPrompt,
+  stripUnitContext,
+  unitAcceptsOwnWeight,
+  unitMatchKeys,
+} from "../nutrition/aiEnrichment";
 
 describe("unitMatchKeys", () => {
   test("une unité connue se réduit à sa forme canonique", () => {
@@ -87,5 +92,35 @@ describe("buildUnitWeightPrompt", () => {
     // On vise la ligne de contexte de l'unité, pas la règle générale du prompt
     // qui emploie le même mot.
     assert.ok(!prompt.includes("\n  contexte :"));
+  });
+});
+
+describe("unitAcceptsOwnWeight", () => {
+  test("une unité de comptage n'a pas de poids à apprendre", () => {
+    // « pièce » repartait au modèle à chaque écriture de recette : le
+    // référentiel supprime son `grams_per_unit`, l'enrichissement voyait le
+    // champ manquant et reposait la question. 850 appels en août 2026.
+    for (const unit of ["piece", "pieces", "unite", "pc"]) {
+      assert.equal(unitAcceptsOwnWeight(unit), false, unit);
+    }
+  });
+
+  test("une unité de volume n'a pas de poids à apprendre", () => {
+    // Ses grammes sont le produit du volume par la densité de l'ingrédient.
+    for (const unit of ["ml", "cl", "l", "c_a_s", "c_a_c", "tasse", "verre"]) {
+      assert.equal(unitAcceptsOwnWeight(unit), false, unit);
+    }
+  });
+
+  test("une unité de poids reste corrigeable depuis le référentiel", () => {
+    for (const unit of ["brin", "branche", "feuille", "pincee"]) {
+      assert.equal(unitAcceptsOwnWeight(unit), true, unit);
+    }
+  });
+
+  test("une unité que la table ignore est le cas qui justifie la passe", () => {
+    for (const unit of ["poignee", "morceau", "louche", "tranche"]) {
+      assert.equal(unitAcceptsOwnWeight(unit), true, unit);
+    }
   });
 });

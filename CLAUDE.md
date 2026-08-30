@@ -24,6 +24,12 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
   précisément le problème », « non pas A mais B », « et c'est là que ». Interdite aussi la
   correction en deux temps qui insiste : « ce n'est pas le même contrôle, c'est un second »
   s'écrit « c'est un second contrôle ». Dire les choses, pas les mettre en scène.
+- **Pas de phrase de chute.** Une phrase courte posée en fin de paragraphe pour que l'effet
+  tombe est une phrase qui ne dit pas son sujet. « La valeur payée n'est jamais lue » ne nomme
+  ni le champ, ni la fonction qui l'écarte : il faut remonter au paragraphe précédent pour
+  deviner de quoi on parle. La version utile tient dans la même place : « `resolveUnitFactorToGrams`
+  écarte `grams_per_unit` quand l'unité est un comptage ; aucun calcul ne lit ce champ sur
+  `nutrition_units/piece`. » Nommer le sujet dans la phrase, pas dans celle d'avant.
 - **Pas de métaphore pour décrire un fait technique.** Un inventaire ne « ferme qu'à moitié »
   et il n'y a pas de « trou » : il manque douze lignes sur trente. Une image remplace un
   chiffre par une impression, et le lecteur doit deviner ce qui a été mesuré. Dire quoi,
