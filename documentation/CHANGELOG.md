@@ -14,6 +14,55 @@ anciennes sans accents.
 
 ---
 
+## 2026-08-30
+
+### v0.22.22 — fonctionnel
+
+#### Les réglages du moteur d'IA s'enregistrent sous un nom
+
+*Admin › Moteur d'IA* pilote sept réglages, dont trois par poste : le moteur, le modèle
+Claude et le plafond de raisonnement de chacun des quarante-trois postes. Revenir à un état
+antérieur demandait de refaire les bascules de mémoire, ce qui ne rend jamais le même état.
+
+Un bandeau « Configurations » en tête d'écran enregistre l'ensemble sous un nom. Cinq gestes :
+charger, mettre à jour, renommer, supprimer, enregistrer sous. « Enregistrer sous » avec un nom
+déjà pris propose d'écraser cette configuration ; deux homonymes sont refusés.
+
+**Charger n'écrit rien.** L'écart s'affiche d'abord — « Moteur par défaut : Gemini → Claude »,
+« 9 postes passent à Claude », « 3 postes servis par Claude changent de modèle » — puis le
+formulaire est rempli. C'est la barre d'enregistrement qui décide, comme avant. Un chargement ne
+doit pas pouvoir déplacer quarante-trois postes sans que personne l'ait lu.
+
+**Le chargement est un remplacement, pas une fusion.** Un poste que la configuration ne nomme
+pas repart au moteur par défaut. Une fusion rendrait le résultat dépendant de ce qui était en
+place avant, et deux essais successifs ne seraient plus comparables — le seul usage de cet écran.
+
+La configuration **« Haute performance »** est créée au premier affichage à partir du réglage
+déjà en place. Sans elle, essayer autre chose demanderait de penser d'abord à enregistrer l'état
+courant, et personne n'y penserait avant de l'avoir perdu.
+
+### v0.22.22 — technique
+
+#### Une configuration vieillit, et reste chargeable
+
+La liste des postes routables perd des entrées à chaque version : huit sont déjà parties avec le
+code qui les appelait. Une configuration écrite en juillet qui nomme un poste disparu reste
+chargeable — le poste est écarté et la raison remonte à l'écran. La refuser en bloc laisserait un
+état ancien inatteignable sans dire lequel des quarante-trois postes bloque.
+
+Une même fonction juge les deux cas, `readRoutingPolicy` (`ai/routingPresets.ts`), sur deux
+modes : `reject` pour ce que l'écran écrit, `drop` pour la relecture d'une configuration. Sans
+ce partage, une configuration s'enregistrerait valide et se chargerait invalide.
+
+Nouvelle collection `ai_routing_presets`, lecture administrateur et écriture serveur seule. Une
+seule fonction déployée de plus, `aiRoutingPresetsFn`, aiguillée sur un champ `action`.
+
+Un défaut corrigé au passage : la détection des modifications en attente ignorait les plafonds de
+raisonnement par poste. Une configuration qui n'en changeait qu'un se chargeait sans faire
+apparaître la barre d'enregistrement, et le réglage était perdu au retour.
+
+---
+
 ## 2026-08-29
 
 ### v0.22.17 — technique
