@@ -11,6 +11,7 @@ import '../utils/timer_display.dart';
 import 'pdf_download_stub.dart'
     if (dart.library.js_interop) 'pdf_download_web.dart';
 import '../../features/annotations/domain/annotation.dart';
+import '../../features/recipes/domain/nutrition_contributions.dart';
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/recipe_portion_scaler.dart';
 import 'cooklang_parser.dart';
@@ -37,6 +38,8 @@ class PdfExtraCounts {
     required this.notes,
     required this.tips,
     required this.corrections,
+    this.nutrition = false,
+    this.ingredientLines = 0,
   });
 
   factory PdfExtraCounts.of(Recipe recipe, List<Annotation> annotations) {
@@ -47,6 +50,10 @@ class PdfExtraCounts {
       notes: compte(AnnotationType.note),
       tips: compte(AnnotationType.tip),
       corrections: compte(AnnotationType.correction),
+      nutrition: recipe.nutrition != null,
+      ingredientLines: recipe.ingredients
+          .where((ingredient) => ingredient.name.trim().isNotEmpty)
+          .length,
     );
   }
 
@@ -55,8 +62,21 @@ class PdfExtraCounts {
   final int tips;
   final int corrections;
 
+  /// La recette porte un calcul nutritionnel. Un compte n'aurait pas de sens :
+  /// le bloc existe ou n'existe pas.
+  final bool nutrition;
+
+  /// Combien d'ingrédients auraient une ligne dans le détail par ingrédient.
+  ///
+  /// Sert au seul second interrupteur : proposer « détail par ingrédient » sur
+  /// une recette qui n'en liste aucun donnerait un tableau à une ligne.
+  final int ingredientLines;
+
   /// Faux quand il n'y a rien à choisir : le dialogue n'a alors pas lieu d'être.
-  bool get hasAny => images + notes + tips + corrections > 0;
+  bool get hasAny => images + notes + tips + corrections > 0 || nutrition;
+
+  /// Le détail par ingrédient ne se propose que s'il a de quoi se remplir.
+  bool get hasNutritionDetails => nutrition && ingredientLines > 0;
 }
 
 /// Ce que l'utilisateur a décidé d'emporter dans son PDF.
@@ -66,6 +86,8 @@ class PdfExportChoice {
     required this.notes,
     required this.tips,
     required this.corrections,
+    this.nutrition = false,
+    this.nutritionDetails = false,
   });
 
   /// Rien de plus que la recette — l'état quand il n'y a rien à choisir.
@@ -81,6 +103,21 @@ class PdfExportChoice {
   final bool tips;
   final bool corrections;
 
+  /// Les valeurs nutritionnelles de synthèse : par portion, recette entière,
+  /// et pour 100 g quand le calcul est complet.
+  final bool nutrition;
+
+  /// Le détail par ingrédient sous ces valeurs.
+  ///
+  /// Subordonné à [nutrition] : un tableau d'apports sans le total qu'il
+  /// alimente n'aurait rien à quoi se rapporter. [wantsNutritionDetails] tient
+  /// cette règle plutôt que le dialogue, pour qu'un réglage mémorisé ne puisse
+  /// pas la contourner.
+  final bool nutritionDetails;
+
+  /// Vrai quand le détail par ingrédient part réellement dans le document.
+  bool get wantsNutritionDetails => nutrition && nutritionDetails;
+
   /// Vrai si les annotations de ce type partent dans le document.
   bool keeps(AnnotationType type) => switch (type) {
     AnnotationType.note => notes,
@@ -93,12 +130,40 @@ class PdfExportChoice {
     bool? notes,
     bool? tips,
     bool? corrections,
+    bool? nutrition,
+    bool? nutritionDetails,
   }) => PdfExportChoice(
     images: images ?? this.images,
     notes: notes ?? this.notes,
     tips: tips ?? this.tips,
     corrections: corrections ?? this.corrections,
+    nutrition: nutrition ?? this.nutrition,
+    nutritionDetails: nutritionDetails ?? this.nutritionDetails,
   );
+}
+
+/// Ce que le document imprime de la nutrition.
+///
+/// Construit par l'appelant, qui seul dispose des référentiels d'unités et
+/// d'ingrédients : le générateur de PDF ne lit pas Firestore.
+class PdfNutritionBlock {
+  const PdfNutritionBlock({
+    required this.snapshot,
+    this.displayedPortions,
+    this.contributions,
+  });
+
+  final RecipeNutritionSnapshot snapshot;
+
+  /// Les parts pour lesquelles la colonne « par portion » est calculée.
+  ///
+  /// Le bloc stocké est calculé aux portions de la recette et ne bouge pas :
+  /// la division se refait ici, comme à l'écran, pour les parts affichées.
+  final int? displayedPortions;
+
+  /// Le détail par ingrédient, quand l'utilisateur l'a demandé. `null` sinon —
+  /// le document n'imprime alors que la synthèse.
+  final NutritionContributionTable? contributions;
 }
 
 /// « Cette recette contient 1 photo, 2 astuces et 1 correction. »
@@ -113,6 +178,9 @@ String pdfExtrasSentence(PdfExtraCounts counts) {
     if (counts.notes > 0) pluriel(counts.notes, 'remarque'),
     if (counts.tips > 0) pluriel(counts.tips, 'astuce'),
     if (counts.corrections > 0) pluriel(counts.corrections, 'correction'),
+    // Ni compté, ni pluriel : le bloc nutritionnel est unique. Il se nomme
+    // donc en toutes lettres et ferme l'énumération.
+    if (counts.nutrition) 'des valeurs nutritionnelles',
   ];
   if (morceaux.isEmpty) return 'Cette recette ne contient rien de plus.';
   if (morceaux.length == 1) return 'Cette recette contient ${morceaux.first}.';
@@ -137,6 +205,7 @@ Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
   Recipe recipe, {
   bool includeImages = false,
   List<Annotation> annotations = const [],
+  PdfNutritionBlock? nutrition,
   int? userRating,
   int? basePortions,
   int? selectedPortions,
@@ -162,6 +231,7 @@ Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
     recipe,
     includeImages: includeImages,
     annotations: annotations,
+    nutrition: nutrition,
     userRating: userRating,
     displayedPortions: effectiveSelectedPortions,
     ingredientsOverride: scaleRecipeIngredients(recipe.ingredients, factor),
@@ -197,6 +267,7 @@ Future<Uint8List> buildRecipePdfBytes(
   Recipe recipe, {
   bool includeImages = false,
   List<Annotation> annotations = const [],
+  PdfNutritionBlock? nutrition,
   int? userRating,
   int? displayedPortions,
   List<RecipeIngredient>? ingredientsOverride,
@@ -294,6 +365,14 @@ Future<Uint8List> buildRecipePdfBytes(
           ),
         ],
         pw.SizedBox(height: 20),
+        // La nutrition suit la méthode : elle décrit ce que la recette donne
+        // à manger, ce qui ne se lit qu'une fois su ce qu'elle contient.
+        if (nutrition != null) ...[
+          _divider(),
+          pw.SizedBox(height: 10),
+          _nutritionSection(nutrition, bold, regular, oblique),
+          pw.SizedBox(height: 20),
+        ],
         // Les annotations viennent APRÈS la préparation et AVANT les photos :
         // ce sont des commentaires sur la recette, ils se lisent une fois la
         // méthode connue.
@@ -992,6 +1071,316 @@ pw.Widget _annotationRow(
         ),
       ],
     ),
+  );
+}
+
+// ── Valeurs nutritionnelles ──────────────────────────────────────────────────
+
+/// L'unité d'un nutriment : les calories se comptent en kcal, le reste en g.
+String _nutritionUnit(String key) => key == 'kcal' ? 'kcal' : 'g';
+
+/// Une valeur de la synthèse, unité comprise, ou un tiret seul.
+String _nutritionSummaryValue(Map<String, double>? values, String key) {
+  final value = values?[key];
+  if (value == null) return '-';
+  return '${formatNutritionValue(value, integer: key == 'kcal')} '
+      '${_nutritionUnit(key)}';
+}
+
+pw.Widget _nutritionCell(
+  String text,
+  pw.Font font, {
+  double fontSize = 9,
+  PdfColor? color,
+  pw.Alignment alignment = pw.Alignment.centerRight,
+}) {
+  return pw.Container(
+    alignment: alignment,
+    padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 3),
+    child: pw.Text(
+      _sanitize(text),
+      style: pw.TextStyle(font: font, fontSize: fontSize, color: color),
+    ),
+  );
+}
+
+/// La synthèse, et sous elle le détail par ingrédient quand il a été demandé.
+///
+/// Le document n'arbitre pas : ce qu'il reçoit, il l'imprime. Le tri appartient
+/// au dialogue d'export, comme pour les annotations.
+pw.Widget _nutritionSection(
+  PdfNutritionBlock block,
+  pw.Font bold,
+  pw.Font regular,
+  pw.Font oblique,
+) {
+  final snapshot = block.snapshot;
+  final portions = block.displayedPortions ?? snapshot.selectedPortions;
+  final perPortion = snapshot.perPortionFor(block.displayedPortions);
+  // Le calcul partiel masque la vue pour 100 g, à l'écran comme ici : elle
+  // rapporterait les valeurs d'une partie de la recette au poids du tout.
+  final per100g = snapshot.per100g;
+  final contributions = block.contributions;
+
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('VALEURS NUTRITIONNELLES', bold),
+      pw.SizedBox(height: 6),
+      pw.Text(
+        _sanitize(
+          'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} % - '
+          'Fiabilite ${snapshot.quality.level} '
+          '(${snapshot.quality.score}/100) - '
+          '${_coverageStateLabel(snapshot.coverageState)}',
+        ),
+        style: pw.TextStyle(font: oblique, fontSize: 9, color: _kMuted),
+      ),
+      pw.SizedBox(height: 6),
+      pw.Table(
+        border: const pw.TableBorder(
+          horizontalInside: pw.BorderSide(color: _kDivider, width: 0.5),
+        ),
+        columnWidths: {
+          0: const pw.FlexColumnWidth(2.2),
+          1: const pw.FlexColumnWidth(1.4),
+          2: const pw.FlexColumnWidth(1.4),
+          if (per100g != null) 3: const pw.FlexColumnWidth(1.4),
+        },
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: _kAccentLight),
+            children: [
+              _nutritionCell(
+                'Nutriment',
+                bold,
+                alignment: pw.Alignment.centerLeft,
+              ),
+              _nutritionCell(
+                portions > 0 ? 'Par portion ($portions parts)' : 'Par portion',
+                bold,
+              ),
+              _nutritionCell('Recette', bold),
+              if (per100g != null) _nutritionCell('Pour 100 g', bold),
+            ],
+          ),
+          for (final metric in kNutritionMetricKeys)
+            pw.TableRow(
+              children: [
+                _nutritionCell(
+                  metric.$2,
+                  regular,
+                  alignment: pw.Alignment.centerLeft,
+                ),
+                _nutritionCell(
+                  _nutritionSummaryValue(perPortion, metric.$1),
+                  regular,
+                ),
+                _nutritionCell(
+                  _nutritionSummaryValue(snapshot.totals, metric.$1),
+                  regular,
+                ),
+                if (per100g != null)
+                  _nutritionCell(
+                    _nutritionSummaryValue(per100g, metric.$1),
+                    regular,
+                  ),
+              ],
+            ),
+        ],
+      ),
+      // Ce que le calcul lui-même signale. Imprimé sans mise en garde, un
+      // total dont les calories ne collent pas aux macronutriments se lirait
+      // comme une mesure.
+      if (snapshot.quality.warnings.isNotEmpty) ...[
+        pw.SizedBox(height: 6),
+        for (final warning in snapshot.quality.warnings)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 2),
+            child: pw.Text(
+              _sanitize('- $warning'),
+              style: pw.TextStyle(font: oblique, fontSize: 8, color: _kAccent),
+            ),
+          ),
+      ],
+      if (contributions != null) ...[
+        pw.SizedBox(height: 12),
+        _nutritionContributionsTable(contributions, bold, regular, oblique),
+      ],
+    ],
+  );
+}
+
+/// Libellé français de l'état de couverture renvoyé par le backend.
+String _coverageStateLabel(String state) => switch (state) {
+  'full' => 'Calcul complet',
+  'partial' => 'Calcul partiel',
+  'low' => 'Calcul incomplet',
+  'failed' => 'Calcul en échec',
+  _ => 'État inconnu',
+};
+
+/// Le tableau des apports, une ligne par ingrédient, le total en tête.
+///
+/// Dix colonnes sur une A4 portrait : les valeurs descendent à 7 points et les
+/// en-têtes à 6,5. En dessous, la colonne des noms ne tient plus « chapelure de
+/// pain de mie » sur deux lignes.
+pw.Widget _nutritionContributionsTable(
+  NutritionContributionTable table,
+  pw.Font bold,
+  pw.Font regular,
+  pw.Font oblique,
+) {
+  const nomLargeur = 110.0;
+  const quantiteLargeur = 52.0;
+  const metriqueLargeur = 40.0;
+  final absorbedOil = table.absorbedOil;
+
+  pw.TableRow ligne({
+    required String nom,
+    required String quantite,
+    required Map<String, double>? valeurs,
+    required pw.Font font,
+    PdfColor? color,
+  }) {
+    return pw.TableRow(
+      children: [
+        _nutritionCell(
+          nom,
+          font,
+          fontSize: 7,
+          color: color,
+          alignment: pw.Alignment.centerLeft,
+        ),
+        _nutritionCell(quantite, font, fontSize: 7, color: color),
+        for (final metric in kNutritionMetricKeys)
+          _nutritionCell(
+            formatNutritionValue(
+              valeurs?[metric.$1],
+              integer: metric.$1 == 'kcal',
+            ),
+            font,
+            fontSize: 7,
+            color: color,
+          ),
+      ],
+    );
+  }
+
+  /// L'huile que la friture a fait passer du bain à l'assiette.
+  ///
+  /// [nested] la range sous le bain qui l'a produite : les deux lignes se
+  /// lisent alors comme une seule idée — on jette le litre, on mange les 55 g.
+  pw.TableRow ligneHuile(RecipeAbsorbedOil oil, {required bool nested}) =>
+      ligne(
+        nom: nested ? '   dont absorbée' : '${oil.sourceName} absorbée',
+        quantite: '${oil.grams.toStringAsFixed(0)} g',
+        valeurs: oil.contribution,
+        font: oblique,
+        color: _kMuted,
+      );
+
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        'Apports par ingrédient',
+        style: pw.TextStyle(
+          font: bold,
+          fontSize: 10,
+          color: PdfColor.fromInt(0xFF212121),
+        ),
+      ),
+      pw.SizedBox(height: 4),
+      pw.Table(
+        border: const pw.TableBorder(
+          horizontalInside: pw.BorderSide(color: _kDivider, width: 0.5),
+        ),
+        columnWidths: {
+          0: const pw.FixedColumnWidth(nomLargeur),
+          1: const pw.FixedColumnWidth(quantiteLargeur),
+          for (var i = 0; i < kNutritionMetricKeys.length; i++)
+            i + 2: const pw.FixedColumnWidth(metriqueLargeur),
+        },
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: _kAccentLight),
+            children: [
+              _nutritionCell(
+                'Ingrédient',
+                bold,
+                fontSize: 6.5,
+                alignment: pw.Alignment.centerLeft,
+              ),
+              _nutritionCell('Quantité', bold, fontSize: 6.5),
+              for (final metric in kNutritionMetricKeys)
+                _nutritionCell(metric.$2, bold, fontSize: 6.5),
+            ],
+          ),
+          // Le total ouvre le tableau, comme à l'écran : c'est le chiffre
+          // qu'on vient chercher, les lignes en dessous l'expliquent.
+          pw.TableRow(
+            children: [
+              _nutritionCell(
+                'TOTAL',
+                bold,
+                fontSize: 7,
+                alignment: pw.Alignment.centerLeft,
+              ),
+              _nutritionCell(
+                table.knownWeight > 0
+                    ? '${table.knownWeight.toStringAsFixed(0)} g'
+                    : '-',
+                bold,
+                fontSize: 7,
+              ),
+              for (final metric in kNutritionMetricKeys)
+                _nutritionCell(
+                  formatNutritionValue(
+                    table.totalFor(metric.$1),
+                    integer: metric.$1 == 'kcal',
+                  ),
+                  bold,
+                  fontSize: 7,
+                ),
+            ],
+          ),
+          for (final row in table.rows) ...[
+            ligne(
+              // Ce qui sort du total le dit sur la ligne : sans tooltip pour
+              // l'expliquer, un nom en italique ne suffirait pas sur papier.
+              nom: row.isExcluded
+                  ? '${row.ingredient.name} (hors total)'
+                  : row.isMissing
+                  ? '${row.ingredient.name} (sans valeur)'
+                  : row.ingredient.name,
+              quantite: nutritionQuantityCellText(row),
+              valeurs: row.perIngredient,
+              font: row.isExcluded ? oblique : regular,
+              color: row.isExcluded ? _kMuted : null,
+            ),
+            if (absorbedOil != null && table.isAbsorbedOilSource(row))
+              ligneHuile(absorbedOil, nested: true),
+          ],
+          // Le bain n'est pas listé, ou sous un nom que le serveur n'a pas
+          // retenu : la ligne dérivée ferme le tableau plutôt que de
+          // disparaître.
+          if (absorbedOil != null && table.hasOrphanAbsorbedOil)
+            ligneHuile(absorbedOil, nested: false),
+        ],
+      ),
+      if (table.needsLegend) ...[
+        pw.SizedBox(height: 6),
+        for (final entry in nutritionLegendEntries(table))
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 2),
+            child: pw.Text(
+              _sanitize('- ${entry.label}'),
+              style: pw.TextStyle(font: oblique, fontSize: 7, color: _kMuted),
+            ),
+          ),
+      ],
+    ],
   );
 }
 

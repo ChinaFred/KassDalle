@@ -1,27 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/utils/ingredient_name.dart';
-import '../../../../core/utils/nutrition_quantity_converter.dart';
-
 import '../../../../core/services/nutrition_units_reference.dart';
-import '../../../admin/data/nutrition_ingredients_repository.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../domain/nutrition_contributions.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
-
-const _nutritionMetricKeys = [
-  ('kcal', 'Calories'),
-  ('protein_g', 'Protéines'),
-  ('carbs_g', 'Glucides'),
-  ('sugar_g', 'Sucres'),
-  ('fiber_g', 'Fibres'),
-  ('fat_g', 'Lipides'),
-  ('saturated_fat_g', 'Saturés'),
-  ('salt_g', 'Sel'),
-];
 
 /// Libellé français de l'état de couverture renvoyé par le backend.
 ///
@@ -99,54 +85,6 @@ class _MiniMetric extends StatelessWidget {
   }
 }
 
-class _NutritionIngredientRow {
-  final RecipeIngredient ingredient;
-  final String canonicalId;
-  final Map<String, double>? perIngredient;
-  final double? weightGrams;
-
-  /// Le poids d'une unité de cet ingrédient est estimé par l'IA
-  /// (« 1 fine tranche » ne se mesure pas, elle se devine).
-  final bool weightEstimated;
-
-  /// La recette n'écrivait pas de quantité : celle-ci a été lue par
-  /// convention. « sel, pincée » et « poivre » tout court se pèsent à la
-  /// pincée — un demi-gramme qu'il vaut mieux compter que perdre, mais qui
-  /// doit se dire, sinon il se lit comme une donnée de la recette.
-  final bool quantityAssumed;
-
-  /// L'ingrédient appartient à la recette mais pas au repas : bain de friture,
-  /// foin de fumage, marinade jetée. Ses valeurs restent affichées — les
-  /// masquer reviendrait à cacher un ingrédient — mais sortent du total.
-  final bool notConsumed;
-
-  /// La ligne reprend un ingrédient déjà listé : la pièce achetée revient
-  /// découpée ou sous un nom générique. Même traitement que [notConsumed] —
-  /// visible, atténuée, hors total.
-  final bool duplicate;
-
-  const _NutritionIngredientRow({
-    required this.ingredient,
-    required this.canonicalId,
-    this.perIngredient,
-    this.weightGrams,
-    this.quantityAssumed = false,
-    this.weightEstimated = false,
-    this.notConsumed = false,
-    this.duplicate = false,
-  });
-
-  /// Écartée du total, mais délibérément : rien à corriger ici.
-  bool get isExcluded => notConsumed || duplicate;
-
-  /// Rien à afficher : ni poids, ni valeurs. C'est le cas qu'il ne faut pas
-  /// laisser passer pour une simple série de tirets.
-  ///
-  /// Un ingrédient écarté volontairement n'est pas « manquant » : son absence
-  /// du total est voulue.
-  bool get isMissing => perIngredient == null && !isExcluded;
-}
-
 /// Pourquoi cet ingrédient ne contribue à rien : poids inconnu, valeurs
 /// inconnues, ou les deux. Le distinguer évite de chercher au mauvais endroit —
 /// le poids se corrige dans les unités, les valeurs dans les ingrédients.
@@ -156,7 +94,7 @@ class _NutritionIngredientRow {
 /// lecteur vers « Admin → Unités », c'est lui demander d'ouvrir une porte
 /// fermée. Les autres rôles apprennent ce qui manque, pas où le réparer.
 String _missingExplanation(
-  _NutritionIngredientRow row, {
+  NutritionContributionRow row, {
   required bool isAdmin,
 }) {
   if (row.weightGrams == null) {
@@ -189,30 +127,6 @@ String _absorbedOilExplanation(RecipeAbsorbedOil oil) {
       'l\'absorption ne peut pas dépasser le bain.';
 }
 
-/// Une valeur nutritionnelle, ou un tiret quand elle est inconnue.
-///
-/// Fonction de bibliothèque plutôt que méthode de l'écran : elle ne dépend
-/// d'aucun état, et les lignes du tableau se construisent désormais aussi en
-/// dehors de la classe.
-String _fmtNum(double? v, {bool integer = false}) {
-  if (v == null) return '-';
-  return integer ? v.round().toString() : v.toStringAsFixed(1);
-}
-
-/// Cette ligne écartée est-elle le bain d'où sort l'huile absorbée ?
-///
-/// Le serveur nomme sa source : c'est l'ingrédient non consommé le plus gras de
-/// la recette. On ne rapproche que des lignes déjà écartées — un homonyme
-/// consommé (« huile d'olive » de l'assaisonnement) n'est pas ce bain-là.
-bool _isAbsorbedOilSource(
-  _NutritionIngredientRow row,
-  RecipeAbsorbedOil absorbedOil,
-) {
-  if (!row.notConsumed) return false;
-  return row.ingredient.name.trim().toLowerCase() ==
-      absorbedOil.sourceName.trim().toLowerCase();
-}
-
 /// Ligne dérivée : l'huile que la friture a fait passer du bain à l'assiette.
 ///
 /// [nested] la place sous le bain qui l'a produite — elle se contente alors
@@ -243,10 +157,10 @@ DataRow _absorbedOilDataRow(
         ),
       ),
       DataCell(Text('${absorbedOil.grams.toStringAsFixed(0)} g', style: style)),
-      for (final metric in _nutritionMetricKeys)
+      for (final metric in kNutritionMetricKeys)
         DataCell(
           Text(
-            _fmtNum(
+            formatNutritionValue(
               absorbedOil.contribution[metric.$1],
               integer: metric.$1 == 'kcal',
             ),
@@ -258,56 +172,39 @@ DataRow _absorbedOilDataRow(
 }
 
 /// Ce que vaut la ligne, faute de quantité écrite dans la recette.
-///
-/// Le libellé nomme l'unité réellement appliquée plutôt qu'un nombre de
-/// grammes : le poids d'une pincée se corrige depuis Admin → Unités, et un
-/// message qui annonce « 0,5 g » vieillirait le jour où quelqu'un le change.
-String _assumedUnitName(_NutritionIngredientRow row) {
-  final weighing = NutritionQuantityConverter.resolveWeighingInput(
-    ingredientName: row.ingredient.name,
-    qty: row.ingredient.qty,
-    unit: row.ingredient.unit,
-  );
-  final normalized = NutritionQuantityConverter.normalizeObservedUnit(
-    weighing?.unit ?? '',
-  );
-  return switch (normalized) {
-    'pincee' => 'pincée',
-    'pointe_de_couteau' => 'pointe de couteau',
-    _ => 'unité',
-  };
-}
-
-/// Ce que vaut la ligne, faute de quantité écrite dans la recette.
-String _assumedQuantityLabel(_NutritionIngredientRow row) =>
-    'une ${_assumedUnitName(row)}';
-
-/// Ce qu'affiche la colonne « Quantite ».
-///
-/// D'abord ce que la recette écrit. Quand elle n'écrit rien — « poivre » tout
-/// court —, l'unité retenue par le calcul prend sa place : la ligne montrait
-/// sinon une pastille seule, sans dire de quoi elle parlait, à côté d'un
-/// « Pincée » lisible sur la ligne du dessus.
-String _quantityCellText(_NutritionIngredientRow row) {
-  final written = [
-    row.ingredient.qty.trim(),
-    row.ingredient.unit.trim(),
-  ].where((part) => part.isNotEmpty).join(' ');
-  if (written.isNotEmpty) return written;
-  if (!row.quantityAssumed) return '';
-  final name = _assumedUnitName(row);
-  return name.isEmpty ? '' : name[0].toUpperCase() + name.substring(1);
-}
+String _assumedQuantityLabel(NutritionContributionRow row) =>
+    'une ${nutritionAssumedUnitName(row)}';
 
 /// Même règle pour le poids estimé par l'IA.
 String _estimatedUnitExplanation(
-  _NutritionIngredientRow row, {
+  NutritionContributionRow row, {
   required bool isAdmin,
 }) {
   final base =
       'Poids d\'une unité « ${row.ingredient.unit} » estimé par l\'IA : '
       'cette unité ne correspond à aucune mesure standard.';
   return isAdmin ? '$base Corrigeable depuis Admin → Unités.' : base;
+}
+
+IconData _legendIcon(NutritionLegendKind kind) => switch (kind) {
+  NutritionLegendKind.absorbedOil => Icons.water_drop_outlined,
+  NutritionLegendKind.assumedQuantity => Icons.grain,
+  NutritionLegendKind.estimatedUnit => Icons.auto_awesome_outlined,
+  NutritionLegendKind.notConsumed => Icons.do_not_disturb_on_outlined,
+  NutritionLegendKind.duplicate => Icons.content_copy_outlined,
+  NutritionLegendKind.missing => Icons.help_outline,
+};
+
+Color _legendColor(BuildContext context, NutritionLegendKind kind) {
+  final scheme = Theme.of(context).colorScheme;
+  return switch (kind) {
+    NutritionLegendKind.absorbedOil ||
+    NutritionLegendKind.assumedQuantity ||
+    NutritionLegendKind.estimatedUnit => scheme.tertiary,
+    NutritionLegendKind.notConsumed ||
+    NutritionLegendKind.duplicate => scheme.outline,
+    NutritionLegendKind.missing => scheme.error,
+  };
 }
 
 /// Ligne de légende sous le tableau des apports.
@@ -460,93 +357,12 @@ class _NutritionDetailsSectionState
   bool _showContributionTable = true;
   bool _showIngredientDetails = true;
 
-  /// Poids d'un ingrédient, référentiels `nutrition_units` et
-  /// `nutrition_ingredients` appliqués.
-  ///
-  /// Même arbitrage que le calcul serveur ([recipeNutrition.ts]) : quand
-  /// l'ingrédient se compte à la pièce, le poids d'une pièce **du référentiel
-  /// d'ingrédients** l'emporte — c'est la donnée la plus spécifique dont on
-  /// dispose. L'app l'ignorait, si bien qu'elle continuait d'afficher le poids
-  /// générique alors que le serveur calculait, lui, avec le bon.
-  double? _ingredientWeight(
-    RecipeIngredient ingredient,
-    NutritionIngredientDoc? profile,
-  ) {
-    return resolveIngredientWeightGrams(
-      overrides: ref.watch(nutritionUnitOverridesProvider),
-      ingredientName: ingredient.name,
-      qty: ingredient.qty,
-      unit: ingredient.unit,
-      ingredientOverride: profile == null
-          ? null
-          : IngredientWeightOverride(
-              gramsPerPiece: profile.gramsPerPiece,
-              gramsPerUnit: profile.gramsPerUnit,
-            ),
-    );
-  }
-
-  /// Document du référentiel qui porte les valeurs de cet ingrédient.
-  NutritionIngredientDoc? _profileFor(
-    RecipeIngredient ingredient,
-    Map<String, NutritionIngredientDoc> nutritionById,
-  ) {
-    for (final candidate in buildIngredientLookupIds(ingredient.name)) {
-      final doc = nutritionById[candidate];
-      if (doc == null || !doc.hasUsableValues) continue;
-      return doc;
-    }
-    return null;
-  }
-
-  /// Document du référentiel, valeurs nutritionnelles ou non.
-  ///
-  /// Distinct de [_profileFor] : un ingrédient peut connaître le poids de sa
-  /// pièce sans avoir encore ses valeurs pour 100 g. Confondre les deux ferait
-  /// perdre le poids exact au moment précis où il est le plus utile.
-  NutritionIngredientDoc? _docFor(
-    RecipeIngredient ingredient,
-    Map<String, NutritionIngredientDoc> nutritionById,
-  ) {
-    for (final candidate in buildIngredientLookupIds(ingredient.name)) {
-      final doc = nutritionById[candidate];
-      if (doc != null) return doc;
-    }
-    return null;
-  }
-
-  /// Identifiants du référentiel à charger pour cette recette.
-  ///
-  /// Les mêmes variantes que celles interrogées par le serveur — strict,
-  /// canonique, singulier — pour que les deux couches trouvent ou ne trouvent
-  /// pas exactement les mêmes profils.
-  String _profileIdsKey() => nutritionProfileIdsKey([
-    for (final ingredient in widget.recipe.ingredients)
-      ...buildIngredientLookupIds(ingredient.name),
-  ]);
-
-  /// Apport d'un ingrédient dont le profil est connu.
-  ///
-  /// Les métriques affichées partent de zéro, puis le profil les remplit. Le
-  /// référentiel n'enregistre que les valeurs strictement positives : ce qu'il
-  /// ne liste pas est un zéro, pas une inconnue. Sans ce garnissage, le sel
-  /// affichait sept tirets — « on ne sait pas » — pour sept zéros certains,
-  /// alors même que le total, lui, les additionnait déjà comme des zéros.
-  Map<String, double> _contributionOf(
-    NutritionIngredientDoc profile,
-    double weightGrams,
-  ) {
-    return {
-      for (final metric in _nutritionMetricKeys) metric.$1: 0,
-      for (final entry in profile.per100g.entries)
-        entry.key: (weightGrams * entry.value) / 100,
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final nutritionAsync = ref.watch(
-      nutritionIngredientsByIdProvider(_profileIdsKey()),
+      nutritionIngredientsByIdProvider(
+        nutritionProfileIdsKey(recipeNutritionProfileIds(widget.recipe)),
+      ),
     );
     final snapshot = widget.recipe.nutrition;
     // Conditionne les consignes de correction : elles pointent vers /admin,
@@ -582,93 +398,24 @@ class _NutritionDetailsSectionState
               compact: true,
             ),
             data: (nutritionById) {
-              final unitInfos = ref.watch(nutritionUnitInfosProvider);
-              // Le verdict « cette ligne en reprend une autre » vient du
-              // serveur : il demande de lire la recette, pas de comparer des
-              // noms. L'app se contente de le refléter.
-              final duplicateNames = snapshot.duplicateIngredients
-                  .map((name) => name.trim().toLowerCase())
-                  .toSet();
-              final rows = widget.recipe.ingredients
-                  .where((ingredient) => ingredient.name.trim().isNotEmpty)
-                  .map((ingredient) {
-                    final profile = _profileFor(ingredient, nutritionById);
-                    final doc = _docFor(ingredient, nutritionById);
-                    final weight = _ingredientWeight(ingredient, doc);
-                    return _NutritionIngredientRow(
-                      notConsumed: doc?.notConsumed ?? false,
-                      duplicate: duplicateNames.contains(
-                        ingredient.name.trim().toLowerCase(),
-                      ),
-                      ingredient: ingredient,
-                      canonicalId: normalizeIngredientCanonicalId(
-                        ingredient.name,
-                      ),
-                      perIngredient: weight == null || profile == null
-                          ? null
-                          : _contributionOf(profile, weight),
-                      weightGrams: weight,
-                      quantityAssumed:
-                          weight != null &&
-                          NutritionQuantityConverter.parseQuantity(
-                                ingredient.qty,
-                              ) ==
-                              null,
-                      weightEstimated: isUnitWeightEstimated(
-                        infos: unitInfos,
-                        unit: ingredient.unit,
-                      ),
-                    );
-                  })
-                  .toList(growable: false);
-              // Seules les unités devinées restent signalées ligne à ligne :
-              // le poids d'une « fine tranche » est une convention choisie par
-              // l'IA, pas une donnée mesurée, et il change le résultat.
-              final estimatedUnitCount = rows
-                  .where((r) => !r.isMissing && r.weightEstimated)
-                  .length;
-              final missingCount = rows.where((r) => r.isMissing).length;
-              final assumedCount = rows
-                  .where((r) => !r.isMissing && r.quantityAssumed)
-                  .length;
-              final notConsumedCount = rows.where((r) => r.notConsumed).length;
-              final duplicateCount = rows.where((r) => r.duplicate).length;
+              // Le tableau se construit dans le domaine : le PDF exporté
+              // dessine le même, et deux calculs séparés finiraient par donner
+              // deux totaux à la même recette.
+              final table = buildNutritionContributions(
+                recipe: widget.recipe,
+                nutritionById: nutritionById,
+                unitOverrides: ref.watch(nutritionUnitOverridesProvider),
+                unitInfos: ref.watch(nutritionUnitInfosProvider),
+              );
+              final rows = table.rows;
 
               // L'huile absorbée n'est pas un ingrédient : elle n'a pas de
               // ligne dans la recette, mais elle finit dans l'assiette. Le
               // serveur la calcule ; le tableau, qui refait ses totaux depuis
               // les lignes, doit la compter comme elle — sinon le TOTAL affiché
               // ici contredirait les calories par portion affichées au-dessus.
-              final absorbedOil = snapshot.absorbedOil;
-
-              // Le total ignore ce qui n'est pas mangé. Un litre de bain de
-              // friture y pesait 8280 kcal et écrasait toute la recette.
-              double? totalFor(String key) {
-                var hasValue = false;
-                var sum = 0.0;
-                for (final row in rows) {
-                  if (row.isExcluded) continue;
-                  final value = row.perIngredient?[key];
-                  if (value == null) continue;
-                  hasValue = true;
-                  sum += value;
-                }
-                final absorbed = absorbedOil?.contribution[key];
-                if (absorbed != null) {
-                  hasValue = true;
-                  sum += absorbed;
-                }
-                return hasValue ? sum : null;
-              }
-
-              final knownWeight =
-                  rows
-                      .where((row) => !row.isExcluded)
-                      .fold<double>(
-                        0,
-                        (acc, row) => acc + (row.weightGrams ?? 0),
-                      ) +
-                  (absorbedOil?.grams ?? 0);
+              final absorbedOil = table.absorbedOil;
+              final knownWeight = table.knownWeight;
 
               // Division faite ici, pour les parts affichées : le bloc stocké
               // est calculé aux portions de la recette et ne bouge pas.
@@ -686,19 +433,21 @@ class _NutritionDetailsSectionState
                       _MiniMetric(
                         label: 'Calories / portion',
                         value:
-                            '${_fmtNum(perPortion['kcal'], integer: true)} kcal',
+                            '${formatNutritionValue(perPortion['kcal'], integer: true)} kcal',
                       ),
                       _MiniMetric(
                         label: 'Protéines',
-                        value: '${_fmtNum(perPortion['protein_g'])} g',
+                        value:
+                            '${formatNutritionValue(perPortion['protein_g'])} g',
                       ),
                       _MiniMetric(
                         label: 'Glucides',
-                        value: '${_fmtNum(perPortion['carbs_g'])} g',
+                        value:
+                            '${formatNutritionValue(perPortion['carbs_g'])} g',
                       ),
                       _MiniMetric(
                         label: 'Lipides',
-                        value: '${_fmtNum(perPortion['fat_g'])} g',
+                        value: '${formatNutritionValue(perPortion['fat_g'])} g',
                       ),
                     ],
                   ),
@@ -825,11 +574,11 @@ class _NutritionDetailsSectionState
                                   ],
                                 ),
                               ),
-                              for (final metric in _nutritionMetricKeys)
+                              for (final metric in kNutritionMetricKeys)
                                 DataCell(
                                   Text(
-                                    _fmtNum(
-                                      totalFor(metric.$1),
+                                    formatNutritionValue(
+                                      table.totalFor(metric.$1),
                                       integer: metric.$1 == 'kcal',
                                     ),
                                     style: const TextStyle(
@@ -890,7 +639,7 @@ class _NutritionDetailsSectionState
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(_quantityCellText(row)),
+                                        Text(nutritionQuantityCellText(row)),
                                         if (row.quantityAssumed)
                                           _AssumedQuantityBadge(
                                             unitLabel: _assumedQuantityLabel(
@@ -907,10 +656,10 @@ class _NutritionDetailsSectionState
                                       ],
                                     ),
                                   ),
-                                  for (final metric in _nutritionMetricKeys)
+                                  for (final metric in kNutritionMetricKeys)
                                     DataCell(
                                       Text(
-                                        _fmtNum(
+                                        formatNutritionValue(
                                           row.perIngredient?[metric.$1],
                                           integer: metric.$1 == 'kcal',
                                         ),
@@ -931,7 +680,7 @@ class _NutritionDetailsSectionState
                               // mange les 55 g. Reléguée en fin de tableau,
                               // elle ressemblait à un ingrédient oublié.
                               if (absorbedOil != null &&
-                                  _isAbsorbedOilSource(row, absorbedOil))
+                                  table.isAbsorbedOilSource(row))
                                 _absorbedOilDataRow(
                                   context,
                                   absorbedOil,
@@ -943,9 +692,7 @@ class _NutritionDetailsSectionState
                           // tableau plutôt que de disparaître.
                           if (_showIngredientDetails &&
                               absorbedOil != null &&
-                              !rows.any(
-                                (row) => _isAbsorbedOilSource(row, absorbedOil),
-                              ))
+                              table.hasOrphanAbsorbedOil)
                             _absorbedOilDataRow(
                               context,
                               absorbedOil,
@@ -955,59 +702,20 @@ class _NutritionDetailsSectionState
                       ),
                     ),
                   ],
-                  if (estimatedUnitCount > 0 ||
-                      assumedCount > 0 ||
-                      missingCount > 0 ||
-                      notConsumedCount > 0 ||
-                      duplicateCount > 0 ||
-                      absorbedOil != null) ...[
+                  if (table.needsLegend) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
                       runSpacing: 4,
                       children: [
-                        if (absorbedOil != null)
+                        // Les textes viennent du domaine : le PDF exporté
+                        // imprime la même légende, et deux formulations
+                        // décriraient différemment le même tableau.
+                        for (final entry in nutritionLegendEntries(table))
                           _LegendEntry(
-                            icon: Icons.water_drop_outlined,
-                            color: Theme.of(context).colorScheme.tertiary,
-                            label:
-                                '${absorbedOil.grams.toStringAsFixed(0)} g d\'huile absorbée '
-                                'à la friture, comptée dans le total',
-                          ),
-                        if (assumedCount > 0)
-                          _LegendEntry(
-                            icon: Icons.grain,
-                            color: Theme.of(context).colorScheme.tertiary,
-                            label:
-                                '$assumedCount ingrédient(s) sans quantité, comptés à la pincée',
-                          ),
-                        if (estimatedUnitCount > 0)
-                          _LegendEntry(
-                            icon: Icons.auto_awesome_outlined,
-                            color: Theme.of(context).colorScheme.tertiary,
-                            label:
-                                '$estimatedUnitCount unité(s) au poids estimé',
-                          ),
-                        if (notConsumedCount > 0)
-                          _LegendEntry(
-                            icon: Icons.do_not_disturb_on_outlined,
-                            color: Theme.of(context).colorScheme.outline,
-                            label:
-                                '$notConsumedCount ingrédient(s) non consommé(s), hors total',
-                          ),
-                        if (duplicateCount > 0)
-                          _LegendEntry(
-                            icon: Icons.content_copy_outlined,
-                            color: Theme.of(context).colorScheme.outline,
-                            label:
-                                '$duplicateCount ligne(s) déjà comptée(s) plus haut',
-                          ),
-                        if (missingCount > 0)
-                          _LegendEntry(
-                            icon: Icons.help_outline,
-                            color: Theme.of(context).colorScheme.error,
-                            label:
-                                '$missingCount ingrédient(s) sans valeur, exclus du total',
+                            icon: _legendIcon(entry.kind),
+                            color: _legendColor(context, entry.kind),
+                            label: entry.label,
                           ),
                       ],
                     ),

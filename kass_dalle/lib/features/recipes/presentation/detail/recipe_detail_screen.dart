@@ -16,6 +16,8 @@ import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../planning/domain/meal_prep_context.dart';
+import '../../../../core/services/nutrition_units_reference.dart';
+import '../../domain/nutrition_contributions.dart';
 import '../../domain/recipe.dart';
 import '../../domain/storage_text.dart';
 import '../recipe_providers.dart';
@@ -606,6 +608,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           notes: prefs.getBool('pdf_include_notes') ?? true,
           tips: prefs.getBool('pdf_include_tips') ?? true,
           corrections: prefs.getBool('pdf_include_corrections') ?? true,
+          nutrition: prefs.getBool('pdf_include_nutrition') ?? true,
+          // Le détail par ingrédient, lui, part décoché : dix colonnes de
+          // diagnostic sur une fiche de cuisine se demandent, elles ne
+          // s'imposent pas.
+          nutritionDetails:
+              prefs.getBool('pdf_include_nutrition_details') ?? false,
         ),
       );
       if (answer == null) return;
@@ -624,6 +632,60 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       if (counts.corrections > 0) {
         await prefs.setBool('pdf_include_corrections', choice.corrections);
       }
+      if (counts.nutrition) {
+        await prefs.setBool('pdf_include_nutrition', choice.nutrition);
+      }
+      if (counts.hasNutritionDetails) {
+        await prefs.setBool(
+          'pdf_include_nutrition_details',
+          choice.nutritionDetails,
+        );
+      }
+    }
+
+    // Le détail par ingrédient se calcule avec les référentiels d'unités et
+    // d'ingrédients, que le générateur de PDF ne lit pas lui-même. Cette
+    // lecture n'a lieu que si l'utilisateur l'a demandée.
+    final snapshot = recipe.nutrition;
+    PdfNutritionBlock? nutritionBlock;
+    if (snapshot != null && choice.nutrition) {
+      NutritionContributionTable? contributions;
+      if (choice.wantsNutritionDetails) {
+        try {
+          final profiles = await ref.read(
+            nutritionIngredientsByIdProvider(
+              nutritionProfileIdsKey(recipeNutritionProfileIds(recipe)),
+            ).future,
+          );
+          // Le référentiel d'unités d'abord : les providers qui en dérivent
+          // rendent une table vide tant qu'il n'est pas chargé, et le tableau
+          // sortirait alors avec des poids de repli.
+          await ref.read(nutritionUnitsProvider.future);
+          contributions = buildNutritionContributions(
+            recipe: recipe,
+            nutritionById: profiles,
+            unitOverrides: ref.read(nutritionUnitOverridesProvider),
+            unitInfos: ref.read(nutritionUnitInfosProvider),
+          );
+        } catch (error, stackTrace) {
+          reportUnexpectedError(
+            feature: 'recipeDetailScreen.exportPdf.readNutrition',
+            error: error,
+            stackTrace: stackTrace,
+            context: {'recipe_id': recipe.id},
+          );
+          if (!mounted) return;
+          context.showErrorSnackBar(
+            'Impossible de lire le détail nutritionnel : export annulé.',
+          );
+          return;
+        }
+      }
+      nutritionBlock = PdfNutritionBlock(
+        snapshot: snapshot,
+        displayedPortions: selectedPortions,
+        contributions: contributions,
+      );
     }
 
     if (!mounted) return;
@@ -638,6 +700,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         annotations: annotations
             .where((a) => choice.keeps(a.type))
             .toList(growable: false),
+        nutrition: nutritionBlock,
         userRating: userRating,
         basePortions: basePortions,
         selectedPortions: selectedPortions,
@@ -926,6 +989,34 @@ Future<PdfExportChoice?> _showPdfExportDialog(
                   onChanged: (v) => setDlgState(
                     () => choice = choice.copyWith(corrections: v),
                   ),
+                ),
+              if (counts.nutrition)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Inclure les valeurs nutritionnelles'),
+                  subtitle: const Text(
+                    'Par portion, recette entière et pour 100 g',
+                  ),
+                  value: choice.nutrition,
+                  onChanged: (v) =>
+                      setDlgState(() => choice = choice.copyWith(nutrition: v)),
+                ),
+              // Décroché plutôt que caché quand la synthèse est refusée : la
+              // case disparaîtrait sous le doigt au moment où l'on coupe la
+              // nutrition, et son réglage reste visible.
+              if (counts.hasNutritionDetails)
+                SwitchListTile(
+                  contentPadding: const EdgeInsets.only(left: 16),
+                  title: const Text('Détail par ingrédient'),
+                  subtitle: const Text(
+                    'Le tableau des apports, ligne par ligne',
+                  ),
+                  value: choice.wantsNutritionDetails,
+                  onChanged: choice.nutrition
+                      ? (v) => setDlgState(
+                          () => choice = choice.copyWith(nutritionDetails: v),
+                        )
+                      : null,
                 ),
             ],
           ),

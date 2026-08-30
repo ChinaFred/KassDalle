@@ -422,6 +422,21 @@ déjà transmise continue de fonctionner.
 
 - Export d'une recette en PDF mis en forme, avec ses photos, ses badges et ses minuteurs.
 - Sur mobile, le PDF part dans la feuille de partage du système ; sur web et desktop, il se télécharge.
+- **Un dialogue demande ce que le document emporte en plus de la méthode** : les
+  photos, les remarques, les astuces, les corrections, les valeurs
+  nutritionnelles, et sous elles le détail par ingrédient. Chaque réglage est
+  mémorisé d'un export à l'autre.
+- **Le dialogue ne propose que ce qui existe.** Une recette sans astuce n'affiche
+  pas la case correspondante ; une recette sans rien de plus n'ouvre aucun
+  dialogue. Le détail par ingrédient est subordonné aux valeurs
+  nutritionnelles : décochées, il ne part pas.
+- Les valeurs nutritionnelles imprimées reprennent l'onglet Nutrition : par
+  portion (pour les parts affichées), recette entière, pour 100 g quand le
+  calcul est complet, couverture, fiabilité et avertissements. Le détail par
+  ingrédient reprend le tableau des apports, lignes hors total et huile
+  absorbée comprises, avec sa légende.
+- Le détail par ingrédient part **décoché par défaut** : c'est un tableau de
+  diagnostic, pas une fiche de cuisine.
 
 ---
 

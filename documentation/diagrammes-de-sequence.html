@@ -1915,22 +1915,28 @@ sequenceDiagram
   actor U as Lecteur
   participant D as RecipeDetailScreen
   participant CH as Dialogue d'export
+  participant FS as Firestore
   participant EX as exportRecipeToPdf
   participant ST as Cloud Storage
   participant OS as Système
 
   U->>D: Exporter en PDF
-  D->>CH: PdfExtraCounts — images, remarques, astuces, corrections
+  D->>CH: PdfExtraCounts — images, remarques, astuces,<br/>corrections, nutrition
   alt rien à choisir
     CH-->>EX: PdfExportChoice.rien
     Note over CH: le dialogue n'a pas lieu d'être
   else
-    CH-->>U: quatre cases, chacune annonçant son compte
+    CH-->>U: une case par contenu réellement présent
     U-->>CH: choix
   end
 
+  opt détail par ingrédient demandé
+    D->>FS: nutrition_units, nutrition_ingredients
+    D->>D: buildNutritionContributions — le tableau de l'onglet Nutrition
+  end
+
   EX->>ST: télécharge les images retenues
-  EX->>EX: compose le document — en-tête, ingrédients,<br/>étapes, badges, minuteurs, annotations gardées
+  EX->>EX: compose le document — en-tête, ingrédients,<br/>étapes, badges, minuteurs, nutrition, annotations gardées
   EX-->>D: octets + nom de fichier
 
   alt mobile ou desktop
@@ -1948,6 +1954,14 @@ sequenceDiagram
         <span class="expect">
           <b>Le choix est par type d'annotation, pas global.</b> Une correction n'a pas la même
           valeur qu'une astuce sur une feuille posée sur le plan de travail.
+        </span>
+        <span class="expect">
+          <b>Le tableau nutrition se calcule dans le domaine, pas dans l'écran.</b> L'onglet
+          Nutrition et le PDF appellent la même fonction
+          (<code>buildNutritionContributions</code>) : deux calculs séparés auraient donné deux
+          totaux à la même recette, sans lever d'erreur. Les référentiels ne sont lus que si le
+          détail par ingrédient est demandé ; leur lecture échouée annule l'export au lieu
+          d'imprimer un tableau aux poids de repli.
         </span>
       </figcaption>
     </figure>
