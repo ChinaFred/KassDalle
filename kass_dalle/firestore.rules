@@ -242,6 +242,22 @@ service cloud.firestore {
       allow write: if isAdmin() || (isApproved() && docId == 'usage');
     }
 
+    // Configurations de routage enregistrées.
+    //
+    // Écriture SERVEUR uniquement : `aiRoutingPresetsFn` contrôle la
+    // configuration contre le catalogue de postes du jour avant de l'écrire.
+    // Une configuration écrite directement par le client échapperait à ce
+    // contrôle, et se chargerait ensuite amputée sans que personne sache
+    // pourquoi.
+    //
+    // Lecture ouverte à l'administrateur pour l'inspection. L'écran, lui,
+    // passe par la Cloud Function, qui relit chaque configuration contre le
+    // catalogue et dit ce qu'elle a écarté.
+    match /ai_routing_presets/{presetId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Jobs de traitement IA
     //
     // Le traitement se fait entièrement côté backend (Cloud Tasks). Le client

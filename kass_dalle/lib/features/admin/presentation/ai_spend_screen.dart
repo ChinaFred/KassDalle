@@ -6,6 +6,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_budget_repository.dart';
 import '../data/feature_catalog.dart';
+import '../../../core/theme/app_icon_size.dart';
 import 'admin_providers.dart';
 import 'costs_format.dart';
 import 'monthly_costs_screen.dart' show CostsDepthChips, costsDepthProvider;
@@ -49,6 +50,14 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   bool _loading = true;
   bool _saving = false;
   int? _loadedDepth;
+
+  /// Le jour dont on regarde la dépense, `AAAA-MM-JJ`. `null` = aujourd'hui.
+  ///
+  /// Distinct de la profondeur : celle-ci choisit les mois du tableau par
+  /// compte, celui-là la journée du plafond. Les deux se règlent séparément
+  /// parce qu'on ne les regarde pas pour la même raison — « combien ce mois
+  /// a coûté » et « qui a mangé son plafond ce jour-là ».
+  String? _day;
 
   /// Filtre libre, appliqué aux noms de compte ET aux noms de poste.
   ///
@@ -149,7 +158,7 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
     try {
       final snapshot = await ref
           .read(aiBudgetRepositoryProvider)
-          .fetch(depth: depth);
+          .fetch(depth: depth, day: _day);
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
@@ -168,6 +177,16 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Change le jour regardé, et relit.
+  ///
+  /// `null` revient à la journée en cours. Le jour demandé n'est pas forcément
+  /// celui qui revient : le serveur refuse une date à venir ou impossible, et
+  /// c'est son verdict qui s'affiche.
+  Future<void> _setDay(String? day) async {
+    setState(() => _day = day);
+    await _load(ref.read(costsDepthProvider));
   }
 
   Future<void> _save(AiBudgetPolicy policy) async {
@@ -238,7 +257,12 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
               child: Center(child: CircularProgressIndicator()),
             )
           else ...[
-            _BudgetCard(snapshot: snapshot, saving: _saving, onSave: _save),
+            _BudgetCard(
+              snapshot: snapshot,
+              saving: _saving,
+              onSave: _save,
+              onDayChanged: _setDay,
+            ),
             const SizedBox(height: 16),
             _PeriodHeader(snapshot: snapshot, loading: _loading),
             const SizedBox(height: 8),
@@ -530,10 +554,14 @@ class _BudgetCard extends StatelessWidget {
   final bool saving;
   final Future<void> Function(AiBudgetPolicy) onSave;
 
+  /// Change le jour regardé. `null` revient à la journée en cours.
+  final ValueChanged<String?> onDayChanged;
+
   const _BudgetCard({
     required this.snapshot,
     required this.saving,
     required this.onSave,
+    required this.onDayChanged,
   });
 
   @override
@@ -579,7 +607,8 @@ class _BudgetCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                '$unpriced appel${unpriced > 1 ? 's' : ''} sans montant aujourd\'hui : '
+                '$unpriced appel${unpriced > 1 ? 's' : ''} sans montant '
+                '${snapshot.isToday ? 'aujourd\'hui' : 'ce jour-là'} : '
                 'la grille tarifaire n\'était pas lisible. Le plafond en nombre '
                 'd\'appels prend le relais.',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -588,17 +617,30 @@ class _BudgetCard extends StatelessWidget {
               ),
             ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'Aujourd\'hui (jour UTC ${snapshot.day})',
-              style: theme.textTheme.titleSmall,
+          _DaySelector(snapshot: snapshot, onChanged: onDayChanged),
+          // Sur une journée close, le plafond affiché est celui d'aujourd'hui.
+          // Il a pu changer depuis, et rien ne dirait que la barre se rapporte
+          // à une limite qui n'était pas celle-là.
+          if (!snapshot.isToday)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Journée close : les barres rapportent la dépense de ce jour au '
+                'plafond en vigueur aujourd\'hui, qui n\'est pas forcément celui '
+                'qui s\'appliquait alors.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ),
-          ),
           if (today.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Text('Aucun appel d\'IA aujourd\'hui.'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                snapshot.isToday
+                    ? 'Aucun appel d\'IA aujourd\'hui.'
+                    : 'Aucun appel d\'IA ce jour-là.',
+              ),
             )
           else
             for (final row in today) _TodayRow(row: row, snapshot: snapshot),
@@ -606,6 +648,113 @@ class _BudgetCard extends StatelessWidget {
           _PolicyEditor(policy: policy, saving: saving, onSave: onSave),
         ],
       ),
+    );
+  }
+}
+
+/// Le jour regardé, et de quoi en changer.
+///
+/// Le plafond est quotidien, mais l'écran ne montrait que la journée en cours :
+/// une coupure de la veille — la seule qu'on cherche à comprendre, puisqu'elle
+/// a déjà eu lieu — n'était visible nulle part. Les documents de dépense sont
+/// écrits un par compte et par jour ; l'historique était là, sans porte.
+///
+/// Trois gestes : reculer d'un jour, avancer d'un jour, ouvrir le calendrier.
+/// Aucun ne va au-delà d'aujourd'hui : un jour à venir n'a rien dépensé, et
+/// l'afficher vide se lirait « aucun appel ».
+class _DaySelector extends StatelessWidget {
+  final AiBudgetSnapshot snapshot;
+  final ValueChanged<String?> onChanged;
+
+  const _DaySelector({required this.snapshot, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final jour = parseSpendDay(snapshot.day);
+    final aujourdhui = parseSpendDay(snapshot.currentDay);
+    final titre = snapshot.isToday
+        ? 'Aujourd\'hui (jour UTC ${snapshot.day})'
+        : 'Jour UTC ${snapshot.day}';
+
+    // Sans date lisible — un serveur qui ne l'envoie pas encore —, le titre
+    // reste, la navigation disparaît. Mieux vaut pas de flèches que des
+    // flèches qui ne mènent nulle part.
+    if (jour == null || aujourdhui == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text(titre, style: theme.textTheme.titleSmall),
+      );
+    }
+
+    final veille = jour.subtract(const Duration(days: 1));
+    final lendemain = jour.add(const Duration(days: 1));
+    final peutAvancer = !lendemain.isAfter(aujourdhui);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Jour précédent',
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => onChanged(formatSpendDay(veille)),
+          ),
+          Expanded(
+            child: TextButton.icon(
+              style: TextButton.styleFrom(alignment: Alignment.centerLeft),
+              icon: const Icon(
+                Icons.calendar_month_outlined,
+                size: AppIconSize.small,
+              ),
+              label: Text(
+                titre,
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onPressed: () => _choisir(context, jour, aujourdhui),
+            ),
+          ),
+          IconButton(
+            tooltip: peutAvancer ? 'Jour suivant' : 'Déjà au jour courant',
+            icon: const Icon(Icons.chevron_right),
+            onPressed: peutAvancer
+                ? () => onChanged(formatSpendDay(lendemain))
+                : null,
+          ),
+          if (!snapshot.isToday)
+            TextButton(
+              onPressed: () => onChanged(null),
+              child: const Text('Aujourd\'hui'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _choisir(
+    BuildContext context,
+    DateTime jour,
+    DateTime aujourdhui,
+  ) async {
+    final choisi = await showDatePicker(
+      context: context,
+      initialDate: jour,
+      // Deux ans en arrière : la dépense quotidienne n'est écrite que depuis
+      // la v0.21, et une borne large ne coûte qu'un jour vide si on remonte
+      // trop loin.
+      firstDate: DateTime.utc(aujourdhui.year - 2, 1, 1),
+      lastDate: aujourdhui,
+      helpText: 'Jour à afficher (UTC)',
+      cancelText: 'Annuler',
+      confirmText: 'Afficher',
+    );
+    if (choisi == null) return;
+    // Le calendrier rend une date locale : seuls l'année, le mois et le jour
+    // sont repris. Convertir le fuseau ferait glisser d'un jour le choix fait
+    // à l'écran.
+    onChanged(
+      formatSpendDay(DateTime.utc(choisi.year, choisi.month, choisi.day)),
     );
   }
 }

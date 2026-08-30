@@ -16,6 +16,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import {
   REGION,
   COLL_APP_CONFIG,
+  COLL_AI_ROUTING_PRESETS,
+  COLL_USERS,
   ANTHROPIC_API_KEY,
   GEMINI_IMAGE_MODEL,
   GEMINI_IMAGE_MODEL_LABEL,
@@ -24,12 +26,20 @@ import {
 import { requireAdmin } from "./_auth";
 import type { AiProvider } from "../ai/types";
 import { anthropicApiKey } from "../ai/anthropic";
+import { AI_ROUTING_POLICY_DOC_ID, getAiRoutingPolicy, type AiRoutingPolicy } from "../ai/router";
+import { logError } from "../logging";
 import {
-  AI_ROUTING_POLICY_DOC_ID,
-  DEFAULT_AI_ROUTING_POLICY,
-  getAiRoutingPolicy,
-  type AiRoutingPolicy,
-} from "../ai/router";
+  buildRoutingCatalog,
+  normalizePresetName,
+  presetNameKey,
+  presetPolicyFromMap,
+  presetPolicyToMap,
+  readRoutingPolicy,
+  RoutingPolicyError,
+  SEEDED_PRESET_ID,
+  SEEDED_PRESET_NAME,
+  type RoutingPolicyReading,
+} from "../ai/routingPresets";
 import {
   AI_PRICING_DOC_ID,
   builtinPricingTable,
@@ -444,11 +454,170 @@ export const setAiPricingFn = onCall<SetAiPricingRequest>(callableOpts, async (r
   return { model, pricing: pricingEntryToMap(parsed) };
 });
 
+/**
+ * Ce que le serveur accepte aujourd'hui, monté une fois.
+ *
+ * Les trois tables ci-dessus décident ensemble de ce qu'une politique peut
+ * dire. Les recopier à chaque lecture ferait diverger le contrôle de
+ * l'écriture et celui du chargement d'une configuration.
+ */
+const ROUTING_CATALOG = buildRoutingCatalog({
+  providers: PROVIDERS,
+  features: ROUTABLE_FEATURES,
+  models: ANTHROPIC_MODEL_CHOICES,
+});
+
+/** Lit une politique et rend l'erreur transportable jusqu'à l'écran. */
+function readPolicyOrThrow(
+  raw: Partial<AiRoutingPolicy> | null | undefined,
+  onUnknown: "reject" | "drop",
+): RoutingPolicyReading {
+  try {
+    return readRoutingPolicy(raw, ROUTING_CATALOG, { onUnknown });
+  } catch (err) {
+    if (err instanceof RoutingPolicyError) {
+      throw new HttpsError("invalid-argument", err.message);
+    }
+    throw err;
+  }
+}
+
+// ── Configurations enregistrées ──────────────────────────────────────────────
+
+/** Une configuration telle que l'écran la reçoit. */
+interface PresetView {
+  id: string;
+  name: string;
+  policy: AiRoutingPolicy;
+  /** Ce que la relecture a écarté : postes disparus, modèles hors grille. */
+  stale: string[];
+  updatedAt: string | null;
+  /** Nom d'affichage de l'auteur, jamais son identifiant technique. */
+  updatedBy: string | null;
+}
+
+/**
+ * Libellés des comptes cités, en une lecture.
+ *
+ * Un identifiant Firebase ne dit rien à personne. Le résoudre coûte une
+ * lecture par auteur distinct — il y a moins d'auteurs que de configurations.
+ */
+async function userLabels(uids: readonly string[]): Promise<Record<string, string>> {
+  if (uids.length === 0) return {};
+  const db = getFirestore();
+  const snaps = await db.getAll(...uids.map((uid) => db.collection(COLL_USERS).doc(uid)));
+  const labels: Record<string, string> = {};
+  for (const snap of snaps) {
+    const data = snap.data() ?? {};
+    const label = (data.display_name as string) || (data.email as string) || "";
+    if (label) labels[snap.id] = label;
+  }
+  return labels;
+}
+
+/**
+ * Toutes les configurations, relues contre le catalogue du jour.
+ *
+ * La relecture est permissive : une configuration qui nomme un poste retiré
+ * depuis reste chargeable, amputée de ce poste et accompagnée de la raison.
+ * La refuser en bloc laisserait un état ancien inatteignable sans qu'aucun
+ * message ne dise lequel des quarante-trois postes bloque.
+ */
+async function listPresets(): Promise<PresetView[]> {
+  const snap = await getFirestore().collection(COLL_AI_ROUTING_PRESETS).get();
+
+  const uids = [
+    ...new Set(
+      snap.docs
+        .map((doc) => doc.get("updated_by"))
+        .filter((uid): uid is string => typeof uid === "string" && uid.length > 0),
+    ),
+  ];
+  const labels = await userLabels(uids);
+
+  const presets = snap.docs.map((doc) => {
+    const data = doc.data();
+    const { policy, stale } = readRoutingPolicy(
+      presetPolicyFromMap(data.policy as Record<string, unknown>),
+      ROUTING_CATALOG,
+      { onUnknown: "drop" },
+    );
+    const updatedAt = data.updated_at;
+    const uid = typeof data.updated_by === "string" ? data.updated_by : null;
+    return {
+      id: doc.id,
+      name: typeof data.name === "string" ? data.name : doc.id,
+      policy,
+      stale,
+      updatedAt:
+        updatedAt != null && typeof updatedAt.toDate === "function"
+          ? (updatedAt.toDate() as Date).toISOString()
+          : null,
+      updatedBy: uid ? (labels[uid] ?? null) : null,
+    };
+  });
+
+  presets.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  return presets;
+}
+
+/**
+ * Sème la politique en vigueur comme première configuration.
+ *
+ * L'écran arrive sur une installation où quarante-trois postes ont déjà été
+ * réglés à la main. Sans ce geste, essayer une autre configuration
+ * demanderait d'abord d'enregistrer l'état courant, et personne n'y penserait
+ * avant de l'avoir perdu.
+ *
+ * Une seule fois : la marque posée sur le document de politique empêche la
+ * configuration de revenir après une suppression volontaire.
+ */
+async function seedPresetsIfNeeded(policy: AiRoutingPolicy, uid: string | null): Promise<void> {
+  const db = getFirestore();
+  const presets = db.collection(COLL_AI_ROUTING_PRESETS);
+
+  const existing = await presets.limit(1).get();
+  if (!existing.empty) return;
+
+  const policyDoc = db.collection(COLL_APP_CONFIG).doc(AI_ROUTING_POLICY_DOC_ID);
+  const snap = await policyDoc.get();
+  if (snap.exists && snap.get("presets_seeded_at") != null) return;
+
+  await presets.doc(SEEDED_PRESET_ID).set({
+    name: SEEDED_PRESET_NAME,
+    name_key: presetNameKey(SEEDED_PRESET_NAME),
+    policy: presetPolicyToMap(policy),
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+    updated_by: uid,
+  });
+  await policyDoc.set({ presets_seeded_at: FieldValue.serverTimestamp() }, { merge: true });
+}
+
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
   await requireAdmin(req, "routage_ia_lecture");
   const policy = await getAiRoutingPolicy();
+
+  // Les configurations ne sont pas le sujet de cet écran : leur panne ne doit
+  // pas empêcher de régler le routage. Elle se dit, elle n'interrompt pas.
+  let presets: PresetView[] = [];
+  let presetsFailed = false;
+  try {
+    await seedPresetsIfNeeded(policy, req.auth?.uid ?? null);
+    presets = await listPresets();
+  } catch (err) {
+    presetsFailed = true;
+    await logError({
+      message: "getAiRoutingPolicyFn: configurations de routage illisibles",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: req.auth?.uid,
+    });
+  }
+
   return {
     policy,
+    presets,
+    presetsFailed,
     // L'écran doit pouvoir dire « routé vers Claude mais la clé n'est pas
     // posée » : sans cette information, une bascule sans effet reste une
     // énigme pour celui qui l'a demandée.
@@ -468,115 +637,161 @@ interface SetAiRoutingPolicyRequest {
 export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOpts, async (req) => {
   await requireAdmin(req, "routage_ia_ecriture");
 
-  const next = req.data?.policy;
-  if (!next) {
-    throw new HttpsError("invalid-argument", "policy est requis.");
-  }
-
-  const defaultProvider = next.defaultProvider ?? DEFAULT_AI_ROUTING_POLICY.defaultProvider;
-  if (!PROVIDERS.includes(defaultProvider)) {
-    throw new HttpsError(
-      "invalid-argument",
-      `defaultProvider doit valoir ${PROVIDERS.join(" ou ")}.`,
-    );
-  }
-
-  const knownFeatureIds = new Set(ROUTABLE_FEATURES.map((f) => f.id));
-  const features: Record<string, string> = {};
-  for (const [feature, provider] of Object.entries(next.features ?? {})) {
-    if (!knownFeatureIds.has(feature)) {
-      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
-    }
-    const allowed = ROUTABLE_FEATURES.find((f) => f.id === feature)?.providers ?? PROVIDERS;
-    if (!allowed.includes(provider as AiProvider)) {
-      throw new HttpsError(
-        "invalid-argument",
-        `Fournisseur invalide pour ${feature} : ${provider}.`,
-      );
-    }
-    features[feature] = provider;
-  }
-
-  const anthropicModel = (next.anthropicModel ?? DEFAULT_AI_ROUTING_POLICY.anthropicModel).trim();
-  if (!anthropicModel) {
-    throw new HttpsError("invalid-argument", "anthropicModel ne peut pas être vide.");
-  }
-
-  // Plafond de raisonnement : `null` laisse le modèle décider, `0` le coupe.
-  // Un plafond démesuré ne protégerait de rien — la borne haute vaut celle du
-  // modèle, au-delà l'API refuserait l'appel.
-  const MAX_THINKING_BUDGET = 24576;
-  const readBudget = (value: unknown, label: string): number | null => {
-    if (value == null) return null;
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0 || n > MAX_THINKING_BUDGET) {
-      throw new HttpsError(
-        "invalid-argument",
-        `Plafond de raisonnement invalide pour ${label} : attendu entre 0 et ${MAX_THINKING_BUDGET}.`,
-      );
-    }
-    return Math.trunc(n);
-  };
-
-  // Modèle Claude par poste : seuls les modèles de la grille tarifaire sont
-  // acceptés. Un identifiant hors grille se facturerait sans montant et
-  // gonflerait `total_unpriced_calls` — un coût invisible, exactement ce que
-  // ce projet refuse.
-  const anthropicModels: Record<string, string> = {};
-  for (const [feature, model] of Object.entries(next.anthropicModels ?? {})) {
-    if (!knownFeatureIds.has(feature)) {
-      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
-    }
-    const wanted = typeof model === "string" ? model.trim() : "";
-    if (!wanted) continue;
-    if (!ANTHROPIC_MODEL_CHOICES.some((m) => m.id === wanted)) {
-      throw new HttpsError("invalid-argument", `Modèle Claude inconnu : ${wanted}.`);
-    }
-    // Un poste réglé sur le modèle par défaut n'a pas besoin d'exception.
-    if (wanted !== anthropicModel) anthropicModels[feature] = wanted;
-  }
-
-  const thinkingBudget = readBudget(next.thinkingBudget, "le réglage global");
-  const thinkingBudgets: Record<string, number> = {};
-  for (const [feature, budget] of Object.entries(next.thinkingBudgets ?? {})) {
-    if (!knownFeatureIds.has(feature)) {
-      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
-    }
-    const value = readBudget(budget, feature);
-    if (value != null) thinkingBudgets[feature] = value;
-  }
+  const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
 
   await getFirestore()
     .collection(COLL_APP_CONFIG)
     .doc(AI_ROUTING_POLICY_DOC_ID)
     .set(
       {
-        default_provider: defaultProvider,
-        features,
-        anthropic_model: anthropicModel,
-        anthropic_models: anthropicModels,
-        fallback_enabled: next.fallbackEnabled !== false,
-        // Écrit même à `null` : c'est ainsi qu'on revient au comportement du
-        // modèle après avoir posé un plafond. Un champ simplement omis en
-        // fusion laisserait l'ancienne valeur en place.
-        thinking_budget: thinkingBudget,
-        thinking_budgets: thinkingBudgets,
+        // Les sept champs sont écrits en entier, plafonds à `null` compris :
+        // c'est ainsi qu'on revient au comportement du modèle après avoir posé
+        // un plafond. Un champ simplement omis en fusion laisserait l'ancienne
+        // valeur en place.
+        ...presetPolicyToMap(policy),
         updated_at: FieldValue.serverTimestamp(),
         updated_by: req.auth?.uid ?? null,
       },
       { merge: true },
     );
 
-  return {
-    policy: {
-      defaultProvider,
-      features,
-      anthropicModel,
-      anthropicModels,
-      fallbackEnabled: next.fallbackEnabled !== false,
-      thinkingBudget,
-      thinkingBudgets,
-    },
-    anthropicKeyPresent: anthropicApiKey() != null,
+  return { policy, anthropicKeyPresent: anthropicApiKey() != null };
+});
+
+// ── Configurations enregistrées : écriture ───────────────────────────────────
+
+interface AiRoutingPresetsRequest {
+  action?: "save" | "update" | "rename" | "delete";
+  id?: string;
+  name?: string;
+  policy?: Partial<AiRoutingPolicy>;
+}
+
+/**
+ * Refuse un nom déjà porté par une autre configuration.
+ *
+ * Deux entrées homonymes dans une liste déroulante ne se distinguent plus une
+ * fois l'une choisie : on croit charger la sienne, on charge l'autre. La
+ * comparaison se fait sur `name_key`, insensible à la casse.
+ */
+async function assertNameFree(name: string, exceptId: string | null): Promise<void> {
+  const snap = await getFirestore()
+    .collection(COLL_AI_ROUTING_PRESETS)
+    .where("name_key", "==", presetNameKey(name))
+    .get();
+  const clash = snap.docs.find((doc) => doc.id !== exceptId);
+  if (clash) {
+    throw new HttpsError("already-exists", `Une configuration porte déjà le nom « ${name} ».`);
+  }
+}
+
+async function requirePreset(id: string) {
+  const ref = getFirestore().collection(COLL_AI_ROUTING_PRESETS).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "Cette configuration n'existe plus.");
+  }
+  return ref;
+}
+
+/**
+ * Enregistre, met à jour, renomme ou supprime une configuration de routage.
+ *
+ * Une seule fonction déployée pour quatre gestes, aiguillée sur `action` : le
+ * bundle porte déjà cinquante fonctions, et le budget de découverte du
+ * déploiement est de dix secondes.
+ *
+ * Aucune de ces actions ne touche la politique en vigueur. Charger une
+ * configuration se fait dans l'écran, qui remplit son brouillon ; c'est
+ * `setAiRoutingPolicyFn` qui écrit, comme avant. Un chargement ne doit pas
+ * pouvoir modifier quarante-trois postes sans que personne ait vu l'écart.
+ */
+export const aiRoutingPresetsFn = onCall<AiRoutingPresetsRequest>(callableOpts, async (req) => {
+  await requireAdmin(req, "configurations_routage");
+
+  const action = req.data?.action;
+  const uid = req.auth?.uid ?? null;
+  const presets = getFirestore().collection(COLL_AI_ROUTING_PRESETS);
+
+  const readName = (): string => {
+    try {
+      return normalizePresetName(req.data?.name);
+    } catch (err) {
+      if (err instanceof RoutingPolicyError) {
+        throw new HttpsError("invalid-argument", err.message);
+      }
+      throw err;
+    }
   };
+
+  const readId = (): string => {
+    const id = (req.data?.id ?? "").trim();
+    if (!id) throw new HttpsError("invalid-argument", "id est requis.");
+    return id;
+  };
+
+  switch (action) {
+    case "save": {
+      const name = readName();
+      // Le contrôle strict, celui de l'écriture de la politique : une
+      // configuration invalide doit être refusée quand on l'enregistre, pas
+      // six semaines plus tard quand on la charge.
+      const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
+      await assertNameFree(name, null);
+      await presets.add({
+        name,
+        name_key: presetNameKey(name),
+        policy: presetPolicyToMap(policy),
+        created_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: uid,
+      });
+      break;
+    }
+
+    case "update": {
+      const id = readId();
+      const ref = await requirePreset(id);
+      const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
+      await ref.set(
+        {
+          policy: presetPolicyToMap(policy),
+          updated_at: FieldValue.serverTimestamp(),
+          updated_by: uid,
+        },
+        { merge: true },
+      );
+      break;
+    }
+
+    case "rename": {
+      const id = readId();
+      const ref = await requirePreset(id);
+      const name = readName();
+      await assertNameFree(name, id);
+      await ref.set(
+        {
+          name,
+          name_key: presetNameKey(name),
+          updated_at: FieldValue.serverTimestamp(),
+          updated_by: uid,
+        },
+        { merge: true },
+      );
+      break;
+    }
+
+    case "delete": {
+      const ref = await requirePreset(readId());
+      await ref.delete();
+      break;
+    }
+
+    default:
+      throw new HttpsError("invalid-argument", `Action inconnue : ${action ?? "aucune"}.`);
+  }
+
+  // La liste part avec la réponse : sans elle, chaque geste demanderait un
+  // second aller-retour, et l'écran afficherait un état d'avant l'écriture.
+  return { presets: await listPresets() };
 });

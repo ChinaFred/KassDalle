@@ -91,6 +91,7 @@ export {
 export {
   getAiRoutingPolicyFn,
   setAiRoutingPolicyFn,
+  aiRoutingPresetsFn,
   getAiPricingFn,
   setAiPricingFn,
 } from "./callable/aiRoutingCallable";

@@ -95,6 +95,30 @@ class UserSpend {
   });
 }
 
+/// Un jour `AAAA-MM-JJ` en date UTC, ou `null` si la chaîne n'a pas cette forme.
+///
+/// Le serveur reste juge de ce qu'il lit : cette lecture ne sert qu'à naviguer
+/// — reculer d'un jour, ouvrir le calendrier sur la bonne case. Un 31 février
+/// est refusé plutôt que normalisé en mars, sans quoi les flèches feraient
+/// glisser d'un mois sans le dire.
+DateTime? parseSpendDay(String day) {
+  final parts = day.split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final dayOfMonth = int.tryParse(parts[2]);
+  if (year == null || month == null || dayOfMonth == null) return null;
+  final parsed = DateTime.utc(year, month, dayOfMonth);
+  if (parsed.month != month || parsed.day != dayOfMonth) return null;
+  return parsed;
+}
+
+/// Une date en `AAAA-MM-JJ`, la forme que le serveur attend.
+String formatSpendDay(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
+
 /// L'uid que portent les appels lancés sans personne derrière.
 ///
 /// Enrichissement du référentiel nutritionnel, tâches planifiées, backfills :
@@ -154,7 +178,18 @@ class AiBudgetSnapshot {
   final int founderMultiplier;
 
   /// Jour UTC couvert par [today], au format `AAAA-MM-JJ`.
+  ///
+  /// Pas forcément aujourd'hui : l'écran peut demander un jour passé. C'est le
+  /// serveur qui tranche — il refuse une date impossible ou à venir et retombe
+  /// alors sur le jour courant.
   final String day;
+
+  /// Le jour courant sur le serveur, au format `AAAA-MM-JJ`.
+  ///
+  /// Il voyage à côté de [day] plutôt que d'être recalculé ici : le plafond
+  /// s'applique sur le jour UTC du serveur, et un client dont l'horloge avance
+  /// afficherait « aujourd'hui » sur une journée déjà close.
+  final String currentDay;
 
   /// Mois réellement lus pour [spends].
   final List<String> periods;
@@ -175,11 +210,19 @@ class AiBudgetSnapshot {
     required this.founderUid,
     required this.founderMultiplier,
     required this.day,
+    required this.currentDay,
     required this.periods,
     required this.periodsWithoutBreakdown,
     required this.spends,
     required this.today,
   });
+
+  /// Le jour regardé est la journée en cours.
+  ///
+  /// Ce que le plafond dit n'est vrai qu'ici : sur une journée close, les
+  /// barres rapportent une dépense passée au plafond d'aujourd'hui, qui n'est
+  /// pas forcément celui qui s'appliquait alors.
+  bool get isToday => day == currentDay;
 
   /// Le plafond applicable à un compte, multiplicateur du fondateur compris.
   double costLimitEurFor(String uid) =>
@@ -202,18 +245,23 @@ class AiBudgetRepository {
 
   /// [depth] : nombre de mois à lire, `null` pour tout l'historique — la même
   /// convention que les deux autres onglets de la comptabilité.
-  Future<AiBudgetSnapshot> fetch({int? depth}) async {
+  ///
+  /// [day] : le jour UTC dont on veut la dépense, `AAAA-MM-JJ`. `null` pour la
+  /// journée en cours. Le serveur reste juge : une date à venir ou impossible
+  /// retombe sur aujourd'hui, et le jour réellement lu revient dans
+  /// [AiBudgetSnapshot.day].
+  Future<AiBudgetSnapshot> fetch({int? depth, String? day}) async {
     try {
       final raw = await _functions
           .httpsCallable('getAiBudgetFn')
-          .call<Map<String, dynamic>>({'depth': depth});
+          .call<Map<String, dynamic>>({'depth': depth, 'day': day});
       return _parse(Map<String, dynamic>.from(raw.data));
     } catch (e, st) {
       await _errorReportService.reportError(
         feature: 'aiBudget.fetch',
         error: e,
         stackTrace: st,
-        context: {'depth': depth?.toString() ?? 'all'},
+        context: {'depth': depth?.toString() ?? 'all', 'day': day ?? 'today'},
       );
       rethrow;
     }
@@ -290,6 +338,10 @@ class AiBudgetRepository {
       founderUid: data['founderUid'] as String?,
       founderMultiplier: (data['founderMultiplier'] as num?)?.toInt() ?? 1,
       day: data['day'] as String? ?? '',
+      // Un serveur d'avant cette lecture n'envoie pas le jour courant : le jour
+      // regardé fait alors office, et l'écran se comporte comme avant — il
+      // montre aujourd'hui, et ne propose rien d'autre.
+      currentDay: data['currentDay'] as String? ?? data['day'] as String? ?? '',
       periods: (data['periods'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),

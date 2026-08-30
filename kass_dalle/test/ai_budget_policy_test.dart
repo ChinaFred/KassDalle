@@ -81,6 +81,7 @@ void main() {
       founderUid: founder,
       founderMultiplier: 5,
       day: "2026-08-18",
+      currentDay: "2026-08-18",
       periods: const [],
       periodsWithoutBreakdown: const [],
       spends: const [],
@@ -101,6 +102,57 @@ void main() {
       final s = snapshot();
       expect(s.costLimitEurFor("uid-fondateur"), 2);
       expect(s.callsLimitFor("uid-fondateur"), 400);
+    });
+  });
+
+  group('le jour regardé', () {
+    AiBudgetSnapshot snapshot({required String day, required String current}) =>
+        AiBudgetSnapshot(
+          policy: AiBudgetPolicy.fromMap(const {}),
+          usdToEur: 0.92,
+          founderUid: null,
+          founderMultiplier: 10,
+          day: day,
+          currentDay: current,
+          periods: const [],
+          periodsWithoutBreakdown: const [],
+          spends: const [],
+          today: const [],
+        );
+
+    test('le jour courant vient du serveur, pas de l horloge du client', () {
+      // Un client dont l horloge avance afficherait « aujourd hui » sur une
+      // journee deja close, et un plafond epuise comme s il courait encore.
+      final s = snapshot(day: '2026-08-30', current: '2026-08-30');
+      expect(s.isToday, isTrue);
+      expect(snapshot(day: '2026-08-29', current: '2026-08-30').isToday, false);
+    });
+
+    test('une date se relit et se réécrit à l identique', () {
+      final jour = parseSpendDay('2026-08-30');
+      expect(jour, DateTime.utc(2026, 8, 30));
+      expect(formatSpendDay(jour!), '2026-08-30');
+    });
+
+    test('reculer d un jour traverse le changement de mois', () {
+      final premier = parseSpendDay('2026-03-01')!;
+      expect(
+        formatSpendDay(premier.subtract(const Duration(days: 1))),
+        '2026-02-28',
+      );
+    });
+
+    test('une date impossible est refusée, pas décalée', () {
+      // 2026-02-31 se normaliserait en mars : les fleches feraient alors
+      // glisser d un mois sans le dire.
+      expect(parseSpendDay('2026-02-31'), isNull);
+      expect(parseSpendDay('hier'), isNull);
+      expect(parseSpendDay(''), isNull);
+      expect(parseSpendDay('2026-08'), isNull);
+    });
+
+    test('un mois et un jour à un chiffre se réécrivent sur deux', () {
+      expect(formatSpendDay(DateTime.utc(2026, 1, 5)), '2026-01-05');
     });
   });
 

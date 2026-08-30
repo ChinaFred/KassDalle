@@ -144,6 +144,21 @@ export const COLL_AI_USAGE_MONTHLY = "ai_usage_monthly";
 export const COLL_AI_DAILY_SPEND = "ai_daily_spend";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
+/**
+ * Configurations de routage enregistrées — un document par configuration.
+ *
+ * Le routage se règle sur sept champs, dont trois par poste : le moteur, le
+ * modèle Claude et le plafond de raisonnement de chacun des quarante-trois
+ * postes. Comparer deux moteurs sur des données réelles demande de pouvoir
+ * revenir à un état antérieur, et refaire quarante-trois bascules de mémoire
+ * n'est pas revenir au même état.
+ *
+ * Une configuration ne commande rien tant qu'elle n'est pas chargée puis
+ * enregistrée : la politique en vigueur reste `app_config/ai_routing_policy`,
+ * et elle seule.
+ */
+export const COLL_AI_ROUTING_PRESETS = "ai_routing_presets";
+
 // ── Collections backup ───────────────────────────────────────────────────────
 export const COLL_BACKUP_RECIPES = "backup_recipes";
 export const COLL_BACKUP_BOOKS = "backup_books";

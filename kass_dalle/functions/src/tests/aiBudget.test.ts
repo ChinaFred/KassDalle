@@ -21,7 +21,7 @@ import {
   type DailySpend,
 } from "../ai/budget";
 import { shouldAlert } from "../scheduled/aiBudgetAlertSchedule";
-import { periodsToRead } from "../callable/budgetCallable";
+import { periodsToRead, resolveSpendDay } from "../callable/budgetCallable";
 
 function policy(over: Partial<AiBudgetPolicy> = {}): AiBudgetPolicy {
   return { ...DEFAULT_AI_BUDGET_POLICY, ...over };
@@ -220,5 +220,35 @@ describe("alerte mensuelle", () => {
 
   test("un seuil à zéro n'alerte jamais", () => {
     assert.equal(shouldAlert({ ...base, monthlyAlertEur: 0 }), false);
+  });
+});
+
+describe("le jour regarde par l ecran", () => {
+  const maintenant = new Date("2026-08-30T09:00:00Z");
+
+  test("un jour passe est lu tel quel", () => {
+    assert.equal(resolveSpendDay("2026-08-17", maintenant), "2026-08-17");
+  });
+
+  test("rien de demande vaut aujourd hui", () => {
+    assert.equal(resolveSpendDay(undefined, maintenant), "2026-08-30");
+    assert.equal(resolveSpendDay(null, maintenant), "2026-08-30");
+  });
+
+  test("un jour a venir retombe sur aujourd hui", () => {
+    // Il n a rien depense : l afficher vide se lirait « aucun appel » alors
+    // que la question n a pas encore de reponse.
+    assert.equal(resolveSpendDay("2026-09-01", maintenant), "2026-08-30");
+  });
+
+  test("une date qui n existe pas est refusee", () => {
+    // 2026-02-31 se normaliserait en mars et rendrait un autre jour.
+    assert.equal(resolveSpendDay("2026-02-31", maintenant), "2026-08-30");
+  });
+
+  test("une chaine qui n est pas une date est refusee", () => {
+    assert.equal(resolveSpendDay("hier", maintenant), "2026-08-30");
+    assert.equal(resolveSpendDay("2026-8-3", maintenant), "2026-08-30");
+    assert.equal(resolveSpendDay(20260817, maintenant), "2026-08-30");
   });
 });
