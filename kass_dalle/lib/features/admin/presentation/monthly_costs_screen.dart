@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 import '../data/monthly_costs_repository.dart';
+import 'ai_console_links.dart';
 import 'ai_services_tab.dart';
 import 'costs_format.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -370,6 +371,11 @@ class _HeaderState extends ConsumerState<_Header> {
             _ProviderSplit(report: report),
             const SizedBox(height: 12),
             _EnergyLine(tokens: tokens),
+            // Ce que l'application compte n'est pas ce qui est facturé : elle
+            // multiplie des jetons par une grille tarifaire, le fournisseur
+            // édite une facture. Les deux chiffres se comparent, et il faut
+            // pour cela pouvoir ouvrir l'autre.
+            const AiConsoleLinks(withUsageReports: true),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,

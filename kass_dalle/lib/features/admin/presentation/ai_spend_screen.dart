@@ -647,8 +647,8 @@ class _TodayRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   row.uid == snapshot.founderUid
-                      ? '${row.uid}  (×${snapshot.founderMultiplier})'
-                      : row.uid,
+                      ? '${row.label}  (×${snapshot.founderMultiplier})'
+                      : row.label,
                   style: theme.textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis,
                 ),

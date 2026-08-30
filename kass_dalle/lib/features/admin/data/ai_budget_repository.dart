@@ -95,10 +95,33 @@ class UserSpend {
   });
 }
 
+/// L'uid que portent les appels lancés sans personne derrière.
+///
+/// Enrichissement du référentiel nutritionnel, tâches planifiées, backfills :
+/// ils consomment de l'IA et se comptent, mais aucun membre de la famille ne
+/// les a demandés.
+const kSystemSpendUid = 'system';
+
+/// Le nom sous lequel un compte apparaît dans la comptabilité.
+///
+/// Trois cas. Un compte connu porte son nom. [kSystemSpendUid] n'est pas un
+/// compte, et se nomme donc pour ce qu'il est. Un compte supprimé garde son
+/// identifiant : c'est la seule trace qu'il en reste, et l'effacer ferait
+/// disparaître une dépense réelle de la lecture.
+String spendUserLabel(String uid, Map<String, String> names) {
+  if (uid == kSystemSpendUid) return 'Tâches automatiques (système)';
+  final name = names[uid]?.trim() ?? '';
+  return name.isEmpty ? uid : name;
+}
+
 /// Ce qu'un compte a consommé aujourd'hui — la seule unité où un plafond
 /// quotidien a du sens.
 class DailySpendRow {
   final String uid;
+
+  /// Nom d'affichage, ou l'identifiant quand le compte n'existe plus.
+  final String label;
+
   final double costUsd;
   final int calls;
 
@@ -110,6 +133,7 @@ class DailySpendRow {
 
   const DailySpendRow({
     required this.uid,
+    required this.label,
     required this.costUsd,
     required this.calls,
     required this.unpricedCalls,
@@ -215,7 +239,13 @@ class AiBudgetRepository {
   }
 
   AiBudgetSnapshot _parse(Map<String, dynamic> data) {
-    final names = Map<String, dynamic>.from(data['names'] as Map? ?? const {});
+    final rawNames = Map<String, dynamic>.from(
+      data['names'] as Map? ?? const {},
+    );
+    final names = <String, String>{
+      for (final entry in rawNames.entries)
+        if (entry.value is String) entry.key: entry.value as String,
+    };
 
     final spends = (data['spends'] as List? ?? const [])
         .whereType<Map>()
@@ -244,7 +274,7 @@ class AiBudgetRepository {
 
           return UserSpend(
             uid: uid,
-            label: (names[uid] as String?) ?? uid,
+            label: spendUserLabel(uid, names),
             costUsd: (e['costUsd'] as num?)?.toDouble() ?? 0,
             calls: (e['calls'] as num?)?.toInt() ?? 0,
             byFeature: features,
@@ -271,14 +301,16 @@ class AiBudgetRepository {
       today: (data['today'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
-          .map(
-            (e) => DailySpendRow(
-              uid: e['uid'] as String? ?? '',
+          .map((e) {
+            final uid = e['uid'] as String? ?? '';
+            return DailySpendRow(
+              uid: uid,
+              label: spendUserLabel(uid, names),
               costUsd: (e['costUsd'] as num?)?.toDouble() ?? 0,
               calls: (e['calls'] as num?)?.toInt() ?? 0,
               unpricedCalls: (e['unpricedCalls'] as num?)?.toInt() ?? 0,
-            ),
-          )
+            );
+          })
           .toList(growable: false),
     );
   }

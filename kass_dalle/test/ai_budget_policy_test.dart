@@ -103,4 +103,28 @@ void main() {
       expect(s.callsLimitFor("uid-fondateur"), 400);
     });
   });
+
+  group('le nom affiché dans la comptabilité', () {
+    const names = {'uid-1': 'Frédéric China', 'uid-2': '  '};
+
+    test('un compte connu porte son nom', () {
+      expect(spendUserLabel('uid-1', names), 'Frédéric China');
+    });
+
+    test('« system » se nomme pour ce qu\'il est', () {
+      // Ce n'est pas un compte : c'est l'uid des appels lancés sans personne
+      // derrière. Affiché tel quel, il se lisait comme un membre de la famille.
+      expect(spendUserLabel('system', names), 'Tâches automatiques (système)');
+    });
+
+    test('un compte supprimé garde son identifiant', () {
+      // La seule trace qu'il en reste. L'effacer ferait disparaître une
+      // dépense réelle de la lecture.
+      expect(spendUserLabel('uid-parti', names), 'uid-parti');
+    });
+
+    test('un nom vide ne remplace pas l\'identifiant', () {
+      expect(spendUserLabel('uid-2', names), 'uid-2');
+    });
+  });
 }
