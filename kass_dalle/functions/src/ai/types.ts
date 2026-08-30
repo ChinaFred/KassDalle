@@ -108,6 +108,15 @@ export interface ModelCallResult {
   provider: AiProvider;
   model: string;
   usage: ModelUsage;
+  /**
+   * Identifiant de CET appel, tiré par `callModel`.
+   *
+   * Rendu à l'appelant pour une raison : le texte du modèle est journalisé
+   * après coup, par celui qui l'a demandé (`logAiText`), et sans cet
+   * identifiant sa ligne se retrouvait au même rang que celles du pipeline,
+   * sans lien avec l'appel qui l'avait produite.
+   */
+  callId: string;
   /** Raison d'arrêt telle que rendue par le fournisseur, si elle est connue. */
   stopReason?: string;
 }
@@ -122,6 +131,15 @@ export interface ModelCallContext {
   timeoutMs?: number;
   /** Job de pipeline auquel l'appel appartient, quand il y en a un. */
   jobId?: string;
+  /**
+   * Scan de l'utilisateur auquel l'appel appartient, quand il en vient un.
+   *
+   * Il traverse les quatre traitements d'un import — contrôle du fichier,
+   * pipeline, détection d'illustrations, calculs d'après écriture — que le
+   * `correlationId` seul ne relie pas. Il s'écrit sur la ligne de
+   * consommation, ce qui rend le coût total d'un scan additionnable.
+   */
+  scanId?: string;
   /** Rang de l'étape dans le pipeline — sert à ordonner les logs d'un import. */
   stepIndex?: number;
   /**

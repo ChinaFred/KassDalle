@@ -36,6 +36,7 @@ import {
 import { GEMINI_MODEL } from "../config";
 import { createGenerativeModel, thinkingTokensOf, toGeminiResponse } from "../gemini/client";
 import type { ModelCallContext, ModelCallResult, ModelPart } from "../ai/types";
+import { newCallId } from "../logging";
 
 export type SandboxProvider = "gemini" | "anthropic";
 
@@ -104,10 +105,14 @@ export async function askModel(args: {
   // par lequel une dépense échappe au plafond du compte.
   await assertWithinDailyBudget(args.ctx.userId, args.ctx.feature);
 
+  // Le bac à sable court-circuite `callModel`, qui pose d'habitude cet
+  // identifiant : sans lui, l'appel s'enregistrerait sans lien avec ses lignes
+  // de journal, et l'écran l'afficherait sans montant.
+  const callId = newCallId();
   const result =
     args.choice.provider === "anthropic"
-      ? await callChosenAnthropic(args.parts, args.ctx, args.choice.model, args.maxTokens)
-      : await callChosenGemini(args.parts, args.ctx, args.choice.model);
+      ? await callChosenAnthropic(args.parts, args.ctx, callId, args.choice.model, args.maxTokens)
+      : await callChosenGemini(args.parts, args.ctx, callId, args.choice.model);
 
   await recordModelUsage(result, args.ctx);
   // Le choix explicite ne passe pas par `callModel` : aucun repli n'a pu se
@@ -118,6 +123,7 @@ export async function askModel(args: {
 async function callChosenAnthropic(
   parts: ModelPart[],
   ctx: ModelCallContext,
+  callId: string,
   model: string,
   maxTokens?: number,
 ): Promise<ModelCallResult> {
@@ -125,7 +131,7 @@ async function callChosenAnthropic(
   if (!key) {
     throw new Error("Clé Anthropic absente de l'environnement de cette fonction.");
   }
-  return callAnthropic({ apiKey: key, parts, ctx, model, maxTokens });
+  return callAnthropic({ apiKey: key, parts, ctx, callId, model, maxTokens });
 }
 
 /**
@@ -139,6 +145,7 @@ async function callChosenAnthropic(
 async function callChosenGemini(
   parts: ModelPart[],
   ctx: ModelCallContext,
+  callId: string,
   model: string,
 ): Promise<ModelCallResult> {
   const geminiParts = parts.map((part) =>
@@ -160,6 +167,7 @@ async function callChosenGemini(
     text: (response.text ?? "").trim(),
     provider: "gemini",
     model,
+    callId,
     usage: {
       inputTokens: input,
       outputTokens: output,

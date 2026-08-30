@@ -226,6 +226,8 @@ const PER100G_BATCH_SCHEMA = {
 export async function estimatePer100gBatchWithAI(params: {
   targets: Per100gEnrichmentTarget[];
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
   feature?: string;
 }): Promise<Map<string, Record<string, number>>> {
@@ -354,6 +356,8 @@ export async function estimatePer100gWithGemini(params: {
   canonicalName: string;
   aliases: string[];
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
   feature?: string;
   /** Deuxième tentative : le prompt rappelle qu'une valeur est obligatoire. */
@@ -467,6 +471,8 @@ export async function estimatePer100gWithGemini(params: {
 export async function estimatePer100gForTargets(params: {
   targets: Per100gEnrichmentTarget[];
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
   feature?: string;
   /** Instant limite : au-delà, on arrête proprement plutôt que de se faire couper. */

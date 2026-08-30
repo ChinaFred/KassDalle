@@ -225,12 +225,15 @@ export async function extractPageIllustrations(args: {
   bytes: Buffer;
   mimeType: string;
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient la page, quand il en vient un. */
+  scanId?: string;
   userId?: string;
   jobId?: string;
   fileName?: string;
 }): Promise<IllustrationExtraction> {
   const ledger = new IllustrationLedger({
     correlationId: args.correlationId,
+    scanId: args.scanId,
     userId: args.userId,
     jobId: args.jobId,
     fileName: args.fileName,
@@ -238,6 +241,7 @@ export async function extractPageIllustrations(args: {
 
   const base = {
     correlationId: args.correlationId,
+    scanId: args.scanId,
     userId: args.userId,
     jobId: args.jobId,
     moduleType: "DESIGN" as const,
@@ -256,6 +260,7 @@ export async function extractPageIllustrations(args: {
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "DESIGN",
       correlationId: args.correlationId,
+      scanId: args.scanId,
       userId: args.userId,
       jobId: args.jobId,
       feature: "page_illustrations",
@@ -271,7 +276,13 @@ async function runChain(args: {
   bytes: Buffer;
   mimeType: string;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<IllustrationExtraction> {
   const { ledger, base } = args;
   const { default: sharp } = await import("sharp");
@@ -384,18 +395,22 @@ export async function precheckPageImages(args: {
   bytes: Buffer;
   mimeType: string;
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient la page, quand il en vient un. */
+  scanId?: string;
   userId?: string;
   jobId?: string;
   fileName?: string;
 }): Promise<PagePrecheck> {
   const ledger = new IllustrationLedger({
     correlationId: args.correlationId,
+    scanId: args.scanId,
     userId: args.userId,
     jobId: args.jobId,
     fileName: args.fileName,
   });
   const base = {
     correlationId: args.correlationId,
+    scanId: args.scanId,
     userId: args.userId,
     jobId: args.jobId,
     moduleType: "DESIGN" as const,
@@ -417,6 +432,7 @@ export async function precheckPageImages(args: {
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "DESIGN",
       correlationId: args.correlationId,
+      scanId: args.scanId,
       userId: args.userId,
       jobId: args.jobId,
       feature: FEATURE_PRECHECK,
@@ -431,7 +447,13 @@ async function runPrecheck(args: {
   bytes: Buffer;
   label: string;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<PagePrecheck> {
   const answer = await askJson({
     bytes: args.bytes,
@@ -466,7 +488,13 @@ async function detectPageQuad(args: {
   full: Buffer;
   small: PreparedImage;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<Quad1000 | null> {
   const { full, small, ledger, base } = args;
   const { default: sharp } = await import("sharp");
@@ -609,7 +637,13 @@ async function detectPageQuad(args: {
 async function detectRotation(args: {
   page: Buffer;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<number> {
   const { page, ledger, base } = args;
 
@@ -659,7 +693,13 @@ interface Region {
 async function detectRegions(args: {
   prepared: PreparedImage;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<Region[]> {
   const { prepared, ledger, base } = args;
 
@@ -714,7 +754,13 @@ async function detectRegions(args: {
 async function cropRegions(args: {
   page: Buffer;
   regions: Region[];
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
 }): Promise<ExtractedIllustration[]> {
   const { page, regions, base } = args;
   const { default: sharp } = await import("sharp");
@@ -785,7 +831,13 @@ async function askJson(args: {
   label: string;
   feature: string;
   ledger: IllustrationLedger;
-  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+  base: {
+    correlationId: string;
+    scanId?: string;
+    userId?: string;
+    jobId?: string;
+    moduleType: "DESIGN";
+  };
   array?: boolean;
 }): Promise<JsonAnswer | null> {
   const { bytes, mimeType, prompt, header, label, feature, ledger, base, array } = args;
@@ -814,6 +866,8 @@ async function askJson(args: {
     stage: feature,
     text,
     correlationId: base.correlationId,
+    scanId: base.scanId,
+    callId: result.callId,
     userId: base.userId,
     feature,
     provider: result.provider,

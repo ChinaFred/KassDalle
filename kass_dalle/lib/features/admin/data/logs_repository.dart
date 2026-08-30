@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../domain/ai_call.dart';
 import '../domain/log_entry.dart';
 
 /// Une page de journaux, et de quoi demander la suivante.
@@ -15,9 +16,28 @@ import '../domain/log_entry.dart';
 /// chemin, et l'on en tirait des conclusions sur du vide. Le jeton dit si la
 /// suite existe.
 class LogsPage {
-  const LogsPage({required this.entries, this.nextPageToken});
+  const LogsPage({
+    required this.entries,
+    this.calls = const [],
+    this.usdToEur,
+    this.nextPageToken,
+  });
 
   final List<LogEntry> entries;
+
+  /// Les appels de modèle facturés qui se rattachent à ces entrées.
+  ///
+  /// Ils ne sortent pas des journaux mais de `ai_usage` : c'est là que vit le
+  /// montant, et il n'en existe qu'un. Un appel peut figurer ici sans qu'aucune
+  /// de ses lignes de journal soit visible — le niveau DEBUG masqué, par
+  /// exemple. C'est voulu : le total d'un scan reste alors juste.
+  final List<AiCall> calls;
+
+  /// Taux du jour, `null` s'il est indisponible.
+  ///
+  /// Sans lui, les montants s'affichent en dollars. Appliquer une constante à
+  /// la place produirait un montant en euros périmé, présenté comme exact.
+  final double? usdToEur;
 
   /// `null` quand Cloud Logging n'a plus rien à rendre pour cette recherche.
   final String? nextPageToken;
@@ -44,6 +64,7 @@ class LogsRepository {
   ///
   /// [severity]        : "INFO" / "WARNING" / "ERROR" / "DEBUG"
   /// [correlationId]   : filtre exact sur le label.
+  /// [scanId]          : filtre exact — rend les quatre traitements d'un scan.
   /// [jobId], [userId] : filtres exacts sur les labels.
   /// [timeRangeMinutes]: fenêtre en minutes (défaut 60, max 10080 = 7 jours).
   /// [freeText]        : recherche plein-texte dans `payload.message`.
@@ -52,6 +73,7 @@ class LogsRepository {
   Future<LogsPage> query({
     String? severity,
     String? correlationId,
+    String? scanId,
     String? jobId,
     String? userId,
     int timeRangeMinutes = 60,
@@ -70,6 +92,7 @@ class LogsRepository {
     if (correlationId != null && correlationId.isNotEmpty) {
       payload['correlationId'] = correlationId;
     }
+    if (scanId != null && scanId.isNotEmpty) payload['scanId'] = scanId;
     if (jobId != null && jobId.isNotEmpty) payload['jobId'] = jobId;
     if (userId != null && userId.isNotEmpty) payload['userId'] = userId;
     if (freeText != null && freeText.isNotEmpty) payload['freeText'] = freeText;
@@ -80,11 +103,18 @@ class LogsRepository {
 
     final data = Map<String, dynamic>.from(raw as Map);
     final entries = (data['entries'] as List?) ?? const [];
+    final calls = (data['calls'] as List?) ?? const [];
+    final rate = data['usdToEur'];
     return LogsPage(
       entries: entries
           .whereType<Map>()
           .map((m) => LogEntry.fromMap(Map<String, dynamic>.from(m)))
           .toList(growable: false),
+      calls: calls
+          .whereType<Map>()
+          .map((m) => AiCall.fromMap(Map<String, dynamic>.from(m)))
+          .toList(growable: false),
+      usdToEur: rate is num ? rate.toDouble() : null,
       nextPageToken: data['nextPageToken'] as String?,
     );
   }

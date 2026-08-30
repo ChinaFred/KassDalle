@@ -77,9 +77,11 @@ export async function extractAndStorePageIllustrations(args: {
   userId: string;
   jobId: string;
   correlationId: string;
+  /** Scan de l'utilisateur d'où viennent les pages, quand il en vient un. */
+  scanId?: string;
   fileName?: string;
 }): Promise<StoredIllustrations> {
-  const { pages, mimeType, userId, jobId, correlationId, fileName } = args;
+  const { pages, mimeType, userId, jobId, correlationId, scanId, fileName } = args;
 
   const urls: string[] = [];
   let detectees = 0;
@@ -95,6 +97,7 @@ export async function extractAndStorePageIllustrations(args: {
       // en laissant le préfixe commun : un filtre sur l'identifiant du job les
       // rassemble, un filtre exact isole une page.
       correlationId: `${correlationId}_p${index + 1}`,
+      scanId,
       userId,
       jobId,
       fileName: fileName ? `${fileName} (page ${index + 1})` : undefined,
@@ -123,6 +126,7 @@ export async function extractAndStorePageIllustrations(args: {
           errorDescription: err instanceof Error ? err.message : String(err),
           moduleType: "DESIGN",
           correlationId,
+          scanId,
           userId,
           jobId,
           feature: "page_illustrations",
@@ -137,6 +141,7 @@ export async function extractAndStorePageIllustrations(args: {
       `${pages.length} page(s), ${pagesSansImage} sans image, ${pagesEnEchec} en échec`,
     moduleType: "DESIGN",
     correlationId,
+    scanId,
     userId,
     jobId,
     feature: "page_illustrations",

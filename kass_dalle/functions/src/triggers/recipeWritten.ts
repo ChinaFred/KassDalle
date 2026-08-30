@@ -42,6 +42,19 @@ export const onRecipeWritten = onDocumentWritten(
     const data = after.data() as Record<string, unknown>;
     const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
 
+    // Le scan d'où vient la recette, quand elle vient d'un scan.
+    //
+    // Ce déclencheur part sur une écriture Firestore : rien, dans l'événement,
+    // ne dit qu'un import l'a provoquée. Le pipeline écrit donc `scan_id` sur
+    // la recette, et c'est le seul fil entre les deux. Sans lui, la nutrition
+    // et les courses d'un import formaient un groupe de journaux sans lien
+    // avec lui, et leur coût — la moitié de celui d'un scan — n'était pas
+    // additionné avec le sien.
+    //
+    // Une recette écrite à la main n'en a pas, et c'est normal : elle ne vient
+    // d'aucun scan.
+    const scanId = typeof data.scan_id === "string" && data.scan_id ? data.scan_id : undefined;
+
     // ── La confidentialité descend du livre, avant tout le reste ─────────────
     //
     // Avant la garde de type de page : une page technique rangée dans un livre
@@ -54,6 +67,7 @@ export const onRecipeWritten = onDocumentWritten(
       data,
       beforeData,
       correlationId: newCorrelationId(qualify("ecriture_recette", "confidentialite")),
+      scanId,
     });
 
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
@@ -120,10 +134,10 @@ export const onRecipeWritten = onDocumentWritten(
     // travail de la première. Le drapeau lui demandait d'attendre. Depuis la
     // transcription en deux passes, la normalisation a lieu AVANT l'écriture et
     // la recette n'est écrite qu'une fois — il n'y a plus rien à attendre.
-    const args = { after, data, ingredientsChanged, correlationId };
+    const args = { after, data, ingredientsChanged, correlationId, scanId };
     const outcomes = await Promise.allSettled([
       refreshShoppingProducts(args),
-      syncRecipeNutrition({ after, data, cause, correlationId }),
+      syncRecipeNutrition({ after, data, cause, correlationId, scanId }),
     ]);
 
     const labels = ["refreshShoppingProducts", "syncRecipeNutrition"];
@@ -135,6 +149,7 @@ export const onRecipeWritten = onDocumentWritten(
           outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
         moduleType: "DESIGN",
         correlationId,
+        scanId,
         extra: { recipeId: after.id },
       });
     });

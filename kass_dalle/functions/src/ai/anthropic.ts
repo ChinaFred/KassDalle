@@ -122,6 +122,8 @@ export async function callAnthropic(args: {
   apiKey: string;
   parts: ModelPart[];
   ctx: ModelCallContext;
+  /** Identifiant de cet appel — porté par ses lignes de journal et sa consommation. */
+  callId: string;
   model?: string;
   maxTokens?: number;
   outputSchema?: ModelOutputSchema;
@@ -218,6 +220,8 @@ export async function callAnthropic(args: {
       // duplique une information déjà filtrable.
       message: `Appel IA terminé (${args.ctx.feature})`,
       correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
+      callId: args.callId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
       jobId: args.ctx.jobId,
@@ -234,6 +238,7 @@ export async function callAnthropic(args: {
       provider: "anthropic",
       model,
       usage,
+      callId: args.callId,
       stopReason: response.stop_reason ?? undefined,
     };
   } catch (err) {

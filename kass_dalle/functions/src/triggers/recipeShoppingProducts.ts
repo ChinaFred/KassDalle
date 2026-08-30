@@ -28,8 +28,10 @@ export async function refreshShoppingProducts(args: {
   ingredientsChanged: boolean;
   /** Traitement auquel ce recalcul appartient — fourni par `onRecipeWritten`. */
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<void> {
-  const { after, data, ingredientsChanged, correlationId } = args;
+  const { after, data, ingredientsChanged, correlationId, scanId } = args;
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
   const noProductsYet = !Array.isArray(data.shopping_products);
@@ -48,6 +50,7 @@ export async function refreshShoppingProducts(args: {
     message: "refreshShoppingProducts: recalcul produits",
     moduleType: "DESIGN",
     correlationId,
+    scanId,
     userId,
     extra: { recipeId: after.id, ingredientsCount: ingredients.length },
   });
@@ -81,6 +84,7 @@ export async function refreshShoppingProducts(args: {
       message: "refreshShoppingProducts: produits mis à jour",
       moduleType: "DESIGN",
       correlationId,
+      scanId,
       userId,
       extra: { recipeId: after.id, productCount: products.length },
     });
@@ -91,6 +95,7 @@ export async function refreshShoppingProducts(args: {
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "DESIGN",
       correlationId,
+      scanId,
       userId,
       extra: { recipeId: after.id },
     });

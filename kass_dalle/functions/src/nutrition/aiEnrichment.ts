@@ -225,6 +225,8 @@ async function askUnitWeights(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   insist: boolean;
 }): Promise<Map<string, EstimatedUnitWeight>> {
   const out = new Map<string, EstimatedUnitWeight>();
@@ -247,6 +249,7 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
     parts: [textPart(prompt)],
     ctx: {
       correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? Date.now()}`,
+      scanId: args.scanId,
       feature: "enrich_unit_weights",
       userId: args.userId ?? "system",
       moduleType: "DESIGN",
@@ -306,6 +309,7 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
         message: `enrichUnknownUnitsWithAI: réponse "${answered}" sans unité demandée correspondante`,
         errorDescription: "Libellé retourné par Gemini non rapprochable — estimation perdue",
         correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
+        scanId: args.scanId,
         extra: { recipeId: args.recipeId, demandees: args.units.map((u) => u.label) },
       });
       continue;
@@ -332,6 +336,8 @@ export async function enrichUnknownUnitsWithAI(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   /** Contexte : noms d'ingrédients associés à chaque unité canonique (améliore l'estimation). */
   unitIngredientNames?: Map<string, string[]>;
 }): Promise<void> {
@@ -381,6 +387,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       userId: args.userId,
       recipeId: args.recipeId,
       correlationId: args.correlationId,
+      scanId: args.scanId,
       insist: false,
     });
     for (const [canonical, estimate] of first) estimates.set(canonical, estimate);
@@ -394,6 +401,7 @@ export async function enrichUnknownUnitsWithAI(args: {
         userId: args.userId,
         recipeId: args.recipeId,
         correlationId: args.correlationId,
+        scanId: args.scanId,
         insist: true,
       });
       for (const [canonical, estimate] of second) estimates.set(canonical, estimate);
@@ -403,6 +411,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       message: "enrichUnknownUnitsWithAI: échec (best-effort)",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
+      scanId: args.scanId,
       extra: { recipeId: args.recipeId, units: unitsNeedingEnrichment.map((u) => u.label) },
     });
   }
@@ -428,6 +437,7 @@ export async function enrichUnknownUnitsWithAI(args: {
         message: `enrichUnknownUnitsWithAI: écriture du poids échouée pour "${canonical}"`,
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
+        scanId: args.scanId,
       });
     }
   }
@@ -461,6 +471,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       errorDescription:
         "Aucune estimation exploitable après relance — ingrédients exclus du calcul",
       correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
+      scanId: args.scanId,
       extra: {
         recipeId: args.recipeId,
         units: stillMissing.map((u) => ({ canonical: u.canonical, label: u.label })),
@@ -494,6 +505,8 @@ export async function enrichUnknownIngredientsWithAI(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   /** Instant limite au-delà duquel on s'arrête proprement (défaut : aucun). */
   deadlineMs?: number;
 }): Promise<number> {
@@ -534,6 +547,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
   const estimated = await estimatePer100gForTargets({
     targets: toEnrich,
     correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
+    scanId: args.scanId,
     userId: args.userId ?? "system",
     feature: "inline_ingredient_per100g_enrichment",
     deadlineMs: args.deadlineMs,
@@ -574,6 +588,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
       message: "enrichUnknownIngredientsWithAI: écriture groupée du référentiel échouée",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      scanId: args.scanId,
     });
   }
   if (failed.length > 0) {
@@ -582,6 +597,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
       errorDescription:
         "Aucune estimation plausible — ces ingrédients sortent du calcul nutritionnel",
       correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      scanId: args.scanId,
       extra: { recipeId: args.recipeId, ingredients: failed.map((t) => t.id) },
     });
   }
@@ -606,6 +622,8 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
 }): Promise<number> {
   const candidates = [...new Set(args.ingredientNames.map((n) => n.trim()).filter(Boolean))];
@@ -617,6 +635,7 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   // chaque enregistrement paierait un appel pour réécrire ce qu'il savait —
   // et écraserait au passage un poids corrigé à la main.
   const correlationId = args.correlationId ?? `piece-weights-${args.recipeId ?? "norecipe"}`;
+  const scanId = args.scanId;
   const byName = new Map<string, string>();
   for (const name of candidates) {
     const id = normalizeIngredientCanonicalId(name);
@@ -638,6 +657,7 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
       message: "estimateIngredientPieceWeightsWithAI: lecture groupée des poids connus impossible",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId,
+      scanId,
     });
   }
 
@@ -671,6 +691,7 @@ Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans tex
       prompt,
       ctx: {
         correlationId,
+        scanId,
         feature: "estimate_piece_weights",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -752,9 +773,12 @@ export async function detectNotConsumedIngredientsWithAI(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
 }): Promise<number> {
   const correlationId = args.correlationId ?? `not-consumed-${args.recipeId ?? "norecipe"}`;
+  const scanId = args.scanId;
 
   // Candidats dédupliqués, dans l'ordre de la recette.
   const candidates: Array<{ name: string; id: string }> = [];
@@ -784,6 +808,7 @@ export async function detectNotConsumedIngredientsWithAI(args: {
         "detectNotConsumedIngredientsWithAI: lecture groupée impossible, tous les ingrédients sont resoumis",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId,
+      scanId,
     });
   }
 
@@ -820,6 +845,7 @@ Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
       prompt,
       ctx: {
         correlationId,
+        scanId,
         feature: "detect_not_consumed",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -916,9 +942,12 @@ export async function estimateIngredientUnitWeightsWithAI(args: {
   recipeId?: string;
   /** Fil du traitement appelant : import, declencheur, ecran. */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
   userId?: string;
 }): Promise<number> {
   const correlationId = args.correlationId ?? `unit-couple-weights-${args.recipeId ?? "norecipe"}`;
+  const scanId = args.scanId;
   const seen = new Set<string>();
   const candidates: Array<{ pair: IngredientUnitPair; id: string }> = [];
 
@@ -948,6 +977,7 @@ export async function estimateIngredientUnitWeightsWithAI(args: {
         "estimateIngredientUnitWeightsWithAI: lecture groupée impossible, tous les couples sont resoumis",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId,
+      scanId,
     });
   }
 
@@ -985,6 +1015,7 @@ Format strict : {"weights":[{"id":"0","grams":1}]}`;
       prompt,
       ctx: {
         correlationId,
+        scanId,
         feature: "estimate_unit_couple_weights",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",

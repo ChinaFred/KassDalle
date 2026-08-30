@@ -273,6 +273,7 @@ Document principal d'une recette.
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
+| `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
 | `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`. Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
@@ -696,6 +697,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
 | `current_step` | `String?` | Étape courante du traitement IA |
+| `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 
 **Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
@@ -818,10 +820,10 @@ Cinq collections, écrites par `recordUsage` et par lui seul.
 
 | Collection | Contenu |
 |---|---|
-| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
+| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
-| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier |
+| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -1457,6 +1459,8 @@ Une entrée est un objet `StructuredLogEntry` :
 | `provider` | `string?` | `gemini` ou `anthropic` |
 | `model` | `string?` | identifiant exact du modèle appelé |
 | `feature` | `string?` | poste de coût — **la même clé que le reporting** |
+| `scanId` | `string?` | le scan de l'utilisateur — voir 7.3 bis |
+| `callId` | `string?` | l'appel de modèle auquel la ligne appartient — voir 7.3 bis |
 | `extra` | `Record<string, unknown>?` | tout le reste, non indexé |
 
 **`provider`, `model` et `feature` sont des champs de premier plan, pas des clés perdues
@@ -1466,8 +1470,8 @@ la clé qui relie une ligne de journal à une ligne de facture.
 
 **Ce qui devient un label indexé** — donc requêtable — est limité aux champs courts :
 `correlationId`, `moduleType`, `geminiStatus`, `jobId`, `userId`, `provider`, `model`,
-`feature`. Tout le reste part dans `jsonPayload`, avec un `timestamp` ISO ajouté à
-l'écriture.
+`feature`, `scanId`, `callId`. Tout le reste part dans `jsonPayload`, avec un
+`timestamp` ISO ajouté à l'écriture.
 
 **Les quatre sévérités ne sont pas interchangeables.**
 
@@ -1523,6 +1527,51 @@ filtrable ; un libellé change. Une racine inconnue n'est pas une erreur : on af
 racine telle quelle, parce qu'un nom technique reste cherchable là où « Traitement inconnu »
 ne l'est plus.
 
+### 7.3 bis Le fil au-dessus du fil : `scanId` et `callId`
+
+Le `correlationId` relie les lignes d'**un traitement**. Il n'en relie pas quatre.
+
+Photographier une page de livre en déroule quatre, chacun tirant son propre identifiant :
+
+| Ordre | Traitement | Où | Ce qu'il contient |
+|---|---|---|---|
+| 1 | `upload_security_scan` | `scanAndPromoteUploadFn` | le contrôle du fichier envoyé, facturé à l'unité |
+| 2 | `import_recette` | `jobDispatcher` → `recipeProcessor` | `transcription_page`, `recipe_tagging`, la normalisation contre les référentiels |
+| 3 | `import_recette…_p1`, `_p2` | `illustrations/` | une détection d'illustrations par page |
+| 4 | `ecriture_recette:creation` | `onRecipeWritten` | la liste de courses et toute la nutrition |
+
+L'écran en faisait quatre groupes sans lien, et le coût d'un scan se lisait sur quatre
+lignes qu'il fallait retrouver une à une.
+
+**`scanId` chapeaute le `correlationId`, il ne le remplace pas.** Forme :
+`scan_{millisecondes}_{aléa}`.
+
+**Le client le pose**, et lui seul peut le faire : le contrôle du fichier a lieu avant que
+le job existe, et les pages supplémentaires arrivent par des appels séparés.
+`ScanUploadNotifier` le tire une fois par import, le passe à chaque
+`scanAndPromoteUpload` et l'écrit sur le job. Le `jobDispatcher` le relit, le réécrit
+sur le job — pour qu'une relance retrouve le même scan — et le transmet dans le payload de
+la tâche. Le `recipeProcessor` le porte dans son `ctx`, d'où il descend dans chaque
+`ModelCallContext`. `saveDraft` l'écrit sur la recette (`scan_id`), et
+`onRecipeWritten` l'y relit : c'est ce dernier maillon qui ramène la nutrition et les
+courses dans le total du scan.
+
+Un job créé avant l'existence du champ n'en a pas : `newScanId()` en fabrique un côté
+serveur, qui couvre au moins l'import et ses suites.
+
+**`callId` nomme un appel de modèle.** Forme : `call_{base36}_{aléa}`, tiré par
+`callModel` **à chaque tentative** — un repli sur l'autre moteur produit deux appels
+réellement facturés, deux lignes de consommation et deux séries de lignes de journal ; leur
+donner le même identifiant afficherait un seul appel au coût doublé sans raison lisible.
+
+Il est écrit sur les lignes de journal de l'appel **et** sur sa ligne `ai_usage`
+(`call_id`). C'est ce qui met un montant exact en face d'un appel dans l'écran, sans avoir
+à rapprocher une ligne de consommation d'une ligne de journal par son poste et son heure —
+rapprochement qui se trompe dès que le même poste part quarante fois de suite.
+
+Un appel écrit deux à quatre lignes — le prompt en `DEBUG`, la fin de l'appel, le texte
+rendu. Elles étaient posées au même rang que celles du pipeline.
+
 ### 7.4 Journaliser l'échange avec un modèle
 
 Les journaux disaient qu'un appel avait eu lieu, avec son poste, son moteur et ses jetons —
@@ -1536,7 +1585,12 @@ disent pas quelle étape a interprété.
 |---|---|
 | `stage` | le moment — `classification`, `extraction`, `polish.avant`, `polish.après`… |
 | `text` | le texte rendu, ou celui qu'on s'apprête à écrire |
-| `correlationId`, `jobId`, `userId`, `feature`, `provider`, `model`, `moduleType` | le contexte habituel |
+| `correlationId`, `scanId`, `callId`, `jobId`, `userId`, `feature`, `provider`, `model`, `moduleType` | le contexte habituel |
+
+`callId` vient de `ModelCallResult.callId`, rendu par `callModel` : le texte est
+journalisé **après** l'appel, par celui qui l'a demandé, et sans cet identifiant sa ligne se
+retrouvait au même rang que les étapes du pipeline, sans lien avec l'appel qui l'avait
+produite.
 
 L'entrée part en `INFO`, avec un message de la forme « Texte IA — extraction (3 214
 caractères) », et dans `extra` : `stage`, `textLength`, `truncated`, `text`.
@@ -1570,13 +1624,57 @@ Filtres acceptés, traduits en syntaxe de requête Cloud Logging :
 |---|---|
 | `severity` | `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout |
 | `correlationId` | `labels.correlationId="…"` |
+| `scanId` | `labels.scanId="…"` — rend les quatre traitements d'un scan, et eux seuls |
 | `jobId` | `labels.jobId="…"` |
 | `userId` | `labels.userId="…"` |
 | `freeText` | `jsonPayload.message:"…"` |
 
-La pagination se fait par `nextPageToken`. L'écran
-(`admin/presentation/logs_screen.dart`) regroupe par racine de `correlationId`, traduit le
-titre, et filtre `DEBUG` par défaut.
+La pagination se fait par `nextPageToken`.
+
+**La réponse porte aussi les montants.** `queryLogsFn` relit `ai_usage` pour les
+`scan_id` et les `correlation_id` présents dans la page, et rend un tableau `calls`
+— un objet par appel facturé : `callId`, `correlationId`, `scanId`, `feature`,
+`provider`, `model`, `status`, jetons, `costUsd`, `timestamp` — plus le
+`usdToEur` du jour.
+
+Le montant n'est **pas** recalculé depuis les jetons journalisés : il est lu où il vit
+déjà. Le chiffrer une seconde fois, autrement, produirait deux montants pour un même
+appel — deux écrans, deux chiffres, et aucun moyen de dire lequel est juste.
+
+Trois conséquences :
+
+- `costUsd` vaut `null` quand la grille tarifaire était en panne au moment de l'appel.
+  L'écran écrit « sans montant » et n'additionne rien : un total à zéro se lit comme une
+  dépense nulle.
+- Sans taux du jour, les montants restent en **dollars**. Une constante du code produirait
+  des euros périmés présentés comme exacts.
+- Une lecture de coûts en échec ne fait pas échouer l'écran : les journaux s'affichent sans
+  montant, et l'incident part dans `logError`.
+
+**L'écran (`admin/presentation/logs_screen.dart`) rend trois niveaux**, le regroupement
+vivant dans `admin/domain/log_scan_group.dart` — donc testable
+(`test/log_scan_group_test.dart`) :
+
+| Niveau | Ce qu'il montre | Son montant |
+|---|---|---|
+| 1 — le scan | les quatre traitements d'un scan sous un seul titre, ou le traitement seul quand aucun scan ne le chapeaute | somme de ses appels, suivie du nombre d'appels et de ceux qui n'ont pas de montant |
+| 2 — l'appel | un appel de modèle, nommé par son poste traduit (`featureLabel`, le catalogue comptable) ; les lignes qui ne relèvent d'aucun appel restent à ce niveau, mêlées aux appels dans l'ordre du temps | son coût exact |
+| 3 — la ligne | prompt, fin d'appel, texte rendu — les labels et le `jsonPayload` complet | — |
+
+Le rattachement se fait sur `scanId`, et retombe sur `correlationId` pour les journaux
+écrits avant que le champ existe. Une carte `correlationId → scanId`, apprise des lignes
+qui portent les deux, rattrape au passage les appels dont seule la corrélation est connue.
+
+Deux choix qui évitent un total faux :
+
+- **Un appel dont aucune ligne n'est visible ouvre quand même son groupe.** Son coût est
+  réel ; l'écarter parce que le niveau `DEBUG` est masqué amputerait le total sans que
+  rien ne le dise.
+- **« Charger la suite » fusionne les appels sur leur `callId`.** Deux pages voisines
+  partagent souvent un traitement : sans cette fusion, le coût du scan doublait à chaque
+  page chargée.
+
+`DEBUG` reste filtré par défaut.
 
 ### 7.6 Aucun `catch` silencieux — les deux applications de la règle
 

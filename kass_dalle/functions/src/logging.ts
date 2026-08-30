@@ -42,6 +42,34 @@ export interface StructuredLogEntry {
   model?: string;
   /** Poste fonctionnel — la même clé que celle du reporting de coûts. */
   feature?: string;
+  /**
+   * Le scan auquel cette ligne appartient — l'acte de l'utilisateur, pas le
+   * traitement qui l'exécute.
+   *
+   * Photographier une page de livre déclenche quatre traitements successifs :
+   * le contrôle du fichier envoyé, le pipeline d'import, une détection
+   * d'illustrations par page, puis le déclencheur d'écriture qui calcule la
+   * nutrition et les courses. Chacun tirait son propre `correlationId`, et
+   * l'écran des journaux en faisait quatre groupes sans lien. Le coût d'un
+   * scan était réparti sur quatre groupes qu'il fallait retrouver un à un.
+   *
+   * `scanId` est l'identifiant posé au premier envoi de fichier et transmis
+   * par chaque étape. Il ne remplace pas `correlationId` : il le chapeaute.
+   */
+  scanId?: string;
+  /**
+   * L'appel de modèle auquel cette ligne appartient.
+   *
+   * Un appel écrit deux à quatre lignes — le prompt, la fin de l'appel, le
+   * texte rendu — que rien ne reliait entre elles. Elles étaient posées au
+   * même rang que celles du pipeline, et un poste appelé quarante fois de
+   * suite donnait cent vingt lignes indiscernables.
+   *
+   * `callId` est aussi écrit sur la ligne de consommation
+   * (`ai_usage.call_id`) : c'est lui qui rattache un montant exact à ces
+   * lignes-là, sans avoir à deviner par l'ordre d'arrivée.
+   */
+  callId?: string;
   /** Champs additionnels libres (ex: tokens consommés, taille fichier…). */
   extra?: Record<string, unknown>;
 }
@@ -86,6 +114,8 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
   if (entry.provider) labels.provider = entry.provider;
   if (entry.model) labels.model = entry.model;
   if (entry.feature) labels.feature = entry.feature;
+  if (entry.scanId) labels.scanId = entry.scanId;
+  if (entry.callId) labels.callId = entry.callId;
 
   const metadata = {
     resource: { type: "cloud_function" } as const,
@@ -172,6 +202,28 @@ export function newCorrelationId(prefix = "corr"): string {
 }
 
 /**
+ * Identifiant d'un scan, quand le client n'en a pas fourni.
+ *
+ * Le client le pose normalement lui-même, au premier envoi : lui seul sait
+ * qu'une photo et ses pages supplémentaires forment un seul acte. Ce repli
+ * couvre les jobs créés avant que le champ existe.
+ */
+export function newScanId(): string {
+  return `scan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Identifiant d'un appel de modèle, tiré par `callModel` à chaque appel.
+ *
+ * Court volontairement : il n'a besoin d'être unique qu'à l'intérieur d'un
+ * scan, et il s'écrit sur chaque ligne de journal de l'appel comme sur sa
+ * ligne de consommation.
+ */
+export function newCallId(): string {
+  return `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * Ajoute une précision au nom d'un traitement : « ecriture_recette:ingredients-modifies ».
  *
  * Quand un même traitement part plusieurs fois de suite — trois variantes de
@@ -224,6 +276,8 @@ export function logAiText(args: {
   text: string;
   message?: string;
   correlationId?: string;
+  scanId?: string;
+  callId?: string;
   jobId?: string;
   userId?: string;
   feature?: string;

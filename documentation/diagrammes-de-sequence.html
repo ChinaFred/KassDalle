@@ -198,9 +198,10 @@ sequenceDiagram
   participant R as recipes
 
   U->>S: pickAndQueueRecipe
+  S->>S: scanId = scan_ms_alea — un par import
   S->>ST: putData quarantine/uid/ts_fichier
   ST-->>S: progression puis storagePath
-  S->>SP: scanAndPromoteUpload storagePath
+  S->>SP: scanAndPromoteUpload storagePath, scanId
   SP->>SP: type MIME, taille, signature du fichier
 
   alt fichier refusé
@@ -210,13 +211,13 @@ sequenceDiagram
   else fichier accepté
     SP->>ST: promotion hors quarantaine
     SP-->>S: downloadUrl
-    S->>J: createJob status queued
+    S->>J: createJob status queued, scan_id
     S-->>U: mis en file, l'écran se libère
   end
 
   J-->>D: entrée en queued (création ou relance)
-  D->>J: correlation_id et dispatched_at
-  D->>Q: enqueue jobId, userId, correlationId
+  D->>J: correlation_id, scan_id et dispatched_at
+  D->>Q: enqueue jobId, userId, correlationId, scanId
   Q->>P: dispatch OIDC, 5 en parallèle, 2 par seconde
 
   P->>J: status processing, current_step import
@@ -1074,6 +1075,7 @@ sequenceDiagram
   participant FN as la fonction appelée
   participant SUB as passes internes
   participant CLG as Cloud Logging
+  participant AIU as ai_usage
   participant EC as Écran Journaux
   participant DIC as log_treatment_label.dart
 
@@ -1091,12 +1093,16 @@ sequenceDiagram
   U->>EC: ouvre Administration puis Journaux
   EC->>CLG: queryLogsFn — filtres sévérité, module, période
   CLG-->>EC: entrées à plat, la plus récente d'abord
+  CLG->>AIU: scan_id et correlation_id de la page
+  AIU-->>EC: une ligne par appel facturé — jetons, coût, callId
 
-  EC->>EC: regroupe par labels.correlationId
-  EC->>EC: racine = fil moins horodatage et suffixe aléatoire
-  EC->>DIC: logTreatmentName(racine)
+  EC->>EC: NIVEAU 1 — regroupe par labels.scanId, sinon correlationId
+  EC->>EC: NIVEAU 2 — un nœud par appel, les lignes hors appel restent là
+  EC->>EC: NIVEAU 3 — les lignes de journal portant le même callId
+  EC->>EC: additionne les coûts du niveau 2 vers le niveau 1
+  EC->>DIC: logTreatmentName(racine) pour nommer les traitements réunis
   DIC-->>EC: libellé français + précision après le deux-points
-  EC-->>U: « Génération d'une recette par l'IA — Creative · 2 message(s) »
+  EC-->>U: « Scan d'une page de livre — 0,0431 € · 9 appel(s) »
 </pre>
       </div>
       <figcaption>
@@ -1122,6 +1128,25 @@ sequenceDiagram
       filtrable — c'est lui qu'on colle dans le champ <code>correlationId</code> pour isoler un
       traitement — tandis qu'un libellé peut changer sans rien casser. Une racine inconnue est
       rendue telle quelle : mieux vaut un nom technique cherchable qu'un « traitement inconnu ».
+    </span>
+    <span class="expect">
+      <b>Le scan chapeaute le fil.</b> Photographier une page de livre déroule
+      <b>quatre</b> traitements — contrôle du fichier, import, détection d'illustrations page
+      par page, nutrition et courses après écriture — chacun avec son propre
+      <code>correlationId</code>. L'écran en faisait quatre groupes sans lien, et le coût d'un
+      scan se lisait sur quatre lignes qu'il fallait retrouver une à une.
+      <code>scanId</code> est posé par le <b>client</b>, seul à savoir que ces envois forment un
+      acte : le contrôle du fichier a lieu avant que le job existe. Il descend par le job, la
+      tâche, le <code>ctx</code> du processeur, puis par <code>recipes.scan_id</code> jusqu'au
+      déclencheur d'écriture — c'est ce dernier maillon qui ramène la nutrition dans le total.
+    </span>
+    <span class="expect">
+      <b>Le montant vient de <code>ai_usage</code>, jamais des journaux.</b> Le recalculer depuis
+      les jetons journalisés donnerait deux chiffres pour un même appel. <code>callId</code>, tiré
+      par <code>callModel</code> à chaque <i>tentative</i> — un repli sur l'autre moteur est un
+      second appel facturé —, est écrit sur les lignes de journal <b>et</b> sur la ligne de
+      consommation : c'est lui qui met un montant exact en face d'un appel, sans rapprochement par
+      l'heure. Un coût inconnu s'affiche « sans montant » et n'est jamais additionné comme zéro.
     </span>
     <span class="expect">
       Deux fils naissent en dehors d'une callable : <code>import_recette</code>, ouvert par le

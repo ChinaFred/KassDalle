@@ -19,7 +19,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFunctions } from "firebase-admin/functions";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { REGION, COLL_PROCESSING_JOBS, PROJECT_ID, TASK_QUEUE_FUNCTION } from "../config";
-import { logInfo, logError, newCorrelationId, qualify } from "../logging";
+import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
 
 export const jobDispatcher = onDocumentWritten(
   {
@@ -45,6 +45,13 @@ export const jobDispatcher = onDocumentWritten(
     // la partie importation ? ». Elle était là, sous un nom de couloir.
     const correlationId = newCorrelationId("import_recette");
 
+    // Le scan est l'acte de l'utilisateur ; ce traitement n'en est qu'une
+    // étape. Le client le pose sur le job au moment de l'envoi, et il couvre
+    // aussi le contrôle du fichier, qui a eu lieu avant que ce job existe.
+    // Un job créé avant l'existence du champ n'en a pas : on en fabrique un,
+    // qui rassemblera au moins l'import et ses suites.
+    const scanId = typeof job.scan_id === "string" && job.scan_id ? job.scan_id : newScanId();
+
     // On n'enqueue que les jobs en état queued (évite l'enqueue sur édition manuelle).
     if (job.status && job.status !== "queued") {
       // Ce déclencheur part à CHAQUE écriture du job — queued, processing,
@@ -59,6 +66,7 @@ export const jobDispatcher = onDocumentWritten(
         moduleType: "IMPORT",
         jobId,
         userId,
+        scanId,
         correlationId: existing || qualify("import_recette", "suivi-du-job"),
       });
       return;
@@ -73,6 +81,9 @@ export const jobDispatcher = onDocumentWritten(
       // Marque le job avec le correlationId avant enqueue (traçabilité).
       await getFirestore().collection(COLL_PROCESSING_JOBS).doc(jobId).update({
         correlation_id: correlationId,
+        // Réécrit même quand il vient du client : une relance passe ici, et le
+        // processeur doit retrouver le même scan qu'à la première tentative.
+        scan_id: scanId,
         dispatched_at: Timestamp.now(),
       });
 
@@ -81,7 +92,7 @@ export const jobDispatcher = onDocumentWritten(
       const queueResource = `projects/${PROJECT_ID}/locations/${REGION}/functions/${TASK_QUEUE_FUNCTION}`;
       const queue = getFunctions().taskQueue(queueResource);
       await queue.enqueue(
-        { jobId, userId, correlationId },
+        { jobId, userId, correlationId, scanId },
         {
           // Cloud Tasks ajoutera retryCount automatiquement aux retries.
           dispatchDeadlineSeconds: 540,
@@ -94,6 +105,7 @@ export const jobDispatcher = onDocumentWritten(
         jobId,
         userId,
         correlationId,
+        scanId,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -104,6 +116,7 @@ export const jobDispatcher = onDocumentWritten(
         jobId,
         userId,
         correlationId,
+        scanId,
       });
       await getFirestore()
         .collection(COLL_PROCESSING_JOBS)

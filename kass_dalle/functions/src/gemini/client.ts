@@ -135,6 +135,10 @@ export interface GeminiCallContext {
   correlationId: string;
   feature: string;
   moduleType?: ModuleType;
+  /** Scan de l'utilisateur auquel l'appel appartient, quand il en vient un. */
+  scanId?: string;
+  /** Identifiant de cet appel, quand il vient du routeur. */
+  callId?: string;
   jobId?: string;
   userId?: string;
   stepIndex?: number;
@@ -211,6 +215,8 @@ export async function callGemini(
     // comprise. En INFO, elle doublait le volume de l'écran pour rien.
     await logDebug(`Appel IA démarré (${ctx.feature})`, {
       correlationId: ctx.correlationId,
+      scanId: ctx.scanId,
+      callId: ctx.callId,
       moduleType: ctx.moduleType,
       jobId: ctx.jobId,
       userId: ctx.userId,
@@ -243,6 +249,8 @@ export async function callGemini(
       const elapsed = Date.now() - startedAt;
       await logInfo(`Appel IA terminé (${ctx.feature})`, {
         correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        callId: ctx.callId,
         moduleType: ctx.moduleType,
         jobId: ctx.jobId,
         userId: ctx.userId,
@@ -271,6 +279,8 @@ export async function callGemini(
       if (thinkingBudget != null && isThinkingRejection(err)) {
         await logError(`Appel IA — plafond de raisonnement refusé, nouvel essai sans lui`, {
           correlationId: ctx.correlationId,
+          scanId: ctx.scanId,
+          callId: ctx.callId,
           moduleType: ctx.moduleType,
           userId: ctx.userId,
           provider: "gemini",
@@ -287,6 +297,8 @@ export async function callGemini(
         const backoffMs = Math.min(60_000, 2_000 * Math.pow(2, attempt - 1));
         await logError(`Appel IA — quota dépassé, nouvelle tentative dans ${backoffMs} ms`, {
           correlationId: ctx.correlationId,
+          scanId: ctx.scanId,
+          callId: ctx.callId,
           moduleType: ctx.moduleType,
           jobId: ctx.jobId,
           userId: ctx.userId,
@@ -305,6 +317,8 @@ export async function callGemini(
 
       await logError(`Appel IA échoué (${ctx.feature})`, {
         correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        callId: ctx.callId,
         moduleType: ctx.moduleType,
         jobId: ctx.jobId,
         userId: ctx.userId,

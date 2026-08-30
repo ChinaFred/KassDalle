@@ -14,7 +14,7 @@
 import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG, GEMINI_API_KEY, GEMINI_MODEL } from "../config";
-import { logDebug, logError, logInfo, logWarn } from "../logging";
+import { logDebug, logError, logInfo, logWarn, newCallId } from "../logging";
 import { callGemini, textPart as geminiTextPart, thinkingTokensOf } from "../gemini/client";
 import {
   ANTHROPIC_MODEL,
@@ -241,6 +241,8 @@ export async function recordModelUsage(
     model: result.model,
     userId: ctx.userId,
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
     thinkingTokens: result.usage.thinkingTokens ?? 0,
@@ -274,6 +276,8 @@ async function callProvider(args: {
   provider: AiProvider;
   parts: ModelPart[];
   ctx: ModelCallContext;
+  /** Identifiant de cet appel — il relie ses lignes de journal à sa consommation. */
+  callId: string;
   policy: AiRoutingPolicy;
   outputSchema?: ModelOutputSchema;
   maxTokens?: number;
@@ -287,6 +291,7 @@ async function callProvider(args: {
       apiKey: key,
       parts: args.parts,
       ctx: args.ctx,
+      callId: args.callId,
       model: resolveAnthropicModel(args.policy, args.ctx.feature),
       maxTokens: args.maxTokens,
       outputSchema: args.outputSchema,
@@ -304,6 +309,8 @@ async function callProvider(args: {
 
   const result = await callGemini(geminiKey(), geminiParts, {
     correlationId: args.ctx.correlationId,
+    scanId: args.ctx.scanId,
+    callId: args.callId,
     feature: args.ctx.feature,
     moduleType: args.ctx.moduleType,
     userId: args.ctx.userId,
@@ -320,6 +327,7 @@ async function callProvider(args: {
     text: (result.text ?? "").trim(),
     provider: "gemini",
     model: GEMINI_MODEL,
+    callId: args.callId,
     usage: {
       inputTokens: input,
       outputTokens: output,
@@ -372,6 +380,7 @@ export async function callModel(args: {
     void logWarn({
       message: `callModel: « ${args.ctx.feature} » est routé vers Claude, mais la clé Anthropic n'est pas disponible dans cette fonction — servi par Gemini`,
       correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
       feature: args.ctx.feature,
@@ -387,6 +396,7 @@ export async function callModel(args: {
     void logDebug({
       message: `callModel: pièce jointe non lisible par Claude, « ${args.ctx.feature} » servi par Gemini`,
       correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
       feature: args.ctx.feature,
@@ -400,11 +410,18 @@ export async function callModel(args: {
   }
 
   const run = async (provider: AiProvider): Promise<ModelCallResult> => {
+    // Un identifiant par TENTATIVE, et non par appel logique : un repli sur
+    // l'autre moteur produit deux appels réellement facturés, deux lignes de
+    // consommation et deux séries de lignes de journal. Leur donner le même
+    // identifiant afficherait un seul appel dont le coût aurait doublé sans
+    // raison lisible.
+    const callId = newCallId();
     try {
       const result = await callProvider({
         provider,
         parts: args.parts,
         ctx: args.ctx,
+        callId,
         policy,
         outputSchema: args.outputSchema,
         maxTokens: args.maxTokens,
@@ -431,6 +448,8 @@ export async function callModel(args: {
               : GEMINI_MODEL,
           userId: args.ctx.userId,
           correlationId: args.ctx.correlationId,
+          scanId: args.ctx.scanId,
+          callId,
           status: "error",
           entityType: args.usageMeta?.entityType,
           entityId: args.usageMeta?.entityId,
@@ -456,6 +475,7 @@ export async function callModel(args: {
       message: `callModel: ${primary} a échoué sur « ${args.ctx.feature} », repli sur ${secondary}`,
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
       provider: primary,
@@ -467,6 +487,8 @@ export async function callModel(args: {
     void logInfo({
       message: `callModel: repli réussi sur ${secondary} pour « ${args.ctx.feature} »`,
       correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
+      callId: result.callId,
       provider: result.provider,
       model: result.model,
       feature: args.ctx.feature,

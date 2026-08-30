@@ -524,9 +524,13 @@ class GeminiService {
   Future<
     ({String downloadUrl, String storagePath, String mimeType, int sizeBytes})
   >
-  scanAndPromoteUpload({required String storagePath}) async {
+  scanAndPromoteUpload({required String storagePath, String? scanId}) async {
     final data = await _call('scanAndPromoteUploadFn', {
       'storagePath': storagePath,
+      // Le contrôle du fichier a lieu AVANT que le job d'import existe : le
+      // serveur n'a aucun moyen de savoir de quel scan il fait partie, et son
+      // coût restait un groupe de journaux isolé. Seul le client le sait.
+      'scanId': ?scanId,
     });
     final map = Map<String, dynamic>.from(data as Map);
     return (

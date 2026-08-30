@@ -267,6 +267,8 @@ export async function tagAndNormalize(
     model: result.model,
     moduleType: "IMPORT",
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     jobId: ctx.jobId,
     userId: ctx.userId,
     extra: {

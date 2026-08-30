@@ -81,8 +81,10 @@ export async function syncRecipePrivacy(args: {
   data: Record<string, unknown>;
   beforeData: Record<string, unknown> | undefined;
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<boolean> {
-  const { recipeId, data, beforeData, correlationId } = args;
+  const { recipeId, data, beforeData, correlationId, scanId } = args;
   const current = data.is_private;
   const bookId = bookIdOf(data);
 
@@ -109,6 +111,7 @@ export async function syncRecipePrivacy(args: {
       errorDescription: error instanceof Error ? error.message : String(error),
       moduleType: "DESIGN",
       correlationId,
+      scanId,
       extra: { recipeId, bookId },
     });
     return false;
@@ -125,6 +128,8 @@ export async function propagateBookPrivacy(args: {
   bookId: string;
   isPrivate: boolean;
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<number> {
   const db = getFirestore();
   const snap = await db.collection(COLL_RECIPES).where("book_id", "==", args.bookId).get();

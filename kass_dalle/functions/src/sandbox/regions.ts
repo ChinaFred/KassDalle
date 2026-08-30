@@ -275,6 +275,8 @@ export async function detectPageRegions(args: {
     stage: "sandbox_detect_regions",
     text,
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     userId: ctx.userId,
     feature: ctx.feature,
     provider: result.provider,

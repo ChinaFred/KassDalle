@@ -206,6 +206,8 @@ async function callDetectAndParse(
     model: result.model,
     moduleType: "DESIGN",
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     jobId: ctx.jobId,
     userId: ctx.userId,
   });

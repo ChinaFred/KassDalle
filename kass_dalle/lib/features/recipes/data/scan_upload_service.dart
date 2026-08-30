@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -25,6 +26,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   late final GeminiService _gemini;
   late final ErrorReportService _errorReportService;
   final ImagePicker _imagePicker = ImagePicker();
+
+  /// Tire la part aléatoire de l'identifiant de scan.
+  ///
+  /// L'horodatage seul ne suffit pas : deux imports lancés dans la même
+  /// milliseconde partageraient un identifiant, et leurs journaux se
+  /// mélangeraient dans un seul groupe.
+  final Random _random = Random();
 
   /// Pages accumulées en mode multi-page (non persistées dans state pour éviter
   /// de mettre de gros Uint8List dans le state Riverpod).
@@ -451,6 +459,23 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // long, en file, et n'avait aucune raison de ne pas l'être des deux
     // premières secondes.
     final importId = '${DateTime.now().microsecondsSinceEpoch}_$filename';
+
+    // L'identifiant du scan — l'acte, pas le traitement.
+    //
+    // Côté serveur, une photo de page déclenche quatre traitements : le
+    // contrôle du fichier, le pipeline d'import, la détection d'illustrations
+    // page par page, puis les calculs d'après écriture. Chacun ouvre son
+    // propre fil de journaux, et rien ne les reliait — le coût d'un scan se
+    // lisait sur quatre groupes qu'il fallait retrouver un à un.
+    //
+    // Seul le client peut poser cet identifiant : le contrôle du fichier a
+    // lieu avant que le job existe, et une page supplémentaire arrive par un
+    // appel séparé. Il n'emprunte pas `importId`, qui contient le nom du
+    // fichier : un libellé de journal doit rester filtrable, donc court et
+    // sans caractère surprenant.
+    final scanId =
+        'scan_${DateTime.now().millisecondsSinceEpoch}_'
+        '${(_random.nextInt(1 << 32)).toRadixString(36)}';
     _beginImport(
       ActiveImport(
         id: importId,
@@ -508,6 +533,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       _updateImport(importId, phase: ScanUploadPhase.scanning, progress: 1);
       final promoted = await _gemini.scanAndPromoteUpload(
         storagePath: snapshot.ref.fullPath,
+        scanId: scanId,
       );
       storageUrl = promoted.downloadUrl;
     } catch (e, stackTrace) {
@@ -583,6 +609,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           _updateImport(importId, phase: ScanUploadPhase.scanning, progress: 1);
           final promoted = await _gemini.scanAndPromoteUpload(
             storagePath: snap.ref.fullPath,
+            scanId: scanId,
           );
           pageUrl = promoted.downloadUrl;
         } catch (e, stackTrace) {
@@ -656,6 +683,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       bookTitre: resolvedBook.titre,
       additionalFileUrls: additionalStorageUrls,
       importIllustrations: importIllustrations && intent == ScanIntent.recipe,
+      scanId: scanId,
     );
 
     final jobId = await _jobsRepo.createJob(job);

@@ -43,6 +43,23 @@ export interface UsageEntry {
   model: string;
   userId?: string | null;
   correlationId?: string | null;
+  /**
+   * Scan de l'utilisateur d'où vient l'appel, quand il en vient un.
+   *
+   * Photographier une page de livre déroule quatre traitements, chacun avec
+   * son `correlationId`. Sans ce champ, additionner ce qu'a coûté un scan
+   * demandait de retrouver ces quatre identifiants à la main.
+   */
+  scanId?: string | null;
+  /**
+   * Identifiant de l'appel, partagé avec ses lignes de journal.
+   *
+   * C'est lui qui permet d'afficher un montant exact en face d'un appel dans
+   * l'écran des journaux. Sans lui, il faudrait rapprocher une ligne de
+   * consommation d'une ligne de journal par son poste et son heure — un
+   * rapprochement qui se trompe dès que le même poste part quarante fois.
+   */
+  callId?: string | null;
   inputTokens?: number;
   /** Jetons du texte rendu à l'appelant. */
   outputTokens?: number;
@@ -399,6 +416,8 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     status: entry.status ?? "ok",
     cost_bucket: entry.costBucket ?? "production",
     correlation_id: entry.correlationId ?? null,
+    scan_id: entry.scanId ?? null,
+    call_id: entry.callId ?? null,
     entity_type: entry.entityType ?? null,
     entity_id: entry.entityId ?? null,
     period,

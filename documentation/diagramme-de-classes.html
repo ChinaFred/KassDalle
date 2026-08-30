@@ -366,6 +366,7 @@ classDiagram
     +List~String~ createdRecipeIds
     +String? createdBookId
     +String? errorMessage
+    +String? scanId
     +bool isActive
   }
 
@@ -862,6 +863,42 @@ classDiagram
     +String? insertId
   }
 
+  class AiCall {
+    +String? callId
+    +String? correlationId
+    +String? scanId
+    +String feature
+    +String provider
+    +String model
+    +String status
+    +int totalTokens
+    +double? costUsd
+    +DateTime? timestamp
+    +bool failed
+  }
+
+  class ScanGroup {
+    +String key
+    +bool isScan
+    +List~ScanItem~ items
+    +List~String~ treatments
+    +AiCostTotal total
+    +String label
+  }
+
+  class CallItem {
+    +String callId
+    +AiCall? call
+    +List~LogEntry~ entries
+  }
+
+  class AiCostTotal {
+    +double costUsd
+    +int calls
+    +int unpricedCalls
+    +int totalTokens
+  }
+
   class NutritionPolicy {
     +double minCoverageForPartial
     +double minCoverageForPer100g
@@ -891,6 +928,10 @@ classDiagram
 
   DeadLetter --> ProcessingJob : relaunchedIntoJobId
   LogEntry ..> DeadLetter : même correlationId
+  ScanGroup "1" --&gt; "0..*" CallItem : niveau 2
+  CallItem "1" --&gt; "0..1" AiCall : le montant, lu dans ai_usage
+  CallItem "1" --&gt; "0..*" LogEntry : niveau 3
+  ScanGroup --&gt; AiCostTotal : somme de ses appels
 </pre>
       </div>
       <figcaption>
@@ -903,6 +944,15 @@ classDiagram
           BigQuery échoue, le rapport est produit quand même et le dit. Un rapport absent se
           confond avec un mois sans dépense ; un rapport qui annonce sa panne ne se confond avec
           rien. Même règle que la grille tarifaire : jamais de valeur de repli plausible.
+        </span>
+        <span class="expect">
+          <b><code>AiCall</code> ne vient pas des journaux.</b> Il vient de
+          <code>ai_usage</code>, la collection que lisent aussi les écrans de facturation, et
+          <code>callId</code> est ce qui le rattache aux lignes de journal de son appel. Chiffrer
+          l'appel une seconde fois depuis les jetons journalisés donnerait deux montants pour un
+          même appel, et aucun moyen de dire lequel est juste. <code>costUsd</code> à
+          <code>null</code> — grille en panne au moment de l'appel — est compté dans
+          <code>AiCostTotal.unpricedCalls</code>, jamais additionné comme zéro.
         </span>
       </figcaption>
     </figure>

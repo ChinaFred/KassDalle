@@ -30,6 +30,18 @@ class ProcessingJob {
   /// ID du rapport d'erreur dans la collection error_reports (si status == error).
   final String? errorId;
 
+  /// Le scan de l'utilisateur d'où vient ce job.
+  ///
+  /// Photographier une page déclenche quatre traitements côté serveur — le
+  /// contrôle du fichier, l'import, la détection d'illustrations, puis les
+  /// calculs d'après écriture. Chacun a son propre fil de journaux, et rien
+  /// ne les reliait : le coût d'un scan était réparti sur quatre groupes.
+  ///
+  /// Le client est le seul à savoir que ces envois forment un seul acte : le
+  /// contrôle du fichier a lieu avant que ce job existe. Il pose donc
+  /// l'identifiant, et le serveur le transmet jusqu'au bout.
+  final String? scanId;
+
   /// Extraire les illustrations de la page importée.
   ///
   /// Le choix voyage avec le job, pas avec le compte : le serveur traite ce job
@@ -56,6 +68,7 @@ class ProcessingJob {
     this.currentStep,
     this.errorId,
     this.importIllustrations = false,
+    this.scanId,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -88,6 +101,7 @@ class ProcessingJob {
       currentStep: data['current_step'] as String?,
       errorId: data['error_id'] as String?,
       importIllustrations: data['import_illustrations'] as bool? ?? false,
+      scanId: data['scan_id'] as String?,
     );
   }
 
@@ -110,6 +124,7 @@ class ProcessingJob {
       if (currentStep != null) 'current_step': currentStep,
       if (errorId != null) 'error_id': errorId,
       'import_illustrations': importIllustrations,
+      if (scanId != null) 'scan_id': scanId,
     };
   }
 
@@ -142,6 +157,7 @@ class ProcessingJob {
       currentStep: currentStep,
       errorId: errorId ?? this.errorId,
       importIllustrations: importIllustrations,
+      scanId: scanId,
     );
   }
 

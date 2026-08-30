@@ -19,13 +19,23 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 
-import { REGION, LOG_NAME, MAX_CALLABLE_INSTANCES } from "../config";
+import { getFirestore } from "firebase-admin/firestore";
+
+import { REGION, LOG_NAME, MAX_CALLABLE_INSTANCES, COLL_AI_USAGE } from "../config";
 import { requireAdmin } from "./_auth";
+import { getUsdToEurRate } from "../ai/budget";
 import { logError } from "../logging";
 
 interface QueryLogsRequest {
   severity?: "INFO" | "WARNING" | "ERROR" | "DEBUG";
   correlationId?: string;
+  /**
+   * Scan de l'utilisateur — l'acte, pas le traitement.
+   *
+   * Filtrer sur `correlationId` ne rend qu'un des quatre traitements d'un
+   * import. Ce filtre-ci les rend tous les quatre, et eux seuls.
+   */
+  scanId?: string;
   jobId?: string;
   userId?: string;
   /** Fenêtre de recherche en minutes (par défaut 60, max 7 jours = 10080). */
@@ -51,6 +61,106 @@ interface LogEntryDto {
   labels: Record<string, string>;
   payload: Record<string, unknown>;
   insertId?: string;
+}
+
+/**
+ * Un appel de modèle, tel qu'il a été facturé.
+ *
+ * Il ne vient PAS des journaux mais de `ai_usage`, la collection que lisent
+ * aussi les écrans de facturation. Chiffrer l'appel ici, depuis les jetons
+ * écrits dans le journal, aurait produit un second montant calculé autrement
+ * que le premier : deux écrans, deux chiffres, aucun moyen de dire lequel est
+ * le bon. Il n'y a qu'une source de vérité pour un montant.
+ *
+ * `costUsd` vaut `null` quand la grille tarifaire était en panne au moment
+ * de l'appel. L'écran affiche alors l'absence de montant, jamais zéro.
+ */
+interface AiCallDto {
+  callId: string | null;
+  correlationId: string | null;
+  scanId: string | null;
+  feature: string;
+  provider: string;
+  model: string;
+  status: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number | null;
+  timestamp: string | null;
+}
+
+/** Taille d'un lot `in` Firestore. */
+const IN_CHUNK = 30;
+
+function chunk<T>(values: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+}
+
+function readNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Les appels facturés qui se rattachent aux entrées de journal affichées.
+ *
+ * Deux clés de rapprochement, et pas une seule : `scan_id` rassemble les
+ * quatre traitements d'un import — contrôle du fichier, pipeline, pages,
+ * calculs d'après écriture — tandis que `correlation_id` couvre tout le
+ * reste, y compris les journaux écrits avant que le scan existe.
+ *
+ * Une panne de lecture ne fait pas échouer l'écran : les journaux s'affichent
+ * sans montant, et l'incident est écrit. Un écran de journaux vide serait une
+ * perte plus grave qu'une colonne de coûts absente.
+ */
+async function loadAiCalls(entries: LogEntryDto[]): Promise<AiCallDto[]> {
+  const scanIds = [...new Set(entries.map((e) => e.labels.scanId).filter(Boolean))] as string[];
+  const correlationIds = [
+    ...new Set(entries.map((e) => e.labels.correlationId).filter(Boolean)),
+  ] as string[];
+  if (scanIds.length === 0 && correlationIds.length === 0) return [];
+
+  const db = getFirestore();
+  const queries = [
+    ...chunk(scanIds, IN_CHUNK).map((ids) =>
+      db.collection(COLL_AI_USAGE).where("scan_id", "in", ids).get(),
+    ),
+    ...chunk(correlationIds, IN_CHUNK).map((ids) =>
+      db.collection(COLL_AI_USAGE).where("correlation_id", "in", ids).get(),
+    ),
+  ];
+
+  const snapshots = await Promise.all(queries);
+  // Un même appel remonte par les deux chemins quand il porte les deux clés.
+  // Sans cette déduplication, son coût serait compté deux fois dans le total
+  // du scan — et un total faux ne se voit pas.
+  const byDocId = new Map<string, AiCallDto>();
+  for (const snap of snapshots) {
+    for (const doc of snap.docs) {
+      if (byDocId.has(doc.id)) continue;
+      const d = doc.data() as Record<string, unknown>;
+      const cost = d.estimated_cost_usd;
+      const ts = d.timestamp as { toDate?: () => Date } | undefined;
+      byDocId.set(doc.id, {
+        callId: (d.call_id as string | null) ?? null,
+        correlationId: (d.correlation_id as string | null) ?? null,
+        scanId: (d.scan_id as string | null) ?? null,
+        feature: String(d.feature ?? ""),
+        provider: String(d.provider ?? ""),
+        model: String(d.model ?? ""),
+        status: String(d.status ?? "ok"),
+        inputTokens: readNumber(d.input_tokens),
+        outputTokens: readNumber(d.output_tokens) + readNumber(d.thinking_tokens),
+        totalTokens: readNumber(d.total_tokens),
+        costUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
+        timestamp: ts?.toDate ? ts.toDate().toISOString() : null,
+      });
+    }
+  }
+  return [...byDocId.values()];
 }
 
 /**
@@ -170,6 +280,9 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
     if (data.correlationId) {
       filters.push(`labels.correlationId=${quote(data.correlationId)}`);
     }
+    if (data.scanId) {
+      filters.push(`labels.scanId=${quote(data.scanId)}`);
+    }
     if (data.jobId) {
       filters.push(`labels.jobId=${quote(data.jobId)}`);
     }
@@ -230,7 +343,29 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
         };
       });
 
-      return { entries: toJsonSafe(result) as LogEntryDto[], filter, nextPageToken };
+      // Les montants et le taux du jour ne font pas échouer la lecture des
+      // journaux : ils l'accompagnent. Une grille tarifaire en panne ou un
+      // taux absent laisse l'écran afficher les appels sans montant — ce qui
+      // se voit — plutôt qu'un chiffre inventé — ce qui ne se voit pas.
+      let calls: AiCallDto[] = [];
+      let usdToEur: number | null = null;
+      try {
+        [calls, usdToEur] = await Promise.all([loadAiCalls(result), getUsdToEurRate()]);
+      } catch (costErr) {
+        await logError({
+          message: "queryLogsFn : coûts des appels illisibles, journaux rendus sans montant",
+          errorDescription: costErr instanceof Error ? costErr.message : String(costErr),
+          extra: { filter },
+        });
+      }
+
+      return {
+        entries: toJsonSafe(result) as LogEntryDto[],
+        calls: toJsonSafe(calls) as AiCallDto[],
+        usdToEur,
+        filter,
+        nextPageToken,
+      };
     } catch (err) {
       await logError({
         message: "queryLogsFn failed",

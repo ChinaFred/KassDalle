@@ -333,6 +333,8 @@ async function askJson(args: {
     stage,
     text,
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     userId: ctx.userId,
     feature: ctx.feature,
     provider: result.provider,

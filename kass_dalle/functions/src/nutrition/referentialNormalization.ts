@@ -415,6 +415,8 @@ export async function normalizeRecipeReferentialsCore(args: {
    * bout. Le fil reçu prime désormais sur celui qu'on fabrique.
    */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<NormalizeRecipeReferentialsResult> {
   const cooklang = args.cooklang;
   const recipeId = args.recipeId;
@@ -549,6 +551,7 @@ export async function normalizeRecipeReferentialsCore(args: {
         recipeId,
         userId: args.userId,
         correlationId: args.correlationId,
+        scanId: args.scanId,
       });
     }
 

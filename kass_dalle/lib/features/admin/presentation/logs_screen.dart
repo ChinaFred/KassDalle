@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../data/feature_catalog.dart';
 import '../data/logs_repository.dart';
+import '../domain/ai_call.dart';
+import '../domain/log_scan_group.dart';
 import '../domain/log_entry.dart';
-import '../domain/log_treatment_label.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -28,6 +30,7 @@ class LogsFilter {
     this.severity = 'INFO',
     this.timeRangeMinutes = 60,
     this.correlationId,
+    this.scanId,
     this.jobId,
     this.userId,
     this.freeText,
@@ -37,6 +40,14 @@ class LogsFilter {
   final String? severity;
   final int timeRangeMinutes;
   final String? correlationId;
+
+  /// Scan isolé — l'acte de l'utilisateur, pas l'un de ses traitements.
+  ///
+  /// Filtrer sur `correlationId` ne rendait qu'un des quatre traitements d'un
+  /// import : on croyait tenir le scan entier alors qu'il en manquait les
+  /// trois quarts, coût compris.
+  final String? scanId;
+
   final String? jobId;
   final String? userId;
   final String? freeText;
@@ -46,6 +57,7 @@ class LogsFilter {
     Object? severity = _sentinel,
     int? timeRangeMinutes,
     Object? correlationId = _sentinel,
+    Object? scanId = _sentinel,
     Object? jobId = _sentinel,
     Object? userId = _sentinel,
     Object? freeText = _sentinel,
@@ -57,6 +69,7 @@ class LogsFilter {
       correlationId: correlationId == _sentinel
           ? this.correlationId
           : correlationId as String?,
+      scanId: scanId == _sentinel ? this.scanId : scanId as String?,
       jobId: jobId == _sentinel ? this.jobId : jobId as String?,
       userId: userId == _sentinel ? this.userId : userId as String?,
       freeText: freeText == _sentinel ? this.freeText : freeText as String?,
@@ -80,7 +93,7 @@ class LogsFilterNotifier extends Notifier<LogsFilter> {
   }
 }
 
-/// Entrées chargées, page après page.
+/// Entrées chargées, page après page, et ce que chaque appel a coûté.
 ///
 /// L'écran affichait une page et rien d'autre. Cloud Logging en rend cent par
 /// défaut ; un import bavard en produit davantage, et les suivantes étaient
@@ -89,11 +102,21 @@ class LogsFilterNotifier extends Notifier<LogsFilter> {
 class LogsPageState {
   const LogsPageState({
     required this.entries,
+    this.calls = const [],
+    this.usdToEur,
     this.nextPageToken,
     this.loadingMore = false,
   });
 
   final List<LogEntry> entries;
+
+  /// Les appels facturés rattachés à ces entrées, lus dans `ai_usage`.
+  final List<AiCall> calls;
+
+  /// Taux du jour, `null` s'il est indisponible : les montants restent alors
+  /// en dollars plutôt que d'être convertis à un taux inventé.
+  final double? usdToEur;
+
   final String? nextPageToken;
 
   /// Vrai pendant le chargement de la page suivante — l'écran garde les
@@ -117,6 +140,7 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
       severity: f.severity,
       timeRangeMinutes: f.timeRangeMinutes,
       correlationId: f.correlationId,
+      scanId: f.scanId,
       jobId: f.jobId,
       userId: f.userId,
       freeText: f.freeText,
@@ -124,6 +148,8 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
     );
     return LogsPageState(
       entries: page.entries,
+      calls: page.calls,
+      usdToEur: page.usdToEur,
       nextPageToken: page.nextPageToken,
     );
   }
@@ -136,6 +162,8 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
     state = AsyncData(
       LogsPageState(
         entries: current.entries,
+        calls: current.calls,
+        usdToEur: current.usdToEur,
         nextPageToken: current.nextPageToken,
         loadingMore: true,
       ),
@@ -148,6 +176,7 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
         severity: f.severity,
         timeRangeMinutes: f.timeRangeMinutes,
         correlationId: f.correlationId,
+        scanId: f.scanId,
         jobId: f.jobId,
         userId: f.userId,
         freeText: f.freeText,
@@ -157,6 +186,12 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
       state = AsyncData(
         LogsPageState(
           entries: [...current.entries, ...page.entries],
+          // Un même appel revient d'une page à l'autre : les appels sont
+          // rattachés aux entrées visibles, et deux pages voisines partagent
+          // souvent un traitement. Le compter deux fois doublerait son coût
+          // dans le total du scan.
+          calls: mergeAiCalls(current.calls, page.calls),
+          usdToEur: page.usdToEur ?? current.usdToEur,
           nextPageToken: page.nextPageToken,
         ),
       );
@@ -166,6 +201,8 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
       state = AsyncData(
         LogsPageState(
           entries: current.entries,
+          calls: current.calls,
+          usdToEur: current.usdToEur,
           nextPageToken: current.nextPageToken,
         ),
       );
@@ -180,6 +217,8 @@ class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
   }
 }
 
+// ─── Écran ───────────────────────────────────────────────────────────────────
+
 class LogsScreen extends ConsumerStatefulWidget {
   const LogsScreen({super.key});
 
@@ -193,14 +232,12 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   final _jobIdCtrl = TextEditingController();
   final _userIdCtrl = TextEditingController();
 
-  /// Regroupe les entrées par traitement plutôt qu'en liste plate.
+  /// Regroupe les entrées par scan plutôt qu'en liste plate.
   ///
-  /// Un import déclenche une dizaine de messages — extraction, normalisation,
-  /// appels IA, enregistrement — dispersés dans le flux entre ceux des autres
-  /// traitements. Lus à plat, ils obligent à reconstituer mentalement ce qui
-  /// appartient à quoi. Le `correlationId` porte déjà cette information : il
-  /// suffit de s'en servir pour l'affichage.
-  bool _groupByTreatment = true;
+  /// Un scan déclenche quatre traitements et une trentaine de messages,
+  /// dispersés dans le flux entre ceux des autres scans. Lus à plat, ils
+  /// obligent à reconstituer mentalement ce qui appartient à quoi.
+  bool _grouped = true;
 
   @override
   void dispose() {
@@ -230,6 +267,26 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                 : _userIdCtrl.text.trim(),
           ),
         );
+  }
+
+  void _isolateScan(String scanId) {
+    _correlationCtrl.clear();
+    ref
+        .read(logsFilterProvider.notifier)
+        .update((s) => s.copyWith(scanId: scanId, correlationId: null));
+  }
+
+  void _isolateCorrelation(String correlationId) {
+    _correlationCtrl.text = correlationId;
+    ref
+        .read(logsFilterProvider.notifier)
+        .update((s) => s.copyWith(correlationId: correlationId, scanId: null));
+  }
+
+  void _clearScan() {
+    ref
+        .read(logsFilterProvider.notifier)
+        .update((s) => s.copyWith(scanId: null));
   }
 
   @override
@@ -358,14 +415,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                       ),
                       const SizedBox(width: 8),
                       FilterChip(
-                        label: const Text('Par traitement'),
+                        label: const Text('Par scan'),
                         avatar: const Icon(
                           Icons.account_tree_outlined,
                           size: AppIconSize.small,
                         ),
-                        selected: _groupByTreatment,
-                        onSelected: (v) =>
-                            setState(() => _groupByTreatment = v),
+                        selected: _grouped,
+                        onSelected: (v) => setState(() => _grouped = v),
                       ),
                       const SizedBox(width: 8),
                       FilledButton.icon(
@@ -375,6 +431,32 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                       ),
                     ],
                   ),
+                  // Un scan isolé doit se voir et se défaire : sans ce bandeau,
+                  // l'écran semblait vide de tout le reste sans dire pourquoi.
+                  if (filter.scanId != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Scan isolé : ${filter.scanId}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _clearScan,
+                          icon: const Icon(
+                            Icons.close,
+                            size: AppIconSize.small,
+                          ),
+                          label: const Text('Tout afficher'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -389,7 +471,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
               ),
               data: (page) {
                 final entries = page.entries;
-                if (entries.isEmpty) {
+                if (entries.isEmpty && page.calls.isEmpty) {
                   return const Center(
                     child: Text('Aucune entrée correspondant aux filtres.'),
                   );
@@ -407,7 +489,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                       ref.read(logsQueryProvider.notifier).loadMore(),
                 );
 
-                if (!_groupByTreatment) {
+                if (!_grouped) {
                   return ListView.separated(
                     itemCount: entries.length + 1,
                     separatorBuilder: (_, _) => const Divider(height: 1),
@@ -418,19 +500,18 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                   );
                 }
 
-                final groups = _groupByCorrelation(entries);
+                final groups = groupLogsByScan(entries, page.calls);
                 return ListView.separated(
                   itemCount: groups.length + 1,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, i) {
                     if (i == groups.length) return footer();
-                    return _TreatmentTile(
+                    return _ScanTile(
                       group: groups[i],
                       fmt: fmt,
-                      onIsolate: (correlationId) {
-                        _correlationCtrl.text = correlationId;
-                        _applyFilters();
-                      },
+                      usdToEur: page.usdToEur,
+                      onIsolateScan: _isolateScan,
+                      onIsolateCorrelation: _isolateCorrelation,
                     );
                   },
                 );
@@ -509,93 +590,22 @@ class _LoadMoreFooter extends StatelessWidget {
   }
 }
 
-/// Un traitement : toutes les entrées partageant un même `correlationId`.
-class _TreatmentGroup {
-  _TreatmentGroup({required this.correlationId, required this.entries});
+// ─── Niveau 1 : le scan ──────────────────────────────────────────────────────
 
-  /// Vide pour les entrées sans corrélation — elles ne forment pas un traitement.
-  final String correlationId;
-
-  /// Du plus ancien au plus récent : un traitement se lit dans son ordre de
-  /// déroulement, à l'inverse du flux global qui montre le neuf en premier.
-  final List<LogEntry> entries;
-
-  bool get hasError => entries.any((e) => e.severity == 'ERROR');
-  bool get hasWarning => entries.any((e) => e.severity == 'WARNING');
-
-  /// Racine du `correlationId`, débarrassée de son horodatage — `null` quand
-  /// l'identifiant est opaque (UUID) et ne nomme donc rien.
-  String? get _correlationRoot {
-    if (correlationId.isEmpty) return null;
-    final isUuid = RegExp(
-      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-      caseSensitive: false,
-    ).hasMatch(correlationId);
-    if (isUuid) return null;
-    final root = correlationId
-        .replaceAll(RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$'), '')
-        .replaceAll(RegExp(r'[-_]+$'), '');
-    return root.isEmpty ? null : root;
-  }
-
-  /// Libellé lisible du traitement.
-  ///
-  /// La racine du `correlationId` passe avant tout : elle nomme le traitement
-  /// lui-même. `feature` ne vient qu'ensuite, et à contrecœur — c'est le poste
-  /// d'imputation d'un appel IA, pas le nom d'un travail. S'en servir comme
-  /// titre faisait passer l'import d'une recette pour un
-  /// « shopping_products_refresh », du nom du premier appel qu'il déclenchait.
-  ///
-  /// La racine est ensuite TRADUITE : elle est écrite pour le code, pas pour
-  /// un lecteur. « generate » ne dit pas ce qui a été généré, « disp » encore
-  /// moins. Voir [logTreatmentName].
-  String get label {
-    final root = _correlationRoot;
-    if (root != null) return logTreatmentName(root).display;
-    for (final e in entries) {
-      final feature = e.labels['feature'];
-      if (feature != null && feature.isNotEmpty) {
-        return logTreatmentName(feature).display;
-      }
-    }
-    for (final e in entries) {
-      final module = e.labels['moduleType'];
-      if (module != null && module.isNotEmpty) return module;
-    }
-    return correlationId.isEmpty ? 'Hors traitement' : correlationId;
-  }
-}
-
-/// Regroupe les entrées par `correlationId`, en conservant l'ordre d'apparition
-/// des traitements (le plus récent d'abord, comme le flux qui les porte).
-List<_TreatmentGroup> _groupByCorrelation(List<LogEntry> entries) {
-  final order = <String>[];
-  final byId = <String, List<LogEntry>>{};
-  for (final e in entries) {
-    final id = e.labels['correlationId'] ?? '';
-    if (!byId.containsKey(id)) order.add(id);
-    (byId[id] ??= []).add(e);
-  }
-  return order
-      .map(
-        (id) => _TreatmentGroup(
-          correlationId: id,
-          entries: byId[id]!.reversed.toList(growable: false),
-        ),
-      )
-      .toList(growable: false);
-}
-
-class _TreatmentTile extends StatelessWidget {
-  const _TreatmentTile({
+class _ScanTile extends StatelessWidget {
+  const _ScanTile({
     required this.group,
     required this.fmt,
-    required this.onIsolate,
+    required this.usdToEur,
+    required this.onIsolateScan,
+    required this.onIsolateCorrelation,
   });
 
-  final _TreatmentGroup group;
+  final ScanGroup group;
   final DateFormat fmt;
-  final ValueChanged<String> onIsolate;
+  final double? usdToEur;
+  final ValueChanged<String> onIsolateScan;
+  final ValueChanged<String> onIsolateCorrelation;
 
   @override
   Widget build(BuildContext context) {
@@ -610,40 +620,247 @@ class _TreatmentTile extends StatelessWidget {
         ? Icons.error_outline
         : group.hasWarning
         ? Icons.warning_amber_outlined
+        : group.isScan
+        ? Icons.document_scanner_outlined
         : Icons.account_tree_outlined;
 
-    final last = group.entries.last.timestampDate;
-    final when = last != null ? fmt.format(last.toLocal()) : '';
+    final when = group.lastAt != null
+        ? fmt.format(group.lastAt!.toLocal())
+        : '';
+    final traitements = group.treatments.isEmpty
+        ? ''
+        : '${group.treatments.join(' · ')} · ';
 
     return ExpansionTile(
-      // Un traitement en échec s'ouvre de lui-même : c'est celui qu'on est venu
-      // lire. Les autres restent pliés pour que l'écran reste parcourable.
+      // Un scan en échec s'ouvre de lui-même : c'est celui qu'on est venu lire.
+      // Les autres restent pliés pour que l'écran reste parcourable.
       initiallyExpanded: group.hasError,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Icon(icon, color: color),
-      title: Text(
-        group.label,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              group.label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _CostChip(total: group.total, usdToEur: usdToEur, emphasized: true),
+        ],
       ),
       subtitle: Text(
-        '${group.entries.length} message(s) · $when',
+        '$traitements${group.entryCount} message(s) · $when',
         style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
       ),
-      trailing: group.correlationId.isEmpty
-          ? null
-          : IconButton(
-              icon: const Icon(Icons.filter_alt_outlined),
-              tooltip: 'N\'afficher que ce traitement',
-              onPressed: () => onIsolate(group.correlationId),
+      trailing: _isolateButton(),
+      children: group.items
+          .map((item) {
+            if (item is CallItem) {
+              return _CallTile(item: item, fmt: fmt, usdToEur: usdToEur);
+            }
+            return _LogTile(entry: (item as EntryItem).entry, fmt: fmt);
+          })
+          .toList(growable: false),
+    );
+  }
+
+  /// Isoler le scan quand il y en a un, le traitement sinon.
+  Widget? _isolateButton() {
+    if (group.isScan) {
+      return IconButton(
+        icon: const Icon(Icons.filter_alt_outlined),
+        tooltip: 'N\x27afficher que ce scan',
+        onPressed: () => onIsolateScan(group.key),
+      );
+    }
+    if (group.correlationIds.isEmpty) return null;
+    return IconButton(
+      icon: const Icon(Icons.filter_alt_outlined),
+      tooltip: 'N\x27afficher que ce traitement',
+      onPressed: () => onIsolateCorrelation(group.correlationIds.first),
+    );
+  }
+}
+
+// ─── Niveau 2 : un appel de modèle ───────────────────────────────────────────
+
+class _CallTile extends StatelessWidget {
+  const _CallTile({
+    required this.item,
+    required this.fmt,
+    required this.usdToEur,
+  });
+
+  final CallItem item;
+  final DateFormat fmt;
+  final double? usdToEur;
+
+  /// Le poste, en français. Il vient du catalogue comptable : c'est le même
+  /// nom que sur l'écran des coûts, et deux noms pour un poste obligeraient à
+  /// traduire de tête pour rapprocher deux chiffres.
+  String get _label {
+    final feature =
+        item.call?.feature ??
+        item.entries
+            .map((e) => e.labels['feature'])
+            .firstWhere((f) => f != null && f.isNotEmpty, orElse: () => null) ??
+        '';
+    return feature.isEmpty ? 'Appel de modèle' : featureLabel(feature);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final call = item.call;
+    final color = item.hasError ? cs.error : cs.tertiary;
+
+    final at = item.at;
+    final when = at != null ? fmt.format(at.toLocal()) : '';
+    final details = <String>[
+      if (call != null && call.model.isNotEmpty)
+        _providerName(call.provider) +
+            (call.model.isEmpty ? '' : ' · ${call.model}'),
+      if (call != null && call.totalTokens > 0)
+        '${call.inputTokens} → ${call.outputTokens} jetons',
+      if (call != null && call.failed) 'appel en échec',
+      if (when.isNotEmpty) when,
+    ];
+
+    final title = Row(
+      children: [
+        Expanded(
+          child: Text(
+            _label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
             ),
-      children: group.entries
+          ),
+        ),
+        const SizedBox(width: 8),
+        _CostChip(
+          total: call == null
+              ? AiCostTotal.empty
+              : AiCostTotal.empty.plus(call),
+          usdToEur: usdToEur,
+          // L'appel dont la ligne de consommation n'a pas été lue n'a pas de
+          // montant à zéro : il n'en a pas du tout, et le dire est le seul
+          // moyen de ne pas prendre un total amputé pour une dépense réelle.
+          missing: call == null,
+        ),
+      ],
+    );
+
+    final subtitle = Text(
+      details.join(' · '),
+      style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+    );
+
+    // Un appel dont aucune ligne de journal n'est visible ne s'ouvre pas :
+    // une flèche qui ne déplie rien fait chercher ce qui n'existe pas.
+    if (item.entries.isEmpty) {
+      return ListTile(
+        contentPadding: const EdgeInsets.only(left: 32, right: 16),
+        leading: Icon(
+          Icons.bolt_outlined,
+          color: color,
+          size: AppIconSize.small,
+        ),
+        title: title,
+        subtitle: subtitle,
+      );
+    }
+
+    return ExpansionTile(
+      initiallyExpanded: item.hasError,
+      tilePadding: const EdgeInsets.only(left: 32, right: 16),
+      leading: Icon(Icons.bolt_outlined, color: color, size: AppIconSize.small),
+      title: title,
+      subtitle: subtitle,
+      children: item.entries
           .map((e) => _LogTile(entry: e, fmt: fmt))
           .toList(growable: false),
     );
   }
 }
+
+String _providerName(String provider) {
+  switch (provider) {
+    case 'anthropic':
+      return 'Claude';
+    case 'gemini':
+      return 'Gemini';
+    case 'vision':
+      return 'Cloud Vision';
+    case 'internal':
+      return 'Interne';
+    default:
+      return provider;
+  }
+}
+
+/// Le montant d'un niveau, ou son absence.
+///
+/// « sans montant » et « 0,00 € » ne disent pas la même chose : le premier est
+/// un appel dont on ne sait pas le prix, le second un appel gratuit. Les
+/// confondre fait passer une grille tarifaire en panne pour une bonne nouvelle.
+class _CostChip extends StatelessWidget {
+  const _CostChip({
+    required this.total,
+    required this.usdToEur,
+    this.emphasized = false,
+    this.missing = false,
+  });
+
+  final AiCostTotal total;
+  final double? usdToEur;
+  final bool emphasized;
+  final bool missing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final String text;
+    final Color color;
+    if (missing) {
+      text = 'sans montant';
+      color = cs.onSurfaceVariant;
+    } else if (total.isEmpty) {
+      return const SizedBox.shrink();
+    } else if (emphasized) {
+      text = formatTotal(total, usdToEur);
+      color = total.unpricedCalls > 0 ? Colors.orange : cs.primary;
+    } else {
+      text = formatCost(
+        total.unpricedCalls == total.calls ? null : total.costUsd,
+        usdToEur,
+      );
+      color = total.unpricedCalls > 0 ? Colors.orange : cs.primary;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Niveau 3 : une ligne de journal ─────────────────────────────────────────
 
 class _LogTile extends StatelessWidget {
   const _LogTile({required this.entry, required this.fmt});
@@ -726,6 +943,10 @@ class _LogTile extends StatelessWidget {
             _label(theme, 'poste', entry.labels['feature']!),
           if (entry.labels['moduleType'] != null)
             _label(theme, 'module', entry.labels['moduleType']!),
+          // Ni `scanId` ni `callId` ici : ils nomment les deux niveaux qui
+          // portent déjà cette ligne, et les répéter sur chacune de ses sœurs
+          // n'apprend rien. Ils restent dans la section Labels, où l'on va
+          // quand on veut les copier.
           if (entry.labels['correlationId'] != null)
             _label(theme, 'corr', entry.labels['correlationId']!),
           if (entry.labels['jobId'] != null)

@@ -139,6 +139,8 @@ export async function persistFailedNutritionSnapshot(args: {
   recipeId: string;
   reason: string;
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<void> {
   try {
     const db = getFirestore();
@@ -163,6 +165,7 @@ export async function persistFailedNutritionSnapshot(args: {
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "DESIGN",
       correlationId: args.correlationId,
+      scanId: args.scanId,
       extra: { recipeId: args.recipeId, raison: args.reason },
     });
   }
@@ -203,6 +206,8 @@ export async function computeAndPersistRecipeNutrition(args: {
    * ni le texte lu à l'étape d'avant.
    */
   correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<ComputedNutritionResult> {
   const db = getFirestore();
   const recipeRef = db.collection(COLL_RECIPES).doc(args.recipeId);

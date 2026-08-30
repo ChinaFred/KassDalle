@@ -60,6 +60,8 @@ interface ProcessorPayload {
   jobId: string;
   userId: string;
   correlationId?: string;
+  /** Scan de l'utilisateur — posé par le client, transmis par le dispatcher. */
+  scanId?: string;
 }
 
 /**
@@ -124,7 +126,7 @@ export const recipeProcessor = onTaskDispatched(
     const payload = req.data as ProcessorPayload;
     const { jobId, userId } = payload;
     const correlationId = payload.correlationId ?? newCorrelationId("import_recette");
-    const ctx = { jobId, userId, correlationId };
+    const ctx = { jobId, userId, correlationId, scanId: payload.scanId };
 
     if (!jobId || !userId) {
       logError({
@@ -144,6 +146,12 @@ export const recipeProcessor = onTaskDispatched(
     }
     const job = snap.data() as Record<string, unknown>;
     const jobType = (job.type as string | undefined) ?? "recipeScan";
+    // Le payload de la tâche est écrit une fois, à la mise en file ; le job,
+    // lui, est relu à chaque tentative. Une tâche partie avant l'existence du
+    // champ retrouve ainsi son scan, écrit depuis par le dispatcher.
+    if (!ctx.scanId && typeof job.scan_id === "string" && job.scan_id) {
+      ctx.scanId = job.scan_id;
+    }
     const attempt = Number(req.retryCount ?? 0);
     let createdBookId: string | null = (job.created_book_id as string | undefined) ?? null;
     let bookTouchedInRun = false;
@@ -382,6 +390,7 @@ export const recipeProcessor = onTaskDispatched(
             userId,
             jobId,
             correlationId,
+            scanId: ctx.scanId,
             fileName: (job.file_name as string | undefined) ?? undefined,
           });
           illustrationUrls.push(...stored.urls);
@@ -398,6 +407,7 @@ export const recipeProcessor = onTaskDispatched(
             jobId,
             userId,
             correlationId,
+            scanId: ctx.scanId,
             fileName: (job.file_name as string | undefined) ?? undefined,
           });
         }
@@ -814,6 +824,7 @@ async function saveDraft(args: {
     feature: "recipe_tagging",
     moduleType: "IMPORT",
     correlationId,
+    scanId: ctx.scanId as string | undefined,
     userId,
     extra: {
       titre,
@@ -888,6 +899,12 @@ async function saveDraft(args: {
     updated_at: now,
     ai_processed_at: now,
     pipeline_correlation_id: correlationId,
+    // Le déclencheur d'écriture n'a pas d'autre moyen de savoir d'où vient la
+    // recette : il part sur une écriture Firestore, sans lien avec la tâche
+    // qui l'a produite. Sans ce champ, la nutrition et les courses d'un import
+    // formaient un groupe de journaux à part, et leur coût sortait du total
+    // du scan.
+    scan_id: (args.ctx.scanId as string | undefined) ?? null,
   });
   return docRef.id;
 }
@@ -958,9 +975,10 @@ async function countPageImages(args: {
   jobId: string;
   userId: string;
   correlationId: string;
+  scanId?: string;
   fileName?: string;
 }): Promise<IllustrationReport> {
-  const { pages, mimeType, jobId, userId, correlationId, fileName } = args;
+  const { pages, mimeType, jobId, userId, correlationId, scanId, fileName } = args;
 
   let total = 0;
   let failures = 0;
@@ -970,6 +988,7 @@ async function countPageImages(args: {
       bytes,
       mimeType,
       correlationId: `${correlationId}_p${index + 1}`,
+      scanId,
       userId,
       jobId,
       fileName: fileName ? `${fileName} (page ${index + 1})` : undefined,
@@ -987,6 +1006,7 @@ async function countPageImages(args: {
     jobId,
     userId,
     correlationId,
+    scanId,
     extra: { pages: pages.length, detectees: total, pagesEnEchec: failures },
   });
 

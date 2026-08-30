@@ -120,12 +120,14 @@ function bytesFromBase64(b64: string): Buffer {
 async function logUploadScanUsage(args: {
   uid: string;
   correlationId: string;
+  /** Scan de l'utilisateur — posé par le client, avant même que le job existe. */
+  scanId?: string;
   sizeBytes: number;
   mimeType: string;
   scanStatus: "clean" | "blocked";
   reason?: string;
 }): Promise<void> {
-  const { uid, correlationId, sizeBytes, mimeType, scanStatus, reason } = args;
+  const { uid, correlationId, scanId, sizeBytes, mimeType, scanStatus, reason } = args;
   const estimatedCostUsd =
     Number.isFinite(SECURITY_SCAN_UNIT_COST_USD) && SECURITY_SCAN_UNIT_COST_USD > 0
       ? SECURITY_SCAN_UNIT_COST_USD
@@ -141,6 +143,7 @@ async function logUploadScanUsage(args: {
     model: "security-scan-v1",
     userId: uid,
     correlationId,
+    scanId,
     costUsdOverride: estimatedCostUsd,
     entityType: "upload",
   });
@@ -150,6 +153,7 @@ async function logUploadScanUsage(args: {
   await logInfo({
     message: `Scan de sécurité ${scanStatus === "clean" ? "accepté" : "bloqué"}`,
     correlationId,
+    scanId,
     userId: uid,
     feature: "upload_security_scan",
     extra: {
@@ -494,7 +498,16 @@ export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
  */
 export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "upload_security_scan");
-  const { storagePath } = (req.data ?? {}) as { storagePath?: string };
+  // `scanId` vient du client, et lui seul peut le fournir : le contrôle du
+  // fichier a lieu AVANT que le job d'import existe, et une même photo peut
+  // arriver avec ses pages supplémentaires en plusieurs appels. Sans lui, le
+  // coût de ce contrôle restait un groupe de journaux orphelin.
+  const { storagePath, scanId: rawScanId } = (req.data ?? {}) as {
+    storagePath?: string;
+    scanId?: string;
+  };
+  const scanId =
+    typeof rawScanId === "string" && rawScanId.trim().length > 0 ? rawScanId.trim() : undefined;
 
   if (!storagePath || typeof storagePath !== "string") {
     throw new HttpsError("invalid-argument", "storagePath est requis.");
@@ -526,6 +539,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
     await logUploadScanUsage({
       uid: ctx.userId,
       correlationId: ctx.correlationId,
+      scanId,
       sizeBytes: bytes.length,
       mimeType: detectedMime,
       scanStatus: scan.clean ? "clean" : "blocked",
@@ -571,6 +585,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       moduleType: "IMPORT",
       userId: ctx.userId,
       correlationId: ctx.correlationId,
+      scanId,
       extra: {
         quarantinePath: storagePath,
         promotedPath,

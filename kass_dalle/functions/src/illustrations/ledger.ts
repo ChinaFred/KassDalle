@@ -65,6 +65,8 @@ export class IllustrationLedger {
   constructor(
     private readonly ctx: {
       correlationId: string;
+      /** Scan de l'utilisateur d'où vient ce bloc, quand il en vient un. */
+      scanId?: string;
       userId?: string;
       jobId?: string;
       fileName?: string;
@@ -110,6 +112,7 @@ export class IllustrationLedger {
         errorDescription: err instanceof Error ? err.message : String(err),
         moduleType: "DESIGN",
         correlationId: this.ctx.correlationId,
+        scanId: this.ctx.scanId,
         userId: this.ctx.userId,
         feature,
       });
@@ -136,6 +139,8 @@ export class IllustrationLedger {
       message: `Illustrations · ${this.steps.length}. ${label} · ${formatCost(costEur, costUsd)} · ${outcome}`,
       moduleType: "DESIGN",
       correlationId: this.ctx.correlationId,
+      scanId: this.ctx.scanId,
+      callId: result.callId,
       userId: this.ctx.userId,
       jobId: this.ctx.jobId,
       feature,
@@ -181,6 +186,7 @@ export class IllustrationLedger {
         `${(elapsedMs / 1000).toFixed(1)} s · ${args.outcome}${manquants}`,
       moduleType: "DESIGN",
       correlationId: this.ctx.correlationId,
+      scanId: this.ctx.scanId,
       userId: this.ctx.userId,
       jobId: this.ctx.jobId,
       feature: "page_illustrations",

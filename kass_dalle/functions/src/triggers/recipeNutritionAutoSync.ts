@@ -68,8 +68,10 @@ export async function syncRecipeNutrition(args: {
   cause: string;
   /** Traitement auquel ce recalcul appartient — fourni par `onRecipeWritten`. */
   correlationId: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
 }): Promise<void> {
-  const { after, data, cause, correlationId } = args;
+  const { after, data, cause, correlationId, scanId } = args;
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
@@ -114,6 +116,7 @@ export async function syncRecipeNutrition(args: {
     message: "Texte de la recette à l'entrée du déclencheur",
     moduleType: "DESIGN",
     correlationId,
+    scanId,
     userId,
     extra: { recipeId: after.id, cause },
   });
@@ -136,12 +139,14 @@ export async function syncRecipeNutrition(args: {
         recipeId: after.id,
         selectedPortions: toPositiveNumber(data.portions),
         correlationId,
+        scanId,
       });
 
       await logInfo({
         message: "onRecipeNutritionAutoSync: recette sans ingrédients, nutrition recalculée",
         moduleType: "DESIGN",
         correlationId,
+        scanId,
         userId,
         extra: { recipeId: after.id },
       });
@@ -192,6 +197,7 @@ export async function syncRecipeNutrition(args: {
           message: "onRecipeNutritionAutoSync: synchronisation référentiel unités échouée",
           moduleType: "DESIGN",
           correlationId,
+          scanId,
           userId,
           errorDescription: err instanceof Error ? err.message : String(err),
           extra: { recipeId: after.id, unit: unitForReference },
@@ -229,6 +235,7 @@ export async function syncRecipeNutrition(args: {
         userId,
         recipeId: after.id,
         correlationId,
+        scanId,
         unitIngredientNames,
       });
     }
@@ -331,6 +338,7 @@ export async function syncRecipeNutrition(args: {
       userId,
       recipeId: after.id,
       correlationId,
+      scanId,
       deadlineMs: enrichmentDeadlineMs,
     });
 
@@ -352,12 +360,14 @@ export async function syncRecipeNutrition(args: {
       recipeId: after.id,
       selectedPortions: toPositiveNumber(data.portions),
       correlationId,
+      scanId,
     });
 
     await logInfo({
       message: "onRecipeNutritionAutoSync: synchronisation nutrition terminée",
       moduleType: "DESIGN",
       correlationId,
+      scanId,
       userId,
       extra: {
         recipeId: after.id,
@@ -386,12 +396,14 @@ export async function syncRecipeNutrition(args: {
       recipeId: after.id,
       reason: err instanceof Error ? err.message : String(err),
       correlationId,
+      scanId,
     });
 
     await logError({
       message: "onRecipeNutritionAutoSync: échec global (best-effort)",
       moduleType: "DESIGN",
       correlationId,
+      scanId,
       userId,
       errorDescription: err instanceof Error ? err.message : String(err),
       extra: {

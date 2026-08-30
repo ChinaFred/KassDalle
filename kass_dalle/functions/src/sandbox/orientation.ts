@@ -162,6 +162,8 @@ export async function detectOrientation(args: {
     stage: "sandbox_detect_orientation",
     text,
     correlationId: ctx.correlationId,
+    scanId: ctx.scanId,
+    callId: result.callId,
     userId: ctx.userId,
     feature: ctx.feature,
     provider: result.provider,
