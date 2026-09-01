@@ -16,6 +16,35 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.28 — fonctionnel
+
+#### Les coins détectés atterrissaient à côté de la page
+
+Dans l'atelier de retouche, activer « Cadre » posait les quatre poignées n'importe où. La
+détection tournait pourtant, et rendait des coordonnées justes — dans un repère qui n'était pas
+celui de l'image affichée.
+
+Une photo de téléphone existe en deux versions. Celle que Flutter **affiche** honore l'orientation
+EXIF. Celle que le paquet `image` **décode** l'ignore. Pour une photo prise en portrait, les deux
+sont tournées d'un quart de tour l'une par rapport à l'autre. La détection des coins et le
+redressement de perspective travaillent tous deux sur la seconde ; l'écran pose leur résultat sur
+la première.
+
+Le serveur avait été corrigé en août — « l'image est redressée une fois, puis sert à la détection
+ET au découpage ». L'atelier de retouche n'avait pas suivi.
+
+Les pixels portent maintenant eux-mêmes leur orientation, remise d'aplomb une seule fois à
+l'ouverture, avant l'affichage comme avant les analyses. Toute la chaîne parle du même repère.
+
+La décision porte sur la **valeur EXIF**, pas sur les dimensions : quatre des huit orientations —
+miroir horizontal, demi-tour et leurs combinaisons — ne changent ni la largeur ni la hauteur. Les
+reconnaître à leurs dimensions revenait à les laisser passer, et un demi-tour non appliqué met les
+coins à l'exact opposé de la page. Une image déjà debout n'est pas réencodée : ce serait une
+génération de JPEG, donc de la netteté, pour rien.
+
+`test/image_upright_test.dart` couvre les cinq cas. La validation remonte désormais
+`orientation_redressee`, et l'ouverture chronomètre cette étape avec les autres.
+
 ### v0.22.27 — fonctionnel
 
 #### La bibliothèque affichait l'ancienne couverture d'un livre modifié

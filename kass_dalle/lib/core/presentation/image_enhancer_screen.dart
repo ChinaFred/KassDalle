@@ -94,13 +94,19 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool _detecting = false;
   bool _showOriginalPreview = false;
 
+  /// Vrai quand les pixels ont été tournés pour honorer l'orientation EXIF.
+  ///
+  /// Remonté avec la validation : c'est la seule façon de savoir, après coup,
+  /// si une photo de téléphone est passée par cette étape.
+  bool _orientationRedressee = false;
+
   /// Ce que l'atelier fait pendant son ouverture, affiché sous l'indicateur.
   ///
   /// Un indicateur nu ne dit pas s'il attend le décodage, l'analyse des
   /// couleurs ou la détection du cadre. Quand l'ouverture dure, c'est la seule
   /// information qui reste : sur le web, ces trois étapes tournent sur le fil
   /// principal, et un écran figé garde la dernière image peinte.
-  String _openingStep = 'Lecture de la photo…';
+  String _openingStep = 'Remise d\'aplomb…';
 
   /// Le panneau ouvert, ou `null` quand aucun ne l'est.
   ///
@@ -166,6 +172,20 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     final etapes = <String, int>{};
 
     try {
+      // Remise d'aplomb AVANT tout le reste.
+      //
+      // L'affichage honore l'orientation EXIF, la détection et le redressement
+      // l'ignorent. Tant que les pixels ne portent pas eux-mêmes l'orientation,
+      // les coins détectés sont justes dans un repère et faux dans l'autre.
+      final redressement = Stopwatch()..start();
+      final aplomb = await compute(
+        uprightIsolate,
+        UprightParams(bytes: _currentBytes),
+      );
+      etapes['redressement_ms'] = redressement.elapsedMilliseconds;
+      _orientationRedressee = aplomb.rotated;
+      if (aplomb.rotated) _currentBytes = aplomb.bytes;
+
       final decodage = Stopwatch()..start();
       final codec = await ui.instantiateImageCodec(_currentBytes);
       final frame = await codec.getNextFrame();
@@ -222,6 +242,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           'hauteur': _imgH,
           'web': kIsWeb,
           'mode': widget.mode.name,
+          'orientation_redressee': _orientationRedressee,
         },
       );
     }
@@ -586,6 +607,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       context: {
         'cadre_arme': _cropArmed,
         'ecart_coins': double.parse(ecartCoins.toStringAsFixed(4)),
+        'orientation_redressee': _orientationRedressee,
         'a_pivote': _currentBytes.length != widget.imageBytes.length,
         'luminosite': _brightness,
         'contraste': _contrast,

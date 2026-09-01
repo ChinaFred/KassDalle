@@ -231,6 +231,81 @@ class WarpParams {
   });
 }
 
+// ── Remise d'aplomb EXIF ─────────────────────────────────────────────────────
+
+class UprightParams {
+  final Uint8List bytes;
+  const UprightParams({required this.bytes});
+}
+
+class UprightResult {
+  final Uint8List bytes;
+
+  /// Vrai quand les pixels ont réellement été tournés.
+  final bool rotated;
+
+  const UprightResult({required this.bytes, required this.rotated});
+}
+
+/// Applique l'orientation EXIF dans les pixels eux-mêmes.
+///
+/// Sans cette passe, une photo de téléphone existe en deux versions : celle que
+/// Flutter **affiche**, qui honore l'EXIF, et celle que le paquet `image`
+/// **décode**, qui l'ignore. Les deux sont tournées de quatre-vingt-dix degrés
+/// l'une par rapport à l'autre.
+///
+/// [detectCornersIsolate] rendait donc des coins justes dans le repère couché,
+/// que l'écran posait sur l'image debout : les poignées atterrissaient à côté
+/// de la page, et [warpIsolate] découpait au même mauvais endroit. Le résultat
+/// est un morceau de table, parfaitement net.
+///
+/// Le serveur avait été corrigé en août ; l'atelier, non.
+///
+/// Une seule remise d'aplomb, à l'ouverture, et tout le reste de la chaîne
+/// parle du même repère.
+UprightResult uprightIsolate(UprightParams p) {
+  final source = img.decodeImage(p.bytes);
+  if (source == null) throw Exception('Image illisible.');
+
+  final decision = decideUpright(source);
+
+  // Réencodé seulement s'il s'est passé quelque chose : réencoder pour rien
+  // coûterait une génération de JPEG, donc de la netteté, sans contrepartie.
+  if (!decision.rotated) return UprightResult(bytes: p.bytes, rotated: false);
+
+  return UprightResult(
+    bytes: Uint8List.fromList(img.encodeJpg(decision.image, quality: 95)),
+    rotated: true,
+  );
+}
+
+/// Ce que la remise d'aplomb décide, avant tout encodage.
+class UprightDecision {
+  final img.Image image;
+  final bool rotated;
+
+  const UprightDecision({required this.image, required this.rotated});
+}
+
+/// Décide si les pixels doivent tourner, et les tourne.
+///
+/// Séparée de [uprightIsolate] pour être testable : `encodeJpg` ne réécrit pas
+/// le bloc EXIF, une image fabriquée dans un test perdrait donc son orientation
+/// au premier aller-retour. Ici, l'image arrive décodée, avec son EXIF intact.
+///
+/// La décision porte sur la **valeur EXIF**, pas sur les dimensions. Quatre des
+/// huit orientations — miroir horizontal, demi-tour, et leurs combinaisons — ne
+/// changent ni la largeur ni la hauteur. Les reconnaître à leurs dimensions
+/// revenait à les laisser passer, et un demi-tour non appliqué met les coins
+/// détectés à l'exact opposé de la page.
+UprightDecision decideUpright(img.Image source) {
+  final orientation = source.exif.imageIfd.orientation;
+  if (orientation == null || orientation <= 1) {
+    return UprightDecision(image: source, rotated: false);
+  }
+  return UprightDecision(image: img.bakeOrientation(source), rotated: true);
+}
+
 Uint8List warpIsolate(WarpParams p) {
   final src = img.decodeImage(p.imageBytes);
   if (src == null) throw Exception('Impossible de décoder l\'image');
