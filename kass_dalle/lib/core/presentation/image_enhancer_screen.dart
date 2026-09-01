@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
 import '../../core/services/error_reporting.dart';
 import '../utils/context_extensions.dart';
@@ -94,11 +93,25 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool _detecting = false;
   bool _showOriginalPreview = false;
 
-  /// Vrai quand les pixels ont été tournés pour honorer l'orientation EXIF.
+  /// Les octets courants portent-ils encore leur orientation EXIF ?
   ///
-  /// Remonté avec la validation : c'est la seule façon de savoir, après coup,
-  /// si une photo de téléphone est passée par cette étape.
-  bool _orientationRedressee = false;
+  /// L'affichage honore l'EXIF, le paquet `image` l'ignore : détection et
+  /// redressement doivent donc l'appliquer eux-mêmes, sinon ils travaillent
+  /// dans un repère tourné d'un quart de tour par rapport à ce qu'on voit.
+  ///
+  /// Ils l'appliquent au passage, sur le décodage qu'ils font de toute façon.
+  /// Une passe dédiée coûtait un décodage complet et un réencodage, pour rien.
+  ///
+  /// Faux dès qu'une opération a produit de nouveaux octets : ceux-là sortent
+  /// du paquet `image`, déjà d'aplomb et sans bloc EXIF.
+  bool _orientationPending = true;
+
+  /// Durée du rendu final, en millisecondes.
+  ///
+  /// La boucle de redressement parcourt chaque pixel de sortie en Dart pur, et
+  /// sur le web elle tourne sur le fil principal. Sans cette mesure, un rendu
+  /// de douze mégapixels qui prend trente secondes ressemble à un blocage.
+  int _renduMs = 0;
 
   /// Ce que l'atelier fait pendant son ouverture, affiché sous l'indicateur.
   ///
@@ -106,7 +119,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   /// couleurs ou la détection du cadre. Quand l'ouverture dure, c'est la seule
   /// information qui reste : sur le web, ces trois étapes tournent sur le fil
   /// principal, et un écran figé garde la dernière image peinte.
-  String _openingStep = 'Remise d\'aplomb…';
+  String _openingStep = 'Lecture de la photo…';
 
   /// Le panneau ouvert, ou `null` quand aucun ne l'est.
   ///
@@ -172,20 +185,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     final etapes = <String, int>{};
 
     try {
-      // Remise d'aplomb AVANT tout le reste.
-      //
-      // L'affichage honore l'orientation EXIF, la détection et le redressement
-      // l'ignorent. Tant que les pixels ne portent pas eux-mêmes l'orientation,
-      // les coins détectés sont justes dans un repère et faux dans l'autre.
-      final redressement = Stopwatch()..start();
-      final aplomb = await compute(
-        uprightIsolate,
-        UprightParams(bytes: _currentBytes),
-      );
-      etapes['redressement_ms'] = redressement.elapsedMilliseconds;
-      _orientationRedressee = aplomb.rotated;
-      if (aplomb.rotated) _currentBytes = aplomb.bytes;
-
       final decodage = Stopwatch()..start();
       final codec = await ui.instantiateImageCodec(_currentBytes);
       final frame = await codec.getNextFrame();
@@ -242,7 +241,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           'hauteur': _imgH,
           'web': kIsWeb,
           'mode': widget.mode.name,
-          'orientation_redressee': _orientationRedressee,
         },
       );
     }
@@ -254,7 +252,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     try {
       final corners = await compute(
         detectCornersIsolate,
-        DetectParams(imageBytes: _currentBytes),
+        DetectParams(
+          imageBytes: _currentBytes,
+          bakeOrientation: _orientationPending,
+        ),
       );
       // Ne pas écraser les coins si l'utilisateur a déjà déclenché le recadrage.
       if (mounted && corners != null && !_processing) {
@@ -577,9 +578,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         contrast: _contrast,
         saturation: _saturation,
         sharpen: _sharpen,
+        bakeOrientation: _orientationPending,
       );
-      final warped = await compute(warpIsolate, params);
-      result = await _nativeCompress(warped);
+      // Un seul encodage, celui de l'isolat.
+      //
+      // `_nativeCompress` réencodait ici en 88 ce que `warpIsolate` venait
+      // d'encoder en 97 : deux générations JPEG à la suite, pour une image qui
+      // en avait déjà subi une à la remise d'aplomb.
+      final rendu = Stopwatch()..start();
+      result = await compute(warpIsolate, params);
+      _renduMs = rendu.elapsedMilliseconds;
     } catch (error, stackTrace) {
       reportUnexpectedError(
         feature: 'imageEnhancerScreen.confirm',
@@ -607,7 +615,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       context: {
         'cadre_arme': _cropArmed,
         'ecart_coins': double.parse(ecartCoins.toStringAsFixed(4)),
-        'orientation_redressee': _orientationRedressee,
+        'orientation_a_appliquer': _orientationPending,
         'a_pivote': _currentBytes.length != widget.imageBytes.length,
         'luminosite': _brightness,
         'contraste': _contrast,
@@ -616,6 +624,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         'octets_origine': widget.imageBytes.length,
         'octets_entree': _currentBytes.length,
         'octets_sortie': result.length,
+        'rendu_ms': _renduMs,
         'mode': widget.mode.name,
         'web': kIsWeb,
       },
@@ -668,32 +677,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     return maximum;
   }
 
-  // ── Compression native (flutter_image_compress) ────────────────────────────
-
-  /// Recompresse les bytes JPEG avec le codec natif de la plateforme (qualité
-  /// supérieure à la même taille que le codec Dart pur). Si le codec natif n'est
-  /// pas disponible (plateforme non supportée), retourne les bytes inchangés.
-  static Future<Uint8List> _nativeCompress(
-    Uint8List bytes, {
-    int quality = 88,
-  }) async {
-    try {
-      final out = await FlutterImageCompress.compressWithList(
-        bytes,
-        quality: quality,
-        format: CompressFormat.jpeg,
-      );
-      if (out.isNotEmpty) return out;
-    } catch (error, stackTrace) {
-      reportUnexpectedError(
-        feature: 'imageEnhancerScreen.nativeCompress',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-    return bytes;
-  }
-
   // ── Rotation ───────────────────────────────────────────────────────────────
 
   Future<void> _rotate(bool clockwise) async {
@@ -705,9 +688,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         RotateParams(
           imageBytes: _currentBytes,
           angle: clockwise ? 90.0 : -90.0,
+          bakeOrientation: _orientationPending,
         ),
       );
-      final rotated = await _nativeCompress(rotatedRaw, quality: 90);
+      // Les octets sortent du paquet `image` : d'aplomb, sans bloc EXIF, et
+      // encodés une seule fois. Les recompresser en 90 par-dessus ajoutait une
+      // génération par quart de tour.
+      // Ces octets sortent du paquet `image` : déjà d'aplomb, sans bloc EXIF.
+      // Les étapes suivantes n'ont donc plus rien à appliquer.
+      final rotated = rotatedRaw;
+      _orientationPending = false;
       if (!mounted) return;
       final codec = await ui.instantiateImageCodec(rotated);
       final frame = await codec.getNextFrame();

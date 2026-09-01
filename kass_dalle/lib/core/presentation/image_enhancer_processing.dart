@@ -194,21 +194,52 @@ class LoupePainter extends CustomPainter {
   bool shouldRepaint(LoupePainter old) => old.focalWidget != focalWidget;
 }
 
+/// Qualité du **seul** encodage JPEG de l'atelier.
+///
+/// On travaille l'image telle qu'elle arrive et on ne la compresse qu'une fois,
+/// pour le stockage. La chaîne en comptait trois : la remise d'aplomb
+/// réencodait en 95, chaque quart de tour en 97 puis en 90, le redressement en
+/// 97 puis en 88 — et réduisait au passage le grand côté à 2048 px. Une photo
+/// de 3000 × 4000 arrivait donc rognée et trois fois recompressée avant même
+/// d'être lue.
+///
+/// Chaque génération JPEG abîme d'abord les petits caractères, ce qui est
+/// exactement ce qu'un titre de couverture donne à lire.
+const int kAtelierJpegQuality = 95;
+
+/// Plus grand côté admis pour le travail sur les pixels.
+///
+/// Même chiffre que `gemini/perspective.ts` pour l'extraction d'une page : ce
+/// n'est pas un excès de zèle, c'est une valeur mesurée. En dessous, le corps
+/// de texte d'une page redressée descend à quelques pixels de haut, et le
+/// modèle qui la lit invente un titre plausible.
+const int kAtelierMaxWorkDimension = 4000;
+
 // ── Isolate rotation ──────────────────────────────────────────────────────────
 
 class RotateParams {
   final Uint8List imageBytes;
   final double angle; // degrés, positif = sens horaire
-  const RotateParams({required this.imageBytes, required this.angle});
+
+  /// Appliquer d'abord l'orientation EXIF, quand les octets la portent encore.
+  final bool bakeOrientation;
+
+  const RotateParams({
+    required this.imageBytes,
+    required this.angle,
+    this.bakeOrientation = false,
+  });
 }
 
 Uint8List rotateIsolate(RotateParams p) {
   final src = img.decodeImage(p.imageBytes);
   if (src == null) throw Exception('Impossible de décoder l\'image');
+  final base = p.bakeOrientation ? decideUpright(src).image : src;
   // image package: angle positif = sens horaire
-  final rotated = img.copyRotate(src, angle: p.angle);
-  // Qualité haute : flutter_image_compress appliquera la compression native finale
-  return Uint8List.fromList(img.encodeJpg(rotated, quality: 97));
+  final rotated = img.copyRotate(base, angle: p.angle);
+  return Uint8List.fromList(
+    img.encodeJpg(rotated, quality: kAtelierJpegQuality),
+  );
 }
 
 // ── Isolate warp ───────────────────────────────────────────────────────────────
@@ -221,6 +252,9 @@ class WarpParams {
   final double saturation;
   final bool sharpen;
 
+  /// Appliquer d'abord l'orientation EXIF, quand les octets la portent encore.
+  final bool bakeOrientation;
+
   const WarpParams({
     required this.imageBytes,
     required this.cornersFlat,
@@ -228,24 +262,11 @@ class WarpParams {
     required this.contrast,
     required this.saturation,
     required this.sharpen,
+    this.bakeOrientation = false,
   });
 }
 
 // ── Remise d'aplomb EXIF ─────────────────────────────────────────────────────
-
-class UprightParams {
-  final Uint8List bytes;
-  const UprightParams({required this.bytes});
-}
-
-class UprightResult {
-  final Uint8List bytes;
-
-  /// Vrai quand les pixels ont réellement été tournés.
-  final bool rotated;
-
-  const UprightResult({required this.bytes, required this.rotated});
-}
 
 /// Applique l'orientation EXIF dans les pixels eux-mêmes.
 ///
@@ -263,22 +284,6 @@ class UprightResult {
 ///
 /// Une seule remise d'aplomb, à l'ouverture, et tout le reste de la chaîne
 /// parle du même repère.
-UprightResult uprightIsolate(UprightParams p) {
-  final source = img.decodeImage(p.bytes);
-  if (source == null) throw Exception('Image illisible.');
-
-  final decision = decideUpright(source);
-
-  // Réencodé seulement s'il s'est passé quelque chose : réencoder pour rien
-  // coûterait une génération de JPEG, donc de la netteté, sans contrepartie.
-  if (!decision.rotated) return UprightResult(bytes: p.bytes, rotated: false);
-
-  return UprightResult(
-    bytes: Uint8List.fromList(img.encodeJpg(decision.image, quality: 95)),
-    rotated: true,
-  );
-}
-
 /// Ce que la remise d'aplomb décide, avant tout encodage.
 class UprightDecision {
   final img.Image image;
@@ -289,9 +294,14 @@ class UprightDecision {
 
 /// Décide si les pixels doivent tourner, et les tourne.
 ///
-/// Séparée de [uprightIsolate] pour être testable : `encodeJpg` ne réécrit pas
-/// le bloc EXIF, une image fabriquée dans un test perdrait donc son orientation
-/// au premier aller-retour. Ici, l'image arrive décodée, avec son EXIF intact.
+/// Appelée par les trois isolats qui décodent l'image, jamais seule : une
+/// passe dédiée à la seule orientation coûtait un décodage complet — près de
+/// trois secondes sur une photo de douze mégapixels dans un navigateur — et un
+/// réencodage, pour un travail que chacun d'eux fait au passage.
+///
+/// Testable telle quelle : `encodeJpg` ne réécrit pas le bloc EXIF, une image
+/// fabriquée dans un test perdrait donc son orientation au premier
+/// aller-retour. Ici, l'image arrive décodée, avec son EXIF intact.
 ///
 /// La décision porte sur la **valeur EXIF**, pas sur les dimensions. Quatre des
 /// huit orientations — miroir horizontal, demi-tour, et leurs combinaisons — ne
@@ -307,19 +317,31 @@ UprightDecision decideUpright(img.Image source) {
 }
 
 Uint8List warpIsolate(WarpParams p) {
-  final src = img.decodeImage(p.imageBytes);
-  if (src == null) throw Exception('Impossible de décoder l\'image');
+  final decoded = img.decodeImage(p.imageBytes);
+  if (decoded == null) throw Exception('Impossible de décoder l\'image');
+  final src = p.bakeOrientation ? decideUpright(decoded).image : decoded;
 
-  // Downsample large images for performance
+  // Plafond de travail : 4000 px, la borne que le serveur a mesurée.
+  //
+  // Il était à 2048 « for performance ». Une photo de 3000 × 4000 ressortait
+  // donc en 1536 × 2048, définitivement : c'est cette image-là qui part au
+  // stockage et que le modèle lit ensuite. `gemini/perspective.ts` a fait le
+  // constat côté serveur — « une double page redressée dans une image bornée à
+  // 2048 px sort autour de 650 px de large, et son corps de texte y mesure cinq
+  // pixels de haut » — et a relevé sa propre borne à 4000.
+  //
+  // La garde reste utile : la boucle ci-dessous parcourt chaque pixel de sortie
+  // en Dart pur, et sur le web elle n'a aucun isolate où se réfugier. Une photo
+  // de cinquante mégapixels y figerait l'onglet.
   final maxDim = math.max(src.width, src.height);
   final img.Image work;
-  if (maxDim > 2048) {
-    final s = 2048 / maxDim;
+  if (maxDim > kAtelierMaxWorkDimension) {
+    final s = kAtelierMaxWorkDimension / maxDim;
     work = img.copyResize(
       src,
       width: (src.width * s).round(),
       height: (src.height * s).round(),
-      interpolation: img.Interpolation.linear,
+      interpolation: img.Interpolation.cubic,
     );
   } else {
     work = src;
@@ -379,7 +401,6 @@ Uint8List warpIsolate(WarpParams p) {
       div: 1,
     );
   }
-  // Qualité haute : flutter_image_compress appliquera la compression native finale
   return Uint8List.fromList(img.encodeJpg(result, quality: 97));
 }
 
@@ -617,7 +638,14 @@ List<double> _invertMatrix3(List<double> m) {
 
 class DetectParams {
   final Uint8List imageBytes;
-  const DetectParams({required this.imageBytes});
+
+  /// Appliquer d'abord l'orientation EXIF, quand les octets la portent encore.
+  ///
+  /// Sans cela, les coins rendus sont justes dans le repère STOCKÉ et faux dans
+  /// celui que l'écran affiche — l'affichage honore l'EXIF, ce décodeur non.
+  final bool bakeOrientation;
+
+  const DetectParams({required this.imageBytes, this.bakeOrientation = false});
 }
 
 /// Détecte automatiquement les 4 coins d'un document dans une image.
@@ -627,8 +655,9 @@ class DetectParams {
 /// Retourne \[x0,y0, x1,y1, x2,y2, x3,y3\] normalisés \[0..1\] (TL, TR, BR, BL)
 /// ou null si la détection échoue (fond trop homogène, pas de bord net).
 List<double>? detectCornersIsolate(DetectParams p) {
-  final src = img.decodeImage(p.imageBytes);
-  if (src == null) return null;
+  final decoded = img.decodeImage(p.imageBytes);
+  if (decoded == null) return null;
+  final src = p.bakeOrientation ? decideUpright(decoded).image : decoded;
 
   // 1. Réduire à max 512px pour la vitesse
   const target = 512;

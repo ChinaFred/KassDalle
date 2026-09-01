@@ -16,6 +16,48 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.29 — technique
+
+#### L'atelier ne compresse plus qu'une fois, pour le stockage
+
+La photo arrivait en qualité 100, volontairement : « c'est du TEXTE qu'on photographie ». Puis
+l'atelier la recompressait trois fois avant de la rendre.
+
+| Étape | Ce qu'elle faisait |
+|---|---|
+| Remise d'aplomb | réencodage en 95 quand l'orientation le demandait |
+| Chaque quart de tour | encodage en 97, puis réencodage natif en 90 |
+| Redressement | réduction à 2048 px, encodage en 97 |
+| Compression finale | réencodage natif en 88 |
+
+Trois générations JPEG au minimum, et un redimensionnement définitif : une photo de 3000 × 4000
+partait au stockage en 1536 × 2048. C'est cette image-là que le modèle lit ensuite pour créer le
+livre. Chaque génération abîme d'abord les petits caractères — ce qu'un titre de couverture donne
+précisément à lire.
+
+Il ne reste qu'un encodage, en qualité 95, à la validation. Le codec natif et sa passe à 88 ont
+disparu ; une rotation n'encode plus qu'une fois.
+
+#### La remise d'aplomb ne coûte plus un décodage entier
+
+Elle décodait le JPEG complet pour appliquer l'orientation EXIF, puis le réencodait. Sur la
+dernière mesure : 2 980 ms des 8 987 ms d'ouverture, pour une photo qui n'avait rien à redresser.
+
+La détection, la rotation et le redressement décodent l'image de toute façon. Ils appliquent
+maintenant l'orientation eux-mêmes, au passage, sur ce décodage-là. Un drapeau suit ce qui reste à
+appliquer : dès qu'une opération produit de nouveaux octets, ils sortent du paquet `image`, déjà
+d'aplomb et sans bloc EXIF.
+
+#### Le plafond de travail passe de 2048 à 4000 px
+
+C'est la borne que le serveur avait déjà mesurée pour l'extraction d'une page, dans
+`gemini/perspective.ts` : « une double page redressée dans une image bornée à 2048 px sort autour
+de 650 px de large, et son corps de texte y mesure cinq pixels de haut ». Une photo de téléphone
+en 3000 × 4000 passe désormais sans réduction.
+
+La garde reste, à 4000 : la boucle de redressement parcourt chaque pixel de sortie en Dart pur, et
+sur le web elle n'a aucun isolate où se réfugier. La validation remonte sa durée (`rendu_ms`).
+
 ### v0.22.28 — fonctionnel
 
 #### Les coins détectés atterrissaient à côté de la page
