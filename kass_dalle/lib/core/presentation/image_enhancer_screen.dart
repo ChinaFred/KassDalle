@@ -250,13 +250,17 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     if (!mounted || !_allowCrop) return;
     setState(() => _detecting = true);
     try {
-      final corners = await compute(
+      final detection = await compute(
         detectCornersIsolate,
         DetectParams(
           imageBytes: _currentBytes,
           bakeOrientation: _orientationPending,
         ),
       );
+      final corners = detection.quad;
+      var retenu = false;
+      double? aireQuad;
+
       // Ne pas écraser les coins si l'utilisateur a déjà déclenché le recadrage.
       if (mounted && corners != null && !_processing) {
         // Validation : le quad doit couvrir ≥ 35 % de l'image.
@@ -266,7 +270,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           4,
           (i) => Offset(corners[i * 2], corners[i * 2 + 1]),
         );
-        if (_quadArea(detected) >= 0.35) {
+        aireQuad = _quadArea(detected);
+        if (aireQuad >= 0.35) {
+          retenu = true;
           setState(() {
             for (var i = 0; i < 4; i++) {
               _corners[i] = Offset(
@@ -277,6 +283,28 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           });
         }
       }
+
+      // Ce que la détection a trouvé, et pourquoi le cadre n'a pas bougé.
+      //
+      // Un cadre resté à sa position par défaut ne dit rien de lui-même : la
+      // détection a-t-elle rendu une tache trop petite, mal modélisé le fond,
+      // ou rien trouvé du tout ? Trois séances de diagnostic sont parties sur
+      // des hypothèses plausibles faute de ces nombres.
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.detection',
+        error: StateError(
+          'Détection : ${detection.diagnostic['sortie']}'
+          '${retenu ? ' (cadre adopté)' : ' (cadre par défaut conservé)'}',
+        ),
+        context: {
+          ...detection.diagnostic,
+          'retenu': retenu,
+          if (aireQuad != null) 'aire_quad_ecran': (aireQuad * 100).round(),
+          'octets': _currentBytes.length,
+          'orientation_a_appliquer': _orientationPending,
+          'web': kIsWeb,
+        },
+      );
     } catch (error, stackTrace) {
       reportUnexpectedError(
         feature: 'imageEnhancerScreen.runAutoDetect',

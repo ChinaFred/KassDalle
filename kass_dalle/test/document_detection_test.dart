@@ -78,7 +78,7 @@ void main() {
 
   /// Les quatre coins rendus, en fractions de l'image.
   List<double> coins(img.Image image) {
-    final quad = detectQuadInImage(image);
+    final quad = detectQuadInImage(image).quad;
     expect(quad, isNotNull, reason: 'aucun document détecté');
     return quad!;
   }
@@ -135,13 +135,15 @@ void main() {
     test('une table vide ne fabrique pas de document', () {
       // L'ancienne méthode rendait le cadre de la photo. Ne rien rendre laisse
       // les coins par défaut, ce qui est plus honnête qu'un cadrage inventé.
-      expect(detectQuadInImage(scene()), isNull);
+      expect(detectQuadInImage(scene()).quad, isNull);
     });
 
     test('un livre qui remplit toute la photo est écarté', () {
       // Il n'y a alors rien à recadrer, et le fond ne peut plus être modélisé.
       expect(
-        detectQuadInImage(scene(gauche: 0.0, haut: 0.0, droite: 1.0, bas: 1.0)),
+        detectQuadInImage(
+          scene(gauche: 0.0, haut: 0.0, droite: 1.0, bas: 1.0),
+        ).quad,
         isNull,
       );
     });

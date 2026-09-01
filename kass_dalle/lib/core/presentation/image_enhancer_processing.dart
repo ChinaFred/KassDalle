@@ -660,9 +660,31 @@ class DetectParams {
 ///
 /// Retourne \[x0,y0, x1,y1, x2,y2, x3,y3\] normalisés \[0..1\] (TL, TR, BR, BL)
 /// ou null si la détection échoue (fond trop homogène, pas de bord net).
-List<double>? detectCornersIsolate(DetectParams p) {
+/// Ce que la détection a trouvé, et par où elle est passée.
+class QuadDetection {
+  /// Les quatre coins normalisés, ou `null` si rien n'a été retenu.
+  final List<double>? quad;
+
+  /// Où la détection s'est arrêtée, et sur quels chiffres.
+  ///
+  /// Transporté plutôt que remonté sur place : cette fonction tourne dans un
+  /// isolat, où aucun service de l'application n'existe. C'est l'écran qui
+  /// écrit le rapport.
+  ///
+  /// Sans ces nombres, un cadre qui ne bouge pas ne dit rien : la détection
+  /// a-t-elle trouvé une tache trop petite, un fond mal modélisé, ou rien du
+  /// tout ? Trois séances de diagnostic sont parties sur des hypothèses
+  /// plausibles faute de les avoir.
+  final Map<String, Object?> diagnostic;
+
+  const QuadDetection({this.quad, required this.diagnostic});
+}
+
+QuadDetection detectCornersIsolate(DetectParams p) {
   final decoded = img.decodeImage(p.imageBytes);
-  if (decoded == null) return null;
+  if (decoded == null) {
+    return const QuadDetection(diagnostic: {'sortie': 'image_illisible'});
+  }
   final src = p.bakeOrientation ? decideUpright(decoded).image : decoded;
   return detectQuadInImage(src);
 }
@@ -677,23 +699,23 @@ List<double>? detectCornersIsolate(DetectParams p) {
 /// l'intérieur porte des contours bien plus marqués que la frontière
 /// carton/table : le balayage s'arrêtait sur le bord d'une assiette, ou, quand
 /// le seuil les écartait tous, filait jusqu'au cadre de la photo et rendait
-/// l'image entière. Les quatre validations du 1er septembre 2026 le montrent :
-/// coins à 1,8 %, 2,6 %, 14,6 % et 19,5 % des bords, jamais sur le livre.
+/// l'image entière.
 ///
 /// Ici, on part de ce qui est réellement simple dans la scène : **le fond est
 /// uniforme et il occupe les bords**. On le modélise depuis la bande
 /// extérieure, on marque tout ce qui s'en écarte, on garde la plus grande tache
 /// et on lui ajuste un rectangle. L'intérieur du livre n'a plus aucune
-/// influence : qu'il soit une photographie chargée ou une page blanche, il est
-/// simplement « pas la table ».
+/// influence : photographie chargée ou page blanche, il est simplement « pas la
+/// table ».
 ///
 /// Cette approche rend aussi la réduction à 512 px inoffensive. Un bord d'un
 /// pixel de large ne se détecte pas ; une tache de deux cent mille pixels, si.
 ///
-/// Rend `[x0,y0, x1,y1, x2,y2, x3,y3]` normalisés dans `[0,1]`, dans l'ordre
-/// haut-gauche, haut-droit, bas-droit, bas-gauche — ou `null` quand la scène
-/// ne porte pas de document identifiable.
-List<double>? detectQuadInImage(img.Image source) {
+/// Rend les coins dans l'ordre haut-gauche, haut-droit, bas-droit, bas-gauche,
+/// **et** le chemin suivi, que l'appelant remonte.
+QuadDetection detectQuadInImage(img.Image source) {
+  final diag = <String, Object?>{};
+
   // 1. Réduction : une région se reconnaît aussi bien à 512 px, et la suite
   //    parcourt chaque pixel plusieurs fois.
   const target = 512;
@@ -710,7 +732,12 @@ List<double>? detectQuadInImage(img.Image source) {
         );
   final w = small.width;
   final h = small.height;
-  if (w < 16 || h < 16) return null;
+  diag['largeur'] = w;
+  diag['hauteur'] = h;
+  if (w < 16 || h < 16) {
+    diag['sortie'] = 'image_trop_petite';
+    return QuadDetection(diagnostic: diag);
+  }
 
   // 2. Modèle du fond, pris sur la bande extérieure.
   //
@@ -731,7 +758,10 @@ List<double>? detectQuadInImage(img.Image source) {
       bs.add(px.b.toInt());
     }
   }
-  if (rs.length < 32) return null;
+  if (rs.length < 32) {
+    diag['sortie'] = 'bande_insuffisante';
+    return QuadDetection(diagnostic: diag);
+  }
 
   final fondR = _mediane(rs);
   final fondG = _mediane(gs);
@@ -749,9 +779,13 @@ List<double>? detectQuadInImage(img.Image source) {
   // capteur passe pour du document. Le plancher évite ce cas ; le facteur 3
   // laisse passer le veinage du bois sans laisser passer le livre.
   final seuil = math.max(30.0, ecartMedian * 3);
+  diag['fond_rgb'] = '$fondR,$fondG,$fondB';
+  diag['ecart_median'] = ecartMedian.round();
+  diag['seuil'] = seuil.round();
 
   // 3. Masque : ce qui ne ressemble pas au fond.
   final masque = List.generate(h, (_) => List.filled(w, false));
+  var marques = 0;
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       final px = small.getPixel(x, y);
@@ -763,9 +797,13 @@ List<double>? detectQuadInImage(img.Image source) {
         fondG,
         fondB,
       );
-      masque[y][x] = d > seuil;
+      if (d > seuil) {
+        masque[y][x] = true;
+        marques++;
+      }
     }
   }
+  diag['part_marquee'] = (marques / (w * h) * 100).round();
 
   // 4. Nettoyage : fermeture puis ouverture, rayon 1.
   //
@@ -777,9 +815,14 @@ List<double>? detectQuadInImage(img.Image source) {
 
   // 5. Plus grande tache connexe.
   final tache = _plusGrandeComposante(propre, w, h);
-  if (tache == null) return null;
+  if (tache == null) {
+    diag['sortie'] = 'aucune_tache';
+    return QuadDetection(diagnostic: diag);
+  }
 
   final aireTache = tache.length / (w * h);
+  diag['aire_tache'] = (aireTache * 100).round();
+
   // Trop petit : une assiette, un reflet, une ombre — et le cas où le livre
   // remplit la photo, où le fond modélisé EST le livre et où la seule tache
   // trouvée est un aplat de la couverture. Trop grand : le fond lui-même a été
@@ -788,7 +831,10 @@ List<double>? detectQuadInImage(img.Image source) {
   // Le plancher vaut un quart de l'image. L'écran repasse ensuite un contrôle
   // à 35 % avant d'adopter le cadre : le premier écarte l'absurde, le second
   // décide.
-  if (aireTache < kAtelierAireMinimale || aireTache > 0.97) return null;
+  if (aireTache < kAtelierAireMinimale || aireTache > 0.97) {
+    diag['sortie'] = 'aire_tache_hors_bornes';
+    return QuadDetection(diagnostic: diag);
+  }
 
   // 6. Rectangle d'aire minimale autour de la tache.
   //
@@ -797,20 +843,33 @@ List<double>? detectQuadInImage(img.Image source) {
   //    tirer un coin ; chercher un rectangle contraint la forme à ce qu'on sait
   //    d'elle.
   final contour = _contourParLigne(tache, w, h);
-  if (contour.length < 8) return null;
+  if (contour.length < 8) {
+    diag['sortie'] = 'contour_trop_court';
+    return QuadDetection(diagnostic: diag);
+  }
   final rect = _rectangleAireMinimale(contour);
-  if (rect == null) return null;
+  if (rect == null) {
+    diag['sortie'] = 'rectangle_introuvable';
+    return QuadDetection(diagnostic: diag);
+  }
 
   final aireRect = _aireQuad(rect) / (w * h);
-  if (aireRect < kAtelierAireMinimale || aireRect > 0.98) return null;
+  diag['aire_rect'] = (aireRect * 100).round();
+  if (aireRect < kAtelierAireMinimale || aireRect > 0.98) {
+    diag['sortie'] = 'aire_rect_hors_bornes';
+    return QuadDetection(diagnostic: diag);
+  }
 
   final ordonne = _ordonneCoins(rect);
-  return [
+  final quad = [
     for (final c in ordonne) ...[
       (c.dx / w).clamp(0.0, 1.0),
       (c.dy / h).clamp(0.0, 1.0),
     ],
   ];
+  diag['sortie'] = 'quadrilatere';
+  diag['coins'] = quad.map((v) => (v * 1000).round() / 1000).join(' ');
+  return QuadDetection(quad: quad, diagnostic: diag);
 }
 
 double _distanceCouleur(int r, int g, int b, int mr, int mg, int mb) {

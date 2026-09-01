@@ -16,6 +16,23 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.31 — technique
+
+#### La détection du cadre dit où elle s'arrête
+
+Le cadre restait à sa position par défaut, et rien ne disait pourquoi : tache trop petite, fond
+mal modélisé, ou rien trouvé du tout ? Trois séances de diagnostic sont parties sur des
+hypothèses plausibles faute de ces nombres.
+
+`detectQuadInImage` rend désormais son chemin avec son résultat : couleur médiane du fond, écart
+médian, seuil retenu, part de l'image marquée, aire de la plus grande tache, aire du rectangle,
+et le point de sortie exact — `aucune_tache`, `aire_tache_hors_bornes`, `contour_trop_court`,
+`rectangle_introuvable`, `aire_rect_hors_bornes` ou `quadrilatere`.
+
+Le diagnostic est **transporté** et non remonté sur place : la détection tourne dans un isolat, où
+aucun service de l'application n'existe. C'est l'écran qui écrit le rapport
+(`imageEnhancerScreen.detection`), en y ajoutant le verdict du contrôle à 35 % qu'il repasse.
+
 ### v0.22.30 — fonctionnel
 
 #### La détection du cadre sépare une région au lieu de traquer un contour
