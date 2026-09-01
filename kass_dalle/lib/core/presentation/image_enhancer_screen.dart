@@ -604,10 +604,28 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     // Mise à jour du message pendant l'upload
     setState(() => _processingMessage = 'Envoi en cours…');
 
-    if (widget.onResult != null) {
-      await widget.onResult!(result);
-    } else {
-      Navigator.of(context).pop<Uint8List?>(result);
+    // La remise du résultat n'était couverte par rien.
+    //
+    // Le 1er septembre 2026, la mise en file levait dès sa première ligne sur
+    // le web. L'exception remontait jusqu'ici, où personne ne l'attrapait :
+    // l'atelier se refermait, rien ne partait, aucun rapport n'était écrit. Le
+    // seul symptôme était un bouton « Appliquer » sans effet.
+    try {
+      if (widget.onResult != null) {
+        await widget.onResult!(result);
+      } else {
+        Navigator.of(context).pop<Uint8List?>(result);
+      }
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.deliverResult',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'octets': result.length, 'web': kIsWeb},
+      );
+      if (!mounted) return;
+      setState(() => _processing = false);
+      context.showErrorSnackBar('Envoi impossible : $error');
     }
   }
 

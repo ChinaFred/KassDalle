@@ -473,9 +473,18 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // appel séparé. Il n'emprunte pas `importId`, qui contient le nom du
     // fichier : un libellé de journal doit rester filtrable, donc court et
     // sans caractère surprenant.
+    //
+    // La borne s'écrit en littéral, jamais `1 << 32`.
+    //
+    // dart2js compile les opérateurs de bits sur des entiers 32 bits : `1 << 32`
+    // vaut 4 294 967 296 sur la machine virtuelle et **0** dans un navigateur.
+    // `Random.nextInt(0)` lève alors `RangeError` dès cette ligne, avant le
+    // moindre envoi. Livré le 30 août 2026, ce décalage a bloqué tous les
+    // imports web pendant deux versions : le bouton « Appliquer » de l'atelier
+    // ne faisait plus rien, sans une erreur ni une trace.
     final scanId =
         'scan_${DateTime.now().millisecondsSinceEpoch}_'
-        '${(_random.nextInt(1 << 32)).toRadixString(36)}';
+        '${(_random.nextInt(0x100000000)).toRadixString(36)}';
     // Ce qui part réellement, pour une couverture.
     //
     // C'est le dernier maillon : l'atelier dit ce qu'il a produit, celui-ci dit

@@ -16,6 +16,36 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.25 — technique
+
+#### `1 << 32` vaut zéro sur le web : plus aucun scan ne partait
+
+Depuis la v0.22.21, aucun import ne partait depuis le navigateur — ni couverture de livre, ni
+page de recette, ni document. Le bouton « Appliquer » de l'atelier de retouche refermait l'écran
+et rien ne se passait.
+
+La mise en file d'un scan tire un identifiant : `Random().nextInt(1 << 32)`. dart2js compile les
+opérateurs de bits sur des entiers 32 bits. `1 << 32` vaut 4 294 967 296 sur la machine virtuelle
+et **0** dans un navigateur, et `nextInt(0)` lève `RangeError` — dès la première ligne, avant le
+moindre envoi.
+
+Trois raisons pour lesquelles la panne est restée invisible deux versions :
+
+- l'exception remontait jusqu'à la remise du résultat de l'atelier, que rien n'entourait ;
+- l'application native n'était pas touchée, le calcul y étant juste ;
+- aucun test ne pouvait la voir : ils tournent tous sur la machine virtuelle.
+
+La borne s'écrit maintenant en littéral, `0x100000000`, qui vaut la même chose des deux côtés.
+La remise du résultat attrape et remonte (`imageEnhancerScreen.deliverResult`). Et
+`test/web_int_semantics_test.dart` refuse tout décalage de 32 bits ou plus dans `lib/` : une
+suite qui ne s'exécute pas dans un navigateur ne peut pas mesurer la différence, elle peut
+seulement interdire la construction.
+
+Le diagnostic vient des traces posées en v0.22.24 : l'atelier appliquait bien le recadrage
+(5,2 Mo en entrée, 321 Ko en sortie), il se rouvrait sur la photo d'origine sept millisecondes
+plus tard, et `scanUpload.coverQueued` n'apparaissait jamais. La mise en file n'était donc jamais
+atteinte.
+
 ### v0.22.24 — technique
 
 #### Le recadrage d'une couverture, tracé de bout en bout
