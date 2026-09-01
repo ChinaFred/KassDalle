@@ -38,3 +38,6 @@ Thumbs.db
 # Env / secrets
 *.env
 .env*
+
+# Photos de banc d'essai de la detection : elles appartiennent a l'utilisateur.
+kass_dalle/photos-test/
