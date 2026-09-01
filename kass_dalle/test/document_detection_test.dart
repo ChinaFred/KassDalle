@@ -147,5 +147,30 @@ void main() {
         isNull,
       );
     });
+
+    test('des bandes noires en haut et en bas ne detournent pas le fond', () {
+      // Le cas mesure le 1er septembre 2026. La photo portait des bandes
+      // noires ; la bande exterieure echantillonnee en contenait assez pour
+      // que le fond modelise ressorte a 21,23,24. Le bois devenait alors
+      // « pas le fond » autant que le livre, et le cadre entourait tout sauf
+      // les bandes : coins a 0 / 0,117 / 0,997 / 0,887.
+      final image = scene(gauche: 0.25, haut: 0.30, droite: 0.75, bas: 0.70);
+      for (var y = 0; y < image.height; y++) {
+        for (var x = 0; x < image.width; x++) {
+          final dansUneBande =
+              y < image.height * 0.12 || y > image.height * 0.88;
+          if (dansUneBande) image.setPixelRgb(x, y, 8, 9, 10);
+        }
+      }
+
+      final quad = detectQuadInImage(image).quad;
+      expect(quad, isNotNull, reason: 'aucun document detecte');
+
+      // Les coins doivent cadrer le livre, pas la zone hors bandes.
+      expect(quad![0], closeTo(0.25, 0.06));
+      expect(quad[1], closeTo(0.30, 0.06));
+      expect(quad[4], closeTo(0.75, 0.06));
+      expect(quad[5], closeTo(0.70, 0.06));
+    });
   });
 }

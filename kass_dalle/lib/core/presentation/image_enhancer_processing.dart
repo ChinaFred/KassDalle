@@ -730,12 +730,41 @@ QuadDetection detectQuadInImage(img.Image source) {
           height: H,
           interpolation: img.Interpolation.average,
         );
-  final w = small.width;
-  final h = small.height;
-  diag['largeur'] = w;
-  diag['hauteur'] = h;
-  if (w < 16 || h < 16) {
+  final pleineW = small.width;
+  final pleineH = small.height;
+  diag['largeur'] = pleineW;
+  diag['hauteur'] = pleineH;
+  if (pleineW < 16 || pleineH < 16) {
     diag['sortie'] = 'image_trop_petite';
+    return QuadDetection(diagnostic: diag);
+  }
+
+  // 1b. Retirer les bandes uniformes qui bordent la photo.
+  //
+  //     Une photo prise au téléphone arrive parfois avec des bandes noires en
+  //     haut et en bas. Elles ne font pas partie de la scène, mais elles
+  //     occupent la bande extérieure d'où l'on tire le modèle du fond : mesuré
+  //     le 1er septembre 2026, ce fond ressortait à 21,23,24 — du noir — au
+  //     lieu du bois de la table. Le bois devenait alors « pas le fond »,
+  //     autant que le livre, et le cadre entourait tout sauf les bandes.
+  final bandes = _bandesUniformes(small);
+  final zone = bandes.estPleine(pleineW, pleineH)
+      ? small
+      : img.copyCrop(
+          small,
+          x: bandes.x0,
+          y: bandes.y0,
+          width: bandes.x1 - bandes.x0,
+          height: bandes.y1 - bandes.y0,
+        );
+  diag['bandes'] =
+      '${bandes.y0} ${pleineH - bandes.y1} '
+      '${bandes.x0} ${pleineW - bandes.x1}';
+
+  final w = zone.width;
+  final h = zone.height;
+  if (w < 16 || h < 16) {
+    diag['sortie'] = 'zone_trop_petite';
     return QuadDetection(diagnostic: diag);
   }
 
@@ -752,7 +781,7 @@ QuadDetection detectQuadInImage(img.Image source) {
       final surLaBande =
           x < bande || x >= w - bande || y < bande || y >= h - bande;
       if (!surLaBande) continue;
-      final px = small.getPixel(x, y);
+      final px = zone.getPixel(x, y);
       rs.add(px.r.toInt());
       gs.add(px.g.toInt());
       bs.add(px.b.toInt());
@@ -788,7 +817,7 @@ QuadDetection detectQuadInImage(img.Image source) {
   var marques = 0;
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      final px = small.getPixel(x, y);
+      final px = zone.getPixel(x, y);
       final d = _distanceCouleur(
         px.r.toInt(),
         px.g.toInt(),
@@ -861,15 +890,131 @@ QuadDetection detectQuadInImage(img.Image source) {
   }
 
   final ordonne = _ordonneCoins(rect);
+  // Retour dans le repère de l'image entière : les coins ont été trouvés dans
+  // la zone rognée, l'écran les pose sur la photo complète.
   final quad = [
     for (final c in ordonne) ...[
-      (c.dx / w).clamp(0.0, 1.0),
-      (c.dy / h).clamp(0.0, 1.0),
+      ((bandes.x0 + c.dx) / pleineW).clamp(0.0, 1.0),
+      ((bandes.y0 + c.dy) / pleineH).clamp(0.0, 1.0),
     ],
   ];
   diag['sortie'] = 'quadrilatere';
   diag['coins'] = quad.map((v) => (v * 1000).round() / 1000).join(' ');
   return QuadDetection(quad: quad, diagnostic: diag);
+}
+
+/// Ce qui reste de l'image une fois ses bandes uniformes retirées.
+class BandesUniformes {
+  final int x0, y0, x1, y1;
+  const BandesUniformes(this.x0, this.y0, this.x1, this.y1);
+
+  bool estPleine(int w, int h) => x0 == 0 && y0 == 0 && x1 == w && y1 == h;
+}
+
+/// Repère les bandes unies qui bordent une photo.
+///
+/// Une bande est une suite de lignes — ou de colonnes — dont la couleur ne
+/// varie pas et qui ne ressemble pas au centre de l'image. C'est ce que
+/// produisent les bandes noires d'une photo de téléphone, et ce n'est pas la
+/// scène : les laisser fausse le modèle du fond, qui se prend pour du noir
+/// alors que le sujet est posé sur du bois.
+///
+/// Le rognage est borné à 30 % par côté : au-delà, ce n'est plus une bordure,
+/// c'est le sujet.
+BandesUniformes _bandesUniformes(img.Image im) {
+  final w = im.width, h = im.height;
+
+  // Couleur du centre, pour savoir de quoi la bande doit se distinguer.
+  final cr = <int>[], cg = <int>[], cb = <int>[];
+  for (var y = (h * 0.35).round(); y < (h * 0.65).round(); y += 2) {
+    for (var x = (w * 0.35).round(); x < (w * 0.65).round(); x += 2) {
+      final px = im.getPixel(x, y);
+      cr.add(px.r.toInt());
+      cg.add(px.g.toInt());
+      cb.add(px.b.toInt());
+    }
+  }
+  if (cr.length < 16) return BandesUniformes(0, 0, w, h);
+  final centreR = _mediane(cr), centreG = _mediane(cg), centreB = _mediane(cb);
+
+  /// Une ligne ou une colonne est-elle une bande ?
+  bool estUneBande(List<int> rs, List<int> gs, List<int> bs) {
+    if (rs.length < 8) return false;
+    final mr = _mediane(rs), mg = _mediane(gs), mb = _mediane(bs);
+
+    // SOMBRE. C'est le point qui distingue une bande d'un fond.
+    //
+    // La première version demandait seulement « unie et différente du centre » :
+    // la table claire répondait à la définition, et le rognage mangeait le fond
+    // qu'il devait préserver. Une bordure de capteur est noire ; une table ne
+    // l'est pas.
+    final luminance = mr * 0.299 + mg * 0.587 + mb * 0.114;
+    if (luminance > 40) return false;
+
+    // Loin du centre : sinon c'est le sujet lui-même, sombre et uni.
+    if (_distanceCouleur(mr, mg, mb, centreR, centreG, centreB) < 60) {
+      return false;
+    }
+
+    // Franchement unie : une bande de capteur n'a pas de grain, une ombre si.
+    final ecarts = <int>[];
+    for (var i = 0; i < rs.length; i++) {
+      ecarts.add(_distanceCouleur(rs[i], gs[i], bs[i], mr, mg, mb).round());
+    }
+    return _mediane(ecarts) < 10;
+  }
+
+  List<List<int>> ligne(int y) {
+    final rs = <int>[], gs = <int>[], bs = <int>[];
+    for (var x = 0; x < w; x += 2) {
+      final px = im.getPixel(x, y);
+      rs.add(px.r.toInt());
+      gs.add(px.g.toInt());
+      bs.add(px.b.toInt());
+    }
+    return [rs, gs, bs];
+  }
+
+  List<List<int>> colonne(int x) {
+    final rs = <int>[], gs = <int>[], bs = <int>[];
+    for (var y = 0; y < h; y += 2) {
+      final px = im.getPixel(x, y);
+      rs.add(px.r.toInt());
+      gs.add(px.g.toInt());
+      bs.add(px.b.toInt());
+    }
+    return [rs, gs, bs];
+  }
+
+  final maxY = (h * 0.30).round();
+  final maxX = (w * 0.30).round();
+
+  var y0 = 0;
+  while (y0 < maxY) {
+    final l = ligne(y0);
+    if (!estUneBande(l[0], l[1], l[2])) break;
+    y0++;
+  }
+  var y1 = h;
+  while (h - y1 < maxY && y1 > y0 + 8) {
+    final l = ligne(y1 - 1);
+    if (!estUneBande(l[0], l[1], l[2])) break;
+    y1--;
+  }
+  var x0 = 0;
+  while (x0 < maxX) {
+    final c = colonne(x0);
+    if (!estUneBande(c[0], c[1], c[2])) break;
+    x0++;
+  }
+  var x1 = w;
+  while (w - x1 < maxX && x1 > x0 + 8) {
+    final c = colonne(x1 - 1);
+    if (!estUneBande(c[0], c[1], c[2])) break;
+    x1--;
+  }
+
+  return BandesUniformes(x0, y0, x1, y1);
 }
 
 double _distanceCouleur(int r, int g, int b, int mr, int mg, int mb) {

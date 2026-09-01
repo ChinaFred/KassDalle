@@ -16,6 +16,27 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.32 — fonctionnel
+
+#### Les bandes noires de la photo détournaient le modèle du fond
+
+La détection du cadre rendait un faux positif : elle entourait la table entière, livre compris.
+
+Le diagnostic posé en v0.22.31 l'a dit en une ligne. Le fond modélisé sortait à **21,23,24** —
+du noir — au lieu du bois de la table. La photo porte des bandes noires en haut et en bas ; la
+bande extérieure de six pour cent où l'on échantillonne le fond en contenait assez pour que sa
+médiane bascule. Le bois devenait alors « pas le fond » autant que le livre : 56 % de l'image
+marquée, une tache de 58 %, un rectangle de 77 % allant de 0 à 0,997 en largeur.
+
+Ces bandes ne font pas partie de la scène. Elles sont maintenant retirées avant tout le reste, et
+les coins trouvés repassent dans le repère de la photo entière.
+
+Une bande est une suite de lignes ou de colonnes **sombres**, franchement unies, et éloignées du
+centre de l'image. La première version demandait seulement « unie et différente du centre » : la
+table claire répondait à la définition, et le rognage mangeait le fond qu'il devait préserver.
+Quatre tests l'ont dit avant le déploiement. Une bordure de capteur est noire ; une table ne
+l'est pas. Le rognage reste borné à 30 % par côté — au-delà, ce n'est plus une bordure.
+
 ### v0.22.31 — technique
 
 #### La détection du cadre dit où elle s'arrête
