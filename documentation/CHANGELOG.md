@@ -16,6 +16,41 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.30 — fonctionnel
+
+#### La détection du cadre sépare une région au lieu de traquer un contour
+
+Dans l'atelier, la puce « Cadre » posait un rectangle qui n'avait rien à voir avec le livre.
+
+L'ancienne méthode calculait un gradient de Sobel, puis balayait depuis le centre de l'image
+jusqu'au premier bord franc rencontré. Elle supposait un intérieur uniforme — une page de texte.
+Une couverture de livre est une photographie : ses contours internes, le bord d'une assiette, un
+cartouche, sont bien plus marqués que la frontière carton/table, qui sépare deux beiges clairs à
+un pixel d'écart après réduction à 512 px. Le balayage s'arrêtait donc à l'intérieur, ou, quand le
+seuil écartait tout, filait jusqu'au cadre de la photo et rendait l'image entière. Les quatre
+validations mesurées donnaient des coins à 1,8 %, 2,6 %, 14,6 % et 19,5 % des bords : jamais sur
+le livre.
+
+La nouvelle méthode part de ce qui est réellement simple dans la scène : **le fond est uniforme et
+il occupe les bords**. Elle en prend la couleur médiane sur la bande extérieure, mesure son bruit
+pour en déduire un seuil, marque tout ce qui s'en écarte, nettoie par fermeture puis ouverture
+morphologiques, garde la plus grande tache connexe et lui ajuste le rectangle tourné d'aire
+minimale.
+
+L'intérieur du livre n'a plus aucune influence : photographie chargée ou page blanche, il est
+simplement « pas la table ». La fermeture rattache les aplats clairs — l'assiette blanche qui
+égarait l'ancienne méthode. Et la réduction à 512 px devient inoffensive : un bord d'un pixel de
+large ne se détecte pas, une tache de deux cent mille pixels si.
+
+Quand la scène ne porte pas de document identifiable, la détection ne rend rien et les coins par
+défaut restent. C'est plus honnête qu'un cadre qui a l'air détecté.
+
+`test/document_detection_test.dart` fabrique la scène plutôt que de la photographier : table
+claire veinée, livre sombre à une position connue, avec son aplat clair. Cinq cas, dont le livre
+posé de travers et la table vide.
+
+Les six fonctions du détecteur au gradient ont été retirées avec lui.
+
 ### v0.22.29 — technique
 
 #### L'atelier ne compresse plus qu'une fois, pour le stockage

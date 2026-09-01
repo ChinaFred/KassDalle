@@ -215,6 +215,12 @@ const int kAtelierJpegQuality = 95;
 /// modèle qui la lit invente un titre plausible.
 const int kAtelierMaxWorkDimension = 4000;
 
+/// Part minimale de l'image qu'un document doit couvrir pour être proposé.
+///
+/// En dessous, ce qui a été trouvé est un détail de la scène : une assiette, un
+/// reflet, un aplat de la couverture quand le livre remplit déjà la photo.
+const double kAtelierAireMinimale = 0.25;
+
 // ── Isolate rotation ──────────────────────────────────────────────────────────
 
 class RotateParams {
@@ -658,251 +664,340 @@ List<double>? detectCornersIsolate(DetectParams p) {
   final decoded = img.decodeImage(p.imageBytes);
   if (decoded == null) return null;
   final src = p.bakeOrientation ? decideUpright(decoded).image : decoded;
+  return detectQuadInImage(src);
+}
 
-  // 1. Réduire à max 512px pour la vitesse
+/// Cherche le document dans une image décodée.
+///
+/// **On sépare une région, on ne traque pas un contour.**
+///
+/// La version précédente calculait un gradient de Sobel puis balayait depuis le
+/// centre jusqu'au premier bord franc. Elle supposait un intérieur uniforme —
+/// une page de texte. Sur une couverture de livre, qui est une photographie,
+/// l'intérieur porte des contours bien plus marqués que la frontière
+/// carton/table : le balayage s'arrêtait sur le bord d'une assiette, ou, quand
+/// le seuil les écartait tous, filait jusqu'au cadre de la photo et rendait
+/// l'image entière. Les quatre validations du 1er septembre 2026 le montrent :
+/// coins à 1,8 %, 2,6 %, 14,6 % et 19,5 % des bords, jamais sur le livre.
+///
+/// Ici, on part de ce qui est réellement simple dans la scène : **le fond est
+/// uniforme et il occupe les bords**. On le modélise depuis la bande
+/// extérieure, on marque tout ce qui s'en écarte, on garde la plus grande tache
+/// et on lui ajuste un rectangle. L'intérieur du livre n'a plus aucune
+/// influence : qu'il soit une photographie chargée ou une page blanche, il est
+/// simplement « pas la table ».
+///
+/// Cette approche rend aussi la réduction à 512 px inoffensive. Un bord d'un
+/// pixel de large ne se détecte pas ; une tache de deux cent mille pixels, si.
+///
+/// Rend `[x0,y0, x1,y1, x2,y2, x3,y3]` normalisés dans `[0,1]`, dans l'ordre
+/// haut-gauche, haut-droit, bas-droit, bas-gauche — ou `null` quand la scène
+/// ne porte pas de document identifiable.
+List<double>? detectQuadInImage(img.Image source) {
+  // 1. Réduction : une région se reconnaît aussi bien à 512 px, et la suite
+  //    parcourt chaque pixel plusieurs fois.
   const target = 512;
-  final scaleF = target / math.max(src.width, src.height);
-  final W = (src.width * scaleF).clamp(4, target.toDouble()).round();
-  final H = (src.height * scaleF).clamp(4, target.toDouble()).round();
-  final small = img.copyResize(
-    src,
-    width: W,
-    height: H,
-    interpolation: img.Interpolation.linear,
-  );
-  final gray = img.grayscale(small);
+  final scaleF = target / math.max(source.width, source.height);
+  final W = (source.width * scaleF).clamp(4, target.toDouble()).round();
+  final H = (source.height * scaleF).clamp(4, target.toDouble()).round();
+  final small = scaleF >= 1
+      ? source
+      : img.copyResize(
+          source,
+          width: W,
+          height: H,
+          interpolation: img.Interpolation.average,
+        );
+  final w = small.width;
+  final h = small.height;
+  if (w < 16 || h < 16) return null;
 
-  // 1b. Étirement d'histogramme : normalise les niveaux de gris à [0, 255].
-  //     Améliore massivement la détection sur les photos sombres, pages jaunies
-  //     et scans à faible contraste (Sobel trouve des bords plus nets).
-  final normalized = img.normalize(gray, min: 0, max: 255);
+  // 2. Modèle du fond, pris sur la bande extérieure.
+  //
+  //    Les bords d'une photo posée sur une table montrent la table. On en prend
+  //    la couleur médiane — insensible à un coin de livre qui déborderait — et
+  //    l'écart médian, qui dit à quel point ce fond est bruité : un bois veiné
+  //    tolère plus qu'un fond de studio.
+  final bande = math.max(2, (math.min(w, h) * 0.06).round());
+  final rs = <int>[], gs = <int>[], bs = <int>[];
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final surLaBande =
+          x < bande || x >= w - bande || y < bande || y >= h - bande;
+      if (!surLaBande) continue;
+      final px = small.getPixel(x, y);
+      rs.add(px.r.toInt());
+      gs.add(px.g.toInt());
+      bs.add(px.b.toInt());
+    }
+  }
+  if (rs.length < 32) return null;
 
-  // 2. Magnitude du gradient Sobel 3×3
-  final mag = List.generate(H, (_) => List.filled(W, 0.0));
-  double maxMag = 1.0;
-  for (int y = 1; y < H - 1; y++) {
-    for (int x = 1; x < W - 1; x++) {
-      final m = _dcSobel(normalized, x, y);
-      mag[y][x] = m;
-      if (m > maxMag) maxMag = m;
+  final fondR = _mediane(rs);
+  final fondG = _mediane(gs);
+  final fondB = _mediane(bs);
+
+  final ecarts = <double>[];
+  for (var i = 0; i < rs.length; i++) {
+    ecarts.add(_distanceCouleur(rs[i], gs[i], bs[i], fondR, fondG, fondB));
+  }
+  final ecartMedian = _mediane(
+    ecarts.map((e) => e.round()).toList(),
+  ).toDouble();
+
+  // Un fond parfaitement uni donnerait un seuil nul, où le moindre bruit de
+  // capteur passe pour du document. Le plancher évite ce cas ; le facteur 3
+  // laisse passer le veinage du bois sans laisser passer le livre.
+  final seuil = math.max(30.0, ecartMedian * 3);
+
+  // 3. Masque : ce qui ne ressemble pas au fond.
+  final masque = List.generate(h, (_) => List.filled(w, false));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final px = small.getPixel(x, y);
+      final d = _distanceCouleur(
+        px.r.toInt(),
+        px.g.toInt(),
+        px.b.toInt(),
+        fondR,
+        fondG,
+        fondB,
+      );
+      masque[y][x] = d > seuil;
     }
   }
 
-  // 3. Seuil adaptatif : 70e percentile (plus inclusif pour les bords de document)
-  final allMags = mag.expand((row) => row).toList()..sort();
-  final thresh = allMags[(allMags.length * 0.70).round()].clamp(
-    maxMag * 0.04,
-    maxMag * 0.5,
-  );
+  // 4. Nettoyage : fermeture puis ouverture, rayon 1.
+  //
+  //    La fermeture bouche les trous — un aplat clair sur la couverture, une
+  //    assiette blanche, qui ressemblent au fond sans en être. L'ouverture
+  //    efface les grains isolés : une miette sur la table, un reflet.
+  final ferme = _dilate(_erode(_dilate(masque, w, h, 2), w, h, 2), w, h, 1);
+  final propre = _erode(ferme, w, h, 1);
 
-  // 3b. Dilation morphologique (rayon 1) : élargit les bords d'1 pixel dans toutes
-  //     les directions, comblant les lacunes 1-pixel dans le contour du document.
-  final edge = _buildEdgeMask(mag, W, H, thresh, 1);
+  // 5. Plus grande tache connexe.
+  final tache = _plusGrandeComposante(propre, w, h);
+  if (tache == null) return null;
 
-  // 4. Scan depuis le CENTRE vers les bords (évite de trouver le fond avant le livre).
-  //    Pour chaque colonne, on part du milieu de l'image et on remonte/descend
-  //    jusqu'à trouver le premier gradient fort → c'est le bord du document.
-  final mW = (W * 0.08).round();
-  final mH = (H * 0.08).round();
-  final midY = H ~/ 2;
-  final midX = W ~/ 2;
-  final topPts = <Offset>[], botPts = <Offset>[];
-  final lftPts = <Offset>[], rgtPts = <Offset>[];
+  final aireTache = tache.length / (w * h);
+  // Trop petit : une assiette, un reflet, une ombre — et le cas où le livre
+  // remplit la photo, où le fond modélisé EST le livre et où la seule tache
+  // trouvée est un aplat de la couverture. Trop grand : le fond lui-même a été
+  // pris pour le document, il n'y a rien à recadrer.
+  //
+  // Le plancher vaut un quart de l'image. L'écran repasse ensuite un contrôle
+  // à 35 % avant d'adopter le cadre : le premier écarte l'absurde, le second
+  // décide.
+  if (aireTache < kAtelierAireMinimale || aireTache > 0.97) return null;
 
-  for (int x = mW; x < W - mW; x++) {
-    // top : du centre vers le haut
-    for (int y = midY; y >= 0; y--) {
-      if (edge[y][x]) {
-        topPts.add(Offset(x.toDouble(), y.toDouble()));
-        break;
-      }
-    }
-    // bottom : du centre vers le bas
-    for (int y = midY; y < H; y++) {
-      if (edge[y][x]) {
-        botPts.add(Offset(x.toDouble(), y.toDouble()));
-        break;
-      }
-    }
-  }
-  for (int y = mH; y < H - mH; y++) {
-    // left : du centre vers la gauche
-    for (int x = midX; x >= 0; x--) {
-      if (edge[y][x]) {
-        lftPts.add(Offset(x.toDouble(), y.toDouble()));
-        break;
-      }
-    }
-    // right : du centre vers la droite
-    for (int x = midX; x < W; x++) {
-      if (edge[y][x]) {
-        rgtPts.add(Offset(x.toDouble(), y.toDouble()));
-        break;
-      }
-    }
-  }
+  // 6. Rectangle d'aire minimale autour de la tache.
+  //
+  //    Un livre est un rectangle : son image, photographiée à peu près de face,
+  //    en est un tourné. Chercher un quadrilatère libre inviterait le bruit à
+  //    tirer un coin ; chercher un rectangle contraint la forme à ce qu'on sait
+  //    d'elle.
+  final contour = _contourParLigne(tache, w, h);
+  if (contour.length < 8) return null;
+  final rect = _rectangleAireMinimale(contour);
+  if (rect == null) return null;
 
-  const minPts = 10;
-  if (topPts.length < minPts ||
-      botPts.length < minPts ||
-      lftPts.length < minPts ||
-      rgtPts.length < minPts) {
-    return null;
-  }
+  final aireRect = _aireQuad(rect) / (w * h);
+  if (aireRect < kAtelierAireMinimale || aireRect > 0.98) return null;
 
-  // 5. Élimination des outliers (trim 10%–90%)
-  final topT = _dcTrim(topPts, false); // sort par y détectée
-  final botT = _dcTrim(botPts, false);
-  final lftT = _dcTrim(lftPts, true); // sort par x détectée
-  final rgtT = _dcTrim(rgtPts, true);
-
-  // 6. Régression PCA → 4 droites
-  final topL = _dcFitLine(topT);
-  final botL = _dcFitLine(botT);
-  final lftL = _dcFitLine(lftT);
-  final rgtL = _dcFitLine(rgtT);
-
-  // 7. Intersections → 4 coins
-  final tl = _dcIntersect(topL, lftL);
-  final tr = _dcIntersect(topL, rgtL);
-  final br = _dcIntersect(botL, rgtL);
-  final bl = _dcIntersect(botL, lftL);
-  if (tl == null || tr == null || br == null || bl == null) return null;
-
-  // 8. Validation : coins dans la zone valide + quadrilatère convexe
-  const margin = 0.05;
-  for (final c in [tl, tr, br, bl]) {
-    if (c.dx / W < -margin ||
-        c.dx / W > 1 + margin ||
-        c.dy / H < -margin ||
-        c.dy / H > 1 + margin) {
-      return null;
-    }
-  }
-  if (!_dcIsConvex([tl, tr, br, bl])) return null;
-
+  final ordonne = _ordonneCoins(rect);
   return [
-    tl.dx / W,
-    tl.dy / H,
-    tr.dx / W,
-    tr.dy / H,
-    br.dx / W,
-    br.dy / H,
-    bl.dx / W,
-    bl.dy / H,
+    for (final c in ordonne) ...[
+      (c.dx / w).clamp(0.0, 1.0),
+      (c.dy / h).clamp(0.0, 1.0),
+    ],
   ];
 }
 
-/// Crée un masque binaire à partir du gradient Sobel avec dilation morphologique.
-/// Chaque pixel fort (>= thresh) dilate ses voisins dans un carré de rayon [radius].
-/// Cela comble les lacunes 1-pixel dans les contours du document avant le scan.
-List<List<bool>> _buildEdgeMask(
-  List<List<double>> mag,
-  int W,
-  int H,
-  double thresh,
-  int radius,
-) {
-  final result = List.generate(H, (_) => List.filled(W, false));
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      if (mag[y][x] >= thresh) {
-        for (int dy = -radius; dy <= radius; dy++) {
-          for (int dx = -radius; dx <= radius; dx++) {
-            result[(y + dy).clamp(0, H - 1)][(x + dx).clamp(0, W - 1)] = true;
-          }
+double _distanceCouleur(int r, int g, int b, int mr, int mg, int mb) {
+  final dr = (r - mr).toDouble();
+  final dg = (g - mg).toDouble();
+  final db = (b - mb).toDouble();
+  return math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+int _mediane(List<int> valeurs) {
+  final tri = List<int>.from(valeurs)..sort();
+  return tri[tri.length ~/ 2];
+}
+
+List<List<bool>> _dilate(List<List<bool>> m, int w, int h, int rayon) {
+  final out = List.generate(h, (_) => List.filled(w, false));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (!m[y][x]) continue;
+      for (var dy = -rayon; dy <= rayon; dy++) {
+        final yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (var dx = -rayon; dx <= rayon; dx++) {
+          final xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          out[yy][xx] = true;
         }
       }
     }
   }
-  return result;
+  return out;
 }
 
-/// Magnitude du gradient de Sobel au pixel (x, y) d'une image en niveaux de gris.
-double _dcSobel(img.Image gray, int x, int y) {
-  int gv(int px, int py) => gray
-      .getPixel(px.clamp(0, gray.width - 1), py.clamp(0, gray.height - 1))
-      .r
-      .round();
-  final gx =
-      gv(x + 1, y - 1) +
-      2 * gv(x + 1, y) +
-      gv(x + 1, y + 1) -
-      gv(x - 1, y - 1) -
-      2 * gv(x - 1, y) -
-      gv(x - 1, y + 1);
-  final gy =
-      gv(x - 1, y + 1) +
-      2 * gv(x, y + 1) +
-      gv(x + 1, y + 1) -
-      gv(x - 1, y - 1) -
-      2 * gv(x, y - 1) -
-      gv(x + 1, y - 1);
-  return math.sqrt((gx * gx + gy * gy).toDouble());
-}
-
-/// Élimine les 10% extrêmes selon la coordonnée choisie (x si [sortByX], sinon y).
-List<Offset> _dcTrim(List<Offset> pts, bool sortByX) {
-  final sorted = [...pts]
-    ..sort(
-      (a, b) =>
-          ((sortByX ? a.dx : a.dy) - (sortByX ? b.dx : b.dy)).sign.toInt(),
-    );
-  final lo = (sorted.length * 0.10).round();
-  final hi = (sorted.length * 0.90).round().clamp(lo + 1, sorted.length);
-  return sorted.sublist(lo, hi);
-}
-
-/// Droite en forme générale : px·x + py·y = r.
-class _Line2D {
-  final double px, py, r;
-  const _Line2D(this.px, this.py, this.r);
-}
-
-/// Régression PCA : droite passant au mieux par la liste de points.
-/// Utilise l'analyse en composantes principales de la matrice de covariance.
-_Line2D _dcFitLine(List<Offset> pts) {
-  final n = pts.length.toDouble();
-  final mx = pts.fold(0.0, (s, p) => s + p.dx) / n;
-  final my = pts.fold(0.0, (s, p) => s + p.dy) / n;
-  double sxx = 0, syy = 0, sxy = 0;
-  for (final p in pts) {
-    final dx = p.dx - mx, dy = p.dy - my;
-    sxx += dx * dx;
-    syy += dy * dy;
-    sxy += dx * dy;
-  }
-  // Direction principale = eigenvecteur de la grande valeur propre.
-  // La normale à la droite est l'eigenvecteur de la PETITE valeur propre.
-  final theta = 0.5 * math.atan2(2 * sxy, sxx - syy);
-  final nx = -math.sin(theta);
-  final ny = math.cos(theta);
-  return _Line2D(nx, ny, nx * mx + ny * my);
-}
-
-/// Intersection de deux droites en forme générale (règle de Cramer).
-Offset? _dcIntersect(_Line2D a, _Line2D b) {
-  final det = a.px * b.py - b.px * a.py;
-  if (det.abs() < 1e-6) return null;
-  return Offset(
-    (a.r * b.py - b.r * a.py) / det,
-    (a.px * b.r - b.px * a.r) / det,
-  );
-}
-
-/// Vérifie qu'un quadrilatère (4 sommets ordonnés TL→TR→BR→BL) est convexe.
-bool _dcIsConvex(List<Offset> q) {
-  int sign = 0;
-  for (int i = 0; i < 4; i++) {
-    final a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
-    final cross = (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
-    if (cross.abs() < 0.5) continue;
-    final s = cross > 0 ? 1 : -1;
-    if (sign == 0) {
-      sign = s;
-    } else if (s != sign) {
-      return false;
+List<List<bool>> _erode(List<List<bool>> m, int w, int h, int rayon) {
+  final out = List.generate(h, (_) => List.filled(w, false));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      var plein = true;
+      for (var dy = -rayon; dy <= rayon && plein; dy++) {
+        final yy = (y + dy).clamp(0, h - 1);
+        for (var dx = -rayon; dx <= rayon; dx++) {
+          final xx = (x + dx).clamp(0, w - 1);
+          if (!m[yy][xx]) {
+            plein = false;
+            break;
+          }
+        }
+      }
+      out[y][x] = plein;
     }
   }
-  return true;
+  return out;
+}
+
+/// Plus grande composante connexe (4-connexité), rendue comme liste d'indices.
+List<int>? _plusGrandeComposante(List<List<bool>> m, int w, int h) {
+  final vu = List.filled(w * h, false);
+  List<int>? meilleure;
+  final pile = <int>[];
+
+  for (var depart = 0; depart < w * h; depart++) {
+    if (vu[depart] || !m[depart ~/ w][depart % w]) continue;
+    final courante = <int>[];
+    pile
+      ..clear()
+      ..add(depart);
+    vu[depart] = true;
+
+    while (pile.isNotEmpty) {
+      final i = pile.removeLast();
+      courante.add(i);
+      final x = i % w;
+      final y = i ~/ w;
+      if (x > 0 && !vu[i - 1] && m[y][x - 1]) {
+        vu[i - 1] = true;
+        pile.add(i - 1);
+      }
+      if (x < w - 1 && !vu[i + 1] && m[y][x + 1]) {
+        vu[i + 1] = true;
+        pile.add(i + 1);
+      }
+      if (y > 0 && !vu[i - w] && m[y - 1][x]) {
+        vu[i - w] = true;
+        pile.add(i - w);
+      }
+      if (y < h - 1 && !vu[i + w] && m[y + 1][x]) {
+        vu[i + w] = true;
+        pile.add(i + w);
+      }
+    }
+
+    if (meilleure == null || courante.length > meilleure.length) {
+      meilleure = courante;
+    }
+  }
+  return meilleure;
+}
+
+/// Contour de la tache : les deux extrêmes de chaque ligne.
+///
+/// Suffit à porter l'enveloppe convexe, et borne l'entrée du rectangle à deux
+/// points par ligne au lieu de deux cent mille.
+List<Offset> _contourParLigne(List<int> tache, int w, int h) {
+  final gauche = List.filled(h, -1);
+  final droite = List.filled(h, -1);
+  for (final i in tache) {
+    final x = i % w;
+    final y = i ~/ w;
+    if (gauche[y] < 0 || x < gauche[y]) gauche[y] = x;
+    if (droite[y] < 0 || x > droite[y]) droite[y] = x;
+  }
+  final points = <Offset>[];
+  for (var y = 0; y < h; y++) {
+    if (gauche[y] < 0) continue;
+    points.add(Offset(gauche[y].toDouble(), y.toDouble()));
+    points.add(Offset(droite[y].toDouble(), y.toDouble()));
+  }
+  return points;
+}
+
+/// Rectangle tourné d'aire minimale contenant tous les points.
+///
+/// Balayage d'un quart de tour par pas d'un degré : à cette échelle, un degré
+/// d'erreur déplace un coin de moins de trois pixels sur 512, et le coût reste
+/// de quelques milliers d'opérations.
+List<Offset>? _rectangleAireMinimale(List<Offset> points) {
+  if (points.length < 4) return null;
+  double meilleureAire = double.infinity;
+  List<Offset>? meilleur;
+
+  for (var deg = 0; deg < 90; deg++) {
+    final a = deg * math.pi / 180.0;
+    final cosA = math.cos(a), sinA = math.sin(a);
+    var minU = double.infinity, maxU = -double.infinity;
+    var minV = double.infinity, maxV = -double.infinity;
+    for (final p in points) {
+      final u = p.dx * cosA + p.dy * sinA;
+      final v = -p.dx * sinA + p.dy * cosA;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    final aire = (maxU - minU) * (maxV - minV);
+    if (aire >= meilleureAire) continue;
+    meilleureAire = aire;
+    Offset versImage(double u, double v) =>
+        Offset(u * cosA - v * sinA, u * sinA + v * cosA);
+    meilleur = [
+      versImage(minU, minV),
+      versImage(maxU, minV),
+      versImage(maxU, maxV),
+      versImage(minU, maxV),
+    ];
+  }
+  return meilleur;
+}
+
+double _aireQuad(List<Offset> q) {
+  var s = 0.0;
+  for (var i = 0; i < q.length; i++) {
+    final a = q[i], b = q[(i + 1) % q.length];
+    s += a.dx * b.dy - b.dx * a.dy;
+  }
+  return s.abs() / 2;
+}
+
+/// Range les quatre coins en haut-gauche, haut-droit, bas-droit, bas-gauche.
+List<Offset> _ordonneCoins(List<Offset> quad) {
+  final cx = quad.map((p) => p.dx).reduce((a, b) => a + b) / quad.length;
+  final cy = quad.map((p) => p.dy).reduce((a, b) => a + b) / quad.length;
+  final tri = List<Offset>.from(quad)
+    ..sort(
+      (a, b) => math
+          .atan2(a.dy - cy, a.dx - cx)
+          .compareTo(math.atan2(b.dy - cy, b.dx - cx)),
+    );
+  // Le tri par angle part de la gauche ; on repart du coin le plus haut-gauche
+  // pour que l'ordre soit celui qu'attend le redressement.
+  var depart = 0;
+  var meilleur = double.infinity;
+  for (var i = 0; i < tri.length; i++) {
+    final somme = tri[i].dx + tri[i].dy;
+    if (somme < meilleur) {
+      meilleur = somme;
+      depart = i;
+    }
+  }
+  return [for (var i = 0; i < 4; i++) tri[(depart + i) % 4]];
 }
