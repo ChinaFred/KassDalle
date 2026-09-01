@@ -476,6 +476,24 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     final scanId =
         'scan_${DateTime.now().millisecondsSinceEpoch}_'
         '${(_random.nextInt(1 << 32)).toRadixString(36)}';
+    // Ce qui part réellement, pour une couverture.
+    //
+    // C'est le dernier maillon : l'atelier dit ce qu'il a produit, celui-ci dit
+    // ce qui monte. Deux tailles différentes entre les deux, et le résultat du
+    // recadrage s'est perdu entre l'écran et Storage.
+    if (intent == ScanIntent.bookCover) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.coverQueued',
+        error: StateError("Couverture mise en file : ${bytes.length} octets"),
+        context: {
+          'octets': bytes.length,
+          'fichier': filename,
+          'extension': extension,
+          'octets_en_attente_dans_l_etat': state.pendingImageBytes?.length ?? 0,
+        },
+      );
+    }
+
     _beginImport(
       ActiveImport(
         id: importId,
@@ -489,6 +507,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     state = state.copyWith(
       status: _pendingPages.isEmpty ? ScanStatus.idle : ScanStatus.pendingFiles,
       pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+      // L'image en attente a été traitée. La garder faisait rouvrir l'atelier
+      // sur la photo d'origine plutôt que sur le résultat du recadrage.
+      clearPendingImage: true,
     );
 
     // 1. Upload vers Firebase Storage

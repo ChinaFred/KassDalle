@@ -118,6 +118,10 @@ class ScanState {
     String? pendingImageFilename,
     List<String>? pendingPageNames,
     List<ActiveImport>? activeImports,
+
+    /// Efface l'image en attente : elle a été traitée, et la garder ferait
+    /// rouvrir l'atelier sur l'original au lieu du résultat du recadrage.
+    bool clearPendingImage = false,
   }) {
     return ScanState(
       status: status ?? this.status,
@@ -129,8 +133,12 @@ class ScanState {
       queuedJobId: queuedJobId ?? this.queuedJobId,
       intent: intent ?? this.intent,
       successMessage: successMessage ?? this.successMessage,
-      pendingImageBytes: pendingImageBytes ?? this.pendingImageBytes,
-      pendingImageFilename: pendingImageFilename ?? this.pendingImageFilename,
+      pendingImageBytes: clearPendingImage
+          ? null
+          : (pendingImageBytes ?? this.pendingImageBytes),
+      pendingImageFilename: clearPendingImage
+          ? null
+          : (pendingImageFilename ?? this.pendingImageFilename),
       pendingPageNames: pendingPageNames ?? this.pendingPageNames,
       activeImports: activeImports ?? this.activeImports,
     );

@@ -37,6 +37,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   late final ScanUploadNotifier _scanNotifier;
   bool? _wasCurrentRoute;
 
+  /// Combien de fois l'atelier s'est ouvert depuis l'arrivée sur l'écran.
+  ///
+  /// Une seconde ouverture pour un seul import est une anomalie : elle veut
+  /// dire que l'écran est reparti de l'image d'origine.
+  int _ouverturesAtelier = 0;
+  int? _dernierOctetsOuverts;
+
   // Enhancer inline (sans Navigator, évite la redirection go_router web)
   Uint8List? _enhancerBytes;
   String? _enhancerFilename;
@@ -592,20 +599,30 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final bytes = state.pendingImageBytes;
     if (bytes == null) return;
 
-    if (rattrapage) {
-      reportUnexpectedError(
-        feature: 'scanUpload.enhancementReopened',
-        error: StateError(
-          "Atelier ouvert par le filet : la transition vers "
-          "pendingEnhancement n'a pas été vue par l'écran.",
-        ),
-        context: {
-          'intent': state.intent.name,
-          'octets': bytes.length,
-          'fichier': state.pendingImageFilename ?? '',
-        },
-      );
-    }
+    _ouverturesAtelier++;
+    // Une réouverture sur la MÊME image est le symptôme à traquer :
+    // `ScanState.copyWith` ne remet jamais `pendingImageBytes` à zéro, et un
+    // retour en attente d'amélioration rouvrirait donc l'atelier sur la photo
+    // d'origine, pas sur le résultat du recadrage.
+    final memeImage = _dernierOctetsOuverts == bytes.length;
+    _dernierOctetsOuverts = bytes.length;
+
+    reportUnexpectedError(
+      feature: 'scanUpload.enhancerOpened',
+      error: StateError(
+        rattrapage
+            ? "Atelier ouvert par le filet (ouverture $_ouverturesAtelier)"
+            : "Atelier ouvert par la transition (ouverture $_ouverturesAtelier)",
+      ),
+      context: {
+        'voie': rattrapage ? 'filet' : 'transition',
+        'ouverture': _ouverturesAtelier,
+        'meme_image_que_la_precedente': memeImage,
+        'intent': state.intent.name,
+        'octets': bytes.length,
+        'fichier': state.pendingImageFilename ?? '',
+      },
+    );
 
     setState(() {
       _enhancerBytes = bytes;

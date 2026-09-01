@@ -14,6 +14,49 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-01
+
+### v0.22.24 — technique
+
+#### Le recadrage d'une couverture, tracé de bout en bout
+
+Le recadrage d'une couverture de livre ressort sans effet : l'image revient non modifiée, et
+aucune erreur n'est levée. Trois causes possibles, qu'aucune trace ne distinguait — le cadre
+n'était pas armé, le résultat s'est perdu entre l'écran et Storage, ou l'atelier s'est rouvert
+sur la photo d'origine.
+
+Trois remontées suivent maintenant la chaîne :
+
+- `scanUpload.enhancerOpened` — l'atelier s'ouvre. Dit par quelle voie (transition ou filet), le
+  rang de l'ouverture, et si l'image est la même que la précédente.
+- `imageEnhancerScreen.applied` — la validation. Dit si le cadre était armé, de combien les coins
+  s'écartent du cadre entier, les réglages de lumière et de détails, et les tailles en octets à
+  l'entrée comme à la sortie.
+- `scanUpload.coverQueued` — la mise en file. Dit ce qui part réellement dans Storage.
+
+Deux tailles qui divergent entre la deuxième et la troisième, et le résultat s'est perdu en
+route. Un cadre non armé, et l'atelier n'avait rien à appliquer.
+
+#### L'état oubliait de lâcher la photo d'origine
+
+`ScanState.copyWith` recopiait `pendingImageBytes` à chaque changement d'état, sans jamais
+l'effacer. La photo d'origine restait donc dans l'état bien après son traitement, et tout retour
+en attente d'amélioration rouvrait l'atelier sur elle — pas sur le résultat du recadrage.
+`copyWith` accepte désormais `clearPendingImage`, et la mise en file l'utilise.
+
+#### deploy.ps1 s'arrêtait sur un avis npm
+
+Le déploiement de la v0.22.23 s'est arrêté juste avant les functions : `npm` avait écrit un avis
+de mise à jour sur stderr, et `$ErrorActionPreference = "Stop"` transforme toute écriture sur
+stderr par un exécutable natif en erreur terminante — comportement de PowerShell 5.1. Le web et
+l'APK étaient construits, rien n'était en ligne, et le message ne parlait que de `firebase.ps1`.
+
+`Invoke-FirebaseCli` bascule en `Continue` le temps de l'appel. Les quatre appels à la CLI
+passent par lui. Ce qui décide du succès ne change pas : le code de sortie et la ligne
+« Deploy complete! ».
+
+---
+
 ## 2026-08-30
 
 ### v0.22.23 — technique

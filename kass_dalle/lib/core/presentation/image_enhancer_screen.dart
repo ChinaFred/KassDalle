@@ -569,6 +569,36 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       result = _currentBytes;
     }
 
+    // Ce que la validation a réellement appliqué.
+    //
+    // Une correction qui ne corrige rien ne lève aucune erreur : l'image
+    // ressort recompressée, visuellement identique, et l'utilisateur conclut
+    // que l'atelier ne marche pas. Sans cette trace, rien ne distingue « le
+    // cadre n'était pas armé » de « le recadrage a été perdu en route ».
+    final ecartCoins = _cropArmed ? _ecartAuCadreEntier() : 0.0;
+    reportUnexpectedError(
+      feature: 'imageEnhancerScreen.applied',
+      error: StateError(
+        _cropArmed
+            ? "Validation avec cadre arme (ecart ${ecartCoins.toStringAsFixed(3)})"
+            : "Validation SANS cadre arme : aucun recadrage applique",
+      ),
+      context: {
+        'cadre_arme': _cropArmed,
+        'ecart_coins': double.parse(ecartCoins.toStringAsFixed(4)),
+        'a_pivote': _currentBytes.length != widget.imageBytes.length,
+        'luminosite': _brightness,
+        'contraste': _contrast,
+        'saturation': _saturation,
+        'nettete': _sharpen,
+        'octets_origine': widget.imageBytes.length,
+        'octets_entree': _currentBytes.length,
+        'octets_sortie': result.length,
+        'mode': widget.mode.name,
+        'web': kIsWeb,
+      },
+    );
+
     if (!mounted) return;
 
     // Mise à jour du message pendant l'upload
@@ -579,6 +609,23 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     } else {
       Navigator.of(context).pop<Uint8List?>(result);
     }
+  }
+
+  /// De combien les quatre coins s'écartent du cadre entier, en fraction de
+  /// l'image.
+  ///
+  /// Zéro veut dire que l'utilisateur a armé le cadre sans le déplacer : la
+  /// transformation est neutre et l'image ressort telle quelle. C'est le cas
+  /// qu'aucune erreur ne signale.
+  double _ecartAuCadreEntier() {
+    const entier = [Offset(0, 0), Offset(1, 0), Offset(1, 1), Offset(0, 1)];
+    var maximum = 0.0;
+    for (var i = 0; i < _corners.length && i < entier.length; i++) {
+      final dx = (_corners[i].dx - entier[i].dx).abs();
+      final dy = (_corners[i].dy - entier[i].dy).abs();
+      maximum = math.max(maximum, math.max(dx, dy));
+    }
+    return maximum;
   }
 
   // ── Compression native (flutter_image_compress) ────────────────────────────
