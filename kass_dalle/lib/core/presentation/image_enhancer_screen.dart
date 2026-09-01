@@ -94,6 +94,14 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool _detecting = false;
   bool _showOriginalPreview = false;
 
+  /// Ce que l'atelier fait pendant son ouverture, affiché sous l'indicateur.
+  ///
+  /// Un indicateur nu ne dit pas s'il attend le décodage, l'analyse des
+  /// couleurs ou la détection du cadre. Quand l'ouverture dure, c'est la seule
+  /// information qui reste : sur le web, ces trois étapes tournent sur le fil
+  /// principal, et un écran figé garde la dernière image peinte.
+  String _openingStep = 'Lecture de la photo…';
+
   /// Le panneau ouvert, ou `null` quand aucun ne l'est.
   ///
   /// « Cadre » était sélectionné à l'ouverture. Le premier geste possible
@@ -146,17 +154,77 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     _loadUiImage();
   }
 
+  /// Au-delà de ce délai, l'ouverture de l'atelier est une anomalie.
+  ///
+  /// Elle ne lève rien : l'écran finit par s'afficher, ou l'onglet reste figé
+  /// assez longtemps pour qu'on croie l'application bloquée. Sans cette
+  /// remontée, la seule trace de l'incident est une capture d'écran.
+  static const Duration _ouvertureLente = Duration(seconds: 8);
+
   Future<void> _loadUiImage() async {
-    final codec = await ui.instantiateImageCodec(_currentBytes);
-    final frame = await codec.getNextFrame();
-    if (!mounted) return;
-    setState(() {
-      _uiImage = frame.image;
-      _imgW = frame.image.width;
-      _imgH = frame.image.height;
-    });
-    _suggestPreset();
-    _runAutoDetect();
+    final total = Stopwatch()..start();
+    final etapes = <String, int>{};
+
+    try {
+      final decodage = Stopwatch()..start();
+      final codec = await ui.instantiateImageCodec(_currentBytes);
+      final frame = await codec.getNextFrame();
+      etapes['decodage_ms'] = decodage.elapsedMilliseconds;
+      if (!mounted) return;
+      setState(() {
+        _uiImage = frame.image;
+        _imgW = frame.image.width;
+        _imgH = frame.image.height;
+      });
+
+      // L'image s'affiche AVANT les deux analyses.
+      //
+      // Sur le web, `compute` n'ouvre aucun isolate — Flutter web n'en a pas —
+      // et les deux analyses décodent le JPEG entier sur le fil principal.
+      // Lancées sans rendre la main, elles gelaient l'onglet avant que
+      // l'atelier n'ait peint sa première image.
+      await WidgetsBinding.instance.endOfFrame;
+
+      final analyse = Stopwatch()..start();
+      if (mounted) setState(() => _openingStep = 'Analyse des couleurs…');
+      await _suggestPreset();
+      etapes['analyse_ms'] = analyse.elapsedMilliseconds;
+
+      final detection = Stopwatch()..start();
+      if (mounted) setState(() => _openingStep = 'Détection du cadre…');
+      await _runAutoDetect();
+      etapes['detection_ms'] = detection.elapsedMilliseconds;
+    } catch (error, stackTrace) {
+      // Sans ce bloc, un décodage impossible laissait l'atelier sur son
+      // indicateur, indéfiniment et sans un mot.
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.loadImage',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'octets': _currentBytes.length, ...etapes},
+      );
+      if (mounted) context.showErrorSnackBar('Image illisible : $error');
+      _cancel();
+      return;
+    }
+
+    if (total.elapsed > _ouvertureLente) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.slowOpen',
+        error: StateError(
+          "Ouverture de l'atelier en ${total.elapsedMilliseconds} ms",
+        ),
+        context: {
+          'total_ms': total.elapsedMilliseconds,
+          ...etapes,
+          'octets': _currentBytes.length,
+          'largeur': _imgW,
+          'hauteur': _imgH,
+          'web': kIsWeb,
+          'mode': widget.mode.name,
+        },
+      );
+    }
   }
 
   Future<void> _runAutoDetect() async {
@@ -652,8 +720,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
   Widget _buildEditor() {
     if (_uiImage == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 16),
+            Text(_openingStep, style: const TextStyle(color: Colors.white70)),
+          ],
+        ),
       );
     }
     return LayoutBuilder(

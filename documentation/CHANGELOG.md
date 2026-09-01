@@ -16,6 +16,39 @@ anciennes sans accents.
 
 ## 2026-08-30
 
+### v0.22.23 — technique
+
+#### L'import d'une couverture restait sur son indicateur
+
+L'écran de scan passe la photo en attente d'amélioration, puis l'atelier de retouche s'ouvre
+par-dessus. Il ne s'ouvrait que sur la **transition** vers cet état, écoutée par `ref.listen`.
+
+`ref.listen` ne délivre jamais la valeur en place au moment où il s'enregistre. Quand l'image
+passait en attente alors que l'écran n'était pas monté — un retour de caméra qui recrée l'arbre
+sur Chrome Android, un onglet restauré — l'écran se montait, s'abonnait, et n'entendait plus
+rien. L'indicateur tournait indéfiniment, aucun code ne levait quoi que ce soit, et la seule
+trace de l'incident était une capture d'écran.
+
+L'atelier s'ouvre désormais depuis l'**état courant**, à chaque build. Une transition manquée se
+rattrape à la frame suivante.
+
+#### Trois trous de journalisation comblés
+
+Le diagnostic a coûté une session entière faute de trace. Trois remontées ont été ajoutées :
+
+- `scanUpload.enhancementReopened` — l'atelier a été ouvert par le filet, donc la transition a
+  été manquée. C'est le log qui manquait pour nommer la panne ci-dessus.
+- `imageEnhancerScreen.slowOpen` — l'ouverture a dépassé huit secondes. Le rapport porte la durée
+  de chacune des trois étapes (décodage, analyse des couleurs, détection du cadre), la taille de
+  l'image, ses dimensions et la plateforme. Sur le web, `compute` n'ouvre aucun isolate et ces
+  analyses tournent sur le fil principal : c'est cette mesure qui dira si le coût est là.
+- `imageEnhancerScreen.loadImage` — le chargement de l'image n'avait aucun `catch`. Une image
+  illisible laissait l'atelier sur son indicateur, sans un mot. Elle ferme maintenant l'atelier.
+
+L'image s'affiche aussi avant les deux analyses, qui s'enchaînent au lieu de partir ensemble. Et
+le libellé « Améliorez l'image… » — qui s'adressait à l'utilisateur alors que rien n'était encore
+ouvert — devient « Ouverture de l'atelier… », l'atelier nommant ensuite son étape en cours.
+
 ### v0.22.22 — fonctionnel
 
 #### Les réglages du moteur d'IA s'enregistrent sous un nom

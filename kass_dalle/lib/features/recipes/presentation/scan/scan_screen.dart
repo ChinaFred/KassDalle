@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
+import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -131,20 +132,29 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       });
     }
 
+    // Filet : l'atelier s'ouvre aussi depuis l'ÉTAT COURANT.
+    //
+    // `ref.listen` ne délivre jamais la valeur en place au moment où il
+    // s'enregistre. Si l'image est passée en attente d'amélioration alors que
+    // cet écran n'était pas monté — un retour de caméra qui recrée l'arbre, un
+    // onglet restauré — l'atelier ne s'ouvrait plus jamais. L'écran gardait son
+    // indicateur, aucune erreur n'était levée, et la seule trace possible était
+    // une capture d'écran.
+    if (scanState.status == ScanStatus.pendingEnhancement &&
+        scanState.pendingImageBytes != null &&
+        !_showingEnhancer) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openEnhancer(scanState, rattrapage: true),
+      );
+    }
+
     // Navigation automatique vers les brouillons une fois terminé
     ref.listen<ScanState>(scanUploadProvider, (prev, next) {
       // Étape d'amélioration de la couverture
       if (next.status == ScanStatus.pendingEnhancement &&
           next.pendingImageBytes != null &&
           prev?.status != ScanStatus.pendingEnhancement) {
-        Future.microtask(() {
-          if (!mounted) return;
-          setState(() {
-            _enhancerBytes = next.pendingImageBytes!;
-            _enhancerFilename = next.pendingImageFilename ?? 'cover.jpg';
-            _showingEnhancer = true;
-          });
-        });
+        Future.microtask(() => _openEnhancer(next, rattrapage: false));
       }
       // Sur la mise en file, et non sur le statut « terminé » : depuis que
       // l'écran reste disponible pendant l'envoi, un import peut aboutir alors
@@ -569,6 +579,39 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       );
     }
     return scaffold;
+  }
+
+  /// Ouvre l'atelier de retouche, une seule fois par image.
+  ///
+  /// [rattrapage] vaut vrai quand l'ouverture vient du filet et non de la
+  /// transition. C'est une anomalie : elle ne bloque plus rien depuis que le
+  /// filet existe, mais elle dit que l'écran a manqué le changement d'état, et
+  /// personne ne le saurait sans cette remontée.
+  void _openEnhancer(ScanState state, {required bool rattrapage}) {
+    if (!mounted || _showingEnhancer) return;
+    final bytes = state.pendingImageBytes;
+    if (bytes == null) return;
+
+    if (rattrapage) {
+      reportUnexpectedError(
+        feature: 'scanUpload.enhancementReopened',
+        error: StateError(
+          "Atelier ouvert par le filet : la transition vers "
+          "pendingEnhancement n'a pas été vue par l'écran.",
+        ),
+        context: {
+          'intent': state.intent.name,
+          'octets': bytes.length,
+          'fichier': state.pendingImageFilename ?? '',
+        },
+      );
+    }
+
+    setState(() {
+      _enhancerBytes = bytes;
+      _enhancerFilename = state.pendingImageFilename ?? 'cover.jpg';
+      _showingEnhancer = true;
+    });
   }
 
   // ignore: unused_element

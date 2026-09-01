@@ -28,6 +28,34 @@ $appDir   = Join-Path $root "kass_dalle"
 $releaseWeb   = Join-Path $root "Release\web"
 $releaseMobile = Join-Path $root "Release\mobile"
 
+function Invoke-FirebaseCli {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$FirebaseArgs,
+        [Parameter(Mandatory = $true)][string]$LogFile
+    )
+
+    # Un « npm notice » sur stderr n'est pas un echec de deploiement.
+    #
+    # $ErrorActionPreference = "Stop" transforme la moindre ligne ecrite sur
+    # stderr par un executable natif en erreur terminante — NativeCommandError,
+    # comportement de PowerShell 5.1. Le 30 aout 2026, un simple avis de mise a
+    # jour npm a arrete le deploiement juste avant les functions : le web et
+    # l'APK etaient construits, rien n'etait en ligne, et le message d'erreur ne
+    # parlait que de firebase.ps1.
+    #
+    # Ce qui decide du succes ne change pas : le code de sortie ET la ligne
+    # « Deploy complete! », verifies par les appelants. Le bruit de stderr n'en
+    # fait pas partie.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & firebase @FirebaseArgs *> $LogFile
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Invoke-FirebaseDeployVerified {
     param(
         [Parameter(Mandatory = $true)][string]$Targets
@@ -38,8 +66,7 @@ function Invoke-FirebaseDeployVerified {
     # script annoncerait une mise en ligne qui n'a pas eu lieu.
     $logFile = Join-Path $env:TEMP ("kassdalle-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
-        & firebase deploy --only $Targets *> $logFile
-        $exitCode = $LASTEXITCODE
+        $exitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", $Targets) -LogFile $logFile
         Get-Content $logFile | Write-Output
         $completed = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
         if ($exitCode -ne 0) { throw "firebase deploy $Targets a echoue (exit $exitCode)" }
@@ -88,8 +115,7 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     # version.
     $firstLog = Join-Path $env:TEMP ("kassdalle-functions-first-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
-        & firebase deploy --only functions *> $firstLog
-        $firstExitCode = $LASTEXITCODE
+        $firstExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions") -LogFile $firstLog
         Get-Content $firstLog | Write-Output
         $firstCompleted = (Select-String -Path $firstLog -Pattern "Deploy complete" -Quiet) -eq $true
         if ($firstExitCode -eq 0 -and $firstCompleted) { return }
@@ -105,8 +131,7 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     Write-Host "Première tentative échouée (exit $LASTEXITCODE), relance avec capture..." -ForegroundColor Yellow
     $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
-        & firebase deploy --only functions *> $logFile
-        $retryExitCode = $LASTEXITCODE
+        $retryExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions") -LogFile $logFile
         Get-Content $logFile | Write-Output
         $retryCompleted = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
         if ($retryExitCode -eq 0 -and $retryCompleted) { return }
@@ -128,9 +153,15 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         Write-Host "Relance ciblée des fonctions en échec : $($failedFunctions -join ', ')" -ForegroundColor Yellow
         foreach ($fn in $failedFunctions) {
             Write-Host " - Retry functions:$fn" -ForegroundColor DarkYellow
-            & firebase deploy --only "functions:$fn"
-            if ($LASTEXITCODE -ne 0) {
-                throw "Relance ciblée échouée pour la fonction $fn"
+            $fnLog = Join-Path $env:TEMP ("kassdalle-functions-{0}-{1}.log" -f $fn, ([guid]::NewGuid().ToString("N")))
+            try {
+                $fnExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions:$fn") -LogFile $fnLog
+                Get-Content $fnLog | Write-Output
+                if ($fnExitCode -ne 0) {
+                    throw "Relance ciblée échouée pour la fonction $fn"
+                }
+            } finally {
+                Remove-Item $fnLog -Force -ErrorAction SilentlyContinue
             }
         }
     } finally {

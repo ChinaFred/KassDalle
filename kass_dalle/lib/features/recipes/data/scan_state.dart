@@ -149,7 +149,11 @@ class ScanState {
   String get statusLabel => switch (status) {
     ScanStatus.idle => 'Prêt',
     ScanStatus.picking => 'Sélection du fichier…',
-    ScanStatus.pendingEnhancement => 'Améliorez l\'image…',
+    // « Améliorez l'image… » s'adressait à l'utilisateur, qui n'avait rien
+    // sous la main : l'atelier n'était pas encore ouvert. Le libellé nomme
+    // maintenant ce que fait l'application, et un blocage se lit sur
+    // l'écran lui-même.
+    ScanStatus.pendingEnhancement => 'Ouverture de l\'atelier…',
     ScanStatus.pendingFiles => 'Pages en attente',
     ScanStatus.uploading => 'Envoi en cours…',
     ScanStatus.scanning => 'Scanner les fichiers…',
