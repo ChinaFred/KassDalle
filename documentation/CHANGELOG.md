@@ -16,6 +16,21 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.26 — fonctionnel
+
+#### Le bandeau de mise en file d'une couverture disparaît
+
+« Scan de couverture ajouté… » se posait au bas de l'écran pendant deux secondes, là où le doigt
+revient pour passer à la suite. Il fallait l'attendre ou viser à côté.
+
+C'est le raisonnement déjà tenu pour la page de recette, appliqué à la couverture : l'écran dit
+déjà que l'import est parti, la file des traitements en cours est affichée en permanence, et le
+livre apparaît dans la bibliothèque de lui-même. Un message qui recouvre le geste suivant coûte
+plus qu'il n'apprend.
+
+Le document de livre garde le sien : il rattache des recettes à un livre déjà choisi, et personne
+ne l'enchaîne.
+
 ### v0.22.25 — technique
 
 #### `1 << 32` vaut zéro sur le web : plus aucun scan ne partait

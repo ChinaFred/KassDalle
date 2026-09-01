@@ -836,20 +836,20 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
   /// Ce qu'on dit à l'utilisateur quand son import entre en file, ou rien.
   ///
-  /// **Rien pour une page de recette.** Le message se posait au-dessus du bouton
-  /// « Analyser », juste là où le doigt revient pour enchaîner la page suivante.
-  /// Il fallait attendre qu'il s'efface, ou viser à côté. Une seconde perdue à
-  /// chaque page, pour une information que l'écran donne déjà : la file des
-  /// imports en cours est affichée en permanence, et la liste des pages en
-  /// attente se vide sous les yeux.
+  /// **Rien pour une page de recette, rien pour une couverture.** Le message se
+  /// pose au bas de l'écran, là où le doigt revient pour passer à la suite : il
+  /// faut attendre ses deux secondes, ou viser à côté. Le raisonnement tenu
+  /// pour la page de recette vaut pour la couverture — l'écran dit déjà que
+  /// l'import est parti, la file des traitements en cours est affichée en
+  /// permanence, et le livre apparaît dans la bibliothèque de lui-même.
   ///
-  /// Les deux autres restent. Ils ne disent pas « c'est parti » mais **ce qui va
-  /// se passer** — un livre créé, des recettes rattachées — et ces deux imports
-  /// ne s'enchaînent pas : on n'en fait qu'un à la fois.
+  /// Un message qui recouvre le geste suivant coûte plus qu'il n'apprend.
+  ///
+  /// Reste le document de livre, seul import qui rattache des recettes à un
+  /// livre déjà choisi : il dit ce qui va se passer, et personne ne l'enchaîne.
   String? _queuedMessage(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe => null,
-    ScanIntent.bookCover =>
-      'Scan de couverture ajouté. Le livre sera créé et ajouté directement à votre bibliothèque.',
+    ScanIntent.bookCover => null,
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };
