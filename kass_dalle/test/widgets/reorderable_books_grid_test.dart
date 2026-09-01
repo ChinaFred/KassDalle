@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/books/domain/book.dart';
 import 'package:kass_dalle/features/books/presentation/reorderable_books_grid.dart';
 
-Book _book(String id) {
+Book _book(String id, {String? titre}) {
   final now = DateTime(2026, 1, 1);
   return Book(
     id: id,
-    titre: id,
+    titre: titre ?? id,
     auteur: 'Kassbi',
     langue: 'fr',
     tags: const [],
@@ -156,5 +156,33 @@ void main() {
 
     expect(calls, 0);
     expect(visibleOrder(tester, ['a', 'b', 'c']), ['a', 'b', 'c']);
+  });
+
+  testWidgets('un livre modifie s\'affiche meme si l\'ordre ne change pas', (
+    tester,
+  ) async {
+    // Le symptome observe le 1er septembre 2026 : une couverture de livre
+    // remplacee, bien enregistree, et la bibliotheque continuait
+    // d'afficher l'ancienne.
+    //
+    // La grille garde une copie locale des livres pour survivre a un
+    // glissement. Elle ne la renouvelait que sur un changement d'ORDRE :
+    // un livre modifie a la meme place restait donc affiche tel quel. Rien
+    // ne levait d'erreur, le flux Firestore livrait bien la nouvelle
+    // valeur.
+    final avant = [_book('a'), _book('b'), _book('c')];
+    await tester.pumpWidget(harness(avant, (_) {}));
+    expect(find.text('b'), findsOneWidget);
+
+    final apres = [
+      _book('a'),
+      _book('b', titre: 'b avec sa nouvelle couverture'),
+      _book('c'),
+    ];
+    await tester.pumpWidget(harness(apres, (_) {}));
+    await tester.pump();
+
+    expect(find.text('b avec sa nouvelle couverture'), findsOneWidget);
+    expect(find.text('b'), findsNothing);
   });
 }

@@ -90,7 +90,14 @@ class _ReorderableBooksGridSliverState
     final incoming = _pendingOrder == null
         ? widget.books
         : applyBookOrder(widget.books, _pendingOrder!);
-    if (!_sameOrder(_books, incoming)) {
+    // Le CONTENU compte autant que l'ordre.
+    //
+    // La comparaison ne portait que sur les identifiants. Une couverture
+    // remplacée, un titre corrigé, un livre validé ne déplacent rien : la
+    // grille gardait donc sa copie locale et continuait d'afficher l'ancienne
+    // valeur. Le flux Firestore livrait la bonne, personne ne la regardait, et
+    // aucune erreur ne le disait.
+    if (!_sameBooks(_books, incoming)) {
       setState(() => _books = List.of(incoming));
     }
   }
@@ -99,6 +106,20 @@ class _ReorderableBooksGridSliverState
   void dispose() {
     _autoScrollTimer?.cancel();
     super.dispose();
+  }
+
+  /// Même ordre **et** mêmes instances.
+  ///
+  /// `identical` suffit et ne coûte rien : chaque instantané Firestore
+  /// reconstruit ses `Book`, tandis qu'un simple rebuild du parent rend les
+  /// mêmes instances. Comparer champ par champ demanderait d'énumérer les
+  /// vingt champs du modèle, et d'y penser à chaque champ ajouté.
+  static bool _sameBooks(List<Book> a, List<Book> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
   }
 
   static bool _sameOrder(List<Book> a, List<Book> b) {

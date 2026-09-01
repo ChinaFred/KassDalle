@@ -16,6 +16,28 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.27 — fonctionnel
+
+#### La bibliothèque affichait l'ancienne couverture d'un livre modifié
+
+Une couverture remplacée était bien enregistrée — nouveau fichier dans Storage, nouvelle URL dans
+Firestore — et la bibliothèque continuait d'afficher l'ancienne.
+
+La grille de la bibliothèque garde une copie locale des livres, pour qu'un glissement en cours ne
+soit pas coupé par une mise à jour du flux. Elle ne renouvelait cette copie que sur un changement
+d'**ordre**, comparé identifiant par identifiant. Un livre modifié à la même place ne changeait
+donc rien : la grille gardait sa copie et réaffichait l'ancienne valeur.
+
+Le défaut ne touchait pas que les couvertures. Un titre corrigé, un auteur, un livre validé : rien
+n'apparaissait tant que l'ordre ne bougeait pas.
+
+La comparaison porte maintenant sur les instances (`identical`). Chaque instantané Firestore
+reconstruit ses `Book`, alors qu'un simple rebuild du parent rend les mêmes objets : la
+distinction est exacte et ne coûte rien. Comparer champ par champ aurait demandé d'énumérer les
+vingt champs du modèle, et d'y penser à chaque champ ajouté.
+
+Un test le vérifie, et il échoue sans le correctif.
+
 ### v0.22.26 — fonctionnel
 
 #### Le bandeau de mise en file d'une couverture disparaît
