@@ -167,6 +167,10 @@ export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string
       out.push(`${n}. ${ligne}`);
     }
   }
+  // Un titre suivi de rien se lit comme une transcription incomplète. La page
+  // écrite en prose n'a pas de liste, et le prompt a une règle pour ce cas : il
+  // faut la lui annoncer, pas la lui laisser deviner.
+  if (n === 0) out.push("(aucune : la recette est écrite en prose)");
 
   out.push("");
   out.push("═══ ÉTAPES ═══");

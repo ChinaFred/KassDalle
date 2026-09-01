@@ -374,6 +374,30 @@ AU MOINS une entrée par ligne d'ingrédient de la transcription, dans l'ordre.
 Une ligne qui nomme deux aliments en donne deux — voir plus bas. Aucune ligne
 ne peut rester sans entrée : c'est vérifié.
 
+▸ SI LA TRANSCRIPTION NE PORTE AUCUNE LIGNE D'INGRÉDIENT
+  Certains livres écrivent la recette en prose : « faites revenir un oignon
+  avec deux gousses d'ail ». Il n'y a alors pas de liste, et la section
+  « LISTE D'INGRÉDIENTS » de la transcription est vide.
+
+  Dans ce cas seulement, construis la liste depuis les étapes que tu viens de
+  baliser : une entrée par @aliment distinct, dans l'ordre d'apparition. Un
+  aliment cité dans trois étapes reste UNE entrée.
+
+  - "brut" reste VIDE. Il n'y a pas de ligne de livre à citer, et recopier la
+    phrase de l'étape en tiendrait lieu à tort.
+  - "qte" et "unite" ne se remplissent que si la phrase les donne : « deux
+    gousses d'ail » donne qte "2" et unite "gousse", « un filet d'huile » ne
+    donne rien. N'estime jamais une quantité que le texte ne dit pas — vide est
+    la bonne réponse, et une quantité inventée se retrouve dans une liste de
+    courses et dans un calcul nutritionnel.
+  - "note" reçoit la précision que la phrase attache à l'aliment (« oignon
+    émincé finement » → note "émincé finement"), et rien d'autre.
+  - "section" reprend le titre de la section d'étapes où l'aliment paraît en
+    premier, ou reste vide.
+
+  Cette règle ne s'applique JAMAIS quand la transcription porte des lignes : le
+  livre fait alors foi, même s'il oublie un aliment que les étapes emploient.
+
 Pour chaque ligne, sépare ce qui se compte de ce qui se dit :
 
   « 1 filet de saumon de 1,8 kg avec la peau mais écaillée »

@@ -1396,6 +1396,17 @@ transcription au profit de la mise en forme : ingrédients fusionnés, précisio
 réponse de la passe 1, ce qui garantit que le verdict porte sur ce qui a été lu. `NO_RECIPE`
 a disparu au profit de `page_type: "no_recipe"`.
 
+**Une page écrite en prose n'a pas de liste d'ingrédients.** La passe 2 normalise les lignes
+que la passe 1 a recopiées : sans liste sur la page, elle n'a rien à normaliser et rend
+`ingredients: []`, pendant que son CookLang nomme pourtant tous les aliments. La recette
+s'enregistrait alors sans ingrédients — donc sans liste de courses, sans planification
+(`onSchedule` exige une liste non vide) et sans nutrition. Deux dispositions couvrent le cas :
+la passe 2 reçoit la mention « aucune : la recette est écrite en prose » et une règle qui lui
+fait construire la liste depuis les étapes, sans inventer de quantité ; et `saveDraft` dérive
+la liste du CookLang par `pipeline/ingredientsFromCooklang.ts` quand elle arrive vide malgré
+tout. La dérivation a lieu **avant** la normalisation référentiel, et ne rend ni la note ni le
+`source` — il n'y a pas de ligne de livre à citer.
+
 `gemini/extractor.ts` ne porte plus que l'entrée « texte collé ». Les trois anciens appels
 qui vivaient là — classification, extraction depuis une image, extraction d'un document — ont
 été remplacés par la passe 1. Leurs trois postes de coût **restent au catalogue comptable**,

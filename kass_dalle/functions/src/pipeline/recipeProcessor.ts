@@ -46,6 +46,7 @@ import {
   normalizeRecipeReferentialsCore,
   type StoredRecipeIngredient,
 } from "../nutrition/referentialNormalization";
+import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
 import {
   extractTitle,
   extractPortions,
@@ -773,6 +774,28 @@ async function saveDraft(args: {
     // conviction voyage désormais avec la pièce à conviction.
     ...(i.brut ? { source: i.brut } : {}),
   }));
+
+  // Repli : une recette en prose n'a pas de liste à normaliser.
+  //
+  // Le balisage part des lignes recopiées par la transcription. Un livre qui
+  // écrit « faites revenir un oignon avec deux gousses d'ail » n'en donne
+  // aucune : la liste arrivait vide ici, et la recette s'enregistrait sans
+  // ingrédients — donc sans liste de courses, sans planification et sans
+  // nutrition — pendant que son CookLang portait bien ses `@aliment{…}`.
+  //
+  // La dérivation a lieu AVANT la normalisation, pour que ces noms passent par
+  // le référentiel comme les autres.
+  if (pageType === "recipe" && ingredients.length === 0) {
+    ingredients = ingredientsFromCooklang(cooklang);
+    if (ingredients.length > 0) {
+      logInfo({
+        message: `Liste d'ingrédients dérivée du texte balisé : ${ingredients.length} ingrédient(s)`,
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: { titre, ingredients: ingredients.length },
+      });
+    }
+  }
 
   // Identifiant réservé sans écriture : la normalisation peut rattacher les
   // référentiels à cette recette avant qu'elle n'existe.
