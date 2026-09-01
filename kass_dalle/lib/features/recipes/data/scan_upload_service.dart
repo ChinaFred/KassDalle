@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
+import '../../../core/utils/page_name_order.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
@@ -49,7 +50,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     return const ScanState();
   }
 
-  Future<void> pickAndQueueRecipe({String? bookId, String? bookTitre}) {
+  /// Une recette tient souvent sur plusieurs pages : la sélection est
+  /// multiple, et tous les fichiers choisis entrent dans la file d'un coup.
+  ///
+  /// Renvoie le nombre de fichiers écartés faute d'octets lisibles, pour que
+  /// l'écran puisse le dire.
+  Future<int> pickAndQueueRecipe({String? bookId, String? bookTitre}) {
     return _pickAndQueue(
       intent: ScanIntent.recipe,
       allowedExtensions: const ['pdf', 'docx', 'jpg', 'jpeg', 'png'],
@@ -58,19 +64,54 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     );
   }
 
-  /// Ajoute une page supplémentaire depuis le sélecteur de fichiers
+  /// Ajoute des pages depuis le sélecteur de fichiers, une ou plusieurs
   /// (actif uniquement quand status == pendingFiles).
-  Future<void> addPage() async {
+  ///
+  /// Renvoie le nombre de fichiers écartés faute d'octets lisibles.
+  Future<int> addPage() async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
         withData: true,
+        allowMultiple: true,
       );
-      if (result == null) return;
-      final file = result.files.single;
+      if (result == null) return 0;
+      return _appendPendingPages(result.files, from: 'addPageFromFile');
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.addPageFromFile',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return 0;
+    }
+  }
+
+  /// Range une sélection de fichiers dans la file multi-page et met l'écran à
+  /// jour. Renvoie le nombre de fichiers écartés faute d'octets lisibles.
+  ///
+  /// Le lot est trié par nom, chiffres comparés comme des nombres. Le
+  /// sélecteur rend une sélection multiple dans l'ordre du système, où
+  /// « page10.jpg » arrive avant « page2.jpg » ; sans tri, les pages partent à
+  /// l'analyse dans le désordre et le texte de la recette se mélange. Le tri
+  /// ne porte que sur le lot en cours : deux sélections successives restent
+  /// l'une après l'autre.
+  int _appendPendingPages(List<PlatformFile> files, {required String from}) {
+    final sorted = List<PlatformFile>.from(files)
+      ..sort((a, b) => comparePageNames(a.name, b.name));
+    var ignored = 0;
+    for (final file in sorted) {
       final bytes = file.bytes;
-      if (bytes == null) return;
+      if (bytes == null) {
+        ignored++;
+        _errorReportService.reportError(
+          feature: 'scanUpload.$from',
+          error: StateError('Fichier sans octets lisibles, page ignorée'),
+          context: {'fichier': file.name, 'octets_annonces': file.size},
+        );
+        continue;
+      }
       _pendingPages.add(
         _PendingPage(
           bytes: bytes,
@@ -79,16 +120,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           mimeType: _mimeTypeFor(file.extension ?? ''),
         ),
       );
-      state = state.copyWith(
-        pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
-      );
-    } catch (error, stackTrace) {
-      _errorReportService.reportError(
-        feature: 'scanUpload.addPageFromFile',
-        error: error,
-        stackTrace: stackTrace,
-      );
     }
+    if (_pendingPages.isEmpty) return ignored;
+    state = state.copyWith(
+      status: ScanStatus.pendingFiles,
+      intent: ScanIntent.recipe,
+      pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+    );
+    return ignored;
   }
 
   /// Ajoute une page supplémentaire depuis la caméra.
@@ -227,7 +266,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
   }
 
-  Future<void> pickAndQueueBookDocument({
+  Future<int> pickAndQueueBookDocument({
     required String? bookId,
     required String? bookTitre,
   }) {
@@ -239,7 +278,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     );
   }
 
-  Future<void> _pickAndQueue({
+  Future<int> _pickAndQueue({
     required ScanIntent intent,
     required List<String> allowedExtensions,
     String? bookId,
@@ -251,37 +290,35 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         withData: true,
+        // Une recette s'étale sur plusieurs pages ; un livre entier ou une
+        // couverture sont un seul fichier.
+        allowMultiple: intent == ScanIntent.recipe,
       );
-      if (result == null) {
+      if (result == null || result.files.isEmpty) {
         state = ScanState(activeImports: state.activeImports);
-        return;
+        return 0;
       }
-      final file = result.files.single;
+
+      // Pour les recettes : accumulation multi-page avant traitement
+      if (intent == ScanIntent.recipe) {
+        final ignored = _appendPendingPages(result.files, from: 'pickFile');
+        if (_pendingPages.isEmpty) {
+          state = state.copyWith(
+            status: ScanStatus.error,
+            errorMessage: 'Fichier vide ou inaccessible.',
+          );
+        }
+        return ignored;
+      }
+
+      final file = result.files.first;
       final bytes = file.bytes;
       if (bytes == null) {
         state = state.copyWith(
           status: ScanStatus.error,
           errorMessage: 'Fichier vide ou inaccessible.',
         );
-        return;
-      }
-
-      // Pour les recettes : accumulation multi-page avant traitement
-      if (intent == ScanIntent.recipe) {
-        _pendingPages.add(
-          _PendingPage(
-            bytes: bytes,
-            filename: file.name,
-            extension: file.extension ?? '',
-            mimeType: _mimeTypeFor(file.extension ?? ''),
-          ),
-        );
-        state = ScanState(
-          status: ScanStatus.pendingFiles,
-          intent: intent,
-          pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
-        );
-        return;
+        return 1;
       }
 
       // Autres intentions : traitement direct
@@ -293,6 +330,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookId: bookId,
         bookTitre: bookTitre,
       );
+      return 0;
     } catch (e, stackTrace) {
       _errorReportService.reportError(
         feature: 'scanUpload.pickFile',
@@ -304,6 +342,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         status: ScanStatus.error,
         errorMessage: 'Impossible d\'ouvrir le fichier : $e',
       );
+      return 0;
     }
   }
 

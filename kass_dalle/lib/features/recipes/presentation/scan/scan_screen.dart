@@ -322,9 +322,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       final notifier = ref.read(scanUploadProvider.notifier);
                       switch (_selectedIntent) {
                         case ScanIntent.recipe:
-                          notifier.pickAndQueueRecipe(
-                            bookId: _selectedBookId,
-                            bookTitre: _selectedBookTitre,
+                          _announceIgnored(
+                            notifier.pickAndQueueRecipe(
+                              bookId: _selectedBookId,
+                              bookTitre: _selectedBookTitre,
+                            ),
                           );
                           break;
                         case ScanIntent.bookCover:
@@ -430,9 +432,10 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                         const SizedBox(width: 8),
                       Expanded(
                         child: IconButton.outlined(
-                          tooltip: 'Ajouter une page (fichier)',
-                          onPressed: () =>
-                              ref.read(scanUploadProvider.notifier).addPage(),
+                          tooltip: 'Ajouter des pages (fichiers)',
+                          onPressed: () => _announceIgnored(
+                            ref.read(scanUploadProvider.notifier).addPage(),
+                          ),
                           icon: const Icon(Icons.upload_file),
                         ),
                       ),
@@ -640,7 +643,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>
-      'Une photo, un fichier (PDF, DOCX, image) ou un texte à coller. '
+      'Une photo, des fichiers (PDF, DOCX, image) ou un texte à coller. '
+          'Une recette sur plusieurs pages se choisit en une seule fois. '
           'L\'IA extrait les recettes en brouillons.',
     ScanIntent.bookCover =>
       'Photographiez la page de garde pour créer un livre. La caméra se lance automatiquement sur mobile.',
@@ -659,13 +663,29 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
   String _buttonLabel(ScanStatus status, ScanIntent intent) {
     if (status == ScanStatus.error || status == ScanStatus.done) {
-      return 'Importer un autre fichier';
+      return 'Importer d\'autres fichiers';
     }
     return switch (intent) {
-      ScanIntent.recipe => 'Choisir un fichier (PDF, DOCX, image)',
+      ScanIntent.recipe =>
+        'Choisir un ou plusieurs fichiers (PDF, DOCX, image)',
       ScanIntent.bookCover => 'Choisir une couverture (image ou PDF)',
       ScanIntent.bookDocument => 'Choisir un livre (PDF, DOCX, image)',
     };
+  }
+
+  /// Dit combien de fichiers choisis n'ont pas pu être lus.
+  ///
+  /// Avec une sélection multiple, un fichier illisible disparaissait sans un
+  /// mot au milieu de neuf autres : la recette partait à l'analyse amputée
+  /// d'une page, et rien ne le signalait.
+  Future<void> _announceIgnored(Future<int> pick) async {
+    final ignored = await pick;
+    if (ignored == 0 || !mounted) return;
+    context.showSnackBar(
+      ignored == 1
+          ? 'Un fichier illisible a été ignoré.'
+          : '$ignored fichiers illisibles ont été ignorés.',
+    );
   }
 }
 
