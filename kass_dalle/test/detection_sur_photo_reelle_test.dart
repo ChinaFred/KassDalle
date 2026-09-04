@@ -27,12 +27,18 @@ import 'package:kass_dalle/core/presentation/image_enhancer_processing.dart';
 /// Une image de contrôle dit en un coup d'œil ce que trois nombres laissent
 /// deviner : le masque attrape-t-il le livre, la table, ou les deux ?
 void main() {
-  test('détection sur les photos de kass_dalle/photos-test/', () {
-    final dossier = Directory('photos-test');
-    if (!dossier.existsSync()) {
+  test('détection sur les photos de kass_dalle/photo-test/', () {
+    // Deux noms admis : le pluriel a ete annonce, le singulier a ete utilise.
+    // Renommer le dossier de quelqu'un pour satisfaire un test serait le
+    // mauvais sens de la correction.
+    final dossier = [
+      Directory('photo-test'),
+      Directory('photos-test'),
+    ].where((d) => d.existsSync()).firstOrNull;
+    if (dossier == null) {
       // ignore: avoid_print
       print(
-        'Aucun dossier photos-test/ : rien à mesurer. '
+        'Aucun dossier photo-test/ : rien à mesurer. '
         'Y déposer une photo pour lancer le banc d\'essai.',
       );
       return;
@@ -52,7 +58,7 @@ void main() {
 
     if (photos.isEmpty) {
       // ignore: avoid_print
-      print('Dossier photos-test/ vide.');
+      print('Dossier ${dossier.path}/ vide.');
       return;
     }
 

@@ -16,6 +16,49 @@ anciennes sans accents.
 
 ## 2026-09-01
 
+### v0.22.33 — fonctionnel
+
+#### La détection du cadre, réglée sur la photo qui échouait
+
+Sept versions ont été déployées sans jamais tourner sur la photo en cause : les tests fabriquaient
+la scène, donc ils passaient. Un banc d'essai lit maintenant un fichier déposé dans
+, exécute la détection dessus et écrit une image de contrôle. Le réglage
+s'est fait en quelques minutes au lieu d'un déploiement par hypothèse.
+
+Ce que la photo a montré : **la couleur ne peut pas séparer le livre de la table**. Le bois est à
+132,101,54 et la couverture contient une planche en bois et des bruns dorés de la même teinte. Un
+seuil de couleur les garde ensemble, et le livre ressort en morceaux — 6 % de l'image au lieu de
+50 %.
+
+La détection mesure donc deux choses sur la bande extérieure, et prend leur union :
+
+- la **couleur** du fond, comme avant ;
+- sa **texture**, l'écart-type local de luminance sur une fenêtre de neuf pixels, calculé par
+  images intégrales. Une table est lisse, une couverture imprimée ne l'est pas.
+
+Un pixel appartient au document s'il est loin du fond par la couleur **ou** plus texturé que lui.
+Aucune des deux mesures ne suffit seule : la bande du titre et l'assiette blanche sont lisses,
+autant que la table.
+
+Trois corrections ont suivi, chacune mesurée :
+
+- **Le modèle du fond se raffine.** La bande longeait un ordinateur noir sur toute sa hauteur
+  gauche — la moitié de ses pixels. La dispersion brute sortait à 171, un seuil qui laissait passer
+  le livre entier. Seuls les pixels de bande proches de la médiane servent maintenant à mesurer la
+  dispersion.
+- **La texture du fond se mesure sur les pixels qui SONT le fond.** Prise sur toute la bande, elle
+  sortait à 31 au lieu de 19 : la frontière ordinateur/table est un bord franc, donc très texturé.
+  La couleur filtre, la texture complète.
+- **Les trous se bouchent.** L'assiette blanche est lisse et pâle : ni la texture ni la couleur ne
+  la distinguent de la table. Mais le fond ne peut pas l'atteindre depuis le bord de l'image, et
+  c'est ce qui la trahit.
+
+Enfin, la bande qui sert de modèle est forcée au fond : l'y marquer comme document serait se
+contredire, et cela empêche la tache de sortir par le bord pour emporter le bois au-delà.
+
+Mesure finale sur la photo : tache 43 % de l'image, rectangle 67 %, coins à 0,086 / 0,225 →
+0,938 / 0,871. Le cadre tient le livre.
+
 ### v0.22.32 — fonctionnel
 
 #### Les bandes noires de la photo détournaient le modèle du fond

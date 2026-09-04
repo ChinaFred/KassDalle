@@ -768,26 +768,55 @@ QuadDetection detectQuadInImage(img.Image source) {
     return QuadDetection(diagnostic: diag);
   }
 
-  // 2. Modèle du fond, pris sur la bande extérieure.
+  // 2. Modèle du fond : sa couleur ET sa texture, pris sur la bande extérieure.
   //
-  //    Les bords d'une photo posée sur une table montrent la table. On en prend
-  //    la couleur médiane — insensible à un coin de livre qui déborderait — et
-  //    l'écart médian, qui dit à quel point ce fond est bruité : un bois veiné
-  //    tolère plus qu'un fond de studio.
-  final bande = math.max(2, (math.min(w, h) * 0.06).round());
+  //    Les bords d'une photo posée sur une table montrent la table. On en tire
+  //    deux mesures, parce qu'aucune des deux ne suffit seule.
+  //
+  //    La couleur ne suffit pas : mesuré sur la photo qui échouait, le bois est
+  //    à 115,85,44 et la couverture contient une planche en bois et des bruns
+  //    dorés exactement de cette teinte. Un seuil de couleur les garde avec le
+  //    fond, et le livre ressort en morceaux.
+  //
+  //    La texture ne suffit pas non plus : la bande sombre du titre et
+  //    l'assiette blanche sont lisses, aussi lisses que la table.
+  //
+  //    Leur union, si. Un pixel appartient au document s'il est loin du fond
+  //    par la couleur **ou** plus texturé que lui.
+  final bande = math.max(4, (math.min(w, h) * 0.06).round());
+  bool surLaBande(int x, int y) =>
+      x < bande || x >= w - bande || y < bande || y >= h - bande;
+
+  // 2a. Texture : écart-type de la luminance sur une fenêtre de neuf pixels,
+  //     calculé par images intégrales — sans elles, chaque pixel relirait
+  //     quatre-vingt-une valeurs.
+  final lum = List.generate(h, (_) => List.filled(w, 0.0));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final px = zone.getPixel(x, y);
+      lum[y][x] = px.r * 0.299 + px.g * 0.587 + px.b * 0.114;
+    }
+  }
+  final ecartLocal = _ecartTypeLocal(lum, w, h, 4);
+
+  // 2b. Couleur : médiane de la bande, puis **raffinement**.
+  //
+  //     La bande n'est pas toujours pure. Sur la photo mesurée, elle contenait
+  //     un ordinateur noir sur toute la hauteur gauche : la moitié de ses
+  //     pixels. La dispersion brute en sortait à 171, un seuil qui laissait
+  //     passer le livre entier. On ne garde donc, pour mesurer la dispersion,
+  //     que les pixels de bande proches de la médiane — le vrai fond.
   final rs = <int>[], gs = <int>[], bs = <int>[];
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      final surLaBande =
-          x < bande || x >= w - bande || y < bande || y >= h - bande;
-      if (!surLaBande) continue;
+      if (!surLaBande(x, y)) continue;
       final px = zone.getPixel(x, y);
       rs.add(px.r.toInt());
       gs.add(px.g.toInt());
       bs.add(px.b.toInt());
     }
   }
-  if (rs.length < 32) {
+  if (rs.length < 64) {
     diag['sortie'] = 'bande_insuffisante';
     return QuadDetection(diagnostic: diag);
   }
@@ -796,25 +825,8 @@ QuadDetection detectQuadInImage(img.Image source) {
   final fondG = _mediane(gs);
   final fondB = _mediane(bs);
 
-  final ecarts = <double>[];
-  for (var i = 0; i < rs.length; i++) {
-    ecarts.add(_distanceCouleur(rs[i], gs[i], bs[i], fondR, fondG, fondB));
-  }
-  final ecartMedian = _mediane(
-    ecarts.map((e) => e.round()).toList(),
-  ).toDouble();
-
-  // Un fond parfaitement uni donnerait un seuil nul, où le moindre bruit de
-  // capteur passe pour du document. Le plancher évite ce cas ; le facteur 3
-  // laisse passer le veinage du bois sans laisser passer le livre.
-  final seuil = math.max(30.0, ecartMedian * 3);
-  diag['fond_rgb'] = '$fondR,$fondG,$fondB';
-  diag['ecart_median'] = ecartMedian.round();
-  diag['seuil'] = seuil.round();
-
-  // 3. Masque : ce qui ne ressemble pas au fond.
-  final masque = List.generate(h, (_) => List.filled(w, false));
-  var marques = 0;
+  final distance = List.generate(h, (_) => List.filled(w, 0.0));
+  final distancesFond = <double>[];
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       final px = zone.getPixel(x, y);
@@ -826,24 +838,96 @@ QuadDetection detectQuadInImage(img.Image source) {
         fondG,
         fondB,
       );
-      if (d > seuil) {
+      distance[y][x] = d;
+      if (surLaBande(x, y)) distancesFond.add(d);
+    }
+  }
+
+  final proches = distancesFond.where((d) => d < 70).toList()..sort();
+  final reference = proches.length > 64 ? proches : (distancesFond..sort());
+  final seuilCouleur = math.max(
+    28.0,
+    reference[(reference.length * 0.90).round().clamp(
+          0,
+          reference.length - 1,
+        )] *
+        1.5,
+  );
+
+  // La texture du fond se mesure sur les pixels de bande qui SONT le fond.
+  //
+  //    Mesurée sur toute la bande, elle sortait à 31 au lieu de 19 : la bande
+  //    longe un ordinateur noir, et la frontière ordinateur/table est un bord
+  //    franc, donc très texturé. Un seuil gonflé par ce bord laisse ensuite
+  //    passer la moitié du livre.
+  //
+  //    On ne garde donc que les pixels de bande dont la COULEUR est déjà celle
+  //    du fond. Les deux mesures se tiennent : la couleur filtre, la texture
+  //    complète.
+  final texturesFond = <double>[];
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (surLaBande(x, y) && distance[y][x] < 70) {
+        texturesFond.add(ecartLocal[y][x]);
+      }
+    }
+  }
+  texturesFond.sort();
+  final seuilTexture = texturesFond.length > 64
+      ? math.max(
+          6.0,
+          texturesFond[(texturesFond.length * 0.90).round().clamp(
+                0,
+                texturesFond.length - 1,
+              )] *
+              1.3,
+        )
+      : 12.0;
+
+  diag['fond_rgb'] = '$fondR,$fondG,$fondB';
+  diag['bande_px'] = distancesFond.length;
+  diag['bande_proches'] = proches.length;
+  diag['seuil_couleur'] = seuilCouleur.round();
+  diag['seuil_texture'] = seuilTexture.round();
+
+  // 3. Masque : loin du fond par la couleur, ou plus texturé que lui.
+  var masque = List.generate(h, (_) => List.filled(w, false));
+  var marques = 0;
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (distance[y][x] > seuilCouleur || ecartLocal[y][x] > seuilTexture) {
         masque[y][x] = true;
         marques++;
       }
     }
   }
+  // La bande qui a servi de modele EST le fond : l'y marquer comme document
+  // serait se contredire. Cela empeche aussi la tache de sortir par le bord et
+  // d'emporter le bois au-dela.
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (surLaBande(x, y) && masque[y][x]) {
+        masque[y][x] = false;
+        marques--;
+      }
+    }
+  }
   diag['part_marquee'] = (marques / (w * h) * 100).round();
 
-  // 4. Nettoyage : fermeture puis ouverture, rayon 1.
+  // 4. Nettoyage.
   //
-  //    La fermeture bouche les trous — un aplat clair sur la couverture, une
-  //    assiette blanche, qui ressemblent au fond sans en être. L'ouverture
-  //    efface les grains isolés : une miette sur la table, un reflet.
-  final ferme = _dilate(_erode(_dilate(masque, w, h, 2), w, h, 2), w, h, 1);
-  final propre = _erode(ferme, w, h, 1);
+  //    Ouverture d'abord : elle efface le grain isolé du bois, qui passe le
+  //    seuil de texture par endroits. Fermeture ensuite : elle recolle le trait
+  //    du contour là où il s'interrompt. Remplissage enfin : tout ce qui n'est
+  //    pas relié au bord de l'image appartient au document — c'est ainsi que
+  //    l'assiette blanche, lisse et de couleur proche du fond, rejoint le livre
+  //    au lieu de le trouer.
+  masque = _dilate(_erode(masque, w, h, 2), w, h, 2);
+  masque = _erode(_dilate(masque, w, h, 3), w, h, 3);
+  masque = _boucheLesTrous(masque, w, h);
 
   // 5. Plus grande tache connexe.
-  final tache = _plusGrandeComposante(propre, w, h);
+  final tache = _plusGrandeComposante(masque, w, h);
   if (tache == null) {
     diag['sortie'] = 'aucune_tache';
     return QuadDetection(diagnostic: diag);
@@ -851,6 +935,21 @@ QuadDetection detectQuadInImage(img.Image source) {
 
   final aireTache = tache.length / (w * h);
   diag['aire_tache'] = (aireTache * 100).round();
+
+  // Etendue de la tache, pour distinguer une tache qui deborde d'un rectangle
+  // qui s'etire : les deux donnent la meme aire finale et ne se corrigent pas
+  // au meme endroit.
+  var bx0 = w, by0 = h, bx1 = 0, by1 = 0;
+  for (final i in tache) {
+    final x = i % w, y = i ~/ w;
+    if (x < bx0) bx0 = x;
+    if (x > bx1) bx1 = x;
+    if (y < by0) by0 = y;
+    if (y > by1) by1 = y;
+  }
+  diag['tache_bbox'] =
+      '${(bx0 / w * 100).round()} ${(by0 / h * 100).round()} '
+      '${(bx1 / w * 100).round()} ${(by1 / h * 100).round()}';
 
   // Trop petit : une assiette, un reflet, une ombre — et le cas où le livre
   // remplit la photo, où le fond modélisé EST le livre et où la seule tache
@@ -1015,6 +1114,84 @@ BandesUniformes _bandesUniformes(img.Image im) {
   }
 
   return BandesUniformes(x0, y0, x1, y1);
+}
+
+/// Écart-type de la luminance sur une fenêtre carrée, par images intégrales.
+///
+/// C'est la mesure de texture qui distingue une couverture imprimée d'une
+/// table : la première est une photographie, la seconde est lisse. Sans les
+/// images intégrales, chaque pixel relirait les quatre-vingt-une valeurs de sa
+/// fenêtre — vingt millions de lectures sur une image réduite.
+List<List<double>> _ecartTypeLocal(
+  List<List<double>> lum,
+  int w,
+  int h,
+  int rayon,
+) {
+  final s1 = List.generate(h + 1, (_) => List.filled(w + 1, 0.0));
+  final s2 = List.generate(h + 1, (_) => List.filled(w + 1, 0.0));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final v = lum[y][x];
+      s1[y + 1][x + 1] = v + s1[y][x + 1] + s1[y + 1][x] - s1[y][x];
+      s2[y + 1][x + 1] = v * v + s2[y][x + 1] + s2[y + 1][x] - s2[y][x];
+    }
+  }
+  double bloc(List<List<double>> s, int x0, int y0, int x1, int y1) =>
+      s[y1][x1] - s[y0][x1] - s[y1][x0] + s[y0][x0];
+
+  final out = List.generate(h, (_) => List.filled(w, 0.0));
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final x0 = math.max(0, x - rayon), y0 = math.max(0, y - rayon);
+      final x1 = math.min(w, x + rayon + 1), y1 = math.min(h, y + rayon + 1);
+      final n = (x1 - x0) * (y1 - y0);
+      final moyenne = bloc(s1, x0, y0, x1, y1) / n;
+      final carres = bloc(s2, x0, y0, x1, y1) / n;
+      out[y][x] = math.sqrt(math.max(0.0, carres - moyenne * moyenne));
+    }
+  }
+  return out;
+}
+
+/// Rattache au document tout ce que le fond n'atteint pas depuis les bords.
+///
+/// L'assiette blanche de la couverture est lisse et pâle : ni la texture ni la
+/// couleur ne la distinguent de la table. Elle creusait donc un trou au milieu
+/// du livre. Mais elle est **entourée** par le livre, et le fond ne peut pas
+/// l'atteindre en partant du bord de l'image : c'est ce qui la trahit.
+List<List<bool>> _boucheLesTrous(List<List<bool>> m, int w, int h) {
+  final dehors = List.generate(h, (_) => List.filled(w, false));
+  final pile = <int>[];
+
+  void pousse(int x, int y) {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    if (dehors[y][x] || m[y][x]) return;
+    dehors[y][x] = true;
+    pile.add(y * w + x);
+  }
+
+  for (var x = 0; x < w; x++) {
+    pousse(x, 0);
+    pousse(x, h - 1);
+  }
+  for (var y = 0; y < h; y++) {
+    pousse(0, y);
+    pousse(w - 1, y);
+  }
+  while (pile.isNotEmpty) {
+    final i = pile.removeLast();
+    final x = i % w, y = i ~/ w;
+    pousse(x - 1, y);
+    pousse(x + 1, y);
+    pousse(x, y - 1);
+    pousse(x, y + 1);
+  }
+
+  return List.generate(
+    h,
+    (y) => List.generate(w, (x) => m[y][x] || !dehors[y][x]),
+  );
 }
 
 double _distanceCouleur(int r, int g, int b, int mr, int mg, int mb) {
