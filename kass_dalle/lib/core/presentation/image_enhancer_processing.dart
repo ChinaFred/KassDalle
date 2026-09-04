@@ -844,7 +844,27 @@ QuadDetection detectQuadInImage(img.Image source) {
   }
 
   final proches = distancesFond.where((d) => d < 70).toList()..sort();
-  final reference = proches.length > 64 ? proches : (distancesFond..sort());
+
+  // La bande décrit-elle UN fond, ou plusieurs ?
+  //
+  // L'hypothèse « les bords montrent la table » tient tant que les bords ne
+  // montrent que la table. Mesuré sur deux photos : sur la première, 81 % des
+  // pixels de bande se serrent autour de leur médiane — c'est du bois. Sur la
+  // seconde, 33 % seulement : à gauche un objet noir, à droite un canapé
+  // sombre, et la médiane sort à 62,65,63. Le bois, lui, se retrouve à 110 de
+  // ce faux fond et passe pour du document.
+  //
+  // Quand la bande n'est pas cohérente, la couleur ne dit plus rien de fiable
+  // et **on ne s'en sert pas**. La texture, elle, reste vraie : une table est
+  // lisse, un canapé aussi, un objet noir aussi — une couverture imprimée non.
+  final coherence = distancesFond.isEmpty
+      ? 0.0
+      : proches.length / distancesFond.length;
+  final couleurFiable = coherence >= 0.55 && proches.length > 64;
+  diag['coherence_fond'] = (coherence * 100).round();
+  diag['couleur_fiable'] = couleurFiable;
+
+  final reference = couleurFiable ? proches : (distancesFond..sort());
   final seuilCouleur = math.max(
     28.0,
     reference[(reference.length * 0.90).round().clamp(
@@ -864,19 +884,30 @@ QuadDetection detectQuadInImage(img.Image source) {
   //    On ne garde donc que les pixels de bande dont la COULEUR est déjà celle
   //    du fond. Les deux mesures se tiennent : la couleur filtre, la texture
   //    complète.
+  // La texture du fond se mesure sur les pixels de bande qui SONT le fond.
+  //
+  // Quand la couleur est fiable, elle sert de filtre : seuls les pixels déjà
+  // de la bonne teinte comptent. Prise sur toute la bande, la mesure sortait à
+  // 31 au lieu de 19 sur la première photo — la frontière ordinateur/table est
+  // un bord franc, donc très texturé.
+  //
+  // Quand elle ne l'est pas, aucun filtre n'est possible : on prend toute la
+  // bande, au 75e centile plutôt qu'au 90e. Les frontières entre les objets du
+  // fond y sont, et un centile plus bas les laisse dehors.
   final texturesFond = <double>[];
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      if (surLaBande(x, y) && distance[y][x] < 70) {
-        texturesFond.add(ecartLocal[y][x]);
-      }
+      if (!surLaBande(x, y)) continue;
+      if (couleurFiable && distance[y][x] >= 70) continue;
+      texturesFond.add(ecartLocal[y][x]);
     }
   }
   texturesFond.sort();
+  final centile = couleurFiable ? 0.90 : 0.75;
   final seuilTexture = texturesFond.length > 64
       ? math.max(
           6.0,
-          texturesFond[(texturesFond.length * 0.90).round().clamp(
+          texturesFond[(texturesFond.length * centile).round().clamp(
                 0,
                 texturesFond.length - 1,
               )] *
@@ -895,7 +926,8 @@ QuadDetection detectQuadInImage(img.Image source) {
   var marques = 0;
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
-      if (distance[y][x] > seuilCouleur || ecartLocal[y][x] > seuilTexture) {
+      final loinParLaCouleur = couleurFiable && distance[y][x] > seuilCouleur;
+      if (loinParLaCouleur || ecartLocal[y][x] > seuilTexture) {
         masque[y][x] = true;
         marques++;
       }
@@ -922,7 +954,7 @@ QuadDetection detectQuadInImage(img.Image source) {
   //    pas relié au bord de l'image appartient au document — c'est ainsi que
   //    l'assiette blanche, lisse et de couleur proche du fond, rejoint le livre
   //    au lieu de le trouer.
-  masque = _dilate(_erode(masque, w, h, 2), w, h, 2);
+  masque = _dilate(_erode(masque, w, h, 3), w, h, 3);
   masque = _erode(_dilate(masque, w, h, 3), w, h, 3);
   masque = _boucheLesTrous(masque, w, h);
 
@@ -975,12 +1007,21 @@ QuadDetection detectQuadInImage(img.Image source) {
     diag['sortie'] = 'contour_trop_court';
     return QuadDetection(diagnostic: diag);
   }
-  final rect = _rectangleAireMinimale(contour);
-  if (rect == null) {
+  final brut = _rectangleAireMinimale(contour);
+  if (brut == null) {
     diag['sortie'] = 'rectangle_introuvable';
     return QuadDetection(diagnostic: diag);
   }
-
+  // Le rectangle brut fait foi.
+  //
+  // Un recalage sur les bords a ete essaye : glisser chaque cote le long de sa
+  // normale et garder la position ou le gradient est le plus fort. Mesure sur
+  // deux photos, il tirait les cotes vers les contours INTERIEURS de la
+  // couverture -- le bord d une assiette, la bande du titre, plus francs que
+  // la frontiere carton/table -- et le cadre entrait dans le livre. Restreint
+  // a cinq pour cent et conditionne a un gain d un quart, il rognait encore
+  // cinq pour cent du livre sans rien corriger ailleurs. Retire.
+  final rect = brut.coins;
   final aireRect = _aireQuad(rect) / (w * h);
   diag['aire_rect'] = (aireRect * 100).round();
   if (aireRect < kAtelierAireMinimale || aireRect > 0.98) {
@@ -1312,15 +1353,38 @@ List<Offset> _contourParLigne(List<int> tache, int w, int h) {
   return points;
 }
 
+/// Un rectangle tourné, décrit par son angle et ses quatre bornes.
+class RectangleTourne {
+  final double angle;
+  final double u0, u1, v0, v1;
+
+  const RectangleTourne(this.angle, this.u0, this.u1, this.v0, this.v1);
+
+  Offset _versImage(double u, double v) {
+    final c = math.cos(angle), s = math.sin(angle);
+    return Offset(u * c - v * s, u * s + v * c);
+  }
+
+  List<Offset> get coins => [
+    _versImage(u0, v0),
+    _versImage(u1, v0),
+    _versImage(u1, v1),
+    _versImage(u0, v1),
+  ];
+
+  RectangleTourne avecBornes(double nu0, double nu1, double nv0, double nv1) =>
+      RectangleTourne(angle, nu0, nu1, nv0, nv1);
+}
+
 /// Rectangle tourné d'aire minimale contenant tous les points.
 ///
 /// Balayage d'un quart de tour par pas d'un degré : à cette échelle, un degré
 /// d'erreur déplace un coin de moins de trois pixels sur 512, et le coût reste
 /// de quelques milliers d'opérations.
-List<Offset>? _rectangleAireMinimale(List<Offset> points) {
+RectangleTourne? _rectangleAireMinimale(List<Offset> points) {
   if (points.length < 4) return null;
   double meilleureAire = double.infinity;
-  List<Offset>? meilleur;
+  RectangleTourne? meilleur;
 
   for (var deg = 0; deg < 90; deg++) {
     final a = deg * math.pi / 180.0;
@@ -1338,14 +1402,7 @@ List<Offset>? _rectangleAireMinimale(List<Offset> points) {
     final aire = (maxU - minU) * (maxV - minV);
     if (aire >= meilleureAire) continue;
     meilleureAire = aire;
-    Offset versImage(double u, double v) =>
-        Offset(u * cosA - v * sinA, u * sinA + v * cosA);
-    meilleur = [
-      versImage(minU, minV),
-      versImage(maxU, minV),
-      versImage(maxU, maxV),
-      versImage(minU, maxV),
-    ];
+    meilleur = RectangleTourne(a, minU, maxU, minV, maxV);
   }
   return meilleur;
 }

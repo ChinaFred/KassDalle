@@ -14,7 +14,44 @@ anciennes sans accents.
 
 ---
 
-## 2026-09-01
+## 2026-09-04
+
+### v0.22.34 — fonctionnel
+
+#### La bande extérieure ne décrit pas toujours UN fond
+
+Une deuxième photo a montré la limite de l'hypothèse « les bords montrent la table ». Livre posé
+sur le même bois, mais un objet noir à gauche et un canapé sombre à droite : la médiane de la
+bande sort à 62,65,63 — le sombre — et le bois, à 110 de ce faux fond, passe pour du document.
+53 % de l'image marquée, un cadre qui entoure le livre plus une large marge.
+
+La cohérence de la bande se mesure : la part de ses pixels serrés autour de leur médiane. 81 % sur
+la première photo, 33 % sur la seconde. En dessous de 55 %, la couleur ne dit plus rien de fiable
+et **on ne s'en sert pas**. La texture, elle, reste vraie : une table est lisse, un canapé aussi,
+un objet noir aussi — une couverture imprimée non.
+
+Le seuil de texture suit la même mesure : filtré par la couleur quand elle est fiable, pris sur
+toute la bande au 75e centile sinon.
+
+L'ouverture morphologique passe de 2 à 3. Mesurée à 4, elle réparait la seconde photo et
+détruisait la première — le rectangle partait en diagonale. C'est le genre d'arbitrage qu'une
+seule image ne permet pas de voir.
+
+#### Un recalage sur les bords, essayé et retiré
+
+Glisser chaque côté du rectangle le long de sa normale et garder la position au gradient le plus
+fort. Mesuré sur les deux photos : les côtés partaient vers les contours **intérieurs** de la
+couverture — le bord d'une assiette, la bande du titre, plus francs que la frontière
+carton/table — et le cadre entrait dans le livre. Restreint à cinq pour cent et conditionné à un
+gain d'un quart, il rognait encore cinq pour cent du livre sans rien corriger ailleurs.
+
+Le code est parti, la mesure reste en commentaire : c'est une piste à ne pas reprendre telle
+quelle.
+
+#### Où en est la détection
+
+Sur la première photo, le cadre tient le livre. Sur la seconde, il déborde encore en bas, sur un
+jean sombre et texturé que le seuil de texture seul ne distingue pas d'une couverture.
 
 ### v0.22.33 — fonctionnel
 
