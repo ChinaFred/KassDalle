@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.22.36**
+**Version actuelle : 0.22.37**
 **Web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
 
 Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation complète vit dans
@@ -49,6 +49,10 @@ l'écran d'accueil » (mobile).
 
 [https://kassdale-6d948.web.app/app-release.apk](https://kassdale-6d948.web.app/app-release.apk) —
 activer « Sources inconnues », puis installer.
+
+Une seule fois. Ensuite, l'application vérifie sa version à chaque lancement et propose de
+se mettre à jour : téléchargement et installation se font depuis la fenêtre, sans repasser
+par le navigateur.
 
 ### Windows
 

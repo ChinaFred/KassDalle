@@ -1,15 +1,12 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
-import '../services/error_report_service.dart';
 import '../services/app_update_service.dart';
+import 'app_update_dialog.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -19,7 +16,6 @@ import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
 import '../../features/moderation/presentation/moderation_providers.dart';
 import 'usage_warning_banner.dart';
-import '../theme/app_icon_size.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -30,6 +26,8 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
+  final AppUpdateService _appUpdateService = AppUpdateService();
+
   @override
   void initState() {
     super.initState();
@@ -41,16 +39,15 @@ class _AppShellState extends ConsumerState<AppShell> {
     // mini-bannière "Ajouter à l'écran d'accueil" (beforeinstallprompt sans
     // preventDefault dans index.html). Pas de dialog custom nécessaire.
 
-    // App native Android → vérifier si une mise à jour est disponible
+    // App native Android → vérifier si une mise à jour est disponible.
+    // `check` répond null partout ailleurs, le garde ici évite un aller-retour
+    // réseau inutile sur le web.
     if (kIsWeb) return;
-    final info = await checkForAppUpdate();
+    final info = await _appUpdateService.check();
     if (info == null || !mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        builder: (_) => _AppUpdateDialog(info: info),
-      );
+      showAppUpdateDialog(context, info: info, service: _appUpdateService);
     });
   }
 
@@ -68,77 +65,6 @@ class _AppShellState extends ConsumerState<AppShell> {
           ? _WideShell(child: widget.child)
           : _NarrowShell(child: widget.child),
     );
-  }
-}
-
-// ── Dialog : mise à jour disponible (app native Android) ─────────────────────
-
-// ── Dialog : mise à jour disponible (app native Android) ─────────────────────
-
-class _AppUpdateDialog extends StatefulWidget {
-  final AppUpdateInfo info;
-  const _AppUpdateDialog({required this.info});
-
-  @override
-  State<_AppUpdateDialog> createState() => _AppUpdateDialogState();
-}
-
-class _AppUpdateDialogState extends State<_AppUpdateDialog> {
-  bool _loading = false;
-  final ErrorReportService _errorReportService = ErrorReportService();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      icon: const Icon(Icons.system_update_outlined, size: AppIconSize.large),
-      title: const Text('Mise à jour disponible'),
-      content: Text(
-        'La version ${widget.info.latestVersion} est disponible.\n'
-        'Vous utilisez actuellement la version $kAppVersion.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Plus tard'),
-        ),
-        FilledButton.icon(
-          icon: _loading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.download_outlined),
-          label: Text(_loading ? 'Ouverture…' : 'Mettre à jour'),
-          onPressed: _loading ? null : _download,
-        ),
-      ],
-    );
-  }
-
-  Future<void> _download() async {
-    setState(() => _loading = true);
-    try {
-      await launchUrl(
-        Uri.parse(widget.info.apkUrl),
-        mode: LaunchMode.externalApplication,
-      );
-      if (mounted) Navigator.of(context).pop();
-    } catch (e, st) {
-      unawaited(
-        _errorReportService.reportError(
-          feature: 'app_update_download',
-          error: e,
-          stackTrace: st,
-          context: {'apk_url': widget.info.apkUrl},
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
   }
 }
 

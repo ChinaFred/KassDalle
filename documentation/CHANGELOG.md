@@ -16,6 +16,90 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.37 — fonctionnel
+
+#### L'application Android se met à jour sans passer par le navigateur
+
+La fenêtre « Mise à jour disponible » ouvrait Chrome. Il fallait ensuite retrouver le fichier
+téléchargé, l'ouvrir, et autoriser Chrome à installer des applications. Trois gestes hors de
+l'application, pour un utilisateur qui venait de dire oui.
+
+Le parcours tient maintenant dans la fenêtre : autorisation, téléchargement avec sa barre de
+progression et son bouton d'annulation, puis l'écran d'installation d'Android. L'autorisation
+est demandée **avant** le transfert — se la voir refuser après quatre-vingt-dix mégaoctets les
+perdrait.
+
+L'écran de confirmation du système reste obligatoire, et l'autorisation « installer des
+applications inconnues » se donne désormais à Kass'Dalle plutôt qu'à Chrome. L'installation
+silencieuse n'existe pas hors Play Store.
+
+Quand l'installation directe échoue, la fenêtre propose le téléchargement par le navigateur :
+l'ancien chemin devient le repli.
+
+Un téléchargement interrompu ne laisse rien derrière lui, et un fichier plus court que la
+taille annoncée est effacé sans être ouvert — un APK tronqué échoue à l'installation sans
+dire pourquoi.
+
+### v0.22.37 — technique
+
+#### Le manifeste de l'APK est distinct de celui du web
+
+L'application lisait `version.json` pour savoir si une mise à jour existait. Ce fichier décrit
+le bundle web, et les deux divergent dès qu'un déploiement ne reconstruit pas l'APK :
+`deploy.ps1 -WebOnly` met le web à jour et laisse le binaire en place. La version annoncée
+n'était alors pas celle du fichier téléchargé — l'utilisateur installait, restait en dessous,
+et la fenêtre revenait à chaque lancement.
+
+`apk_release.json` est écrit au moment où l'APK est compilé et copié : `version`,
+`build_number`, `file`, `size_bytes`, `built_at`. Il décrit toujours le fichier servi à côté
+de lui. Aucun repli sur `version.json` quand il manque : ce serait reproduire le défaut qu'il
+corrige, et sans manifeste aucune mise à jour n'est proposée.
+
+À version égale, le numéro de build départage — un APK reconstruit sans changement de
+`version:` porte le même nom de version et un build supérieur.
+
+#### `-WebOnly` ne supprime plus l'APK de la mise en ligne
+
+Un déploiement hosting remplace tout le contenu de `build/web`. Sans APK recopié, le lien de
+téléchargement du site partait en 404 ; avec un APK survivant, c'était l'ancien binaire publié
+sous le numéro de version du web.
+
+`Publish-ApkPayload` s'exécute avant chaque déploiement. Elle restaure la paire APK +
+manifeste depuis `Release/mobile` quand le build n'a pas été rejoué, et ne publie ni l'un ni
+l'autre quand il n'y a rien à restaurer. La paire se restaure **ensemble** : associer un
+manifeste à un binaire qui n'est pas le sien annoncerait une version fausse.
+
+En fin de course, le script nomme la version d'APK réellement en ligne dès qu'elle diffère de
+celle du web. Un écart après un `-WebOnly` est normal ; il devient un problème quand personne
+ne le voit.
+
+#### Le canal d'installation
+
+`REQUEST_INSTALL_PACKAGES` et un FileProvider d'autorité `${applicationId}.updateprovider`
+rejoignent le manifeste Android — `.fileprovider` serait entré en conflit avec ceux
+d'`image_picker`, de `printing` et de `cunning_document_scanner`. Le seul chemin exposé est
+`cache/updates/`, vidé avant chaque transfert.
+
+`MainActivity.kt` porte le canal `dev.kassbi.kass_dalle/app_installer` : dossier de
+téléchargement, lecture de l'autorisation, ouverture du réglage système, ouverture de
+l'installateur. Le téléchargement reste en Dart, où la progression s'affiche. Sur toute autre
+plateforme, `AppInstaller` répond « non » sans lever d'erreur : l'appelant n'a pas à connaître
+la plateforme.
+
+L'écriture du fichier passe par un import conditionnel (`apk_file_store_io.dart` /
+`apk_file_store_stub.dart`) : `dart:io` n'existe pas sur le web, et `app_shell.dart` est
+compilé pour les deux.
+
+`test/app_update_service_test.dart` couvre la comparaison de versions, la lecture du
+manifeste, l'absence de repli, la progression, le fichier tronqué et l'annulation. Ce dernier
+cas a trouvé un défaut : l'exception d'annulation traverse `addStream` puis la fermeture du
+fichier et ressort parfois enveloppée, si bien que se fier à son type laissait un APK à moitié
+écrit dans le cache. L'annulation se lit maintenant sur le suivi du téléchargement.
+
+Une dernière chose, et elle ne se voyait pas : `deploy.ps1` n'a pas de BOM, PowerShell 5.1 le
+lit alors en ANSI, et l'octet `0x94` d'un tiret cadratin y devient un guillemet fermant. Un
+tiret dans une chaîne coupait le script en deux au chargement.
+
 ### v0.22.36 — fonctionnel
 
 #### La suite des états d'un traitement se lit en icônes

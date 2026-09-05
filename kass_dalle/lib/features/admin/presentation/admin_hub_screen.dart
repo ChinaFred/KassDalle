@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/services/app_update_service.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../moderation/presentation/moderation_providers.dart';
 
@@ -168,7 +169,7 @@ class AdminHubScreen extends ConsumerWidget {
               subtitle:
                   'Récupérer la dernière version de l\'application mobile.',
               onTap: () => launchUrl(
-                Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
+                Uri.parse(kApkDownloadUrl),
                 mode: LaunchMode.platformDefault,
               ),
             ),

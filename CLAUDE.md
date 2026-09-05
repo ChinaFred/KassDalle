@@ -249,9 +249,13 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 Toujours passer par le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
 build/deploy à la main.
 
+**Tout déploiement embarque l'APK.** `-WebOnly` a été retiré et le script s'arrête si on le lui
+passe. L'application Android lit le manifeste posé à côté de l'APK pour savoir si une mise à jour
+existe : publier le web seul lui annonce une version que le téléchargement ne rend pas, et la
+fenêtre de mise à jour revient à chaque lancement.
+
 ```powershell
 ./deploy.ps1              # web + APK Android + functions + hosting/firestore/storage + Release/ + git push
-./deploy.ps1 -WebOnly     # web uniquement
 ./deploy.ps1 -Message "…" # message de commit personnalisé
 ./deploy.ps1 -SkipGit
 ./deploy.ps1 -ResumeHostingOnly

@@ -2048,6 +2048,9 @@ Dans `kass_dalle/firebase.json` :
   `Content-Disposition: attachment` qui le nomme `kass-dalle.apk`. Sans le premier, le
   navigateur affiche le fichier au lieu de le télécharger ; sans les seconds, l'utilisateur
   réinstalle la version de la semaine dernière en croyant se mettre à jour.
+- `apk_release.json` porte les mêmes en-têtes anti-cache. C'est le manifeste que
+  l'application Android interroge au lancement : un cache d'une heure retarderait
+  d'autant la proposition de mise à jour.
 - Une seule règle de réécriture, `** → /index.html`, comme toute application à route unique.
 
 Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne version.
@@ -2073,6 +2076,14 @@ Deux pièges connus, tous deux silencieux :
   échoué. Chercher `Functions deploy had errors` dans le log **avant** d'annoncer quoi que ce
   soit — le second `Deploy complete!` est celui du hosting.
 
+Un déploiement hosting remplace tout le contenu de `build/web`. `-WebOnly` supprimait donc
+l'APK de la mise en ligne, ou publiait celui d'un build précédent. `Publish-ApkPayload`
+s'exécute avant chaque déploiement : elle restaure la paire APK + manifeste depuis
+`Release/mobile` quand le build n'a pas été rejoué, et ne publie ni l'un ni l'autre quand il
+n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manifeste à un
+binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
+course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
+
 ---
 
 ## 12. Application Mobile
@@ -2084,7 +2095,7 @@ est nette dans le dépôt, et une réimplémentation ne doit pas prendre le seco
 
 | Élément | État |
 |---|---|
-| Permissions déclarées | `INTERNET` et `CAMERA` dans `android/app/src/main/AndroidManifest.xml` |
+| Permissions déclarées | `INTERNET`, `CAMERA` et `REQUEST_INSTALL_PACKAGES` dans `android/app/src/main/AndroidManifest.xml` |
 | Caméra | `<uses-feature android:name="android.hardware.camera.any" android:required="false" />` — l'absence de caméra n'empêche pas l'installation |
 | Configuration Firebase | `android/app/google-services.json`, présent |
 | Signature | `android/key.properties` et `signingConfigs.release` |
@@ -2092,6 +2103,51 @@ est nette dans le dépôt, et une réimplémentation ne doit pas prendre le seco
 | Attestation | Play Integrity |
 | Icône | Adaptative — `mipmap-anydpi-v26/ic_launcher.xml`, fond `#6B7B3A` dans `values/colors.xml`, couches `drawable-*dpi/ic_launcher_foreground.png` |
 | Distribution | `app-release.apk` servi par le même déploiement Firebase Hosting, avec un `Content-Disposition: attachment` |
+| Mise à jour | L'application se met à jour elle-même — voir ci-dessous |
+
+#### Mise à jour hors magasin
+
+Kass'Dalle n'est pas distribuée par le Play Store : elle vérifie sa version au lancement,
+télécharge son propre APK et le passe à l'installateur du système.
+
+| Pièce | Rôle |
+|---|---|
+| `apk_release.json` (hosting) | Manifeste de l'APK publié : `version`, `build_number`, `file`, `size_bytes`, `built_at` |
+| `core/services/app_update_service.dart` | Lit le manifeste, compare, télécharge en suivant la progression |
+| `core/services/app_installer.dart` | Canal `dev.kassbi.kass_dalle/app_installer` vers le natif |
+| `MainActivity.kt` | Dossier de téléchargement, lecture de l'autorisation, ouverture de l'installateur |
+| `res/xml/file_paths.xml` | Seul chemin exposé par le FileProvider : `cache/updates/` |
+| `Publish-ApkPayload` (`deploy.ps1`) | Publie l'APK et son manifeste ensemble, ou aucun des deux |
+
+**Le manifeste n'est pas `version.json`.** Ce dernier décrit le bundle web, et les deux
+divergent dès qu'un déploiement ne reconstruit pas l'APK — `deploy.ps1 -WebOnly` met le web
+à jour et laisse le binaire en place. L'application lisait `version.json` : elle annonçait
+alors une version que le téléchargement ne rendait pas, l'utilisateur installait, restait en
+dessous, et la fenêtre revenait à chaque lancement. `apk_release.json` n'est écrit qu'au
+moment où l'APK est compilé et copié, et décrit donc toujours le fichier servi à côté de lui.
+
+**Pas de repli sur `version.json` quand le manifeste manque** : ce serait reproduire le
+défaut qu'il corrige. Sans manifeste, aucune mise à jour n'est proposée.
+
+À version égale, le numéro de build départage : un APK reconstruit sans changement de
+`version:` porte le même nom de version et un build supérieur.
+
+L'autorité du FileProvider est `${applicationId}.updateprovider` et non `.fileprovider` :
+`image_picker`, `printing` et `cunning_document_scanner` déclarent chacun la leur, et deux
+providers de même autorité font échouer la fusion des manifestes.
+
+`REQUEST_INSTALL_PACKAGES` n'autorise pas à installer, elle autorise à le demander : le
+système affiche toujours son écran de confirmation, et l'utilisateur doit avoir accordé
+« installer des applications inconnues » à Kass'Dalle. L'installation silencieuse n'existe
+pas hors Play Store. Quand l'installation directe échoue, la fenêtre propose le
+téléchargement par le navigateur, qui était le chemin unique auparavant.
+
+Le téléchargement écrit dans `cacheDir/updates`, vidé avant chaque transfert : un APK pèse
+près de 90 Mo. Un fichier plus court que la taille annoncée est effacé sans être ouvert — un
+APK tronqué échoue à l'installation sans dire pourquoi.
+
+`test/app_update_service_test.dart` couvre la comparaison de versions, la lecture du
+manifeste, l'absence de repli, la progression, le fichier tronqué et l'annulation.
 
 `READ_MEDIA_IMAGES` **n'est pas déclarée**. Le choix d'une photo passe par le sélecteur du
 système, qui rend un accès ponctuel sans permission — c'est le comportement voulu depuis

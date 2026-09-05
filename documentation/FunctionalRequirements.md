@@ -340,6 +340,34 @@ ouvertes sur mobile : rien n'est réservé au grand écran.
 
 - **Télécharger l'APK Android** : le paquet servi par le même déploiement Firebase Hosting.
 
+### 5.6 bis Mise à jour de l'application Android
+
+L'application n'est pas distribuée par le Play Store. Elle se met à jour elle-même.
+
+Au lancement, elle compare sa version à celle de l'APK publié. Si le serveur est plus
+récent, une fenêtre annonce la version disponible et le poids du téléchargement.
+
+Le parcours se déroule sans quitter l'application :
+
+1. **Autorisation** — au premier passage, Android demande l'accord d'installer des
+   applications inconnues. La fenêtre ouvre le réglage, l'utilisateur revient et poursuit.
+   L'autorisation est demandée avant le téléchargement : refuser après quatre-vingt-dix
+   mégaoctets transférés les perdrait.
+2. **Téléchargement** — barre de progression, poids reçu sur poids total, bouton d'annulation
+   qui arrête le transfert et efface le fichier.
+3. **Installation** — l'écran de confirmation du système s'ouvre. Il reste obligatoire :
+   aucune installation silencieuse n'existe hors magasin.
+
+Quand l'installation directe échoue, la fenêtre propose le téléchargement par le navigateur.
+« Plus tard » ferme la fenêtre ; elle reviendra au prochain lancement tant que la mise à jour
+n'est pas installée.
+
+Une version publiée sans son APK — un déploiement web seul — n'est jamais annoncée aux
+téléphones : ils continuent de voir la dernière version réellement téléchargeable.
+
+Ce parcours n'existe que sur l'application Android native. Le web se met à jour au
+rechargement. iOS n'autorise aucune installation hors App Store.
+
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
 - Un utilisateur peut créer un ou plusieurs groupes familiaux (avec un nom libre).

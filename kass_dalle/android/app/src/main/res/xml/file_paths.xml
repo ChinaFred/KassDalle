@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chemins exposés par le FileProvider des mises à jour.
+
+  Un seul dossier, et il est dans le cache : l'APK téléchargé est un fichier
+  jetable, effacé par le système quand la place manque. Élargir ce chemin
+  reviendrait à ouvrir tout le stockage de l'application à qui reçoit l'URI.
+-->
+<paths>
+    <cache-path name="app_updates" path="updates/" />
+</paths>

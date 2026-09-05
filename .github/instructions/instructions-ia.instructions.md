@@ -176,7 +176,7 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 * Toujours utiliser le script racine `deploy.ps1` (ne pas régénérer les commandes de build/deploy
   à la main).
-* Déployer : `./deploy.ps1` (ou `./deploy.ps1 -WebOnly` si web uniquement).
+* Déployer : `./deploy.ps1`. Tout déploiement embarque l APK ; `-WebOnly` a été retiré et le script s arrête si on le lui passe.
 * Après un travail demandé : résumer en français, incrémenter `version:` dans
   `kass_dalle/pubspec.yaml`, exécuter `./deploy.ps1`, puis annoncer la version déployée
   (ex. `Déployé en v0.19.37`).

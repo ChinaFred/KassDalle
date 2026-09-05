@@ -116,6 +116,12 @@
           { "key": "Content-Disposition", "value": "attachment; filename=\"kass-dalle.apk\"" },
           { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
         ]
+      },
+      {
+        "source": "apk_release.json",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
       }
     ]
   }

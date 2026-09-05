@@ -3,14 +3,14 @@
     Déploie KassDalle : build web + APK Android, Firebase hosting, Release/, git push.
 
 .PARAMETER WebOnly
-    Ne compile et déploie que le web (pas l'APK).
+    RETIRÉ. Tout déploiement embarque désormais l'APK ; passer ce paramètre
+    arrête le script au lieu de publier un site sans binaire.
 
 .PARAMETER Message
     Message de commit git. Par défaut : "deploy: <date>"
 
 .EXAMPLE
     .\deploy.ps1
-    .\deploy.ps1 -WebOnly
     .\deploy.ps1 -Message "fix: correction affichage"
 #>
 param(
@@ -22,6 +22,21 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# « -WebOnly » est refusé, et non ignoré.
+#
+# L'application Android lit le manifeste posé à côté de l'APK pour savoir si
+# une mise à jour existe. Un déploiement sans APK laisse ce manifeste décrire
+# une version que le téléchargement ne rend pas : la fenêtre de mise à jour
+# revient à chaque lancement, et le lien pointe vers un fichier absent ou
+# périmé.
+#
+# Le refuser plutôt que de construire l'APK quand même : un script qui fait
+# silencieusement plus que ce qu'on lui demande est aussi difficile à
+# comprendre qu'un script qui en fait moins.
+if ($WebOnly) {
+    throw "-WebOnly a ete retire : tout deploiement embarque l'APK. Relancer sans ce parametre."
+}
 
 $root     = $PSScriptRoot
 $appDir   = Join-Path $root "kass_dalle"
@@ -169,6 +184,114 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     }
 }
 
+function Get-PubspecVersion {
+    param(
+        [Parameter(Mandatory = $true)][string]$PubspecPath
+    )
+
+    $line = Get-Content $PubspecPath | Where-Object { $_ -match "^version:" } | Select-Object -First 1
+    if (-not $line) { throw "Aucune ligne « version: » dans $PubspecPath" }
+
+    $raw = ($line -replace "^version:\s*", "").Trim()
+    $parts = $raw -split "\+", 2
+    $build = ""
+    if ($parts.Count -gt 1) { $build = $parts[1] }
+
+    return [pscustomobject]@{
+        Version = $parts[0]
+        Build   = $build
+        Raw     = $raw
+    }
+}
+
+function Write-ApkManifest {
+    <#
+        Décrit l'APK réellement construit, à côté de lui.
+
+        L'application Android lit ce fichier pour savoir si une mise à jour
+        existe. Elle lisait « version.json » avant, qui décrit le bundle web :
+        un « -WebOnly » annonçait alors une version que le téléchargement ne
+        rendait pas, et la fenêtre de mise à jour revenait à chaque lancement.
+
+        Ce manifeste n'est donc écrit qu'ici, au moment où l'APK vient d'être
+        compilé, et jamais reconstitué à partir de « pubspec.yaml » plus tard :
+        la version qu'il porte est celle du binaire posé à côté.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$ApkPath,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$BuildNumber,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $apk = Get-Item $ApkPath
+    $manifest = [ordered]@{
+        version      = $Version
+        build_number = $BuildNumber
+        file         = $apk.Name
+        size_bytes   = $apk.Length
+        built_at     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+
+    # UTF-8 SANS BOM : « Out-File -Encoding utf8 » en PowerShell 5.1 en ajoute
+    # un, et jsonDecode côté Dart rejette le document dès le premier caractère.
+    $json = $manifest | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText($Destination, $json, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Publish-ApkPayload {
+    <#
+        Garantit que l'APK et son manifeste partent ensemble, ou pas du tout.
+
+        Un déploiement hosting remplace tout le contenu de « build/web ». Sans
+        cette étape, « -WebOnly » publiait un site sans APK — lien de
+        téléchargement en 404 — ou, si le fichier avait survécu au build web, un
+        APK ancien sous un numéro de version neuf.
+
+        Trois cas, et un seul message pour chacun :
+          - APK et manifeste présents : rien à faire.
+          - Absents de build/web : on restaure la dernière paire connue depuis
+            Release/mobile. L'application se verra proposer cette version-là,
+            qui est bien celle qu'elle téléchargera.
+          - Rien à restaurer : on ne publie ni l'un ni l'autre. Aucun manifeste
+            veut dire aucune mise à jour proposée, ce qui est exact.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$WebDir,
+        [Parameter(Mandatory = $true)][string]$MobileDir
+    )
+
+    $webApk      = Join-Path $WebDir "app-release.apk"
+    $webManifest = Join-Path $WebDir "apk_release.json"
+    $keptApk      = Join-Path $MobileDir "app-release.apk"
+    $keptManifest = Join-Path $MobileDir "apk_release.json"
+
+    if (-not (Test-Path $webApk)) {
+        if ((Test-Path $keptApk) -and (Test-Path $keptManifest)) {
+            Copy-Item $keptApk $webApk -Force
+            Copy-Item $keptManifest $webManifest -Force
+            Write-Host "APK restauré depuis Release/mobile (build non rejoué)." -ForegroundColor DarkGray
+        } else {
+            Remove-Item $webManifest -Force -ErrorAction SilentlyContinue
+            Write-Host "Aucun APK à publier : le site n'en proposera pas et aucune mise à jour ne sera annoncée." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    # APK présent, manifeste absent : rien ne dit quelle version porte ce
+    # binaire. Emprunter celui de Release/mobile associerait un numéro à un
+    # fichier qui n'est pas le sien, et un numéro trop haut ferait réinstaller
+    # la même version à chaque lancement. On publie l'APK pour le lien du site,
+    # sans rien annoncer. Le prochain déploiement complet rétablit la paire.
+    if (-not (Test-Path $webManifest)) {
+        Write-Host "APK publié sans manifeste : aucune mise à jour ne sera proposée aux téléphones." -ForegroundColor Yellow
+        return
+    }
+
+    $announced = (Get-Content $webManifest -Raw | ConvertFrom-Json).version
+    Write-Host "APK publié : v$announced" -ForegroundColor DarkGray
+}
+
 # ── 0. Clé Gemini ──────────────────────────────────────────────────────────────
 # La clé Gemini n'est plus passée côté client : elle est gérée par Secret Manager
 # côté Cloud Functions (secret GEMINI_API_KEY). Voir functions/src/gemini/*.
@@ -199,17 +322,31 @@ try {
         flutter build apk --release
         if ($LASTEXITCODE -ne 0) { throw "flutter build apk a échoué" }
 
-        # Copier l'APK dans build/web pour le lien de téléchargement du site
+        # Copier l'APK dans build/web pour le lien de téléchargement du site,
+        # et écrire le manifeste que l'application Android interroge au
+        # lancement. Les deux vont ensemble : le manifeste décrit le fichier
+        # posé à côté de lui, pas la version du dépôt.
         $apkBuilt = "$appDir\build\app\outputs\flutter-apk\app-release.apk"
         if (Test-Path $apkBuilt) {
             Copy-Item $apkBuilt "$appDir\build\web\app-release.apk" -Force
-            Write-Host "APK copié dans build/web" -ForegroundColor DarkGray
+            $pubspec = Get-PubspecVersion -PubspecPath "$appDir\pubspec.yaml"
+            Write-ApkManifest `
+                -ApkPath "$appDir\build\web\app-release.apk" `
+                -Version $pubspec.Version `
+                -BuildNumber $pubspec.Build `
+                -Destination "$appDir\build\web\apk_release.json"
+            Write-Host "APK v$($pubspec.Raw) copié dans build/web avec son manifeste" -ForegroundColor DarkGray
         }
     } else {
         Write-Host "`n[2/5] APK ignoré (-WebOnly)" -ForegroundColor DarkGray
     }
 
     # ── 3. Firebase deploy (functions puis hosting/firestore/storage) ─────────
+    # Le hosting remplace tout le contenu de build/web : sans cette étape, un
+    # déploiement qui n'a pas reconstruit l'APK le supprimerait de la mise en
+    # ligne, ou publierait l'ancien sous le numéro de version du web.
+    Publish-ApkPayload -WebDir "$appDir\build\web" -MobileDir $releaseMobile
+
     if (-not $ResumeHostingOnly) {
         Write-Host "`n[3/5] firebase deploy (functions)..." -ForegroundColor Cyan
         Invoke-FirebaseFunctionsDeployWithRetry -FunctionsDir $appDir
@@ -233,7 +370,14 @@ Copy-Item -Recurse -Force "$appDir\build\web\*" "$releaseWeb\"
 if (-not $WebOnly) {
     $apkSrc = "$appDir\build\app\outputs\flutter-apk\app-release.apk"
     if (Test-Path $apkSrc) {
+        New-Item -ItemType Directory -Force $releaseMobile | Out-Null
         Copy-Item $apkSrc "$releaseMobile\app-release.apk" -Force
+        # Le manifeste suit l'APK : c'est cette paire que « Publish-ApkPayload »
+        # restaure quand un déploiement ultérieur ne reconstruit pas le binaire.
+        $apkManifestSrc = "$appDir\build\web\apk_release.json"
+        if (Test-Path $apkManifestSrc) {
+            Copy-Item $apkManifestSrc "$releaseMobile\apk_release.json" -Force
+        }
         # Copie vers Google Drive
         $gdrive = "G:\Mon Drive\Kass'Dalle\app-release.apk"
         try {
@@ -267,6 +411,22 @@ if (-not $SkipGit) {
     Write-Host "`n[5/5] git commit + push ignorés (-SkipGit)" -ForegroundColor DarkGray
 }
 
-$version = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""
+$version = (Get-PubspecVersion -PubspecPath "$appDir\pubspec.yaml").Version
 $heure = Get-Date -Format 'HH:mm:ss'
 Write-Host "`nDéployé Version $version à $heure avec succès !" -ForegroundColor Green
+
+# L'écart entre le web et l'APK est normal après un « -WebOnly » ; il devient un
+# problème quand personne ne le voit. Les téléphones se verront proposer la
+# version nommée ici, et pas celle du site.
+$deployedManifest = "$appDir\build\web\apk_release.json"
+if (Test-Path $deployedManifest) {
+    $apkVersion = (Get-Content $deployedManifest -Raw | ConvertFrom-Json).version
+    if ($apkVersion -ne $version) {
+        # Pas de tiret cadratin dans une chaine : ce fichier n'a pas de BOM, et
+        # PowerShell 5.1 le lit alors en ANSI, ou l'octet 0x94 du tiret devient
+        # un guillemet fermant qui coupe la chaine en deux.
+        Write-Host "APK en ligne : v$apkVersion. Les téléphones ne verront pas la v$version." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Aucun APK en ligne : les téléphones ne recevront aucune mise à jour." -ForegroundColor Yellow
+}

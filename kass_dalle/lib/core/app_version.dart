@@ -18,6 +18,14 @@ import 'services/error_report_service.dart';
 /// Initialisée une seule fois au démarrage par [initAppVersion].
 String kAppVersion = '...';
 
+/// Numéro de build de la version installée — le `+271` de `pubspec.yaml`.
+///
+/// Il départage deux APK portant le même nom de version, cas d'un
+/// reconstruit sans changement de `version:`. La vérification de mise à jour
+/// (`AppUpdateService`) est seule à le lire ; aucun écran ne l'affiche.
+/// Vide tant que la plateforme ne l'annonce pas.
+String kAppBuildNumber = '';
+
 Future<void> initAppVersion() async {
   try {
     if (kIsWeb) {
@@ -27,6 +35,8 @@ Future<void> initAppVersion() async {
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body) as Map<String, dynamic>;
         final v = json['version'];
+        final b = json['build_number'];
+        if (b is String) kAppBuildNumber = b;
         if (v is String && v.isNotEmpty) {
           kAppVersion = v;
           return;
@@ -35,6 +45,7 @@ Future<void> initAppVersion() async {
     }
     final info = await PackageInfo.fromPlatform();
     if (info.version.isNotEmpty) kAppVersion = info.version;
+    if (info.buildNumber.isNotEmpty) kAppBuildNumber = info.buildNumber;
   } catch (e, st) {
     debugPrint('[initAppVersion] error: $e');
     unawaited(
