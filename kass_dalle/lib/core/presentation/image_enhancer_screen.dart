@@ -152,6 +152,13 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   /// n'applique que ce qui a été touché : rotation, lumière, détails.
   bool _cropArmed = false;
 
+  /// Le cadre affiché vient-il de la détection, ou du réglage par défaut ?
+  ///
+  /// La distinction se dit à l'écran. Une détection automatique qui a l'air
+  /// d'un résultat, alors qu'elle n'a rien trouvé, fait perdre plus de temps
+  /// qu'un cadre annoncé comme un point de départ.
+  bool _cadreSuggere = false;
+
   bool get _allowColor =>
       widget.mode == EnhancerMode.color || widget.mode == EnhancerMode.studio;
 
@@ -274,6 +281,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         if (aireQuad >= 0.35) {
           retenu = true;
           setState(() {
+            _cadreSuggere = true;
             for (var i = 0; i < 4; i++) {
               _corners[i] = Offset(
                 corners[i * 2].clamp(0.01, 0.99),
@@ -1085,6 +1093,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               child: _cropArmed
                   ? Column(
                       children: [
+                        Text(
+                          _cadreSuggere
+                              ? 'Cadre suggéré — vérifiez les coins et corrigez-les'
+                              : 'Aucun cadre reconnu — placez les quatre coins',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                         const Text(
                           'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
                           style: TextStyle(color: Colors.white54, fontSize: 11),

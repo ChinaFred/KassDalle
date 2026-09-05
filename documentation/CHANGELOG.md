@@ -14,7 +14,42 @@ anciennes sans accents.
 
 ---
 
-## 2026-09-04
+## 2026-09-05
+
+### v0.22.35 — fonctionnel
+
+#### Le scanner du système prend le relais sur mobile
+
+La détection de cadre écrite ces derniers jours ne rivalisera pas avec celle d'un téléphone, et il
+n'y a aucune raison qu'elle essaie là où le système fait le travail.
+
+Trois différences, et aucune n'est un meilleur seuil. Le scanner du système fait tourner un
+**modèle entraîné** sur des centaines de milliers de photos de documents, là où nous appliquons des
+règles posées à la main. Il travaille sur le **flux vidéo** — trente images par seconde, et seul ce
+qui reste stable d'une image à l'autre est retenu, la main qui bouge fournissant des angles et des
+lumières supplémentaires ; nous travaillons sur une seule prise. Et il s'exécute sur le
+**processeur dédié**, en quelques millisecondes.
+
+Le scan d'une couverture ouvre donc ML Kit Document Scanner sur Android et VisionKit sur iOS, par
+`cunning_document_scanner`. L'image revient cadrée et redressée : elle part directement en file,
+sans atelier de retouche. L'APK gagne trois cents kilo-octets — le modèle est fourni par les
+services Google Play, rien n'est embarqué.
+
+#### Sur le web, le cadre dit qu'il est une suggestion
+
+Aucune de ces API n'existe dans un navigateur. L'heuristique reste, et elle s'annonce : « Cadre
+suggéré — vérifiez les coins et corrigez-les » quand elle a trouvé quelque chose, « Aucun cadre
+reconnu — placez les quatre coins » sinon.
+
+Un cadrage automatique qui a l'air d'un résultat, alors qu'il n'a rien trouvé, fait perdre plus de
+temps qu'un point de départ annoncé pour tel.
+
+#### Au passage
+
+La détection tournait déjà **sur l'appareil**, jamais sur le serveur : `compute` sur les octets
+locaux, aucun appel réseau. Ce qui se ressentait comme une latence était la boucle Dart sur douze
+mégapixels — 2 963 ms mesurées — et, sur le web, le fait que `compute` n'y ouvre aucun isolate et
+tourne donc sur le fil principal.
 
 ### v0.22.34 — fonctionnel
 

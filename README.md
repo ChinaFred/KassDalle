@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.22.34**  
+**Version actuelle : 0.22.35**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**  
 **APK Android : [télécharger](https://kassdale-6d948.web.app/app-release.apk)**
 

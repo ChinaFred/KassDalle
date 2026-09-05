@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -10,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
 import '../../../core/utils/page_name_order.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
@@ -361,11 +363,91 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     await _pickFromCameraAndQueue(intent: ScanIntent.bookCover);
   }
 
+  /// La plateforme sait-elle numériser un document elle-même ?
+  ///
+  /// Android expose ML Kit Document Scanner, iOS expose VisionKit. Les deux
+  /// cherchent les coins sur le **flux vidéo**, avec un modèle entraîné, sur le
+  /// processeur dédié : trente images par seconde, et seul ce qui reste stable
+  /// d'une image à l'autre est retenu. La main qui bouge donne des angles et
+  /// des lumières différents, autant d'indices supplémentaires.
+  ///
+  /// Notre heuristique travaille sur une seule prise, avec des seuils posés à
+  /// la main. Elle ne rivalisera pas, et il n'y a aucune raison qu'elle essaie
+  /// là où le système fait le travail.
+  ///
+  /// Rien de tout cela n'existe dans un navigateur : sur le web, l'atelier de
+  /// retouche garde la main et présente son cadre pour ce qu'il est.
+  bool get _scannerSystemeDisponible => PlatformUtils.isMobile;
+
+  /// Numérise une couverture avec le scanner du système.
+  ///
+  /// Il rend une image déjà cadrée et redressée : elle part directement en
+  /// file, sans passer par l'atelier de retouche.
+  Future<void> _scanCouvertureAvecLeSysteme() async {
+    state = state.copyWith(
+      status: ScanStatus.picking,
+      intent: ScanIntent.bookCover,
+    );
+    try {
+      final chemins = await CunningDocumentScanner.getPictures(
+        noOfPages: 1,
+        scannerSource: ScannerSource.camera,
+      );
+      // Annulation : le scanner rend `null` sur les deux plateformes.
+      if (chemins == null || chemins.isEmpty) {
+        state = ScanState(activeImports: state.activeImports);
+        return;
+      }
+
+      // Le fichier vit dans un cache appartenant au greffon, effacé par
+      // `cleanCache` : on lit ses octets avant de le lâcher.
+      final bytes = await XFile(chemins.first).readAsBytes();
+      await _processSelectedBytes(
+        bytes: bytes,
+        filename: 'cover_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        extension: 'jpg',
+        intent: ScanIntent.bookCover,
+      );
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.scannerSysteme',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'intent': ScanIntent.bookCover.name},
+      );
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'Numérisation impossible : $e',
+      );
+    } finally {
+      // Nettoyage best-effort du cache du greffon — jamais silencieux : des
+      // images qui s'accumulent sont un coût de stockage invisible.
+      unawaited(
+        CunningDocumentScanner.cleanCache().catchError((
+          Object e,
+          StackTrace st,
+        ) {
+          _errorReportService.reportError(
+            feature: 'scanUpload.scannerCache',
+            error: e,
+            stackTrace: st,
+          );
+        }),
+      );
+    }
+  }
+
   Future<void> _pickFromCameraAndQueue({
     required ScanIntent intent,
     String? bookId,
     String? bookTitre,
   }) async {
+    // Le système d'abord, quand il sait faire.
+    if (intent == ScanIntent.bookCover && _scannerSystemeDisponible) {
+      await _scanCouvertureAvecLeSysteme();
+      return;
+    }
+
     state = state.copyWith(status: ScanStatus.picking);
     try {
       final photo = await _imagePicker.pickImage(

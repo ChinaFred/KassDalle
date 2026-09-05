@@ -212,6 +212,15 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 ### 5.2 Module Scan (caméra : mobile et web — import de fichier : partout)
 
 - Accès caméra natif sur mobile, `getUserMedia` sur le web ; l'import de fichier (photo, PDF, DOCX, texte collé) est disponible sur les quatre plateformes.
+- **Le scan d'une couverture de livre passe par le scanner du système sur mobile.** Android expose
+  ML Kit Document Scanner, iOS expose VisionKit : les deux cherchent les coins sur le flux vidéo,
+  avec un modèle entraîné, et rendent une image déjà cadrée et redressée. Elle part directement en
+  file, sans passer par l'atelier de retouche.
+- **Sur le web, aucune de ces API n'existe.** L'atelier de retouche garde la main et propose un
+  cadre calculé sur une seule prise. Il est annoncé pour ce qu'il est : « Cadre suggéré — vérifiez
+  les coins et corrigez-les », ou « Aucun cadre reconnu — placez les quatre coins ». Un cadrage
+  automatique qui a l'air d'un résultat, alors qu'il n'a rien trouvé, fait perdre plus de temps
+  qu'un point de départ annoncé.
 - Recadrage et correction de perspective avant envoi.
 - **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste.
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
