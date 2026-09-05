@@ -17,17 +17,6 @@ import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
 
-enum _MobileRecipeAction {
-  annotations,
-  refineAi,
-  copyDraft,
-  changeCover,
-  detach,
-  edit,
-  exportPdf,
-  delete,
-}
-
 /// AppBar de la page de détail d'une recette.
 class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final Recipe recipe;
@@ -130,166 +119,115 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     ).toString();
 
     if (isMobileCompact) {
+      // Deux lignes, parce qu'il n'y a pas la place pour une.
+      //
+      // Le titre partageait la barre avec la note, les pastilles d'annotation,
+      // le document source et un menu « … » : il lui restait de quoi afficher
+      // « Gâteau au … ». Les actions descendent donc d'un cran, et le titre
+      // dispose de toute la largeur, sur deux lignes au besoin.
+      //
+      // Le menu « … » disparaît avec elles. Il cachait huit actions derrière un
+      // geste et un temps d'attente ; les mêmes icônes, posées à plat, se
+      // désignent directement.
+      final actionsCompactes = <Widget>[
+        RecipeRatingBadge(recipeId: recipe.id),
+        ...annotBadges,
+        SourceViewerButton(
+          sourceFileUrl: recipe.sourceFileUrl,
+          sourceFileName: recipe.sourceFileName,
+          additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+        ),
+        _ActionCompacte(
+          tooltip: 'Aller aux annotations',
+          icon: Icons.sticky_note_2_outlined,
+          onPressed: onScrollToAnnotations,
+        ),
+        if (user != null)
+          _ActionCompacte(
+            tooltip: RecipeAiUiCopy.appBarActionTooltip,
+            icon: Icons.auto_awesome_outlined,
+            onPressed: onModifyWithAi,
+          ),
+        if (user != null && recipe.createdBy != user!.uid)
+          _ActionCompacte(
+            tooltip: 'Copier comme brouillon',
+            icon: Icons.copy_outlined,
+            onPressed: onCopyAsDraft,
+          ),
+        // Une recette libre n'a pas de couverture de livre : la sienne se
+        // change depuis la vignette en large, et depuis cette icône ici.
+        if (isOwnRecipe && canEdit && recipe.bookId == null)
+          _ActionCompacte(
+            tooltip: uploadingFreeCover
+                ? 'Envoi de la couverture…'
+                : 'Changer la couverture',
+            icon: Icons.image_outlined,
+            onPressed: uploadingFreeCover ? null : onChangeCover,
+          ),
+        if (canEdit && recipe.bookId != null)
+          _ActionCompacte(
+            tooltip: 'Détacher du livre',
+            icon: Icons.link_off_outlined,
+            onPressed: onDetachFromBook,
+          ),
+        if (canEdit)
+          _ActionCompacte(
+            tooltip: 'Modifier la recette',
+            icon: Icons.edit_outlined,
+            onPressed: () => context.push('/recipes/${recipe.id}/edit'),
+          ),
+        _ActionCompacte(
+          tooltip: 'Exporter en PDF',
+          icon: Icons.picture_as_pdf_outlined,
+          onPressed: onExportPdf,
+        ),
+        if (canEdit)
+          _ActionCompacte(
+            tooltip: 'Supprimer la recette',
+            icon: Icons.delete_outline,
+            couleur: Theme.of(context).colorScheme.error,
+            onPressed: onDeleteRecipe,
+          ),
+      ];
+
       return AppBar(
-        toolbarHeight: kToolbarHeight,
+        // De quoi loger deux lignes de titre.
+        toolbarHeight: 72,
         centerTitle: false,
         titleSpacing: 8,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Tooltip(
-                message: [
-                  recipe.titre,
-                  if (recipe.bookTitre != null)
-                    [
-                      recipe.bookTitre!,
-                      if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
-                    ].join(', '),
-                ].join('\n'),
-                child: Text(
-                  recipe.titre,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+        title: Tooltip(
+          message: [
+            recipe.titre,
+            if (recipe.bookTitre != null)
+              [
+                recipe.bookTitre!,
+                if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
+              ].join(', '),
+          ].join('\n'),
+          child: Text(
+            recipe.titre,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(42),
+          child: SizedBox(
+            height: 42,
+            // Défilement horizontal en dernier recours : à densité normale les
+            // dix icônes tiennent sur 360 px, mais une police agrandie ou une
+            // recette qui offre toutes les actions peuvent les déborder. Rien
+            // ne doit alors disparaître.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: actionsCompactes,
               ),
             ),
-            const SizedBox(width: 4),
-            RecipeRatingBadge(recipeId: recipe.id),
-            ...annotBadges,
-          ],
+          ),
         ),
-        actions: [
-          // Le document scanné est joignable ici aussi : sous 700 px, il
-          // n'existait nulle part ailleurs dans l'écran.
-          SourceViewerButton(
-            sourceFileUrl: recipe.sourceFileUrl,
-            sourceFileName: recipe.sourceFileName,
-            additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-          ),
-          PopupMenuButton<_MobileRecipeAction>(
-            tooltip: 'Plus',
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              switch (value) {
-                case _MobileRecipeAction.annotations:
-                  onScrollToAnnotations();
-                case _MobileRecipeAction.refineAi:
-                  onModifyWithAi();
-                case _MobileRecipeAction.copyDraft:
-                  onCopyAsDraft();
-                case _MobileRecipeAction.changeCover:
-                  onChangeCover();
-                case _MobileRecipeAction.detach:
-                  onDetachFromBook();
-                case _MobileRecipeAction.edit:
-                  context.push('/recipes/${recipe.id}/edit');
-                case _MobileRecipeAction.exportPdf:
-                  onExportPdf();
-                case _MobileRecipeAction.delete:
-                  onDeleteRecipe();
-              }
-            },
-            // Les mêmes icônes qu'en large, dans le même ordre : c'est le même
-            // écran, seule la place manque. Ce menu était le seul des
-            // cinquante-cinq de l'application à n'afficher que du texte nu.
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                value: _MobileRecipeAction.annotations,
-                child: ListTile(
-                  leading: Icon(Icons.sticky_note_2_outlined),
-                  title: Text('Aller aux annotations'),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              if (user != null)
-                const PopupMenuItem(
-                  value: _MobileRecipeAction.refineAi,
-                  child: ListTile(
-                    leading: Icon(Icons.auto_awesome_outlined),
-                    title: Text(RecipeAiUiCopy.appBarActionLabel),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              if (user != null && recipe.createdBy != user!.uid)
-                const PopupMenuItem(
-                  value: _MobileRecipeAction.copyDraft,
-                  child: ListTile(
-                    leading: Icon(Icons.copy_outlined),
-                    title: Text('Copier comme brouillon'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              // Une recette libre n'a pas de couverture de livre : la sienne
-              // se change depuis la vignette en large, et depuis ce menu ici.
-              if (isOwnRecipe && canEdit && recipe.bookId == null)
-                PopupMenuItem(
-                  value: _MobileRecipeAction.changeCover,
-                  enabled: !uploadingFreeCover,
-                  child: ListTile(
-                    leading: const Icon(Icons.image_outlined),
-                    title: Text(
-                      uploadingFreeCover
-                          ? 'Envoi de la couverture…'
-                          : 'Changer la couverture',
-                    ),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              if (canEdit && recipe.bookId != null)
-                const PopupMenuItem(
-                  value: _MobileRecipeAction.detach,
-                  child: ListTile(
-                    leading: Icon(Icons.link_off_outlined),
-                    title: Text('Détacher du livre'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              if (canEdit)
-                const PopupMenuItem(
-                  value: _MobileRecipeAction.edit,
-                  child: ListTile(
-                    leading: Icon(Icons.edit_outlined),
-                    title: Text('Modifier la recette'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              const PopupMenuItem(
-                value: _MobileRecipeAction.exportPdf,
-                child: ListTile(
-                  leading: Icon(Icons.picture_as_pdf_outlined),
-                  title: Text('Exporter en PDF'),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              if (canEdit) ...[
-                const PopupMenuDivider(),
-                PopupMenuItem(
-                  value: _MobileRecipeAction.delete,
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.delete_outline,
-                      color: Theme.of(ctx).colorScheme.error,
-                    ),
-                    title: Text(
-                      'Supprimer la recette',
-                      style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-                    ),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
       );
     }
 
@@ -460,6 +398,38 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             onPressed: onDeleteRecipe,
           ),
       ],
+    );
+  }
+}
+
+/// Une action de la barre compacte : une icône, une infobulle, rien d'autre.
+///
+/// Dimensions serrées — vingt-deux pixels d'icône dans trente-six de touche —
+/// pour que la dizaine d'actions tienne sur une ligne de téléphone. En dessous,
+/// la cible devient trop petite pour le doigt.
+class _ActionCompacte extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color? couleur;
+
+  const _ActionCompacte({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.couleur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, color: couleur),
+      iconSize: 22,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
     );
   }
 }

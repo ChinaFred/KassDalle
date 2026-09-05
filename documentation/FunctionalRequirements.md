@@ -241,6 +241,15 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   - La phrase complète s'affichait auparavant sous le titre. Sur un téléphone étroit, et dès que la
     police du système est agrandie, elle se coupait une lettre par ligne.
 
+#### Barre d'une recette sur téléphone
+
+Deux lignes. Le titre occupe la première, sur deux lignes de texte au besoin. Toutes les actions
+occupent la seconde, en icônes : note, annotations, document source, retouche par l'IA, copie en
+brouillon, changement de couverture, détachement du livre, modification, export PDF, suppression.
+
+Il n'y a plus de menu « … ». Il cachait huit actions derrière un geste et un temps d'attente, et
+privait le titre de la place dont il manquait.
+
 ### 5.3 Module Révision et Édition (tous les clients)
 
 - Éditeur hybride à trois modes — texte CookLang coloré, éditeur visuel par blocs à pastilles, aperçu — partageant un seul contenu.

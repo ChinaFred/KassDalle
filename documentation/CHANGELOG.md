@@ -16,6 +16,26 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.39 — fonctionnel
+
+#### La barre d'une recette tient sur deux lignes, et le menu « … » disparaît
+
+Sur téléphone, le titre partageait la barre avec la note, les pastilles d'annotation, le document
+source et un menu « … ». Il lui restait de quoi afficher « Gâteau au … ».
+
+Les actions descendent d'un cran, sur une seconde ligne. Le titre dispose alors de toute la
+largeur, sur deux lignes au besoin.
+
+Le menu « … » disparaît avec elles. Il cachait huit actions derrière un geste et un temps
+d'attente ; les mêmes icônes, posées à plat, se désignent directement : annotations, retouche par
+l'IA, copie en brouillon, changement de couverture, détachement du livre, modification, export PDF,
+suppression. Chacune garde son infobulle.
+
+Les icônes sont serrées — vingt-deux pixels dans une touche de trente-six — pour que la dizaine
+tienne sur une ligne de téléphone. En dessous, la cible deviendrait trop petite pour le doigt. La
+ligne défile horizontalement en dernier recours, quand une police agrandie les déborde : rien ne
+disparaît.
+
 ### v0.22.38 — fonctionnel
 
 #### La progression d'un traitement tient sur deux lignes
