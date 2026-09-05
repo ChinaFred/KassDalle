@@ -16,6 +16,35 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.42 — fonctionnel
+
+#### La suite des étapes prend une ligne à elle
+
+Elle vivait dans la colonne du sous-titre de la tuile, que `ListTile` réduit à ce que les boutons
+de droite lui laissent : le libellé s'y coupait — « Lecture de la page par … ».
+
+Elle est maintenant posée sous la tuile, sur toute la largeur de la carte, et le texte peut passer
+à la ligne.
+
+#### La loupe grossissait neuf fois au lieu de deux
+
+`LoupePainter` prélevait une fenêtre exprimée en pixels **logiques** dans une image mesurée en
+pixels **d'image**. La conversion manquait.
+
+Sur une photo de 1756 px affichée sur 380, la loupe prélevait 70 pixels d'image et les étalait sur
+140 pixels d'écran : un grossissement d'environ neuf, au lieu des deux demandés. Le viseur
+désignait le bon point, mais ce qu'on voyait autour ne ressemblait plus à ce que le doigt
+survolait — d'où l'impression d'un décalage.
+
+#### La barre du bas n'a plus de libellés
+
+Ils avaient été affichés parce que cinq icônes muettes se distinguent mal. Mais les cinq mots se
+partagent la largeur de l'écran, et à l'échelle de police du système « Bibliothèque » se coupait en
+deux, la barre montant sur deux lignes en rognant le contenu.
+
+La v0.22.40 avait borné l'échelle de police pour l'empêcher ; les mots restaient. Ils partent. Le
+nom de chaque destination reste accessible par un appui long.
+
 ### v0.22.41 — fonctionnel
 
 #### « Traitement IA en cours » annonçait une IA qui ne tournait pas

@@ -197,32 +197,29 @@ class _NarrowShell extends ConsumerWidget {
             Expanded(child: child),
           ],
         ),
-        // L'échelle de police du système est bornée ICI, et nulle part ailleurs.
-        //
-        // Les cinq libellés se partagent la largeur de l'écran : à l'échelle
-        // choisie par l'utilisateur, « Bibliothèque » passait à la ligne et
-        // coupait le mot en deux. Le reste de l'application garde son réglage —
-        // c'est une barre de cinq cases fixes, pas du texte à lire.
-        bottomNavigationBar: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.0,
-          child: NavigationBar(
-            selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-            onDestinationSelected: (i) => context.go(destinations[i].route),
-            // Les libellés étaient masqués : cinq icônes muettes, dont une
-            // boussole et un carnet que rien ne distingue pour qui ouvre
-            // l'application deux fois par mois. Le mot coûte douze pixels.
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            destinations: destinations
-                .map(
-                  (d) => NavigationDestination(
-                    icon: _badgedIcon(d),
-                    selectedIcon: _badgedIcon(d, selected: true),
-                    label: d.label,
-                    tooltip: d.label,
-                  ),
-                )
-                .toList(),
-          ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+          onDestinationSelected: (i) => context.go(destinations[i].route),
+          // Sans libellé.
+          //
+          // Ils avaient été affichés parce que cinq icônes muettes se
+          // distinguent mal — une boussole, un carnet. Mais les cinq mots se
+          // partagent la largeur de l'écran, et à l'échelle de police du
+          // système « Bibliothèque » se coupait en deux, la barre montant sur
+          // deux lignes en rognant le contenu.
+          //
+          // Le nom reste accessible par un appui long, sur chaque icône.
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          destinations: destinations
+              .map(
+                (d) => NavigationDestination(
+                  icon: _badgedIcon(d),
+                  selectedIcon: _badgedIcon(d, selected: true),
+                  label: d.label,
+                  tooltip: d.label,
+                ),
+              )
+              .toList(),
         ),
       ),
     );

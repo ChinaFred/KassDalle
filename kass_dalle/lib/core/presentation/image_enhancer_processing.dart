@@ -141,7 +141,16 @@ class LoupePainter extends CustomPainter {
     final normY = (focalWidget.dy - fitted.top) / fitted.height;
     final imgFX = normX * imgW;
     final imgFY = normY * imgH;
-    final halfSpan = r / zoom;
+
+    // Le rayon est en pixels LOGIQUES, la fenetre a prelever en pixels d IMAGE.
+    //
+    // Sans cette conversion, la loupe prelevait 70 pixels d image et les
+    // etalait sur 140 pixels d ecran, quelle que soit la photo. Sur une image
+    // de 1756 px affichee sur 380, cela fait un grossissement de neuf environ
+    // au lieu des deux demandes : le viseur designe le bon point, mais ce qu on
+    // voit autour ne ressemble plus a ce que le doigt survole.
+    final pixelsImageParPixelLogique = imgW / fitted.width;
+    final halfSpan = (r / zoom) * pixelsImageParPixelLogique;
 
     final srcRect = Rect.fromCenter(
       center: Offset(imgFX, imgFY),

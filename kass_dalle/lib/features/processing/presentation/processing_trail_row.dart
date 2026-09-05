@@ -101,7 +101,10 @@ class ProcessingTrailRow extends StatelessWidget {
               Flexible(
                 child: Text(
                   formatProcessingStep(trail[atteint].code),
-                  maxLines: 1,
+                  // Deux lignes : le libellé dispose maintenant de la largeur
+                  // de la carte, mais « Enrichissement des ingrédients par
+                  // l'IA… » la dépasse encore sur un téléphone étroit.
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary,

@@ -233,6 +233,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   étape. Les étapes faites sont colorées, les suivantes en gris. Une **seconde ligne** porte
   l'icône de l'étape en cours et son libellé complet : « Lecture de la page par l'IA… ». Les deux
   côte à côte sur une seule ligne faisaient trop de choses à lire d'un coup.
+  - Les deux lignes sont posées **sous** la tuile, sur toute la largeur de la carte. Dans la
+    colonne du sous-titre, elles n'avaient que la place laissée par les boutons de droite, et le
+    libellé s'y coupait.
   - Le nombre d'étapes dépend du travail : **trois** pour une couverture de livre (envoi, lecture,
     écriture), **sept** pour une page de recette (envoi, lecture, analyse, photos, balisage,
     ingrédients, écriture). Les séquences viennent des branchements du pipeline serveur, pas d'une

@@ -198,7 +198,10 @@ class QueueJobTile extends StatelessWidget {
       if ((job.bookTitre ?? '').isNotEmpty) job.bookTitre!,
     ].join(' • ');
 
-    return ListTile(
+    final enTraitement =
+        job.status == ProcessingJobStatus.processing && job.currentStep != null;
+
+    final tuile = ListTile(
       selected: isSelected,
       selectedTileColor: theme.colorScheme.primaryContainer.withValues(
         alpha: 0.3,
@@ -243,11 +246,6 @@ class QueueJobTile extends StatelessWidget {
               ),
             ],
           ),
-          if (job.status == ProcessingJobStatus.processing &&
-              job.currentStep != null) ...[
-            const SizedBox(height: 4),
-            ProcessingTrailRow(type: job.type, currentStep: job.currentStep),
-          ],
           if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
           if (job.errorId != null) _ErrorIdChip(errorId: job.errorId!),
         ],
@@ -367,6 +365,28 @@ class QueueJobTile extends StatelessWidget {
             ),
       onTap: onTap,
       onLongPress: onLongPress,
+    );
+
+    if (!enTraitement) return tuile;
+
+    // La suite des étapes prend une ligne À ELLE, sous la tuile.
+    //
+    // Elle vivait dans la colonne du sous-titre, que `ListTile` réduit à ce que
+    // les boutons de droite lui laissent : le libellé de l'étape s'y coupait —
+    // « Lecture de la page par … ». Ici, elle dispose de toute la largeur de la
+    // carte, et le texte peut passer à la ligne.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        tuile,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: ProcessingTrailRow(
+            type: job.type,
+            currentStep: job.currentStep,
+          ),
+        ),
+      ],
     );
   }
 
