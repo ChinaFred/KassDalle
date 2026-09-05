@@ -16,6 +16,20 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.43 — fonctionnel
+
+#### La loupe se décalait près des bords, là où on pose les coins
+
+La fenêtre prélevée autour du point visé sort de l image quand ce point approche d un bord.
+Flutter étirait alors la seule partie valide sur toute la surface de la loupe : le point visé
+n était plus au centre, et la croix désignait un pixel qui n était pas celui qu elle montrait.
+
+Le décalage grandissait à mesure qu on approchait du bord — jusqu à la moitié du rayon dans un
+coin. C est exactement là qu on pose les coins d un document.
+
+La destination est maintenant rognée dans la même proportion que la source. Le fond noir apparaît
+là où l image s arrête, et la croix reste sur le point qui sera retenu.
+
 ### v0.22.42 — fonctionnel
 
 #### La suite des étapes prend une ligne à elle

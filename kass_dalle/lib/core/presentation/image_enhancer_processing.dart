@@ -152,11 +152,25 @@ class LoupePainter extends CustomPainter {
     final pixelsImageParPixelLogique = imgW / fitted.width;
     final halfSpan = (r / zoom) * pixelsImageParPixelLogique;
 
-    final srcRect = Rect.fromCenter(
+    final voulu = Rect.fromCenter(
       center: Offset(imgFX, imgFY),
       width: halfSpan * 2,
       height: halfSpan * 2,
     );
+
+    // Près des bords, la fenêtre voulue sort de l'image — et c'est justement là
+    // qu'on pose les coins d'un document.
+    //
+    // `drawImageRect` étire alors la seule partie valide sur toute la surface
+    // de la loupe : le point visé n'est plus au centre, et la croix désigne un
+    // pixel qui n'est pas celui qu'elle montre. Le décalage grandit à mesure
+    // qu'on approche du bord, jusqu'à la moitié du rayon dans un coin.
+    //
+    // La destination est donc rognée dans la même proportion que la source. Le
+    // fond noir apparaît là où l'image s'arrête, et la croix reste sur le point
+    // qui sera retenu.
+    final image = Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble());
+    final srcRect = voulu.intersect(image);
 
     canvas.save();
     canvas.clipPath(
@@ -166,12 +180,20 @@ class LoupePainter extends CustomPainter {
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = Colors.black,
     );
-    canvas.drawImageRect(
-      uiImage,
-      srcRect,
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..filterQuality = FilterQuality.high,
-    );
+    if (srcRect.width > 0 && srcRect.height > 0) {
+      final dstRect = Rect.fromLTWH(
+        (srcRect.left - voulu.left) / voulu.width * size.width,
+        (srcRect.top - voulu.top) / voulu.height * size.height,
+        srcRect.width / voulu.width * size.width,
+        srcRect.height / voulu.height * size.height,
+      );
+      canvas.drawImageRect(
+        uiImage,
+        srcRect,
+        dstRect,
+        Paint()..filterQuality = FilterQuality.high,
+      );
+    }
     // Crosshair
     final cp = Paint()
       ..color = Colors.orangeAccent
