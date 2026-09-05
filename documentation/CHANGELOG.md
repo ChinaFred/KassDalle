@@ -16,6 +16,25 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.44 — fonctionnel
+
+#### Le titre d une recette était rogné par le haut
+
+La barre déclarait au Scaffold une hauteur de 56 pixels et en construisait 114 : deux lignes de
+titre et une rangée d actions. Le Scaffold ne réservait que ce qu on lui annonçait, et la barre
+était coupée par le haut — « Brownies » amputé de sa moitié supérieure, la flèche de retour avec
+lui.
+
+La hauteur est maintenant calculée une seule fois, par une fonction que l appelant interroge avant
+de construire la barre. Elle suit l échelle de police du système : à grande échelle, deux lignes de
+titre demandent plus de 72 pixels.
+
+#### La note rejoint le titre
+
+L étoile et la note décrivent la recette, elles ne sont pas des actions. Elles étaient sur la
+rangée du bas, avec les icônes ; elles sont maintenant à droite du titre, avec les pastilles
+d annotation.
+
 ### v0.22.43 — fonctionnel
 
 #### La loupe se décalait près des bords, là où on pose les coins

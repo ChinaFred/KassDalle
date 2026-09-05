@@ -430,6 +430,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
 
         return Scaffold(
           appBar: RecipeDetailAppBar(
+            hauteur: RecipeDetailAppBar.hauteurPour(context),
             recipe: recipe,
             user: user,
             canEdit: canEdit,

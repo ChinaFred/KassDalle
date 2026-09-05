@@ -48,10 +48,38 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.onDeleteRecipe,
     required this.onExportPdf,
     this.readingContext = const BookReadingContext(),
+    this.hauteur = kToolbarHeight,
   });
 
+  /// Hauteur réclamée au Scaffold, calculée par l'appelant.
+  ///
+  /// Elle doit valoir ce que [build] construit réellement. Sinon le Scaffold
+  /// réserve moins de place que la barre n'en occupe, et la barre est rognée
+  /// par le haut : titre amputé de sa moitié supérieure, flèche de retour avec
+  /// lui. C'est ce qui arrivait — 56 px réclamés pour 114 construits.
+  final double hauteur;
+
+  /// Ce que la barre occupera dans ce contexte.
+  ///
+  /// Statique, parce que l'appelant doit la connaître AVANT de construire le
+  /// widget : `preferredSize` n'a pas de `BuildContext` et ne peut lire ni la
+  /// largeur de l'écran, ni l'échelle de police.
+  static double hauteurPour(BuildContext context) {
+    final compacte =
+        MediaQuery.sizeOf(context).width <
+        PlatformUtils.compactDetailBreakpoint;
+    if (!compacte) return kToolbarHeight;
+    // Deux lignes de titre, plus la rangée d'actions. La première suit
+    // l'échelle de police du système ; au-delà, le titre débordait.
+    final echelle = MediaQuery.textScalerOf(context).scale(1.0);
+    return (72.0 * echelle).clamp(72.0, 140.0) + _hauteurActions;
+  }
+
+  /// Hauteur de la rangée d'actions, sous le titre.
+  static const double _hauteurActions = 42;
+
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(hauteur);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -129,9 +157,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
       // Le menu « … » disparaît avec elles. Il cachait huit actions derrière un
       // geste et un temps d'attente ; les mêmes icônes, posées à plat, se
       // désignent directement.
+      // La note et les pastilles ne sont pas des actions : elles décrivent la
+      // recette, et vivent donc avec son titre.
       final actionsCompactes = <Widget>[
-        RecipeRatingBadge(recipeId: recipe.id),
-        ...annotBadges,
         SourceViewerButton(
           sourceFileUrl: recipe.sourceFileUrl,
           sourceFileName: recipe.sourceFileName,
@@ -191,29 +219,37 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
       ];
 
       return AppBar(
-        // De quoi loger deux lignes de titre.
-        toolbarHeight: 72,
+        toolbarHeight: hauteur - _hauteurActions,
         centerTitle: false,
         titleSpacing: 8,
-        title: Tooltip(
-          message: [
-            recipe.titre,
-            if (recipe.bookTitre != null)
-              [
-                recipe.bookTitre!,
-                if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
-              ].join(', '),
-          ].join('\n'),
-          child: Text(
-            recipe.titre,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Tooltip(
+                message: [
+                  recipe.titre,
+                  if (recipe.bookTitre != null)
+                    [
+                      recipe.bookTitre!,
+                      if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
+                    ].join(', '),
+                ].join('\n'),
+                child: Text(
+                  recipe.titre,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            RecipeRatingBadge(recipeId: recipe.id),
+            ...annotBadges,
+          ],
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(42),
+          preferredSize: const Size.fromHeight(_hauteurActions),
           child: SizedBox(
-            height: 42,
+            height: _hauteurActions,
             // Défilement horizontal en dernier recours : à densité normale les
             // dix icônes tiennent sur 360 px, mais une police agrandie ou une
             // recette qui offre toutes les actions peuvent les déborder. Rien
