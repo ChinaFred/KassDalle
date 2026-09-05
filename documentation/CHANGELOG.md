@@ -16,6 +16,16 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.38 — fonctionnel
+
+#### La progression d'un traitement tient sur deux lignes
+
+La rangée d'icônes et le mot de l'étape en cours partageaient une ligne. Trop de choses côte à
+côte : on ne lisait ni les unes ni l'autre.
+
+Les icônes ont maintenant leur ligne. En dessous, l'icône de l'étape en cours et son libellé
+complet — « Lecture de la page par l'IA… » plutôt que « Lecture ».
+
 ### v0.22.37 — fonctionnel
 
 #### Le scanner du système prend aussi les pages de recette

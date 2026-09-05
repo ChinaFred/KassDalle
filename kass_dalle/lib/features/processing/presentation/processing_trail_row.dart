@@ -14,9 +14,10 @@ import '../domain/processing_trail.dart';
 /// Les icônes disent davantage que la phrase : elles montrent **où l'on en est
 /// dans la suite**, et combien il reste. La phrase ne disait que l'instant.
 ///
-/// Un ou deux mots l'accompagnent — « Lecture », « Balisage » — qui tiennent
-/// sur une ligne à n'importe quelle échelle. Le libellé complet reste
-/// disponible en infobulle.
+/// Deux lignes, et pas une seule. Les jalons occupaient la première moitié de
+/// la ligne et le mot de l'étape courante la seconde : trop de choses côte à
+/// côte pour être lues d'un coup d'œil. Les icônes ont donc leur ligne, et
+/// l'étape courante la sienne — son icône, puis son libellé complet.
 class ProcessingTrailRow extends StatelessWidget {
   final ProcessingJobType type;
   final String? currentStep;
@@ -58,38 +59,57 @@ class ProcessingTrailRow extends StatelessWidget {
     final fait = theme.colorScheme.primary;
     final aVenir = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.35);
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < trail.length; i++) ...[
-          if (i > 0)
-            Container(
-              width: 6,
-              height: 1.5,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              color: i <= atteint ? fait : aVenir,
-            ),
-          Tooltip(
-            message: formatProcessingStep(trail[i].code),
-            child: Icon(
-              trail[i].icon,
-              size: 15,
-              color: i <= atteint ? fait : aVenir,
-            ),
-          ),
-        ],
-        if (!termine) ...[
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              trail[atteint].shortLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.secondary,
-                fontStyle: FontStyle.italic,
+        // Première ligne : les jalons, et rien d'autre.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < trail.length; i++) ...[
+              if (i > 0)
+                Container(
+                  width: 6,
+                  height: 1.5,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  color: i <= atteint ? fait : aVenir,
+                ),
+              Tooltip(
+                message: formatProcessingStep(trail[i].code),
+                child: Icon(
+                  trail[i].icon,
+                  size: 15,
+                  color: i <= atteint ? fait : aVenir,
+                ),
               ),
-            ),
+            ],
+          ],
+        ),
+        // Seconde ligne : l'étape courante, son icône et son libellé complet.
+        if (!termine) ...[
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                trail[atteint].icon,
+                size: 13,
+                color: theme.colorScheme.secondary,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  formatProcessingStep(trail[atteint].code),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.secondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ],

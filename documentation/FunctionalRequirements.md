@@ -230,8 +230,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   - **Le compte affiché est celui de ce que la page porte, pas de ce qu'on en a tiré.** Le bandeau de relecture peut annoncer « trois photos repérées, à extraire à la main » alors que rien n'a été extrait.
   - **Quand une page porte plusieurs recettes, chacune reçoit sa propre copie des photos.** Elles se partageaient le même fichier : invisible tant que supprimer une illustration se contente d'oublier son adresse, mais le jour où l'on supprime vraiment le fichier, la première suppression viderait l'image de l'autre recette sans un mot. La modération, elle, n'a lieu qu'une fois — c'est la même image.
 - **Progression affichée** : sous le titre d'un traitement, une rangée de petites icônes, une par
-  étape. Les étapes faites sont colorées, les suivantes en gris, et un mot nomme l'étape en cours —
-  « Lecture », « Balisage ». Le libellé complet reste en appui long.
+  étape. Les étapes faites sont colorées, les suivantes en gris. Une **seconde ligne** porte
+  l'icône de l'étape en cours et son libellé complet : « Lecture de la page par l'IA… ». Les deux
+  côte à côte sur une seule ligne faisaient trop de choses à lire d'un coup.
   - Le nombre d'étapes dépend du travail : **trois** pour une couverture de livre (envoi, lecture,
     écriture), **sept** pour une page de recette (envoi, lecture, analyse, photos, balisage,
     ingrédients, écriture). Les séquences viennent des branchements du pipeline serveur, pas d'une
