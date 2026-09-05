@@ -218,6 +218,31 @@ class QueueJobTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(subtitle, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 4),
+          // L'état et l'heure vivent SOUS le titre, pas à côté.
+          //
+          // Ils occupaient `trailing`, où `ListTile` accorde d'abord toute la
+          // largeur demandée avant de laisser le reste au titre. Sur un
+          // téléphone étroit — et dès que la police du système est agrandie —
+          // il n'en restait qu'un caractère : le titre et le libellé de l'étape
+          // se lisaient verticalement, une lettre par ligne.
+          //
+          // `Wrap` plutôt qu'une `Row` : à très grande échelle, la puce et
+          // l'heure passent l'une sous l'autre au lieu de déborder.
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _JobStatusChip(status: job.status),
+              Text(
+                _formatDate(job.updatedAt),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
           if (job.status == ProcessingJobStatus.processing &&
               job.currentStep != null) ...[
             const SizedBox(height: 4),
@@ -227,24 +252,13 @@ class QueueJobTile extends StatelessWidget {
           if (job.errorId != null) _ErrorIdChip(errorId: job.errorId!),
         ],
       ),
-      isThreeLine:
-          hasError ||
-          (job.status == ProcessingJobStatus.processing &&
-              job.currentStep != null),
+      // Le sous-titre porte toujours au moins deux lignes désormais.
+      isThreeLine: true,
       trailing: isSelecting
           ? null
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _JobStatusChip(status: job.status),
-                const SizedBox(width: 8),
-                Text(
-                  _formatDate(job.updatedAt),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 2),
                 if (primaryAction != null)
                   IconButton(
                     tooltip: primaryAction.label,

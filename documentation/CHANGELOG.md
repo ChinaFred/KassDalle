@@ -16,6 +16,26 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.40 — fonctionnel
+
+#### Le titre d'un traitement ne se lit plus une lettre par ligne
+
+La puce d'état et l'heure occupaient la droite de la tuile. `ListTile` leur accorde d'abord toute
+la largeur qu'elles demandent, puis laisse le reste au titre : sur un téléphone étroit, et dès que
+la police du système est agrandie, il n'en restait qu'un caractère. « Scan recette • CHOCOLAT » se
+lisait verticalement, et le libellé de l'étape en cours avec lui.
+
+Les deux descendent sous le titre. À droite ne restent que les boutons d'action, dont la largeur
+est connue d'avance.
+
+#### « Bibliothèque » ne se coupe plus en deux dans la barre du bas
+
+Les cinq libellés se partagent la largeur de l'écran. À l'échelle de police choisie par
+l'utilisateur, le plus long passait à la ligne et se coupait au milieu d'un mot.
+
+L'échelle est bornée pour cette barre, et pour elle seule : c'est une rangée de cinq cases fixes,
+pas du texte à lire. Le reste de l'application garde le réglage du système.
+
 ### v0.22.39 — fonctionnel
 
 #### La barre d'une recette tient sur deux lignes, et le menu « … » disparaît

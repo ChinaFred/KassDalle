@@ -197,23 +197,32 @@ class _NarrowShell extends ConsumerWidget {
             Expanded(child: child),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-          onDestinationSelected: (i) => context.go(destinations[i].route),
-          // Les libellés étaient masqués : cinq icônes muettes, dont une
-          // boussole et un carnet que rien ne distingue pour qui ouvre
-          // l'application deux fois par mois. Le mot coûte douze pixels.
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: destinations
-              .map(
-                (d) => NavigationDestination(
-                  icon: _badgedIcon(d),
-                  selectedIcon: _badgedIcon(d, selected: true),
-                  label: d.label,
-                  tooltip: d.label,
-                ),
-              )
-              .toList(),
+        // L'échelle de police du système est bornée ICI, et nulle part ailleurs.
+        //
+        // Les cinq libellés se partagent la largeur de l'écran : à l'échelle
+        // choisie par l'utilisateur, « Bibliothèque » passait à la ligne et
+        // coupait le mot en deux. Le reste de l'application garde son réglage —
+        // c'est une barre de cinq cases fixes, pas du texte à lire.
+        bottomNavigationBar: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.0,
+          child: NavigationBar(
+            selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+            onDestinationSelected: (i) => context.go(destinations[i].route),
+            // Les libellés étaient masqués : cinq icônes muettes, dont une
+            // boussole et un carnet que rien ne distingue pour qui ouvre
+            // l'application deux fois par mois. Le mot coûte douze pixels.
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: destinations
+                .map(
+                  (d) => NavigationDestination(
+                    icon: _badgedIcon(d),
+                    selectedIcon: _badgedIcon(d, selected: true),
+                    label: d.label,
+                    tooltip: d.label,
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );
