@@ -134,6 +134,29 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
   /// Ajoute une page supplémentaire depuis la caméra.
   Future<void> addPageFromCamera() async {
+    // Sur mobile, le scanner du système reprend la main : il rend autant de
+    // pages que voulu en une session, déjà cadrées.
+    if (_scannerSystemeDisponible) {
+      try {
+        final ajoutees = await _ajoutePagesAvecLeSysteme();
+        if (ajoutees == 0) return;
+        state = state.copyWith(
+          status: ScanStatus.pendingFiles,
+          intent: ScanIntent.recipe,
+          pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+        );
+      } catch (error, stackTrace) {
+        _errorReportService.reportError(
+          feature: 'scanUpload.addPageFromCamera.systeme',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } finally {
+        _videLeCacheDuScanner();
+      }
+      return;
+    }
+
     try {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
@@ -379,6 +402,93 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// retouche garde la main et présente son cadre pour ce qu'il est.
   bool get _scannerSystemeDisponible => PlatformUtils.isMobile;
 
+  /// Nombre de pages qu'une session de numérisation accepte.
+  ///
+  /// Le scanner enchaîne les pages sans repasser par l'écran : on photographie
+  /// une recette de six pages d'affilée. Vingt est une borne, pas une cible ;
+  /// elle existe parce que le paquet en exige une.
+  static const int _pagesMaxParSession = 20;
+
+  /// Ajoute au lot en attente les pages rendues par le scanner du système.
+  ///
+  /// Rend le nombre de pages ajoutées, zéro si l'utilisateur a annulé.
+  Future<int> _ajoutePagesAvecLeSysteme() async {
+    final chemins = await CunningDocumentScanner.getPictures(
+      noOfPages: _pagesMaxParSession,
+      scannerSource: ScannerSource.camera,
+    );
+    if (chemins == null || chemins.isEmpty) return 0;
+
+    // Le rang est dans le nom : `comparePageNames` range ensuite un lot qui
+    // mêle des photos et des fichiers choisis. Sans lui, l'ordre des pages
+    // dépendrait de celui du système de fichiers.
+    final horodatage = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < chemins.length; i++) {
+      final bytes = await XFile(chemins[i]).readAsBytes();
+      _pendingPages.add(
+        _PendingPage(
+          bytes: bytes,
+          filename:
+              'page_${horodatage}_${(i + 1).toString().padLeft(2, '0')}.jpg',
+          extension: 'jpg',
+          mimeType: 'image/jpeg',
+        ),
+      );
+    }
+    return chemins.length;
+  }
+
+  /// Vide le cache du greffon, sans jamais échouer en silence.
+  ///
+  /// Les fichiers numérisés vivent dans un dossier qui lui appartient. Les
+  /// laisser s'accumuler est un coût de stockage que rien n'affiche.
+  void _videLeCacheDuScanner() {
+    unawaited(
+      CunningDocumentScanner.cleanCache().catchError((Object e, StackTrace st) {
+        _errorReportService.reportError(
+          feature: 'scanUpload.scannerCache',
+          error: e,
+          stackTrace: st,
+        );
+      }),
+    );
+  }
+
+  /// Numérise des pages de recette avec le scanner du système.
+  ///
+  /// Elles rejoignent le lot en attente, comme celles prises une à une : c'est
+  /// le bouton « Analyser » qui les envoie ensemble, inchangé.
+  Future<void> _scanPagesAvecLeSysteme() async {
+    state = state.copyWith(
+      status: ScanStatus.picking,
+      intent: ScanIntent.recipe,
+    );
+    try {
+      await _ajoutePagesAvecLeSysteme();
+      if (_pendingPages.isEmpty) {
+        state = ScanState(activeImports: state.activeImports);
+        return;
+      }
+      state = state.copyWith(
+        status: ScanStatus.pendingFiles,
+        intent: ScanIntent.recipe,
+        pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+      );
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.scannerSystemePages',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'Numérisation impossible : $e',
+      );
+    } finally {
+      _videLeCacheDuScanner();
+    }
+  }
+
   /// Numérise une couverture avec le scanner du système.
   ///
   /// Il rend une image déjà cadrée et redressée : elle part directement en
@@ -420,20 +530,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         errorMessage: 'Numérisation impossible : $e',
       );
     } finally {
-      // Nettoyage best-effort du cache du greffon — jamais silencieux : des
-      // images qui s'accumulent sont un coût de stockage invisible.
-      unawaited(
-        CunningDocumentScanner.cleanCache().catchError((
-          Object e,
-          StackTrace st,
-        ) {
-          _errorReportService.reportError(
-            feature: 'scanUpload.scannerCache',
-            error: e,
-            stackTrace: st,
-          );
-        }),
-      );
+      _videLeCacheDuScanner();
     }
   }
 
@@ -443,9 +540,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookTitre,
   }) async {
     // Le système d'abord, quand il sait faire.
-    if (intent == ScanIntent.bookCover && _scannerSystemeDisponible) {
-      await _scanCouvertureAvecLeSysteme();
-      return;
+    //
+    // Une page de recette y gagne plus qu'une couverture : le scanner enchaîne
+    // les pages dans une seule session, chacune cadrée et redressée, là où la
+    // caméra en rendait une par aller-retour.
+    if (_scannerSystemeDisponible) {
+      if (intent == ScanIntent.bookCover) {
+        await _scanCouvertureAvecLeSysteme();
+        return;
+      }
+      if (intent == ScanIntent.recipe) {
+        await _scanPagesAvecLeSysteme();
+        return;
+      }
     }
 
     state = state.copyWith(status: ScanStatus.picking);
