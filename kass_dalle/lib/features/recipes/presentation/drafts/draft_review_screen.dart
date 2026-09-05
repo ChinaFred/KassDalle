@@ -46,6 +46,30 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
+
+  /// Ce que le voile annonce, et qui dépend de l'opération en cours.
+  ///
+  /// Un seul drapeau commande ce voile pour cinq opérations, dont deux
+  /// seulement appellent un modèle. Les cinq affichaient « Traitement IA en
+  /// cours — nous appliquons vos consignes » : ouvrir l'atelier de retouche
+  /// télécharge une image depuis Storage, et enregistrer un recadrage l'envoie.
+  /// Ni l'un ni l'autre ne coûte un appel d'IA — une image marquée comme
+  /// venant de notre propre traitement est approuvée sans analyse et sans
+  /// facturation (`moderateAndPromote.ts`).
+  ///
+  /// Annoncer une IA qui ne tourne pas fait suspecter un coût là où il n'y en a
+  /// pas, et rend suspect le message quand elle tourne vraiment.
+  String _titreTraitement = RecipeAiUiCopy.processingTitle;
+  String _messageTraitement = RecipeAiUiCopy.processingMessage;
+
+  void _debuteTraitement({required String titre, required String message}) {
+    setState(() {
+      _aiRefining = true;
+      _titreTraitement = titre;
+      _messageTraitement = message;
+    });
+  }
+
   bool _isDeleting = false;
   final _refineCtrl = TextEditingController();
 
@@ -174,7 +198,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     EnhancerMode mode,
   ) async {
     final url = recipe.imageUrls[index];
-    setState(() => _aiRefining = true);
+    _debuteTraitement(
+      titre: "Chargement de la photo…",
+      message: "Elle s'ouvre dans l'atelier de retouche.",
+    );
     try {
       final bytes = await DraftReviewService.downloadImageBytes(url);
       if (bytes == null || !mounted) return;
@@ -273,7 +300,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     setState(() => _showingIllEnhancer = false);
     if (result == null) return;
     final index = _enhancingIndex; // null = ajout, int = remplacement
-    setState(() => _aiRefining = true);
+    _debuteTraitement(
+      titre: "Enregistrement de la photo…",
+      message: "Elle est envoyée, puis rattachée à la recette.",
+    );
     try {
       final uid = currentUid;
       final newUrl = await DraftReviewService.uploadEnhancedIllustration(
@@ -329,7 +359,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Future<void> _startExtractFromOriginal(Recipe recipe) async {
     final url = recipe.sourceFileUrl;
     if (url == null || url.isEmpty) return;
-    setState(() => _aiRefining = true);
+    _debuteTraitement(
+      titre: "Chargement du scan…",
+      message: "Il s'ouvre dans l'atelier, pour y découper une illustration.",
+    );
     try {
       final bytes = await DraftReviewService.downloadImageBytes(url);
       if (bytes == null || !mounted) return;
@@ -366,7 +399,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
       return;
     }
-    setState(() => _aiRefining = true);
+    _debuteTraitement(
+      titre: "Recherche des photos par l'IA…",
+      message: "Elle repère les illustrations de la page et les découpe.",
+    );
     try {
       final uid = currentUid;
       final gemini = ref.read(geminiServiceProvider);
@@ -408,7 +444,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   }
 
   Future<void> _doRefine(Recipe recipe, String customInstruction) async {
-    setState(() => _aiRefining = true);
+    _debuteTraitement(
+      titre: RecipeAiUiCopy.processingTitle,
+      message: RecipeAiUiCopy.processingMessage,
+    );
     try {
       final gemini = ref.read(geminiServiceProvider);
 
@@ -755,9 +794,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           children: [
             scaffold,
             if (_aiRefining)
-              const AiProcessingOverlay(
-                title: RecipeAiUiCopy.processingTitle,
-                message: RecipeAiUiCopy.processingMessage,
+              AiProcessingOverlay(
+                title: _titreTraitement,
+                message: _messageTraitement,
               ),
             if (_showingIllEnhancer && _enhancerBytes != null)
               Positioned.fill(

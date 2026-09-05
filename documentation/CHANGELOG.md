@@ -16,6 +16,29 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.41 — fonctionnel
+
+#### « Traitement IA en cours » annonçait une IA qui ne tournait pas
+
+Ouvrir l'atelier de retouche affichait ce message. Enregistrer un recadrage aussi. Aucun des deux
+n'appelle un modèle : le premier télécharge une image depuis Storage, le second l'envoie.
+
+Le recadrage passe bien par la fonction de modération, mais une image marquée comme venant de
+notre propre traitement y est approuvée **sans analyse et sans facturation** — `moderateAndPromote.ts`,
+`if (item.origin !== "user")`. Cloud Vision n'est pas appelé.
+
+La cause : un seul drapeau commandait ce voile pour cinq opérations de l'écran de relecture, et
+cinq autres de l'écran d'édition. Deux seulement appellent un modèle — le raffinement du texte et
+la recherche de photos sur la page. Le titre et le message avaient été écrits pour celles-là, et
+les huit autres les héritaient.
+
+Chaque opération annonce désormais ce qu'elle fait : « Chargement de la photo… », « Chargement du
+scan… », « Enregistrement de la photo… », « Recherche des photos par l'IA… », ou le message
+d'origine pour le raffinement.
+
+Annoncer une IA qui ne tourne pas fait suspecter un coût là où il n'y en a pas, et rend le message
+suspect quand elle tourne vraiment.
+
 ### v0.22.40 — fonctionnel
 
 #### Le titre d'un traitement ne se lit plus une lettre par ligne
