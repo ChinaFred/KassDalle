@@ -2063,8 +2063,15 @@ dans `Release/` et pousse le dépôt.
 
 ```powershell
 ./deploy.ps1              # web + APK + functions + hosting/firestore/storage + git push
-./deploy.ps1 -WebOnly     # web uniquement
 ```
+
+**Tout déploiement embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
+passe, au lieu de publier un site sans binaire. L'application Android lit le manifeste posé à côté
+de l'APK pour savoir si une mise à jour existe ; un déploiement web seul lui annonce une version
+que le téléchargement ne rend pas.
+
+Le refus plutôt que la construction silencieuse de l'APK : un script qui fait plus que ce qu'on lui
+demande est aussi difficile à comprendre qu'un script qui en fait moins.
 
 Deux pièges connus, tous deux silencieux :
 
@@ -2076,13 +2083,104 @@ Deux pièges connus, tous deux silencieux :
   échoué. Chercher `Functions deploy had errors` dans le log **avant** d'annoncer quoi que ce
   soit — le second `Deploy complete!` est celui du hosting.
 
-Un déploiement hosting remplace tout le contenu de `build/web`. `-WebOnly` supprimait donc
-l'APK de la mise en ligne, ou publiait celui d'un build précédent. `Publish-ApkPayload`
+Un déploiement hosting remplace tout le contenu de `build/web`. Un déploiement qui ne
+reconstruit pas l'APK l'en supprimait donc, ou publiait celui d'un build précédent — c'est ce que
+faisait `-WebOnly`, aujourd'hui retiré. Le filet reste utile : `-ResumeHostingOnly` reprend une
+mise en ligne interrompue sans rejouer les builds. `Publish-ApkPayload`
 s'exécute avant chaque déploiement : elle restaure la paire APK + manifeste depuis
 `Release/mobile` quand le build n'a pas été rejoué, et ne publie ni l'un ni l'autre quand il
 n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manifeste à un
 binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
 course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
+
+---
+
+## 11 bis. Cadrer un document dans une photo
+
+Deux implémentations, et le choix se fait sur la plateforme.
+
+### Sur mobile : le scanner du système
+
+Android expose ML Kit Document Scanner, iOS expose VisionKit. Le paquet `cunning_document_scanner`
+enveloppe les deux. Ils cherchent les coins sur le **flux vidéo** de la caméra, avec un modèle
+entraîné, sur le processeur dédié : trente images par seconde, et seul ce qui reste stable d'une
+image à l'autre est retenu.
+
+C'est ce que fait l'appareil photo du téléphone, et aucune heuristique écrite ici ne rivalisera.
+Le scan par la caméra passe donc par lui, pour une couverture comme pour des pages de recette.
+
+- **Couverture** : une page, l'image revient cadrée et redressée, elle part directement en file
+  sans passer par l'atelier de retouche.
+- **Pages de recette** : jusqu'à vingt par session. Elles rejoignent le lot en attente, comme
+  celles prises une à une ou choisies dans un fichier. Le rang est écrit dans le nom
+  (`page_<horodatage>_01.jpg`) pour que `comparePageNames` range un lot mêlé.
+- Les fichiers rendus vivent dans un cache appartenant au greffon. On lit leurs octets, puis
+  `cleanCache()` — best-effort, jamais silencieux.
+
+### Sur le web : une suggestion, annoncée comme telle
+
+Aucune de ces API n'existe dans un navigateur. L'atelier de retouche garde la main et calcule un
+cadre sur une seule prise, dans `core/presentation/image_enhancer_processing.dart`.
+
+Le cadre est présenté pour ce qu'il est : « Cadre suggéré — vérifiez les coins et corrigez-les »,
+ou « Aucun cadre reconnu — placez les quatre coins ».
+
+**On sépare une région, on ne traque pas un contour.** Une première version calculait un gradient
+de Sobel et balayait depuis le centre jusqu'au premier bord franc. Elle supposait un intérieur
+uniforme — une page de texte. Sur une couverture de livre, qui est une photographie, l'intérieur
+porte des contours plus marqués que la frontière carton/table : le balayage s'arrêtait sur le bord
+d'une assiette, ou filait jusqu'au cadre de la photo.
+
+La méthode retenue part de ce qui est simple dans la scène : le fond est uniforme et il occupe les
+bords. Cinq étapes, chacune corrigeant un cas mesuré sur de vraies photos.
+
+1. **Rognage des bandes.** Les bordures sombres et unies d'une photo de téléphone ne font pas
+   partie de la scène. Sans ce rognage, la médiane de la bande extérieure sortait à 21,23,24 — du
+   noir — au lieu du bois de la table, et le bois passait pour du document. Une bande est
+   **sombre**, franchement unie et éloignée du centre ; le rognage est borné à 30 % par côté.
+2. **Modèle du fond, couleur et texture**, pris sur la bande extérieure. La couleur seule ne
+   suffit pas : le bois est à 132,101,54 et la couverture contient une planche en bois de la même
+   teinte. La texture seule ne suffit pas non plus : la bande du titre et une assiette blanche sont
+   lisses, autant que la table. La texture est l'écart-type de luminance sur une fenêtre de neuf
+   pixels, calculé par images intégrales.
+3. **Raffinement du modèle.** La bande n'est pas toujours pure. Sur une photo mesurée, elle
+   longeait un ordinateur noir sur toute sa hauteur gauche : la dispersion brute sortait à 171, un
+   seuil qui laissait passer le livre entier. Seuls les pixels de bande proches de la médiane
+   servent à la mesurer. La texture du fond se mesure sur ces mêmes pixels.
+4. **Cohérence de la bande.** La part de ses pixels serrés autour de leur médiane : 81 % sur une
+   photo, 33 % sur une autre où un objet noir et un canapé sombre occupaient les bords. En dessous
+   de 55 %, la couleur ne dit plus rien de fiable et **n'est pas utilisée** — la texture reste
+   vraie, une table est lisse, un canapé aussi.
+5. **Masque, nettoyage, rectangle.** Un pixel appartient au document s'il est loin du fond par la
+   couleur **ou** plus texturé que lui. Ouverture morphologique de rayon 3, fermeture de rayon 3,
+   puis remplissage : tout ce que le fond n'atteint pas depuis le bord de l'image appartient au
+   document — c'est ainsi que l'assiette blanche rejoint le livre au lieu de le trouer. La plus
+   grande tache reçoit son rectangle tourné d'aire minimale, cherché par balayage d'un quart de
+   tour au degré près.
+
+La détection rend `null` quand la scène ne porte pas de document identifiable — moins de 25 %
+de l'image, ou plus de 97 %. Les coins par défaut restent alors, ce qui est plus honnête qu'un
+cadre inventé.
+
+**Un recalage sur les bords a été essayé et retiré.** Glisser chaque côté du rectangle le long de
+sa normale et garder la position au gradient le plus fort tirait les côtés vers les contours
+intérieurs de la couverture, et le cadre entrait dans le livre. La mesure reste en commentaire dans
+le code : c'est une piste à ne pas reprendre telle quelle.
+
+**Tout cela tourne sur l'appareil**, jamais sur le serveur : `compute` sur les octets locaux. Sur
+le web, `compute` n'ouvre aucun isolate — Flutter web n'en a pas — et le calcul occupe donc le fil
+principal.
+
+### Le banc d'essai
+
+`test/detection_sur_photo_reelle_test.dart` lit les photos déposées dans `kass_dalle/photo-test/`
+(dossier ignoré par git), exécute la détection, imprime tous ses nombres et écrit une image de
+contrôle avec le quadrilatère tracé. Sans photo, il ne fait rien.
+
+Il existe parce que sept versions de cette détection ont été déployées sans jamais tourner sur la
+photo qui échouait : les tests de `test/document_detection_test.dart` fabriquent la scène et
+l'attente, donc ils passent toujours. Une seule photo réelle a suffi à trancher ce que trois jours
+d'hypothèses n'avaient pas tranché.
 
 ---
 
@@ -2120,8 +2218,8 @@ télécharge son propre APK et le passe à l'installateur du système.
 | `Publish-ApkPayload` (`deploy.ps1`) | Publie l'APK et son manifeste ensemble, ou aucun des deux |
 
 **Le manifeste n'est pas `version.json`.** Ce dernier décrit le bundle web, et les deux
-divergent dès qu'un déploiement ne reconstruit pas l'APK — `deploy.ps1 -WebOnly` met le web
-à jour et laisse le binaire en place. L'application lisait `version.json` : elle annonçait
+divergent dès qu'un déploiement ne reconstruit pas l'APK — ce que faisait `-WebOnly`, retiré
+depuis, et ce que fait encore `-ResumeHostingOnly`. L'application lisait `version.json` : elle annonçait
 alors une version que le téléchargement ne rendait pas, l'utilisateur installait, restait en
 dessous, et la fenêtre revenait à chaque lancement. `apk_release.json` n'est écrit qu'au
 moment où l'APK est compilé et copié, et décrit donc toujours le fichier servi à côté de lui.

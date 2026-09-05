@@ -327,7 +327,7 @@ stateDiagram-v2
   <section>
     <h2>La surface Cloud Functions</h2>
     <p class="sec-note">
-      Quarante-neuf fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
+      Cinquante-quatre fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
       La garde d'accès est explicite dans chacune : <code>requireAuth</code>, <code>requireEditor</code>
       ou <code>requireAdmin</code>, depuis <code>callable/_auth.ts</code>.
       Trois entrées existent dans le code sans être déployées, faute d'appelant —
@@ -366,6 +366,7 @@ stateDiagram-v2
           <tr><td><code>reviewModeratedImageFn</code></td><td>Callable</td><td>Décision humaine sur une image <code>pending</code> ou refusée — écran <em>Admin › Modération</em></td><td>admin</td></tr>
           <tr><td><code>retryPendingModerationFn</code></td><td>Callable</td><td>Relance les images restées sans verdict, moteur injoignable ou API Vision non activée</td><td>admin</td></tr>
           <tr><td><code>getAiRoutingPolicyFn</code> · <code>setAiRoutingPolicyFn</code></td><td>Callable</td><td>Politique de routage Gemini / Claude poste par poste (<code>app_config/ai_routing_policy</code>) — écran <em>Admin › Moteur d'IA</em>. Une bascule prend effet en moins d'une minute, sans déploiement</td><td>admin</td></tr>
+          <tr><td><code>aiRoutingPresetsFn</code></td><td>Callable</td><td>Configurations de routage enregistrées (<code>ai_routing_presets</code>) : enregistrer, mettre à jour, renommer, supprimer. Une seule fonction pour quatre gestes, aiguillée sur un champ <code>action</code></td><td>admin</td></tr>
           <tr><td><code>getAiPricingFn</code> · <code>setAiPricingFn</code></td><td>Callable</td><td>Grille tarifaire (<code>app_config/ai_pricing</code>) : plus aucun prix ne vit dans le code, les deux côtés lisent ce document</td><td>admin</td></tr>
           <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
           <tr><td><code>getGcpCostsFn</code></td><td>Callable</td><td>Coûts GCP agrégés par service (export BigQuery)</td><td>admin</td></tr>
@@ -417,6 +418,7 @@ stateDiagram-v2
           <tr><td><code>annotations</code></td><td>Remarques, astuces et corrections attachées à une recette</td><td>Client</td></tr>
           <tr><td><code>planned_meals</code></td><td>Repas planifiés — le couple (personne, date), porteur de toute adaptation d'une recette à un contexte</td><td>Client</td></tr>
           <tr><td><code>planning_config</code></td><td>Préférences de planning par compte : cycle, jour de départ, heure, contraintes en langage naturel, calendrier Google cible</td><td>Client</td></tr>
+          <tr><td><code>ai_routing_presets</code></td><td>Configurations de routage enregistrées : les sept réglages de l'écran <em>Moteur d'IA</em> sous un nom. Ne commandent rien tant qu'elles ne sont pas chargées puis enregistrées</td><td>Cloud Functions</td></tr>
           <tr><td><code>plating_advice</code></td><td>Conseil de dressage propre à une recette, et les visuels d'étapes déjà produits</td><td>Cloud Functions</td></tr>
           <tr><td><code>image_moderation</code></td><td>Un document par image jugée : signaux du moteur, verdict, motif, décision humaine éventuelle. Écrit par le serveur seul — une décision de modération que le client peut écrire n'est pas une décision</td><td>Cloud Functions</td></tr>
           <tr><td><code>nutrition_ingredients</code></td><td>Référentiel d'ingrédients et valeurs pour 100 g</td><td>Triggers + admin</td></tr>

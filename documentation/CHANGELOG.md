@@ -18,6 +18,37 @@ anciennes sans accents.
 
 ### v0.22.37 — fonctionnel
 
+#### Le scanner du système prend aussi les pages de recette
+
+La v0.22.35 l'avait branché sur les couvertures de livre. Il sert maintenant aussi au scan des
+pages, sur mobile uniquement.
+
+Une session accepte jusqu'à vingt pages. On photographie une recette de six pages d'affilée, sans
+revenir à l'écran entre deux, et chaque page arrive cadrée et redressée. Avant, la caméra rendait
+une page par aller-retour.
+
+Les pages rejoignent le lot en attente, comme celles prises une à une ou choisies dans un fichier.
+Le bouton « Analyser » les envoie ensemble, inchangé. Le rang de chaque page est écrit dans son nom
+(`page_<horodatage>_01.jpg`) pour que `comparePageNames` range un lot qui mêle photos et fichiers.
+Le bouton « Ajouter une page » passe par le même chemin.
+
+Sur le web, rien ne change : ces API n'existent pas dans un navigateur.
+
+#### `-WebOnly` a été retiré
+
+Tout déploiement embarque désormais l'APK. Le script s'arrête si on lui passe ce paramètre, au lieu
+de publier un site sans binaire.
+
+C'est une conséquence de la mise à jour dans l'application : elle lit le manifeste posé à côté de
+l'APK pour savoir si une version existe. Un déploiement web seul lui annonce une version que le
+téléchargement ne rend pas.
+
+Le refus plutôt que la construction silencieuse de l'APK : un script qui fait plus que ce qu'on lui
+demande est aussi difficile à comprendre qu'un script qui en fait moins.
+
+`CLAUDE.md`, son miroir Copilot et `TechnicalRequirements.md` ne le proposent plus.
+`-ResumeHostingOnly` reste : il reprend une mise en ligne interrompue sans rejouer les builds.
+
 #### L'application Android se met à jour sans passer par le navigateur
 
 La fenêtre « Mise à jour disponible » ouvrait Chrome. Il fallait ensuite retrouver le fichier

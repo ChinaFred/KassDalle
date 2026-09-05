@@ -178,6 +178,10 @@
       <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
       gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts,
       illustrations/extract.ts</span>
+      <br/><b>La capture diffère selon la plateforme.</b> Sur mobile, le scanner du système —
+      ML Kit sur Android, VisionKit sur iOS — cherche les coins sur le flux vidéo et rend des pages
+      déjà cadrées ; jusqu'à vingt par session. Sur le web, ces API n'existent pas : l'atelier de
+      retouche propose un cadre calculé sur une seule prise, annoncé comme une suggestion.
       <br/>Le détail des six étapes d'extraction : <a href="#illustrations">séquence 12</a>.
     </p>
     <figure class="fig">
@@ -186,6 +190,7 @@
 sequenceDiagram
   autonumber
   actor U as Éditeur
+  participant SC as Scanner du système
   participant S as ScanUploadNotifier
   participant ST as Cloud Storage
   participant SP as scanAndPromoteUploadFn
@@ -197,7 +202,18 @@ sequenceDiagram
   participant G as Gemini
   participant R as recipes
 
-  U->>S: pickAndQueueRecipe
+  alt mobile — Android ou iOS
+    U->>S: caméra
+    S->>SC: getPictures noOfPages 20
+    SC->>SC: coins détectés sur le flux vidéo, modèle entraîné
+    SC-->>S: pages cadrées et redressées
+    S->>S: lot en attente, rang dans le nom
+  else web
+    U->>S: caméra ou fichier
+    S->>S: atelier de retouche — cadre SUGGÉRÉ, coins ajustables
+  end
+
+  U->>S: Analyser
   S->>S: scanId = scan_ms_alea — un par import
   S->>ST: putData quarantine/uid/ts_fichier
   ST-->>S: progression puis storagePath
@@ -1867,6 +1883,11 @@ sequenceDiagram
       prend effet en moins d'une minute.
       <span class="path">ai_routing_screen.dart → setAiRoutingPolicyFn →
       app_config/ai_routing_policy → ai/router.ts</span>
+      <br/><b>Les sept réglages s'enregistrent sous un nom.</b> <code>aiRoutingPresetsFn</code>
+      écrit dans <code>ai_routing_presets</code> ; une configuration ne commande rien tant qu'elle
+      n'est pas chargée puis enregistrée. Le chargement est un remplacement, pas une fusion : un
+      poste que la configuration ne nomme pas repart au moteur par défaut. Une configuration
+      vieillit — un poste retiré du code en est écarté à la relecture, et l'écart est dit.
     </p>
     <figure class="fig">
       <div class="canvas">

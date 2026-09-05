@@ -229,7 +229,16 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   - **Une panne d'extraction ne fait jamais échouer un import.** La chaîne journalise et rend une liste vide ; la recette est déjà transcrite quand elle s'exécute.
   - **Le compte affiché est celui de ce que la page porte, pas de ce qu'on en a tiré.** Le bandeau de relecture peut annoncer « trois photos repérées, à extraire à la main » alors que rien n'a été extrait.
   - **Quand une page porte plusieurs recettes, chacune reçoit sa propre copie des photos.** Elles se partageaient le même fichier : invisible tant que supprimer une illustration se contente d'oublier son adresse, mais le jour où l'on supprime vraiment le fichier, la première suppression viderait l'image de l'autre recette sans un mot. La modération, elle, n'a lieu qu'une fois — c'est la même image.
-- **Progression affichée** : l'écran Traitements affiche l'étape courante du traitement en cours.
+- **Progression affichée** : sous le titre d'un traitement, une rangée de petites icônes, une par
+  étape. Les étapes faites sont colorées, les suivantes en gris, et un mot nomme l'étape en cours —
+  « Lecture », « Balisage ». Le libellé complet reste en appui long.
+  - Le nombre d'étapes dépend du travail : **trois** pour une couverture de livre (envoi, lecture,
+    écriture), **sept** pour une page de recette (envoi, lecture, analyse, photos, balisage,
+    ingrédients, écriture). Les séquences viennent des branchements du pipeline serveur, pas d'une
+    liste plausible : afficher sept étapes pour une couverture promettrait un travail qui n'a pas
+    lieu.
+  - La phrase complète s'affichait auparavant sous le titre. Sur un téléphone étroit, et dès que la
+    police du système est agrandie, elle se coupait une lettre par ligne.
 
 ### 5.3 Module Révision et Édition (tous les clients)
 
