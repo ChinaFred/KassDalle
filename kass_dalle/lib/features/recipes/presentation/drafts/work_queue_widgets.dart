@@ -8,7 +8,7 @@ import '../../../../core/utils/web_download.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
-import '../../../processing/domain/processing_step_labels.dart';
+import '../../../processing/presentation/processing_trail_row.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -219,14 +219,10 @@ class QueueJobTile extends StatelessWidget {
         children: [
           Text(subtitle, style: theme.textTheme.bodySmall),
           if (job.status == ProcessingJobStatus.processing &&
-              job.currentStep != null)
-            Text(
-              formatProcessingStep(job.currentStep),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.secondary,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+              job.currentStep != null) ...[
+            const SizedBox(height: 4),
+            ProcessingTrailRow(type: job.type, currentStep: job.currentStep),
+          ],
           if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
           if (job.errorId != null) _ErrorIdChip(errorId: job.errorId!),
         ],

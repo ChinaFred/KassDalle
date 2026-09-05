@@ -16,6 +16,37 @@ anciennes sans accents.
 
 ## 2026-09-05
 
+### v0.22.36 — fonctionnel
+
+#### La suite des états d'un traitement se lit en icônes
+
+Sous le titre d'un traitement en cours, l'étape s'affichait en toutes lettres : « Lecture de la
+page par l'IA… ». Sur un téléphone étroit, et dès que la police du système est agrandie, cette
+phrase se coupait une lettre par ligne et poussait la tuile sur une demi-page.
+
+Elle laisse la place à un fil de jalons : une icône par étape, celles déjà passées allumées,
+celles à venir éteintes, et un mot pour l'étape courante — « Lecture », « Balisage ». Le libellé
+complet reste en infobulle.
+
+Les icônes disent plus que la phrase. Elles montrent **où l'on en est dans la suite** et combien il
+reste ; la phrase ne disait que l'instant.
+
+#### Le fil montre les étapes réellement traversées
+
+Une couverture de livre en traverse **trois** — envoi, lecture, écriture — et une page de recette
+**sept**, avec l'analyse, la recherche de photos, le balisage et l'enrichissement des ingrédients.
+Les séquences viennent des branchements de `pipeline/recipeProcessor.ts`, pas d'une liste
+plausible : afficher sept jalons pour une couverture promettrait un travail qui n'a pas lieu, et
+le fil resterait bloqué aux deux tiers.
+
+C'est un miroir du serveur, et rien ne relie les deux à l'exécution : une étape ajoutée là-bas ne
+lève aucune erreur ici, elle fait seulement mentir le fil.
+`test/processing_trail_test.dart` fige les deux séquences, pour qu'on doive venir les
+relire.
+
+Quand `current_step` ne correspond à aucun jalon — le client y écrit parfois un libellé en clair
+pendant un scan — le texte reprend sa place plutôt qu'un fil qui désignerait la mauvaise case.
+
 ### v0.22.35 — fonctionnel
 
 #### Le scanner du système prend le relais sur mobile

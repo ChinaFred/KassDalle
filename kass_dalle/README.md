@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.22.35**
+**Version actuelle : 0.22.36**
 **Web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
 
 Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation complète vit dans
