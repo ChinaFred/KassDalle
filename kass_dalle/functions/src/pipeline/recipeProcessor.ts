@@ -106,6 +106,23 @@ function stepIndex(step: PipelineStep): number {
   return STEP_ORDER.indexOf(step);
 }
 
+/**
+ * Le nom qu'une ligne de suivi porte une fois la page lue, à la place du
+ * fichier.
+ *
+ * Écrit sur le job dès la transcription : entre elle et l'enregistrement du
+ * brouillon, le balisage et la normalisation durent jusqu'à sept minutes, et
+ * la file n'affichait que `page_<horodatage>_01.jpg`. Une page à plusieurs
+ * recettes les nomme toutes. `null` quand le modèle n'a rien lu, pour que la
+ * ligne garde le nom de fichier.
+ */
+function titreDeSuivi(transcription: PageTranscription): string | null {
+  const titres = transcription.recettes.map((r) => r.titre.trim()).filter((t) => t.length > 0);
+  if (titres.length > 1) return titres.join(", ");
+  const titre = (titres[0] ?? transcription.titre).trim();
+  return titre.length > 0 ? titre : null;
+}
+
 export const recipeProcessor = onTaskDispatched(
   {
     region: REGION,
@@ -224,7 +241,12 @@ export const recipeProcessor = onTaskDispatched(
           moduleType: "IMPORT",
         });
 
-        await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
+        // Le titre du livre remplace le nom de fichier sur la ligne de suivi.
+        await jobRef.update({
+          current_step: "save",
+          titre: extracted.titre.trim() || null,
+          updated_at: Timestamp.now(),
+        });
         const now = Timestamp.now();
         // ID déterministe pour éviter les doublons en cas de retry partiel.
         const bookRef = getFirestore().collection(COLL_BOOKS).doc(`book_cover_${jobId}`);
@@ -297,6 +319,8 @@ export const recipeProcessor = onTaskDispatched(
           raison: transcription.raison,
         },
       });
+
+      await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
 
       // Page vide, de garde, index : rien à créer.
       if (transcription.pageType === "no_recipe") {

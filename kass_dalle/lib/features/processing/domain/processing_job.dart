@@ -30,6 +30,15 @@ class ProcessingJob {
   /// ID du rapport d'erreur dans la collection error_reports (si status == error).
   final String? errorId;
 
+  /// Le titre lu par l'IA, posé par le serveur après la transcription.
+  ///
+  /// La ligne de suivi l'affiche à la place du nom de fichier, le temps que
+  /// le brouillon existe : entre la lecture de la page et l'enregistrement,
+  /// le balisage et la normalisation durent jusqu'à sept minutes. Un job en
+  /// erreur après la lecture garde ainsi le nom de sa recette. Le client ne
+  /// l'écrit jamais.
+  final String? titre;
+
   /// Le scan de l'utilisateur d'où vient ce job.
   ///
   /// Photographier une page déclenche quatre traitements côté serveur — le
@@ -69,6 +78,7 @@ class ProcessingJob {
     this.errorId,
     this.importIllustrations = false,
     this.scanId,
+    this.titre,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -102,6 +112,7 @@ class ProcessingJob {
       errorId: data['error_id'] as String?,
       importIllustrations: data['import_illustrations'] as bool? ?? false,
       scanId: data['scan_id'] as String?,
+      titre: data['titre'] as String?,
     );
   }
 
@@ -125,6 +136,7 @@ class ProcessingJob {
       if (errorId != null) 'error_id': errorId,
       'import_illustrations': importIllustrations,
       if (scanId != null) 'scan_id': scanId,
+      if (titre != null) 'titre': titre,
     };
   }
 
@@ -158,6 +170,7 @@ class ProcessingJob {
       errorId: errorId ?? this.errorId,
       importIllustrations: importIllustrations,
       scanId: scanId,
+      titre: titre,
     );
   }
 

@@ -215,7 +215,9 @@ class QueueJobTile extends StatelessWidget {
                 color: theme.colorScheme.onSecondaryContainer,
               ),
             ),
-      title: Text(job.fileName, overflow: TextOverflow.ellipsis),
+      // Le titre lu par l'IA dès que le serveur l'a posé, le nom de fichier
+      // avant. Le fichier reste accessible par « Voir le document ».
+      title: Text(job.titre ?? job.fileName, overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

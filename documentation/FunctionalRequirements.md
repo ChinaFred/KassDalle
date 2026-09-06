@@ -270,6 +270,11 @@ privait le titre de la place dont il manquait.
 ### 5.4 Module Traitements IA (tous les clients)
 
 - Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`).
+- **Une ligne porte le titre lu par l'IA dès que la page est transcrite**, à la place du nom du
+  fichier scanné, qui reste accessible par « Voir le document ». Entre la lecture et
+  l'enregistrement du brouillon, le balisage et la normalisation durent jusqu'à sept minutes ; un
+  traitement en erreur après la lecture garde ainsi le nom de sa recette. Une page à plusieurs
+  recettes les nomme toutes, un scan de couverture porte le titre du livre.
 - Indicateur de traitements actifs visible dans la zone Brouillons.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.

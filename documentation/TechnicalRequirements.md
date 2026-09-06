@@ -688,6 +688,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `created_at` | `Timestamp` | Date de creation |
 | `updated_at` | `Timestamp` | Date de mise a jour du job |
 | `file_name` | `String` | Nom du fichier source |
+| `titre` | `String?` | Titre lu par l'IA, **posé par le serveur** après la transcription (titres joints par une virgule pour une page à plusieurs recettes) ou après l'extraction d'une couverture. La file « Brouillons & Traitements » l'affiche à la place de `file_name` dès qu'il existe : entre la lecture et l'enregistrement du brouillon, le balisage et la normalisation durent jusqu'à 7 min. Le client ne l'écrit jamais. |
 | `file_url` | `String` | URL Firebase Storage du fichier source |
 | `mime_type` | `String?` | MIME detecte du fichier |
 | `book_id` | `String?` | Livre cible pour rattachement recettes |
