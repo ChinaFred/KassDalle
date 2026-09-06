@@ -490,11 +490,75 @@ export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
   }
 });
 
+/** Réponse de `scanAndPromoteUploadFn` pour un fichier propre. */
+type PromotedUpload = {
+  status: "clean";
+  downloadUrl: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+/** Code HTTP porté par une erreur du SDK Storage (404, 412…), sinon null. */
+function storageErrorCode(err: unknown): number | null {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "number" ? code : null;
+}
+
+/**
+ * Relit une promotion déjà terminée par une autre requête, ou rend null.
+ *
+ * La requête qui promeut supprime la source EN DERNIER, après avoir posé
+ * `quarantine_status: clean` et le jeton de téléchargement. Une copie promue
+ * qui porte ce statut est donc complète, et `getDownloadURL` n'écrit rien :
+ * il relit le jeton existant.
+ */
+async function replayPromotion(promotedPath: string): Promise<PromotedUpload | null> {
+  const promotedFile = getStorage().bucket().file(promotedPath);
+  const [exists] = await promotedFile.exists();
+  if (!exists) return null;
+  const [meta] = await promotedFile.getMetadata();
+  if (meta.metadata?.quarantine_status !== "clean") return null;
+  return {
+    status: "clean",
+    downloadUrl: await getDownloadURL(promotedFile),
+    storagePath: promotedPath,
+    mimeType: meta.contentType ?? "application/octet-stream",
+    sizeBytes: Number(meta.size ?? 0),
+  };
+}
+
+/**
+ * Attend que la requête concurrente ait supprimé la source en quarantaine.
+ *
+ * Elle la supprime en dernier, quelques centaines de millisecondes après la
+ * copie. Dix essais espacés de 500 ms couvrent ce délai ; au-delà, elle s'est
+ * arrêtée en chemin et l'appelant termine la promotion à sa place.
+ */
+async function waitForSourceGone(storagePath: string): Promise<boolean> {
+  const sourceFile = getStorage().bucket().file(storagePath);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const [exists] = await sourceFile.exists();
+    if (!exists) return true;
+  }
+  return false;
+}
+
 /**
  * Vérifie un upload en quarantaine puis le promeut vers scans/ si propre.
  *
  * Entrée: { storagePath: "quarantine/<uid>/<filename>" }
  * Sortie: { status: "clean", downloadUrl, storagePath, mimeType, sizeBytes }
+ *
+ * Idempotente. Le SDK Android rejoue un appel dont la connexion est tombée
+ * avant la réponse : le serveur reçoit alors deux requêtes pour le même
+ * fichier, la seconde pendant que la première tourne encore. Le 6 septembre
+ * 2026, la première a supprimé la source pendant que la seconde la lisait ;
+ * « No such object » est remonté tel quel jusqu'à l'écran, et le job d'import
+ * n'a jamais été créé alors que le fichier était promu et sain. Deux requêtes
+ * pour un même chemin rendent désormais la même réponse : une seule copie,
+ * l'autre relit son résultat.
  */
 export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "upload_security_scan");
@@ -520,10 +584,38 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
 
   const bucket = getStorage().bucket();
   const sourceFile = bucket.file(storagePath);
+  const promotedPath = storagePath.replace("quarantine/", "scans/");
+
+  // Relit la promotion faite par l'autre requête, et le dit dans le journal :
+  // sans cette ligne, un appel rejoué ressemble à un appel qui n'a rien coûté.
+  const replayed = async (cause: string): Promise<PromotedUpload | null> => {
+    const replay = await replayPromotion(promotedPath);
+    if (replay) {
+      await logInfo({
+        message: "Upload deja promu par une requete concurrente : reponse rejouee",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        scanId,
+        extra: { quarantinePath: storagePath, promotedPath, cause },
+      });
+    }
+    return replay;
+  };
 
   try {
     const [exists] = await sourceFile.exists();
     if (!exists) {
+      const replay = await replayed("source_absente");
+      if (replay) return replay;
+      await logError({
+        message: "Fichier en quarantaine introuvable, et aucune promotion anterieure",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        scanId,
+        extra: { quarantinePath: storagePath, promotedPath },
+      });
       throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
     }
 
@@ -566,8 +658,32 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       );
     }
 
-    const promotedPath = storagePath.replace("quarantine/", "scans/");
-    const [promotedFile] = await sourceFile.copy(bucket.file(promotedPath));
+    // Une seule requête crée la copie promue : `ifGenerationMatch: 0` refuse
+    // la copie (412) si l'objet existe déjà. Chaque chemin porte l'horodatage
+    // en millisecondes de son envoi ; un objet déjà là est donc l'œuvre d'une
+    // requête concurrente pour ce même envoi, jamais d'un envoi antérieur.
+    let promotedFile = bucket.file(promotedPath);
+    try {
+      [promotedFile] = await sourceFile.copy(promotedFile, {
+        preconditionOpts: { ifGenerationMatch: 0 },
+      });
+    } catch (copyError) {
+      if (storageErrorCode(copyError) !== 412) throw copyError;
+      if (await waitForSourceGone(storagePath)) {
+        const replay = await replayed("copie_concurrente");
+        if (replay) return replay;
+      }
+      // La source est toujours là : l'autre requête s'est arrêtée entre sa
+      // copie et sa suppression. La copie existe, on termine la promotion ici.
+      await logInfo({
+        message: "Copie promue deja presente, promotion terminee par cette requete",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        scanId,
+        extra: { quarantinePath: storagePath, promotedPath },
+      });
+    }
     await promotedFile.setMetadata({
       contentType: detectedMime,
       metadata: {
@@ -578,7 +694,21 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
     });
 
     const downloadUrl = await getDownloadURL(promotedFile);
-    await sourceFile.delete().catch(() => undefined);
+    try {
+      await sourceFile.delete();
+    } catch (deleteError) {
+      // Best-effort : la promotion est faite, le fichier reste en quarantaine
+      // et occupe du stockage. Le dire, sans échouer.
+      await logError({
+        message: "Source en quarantaine non supprimee apres promotion",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        scanId,
+        errorDescription: deleteError instanceof Error ? deleteError.message : String(deleteError),
+        extra: { quarantinePath: storagePath, promotedPath },
+      });
+    }
 
     await logInfo({
       message: "Upload scanne puis promu hors quarantaine",
@@ -594,14 +724,34 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       },
     });
 
-    return {
+    const result: PromotedUpload = {
       status: "clean",
       downloadUrl,
       storagePath: promotedPath,
       mimeType: detectedMime,
       sizeBytes: bytes.length,
     };
+    return result;
   } catch (e) {
+    // La source a disparu entre `exists()` et sa lecture : l'autre requête a
+    // fini avant nous. C'est le cas du 6 septembre 2026.
+    if (storageErrorCode(e) === 404) {
+      const replay = await replayed("source_disparue");
+      if (replay) return replay;
+    }
+    if (!(e instanceof HttpsError)) {
+      // Sans cette ligne, l'échec ne laissait qu'un 500 dans les journaux de
+      // Cloud Run, sans chemin ni utilisateur.
+      await logError({
+        message: "Scan de securite en echec technique",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        scanId,
+        errorDescription: e instanceof Error ? e.message : String(e),
+        extra: { quarantinePath: storagePath, promotedPath, storageCode: storageErrorCode(e) },
+      });
+    }
     throw toHttpsError(e);
   }
 });

@@ -2505,7 +2505,10 @@ journalisation et coût.
   l'écriture au propriétaire approuvé, lecture par lui seul, 50 Mo.
 - **`scanAndPromoteUploadFn`** (`callable/geminiCallables.ts`) — télécharge, appelle
   `scanUpload()`, copie vers `scans/{uid}/`, pose `quarantine_status` en métadonnée
-  Storage, rend l'URL de téléchargement, supprime la source.
+  Storage, rend l'URL de téléchargement, supprime la source en dernier. Idempotente :
+  le SDK Android rejoue un appel dont la connexion est tombée, et le serveur reçoit deux
+  requêtes pour le même chemin. Une seule copie (`ifGenerationMatch: 0`) ; l'autre
+  requête attend la fin de la première et relit sa promotion au lieu d'échouer.
 - **`utils/uploadSecurity.ts` — `scanUpload()`** juge le contenant : taille, extension,
   type MIME, signature binaire, EICAR. Il ne regarde pas l'image.
 - **`scans/{uid}/`** est déjà en `allow write: if false` : la promotion serveur est un

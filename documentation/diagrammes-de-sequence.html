@@ -225,7 +225,8 @@ sequenceDiagram
     S->>J: createJob status rejected
     S-->>U: message d'échec, rien n'est traité
   else fichier accepté
-    SP->>ST: promotion hors quarantaine
+    SP->>ST: promotion hors quarantaine — une seule copie, ifGenerationMatch 0
+    Note over SP: idempotente : une requête rejouée par le SDK pour le même chemin<br/>attend la première et relit sa promotion au lieu d'échouer
     SP-->>S: downloadUrl
     S->>J: createJob status queued, scan_id
     S-->>U: mis en file, l'écran se libère
