@@ -218,11 +218,53 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   /// cas ; ce champ dit seulement jusqu'où elle s'applique.
   SpendScope _scope = SpendScope.months;
 
+  /// Les bornes horaires du tableau, en heure locale, sur la journée regardée.
+  ///
+  /// Nulles = la journée entière. Elles ne valent qu'en période de journée :
+  /// c'est ce qui permet de lire ce qu'un changement fait à la dépense —
+  /// « depuis 13:37 » — sans attendre le lendemain. Le plafond, lui, compte
+  /// toujours la journée entière.
+  TimeOfDay? _depuis;
+  TimeOfDay? _jusqua;
+
   /// Le libellé de la puce de journée, ou `null` quand la période est en mois.
   String? get _jourLabel {
     if (_scope != SpendScope.day) return null;
     final jour = _snapshot?.day ?? _day ?? '';
-    return jour.isEmpty ? 'Un jour' : 'Jour : $jour';
+    if (jour.isEmpty) return 'Un jour';
+    final depuis = _depuis;
+    final jusqua = _jusqua;
+    final heures = depuis != null && jusqua != null
+        ? ' · ${_heure(depuis)} → ${_heure(jusqua)}'
+        : depuis != null
+        ? ' · dès ${_heure(depuis)}'
+        : jusqua != null
+        ? ' · jusqu\'à ${_heure(jusqua)}'
+        : '';
+    return 'Jour : $jour$heures';
+  }
+
+  static String _heure(TimeOfDay heure) =>
+      formatSpendTime(heure.hour, heure.minute);
+
+  /// Une borne locale convertie en `HH:MM` UTC sur la journée regardée.
+  ///
+  /// La date de conversion est celle que l'écran demande, ou aujourd'hui en
+  /// UTC : l'heure locale se convertit sur cette date-là, et une autre ferait
+  /// glisser la borne d'un jour. Rien hors de la période en journée : le
+  /// tableau des mois ne saurait pas l'appliquer.
+  String? _borneUtc(TimeOfDay? heure) {
+    if (heure == null || _scope != SpendScope.day) return null;
+    final jour = _day ?? formatSpendDay(DateTime.now().toUtc());
+    final date = parseSpendDay(jour) ?? DateTime.now().toUtc();
+    final local = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      heure.hour,
+      heure.minute,
+    );
+    return utcSpendTime(jour, local);
   }
 
   void _setFiltre(String valeur) {
@@ -282,7 +324,13 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
     try {
       final snapshot = await ref
           .read(aiBudgetRepositoryProvider)
-          .fetch(depth: depth, day: _day, scope: _scope);
+          .fetch(
+            depth: depth,
+            day: _day,
+            scope: _scope,
+            from: _borneUtc(_depuis),
+            to: _borneUtc(_jusqua),
+          );
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
@@ -310,6 +358,18 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   /// c'est son verdict qui s'affiche.
   Future<void> _setDay(String? day) async {
     setState(() => _day = day);
+    await _load(ref.read(costsDepthProvider));
+  }
+
+  /// Change la borne de début du tableau, et relit. `null` = dès minuit.
+  Future<void> _setDepuis(TimeOfDay? heure) async {
+    setState(() => _depuis = heure);
+    await _load(ref.read(costsDepthProvider));
+  }
+
+  /// Change la borne de fin du tableau, et relit. `null` = jusqu'à minuit.
+  Future<void> _setJusqua(TimeOfDay? heure) async {
+    setState(() => _jusqua = heure);
     await _load(ref.read(costsDepthProvider));
   }
 
@@ -403,6 +463,15 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
             ),
             const SizedBox(height: 16),
             _PeriodHeader(snapshot: snapshot, loading: _loading),
+            if (snapshot.spendScope == SpendScope.day) ...[
+              const SizedBox(height: 8),
+              _HeuresSelector(
+                depuis: _depuis,
+                jusqua: _jusqua,
+                onDepuis: _setDepuis,
+                onJusqua: _setJusqua,
+              ),
+            ],
             const SizedBox(height: 8),
             if (snapshot.spends.isEmpty)
               const Card(
@@ -454,6 +523,118 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
 }
 
 /// Ce que la période couvre, et ce qu'elle ne peut pas montrer.
+/// La plage horaire que le serveur a appliquée, en heure locale, ou rien.
+///
+/// Lue sur le snapshot et non sur ce que l'écran a demandé : une borne de fin
+/// écartée par le serveur revient nulle, et le titre ne doit pas dire
+/// « jusqu'à 13:00 » sur un tableau lu jusqu'à minuit.
+String _plageLocale(AiBudgetSnapshot snapshot) {
+  final from = snapshot.spendFrom;
+  final to = snapshot.spendTo;
+  final depuis = from == null ? null : localSpendTime(snapshot.day, from);
+  final jusqua = to == null ? null : localSpendTime(snapshot.day, to);
+  String h(DateTime t) => formatSpendTime(t.hour, t.minute);
+  if (depuis != null && jusqua != null) {
+    return ', de ${h(depuis)} à ${h(jusqua)}';
+  }
+  if (depuis != null) return ', depuis ${h(depuis)}';
+  if (jusqua != null) return ', jusqu\'à ${h(jusqua)}';
+  return '';
+}
+
+/// Les bornes horaires du tableau, et de quoi en changer.
+///
+/// Deux puces : le début et la fin de la plage, en heure locale. Une puce
+/// sans valeur ouvre l'horloge ; une puce posée s'ouvre de la même façon et
+/// se retire d'une croix. La plage ne vaut que pour le tableau : le plafond
+/// est quotidien et ses barres comptent la journée entière.
+class _HeuresSelector extends StatelessWidget {
+  final TimeOfDay? depuis;
+  final TimeOfDay? jusqua;
+  final ValueChanged<TimeOfDay?> onDepuis;
+  final ValueChanged<TimeOfDay?> onJusqua;
+
+  const _HeuresSelector({
+    required this.depuis,
+    required this.jusqua,
+    required this.onDepuis,
+    required this.onJusqua,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Icon(Icons.schedule_outlined, size: AppIconSize.small),
+        _BorneChip(
+          prefixe: 'Depuis',
+          vide: 'le début du jour',
+          aide: 'Début de la plage (heure locale)',
+          valeur: depuis,
+          onChanged: onDepuis,
+        ),
+        _BorneChip(
+          prefixe: 'Jusqu\'à',
+          vide: 'la fin du jour',
+          aide: 'Fin de la plage, minute comprise (heure locale)',
+          valeur: jusqua,
+          onChanged: onJusqua,
+        ),
+      ],
+    );
+  }
+}
+
+/// Une borne horaire : une puce d'action tant qu'elle est vide, une puce
+/// posée — et retirable — dès qu'elle porte une heure.
+class _BorneChip extends StatelessWidget {
+  final String prefixe;
+  final String vide;
+  final String aide;
+  final TimeOfDay? valeur;
+  final ValueChanged<TimeOfDay?> onChanged;
+
+  const _BorneChip({
+    required this.prefixe,
+    required this.vide,
+    required this.aide,
+    required this.valeur,
+    required this.onChanged,
+  });
+
+  Future<void> _choisir(BuildContext context) async {
+    final choisi = await showTimePicker(
+      context: context,
+      initialTime: valeur ?? TimeOfDay.now(),
+      helpText: aide,
+      cancelText: 'Annuler',
+      confirmText: 'Appliquer',
+    );
+    if (choisi != null) onChanged(choisi);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final valeur = this.valeur;
+    if (valeur == null) {
+      return ActionChip(
+        label: Text('$prefixe $vide'),
+        onPressed: () => _choisir(context),
+      );
+    }
+    return InputChip(
+      label: Text('$prefixe ${formatSpendTime(valeur.hour, valeur.minute)}'),
+      selected: true,
+      onPressed: () => _choisir(context),
+      onDeleted: () => onChanged(null),
+      deleteButtonTooltipMessage: 'Retirer cette borne',
+    );
+  }
+}
+
 class _PeriodHeader extends StatelessWidget {
   final AiBudgetSnapshot snapshot;
   final bool loading;
@@ -472,7 +653,7 @@ class _PeriodHeader extends StatelessWidget {
     // l'écran a demandé — le serveur refuse un jour à venir et retombe sur
     // aujourd'hui.
     final label = snapshot.spendScope == SpendScope.day
-        ? 'journée du ${snapshot.day}'
+        ? 'journée du ${snapshot.day}${_plageLocale(snapshot)}'
         : periods.isEmpty
         ? 'Aucun mois enregistré'
         : periods.length == 1
@@ -507,9 +688,14 @@ class _PeriodHeader extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Text(
-              'Le tableau ne couvre que cette journée. Elle se change avec les '
-              'flèches et le calendrier ci-dessus, qui règlent aussi le jour du '
-              'plafond.',
+              snapshot.spendFrom == null && snapshot.spendTo == null
+                  ? 'Le tableau ne couvre que cette journée. Elle se change '
+                        'avec les flèches et le calendrier ci-dessus, qui '
+                        'règlent aussi le jour du plafond.'
+                  : 'Le tableau ne couvre que cette plage, en heure locale — '
+                        'en UTC : ${snapshot.spendFrom ?? '00:00'} → '
+                        '${snapshot.spendTo ?? '23:59'}. Les barres du '
+                        'plafond, elles, comptent la journée entière.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

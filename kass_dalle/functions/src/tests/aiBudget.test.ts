@@ -26,6 +26,7 @@ import {
   dayBounds,
   periodsToRead,
   resolveSpendDay,
+  resolveSpendTime,
 } from "../callable/budgetCallable";
 
 function policy(over: Partial<AiBudgetPolicy> = {}): AiBudgetPolicy {
@@ -335,5 +336,77 @@ describe("dayBounds", () => {
 
   test("un changement de mois ne decale rien", () => {
     assert.equal(dayBounds("2026-08-31").end.toISOString(), "2026-09-01T00:00:00.000Z");
+  });
+});
+
+describe("resolveSpendTime", () => {
+  test("une heure HH:MM est lue telle quelle", () => {
+    assert.equal(resolveSpendTime("13:37"), "13:37");
+    assert.equal(resolveSpendTime(" 00:00 "), "00:00");
+  });
+
+  test("rien de demande vaut pas de borne", () => {
+    assert.equal(resolveSpendTime(undefined), null);
+    assert.equal(resolveSpendTime(null), null);
+    assert.equal(resolveSpendTime(""), null);
+  });
+
+  test("ce qui n est pas une heure est refuse, jamais une erreur", () => {
+    assert.equal(resolveSpendTime("24:00"), null);
+    assert.equal(resolveSpendTime("13:60"), null);
+    assert.equal(resolveSpendTime("9:05"), null);
+    assert.equal(resolveSpendTime("1337"), null);
+    assert.equal(resolveSpendTime(1337), null);
+  });
+});
+
+/**
+ * Une partie de journee.
+ *
+ * C est ce qui permet de lire ce qu un changement fait a la depense — « depuis
+ * 13:37 » — sans attendre le lendemain. La minute de fin est comprise : « jusqu a
+ * 15:00 » se lit jusqu a 15:00:59.
+ */
+describe("dayBounds avec des bornes horaires", () => {
+  test("depuis une heure : de cette minute a minuit", () => {
+    const b = dayBounds("2026-09-06", "11:37");
+    assert.equal(b.start.toISOString(), "2026-09-06T11:37:00.000Z");
+    assert.equal(b.end.toISOString(), "2026-09-07T00:00:00.000Z");
+    assert.equal(b.from, "11:37");
+    assert.equal(b.to, null);
+  });
+
+  test("jusqu a une heure : la minute demandee est comprise", () => {
+    const b = dayBounds("2026-09-06", null, "15:00");
+    assert.equal(b.start.toISOString(), "2026-09-06T00:00:00.000Z");
+    assert.equal(b.end.toISOString(), "2026-09-06T15:01:00.000Z");
+    assert.equal(b.from, null);
+    assert.equal(b.to, "15:00");
+  });
+
+  test("les deux bornes ensemble", () => {
+    const b = dayBounds("2026-09-06", "11:37", "15:00");
+    assert.equal(b.start.toISOString(), "2026-09-06T11:37:00.000Z");
+    assert.equal(b.end.toISOString(), "2026-09-06T15:01:00.000Z");
+  });
+
+  test("une fin qui precede le debut est ecartee, et la reponse le dit", () => {
+    const b = dayBounds("2026-09-06", "15:00", "13:00");
+    assert.equal(b.start.toISOString(), "2026-09-06T15:00:00.000Z");
+    assert.equal(b.end.toISOString(), "2026-09-07T00:00:00.000Z");
+    assert.equal(b.from, "15:00");
+    assert.equal(b.to, null);
+  });
+
+  test("la meme minute en debut et en fin garde cette minute", () => {
+    const b = dayBounds("2026-09-06", "13:37", "13:37");
+    assert.equal(b.end.toISOString(), "2026-09-06T13:38:00.000Z");
+    assert.equal(b.to, "13:37");
+  });
+
+  test("sans borne, la journee entiere, et la reponse le dit", () => {
+    const b = dayBounds("2026-09-06");
+    assert.equal(b.from, null);
+    assert.equal(b.to, null);
   });
 });

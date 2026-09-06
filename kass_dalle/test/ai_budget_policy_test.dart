@@ -160,6 +160,70 @@ void main() {
     });
   });
 
+  /// Les bornes horaires d une journee.
+  ///
+  /// L ecran les choisit en heure locale, le serveur les lit en UTC sur une
+  /// journee UTC : la conversion doit rester dans la journee affichee, sans
+  /// quoi « depuis 01:00 » a Paris en ete lirait la veille.
+  group('bornes horaires', () {
+    test('une heure HH:MM se lit et se recompose', () {
+      expect(parseSpendTime('13:37'), (hour: 13, minute: 37));
+      expect(parseSpendTime('00:00'), (hour: 0, minute: 0));
+      expect(formatSpendTime(9, 5), '09:05');
+    });
+
+    test('ce qui n est pas une heure est refuse', () {
+      expect(parseSpendTime('24:00'), isNull);
+      expect(parseSpendTime('13:60'), isNull);
+      expect(parseSpendTime('1337'), isNull);
+      expect(parseSpendTime(''), isNull);
+    });
+
+    test('un instant de la journee donne son heure UTC', () {
+      expect(
+        utcSpendTime('2026-09-06', DateTime.utc(2026, 9, 6, 11, 37)),
+        '11:37',
+      );
+    });
+
+    test('un instant hors de la journee est ramene a ses bords', () {
+      expect(
+        utcSpendTime('2026-09-06', DateTime.utc(2026, 9, 5, 23, 0)),
+        '00:00',
+      );
+      expect(
+        utcSpendTime('2026-09-06', DateTime.utc(2026, 9, 7, 0, 30)),
+        '23:59',
+      );
+    });
+
+    test('une borne UTC revient sur la bonne journee en local', () {
+      final local = localSpendTime('2026-09-06', '11:37')!;
+      expect(local.toUtc(), DateTime.utc(2026, 9, 6, 11, 37));
+      expect(localSpendTime('2026-09-06', 'midi'), isNull);
+      expect(localSpendTime('hier', '11:37'), isNull);
+    });
+
+    test('sans bornes rendues par le serveur, le tableau est la journee', () {
+      final s = AiBudgetSnapshot(
+        policy: AiBudgetPolicy.fromMap(const {}),
+        usdToEur: 0.92,
+        founderUid: null,
+        founderMultiplier: 10,
+        day: '2026-09-06',
+        currentDay: '2026-09-06',
+        spendScope: SpendScope.day,
+        spendsTruncated: false,
+        periods: const [],
+        periodsWithoutBreakdown: const [],
+        spends: const [],
+        today: const [],
+      );
+      expect(s.spendFrom, isNull);
+      expect(s.spendTo, isNull);
+    });
+  });
+
   group('le nom affiché dans la comptabilité', () {
     const names = {'uid-1': 'Frédéric China', 'uid-2': '  '};
 

@@ -119,6 +119,59 @@ String formatSpendDay(DateTime date) =>
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
+/// Une heure `HH:MM`, la forme des bornes horaires échangées avec le serveur.
+///
+/// `null` quand la chaîne n'en est pas une : le serveur d'avant les bornes
+/// n'en renvoie aucune, et l'écran ne doit pas en inventer.
+({int hour, int minute})? parseSpendTime(String time) {
+  final parts = time.split(':');
+  if (parts.length != 2) return null;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return (hour: hour, minute: minute);
+}
+
+/// `HH:MM`, sur deux chiffres chacun.
+String formatSpendTime(int hour, int minute) =>
+    '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+
+/// L'heure UTC `HH:MM` d'un instant, ramenée dans la journée [day].
+///
+/// L'écran choisit ses bornes en heure locale, le serveur les lit en UTC sur
+/// une journée UTC. Un instant qui tombe avant cette journée — 01:00 à Paris
+/// en été est encore la veille en UTC — vaut son début ; un instant qui tombe
+/// après vaut sa dernière minute. Sans cela, la borne glisserait sur un autre
+/// jour que celui affiché.
+String utcSpendTime(String day, DateTime instant) {
+  final utc = instant.toUtc();
+  final jour = parseSpendDay(day);
+  if (jour != null) {
+    if (utc.isBefore(jour)) return '00:00';
+    if (!utc.isBefore(jour.add(const Duration(days: 1)))) return '23:59';
+  }
+  return formatSpendTime(utc.hour, utc.minute);
+}
+
+/// L'instant local d'une borne `HH:MM` UTC posée sur la journée [day].
+///
+/// Pour l'affichage : le serveur rend ses bornes en UTC, l'écran les montre
+/// dans le fuseau de l'appareil. `null` si l'une des deux chaînes est
+/// illisible.
+DateTime? localSpendTime(String day, String time) {
+  final jour = parseSpendDay(day);
+  final heure = parseSpendTime(time);
+  if (jour == null || heure == null) return null;
+  return DateTime.utc(
+    jour.year,
+    jour.month,
+    jour.day,
+    heure.hour,
+    heure.minute,
+  ).toLocal();
+}
+
 /// L'uid que portent les appels lancés sans personne derrière.
 ///
 /// Enrichissement du référentiel nutritionnel, tâches planifiées, backfills :
@@ -212,6 +265,14 @@ class AiBudgetSnapshot {
   /// manquant se voit, un coût faux ne se voit pas : l'écran le dit.
   final bool spendsTruncated;
 
+  /// Bornes horaires appliquées à [spends], `HH:MM` UTC, sur la journée [day].
+  ///
+  /// Nulles quand la journée est lue en entier. Elles viennent du serveur :
+  /// une borne de fin qu'il a écartée revient nulle, et l'écran ne titre pas
+  /// « jusqu'à 13:00 » sur un tableau lu jusqu'à minuit.
+  final String? spendFrom;
+  final String? spendTo;
+
   /// Mois réellement lus pour [spends]. Vide sur une journée.
   final List<String> periods;
 
@@ -234,6 +295,8 @@ class AiBudgetSnapshot {
     required this.currentDay,
     required this.spendScope,
     required this.spendsTruncated,
+    this.spendFrom,
+    this.spendTo,
     required this.periods,
     required this.periodsWithoutBreakdown,
     required this.spends,
@@ -277,10 +340,17 @@ class AiBudgetRepository {
   /// [scope] : ce que le TABLEAU couvre. [SpendScope.day] le ramène à la seule
   /// journée [day], lue sur la ligne d'appel. Le plafond, lui, porte toujours
   /// sur cette journée, quel que soit le mode.
+  ///
+  /// [from] et [to] : des bornes `HH:MM` UTC à l'intérieur de cette journée,
+  /// la minute [to] comprise. Le serveur les ignore hors [SpendScope.day], et
+  /// rend celles qu'il a appliquées dans [AiBudgetSnapshot.spendFrom] et
+  /// [AiBudgetSnapshot.spendTo].
   Future<AiBudgetSnapshot> fetch({
     int? depth,
     String? day,
     SpendScope scope = SpendScope.months,
+    String? from,
+    String? to,
   }) async {
     try {
       final raw = await _functions
@@ -289,6 +359,8 @@ class AiBudgetRepository {
             'depth': depth,
             'day': day,
             'scope': scope == SpendScope.day ? 'day' : 'months',
+            'from': from,
+            'to': to,
           });
       return _parse(Map<String, dynamic>.from(raw.data));
     } catch (e, st) {
@@ -300,6 +372,8 @@ class AiBudgetRepository {
           'depth': depth?.toString() ?? 'all',
           'day': day ?? 'today',
           'scope': scope.name,
+          'from': from ?? '',
+          'to': to ?? '',
         },
       );
       rethrow;
@@ -388,6 +462,8 @@ class AiBudgetRepository {
           ? SpendScope.day
           : SpendScope.months,
       spendsTruncated: data['spendsTruncated'] == true,
+      spendFrom: data['spendFrom'] as String?,
+      spendTo: data['spendTo'] as String?,
       periods: (data['periods'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),

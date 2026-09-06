@@ -103,10 +103,47 @@ function toNumber(value: unknown): number {
  */
 export type SpendScope = "months" | "day";
 
-/** Les bornes d'une journée `AAAA-MM-JJ`, en UTC comme tout le comptage. */
-export function dayBounds(day: string): { start: Date; end: Date } {
-  const start = new Date(`${day}T00:00:00Z`);
-  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+/**
+ * Une heure `HH:MM` demandée par l'écran, ou rien.
+ *
+ * Même règle que pour le jour : la forme est vérifiée, et ce qui ne passe pas
+ * vaut « pas de borne », jamais une erreur. `24:00` est refusé — la fin de la
+ * journée se dit en n'envoyant rien.
+ */
+export function resolveSpendTime(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const asked = raw.trim();
+  if (!/^[0-9]{2}:[0-9]{2}$/.test(asked)) return null;
+  const hours = Number(asked.slice(0, 2));
+  const minutes = Number(asked.slice(3));
+  if (hours > 23 || minutes > 59) return null;
+  return asked;
+}
+
+/**
+ * Les bornes d'une journée `AAAA-MM-JJ`, en UTC comme tout le comptage.
+ *
+ * Avec `from` et `to` (`HH:MM` UTC), une partie de la journée seulement :
+ * depuis `from` inclus, jusqu'à la minute `to` incluse. C'est ce qui permet de
+ * mesurer ce qu'un changement fait à la dépense sans attendre le lendemain.
+ * Une borne de fin qui ne laisse rien après le début est écartée — la journée
+ * se lit alors jusqu'à minuit, et la réponse le dit.
+ */
+export function dayBounds(
+  day: string,
+  from: string | null = null,
+  to: string | null = null,
+): { start: Date; end: Date; from: string | null; to: string | null } {
+  const midnight = new Date(`${day}T00:00:00Z`);
+  const nextMidnight = new Date(midnight.getTime() + 24 * 60 * 60 * 1000);
+  const start = from ? new Date(`${day}T${from}:00Z`) : midnight;
+  let end = to ? new Date(`${day}T${to}:00Z`).getTime() + 60 * 1000 : nextMidnight.getTime();
+  let effectiveTo = to;
+  if (end <= start.getTime()) {
+    end = nextMidnight.getTime();
+    effectiveTo = null;
+  }
+  return { start, end: new Date(end), from, to: effectiveTo };
 }
 
 /**
@@ -162,9 +199,9 @@ export function aggregateDaySpends(lines: Record<string, unknown>[]): UserSpendR
  */
 async function readDayLines(
   db: FirebaseFirestore.Firestore,
-  day: string,
+  bounds: { start: Date; end: Date },
 ): Promise<{ lines: Record<string, unknown>[]; truncated: boolean }> {
-  const { start, end } = dayBounds(day);
+  const { start, end } = bounds;
   const lines: Record<string, unknown>[] = [];
   let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
 
@@ -214,6 +251,8 @@ export const getAiBudgetFn = onCall<{
   depth?: number | null;
   day?: string | null;
   scope?: string | null;
+  from?: string | null;
+  to?: string | null;
 }>(callableOpts, async (req) => {
   await requireAdmin(req, "ai_budget_policy");
   const db = getFirestore();
@@ -227,6 +266,12 @@ export const getAiBudgetFn = onCall<{
   // tableau quand l'écran demande une journée.
   const day = resolveSpendDay(req.data?.day);
   const scope: SpendScope = req.data?.scope === "day" ? "day" : "months";
+  // Les bornes horaires n'ont de sens que sur une journée : le tableau des
+  // mois ne lit pas la ligne d'appel, et ne saurait donc pas les appliquer.
+  const bounds =
+    scope === "day"
+      ? dayBounds(day, resolveSpendTime(req.data?.from), resolveSpendTime(req.data?.to))
+      : null;
 
   const [policy, usdToEur, founder, monthlySnap, dailySnap, usersSnap] = await Promise.all([
     getAiBudgetPolicy(),
@@ -279,7 +324,7 @@ export const getAiBudgetFn = onCall<{
     if (!sawBreakdown && Object.keys(users).length > 0) periodsWithoutBreakdown.push(doc.id);
   }
 
-  const dayLines = scope === "day" ? await readDayLines(db, day) : null;
+  const dayLines = bounds ? await readDayLines(db, bounds) : null;
 
   const names: Record<string, string> = {};
   for (const doc of usersSnap.docs) {
@@ -321,6 +366,12 @@ export const getAiBudgetFn = onCall<{
     // tableau titré « journée du 7 » alors qu'il montre le 6 se lirait comme
     // une journée vide.
     spendScope: scope,
+    // Les bornes horaires RÉELLEMENT appliquées, `HH:MM` UTC, nulles quand la
+    // journée est lue en entier. Une borne de fin refusée revient nulle : sans
+    // cela, l'écran titrerait « jusqu'à 13:00 » sur un tableau lu jusqu'à
+    // minuit.
+    spendFrom: bounds?.from ?? null,
+    spendTo: bounds?.to ?? null,
     // Journée coupée au plafond de lignes : le total affiché est alors plus
     // bas que la dépense réelle, et cela doit se voir.
     spendsTruncated: dayLines?.truncated ?? false,
