@@ -10,6 +10,7 @@ import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/presentation/image_action_card.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/services/photo_capture_service.dart';
 
 class BookFormScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -75,21 +76,34 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   }
 
   Future<void> _pickCover(ImageSource source, {String? bookId}) async {
-    final picker = ImagePicker();
-    final xFile = await picker.pickImage(
-      source: source,
-      preferredCameraDevice: source == ImageSource.camera
-          ? CameraDevice.rear
-          : CameraDevice.front,
-      imageQuality: 85,
-      maxWidth: 1200,
-    );
-    if (xFile == null) return;
+    // Sur mobile, la caméra est le scanner du système : la couverture revient
+    // cadrée et redressée, comme à l'import.
+    final Uint8List bytes;
+    try {
+      final photo = await PhotoCaptureService().pick(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1200,
+      );
+      if (photo == null) return;
+      bytes = photo.bytes;
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookFormScreen.pickCover',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'etape': 'capture', 'source': source.name},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+      }
+      return;
+    }
+    if (!mounted) return;
     if (bookId != null) {
       // Upload immédiat si on édite un livre existant
       setState(() => _uploadingCover = true);
       try {
-        final bytes = await xFile.readAsBytes();
         final url = await _uploadCoverFile(bytes, bookId);
         await ref
             .read(bookRepositoryProvider)
@@ -117,7 +131,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       }
     } else {
       // Nouveau livre : stocker localement, uploader à la création
-      final bytes = await xFile.readAsBytes();
       setState(() => _localCoverBytes = bytes);
     }
   }

@@ -2117,6 +2117,15 @@ Le scan par la caméra passe donc par lui, pour une couverture comme pour des pa
 - Les fichiers rendus vivent dans un cache appartenant au greffon. On lit leurs octets, puis
   `cleanCache()` — best-effort, jamais silencieux.
 
+**Les boutons « Prendre une photo » hors import passent par le même scanner**, via
+`core/services/photo_capture_service.dart`. Quatre appelants : l'onglet Photos d'un brouillon
+(`draft_illustrations_tab.dart`), le détail d'une recette (`recipe_illustration_actions.dart` et
+`recipe_detail_widgets.dart`), la recette générée (`generated_recipe_illustrations.dart`) et le
+formulaire de livre (`book_form_screen.dart`). Le service prend une page à la fois, sur le même
+critère `PlatformUtils.isMobile` ; la galerie reste `image_picker` partout, et `imageQuality` /
+`maxWidth` ne valent que pour lui — le scanner rend un JPEG à sa résolution. Le service ne réutilise
+pas `scan_upload_service.dart`, qui garde sa chaîne multi-pages ; ils ne partagent que le critère.
+
 ### Sur le web : une suggestion, annoncée comme telle
 
 Aucune de ces API n'existe dans un navigateur. L'atelier de retouche garde la main et calcule un

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/services/photo_capture_service.dart';
 import '../recipe_providers.dart';
 import 'recipe_detail_illustrations.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -53,18 +54,31 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
       return;
     }
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      preferredCameraDevice: source == ImageSource.camera
-          ? CameraDevice.rear
-          : CameraDevice.front,
-      imageQuality: 85,
-    );
-    if (picked == null) {
+    // Sur mobile, la caméra est le scanner du système, comme à l'import.
+    final Uint8List bytes;
+    try {
+      final photo = await PhotoCaptureService().pick(
+        source: source,
+        imageQuality: 85,
+      );
+      if (photo == null) return;
+      bytes = photo.bytes;
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeIllustrationActions.addIllustration',
+        error: e,
+        stackTrace: stackTrace,
+        context: {
+          'etape': 'capture',
+          'source': source.name,
+          'recipeId': recipeId,
+        },
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+      }
       return;
     }
-    final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
     final enhanced = await showGeneralDialog<Uint8List?>(

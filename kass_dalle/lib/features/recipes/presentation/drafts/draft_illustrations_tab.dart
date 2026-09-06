@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../ai/ai_ui_copy.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/services/photo_capture_service.dart';
 import '../../data/draft_review_service.dart';
 import '../../data/recipe_repository.dart';
 import 'illustration_card.dart';
@@ -226,21 +227,32 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     );
     if (source == null || !mounted) return;
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      preferredCameraDevice: source == ImageSource.camera
-          ? CameraDevice.rear
-          : CameraDevice.front,
-      imageQuality: 85,
-      maxWidth: 1600,
-    );
-    if (picked == null || !mounted) return;
+    // Sur mobile, la caméra est le scanner du système : la photo revient
+    // cadrée et redressée, comme une page à l'import.
+    final CapturedPhoto? photo;
+    try {
+      photo = await PhotoCaptureService().pick(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftIllustrationsTab.addManualPhoto',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'etape': 'capture', 'source': source.name},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+      }
+      return;
+    }
+    if (photo == null || !mounted) return;
 
     setState(() => _uploadingManual = true);
     try {
-      final bytes = await picked.readAsBytes();
-      final url = await upload(bytes, picked.name);
+      final url = await upload(photo.bytes, photo.filename);
       if (!mounted) return;
       if (url == null || url.isEmpty) {
         context.showErrorSnackBar('Upload image échoué');

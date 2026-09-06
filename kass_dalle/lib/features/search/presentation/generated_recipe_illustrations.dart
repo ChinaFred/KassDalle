@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
+import '../../../core/services/photo_capture_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../recipes/presentation/ai/ai_ui_copy.dart';
@@ -82,20 +83,34 @@ class _GeneratedRecipeIllustrationsState
     );
     if (source == null || !mounted) return;
 
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      imageQuality: 85,
-      maxWidth: 1600,
-    );
-    if (picked == null || !mounted) return;
+    // Sur mobile, la caméra est le scanner du système, comme à l'import.
+    final CapturedPhoto? photo;
+    try {
+      photo = await PhotoCaptureService().pick(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'generatedRecipeIllustrations.addPhoto',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'etape': 'capture', 'source': source.name},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+      }
+      return;
+    }
+    if (photo == null || !mounted) return;
 
     setState(() => _uploading = true);
     try {
-      final bytes = await picked.readAsBytes();
       final url = await ImageModerationService().publish(
         PendingImage(
-          bytes: bytes,
-          filename: picked.name,
+          bytes: photo.bytes,
+          filename: photo.filename,
           contentType: 'image/jpeg',
           target: ModerationTarget.draftIllustration,
         ),
