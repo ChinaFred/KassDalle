@@ -369,27 +369,29 @@ class QueueJobTile extends StatelessWidget {
       onLongPress: onLongPress,
     );
 
-    if (!enTraitement) return tuile;
-
     // La suite des étapes prend une ligne À ELLE, sous la tuile.
     //
     // Elle vivait dans la colonne du sous-titre, que `ListTile` réduit à ce que
     // les boutons de droite lui laissent : le libellé de l'étape s'y coupait —
     // « Lecture de la page par … ». Ici, elle dispose de toute la largeur de la
     // carte, et le texte peut passer à la ligne.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        tuile,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-          child: ProcessingTrailRow(
-            type: job.type,
-            currentStep: job.currentStep,
-          ),
-        ),
-      ],
-    );
+    final contenu = !enTraitement
+        ? tuile
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              tuile,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: ProcessingTrailRow(
+                  type: job.type,
+                  currentStep: job.currentStep,
+                ),
+              ),
+            ],
+          );
+
+    return _TeinteDeTraitement(status: job.status, child: contenu);
   }
 
   _PrimaryJobAction? _primaryActionForStatus(ProcessingJobStatus status) {
@@ -639,6 +641,51 @@ class QueueDraftTile extends StatelessWidget {
 enum _DraftMenuAction { validate, delete, viewSource, downloadSource }
 
 // ── Chip statut traitement ────────────────────────────────────────────────────
+
+/// Le fond d'une ligne de traitement, pour qu'elle se distingue d'un brouillon.
+///
+/// Les deux partagent la même liste et la même forme : icône ronde, titre,
+/// sous-titre, boutons. Seule la couleur de l'icône les séparait, plus une
+/// puce « Traitement » qu'il faut lire. Un traitement en file ou en cours
+/// porte donc la teinte secondaire sur toute sa ligne, avec un liseré à
+/// gauche ; un traitement en erreur ou rejeté porte la teinte d'erreur ; un
+/// brouillon garde le fond de la liste. La même teinte secondaire sert à la
+/// puce et à l'icône du traitement : une seule couleur veut dire « en cours ».
+class _TeinteDeTraitement extends StatelessWidget {
+  const _TeinteDeTraitement({required this.status, required this.child});
+
+  final ProcessingJobStatus status;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (fond, lisere) = switch (status) {
+      ProcessingJobStatus.queued || ProcessingJobStatus.processing => (
+        scheme.secondaryContainer.withValues(alpha: 0.35),
+        scheme.secondary,
+      ),
+      ProcessingJobStatus.error || ProcessingJobStatus.rejected => (
+        scheme.errorContainer.withValues(alpha: 0.35),
+        scheme.error,
+      ),
+      ProcessingJobStatus.done => (Colors.transparent, Colors.transparent),
+    };
+    // Le fond va sur un `Material`, pas sur la boîte décorée : `ListTile`
+    // peint sa couleur de sélection et son encre sur le `Material` le plus
+    // proche, et une boîte colorée entre les deux les cacherait — Flutter le
+    // refuse à l'exécution. La boîte ne porte que le liseré.
+    return Material(
+      color: fond,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: lisere, width: 4)),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
 
 class _JobStatusChip extends StatelessWidget {
   final ProcessingJobStatus status;

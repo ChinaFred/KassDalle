@@ -275,6 +275,10 @@ privait le titre de la place dont il manquait.
   l'enregistrement du brouillon, le balisage et la normalisation durent jusqu'à sept minutes ; un
   traitement en erreur après la lecture garde ainsi le nom de sa recette. Une page à plusieurs
   recettes les nomme toutes, un scan de couverture porte le titre du livre.
+- **Une ligne de traitement se distingue d'un brouillon par sa couleur.** Tant que le traitement
+  est en file ou en cours, sa ligne porte un fond teinté et un liseré à gauche dans la couleur
+  secondaire, celle de sa puce et de son icône. En erreur ou rejeté, la couleur d'erreur. Un
+  brouillon garde le fond de la liste.
 - Indicateur de traitements actifs visible dans la zone Brouillons.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
