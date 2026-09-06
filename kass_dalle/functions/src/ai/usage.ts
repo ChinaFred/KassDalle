@@ -111,7 +111,7 @@ export interface UsageEntry {
 }
 
 /** Utilisateur retenu quand l'appel n'est rattaché à personne. */
-const UNATTRIBUTED = "system_unattributed";
+export const UNATTRIBUTED = "system_unattributed";
 
 /** Période `AAAA-MM` d'une date, en UTC — la même que la réconciliation. */
 export function usagePeriod(date: Date): string {

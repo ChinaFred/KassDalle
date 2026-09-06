@@ -209,6 +209,22 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   /// même axe aux deux endroits.
   ServicesGrouping _groupement = ServicesGrouping.feature;
 
+  /// La période du TABLEAU : des mois, ou la seule journée [_day].
+  ///
+  /// L'écran portait deux sélecteurs qui ne parlaient pas de la même chose :
+  /// les puces choisissaient les mois du tableau, les flèches la journée du
+  /// plafond. Descendre à la journée n'était donc possible que pour les barres
+  /// de plafond, jamais pour le tableau. C'est la même journée dans les deux
+  /// cas ; ce champ dit seulement jusqu'où elle s'applique.
+  SpendScope _scope = SpendScope.months;
+
+  /// Le libellé de la puce de journée, ou `null` quand la période est en mois.
+  String? get _jourLabel {
+    if (_scope != SpendScope.day) return null;
+    final jour = _snapshot?.day ?? _day ?? '';
+    return jour.isEmpty ? 'Un jour' : 'Jour : $jour';
+  }
+
   void _setFiltre(String valeur) {
     if (_filtreController.text != valeur) _filtreController.text = valeur;
     setState(() => _filtre = valeur.trim().toLowerCase());
@@ -266,7 +282,7 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
     try {
       final snapshot = await ref
           .read(aiBudgetRepositoryProvider)
-          .fetch(depth: depth, day: _day);
+          .fetch(depth: depth, day: _day, scope: _scope);
       if (!mounted) return;
       setState(() {
         _snapshot = snapshot;
@@ -346,8 +362,17 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
             depth: depth,
             onChanged: (months) {
               ref.read(costsDepthProvider.notifier).set(months);
+              setState(() => _scope = SpendScope.months);
               _load(months);
             },
+            // La journée reste celle des flèches, juste en dessous : une seule
+            // date pour l'écran entier, ici pour le tableau et là pour le
+            // plafond.
+            onJour: () {
+              setState(() => _scope = SpendScope.day);
+              _load(depth);
+            },
+            jourLabel: _jourLabel,
           ),
           const SizedBox(height: 16),
           if (_error != null)
@@ -442,7 +467,13 @@ class _PeriodHeader extends StatelessWidget {
     final total = snapshot.spends.fold<double>(0, (sum, u) => sum + u.costUsd);
     final calls = snapshot.spends.fold<int>(0, (sum, u) => sum + u.calls);
 
-    final label = periods.isEmpty
+    // Sur une journée, `periods` est vide et ne dit rien : c'est le jour lu
+    // qui fait la période. Le lire sur le snapshot plutôt que sur ce que
+    // l'écran a demandé — le serveur refuse un jour à venir et retombe sur
+    // aujourd'hui.
+    final label = snapshot.spendScope == SpendScope.day
+        ? 'journée du ${snapshot.day}'
+        : periods.isEmpty
         ? 'Aucun mois enregistré'
         : periods.length == 1
         ? periods.single
@@ -472,6 +503,29 @@ class _PeriodHeader extends StatelessWidget {
               ),
           ],
         ),
+        if (snapshot.spendScope == SpendScope.day)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Le tableau ne couvre que cette journée. Elle se change avec les '
+              'flèches et le calendrier ci-dessus, qui règlent aussi le jour du '
+              'plafond.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (snapshot.spendsTruncated)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Journée trop chargée pour être lue en entier : les montants '
+              'ci-dessous sont plus bas que la dépense réelle.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
         if (snapshot.periodsWithoutBreakdown.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),

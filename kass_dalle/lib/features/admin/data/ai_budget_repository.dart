@@ -138,6 +138,13 @@ String spendUserLabel(String uid, Map<String, String> names) {
   return name.isEmpty ? uid : name;
 }
 
+/// La période que couvre le tableau des dépenses.
+///
+/// Deux sources derrière ce choix : l'agrégat mensuel, qui ne sait rien dire
+/// d'un jour, et la ligne d'appel, qui porte l'heure. Le mois reste le mode
+/// courant ; la journée se demande, et coûte une lecture par appel.
+enum SpendScope { months, day }
+
 /// Ce qu'un compte a consommé aujourd'hui — la seule unité où un plafond
 /// quotidien a du sens.
 class DailySpendRow {
@@ -191,7 +198,21 @@ class AiBudgetSnapshot {
   /// afficherait « aujourd'hui » sur une journée déjà close.
   final String currentDay;
 
-  /// Mois réellement lus pour [spends].
+  /// Ce que [spends] couvre réellement : des mois entiers, ou la journée [day].
+  ///
+  /// Vient du serveur et n'est pas déduit de ce que l'écran a demandé : le
+  /// serveur refuse un jour à venir et retombe sur aujourd'hui. Un tableau
+  /// titré « journée du 7 » qui montrerait le 6 se lirait comme une journée
+  /// vide.
+  final SpendScope spendScope;
+
+  /// Journée coupée au plafond de lignes lues.
+  ///
+  /// Le total affiché est alors plus bas que la dépense réelle. Un coût
+  /// manquant se voit, un coût faux ne se voit pas : l'écran le dit.
+  final bool spendsTruncated;
+
+  /// Mois réellement lus pour [spends]. Vide sur une journée.
   final List<String> periods;
 
   /// Mois trop anciens pour porter la ventilation par poste.
@@ -211,6 +232,8 @@ class AiBudgetSnapshot {
     required this.founderMultiplier,
     required this.day,
     required this.currentDay,
+    required this.spendScope,
+    required this.spendsTruncated,
     required this.periods,
     required this.periodsWithoutBreakdown,
     required this.spends,
@@ -250,18 +273,34 @@ class AiBudgetRepository {
   /// journée en cours. Le serveur reste juge : une date à venir ou impossible
   /// retombe sur aujourd'hui, et le jour réellement lu revient dans
   /// [AiBudgetSnapshot.day].
-  Future<AiBudgetSnapshot> fetch({int? depth, String? day}) async {
+  ///
+  /// [scope] : ce que le TABLEAU couvre. [SpendScope.day] le ramène à la seule
+  /// journée [day], lue sur la ligne d'appel. Le plafond, lui, porte toujours
+  /// sur cette journée, quel que soit le mode.
+  Future<AiBudgetSnapshot> fetch({
+    int? depth,
+    String? day,
+    SpendScope scope = SpendScope.months,
+  }) async {
     try {
       final raw = await _functions
           .httpsCallable('getAiBudgetFn')
-          .call<Map<String, dynamic>>({'depth': depth, 'day': day});
+          .call<Map<String, dynamic>>({
+            'depth': depth,
+            'day': day,
+            'scope': scope == SpendScope.day ? 'day' : 'months',
+          });
       return _parse(Map<String, dynamic>.from(raw.data));
     } catch (e, st) {
       await _errorReportService.reportError(
         feature: 'aiBudget.fetch',
         error: e,
         stackTrace: st,
-        context: {'depth': depth?.toString() ?? 'all', 'day': day ?? 'today'},
+        context: {
+          'depth': depth?.toString() ?? 'all',
+          'day': day ?? 'today',
+          'scope': scope.name,
+        },
       );
       rethrow;
     }
@@ -342,6 +381,13 @@ class AiBudgetRepository {
       // regardé fait alors office, et l'écran se comporte comme avant — il
       // montre aujourd'hui, et ne propose rien d'autre.
       currentDay: data['currentDay'] as String? ?? data['day'] as String? ?? '',
+      // Un serveur d'avant la lecture par journée ne connaît que les mois : ce
+      // qu'il rend est un tableau mensuel, et l'écran l'affiche comme tel
+      // plutôt que de titrer une journée qu'il n'a pas lue.
+      spendScope: data['spendScope'] == 'day'
+          ? SpendScope.day
+          : SpendScope.months,
+      spendsTruncated: data['spendsTruncated'] == true,
       periods: (data['periods'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),

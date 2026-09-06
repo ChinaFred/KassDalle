@@ -21,7 +21,12 @@ import {
   type DailySpend,
 } from "../ai/budget";
 import { shouldAlert } from "../scheduled/aiBudgetAlertSchedule";
-import { periodsToRead, resolveSpendDay } from "../callable/budgetCallable";
+import {
+  aggregateDaySpends,
+  dayBounds,
+  periodsToRead,
+  resolveSpendDay,
+} from "../callable/budgetCallable";
 
 function policy(over: Partial<AiBudgetPolicy> = {}): AiBudgetPolicy {
   return { ...DEFAULT_AI_BUDGET_POLICY, ...over };
@@ -250,5 +255,85 @@ describe("le jour regarde par l ecran", () => {
     assert.equal(resolveSpendDay("hier", maintenant), "2026-08-30");
     assert.equal(resolveSpendDay("2026-8-3", maintenant), "2026-08-30");
     assert.equal(resolveSpendDay(20260817, maintenant), "2026-08-30");
+  });
+});
+
+/**
+ * La journee comme periode du tableau.
+ *
+ * L agregat mensuel n a pas de dimension jour : une journee se relit sur la
+ * ligne d appel. Ce que ces tests verrouillent, c est que les deux lectures
+ * rendent la MEME forme — memes cles de compte, memes cles de poste — sans
+ * quoi le meme compte porterait deux noms selon la periode choisie.
+ */
+describe("aggregateDaySpends", () => {
+  const ligne = (over: Record<string, unknown> = {}) => ({
+    uid: "u1",
+    feature: "recipe_tagging",
+    estimated_cost_usd: 0.5,
+    ...over,
+  });
+
+  test("un compte porte la somme de ses lignes, ventilee par poste", () => {
+    const rendu = aggregateDaySpends([
+      ligne(),
+      ligne({ estimated_cost_usd: 0.25 }),
+      ligne({ feature: "generate", estimated_cost_usd: 1 }),
+    ]);
+
+    assert.equal(rendu.length, 1);
+    assert.equal(rendu[0].uid, "u1");
+    assert.equal(rendu[0].calls, 3);
+    assert.ok(Math.abs(rendu[0].costUsd - 1.75) < 1e-9);
+    assert.equal(rendu[0].byFeature.recipe_tagging.calls, 2);
+    assert.ok(Math.abs(rendu[0].byFeature.recipe_tagging.costUsd - 0.75) < 1e-9);
+    assert.equal(rendu[0].byFeature.generate.calls, 1);
+  });
+
+  test("les comptes sortent du plus cher au moins cher", () => {
+    const rendu = aggregateDaySpends([
+      ligne({ uid: "petit", estimated_cost_usd: 0.1 }),
+      ligne({ uid: "gros", estimated_cost_usd: 9 }),
+    ]);
+    assert.deepEqual(
+      rendu.map((r) => r.uid),
+      ["gros", "petit"],
+    );
+  });
+
+  test("un appel sans montant compte quand meme pour un appel", () => {
+    // Il a eu lieu, et le nombre d appels doit pouvoir se rapprocher de la
+    // facture. Un cout absent vaut zero, jamais une ligne ecartee.
+    const rendu = aggregateDaySpends([ligne({ estimated_cost_usd: undefined })]);
+    assert.equal(rendu[0].calls, 1);
+    assert.equal(rendu[0].costUsd, 0);
+  });
+
+  test("une ligne sans compte garde son montant sous les appels non rattaches", () => {
+    // L ecarter rendrait la journee moins chere qu elle ne l a ete.
+    const rendu = aggregateDaySpends([ligne({ uid: "  ", estimated_cost_usd: 2 })]);
+    assert.equal(rendu[0].uid, "system_unattributed");
+    assert.equal(rendu[0].costUsd, 2);
+  });
+
+  test("un poste sans nom est range sous inconnu, pas perdu", () => {
+    const rendu = aggregateDaySpends([ligne({ feature: undefined })]);
+    assert.equal(rendu[0].byFeature.inconnu.calls, 1);
+  });
+
+  test("aucune ligne rend un tableau vide", () => {
+    assert.deepEqual(aggregateDaySpends([]), []);
+  });
+});
+
+describe("dayBounds", () => {
+  test("une journee va de minuit UTC a minuit UTC", () => {
+    const { start, end } = dayBounds("2026-09-05");
+    assert.equal(start.toISOString(), "2026-09-05T00:00:00.000Z");
+    assert.equal(end.toISOString(), "2026-09-06T00:00:00.000Z");
+  });
+
+  test("un changement de mois ne decale rien", () => {
+    assert.equal(dayBounds("2026-08-31").end.toISOString(), "2026-09-01T00:00:00.000Z");
   });
 });

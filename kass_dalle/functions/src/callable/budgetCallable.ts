@@ -19,6 +19,7 @@ import {
   REGION,
   COLL_APP_CONFIG,
   COLL_AI_DAILY_SPEND,
+  COLL_AI_USAGE,
   COLL_AI_USAGE_MONTHLY,
   COLL_USERS,
   MAX_CALLABLE_INSTANCES,
@@ -36,6 +37,7 @@ import {
   type AiBudgetPolicy,
 } from "../ai/budget";
 import { periodOf } from "../billing/periods";
+import { sanitizeMapKey, UNATTRIBUTED } from "../ai/usage";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -92,6 +94,101 @@ function toNumber(value: unknown): number {
 }
 
 /**
+ * Ce que le tableau couvre : des mois entiers, ou une seule journée.
+ *
+ * Deux sources, et c'est la raison d'être de ce paramètre. `ai_usage_monthly`
+ * agrège par mois et ne sait rien dire d'un jour ; la ligne d'appel porte
+ * l'horodatage, donc la journée, mais coûte une lecture par appel. Le mois
+ * reste le mode courant, la journée se demande.
+ */
+export type SpendScope = "months" | "day";
+
+/** Les bornes d'une journée `AAAA-MM-JJ`, en UTC comme tout le comptage. */
+export function dayBounds(day: string): { start: Date; end: Date } {
+  const start = new Date(`${day}T00:00:00Z`);
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+/**
+ * Plafond de lignes lues pour une journée.
+ *
+ * La collection entière pèse onze mille lignes et la journée la plus chargée
+ * en porte cent trente-cinq : ce plafond ne coupe rien aujourd'hui. Il borne
+ * la mémoire d'une fonction à 256 Mio le jour où un import massif produirait
+ * une journée hors norme — et la coupe se DIT, elle ne se devine pas.
+ */
+export const MAX_DAY_LINES = 20000;
+
+/**
+ * La dépense d'une journée, par compte et par poste, depuis les lignes d'appel.
+ *
+ * Les clés sont celles de l'agrégat mensuel : `uid` tel qu'il est écrit sur la
+ * ligne, poste passé par `sanitizeMapKey`. Sans cela, le même compte porterait
+ * deux noms selon la période choisie, et le même poste deux libellés.
+ *
+ * Une ligne sans `uid` garde son montant sous le compte des appels non
+ * rattachés : l'écarter rendrait la journée moins chère qu'elle ne l'a été.
+ */
+export function aggregateDaySpends(lines: Record<string, unknown>[]): UserSpendRow[] {
+  const byUser = new Map<string, UserSpendRow>();
+
+  for (const line of lines) {
+    const raw = typeof line.uid === "string" ? line.uid.trim() : "";
+    const uid = raw.length > 0 ? raw : UNATTRIBUTED;
+    const feature = sanitizeMapKey(String(line.feature ?? "inconnu"));
+    // Le coût figé à l'appel fait foi : c'est celui qui a été compté dans le
+    // mois. Le recalculer ici au tarif du jour ferait diverger deux lectures
+    // de la même dépense.
+    const cost = toNumber(line.estimated_cost_usd);
+
+    const row = byUser.get(uid) ?? { uid, costUsd: 0, calls: 0, byFeature: {} };
+    row.costUsd += cost;
+    row.calls += 1;
+    const entry = (row.byFeature[feature] ??= { costUsd: 0, calls: 0 });
+    entry.costUsd += cost;
+    entry.calls += 1;
+    byUser.set(uid, row);
+  }
+
+  return [...byUser.values()].sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+}
+
+/**
+ * Les lignes d'appel d'une journée, par pages de mille.
+ *
+ * Même lecture que la reconstruction des agrégats : un curseur plutôt qu'un
+ * bloc, parce qu'une journée qui tient en mémoire aujourd'hui n'y tiendra pas
+ * forcément dans un an.
+ */
+async function readDayLines(
+  db: FirebaseFirestore.Firestore,
+  day: string,
+): Promise<{ lines: Record<string, unknown>[]; truncated: boolean }> {
+  const { start, end } = dayBounds(day);
+  const lines: Record<string, unknown>[] = [];
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+  for (;;) {
+    let query = db
+      .collection(COLL_AI_USAGE)
+      .where("timestamp", ">=", start)
+      .where("timestamp", "<", end)
+      .orderBy("timestamp")
+      .limit(1000);
+    if (cursor) query = query.startAfter(cursor);
+
+    const snap = await query.get();
+    if (snap.empty) break;
+    for (const doc of snap.docs) lines.push(doc.data());
+    if (lines.length >= MAX_DAY_LINES) return { lines, truncated: true };
+    if (snap.size < 1000) break;
+    cursor = snap.docs[snap.docs.length - 1];
+  }
+
+  return { lines, truncated: false };
+}
+
+/**
  * Le jour demandé par l'écran, ou aujourd'hui.
  *
  * Cette chaîne entre dans une requête Firestore : elle est vérifiée sur sa
@@ -113,106 +210,127 @@ export function resolveSpendDay(raw: unknown, now = new Date()): string {
   return asked > today ? today : asked;
 }
 
-export const getAiBudgetFn = onCall<{ depth?: number | null; day?: string | null }>(
-  callableOpts,
-  async (req) => {
-    await requireAdmin(req, "ai_budget_policy");
-    const db = getFirestore();
+export const getAiBudgetFn = onCall<{
+  depth?: number | null;
+  day?: string | null;
+  scope?: string | null;
+}>(callableOpts, async (req) => {
+  await requireAdmin(req, "ai_budget_policy");
+  const db = getFirestore();
 
-    const rawDepth = req.data?.depth;
-    const depth =
-      rawDepth == null ? null : Math.max(1, Math.min(120, Math.trunc(Number(rawDepth) || 1)));
+  const rawDepth = req.data?.depth;
+  const depth =
+    rawDepth == null ? null : Math.max(1, Math.min(120, Math.trunc(Number(rawDepth) || 1)));
 
-    // Le jour regardé : celui que l'écran demande, aujourd'hui par défaut.
-    const day = resolveSpendDay(req.data?.day);
+  // Le jour regardé : celui que l'écran demande, aujourd'hui par défaut. Il
+  // sert au plafond quoi qu'il arrive, et devient la période entière du
+  // tableau quand l'écran demande une journée.
+  const day = resolveSpendDay(req.data?.day);
+  const scope: SpendScope = req.data?.scope === "day" ? "day" : "months";
 
-    const [policy, usdToEur, founder, monthlySnap, dailySnap, usersSnap] = await Promise.all([
-      getAiBudgetPolicy(),
-      getUsdToEurRate(),
-      founderUid(),
-      db.collection(COLL_AI_USAGE_MONTHLY).get(),
-      db.collection(COLL_AI_DAILY_SPEND).where("day", "==", day).get(),
-      // Les identifiants ne disent rien à personne : l'écran affiche des noms.
-      db.collection(COLL_USERS).get(),
-    ]);
+  const [policy, usdToEur, founder, monthlySnap, dailySnap, usersSnap] = await Promise.all([
+    getAiBudgetPolicy(),
+    getUsdToEurRate(),
+    founderUid(),
+    // Sur une journée, l'agrégat mensuel n'apprend rien : ni le tableau ni
+    // l'en-tête n'en lisent quoi que ce soit. Le lire coûterait un document
+    // par mois enregistré, pour rien.
+    scope === "day" ? Promise.resolve(null) : db.collection(COLL_AI_USAGE_MONTHLY).get(),
+    db.collection(COLL_AI_DAILY_SPEND).where("day", "==", day).get(),
+    // Les identifiants ne disent rien à personne : l'écran affiche des noms.
+    db.collection(COLL_USERS).get(),
+  ]);
 
-    const periods = periodsToRead(
-      depth,
-      monthlySnap.docs.map((d) => d.id),
-    );
-    const wanted = new Set(periods);
+  const periods = monthlySnap
+    ? periodsToRead(
+        depth,
+        monthlySnap.docs.map((d) => d.id),
+      )
+    : [];
+  const wanted = new Set(periods);
 
-    // Agrégation par compte, puis par poste dans le compte. La ventilation vient
-    // de `by_user.{uid}.by_feature`, écrite depuis la v0.20.21 : un mois plus
-    // ancien n'a que son total, et l'écran le dit plutôt que d'afficher un vide
-    // qui se lirait « rien dépensé ».
-    const byUser = new Map<string, UserSpendRow>();
-    const periodsWithoutBreakdown: string[] = [];
+  // Agrégation par compte, puis par poste dans le compte. La ventilation vient
+  // de `by_user.{uid}.by_feature`, écrite depuis la v0.20.21 : un mois plus
+  // ancien n'a que son total, et l'écran le dit plutôt que d'afficher un vide
+  // qui se lirait « rien dépensé ».
+  const byUser = new Map<string, UserSpendRow>();
+  const periodsWithoutBreakdown: string[] = [];
 
-    for (const doc of monthlySnap.docs) {
-      if (!wanted.has(doc.id)) continue;
-      const users = (doc.data().by_user ?? {}) as Record<string, Record<string, unknown>>;
-      let sawBreakdown = false;
+  for (const doc of monthlySnap?.docs ?? []) {
+    if (!wanted.has(doc.id)) continue;
+    const users = (doc.data().by_user ?? {}) as Record<string, Record<string, unknown>>;
+    let sawBreakdown = false;
 
-      for (const [uid, raw] of Object.entries(users)) {
-        const row = byUser.get(uid) ?? { uid, costUsd: 0, calls: 0, byFeature: {} };
-        row.costUsd += toNumber(raw.cost_usd);
-        row.calls += toNumber(raw.calls);
+    for (const [uid, raw] of Object.entries(users)) {
+      const row = byUser.get(uid) ?? { uid, costUsd: 0, calls: 0, byFeature: {} };
+      row.costUsd += toNumber(raw.cost_usd);
+      row.calls += toNumber(raw.calls);
 
-        const features = (raw.by_feature ?? {}) as Record<string, Record<string, unknown>>;
-        for (const [feature, values] of Object.entries(features)) {
-          sawBreakdown = true;
-          const entry = (row.byFeature[feature] ??= { costUsd: 0, calls: 0 });
-          entry.costUsd += toNumber(values.cost_usd);
-          entry.calls += toNumber(values.calls);
-        }
-        byUser.set(uid, row);
+      const features = (raw.by_feature ?? {}) as Record<string, Record<string, unknown>>;
+      for (const [feature, values] of Object.entries(features)) {
+        sawBreakdown = true;
+        const entry = (row.byFeature[feature] ??= { costUsd: 0, calls: 0 });
+        entry.costUsd += toNumber(values.cost_usd);
+        entry.calls += toNumber(values.calls);
       }
-
-      if (!sawBreakdown && Object.keys(users).length > 0) periodsWithoutBreakdown.push(doc.id);
+      byUser.set(uid, row);
     }
 
-    const names: Record<string, string> = {};
-    for (const doc of usersSnap.docs) {
-      const data = doc.data();
-      const label = (data.display_name as string) || (data.email as string) || "";
-      if (label) names[doc.id] = label;
-    }
+    if (!sawBreakdown && Object.keys(users).length > 0) periodsWithoutBreakdown.push(doc.id);
+  }
 
-    const spends = [...byUser.values()].sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+  const dayLines = scope === "day" ? await readDayLines(db, day) : null;
 
-    const today = dailySnap.docs.map((d) => {
-      const data = d.data();
-      return {
-        uid: typeof data.uid === "string" ? data.uid : d.id,
-        costUsd: toNumber(data.cost_usd),
-        calls: toNumber(data.calls),
-        unpricedCalls: toNumber(data.unpriced_calls),
-      };
-    });
-    today.sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+  const names: Record<string, string> = {};
+  for (const doc of usersSnap.docs) {
+    const data = doc.data();
+    const label = (data.display_name as string) || (data.email as string) || "";
+    if (label) names[doc.id] = label;
+  }
 
+  const spends = dayLines
+    ? aggregateDaySpends(dayLines.lines)
+    : [...byUser.values()].sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+
+  const today = dailySnap.docs.map((d) => {
+    const data = d.data();
     return {
-      policy,
-      defaults: DEFAULT_AI_BUDGET_POLICY,
-      // Sans taux, l'écran affiche les dollars tels quels plutôt qu'une
-      // conversion inventée — et le plafond en euros est alors inapplicable.
-      usdToEur,
-      founderUid: founder,
-      founderMultiplier: FOUNDER_DAILY_BUDGET_MULTIPLIER,
-      day,
-      // Le jour courant voyage à côté du jour regardé : sans lui, l'écran ne
-      // peut pas savoir s'il montre aujourd'hui ou un jour passé, et un plafond
-      // affiché sur une journée close se lirait comme un plafond en cours.
-      currentDay: spendDay(new Date()),
-      periods,
-      periodsWithoutBreakdown,
-      names,
-      spends,
-      today,
+      uid: typeof data.uid === "string" ? data.uid : d.id,
+      costUsd: toNumber(data.cost_usd),
+      calls: toNumber(data.calls),
+      unpricedCalls: toNumber(data.unpriced_calls),
     };
-  },
-);
+  });
+  today.sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+
+  return {
+    policy,
+    defaults: DEFAULT_AI_BUDGET_POLICY,
+    // Sans taux, l'écran affiche les dollars tels quels plutôt qu'une
+    // conversion inventée — et le plafond en euros est alors inapplicable.
+    usdToEur,
+    founderUid: founder,
+    founderMultiplier: FOUNDER_DAILY_BUDGET_MULTIPLIER,
+    day,
+    // Le jour courant voyage à côté du jour regardé : sans lui, l'écran ne
+    // peut pas savoir s'il montre aujourd'hui ou un jour passé, et un plafond
+    // affiché sur une journée close se lirait comme un plafond en cours.
+    currentDay: spendDay(new Date()),
+    // Ce que le tableau couvre RÉELLEMENT. L'écran ne le déduit pas de ce
+    // qu'il a demandé : le serveur peut refuser un jour à venir, et un
+    // tableau titré « journée du 7 » alors qu'il montre le 6 se lirait comme
+    // une journée vide.
+    spendScope: scope,
+    // Journée coupée au plafond de lignes : le total affiché est alors plus
+    // bas que la dépense réelle, et cela doit se voir.
+    spendsTruncated: dayLines?.truncated ?? false,
+    periods,
+    periodsWithoutBreakdown,
+    names,
+    spends,
+    today,
+  };
+});
 
 interface SetAiBudgetRequest {
   policy?: Partial<AiBudgetPolicy>;

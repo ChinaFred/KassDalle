@@ -90,14 +90,32 @@ class CostsDepthChips extends StatelessWidget {
   final int? depth;
   final ValueChanged<int?> onChanged;
 
+  /// Une puce de plus, pour les écrans qui savent descendre à la journée.
+  ///
+  /// Absente quand [onJour] est nul : les coûts mensuels sont agrégés par mois
+  /// et n'ont pas de dimension jour. Une puce qui ne mène nulle part vaut moins
+  /// que pas de puce.
+  final VoidCallback? onJour;
+
+  /// Le libellé de cette puce quand c'est ELLE qui porte la période choisie —
+  /// « Jour : 2026-09-05 ». Nul le reste du temps.
+  ///
+  /// Il vaut aussi pour la sélection : une puce de mois ne s'allume pas quand
+  /// une journée est choisie, sans quoi deux périodes paraîtraient actives à
+  /// la fois.
+  final String? jourLabel;
+
   const CostsDepthChips({
     super.key,
     required this.depth,
     required this.onChanged,
+    this.onJour,
+    this.jourLabel,
   });
 
   @override
   Widget build(BuildContext context) {
+    final jourChoisi = jourLabel != null;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -106,14 +124,20 @@ class CostsDepthChips extends StatelessWidget {
         for (final months in const [1, 3, 6, 12])
           ChoiceChip(
             label: Text(months == 1 ? 'Ce mois' : '$months mois'),
-            selected: depth == months,
+            selected: !jourChoisi && depth == months,
             onSelected: (_) => onChanged(months),
           ),
         ChoiceChip(
           label: const Text('Depuis le début'),
-          selected: depth == null,
+          selected: !jourChoisi && depth == null,
           onSelected: (_) => onChanged(null),
         ),
+        if (onJour != null)
+          ChoiceChip(
+            label: Text(jourLabel ?? 'Un jour'),
+            selected: jourChoisi,
+            onSelected: (_) => onJour!(),
+          ),
       ],
     );
   }
