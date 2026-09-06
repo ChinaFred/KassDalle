@@ -8,6 +8,7 @@ import '../data/ai_budget_repository.dart';
 import '../data/feature_catalog.dart';
 import '../../../core/theme/app_icon_size.dart';
 import 'admin_providers.dart';
+import 'ai_services_tab.dart' show ServicesGrouping;
 import 'costs_format.dart';
 import 'monthly_costs_screen.dart' show CostsDepthChips, costsDepthProvider;
 
@@ -35,13 +36,128 @@ class AiSpendScreen extends ConsumerStatefulWidget {
 /// poste, pas un jour. La date est la PÉRIODE, et elle se choisit par les puces
 /// au-dessus. Offrir un tri par date ici trierait sur une colonne qui n'existe
 /// pas — voir la note en tête de `_SpendControls`.
-enum _SpendSort {
+enum SpendSort {
   cout('Coût'),
   appels('Appels'),
   nom('Nom');
 
   final String label;
-  const _SpendSort(this.label);
+  const SpendSort(this.label);
+}
+
+/// Une ligne du détail d'un compte : un poste, ou un processus et ses postes.
+///
+/// Un seul type pour les deux axes de lecture. Le tri et le filtre portent sur
+/// `label`, `costUsd` et `calls` — trois champs que le poste et le processus
+/// ont en commun —, ce qui évite d'écrire deux fois le même comparateur.
+class SpendDetailRow {
+  final String label;
+  final double costUsd;
+  final int calls;
+
+  /// Les postes du processus. Vide quand la ligne EST un poste.
+  final List<SpendDetailRow> enfants;
+
+  /// Le groupe est déplié d'entrée parce que ce sont ses POSTES qui ont
+  /// répondu au filtre. Chercher « sodium » et tomber sur six groupes fermés
+  /// n'apprend rien : ce qui correspond doit être visible sans un clic de
+  /// plus. Un groupe gardé pour son propre nom, lui, reste fermé.
+  final bool ouvertParDefaut;
+
+  const SpendDetailRow({
+    required this.label,
+    required this.costUsd,
+    required this.calls,
+    this.enfants = const [],
+    this.ouvertParDefaut = false,
+  });
+}
+
+/// Le filtre, appliqué à un libellé. [filtre] est attendu en minuscules.
+bool spendMatches(String texte, String filtre) =>
+    filtre.isEmpty || texte.toLowerCase().contains(filtre);
+
+int compareSpendRows(
+  SpendDetailRow a,
+  SpendDetailRow b, {
+  required SpendSort tri,
+  required bool croissant,
+}) {
+  final ordre = switch (tri) {
+    SpendSort.cout => a.costUsd.compareTo(b.costUsd),
+    SpendSort.appels => a.calls.compareTo(b.calls),
+    SpendSort.nom => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+  };
+  return croissant ? ordre : -ordre;
+}
+
+/// Le détail d'un compte, filtré, groupé et trié.
+///
+/// Sortie de l'écran pour être testable : elle additionne des montants, et une
+/// somme fausse ne lève aucune erreur — elle s'affiche.
+///
+/// [tousGardes] vaut `true` quand c'est le NOM DU COMPTE qui a répondu au
+/// filtre : ses postes sont alors tous montrés, sans quoi chercher un compte
+/// rendrait une carte vide.
+List<SpendDetailRow> spendDetail(
+  UserSpend user, {
+  required String filtre,
+  required ServicesGrouping groupement,
+  required SpendSort tri,
+  required bool croissant,
+  required bool tousGardes,
+}) {
+  int comparer(SpendDetailRow a, SpendDetailRow b) =>
+      compareSpendRows(a, b, tri: tri, croissant: croissant);
+
+  if (groupement == ServicesGrouping.feature) {
+    final gardes = <SpendDetailRow>[];
+    for (final f in user.byFeature) {
+      final label = featureLabel(f.feature);
+      if (!tousGardes && !spendMatches(label, filtre)) continue;
+      gardes.add(
+        SpendDetailRow(label: label, costUsd: f.costUsd, calls: f.calls),
+      );
+    }
+    gardes.sort(comparer);
+    return gardes;
+  }
+
+  final parProcessus = <String, List<FeatureSpend>>{};
+  for (final f in user.byFeature) {
+    parProcessus.putIfAbsent(featureProcess(f.feature), () => []).add(f);
+  }
+
+  final groupes = <SpendDetailRow>[];
+  parProcessus.forEach((processus, postes) {
+    final groupeCorrespond = tousGardes || spendMatches(processus, filtre);
+    final gardes = groupeCorrespond
+        ? postes
+        : postes.where((f) => spendMatches(featureLabel(f.feature), filtre));
+    final enfants = [
+      for (final f in gardes)
+        SpendDetailRow(
+          label: featureLabel(f.feature),
+          costUsd: f.costUsd,
+          calls: f.calls,
+        ),
+    ]..sort(comparer);
+    if (enfants.isEmpty) return;
+    // Le total du groupe additionne les postes MONTRÉS, pas tous ceux qu'il
+    // contient : un filtre qui cache trois postes sur huit et laisse le total
+    // des huit ferait une ligne dont les enfants ne font pas la somme.
+    groupes.add(
+      SpendDetailRow(
+        label: processus,
+        costUsd: enfants.fold(0, (somme, e) => somme + e.costUsd),
+        calls: enfants.fold(0, (somme, e) => somme + e.calls),
+        enfants: enfants,
+        ouvertParDefaut: !groupeCorrespond,
+      ),
+    );
+  });
+  groupes.sort(comparer);
+  return groupes;
 }
 
 class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
@@ -75,63 +191,55 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   /// « aucun résultat ». Un seul contrôleur, tenu par l'écran, répond aux deux.
   final _filtreController = TextEditingController();
 
-  _SpendSort _tri = _SpendSort.cout;
+  SpendSort _tri = SpendSort.cout;
 
   /// Décroissant par défaut : la première question posée à ce tableau est
   /// « qu'est-ce qui coûte le plus », pas « qu'est-ce qui coûte le moins ».
   bool _croissant = false;
+
+  /// Poste technique ou processus, le même axe que l'onglet « Postes ».
+  ///
+  /// Un compte peut porter trente-cinq postes ; déplié, il tient sur deux
+  /// écrans et la question « ce compte, il numérise ou il planifie ? » ne se
+  /// lit nulle part. Groupés, les mêmes chiffres tiennent en sept lignes, et
+  /// le détail reste à un clic.
+  ///
+  /// L'état est local, pas partagé avec l'onglet « Postes » : là-bas on lit
+  /// une facture globale, ici on lit un compte, et rien ne dit qu'on veut le
+  /// même axe aux deux endroits.
+  ServicesGrouping _groupement = ServicesGrouping.feature;
 
   void _setFiltre(String valeur) {
     if (_filtreController.text != valeur) _filtreController.text = valeur;
     setState(() => _filtre = valeur.trim().toLowerCase());
   }
 
-  bool _correspond(String texte) =>
-      _filtre.isEmpty || texte.toLowerCase().contains(_filtre);
-
-  /// Les postes d'un compte, filtrés et triés.
-  ///
-  /// [tousGardes] vaut `true` quand c'est le NOM DU COMPTE qui a répondu au
-  /// filtre : ses postes sont alors tous montrés, sans quoi chercher un compte
-  /// rendrait une carte vide.
-  List<FeatureSpend> _postes(UserSpend user, {required bool tousGardes}) {
-    final gardes = tousGardes
-        ? user.byFeature.toList()
-        : user.byFeature
-              .where((f) => _correspond(featureLabel(f.feature)))
-              .toList();
-    gardes.sort(_comparerPostes);
-    return gardes;
-  }
-
-  int _comparerPostes(FeatureSpend a, FeatureSpend b) {
-    final ordre = switch (_tri) {
-      _SpendSort.cout => a.costUsd.compareTo(b.costUsd),
-      _SpendSort.appels => a.calls.compareTo(b.calls),
-      _SpendSort.nom => featureLabel(
-        a.feature,
-      ).toLowerCase().compareTo(featureLabel(b.feature).toLowerCase()),
-    };
-    return _croissant ? ordre : -ordre;
-  }
+  bool _correspond(String texte) => spendMatches(texte, _filtre);
 
   int _comparerComptes(UserSpend a, UserSpend b) {
     final ordre = switch (_tri) {
-      _SpendSort.cout => a.costUsd.compareTo(b.costUsd),
-      _SpendSort.appels => a.calls.compareTo(b.calls),
-      _SpendSort.nom => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+      SpendSort.cout => a.costUsd.compareTo(b.costUsd),
+      SpendSort.appels => a.calls.compareTo(b.calls),
+      SpendSort.nom => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
     };
     return _croissant ? ordre : -ordre;
   }
 
-  /// Les comptes à afficher, avec les postes déjà filtrés et triés.
-  List<(UserSpend, List<FeatureSpend>)> _lignes(AiBudgetSnapshot snapshot) {
-    final lignes = <(UserSpend, List<FeatureSpend>)>[];
+  /// Les comptes à afficher, avec leur détail déjà filtré, groupé et trié.
+  List<(UserSpend, List<SpendDetailRow>)> _lignes(AiBudgetSnapshot snapshot) {
+    final lignes = <(UserSpend, List<SpendDetailRow>)>[];
     for (final user in snapshot.spends) {
       final compteCorrespond = _correspond(user.label);
-      final postes = _postes(user, tousGardes: compteCorrespond);
-      if (!compteCorrespond && postes.isEmpty) continue;
-      lignes.add((user, postes));
+      final detail = spendDetail(
+        user,
+        filtre: _filtre,
+        groupement: _groupement,
+        tri: _tri,
+        croissant: _croissant,
+        tousGardes: compteCorrespond,
+      );
+      if (!compteCorrespond && detail.isEmpty) continue;
+      lignes.add((user, detail));
     }
     lignes.sort((a, b) => _comparerComptes(a.$1, b.$1));
     return lignes;
@@ -214,6 +322,11 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
     final theme = Theme.of(context);
     final depth = ref.watch(costsDepthProvider);
     final snapshot = _snapshot;
+    // Calculées une fois : la liste et le message « aucun résultat » lisent le
+    // même travail, qui groupe et trie le détail de chaque compte.
+    final lignes = snapshot == null
+        ? const <(UserSpend, List<SpendDetailRow>)>[]
+        : _lignes(snapshot);
 
     return Scaffold(
       appBar: AppBar(
@@ -279,20 +392,23 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
                 filtre: _filtre,
                 tri: _tri,
                 croissant: _croissant,
+                groupement: _groupement,
                 onFiltre: (v) =>
                     setState(() => _filtre = v.trim().toLowerCase()),
                 onTri: (v) => setState(() => _tri = v),
                 onSens: () => setState(() => _croissant = !_croissant),
+                onGroupement: (v) => setState(() => _groupement = v),
               ),
               const SizedBox(height: 8),
-              for (final (user, postes) in _lignes(snapshot))
+              for (final (user, detail) in lignes)
                 _UserCard(
                   user: user,
-                  postes: postes,
+                  detail: detail,
                   snapshot: snapshot,
                   filtre: _filtre,
+                  groupement: _groupement,
                 ),
-              if (_lignes(snapshot).isEmpty)
+              if (lignes.isEmpty)
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.search_off),
@@ -386,20 +502,24 @@ class _PeriodHeader extends StatelessWidget {
 class _SpendControls extends StatelessWidget {
   final TextEditingController controller;
   final String filtre;
-  final _SpendSort tri;
+  final SpendSort tri;
   final bool croissant;
+  final ServicesGrouping groupement;
   final ValueChanged<String> onFiltre;
-  final ValueChanged<_SpendSort> onTri;
+  final ValueChanged<SpendSort> onTri;
   final VoidCallback onSens;
+  final ValueChanged<ServicesGrouping> onGroupement;
 
   const _SpendControls({
     required this.controller,
     required this.filtre,
     required this.tri,
     required this.croissant,
+    required this.groupement,
     required this.onFiltre,
     required this.onTri,
     required this.onSens,
+    required this.onGroupement,
   });
 
   @override
@@ -413,7 +533,9 @@ class _SpendControls extends StatelessWidget {
             TextField(
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: 'Filtrer un compte ou un poste',
+                hintText: groupement == ServicesGrouping.process
+                    ? 'Filtrer un compte, un processus ou un poste'
+                    : 'Filtrer un compte ou un poste',
                 isDense: true,
                 border: const OutlineInputBorder(),
                 suffixIcon: filtre.isEmpty
@@ -431,13 +553,32 @@ class _SpendControls extends StatelessWidget {
               controller: controller,
             ),
             const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<ServicesGrouping>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: ServicesGrouping.feature,
+                    label: Text('Par poste'),
+                  ),
+                  ButtonSegment(
+                    value: ServicesGrouping.process,
+                    label: Text('Par processus'),
+                  ),
+                ],
+                selected: {groupement},
+                onSelectionChanged: (valeurs) => onGroupement(valeurs.first),
+              ),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text('Trier par'),
-                for (final valeur in _SpendSort.values)
+                for (final valeur in SpendSort.values)
                   ChoiceChip(
                     label: Text(valeur.label),
                     selected: tri == valeur,
@@ -462,21 +603,24 @@ class _SpendControls extends StatelessWidget {
 class _UserCard extends StatelessWidget {
   final UserSpend user;
 
-  /// Les postes déjà filtrés et triés par l'écran.
+  /// Le détail déjà filtré, groupé et trié par l'écran.
   ///
-  /// La carte ne refait ni l'un ni l'autre : le filtre décide aussi si la carte
+  /// La carte ne refait rien de tout cela : le filtre décide aussi si la carte
   /// existe, et les deux décisions doivent être prises au même endroit.
-  final List<FeatureSpend> postes;
+  final List<SpendDetailRow> detail;
   final AiBudgetSnapshot snapshot;
 
   /// Sert au message affiché quand le filtre ne laisse aucun poste visible.
   final String filtre;
 
+  final ServicesGrouping groupement;
+
   const _UserCard({
     required this.user,
-    required this.postes,
+    required this.detail,
     required this.snapshot,
     required this.filtre,
+    required this.groupement,
   });
 
   @override
@@ -516,34 +660,126 @@ class _UserCard extends StatelessWidget {
               padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Text('Aucun détail par service sur cette période.'),
             )
-          else if (postes.isEmpty)
+          else if (detail.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Text('Aucun poste ne contient « $filtre ».'),
             )
+          else if (groupement == ServicesGrouping.process)
+            for (final groupe in detail)
+              _ProcessGroup(
+                // La clé suit le nom du processus : sans elle, un changement de
+                // filtre laisserait l'état « déplié » sur la ligne qui occupe
+                // la même position, qui n'est plus le même groupe.
+                key: ValueKey(groupe.label),
+                groupe: groupe,
+                rate: rate,
+              )
           else
-            for (final feature in postes)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        featureLabel(feature.feature),
-                        style: theme.textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      '${formatMoney(feature.costUsd, rate)} · ${formatCount(feature.calls)}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
+            for (final ligne in detail) _SpendLine(ligne: ligne, rate: rate),
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+/// Une ligne de détail : un libellé, un montant, un nombre d'appels.
+class _SpendLine extends StatelessWidget {
+  final SpendDetailRow ligne;
+  final double rate;
+
+  /// Décalage à gauche. Il sépare un poste rangé sous son processus des lignes
+  /// de premier niveau.
+  final double retrait;
+
+  const _SpendLine({required this.ligne, required this.rate, this.retrait = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16 + retrait, 2, 16, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              ligne.label,
+              style: theme.textTheme.bodySmall,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            '${formatMoney(ligne.costUsd, rate)} · ${formatCount(ligne.calls)}',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un processus, son total pour ce compte, et ses postes une fois déplié.
+class _ProcessGroup extends StatefulWidget {
+  final SpendDetailRow groupe;
+  final double rate;
+
+  const _ProcessGroup({super.key, required this.groupe, required this.rate});
+
+  @override
+  State<_ProcessGroup> createState() => _ProcessGroupState();
+}
+
+class _ProcessGroupState extends State<_ProcessGroup> {
+  /// `null` tant que la ligne n'a pas été touchée : c'est alors le filtre qui
+  /// décide de l'ouverture. Un clic fixe le choix, et le filtre ne le défait
+  /// plus.
+  bool? _choix;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final groupe = widget.groupe;
+    final ouvert = _choix ?? groupe.ouvertParDefaut;
+    final titre = theme.textTheme.bodySmall?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _choix = !ouvert),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  ouvert ? Icons.expand_less : Icons.expand_more,
+                  size: AppIconSize.inline,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    groupe.label,
+                    style: titre,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${formatMoney(groupe.costUsd, widget.rate)} · '
+                  '${formatCount(groupe.calls)}',
+                  style: titre,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (ouvert)
+          for (final poste in groupe.enfants)
+            _SpendLine(ligne: poste, rate: widget.rate, retrait: 22),
+      ],
     );
   }
 }
