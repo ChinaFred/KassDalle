@@ -14,9 +14,11 @@ import '../domain/meal_recipe_location.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_week.dart';
 import '../services/calendar_service.dart';
 import 'planning_month_grid.dart';
 import 'planning_providers.dart';
+import 'planning_week_bar.dart';
 import 'planning_widgets.dart';
 import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
@@ -45,6 +47,18 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   /// à regarder n'est pas une donnée du planning, c'est une position de lecture.
   late DateTime _visibleMonth = PlanningMonthBand.monthOf(DateTime.now());
   late DateTime _selectedDay = PlanningMonthBand.dayOf(DateTime.now());
+
+  /// Semaine lue par l'onglet Liste, par un jour repère.
+  ///
+  /// La semaine se recalcule à chaque construction : son premier jour dépend
+  /// du jour de démarrage du cycle, lu dans les préférences, qui peuvent
+  /// arriver après le premier affichage. Null tant qu'on n'a pas navigué :
+  /// c'est alors la semaine d'aujourd'hui.
+  DateTime? _weekAnchor;
+
+  /// Vrai quand la liste montre toutes les semaines à la suite — la lecture
+  /// d'avant, gardée derrière la puce « Tout ».
+  bool _allWeeks = false;
 
   /// Mois d'archive déjà lus, et ceux en cours de lecture.
   ///
@@ -112,7 +126,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => PlanningRecipePickerSheet(recipes: _availableRecipes),
+      builder: (_) => PlanningRecipePickerSheet(
+        recipes: _availableRecipes,
+        dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
+      ),
     );
     if (recipe == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
@@ -655,49 +672,151 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       );
       (grouped[day] ??= []).add(meal);
     }
-    final days = grouped.keys.toList()..sort();
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: days.length,
-      itemBuilder: (context, index) {
-        final day = days[index];
-        final dayMeals = grouped[day]!;
-        final isToday = _isToday(day);
-        final isPast = day.isBefore(
-          DateTime(
-            DateTime.now().year,
-            DateTime.now().month,
-            DateTime.now().day,
-          ),
-        );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            PlanningDayHeader(day: day, isToday: isToday, isPast: isPast),
-            ...dayMeals.map(
-              (meal) => PlanningMealTile(
-                meal: meal,
-                isPast: isPast,
-                aiLoading:
-                    _aiLoadingIds.contains(meal.id) ||
-                    _storageLoadingIds.contains(meal.id),
-                isWide: isWide,
-                onDelete: () => _deleteMeal(meal),
-                onChangeRecipe: () => _changeRecipe(meal),
-                onClearRecipe: () => _clearRecipe(meal),
-                onSuggestWithAI: () => _suggestRecipeWithAI(meal),
-                onStorageAdvice: () => _showStorageAdvice(meal),
-                onTimeChanged: () => _changeTime(meal),
-                onExportToCalendar: () => _exportMealToCalendar(meal),
-                onTap: _openRecipeFor(meal),
-              ),
-            ),
-          ],
-        );
-      },
+    // La semaine lue, et celles qu'on peut atteindre. La liste partait de
+    // quatre-vingt-dix jours en arrière : la semaine à cuisiner arrivait après
+    // trois écrans de repas passés.
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final cycleStartDay =
+        ref.watch(planningPreferencesProvider).value?.cycleStartDay ??
+        DateTime.friday;
+    final selectedWeek = planningWeekOf(
+      _weekAnchor ?? today,
+      cycleStartDay: cycleStartDay,
     );
+    final weeks = planningWeeksFor(
+      mealDays: grouped.keys,
+      today: today,
+      cycleStartDay: cycleStartDay,
+      alsoCover: [selectedWeek.start],
+    );
+    // En lecture continue, seuls les jours qui portent un repas ; en lecture
+    // par semaine, les sept jours, vides compris — un jour libre est une
+    // information, et l'endroit où poser une recette.
+    final days = _allWeeks
+        ? (grouped.keys.toList()..sort())
+        : selectedWeek.days;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: PlanningWeekBar(
+            weeks: weeks,
+            selected: selectedWeek,
+            allSelected: _allWeeks,
+            today: today,
+            isWide: isWide,
+            onSelect: (week) => setState(() {
+              _weekAnchor = week.start;
+              _allWeeks = false;
+            }),
+            onSelectAll: () => setState(() => _allWeeks = true),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: days.length,
+            itemBuilder: (context, index) {
+              final day = days[index];
+              final dayMeals = grouped[day] ?? const <PlannedMeal>[];
+              final isToday = _isToday(day);
+              final isPast = day.isBefore(today);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PlanningDayHeader(day: day, isToday: isToday, isPast: isPast),
+                  if (dayMeals.isEmpty)
+                    PlanningEmptyDayRow(
+                      isPast: isPast,
+                      onPick: isPast ? null : () => _addMealOnDay(day),
+                    ),
+                  ...dayMeals.map(
+                    (meal) => PlanningMealTile(
+                      meal: meal,
+                      isPast: isPast,
+                      aiLoading:
+                          _aiLoadingIds.contains(meal.id) ||
+                          _storageLoadingIds.contains(meal.id),
+                      isWide: isWide,
+                      onDelete: () => _deleteMeal(meal),
+                      onChangeRecipe: () => _changeRecipe(meal),
+                      onClearRecipe: () => _clearRecipe(meal),
+                      onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                      onStorageAdvice: () => _showStorageAdvice(meal),
+                      onTimeChanged: () => _changeTime(meal),
+                      onExportToCalendar: () => _exportMealToCalendar(meal),
+                      onTap: _openRecipeFor(meal),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Pose une recette sur un jour libre de la semaine lue.
+  ///
+  /// Le repas prend l'heure et les parts de son jour de semaine, comme dans
+  /// « Nouveau planning » ; l'heure se change ensuite d'un appui sur le repas.
+  Future<void> _addMealOnDay(DateTime day) async {
+    await _loadRecipesIfNeeded();
+    if (!mounted) return;
+    final recipe = await showModalBottomSheet<Recipe>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => PlanningRecipePickerSheet(recipes: _availableRecipes),
+    );
+    if (recipe == null || !mounted) return;
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    final prefs =
+        ref.read(planningPreferencesProvider).value ??
+        const PlanningPreferences();
+    final time = prefs.mealTimeFor(day.weekday);
+    final constraint = prefs.dailyConstraints[day.weekday];
+    final targetPortions = (constraint?.targetPortions ?? 0) > 0
+        ? constraint!.targetPortions
+        : recipe.portions;
+    final prepMinutes = recipe.tags.prepTime;
+    final cookMinutes = recipe.tags.cookTime;
+    try {
+      await repo.addMeal(
+        PlannedMeal(
+          id: '',
+          uid: repo.uid,
+          recipeId: recipe.id.isEmpty ? null : recipe.id,
+          recipeTitre: recipe.titre,
+          plannedAt: DateTime(
+            day.year,
+            day.month,
+            day.day,
+            time.hour,
+            time.minute,
+          ),
+          durationMinutes: (prepMinutes ?? 0) + (cookMinutes ?? 0),
+          prepMinutes: prepMinutes,
+          cookMinutes: cookMinutes,
+          basePortions: recipe.portions,
+          targetPortions: targetPortions,
+          createdAt: DateTime.now(),
+        ),
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.addMealOnDay',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) context.showErrorSnackBar('Repas non enregistré : $e');
+    }
   }
 
   /// Onglet « Calendrier » : la grille du mois, puis l'agenda du jour choisi.

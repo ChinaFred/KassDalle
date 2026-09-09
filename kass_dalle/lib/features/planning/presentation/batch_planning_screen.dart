@@ -227,6 +227,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
     if (replaceExisting) {
       setState(() {
+        // Tout regénérer, c'est écarter tout ce qui était en place : ces
+        // écarts suivent chaque repas à la validation.
+        for (final i in _slots.keys.toList()) {
+          _dismissSlotRecipe(i);
+        }
         _slots = {for (int i = 0; i < _slotDates.length; i++) i: null};
         _slotJustifications.clear();
         _slotPrepDates.clear();
@@ -333,7 +338,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => BatchRecipePickerSheet(recipes: _allRecipes),
+      builder: (ctx) => BatchRecipePickerSheet(
+        recipes: _allRecipes,
+        dismissedRecipeIds: _slotDismissed[slotIndex] ?? const {},
+      ),
     );
     if (recipe != null && mounted) {
       setState(() {

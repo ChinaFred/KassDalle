@@ -666,7 +666,14 @@ class BatchSlotTile extends StatelessWidget {
 class BatchRecipePickerSheet extends StatefulWidget {
   final List<Recipe> recipes;
 
-  const BatchRecipePickerSheet({super.key, required this.recipes});
+  /// Recettes déjà écartées du créneau : masquées, sauf demande expresse.
+  final Set<String> dismissedRecipeIds;
+
+  const BatchRecipePickerSheet({
+    super.key,
+    required this.recipes,
+    this.dismissedRecipeIds = const {},
+  });
 
   @override
   State<BatchRecipePickerSheet> createState() => _BatchRecipePickerSheetState();
@@ -674,13 +681,18 @@ class BatchRecipePickerSheet extends StatefulWidget {
 
 class _BatchRecipePickerSheetState extends State<BatchRecipePickerSheet> {
   String _query = '';
+  bool _showDismissed = false;
+
+  bool _isDismissed(Recipe r) => widget.dismissedRecipeIds.contains(r.id);
+
+  int get _dismissedCount => widget.recipes.where(_isDismissed).length;
 
   List<Recipe> get _filtered {
-    if (_query.isEmpty) return widget.recipes;
     final q = _query.toLowerCase();
-    return widget.recipes
-        .where((r) => r.titre.toLowerCase().contains(q))
-        .toList();
+    return widget.recipes.where((r) {
+      if (!_showDismissed && _isDismissed(r)) return false;
+      return q.isEmpty || r.titre.toLowerCase().contains(q);
+    }).toList();
   }
 
   @override
@@ -720,6 +732,21 @@ class _BatchRecipePickerSheetState extends State<BatchRecipePickerSheet> {
                 onChanged: (v) => setState(() => _query = v),
               ),
             ),
+            if (_dismissedCount > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilterChip(
+                    label: Text('Écartées pour ce créneau ($_dismissedCount)'),
+                    selected: _showDismissed,
+                    onSelected: (v) => setState(() => _showDismissed = v),
+                  ),
+                ),
+              ),
             Expanded(
               child: ListView.builder(
                 controller: scrollController,
@@ -763,9 +790,13 @@ class _BatchRecipePickerSheetState extends State<BatchRecipePickerSheet> {
                     if (prep != null) '${prep}min prép',
                     if (cook != null) '${cook}min cuisson',
                   ].join(' + ');
+                  final subtitle = [
+                    if (times.isNotEmpty) times,
+                    if (_isDismissed(r)) 'écartée pour ce créneau',
+                  ].join(' · ');
                   return ListTile(
                     title: Text(r.titre),
-                    subtitle: times.isNotEmpty ? Text(times) : null,
+                    subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
                     onTap: () => Navigator.pop(ctx, r),
                   );
                 },
