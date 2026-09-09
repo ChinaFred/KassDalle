@@ -110,6 +110,7 @@ class PlanningRepository {
     int? basePortions,
     int? targetPortions,
     bool clearPortions = false,
+    String? dismissRecipeId,
   }) async {
     final payload = <String, dynamic>{
       'recipe_id': recipeId,
@@ -120,6 +121,13 @@ class PlanningRepository {
       'base_portions': ?basePortions,
       'target_portions': ?targetPortions,
     };
+    // La recette remplacée reste écartée de ce repas : le prochain
+    // « Suggérer » ne la verra pas dans ses candidats.
+    if (dismissRecipeId != null) {
+      payload['dismissed_recipe_ids'] = FieldValue.arrayUnion([
+        dismissRecipeId,
+      ]);
+    }
     if (clearPortions) {
       payload['base_portions'] = FieldValue.delete();
       payload['target_portions'] = FieldValue.delete();
@@ -244,6 +252,12 @@ class PlanningRepository {
       reviewStatus: ReviewStatus.draft,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
+      // La liste structurée et les parts suivent : sans elles, la relecture
+      // ouvrait un onglet Ingrédients vide sous un texte qui en comptait
+      // quinze, et la fiche s'ouvrait sans nombre de parts.
+      ingredients: recipe.ingredients,
+      portions: recipe.portions,
+      origin: RecipeOrigin.ai,
       createdBy: _uid,
       createdAt: now,
       updatedAt: now,

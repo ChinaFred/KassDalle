@@ -8,7 +8,9 @@ import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../../recipes/presentation/recipe_providers.dart';
-import '../domain/meal_prep_context.dart';
+import '../domain/calendar_event_description.dart';
+import '../domain/meal_candidates.dart';
+import '../domain/meal_recipe_location.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -92,6 +94,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     }
   }
 
+  /// La recette que [meal] perd si [newRecipeId] la remplace, ou null si le
+  /// repas n'en avait pas ou garde la même. Elle rejoint les recettes écartées
+  /// du repas, que l'IA ne repropose plus.
+  String? _oustedBy(PlannedMeal meal, String? newRecipeId) {
+    final current = meal.recipeId;
+    if (current == null || current.isEmpty || current == newRecipeId) {
+      return null;
+    }
+    return current;
+  }
+
   Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
@@ -115,6 +128,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       cookMinutes: cookMinutes,
       basePortions: recipe.portions,
       targetPortions: meal.targetPortions ?? recipe.portions,
+      dismissRecipeId: _oustedBy(meal, recipe.id),
     );
   }
 
@@ -171,7 +185,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           titre: meal.recipeTitre,
           startTime: meal.plannedAt,
           duration: Duration(minutes: defaultDuration),
-          description: 'Repas planifié avec Kass\'Dalle',
+          description: mealCalendarDescription(meal),
           reminderMinutes: meal.prepMinutes ?? 0,
           calendarId: calendarId,
           token: token,
@@ -199,7 +213,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         titre: meal.recipeTitre,
         startTime: meal.plannedAt,
         duration: Duration(minutes: defaultDuration),
-        description: 'Repas planifié avec Kass\'Dalle',
+        description: mealCalendarDescription(meal),
         reminderMinutes: meal.prepMinutes ?? 0,
         calendarId: calendarId,
       );
@@ -308,6 +322,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       recipeTitre: 'Repas libre',
       durationMinutes: 0,
       clearPortions: true,
+      dismissRecipeId: _oustedBy(meal, null),
     );
   }
 
@@ -318,6 +333,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       context.showSnackBar('Aucune recette disponible pour l\'IA.');
       return;
     }
+    // Ni la recette en place, ni celles déjà écartées de ce repas : l'IA ne
+    // voit que ce qu'elle a le droit de proposer.
+    final candidates = candidatesForMeal(
+      _availableRecipes,
+      currentRecipeId: meal.recipeId,
+      dismissedRecipeIds: meal.dismissedRecipeIds,
+    );
+    if (candidates.isEmpty) {
+      context.showSnackBar(
+        'Toutes les recettes disponibles ont déjà été écartées pour ce repas.',
+      );
+      return;
+    }
     setState(() => _aiLoadingIds.add(meal.id));
     try {
       final prefs =
@@ -326,7 +354,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       final suggestions = await ref
           .read(planningAiServiceProvider)
           .suggestMealPlan(
-            recipes: _availableRecipes,
+            recipes: candidates,
             slotDates: [meal.plannedAt],
             dailyConstraints: prefs.dailyConstraints,
             globalConstraints: prefs.globalConstraints,
@@ -348,6 +376,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           cookMinutes: recipe.tags.cookTime,
           basePortions: recipe.portions,
           targetPortions: meal.targetPortions ?? recipe.portions,
+          dismissRecipeId: _oustedBy(meal, recipe.id),
         );
         if (mounted) {
           final why = (suggestion.justification ?? '').trim();
@@ -662,9 +691,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                 onStorageAdvice: () => _showStorageAdvice(meal),
                 onTimeChanged: () => _changeTime(meal),
                 onExportToCalendar: () => _exportMealToCalendar(meal),
-                onTap: meal.recipeId != null
-                    ? () => context.push(_recipeLocationFor(meal))
-                    : null,
+                onTap: _openRecipeFor(meal),
               ),
             ),
           ],
@@ -775,9 +802,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     onStorageAdvice: () => _showStorageAdvice(meal),
                     onTimeChanged: () => _changeTime(meal),
                     onExportToCalendar: () => _exportMealToCalendar(meal),
-                    onTap: meal.recipeId != null
-                        ? () => context.push(_recipeLocationFor(meal))
-                        : null,
+                    onTap: _openRecipeFor(meal),
                   ),
                 ),
               // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
@@ -814,9 +839,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     subtitle: Text(
                       'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
                     ),
-                    onTap: meal.recipeId != null
-                        ? () => context.push(_recipeLocationFor(meal))
-                        : null,
+                    onTap: _openRecipeFor(meal),
                   ),
                 ),
               ],
@@ -888,35 +911,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     await ref.read(plannedMealsProvider.future);
   }
 
-  /// Adresse de la fiche recette pour un repas planifié.
+  /// Ouvre la fiche recette du repas, ou rien s'il n'en a pas.
   ///
-  /// Le contexte du repas voyage en paramètre, sans jamais être écrit sur la
-  /// recette : les parts, pour préparer la quantité prévue au planning et non
-  /// celle du texte, et le couple de dates quand le plat se cuisine à l'avance,
-  /// pour que la fiche parle de conservation et de réchauffage.
-  String _recipeLocationFor(PlannedMeal meal) {
-    final params = <String, String>{};
-
-    final target = meal.targetPortions;
-    final base = meal.basePortions;
-    if (target != null && target > 0 && target != base) {
-      params['portions'] = '$target';
-    }
-
-    final prepDate = meal.prepDate;
-    if (prepDate != null) {
-      params.addAll(
-        MealPrepContext(
-          prepDate: prepDate,
-          mealDate: meal.plannedAt,
-        ).toQueryParameters(),
-      );
-    }
-
-    return Uri(
-      path: '/recipes/${meal.recipeId}',
-      queryParameters: params.isEmpty ? null : params,
-    ).toString();
+  /// Le contexte du repas voyage dans l'adresse — voir [mealRecipeLocation] :
+  /// la même route sert au lien collé dans l'événement Google Calendar.
+  VoidCallback? _openRecipeFor(PlannedMeal meal) {
+    final location = mealRecipeLocation(meal);
+    return location == null ? null : () => context.push(location);
   }
 
   bool _isToday(DateTime day) {

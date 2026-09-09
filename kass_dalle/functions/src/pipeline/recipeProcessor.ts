@@ -924,6 +924,9 @@ async function saveDraft(args: {
     source_file_name: sourceFileName ?? null,
     additional_source_file_urls: additionalSourceFileUrls ?? [],
     review_status: "draft",
+    // Ce qui a écrit ce document : l'écran de relecture le dit au lecteur,
+    // sans le déduire du livre porteur ni du fichier source.
+    origin: "scan",
     // Ce que le contrôle de fidélité a constaté, sur la recette elle-même :
     // un écart doit se voir depuis l'écran de relecture, pas seulement dans
     // les journaux d'un import déjà oublié.

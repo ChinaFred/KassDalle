@@ -266,6 +266,8 @@ privait le titre de la place dont il manquait.
 - Edition directe des champs structures recette (portions, difficulte, temps, ingredients structures) en brouillon.
 - Validation explicite des brouillons livre crees par IA.
 - Sur Web / Desktop : accessible pour modifier des recettes existantes (pas de nouveau scan).
+- **Le sous-titre d'un brouillon dit d'où il vient** — issu d'un scan, conçu par l'IA, saisi à la main, copie de travail — d'après ce que son créateur a écrit à la création. Un document antérieur à cette information n'est pas présenté comme un scan : sans fichier source ni recette source, l'écran dit que l'origine n'est pas renseignée.
+- **Un brouillon conçu par l'IA pour le planning arrive avec sa liste d'ingrédients**, ses temps et ses parts, lus dans le texte CookLang à l'enregistrement. Un ancien brouillon enregistré sans liste la retrouve à l'ouverture, lue dans le même texte.
 
 ### 5.4 Module Traitements IA (tous les clients)
 
@@ -459,8 +461,10 @@ déjà transmise continue de fonctionner.
 - Chaque entrée affiche l'heure (cliquable pour modifier), le titre de la recette et la durée totale.
 - Navigation directe vers la fiche recette en appuyant sur un repas.
 - Menu contextuel sur chaque repas : "Changer la recette", "Vider le créneau", "Supprimer".
+- **Une recette écartée d'un repas ne revient pas** : « Changer la recette », « Vider le créneau » et une nouvelle suggestion retiennent la recette remplacée, et l'IA ne la repropose plus pour ce repas. Pendant la composition d'un cycle, choisir ou demander une autre recette sur un créneau écarte de même celle en place, et ces écarts suivent le repas à la validation. Quand tout le corpus a été écarté, l'écran le dit au lieu de proposer à nouveau.
 - Bouton calendrier sur chaque repas pour export individuel vers Google Calendar.
 - Export global vers Google Calendar (tous les repas du planning courant en un clic).
+- **Chaque événement porte, en première ligne de sa description, le lien direct vers sa recette** : il ouvre la fiche dans le client web, pour les parts prévues au planning et, si le plat se cuisine à l'avance, avec le couple de dates qui fait parler la fiche de conservation. Ouvert sans session, le lien passe par la page de connexion puis atterrit sur la recette demandée, et non sur l'accueil. La planification depuis une fiche recette y ajoute, comme avant, les temps et la liste des ingrédients.
 - Suppression d'un repas avec dialogue de confirmation.
 - Affichage atténué des repas passés.
 - Alimentation en temps réel via un stream Firestore.

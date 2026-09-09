@@ -626,9 +626,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        recipe.sourceRecipeId != null
-                            ? 'Copie de travail - l\'originale reste intacte'
-                            : 'Brouillon issu d\'un scan',
+                        draftOriginLabel(recipe.effectiveOrigin),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),

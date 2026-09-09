@@ -1,5 +1,8 @@
 import '../../../core/services/cooklang_parser.dart'
     show extractPageType, ingredientKey, parsePageTypeLabel;
+import 'recipe_origin.dart';
+
+export 'recipe_origin.dart';
 
 enum ReviewStatus { draft, inReview, validated }
 
@@ -572,6 +575,12 @@ class Recipe {
   /// Nul pour les brouillons issus d'un scan.
   final String? sourceRecipeId;
 
+  /// Ce qui a écrit ce document la première fois — voir [RecipeOrigin].
+  ///
+  /// Nul sur les documents antérieurs au champ : [effectiveOrigin] déduit
+  /// alors ce qu'elle peut des autres champs.
+  final RecipeOrigin? origin;
+
   /// Verdict du contrôle de fidélité entre la page du livre et le balisage.
   ///
   /// `null` quand tout concorde — le cas normal. `avertissement` quand un
@@ -604,6 +613,18 @@ class Recipe {
   /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
   bool get fidelityRejected => fidelityLevel == 'rupture';
 
+  /// Origine lue, ou déduite pour les documents antérieurs au champ : une
+  /// recette source fait une copie, un fichier source fait un scan. Sans
+  /// l'un ni l'autre, on ne sait pas — et on ne l'affirme pas.
+  RecipeOrigin? get effectiveOrigin {
+    if (origin != null) return origin;
+    if (sourceRecipeId != null) return RecipeOrigin.copy;
+    if (sourceFileUrl != null || sourceFileName != null) {
+      return RecipeOrigin.scan;
+    }
+    return null;
+  }
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -632,6 +653,7 @@ class Recipe {
     this.shoppingProducts = const [],
     this.nutrition,
     this.sourceRecipeId,
+    this.origin,
     this.fidelityLevel,
     this.fidelityFindings = const [],
     this.illustrationReport,
@@ -698,6 +720,7 @@ class Recipe {
             )
           : null,
       sourceRecipeId: data['source_recipe_id'] as String?,
+      origin: recipeOriginFrom(data['origin']),
       fidelityLevel: data['fidelity_level'] as String?,
       fidelityFindings: FidelityFinding.listFrom(data['fidelity_findings']),
       illustrationReport: IllustrationReport.fromMap(
@@ -736,6 +759,7 @@ class Recipe {
       if (pageType != PageType.recipe) 'page_type': pageType.name,
       'import_version': ?importVersion,
       if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
+      if (origin != null) 'origin': origin!.name,
       if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
       if (fidelityFindings.isNotEmpty)
         'fidelity_findings': fidelityFindings.map((f) => f.toMap()).toList(),
@@ -771,6 +795,7 @@ class Recipe {
     List<RecipeShoppingProduct>? shoppingProducts,
     RecipeNutritionSnapshot? nutrition,
     String? sourceRecipeId,
+    RecipeOrigin? origin,
   }) {
     return Recipe(
       id: id,
@@ -801,6 +826,7 @@ class Recipe {
       shoppingProducts: shoppingProducts ?? this.shoppingProducts,
       nutrition: nutrition ?? this.nutrition,
       sourceRecipeId: sourceRecipeId ?? this.sourceRecipeId,
+      origin: origin ?? this.origin,
       // Le verdict de fidélité suit la recette : une copie, un renommage ou une
       // validation ne le rendent pas plus fidèle au livre.
       fidelityLevel: fidelityLevel,

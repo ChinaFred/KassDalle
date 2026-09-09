@@ -164,6 +164,7 @@ classDiagram
     +String? sourceFileName
     +List~String~ additionalSourceFileUrls
     +String? sourceRecipeId
+    +RecipeOrigin? origin
     +String? importVersion
     +String createdBy
     +DateTime createdAt
@@ -398,6 +399,7 @@ classDiagram
     +int? basePortions
     +int? targetPortions
     +DateTime? prepDate
+    +List~String~ dismissedRecipeIds
   }
 
   class ModerationEntry {

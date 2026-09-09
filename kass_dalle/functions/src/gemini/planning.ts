@@ -474,6 +474,7 @@ export async function generateRecipeConcept(
     const parts: string[] = [];
     if (c.maxPrepMinutes && c.maxPrepMinutes > 0)
       parts.push(`préparation max ${c.maxPrepMinutes}min`);
+    if (c.targetPortions && c.targetPortions > 0) parts.push(`${c.targetPortions} parts à servir`);
     if (c.isBatchCooking) parts.push("réchauffage uniquement (plat préparé à l'avance)");
     if (c.notes?.trim()) parts.push(c.notes.trim());
     if (parts.length > 0) {
@@ -518,7 +519,11 @@ export async function generateRecipeConcept(
     // `prepTime` et `cookTime` en camelCase n'en font pas partie : les
     // brouillons du planning sortaient donc sans durées, depuis toujours, sans
     // qu'aucune erreur ne le dise.
-    "- Métadonnées en début (une par ligne) : >> temps_preparation: XX min  " +
+    // `portions` est lu par le client à l'enregistrement du brouillon : sans
+    // cette ligne, la fiche s'ouvrait sans nombre de parts, et les quantités
+    // ne se rapportaient à rien.
+    "- Métadonnées en début (une par ligne) : >> portions: N (le nombre de parts pour lequel " +
+      "les quantités sont écrites)  >> temps_preparation: XX min  " +
       ">> temps_cuisson: XX min  >> temps_repos: XX min (ou omise si aucun repos)",
   );
   lines.push("- Ingrédients : @nom{quantité%unité}  ex: @farine{200%g}  @oignon{1%}");

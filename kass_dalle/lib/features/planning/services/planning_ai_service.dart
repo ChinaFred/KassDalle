@@ -1,4 +1,5 @@
 import '../../../../core/services/gemini_service.dart';
+import '../../../core/services/cooklang_parser.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planning_preferences.dart';
 
@@ -165,17 +166,26 @@ class PlanningAiService {
         isGenerated: true,
       );
     }
+    // Le modèle rend un CookLang, pas une liste : les ingrédients, les temps
+    // et les parts s'en extraient ici. Sans cette lecture, le brouillon
+    // s'enregistrait avec un onglet Ingrédients vide et des durées absentes,
+    // alors que le texte les portait.
+    final cooklang = result.cooklang;
+    final ingredients = extractIngredientsStructured(cooklang);
     final now = DateTime.now();
     final recipe = Recipe(
       id: '',
       titre: result.titre,
       langue: 'fr',
-      rawCooklang: result.cooklang,
-      draftCooklang: result.cooklang,
+      rawCooklang: cooklang,
+      draftCooklang: cooklang,
       imageUrls: const [],
       reviewStatus: ReviewStatus.draft,
-      tags: const RecipeTags(),
-      ingredientsIndex: const [],
+      tags: extractRecipeTags(cooklang),
+      ingredientsIndex: buildIngredientsIndex(ingredients),
+      ingredients: ingredients,
+      portions: extractPortions(cooklang),
+      origin: RecipeOrigin.ai,
       createdBy: '',
       createdAt: now,
       updatedAt: now,

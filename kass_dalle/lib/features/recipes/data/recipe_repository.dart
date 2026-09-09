@@ -487,6 +487,7 @@ class RecipeRepository {
       createdAt: now,
       updatedAt: now,
       sourceRecipeId: recipe.id,
+      origin: RecipeOrigin.copy,
     );
     return createRecipe(copy);
   }

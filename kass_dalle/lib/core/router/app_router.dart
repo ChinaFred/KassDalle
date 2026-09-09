@@ -97,6 +97,38 @@ class AppRoutes {
   static String sandboxExperiment(String id) => '$adminSandbox/$id';
 }
 
+/// Paramètre de `/login` qui porte l'adresse demandée avant la connexion.
+const kNextQueryParam = 'next';
+
+/// Adresse de la page de connexion pour une adresse demandée sans session.
+///
+/// L'accueil n'est pas retenu : c'est déjà la destination par défaut, et
+/// `/login` nu reste l'adresse que les tests et les captures connaissent.
+String loginLocationFor(Uri requested) {
+  if (requested.path == AppRoutes.home && !requested.hasQuery) {
+    return AppRoutes.login;
+  }
+  return Uri(
+    path: AppRoutes.login,
+    queryParameters: {kNextQueryParam: requested.toString()},
+  ).toString();
+}
+
+/// Adresse à ouvrir une fois connecté, lue dans `?next=`, ou null.
+///
+/// Seule une route interne est acceptée. Un `next` qui commence par `//` ou
+/// par un schéma ferait de la page de connexion un renvoi vers un autre site ;
+/// `/login` et `/pending` y feraient tourner en rond.
+String? nextLocationAfterLogin(Uri loginUri) {
+  final next = loginUri.queryParameters[kNextQueryParam];
+  if (next == null || !next.startsWith('/') || next.startsWith('//')) {
+    return null;
+  }
+  final path = Uri.parse(next).path;
+  if (path == AppRoutes.login || path == AppRoutes.pending) return null;
+  return next;
+}
+
 /// Où doit aller un compte, selon ce qu'il est et où il tente d'aller.
 ///
 /// Extrait de la fermeture `redirect` pour être testable : c'est le seul
@@ -107,16 +139,20 @@ String? resolveRedirect({
   required AppUser? user,
   required bool isLoading,
   required String location,
+  Uri? uri,
 }) {
   final isLoginRoute = location == AppRoutes.login;
   final isPendingRoute = location == AppRoutes.pending;
+  final requested = uri ?? Uri(path: location);
 
   // Pendant le chargement, ne pas rediriger
   if (isLoading) return null;
 
-  // Non authentifié → login
+  // Non authentifié → login, en gardant l'adresse demandée : un lien reçu
+  // hors de l'application — l'événement Google Calendar d'un repas — doit
+  // rouvrir la recette une fois la session ouverte, pas l'accueil.
   if (user == null) {
-    return isLoginRoute ? null : AppRoutes.login;
+    return isLoginRoute ? null : loginLocationFor(requested);
   }
 
   // Compte révoqué → login avec paramètre
@@ -134,8 +170,8 @@ String? resolveRedirect({
   // Nommé entre-temps : la salle d'attente n'a plus lieu d'être.
   if (isPendingRoute) return AppRoutes.home;
 
-  // Connecté et sur /login → home
-  if (isLoginRoute) return AppRoutes.home;
+  // Connecté et sur /login → l'adresse demandée avant la connexion, sinon home
+  if (isLoginRoute) return nextLocationAfterLogin(requested) ?? AppRoutes.home;
 
   // Admin requis pour /admin
   if (location.startsWith('/admin') && !user.isAdmin) {
@@ -167,6 +203,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         user: appUserAsync.value,
         isLoading: appUserAsync.isLoading,
         location: state.matchedLocation,
+        uri: state.uri,
       );
     },
     routes: [

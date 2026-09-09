@@ -205,6 +205,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         sourceFileUrl: source?.$1,
         sourceFileName: source?.$2,
         aiProcessedAt: _originalPastedText != null ? now : null,
+        origin: RecipeOrigin.manual,
         fidelityLevel: _fidelityLevel,
         fidelityFindings: _fidelityFindings,
       );
@@ -284,6 +285,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         sourceFileUrl: source?.$1,
         sourceFileName: source?.$2,
         aiProcessedAt: _originalPastedText != null ? now : null,
+        origin: RecipeOrigin.manual,
       );
       final id = await ref
           .read(recipeRepositoryProvider)

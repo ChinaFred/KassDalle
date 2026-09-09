@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../app_links.dart';
 import '../app_version.dart';
 import 'apk_file_store_stub.dart'
     if (dart.library.io) 'apk_file_store_io.dart'
@@ -10,7 +11,7 @@ import 'apk_file_store_stub.dart'
 import 'app_installer.dart';
 import 'error_report_service.dart';
 
-const _kHostingUrl = 'https://kassdale-6d948.web.app';
+const _kHostingUrl = kAppWebOrigin;
 
 /// URL publique de l'APK Android hébergé sur Firebase Hosting.
 const kApkDownloadUrl = '$_kHostingUrl/app-release.apk';

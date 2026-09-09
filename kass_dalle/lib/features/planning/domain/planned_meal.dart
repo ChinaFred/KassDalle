@@ -41,6 +41,13 @@ class PlannedMeal {
   /// qu'on relit ensuite, n'en gardait rien.
   final String? justification;
 
+  /// Recettes écartées de ce repas — par « Changer la recette », « Vider le
+  /// créneau » ou une nouvelle suggestion. L'IA ne les repropose pas ici.
+  ///
+  /// Elles appartiennent au repas, pas au profil : écarter un plat un mardi
+  /// ne dit rien du samedi suivant.
+  final List<String> dismissedRecipeIds;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -56,6 +63,7 @@ class PlannedMeal {
     this.targetPortions,
     this.prepDate,
     this.justification,
+    this.dismissedRecipeIds = const [],
     required this.createdAt,
   });
 
@@ -73,6 +81,9 @@ class PlannedMeal {
       targetPortions: data['target_portions'] as int?,
       prepDate: (data['prep_date'] as Timestamp?)?.toDate(),
       justification: data['justification'] as String?,
+      dismissedRecipeIds: List<String>.from(
+        data['dismissed_recipe_ids'] as List? ?? const [],
+      ),
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -90,6 +101,8 @@ class PlannedMeal {
     if (prepDate != null) 'prep_date': Timestamp.fromDate(prepDate!),
     if (justification != null && justification!.trim().isNotEmpty)
       'justification': justification!.trim(),
+    if (dismissedRecipeIds.isNotEmpty)
+      'dismissed_recipe_ids': dismissedRecipeIds,
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

@@ -6,6 +6,9 @@ import 'package:intl/intl.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../domain/calendar_event_description.dart';
+import '../domain/meal_candidates.dart';
+import '../domain/meal_recipe_location.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
@@ -55,6 +58,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // Marque les slots générés par IA (conception)
   Map<int, bool> _slotIsGenerated = {};
   Map<int, DayConstraint> _slotConstraints = {};
+  // Recettes écartées de chaque créneau pendant cette session : une nouvelle
+  // suggestion ne les repropose pas, et elles suivent le repas à la validation.
+  Map<int, Set<String>> _slotDismissed = {};
   PlanningPreferences? _prefs;
   final TextEditingController _globalConstraintsCtrl = TextEditingController();
   // Index du slot en cours de génération IA individuelle (null = aucun)
@@ -331,6 +337,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     );
     if (recipe != null && mounted) {
       setState(() {
+        // Choisir une autre recette, c'est écarter celle en place.
+        if (_slots[slotIndex]?.id != recipe.id) _dismissSlotRecipe(slotIndex);
         _slots[slotIndex] = recipe;
         _slotJustifications[slotIndex] =
             'Sélection manuelle : recette choisie par l\'utilisateur.';
@@ -379,6 +387,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           basePortions: recipe.portions,
           targetPortions: targetPortions,
           prepDate: _slotPrepDates[i],
+          dismissedRecipeIds: (_slotDismissed[i] ?? const {}).toList(
+            growable: false,
+          ),
           // Le « pourquoi » suit le repas. Il était affiché pendant la
           // planification puis jeté à la validation : l'écran qu'on relit
           // ensuite, celui du planning, n'en gardait rien.
@@ -538,6 +549,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         final newResizeReasons = <int, String>{};
         final newIsGenerated = <int, bool>{};
         final newConstraints = <int, DayConstraint>{};
+        final newDismissed = <int, Set<String>>{};
         for (int i = 0; i < newDates.length; i++) {
           if (i < gapIdx) {
             newSlots[i] = _slots[i];
@@ -559,6 +571,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             }
             if (_slotConstraints.containsKey(i)) {
               newConstraints[i] = _slotConstraints[i]!;
+            }
+            if (_slotDismissed.containsKey(i)) {
+              newDismissed[i] = _slotDismissed[i]!;
             }
           } else if (i == gapIdx) {
             newSlots[i] = null;
@@ -588,6 +603,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             if (_slotConstraints.containsKey(i - 1)) {
               newConstraints[i] = _slotConstraints[i - 1]!;
             }
+            if (_slotDismissed.containsKey(i - 1)) {
+              newDismissed[i] = _slotDismissed[i - 1]!;
+            }
           }
         }
         _slotDates = newDates;
@@ -599,6 +617,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotResizeReasons = newResizeReasons;
         _slotIsGenerated = newIsGenerated;
         _slotConstraints = newConstraints;
+        _slotDismissed = newDismissed;
       } else {
         // Pas de trou : étendre d'un jour après le dernier
         final newDate = _slotDates.last.add(const Duration(days: 1));
@@ -627,6 +646,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final newResizeReasons = <int, String>{};
       final newIsGenerated = <int, bool>{};
       final newConstraints = <int, DayConstraint>{};
+      final newDismissed = <int, Set<String>>{};
       for (int i = 0; i < newDates.length; i++) {
         newSlots[i] = i < index ? _slots[i] : _slots[i + 1];
         newTimes[i] = i < index
@@ -651,6 +671,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         if (_slotConstraints.containsKey(sourceIndex)) {
           newConstraints[i] = _slotConstraints[sourceIndex]!;
         }
+        if (_slotDismissed.containsKey(sourceIndex)) {
+          newDismissed[i] = _slotDismissed[sourceIndex]!;
+        }
       }
       _slotDates = newDates;
       _slots = newSlots;
@@ -661,7 +684,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotResizeReasons = newResizeReasons;
       _slotIsGenerated = newIsGenerated;
       _slotConstraints = newConstraints;
+      _slotDismissed = newDismissed;
     });
+  }
+
+  /// Écarte la recette en place sur [slotIndex], s'il y en a une enregistrée.
+  void _dismissSlotRecipe(int slotIndex) {
+    final current = _slots[slotIndex];
+    if (current == null || current.id.isEmpty) return;
+    (_slotDismissed[slotIndex] ??= {}).add(current.id);
   }
 
   /// Génère une suggestion IA pour un slot individuel.
@@ -689,6 +720,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       return;
     }
 
+    // Demander une autre suggestion, c'est écarter celle en place : elle ne
+    // revient pas, ni maintenant ni au prochain essai sur ce créneau.
+    _dismissSlotRecipe(slotIndex);
+    final candidates = candidatesForMeal(
+      pool,
+      dismissedRecipeIds: _slotDismissed[slotIndex] ?? const {},
+    );
+    if (pool.isNotEmpty &&
+        candidates.isEmpty &&
+        !sources.contains(RecipeSource.aiCreation)) {
+      _showError(
+        'Toutes les recettes des sources choisies ont déjà été écartées pour ce créneau.',
+      );
+      return;
+    }
+
     setState(() => _generatingSlot = slotIndex);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
@@ -702,11 +749,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
       SlotSuggestion? suggestion;
 
-      if (pool.isNotEmpty) {
+      if (candidates.isNotEmpty) {
         final suggestions = await ref
             .read(planningAiServiceProvider)
             .suggestMealPlan(
-              recipes: pool,
+              recipes: candidates,
               slotDates: [_slotDates[slotIndex]],
               dailyConstraints: {_slotDates[slotIndex].weekday: slotConstraint},
               slotConstraints: [slotConstraint.isEmpty ? null : slotConstraint],
@@ -935,6 +982,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     );
     final prefs = _prefs ?? const PlanningPreferences();
     final dur = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    // Même contexte que le repas qui sera enregistré à la validation : les
+    // parts du créneau et son jour de préparation voyagent dans le lien.
+    final slotConstraint = _slotConstraints[index] ?? const DayConstraint();
+    final description = buildCalendarDescription(
+      recipeLocation: recipe.id.isEmpty
+          ? null
+          : recipeLocationFor(
+              recipeId: recipe.id,
+              targetPortions: slotConstraint.targetPortions > 0
+                  ? slotConstraint.targetPortions
+                  : null,
+              basePortions: recipe.portions,
+              prepDate: _slotPrepDates[index],
+              mealDate: startTime,
+            ),
+    );
     try {
       await CalendarService.createEvent(
         titre: recipe.titre,
@@ -942,7 +1005,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         duration: Duration(
           minutes: dur > 0 ? dur : prefs.defaultCalendarDurationMinutes,
         ),
-        description: 'Repas planifié avec Kass\'Dalle',
+        description: description,
         reminderMinutes: recipe.tags.prepTime ?? 30,
         calendarId: prefs.calendarId,
       );

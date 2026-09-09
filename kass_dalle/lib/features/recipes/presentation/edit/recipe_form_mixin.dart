@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../../../../core/services/cooklang_parser.dart'
+    show extractIngredientsStructured;
 import '../../domain/recipe.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
@@ -65,7 +67,12 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     cookTimeCtrl.text = recipe.tags.cookTime?.toString() ?? '';
     restTimeCtrl.text = recipe.tags.restTime?.toString() ?? '';
     pageNumberCtrl.text = recipe.pageNumber?.toString() ?? '';
-    formIngredients = List<RecipeIngredient>.from(recipe.ingredients);
+    // Un brouillon conçu par l'IA arrivait sans liste structurée : le texte
+    // portait les ingrédients, le document non. Les lire ici plutôt que
+    // d'afficher un onglet vide sous un CookLang qui en compte quinze.
+    formIngredients = recipe.ingredients.isNotEmpty
+        ? List<RecipeIngredient>.from(recipe.ingredients)
+        : extractIngredientsStructured(raw);
     selectedBookId = recipe.bookId;
     selectedBookTitre = recipe.bookTitre;
     selectedCuisines = List<String>.from(recipe.tags.cuisines);

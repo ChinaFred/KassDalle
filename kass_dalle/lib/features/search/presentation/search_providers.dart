@@ -172,6 +172,7 @@ class SearchNotifier extends Notifier<SearchState> {
       updatedAt: now,
       portions: recipe.portions,
       ingredients: recipe.ingredients,
+      origin: RecipeOrigin.ai,
       bookId: book.id,
       bookTitre: book.titre,
     );
