@@ -25,6 +25,7 @@ import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/theme/app_icons.dart';
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -528,12 +529,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                 tooltip: 'Liste des ingrédients',
                 onPressed: () => _showIngredientsList(mealsAsync.value!),
               ),
-              // Une icône d'envoi, pas un calendrier : l'onglet « Calendrier »
-              // est juste en dessous dans la même barre, et deux calendriers
-              // côte à côte pour « voir » et « exporter » ne se distinguent
-              // qu'à l'infobulle — c'est-à-dire trop tard.
+              // La même icône que sur chaque repas et chaque créneau : un
+              // geste, une icône. Elle reste distincte du calendrier de
+              // l'onglet juste en dessous, qui sert à voir, pas à envoyer.
               IconButton(
-                icon: const Icon(Icons.upload_outlined),
+                icon: const Icon(AppIcons.calendarExport),
                 tooltip: 'Exporter le planning vers le calendrier',
                 onPressed: () => _exportAllToCalendar(mealsAsync.value!),
               ),
@@ -576,7 +576,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                   const PopupMenuItem(
                     value: 2,
                     child: ListTile(
-                      leading: Icon(Icons.upload_outlined),
+                      leading: Icon(AppIcons.calendarExport),
                       title: Text('Exporter vers le calendrier'),
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -720,7 +720,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         ),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            // La marge du bas laisse passer la dernière ligne sous le bouton
+            // « Nouveau planning » : sans elle, il couvrait l'icône d'export
+            // du dernier repas, et rien ne permettait de descendre plus bas.
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 96),
             itemCount: days.length,
             itemBuilder: (context, index) {
               final day = days[index];

@@ -6,6 +6,7 @@ import '../../recipes/domain/recipe.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/theme/app_icons.dart';
 
 // ── Helpers d'agrégation d'ingrédients ──────────────────────────────────────────
 
@@ -463,7 +464,7 @@ class PlanningMealTile extends StatelessWidget {
                         // s'annonce aussi au lecteur d'écran.
                         tooltip: 'Exporter ce repas vers le calendrier',
                         icon: const Icon(
-                          Icons.upload_outlined,
+                          AppIcons.calendarExport,
                           size: AppIconSize.small,
                         ),
                         onPressed: onExportToCalendar,
@@ -526,7 +527,7 @@ class PlanningMealTile extends StatelessWidget {
                         const PopupMenuItem(
                           value: PlanningMealAction.exportToCalendar,
                           child: ListTile(
-                            leading: Icon(Icons.calendar_month_outlined),
+                            leading: Icon(AppIcons.calendarExport),
                             title: Text('Exporter vers Calendar'),
                             contentPadding: EdgeInsets.zero,
                           ),

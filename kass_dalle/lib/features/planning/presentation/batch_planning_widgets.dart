@@ -7,6 +7,7 @@ import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/theme/app_icons.dart';
 
 /// Sources disponibles pour la sélection de recettes dans la génération par slot.
 enum RecipeSource {
@@ -429,7 +430,7 @@ class BatchSlotTile extends StatelessWidget {
               if (recipe != null) ...[
                 IconButton(
                   icon: const Icon(
-                    Icons.event_outlined,
+                    AppIcons.calendarExport,
                     size: AppIconSize.small,
                   ),
                   tooltip: 'Ajouter au calendrier',

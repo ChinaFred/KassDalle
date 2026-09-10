@@ -13,6 +13,7 @@ import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/theme/app_icons.dart';
 
 /// Ouvre le bottom sheet de planification pour une recette.
 Future<void> showScheduleRecipeSheet(
@@ -354,7 +355,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.calendar_month_outlined),
+                  : const Icon(AppIcons.calendarExport),
               label: const Text('Ajouter à Google Calendar'),
             ),
           ),
