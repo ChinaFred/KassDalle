@@ -15,6 +15,7 @@ import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
+import 'recipe_picker_sheet.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
@@ -338,9 +339,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => BatchRecipePickerSheet(
+      builder: (ctx) => RecipePickerSheet(
         recipes: _allRecipes,
         dismissedRecipeIds: _slotDismissed[slotIndex] ?? const {},
+        dismissedFrom: 'créneau',
       ),
     );
     if (recipe != null && mounted) {

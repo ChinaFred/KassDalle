@@ -42,6 +42,7 @@ void main() {
     void Function(DateTime)? onMonthChanged,
     Size surface = const Size(1400, 900),
     double bandHeight = 280,
+    DateTime? now,
   }) async {
     await tester.binding.setSurfaceSize(surface);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -57,6 +58,9 @@ void main() {
               earliestMonth: earliest ?? DateTime(2026, 5),
               onSelectDay: onSelectDay ?? (_) {},
               onMonthChanged: onMonthChanged ?? (_) {},
+              // Le jour courant est fixé : le rendu d'« aujourd'hui » ne doit
+              // pas dépendre du jour où la suite tourne.
+              now: now ?? DateTime(2026, 8, 12),
             ),
           ),
         ),
@@ -112,6 +116,25 @@ void main() {
     final band = tester.getSize(find.byType(PlanningMonthBand));
     expect(band.height, lessThanOrEqualTo(200));
   });
+
+  testWidgets(
+    'un aujourd\'hui à deux chiffres tient dans la case d\'un mois latéral',
+    (tester) async {
+      // Le 10 septembre, en gras et encadré dans le petit mois de droite,
+      // passait sur deux lignes et faisait déborder la colonne de cinq pixels.
+      // Le 9 tenait : la suite passait un jour et échouait le lendemain.
+      await pump(
+        tester,
+        month: DateTime(2026, 8),
+        selected: DateTime(2026, 8, 12),
+        bandHeight: 200,
+        now: DateTime(2026, 9, 10),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('10'), findsWidgets);
+    },
+  );
 
   testWidgets('un appui sur un jour le remonte à l\'écran', (tester) async {
     DateTime? picked;

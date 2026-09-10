@@ -20,6 +20,7 @@ import 'planning_month_grid.dart';
 import 'planning_providers.dart';
 import 'planning_week_bar.dart';
 import 'planning_widgets.dart';
+import 'recipe_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
@@ -126,9 +127,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => PlanningRecipePickerSheet(
+      builder: (_) => RecipePickerSheet(
         recipes: _availableRecipes,
         dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
+        hintText: 'Rechercher ou saisir un nom libre\u2026',
+        freeNameAlways: true,
       ),
     );
     if (recipe == null || !mounted) return;
@@ -772,7 +775,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => PlanningRecipePickerSheet(recipes: _availableRecipes),
+      builder: (_) => RecipePickerSheet(
+        recipes: _availableRecipes,
+        hintText: 'Rechercher ou saisir un nom libre\u2026',
+        freeNameAlways: true,
+      ),
     );
     if (recipe == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);

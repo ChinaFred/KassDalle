@@ -6,6 +6,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/recipe_picker_filter.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 
@@ -192,6 +193,10 @@ class PlanningRepository {
 
   /// Récupère toutes les recettes validées de l'utilisateur pour la sélection
   /// et la génération AI.
+  ///
+  /// Pages de type recette seulement, ici comme dans les deux autres corpus :
+  /// une technique validée n'est pas un plat, et elle se retrouvait proposée
+  /// pour un mardi soir — voir [pickableRecipes].
   Future<List<Recipe>> getValidatedRecipes() async {
     final snap = await _db
         .collection('recipes')
@@ -199,7 +204,9 @@ class PlanningRepository {
         .where('review_status', isEqualTo: 'validated')
         .orderBy('titre')
         .get();
-    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
+    return pickableRecipes(
+      snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())),
+    );
   }
 
   /// Récupère les brouillons (draft + inReview) de l'utilisateur.
@@ -213,7 +220,7 @@ class PlanningRepository {
         .map((d) => Recipe.fromFirestore(d.id, d.data()))
         .toList();
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return list;
+    return pickableRecipes(list);
   }
 
   /// Récupère les recettes validées des membres de la famille (hors utilisateur courant).
@@ -231,7 +238,9 @@ class PlanningRepository {
         .where('review_status', isEqualTo: 'validated')
         .where('is_private', isEqualTo: false)
         .get();
-    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
+    return pickableRecipes(
+      snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())),
+    );
   }
 
   /// Sauvegarde une recette générée par l'IA comme brouillon et retourne son ID.

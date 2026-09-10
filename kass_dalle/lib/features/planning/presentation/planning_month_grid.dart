@@ -41,6 +41,12 @@ class PlanningMonthBand extends StatelessWidget {
   /// chargé ressemblerait à un mois vide parce que rien n'y a été planifié.
   final DateTime earliestMonth;
 
+  /// L'instant courant, injectable par les tests ; sinon l'horloge.
+  ///
+  /// Le rendu dépend du jour : « aujourd'hui » est encadré et en gras. Un
+  /// test qui lit l'horloge passait le 9 du mois et échouait le 10.
+  final DateTime? now;
+
   const PlanningMonthBand({
     super.key,
     required this.month,
@@ -49,6 +55,7 @@ class PlanningMonthBand extends StatelessWidget {
     required this.onSelectDay,
     required this.onMonthChanged,
     required this.earliestMonth,
+    this.now,
   });
 
   static DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -69,7 +76,7 @@ class PlanningMonthBand extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final today = dayOf(DateTime.now());
+    final today = dayOf(now ?? DateTime.now());
 
     final byDay = <DateTime, List<PlannedMeal>>{};
     final prepByDay = <DateTime, int>{};
@@ -411,15 +418,24 @@ class _DayCell extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                '${day.day}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: size * 0.36,
-                  height: 1.1,
-                  color: numberColor,
-                  fontWeight: isToday || isSelected
-                      ? FontWeight.w700
-                      : FontWeight.w400,
+              // Un nombre à deux chiffres, en gras pour aujourd'hui, dépassait
+              // d'un demi-pixel la case d'un mois latéral et passait sur deux
+              // lignes : la colonne débordait de cinq pixels le 10 du mois, pas
+              // le 9. Le nombre se réduit plutôt que de se plier.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '${day.day}',
+                  softWrap: false,
+                  maxLines: 1,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: size * 0.36,
+                    height: 1.1,
+                    color: numberColor,
+                    fontWeight: isToday || isSelected
+                        ? FontWeight.w700
+                        : FontWeight.w400,
+                  ),
                 ),
               ),
               SizedBox(
