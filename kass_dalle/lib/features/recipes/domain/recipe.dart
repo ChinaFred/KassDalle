@@ -859,6 +859,15 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   // La clé de nom est normalisée pour fusionner singulier/pluriel.
   // En cas de doublon strict (même nom + même catégorie), on garde le premier.
   //
+  // Sauf si les deux portent une note, et pas la même. Le balisage a rendu
+  // « 2 poivrons rouges » et « 2 poivrons verts » sous le même nom
+  // « poivron », la couleur en note. Le serveur avait bien écrit deux
+  // entrées ; cette fonction n'en gardait qu'une, et la recette affichait
+  // deux poivrons sur quatre. Deux lignes du livre qui ne diffèrent que par
+  // leur note sont deux lignes, pas un doublon. Une entrée sans note, elle,
+  // reste un doublon de celle qui en porte une — c'est le cas des listes
+  // dérivées des étapes, où le même aliment revenait tel quel.
+  //
   // Cette fonction RECONSTRUIT chaque entrée pour n'en garder que la version
   // rognée. Elle recopiait quatre champs sur six : `note` et `source`
   // disparaissaient ici, à la lecture du document, alors qu'ils étaient bien
@@ -869,15 +878,22 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   // La leçon vaut au-delà de ce cas : une recopie champ par champ est une
   // liste qui vieillit mal. Tout champ ajouté au modèle et oublié ici est
   // silencieusement supprimé, sans erreur et sans trace.
-  final seen = <String>{};
+  // Par clé (nom, catégorie), les notes déjà vues ; une chaîne vide y marque
+  // une entrée sans note.
+  final seenNotesByKey = <String, Set<String>>{};
   final result = <RecipeIngredient>[];
   for (final ing in raw) {
     final name = ing.name.trim();
     if (name.isEmpty) continue;
     final key =
         '${ingredientKey(name)}|${(ing.category ?? '').trim().toLowerCase()}';
-    if (seen.contains(key)) continue;
-    seen.add(key);
+    final note = (ing.note ?? '').trim().toLowerCase();
+    final seenNotes = seenNotesByKey[key];
+    final isDuplicate =
+        seenNotes != null &&
+        (note.isEmpty || seenNotes.contains('') || seenNotes.contains(note));
+    if (isDuplicate) continue;
+    (seenNotesByKey[key] ??= <String>{}).add(note);
     result.add(
       RecipeIngredient(
         name: name,

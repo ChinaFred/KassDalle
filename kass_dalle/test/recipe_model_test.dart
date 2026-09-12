@@ -244,6 +244,29 @@ void main() {
         expect(recipe.ingredients.single.note, 'mélangée au miel');
       },
     );
+
+    // Le balisage a rendu « 2 poivrons rouges » et « 2 poivrons verts » sous
+    // le même nom, la couleur en note. Le serveur a écrit deux entrées ; la
+    // lecture n'en gardait qu'une, et la recette affichait deux poivrons sur
+    // quatre.
+    test('deux lignes de même nom et de notes différentes restent deux', () {
+      final recipe = Recipe.fromFirestore('r3', {
+        'titre': 'Poulet basquaise',
+        'created_by': 'u1',
+        'created_at': _FakeTimestamp(DateTime(2026, 9, 12)),
+        'updated_at': _FakeTimestamp(DateTime(2026, 9, 12)),
+        'ingredients': [
+          {'name': 'poivron', 'qty': '2', 'unit': 'pièces', 'note': 'rouges'},
+          {'name': 'poivron', 'qty': '2', 'unit': 'pièces', 'note': 'verts'},
+          // Une troisième occurrence sans note reste un doublon.
+          {'name': 'poivrons', 'qty': '', 'unit': ''},
+        ],
+      });
+
+      expect(recipe.ingredients, hasLength(2));
+      expect(recipe.ingredients[0].note, 'rouges');
+      expect(recipe.ingredients[1].note, 'verts');
+    });
   });
 
   // ── Sections qui ne nomment rien ─────────────────────────────────────────────

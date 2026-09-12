@@ -412,6 +412,15 @@ Pour chaque ligne, sépare ce qui se compte de ce qui se dit :
 
 Règles :
 - "nom" est l'aliment, au plus simple, sans quantité ni préparation.
+- **LA COULEUR, LA VARIÉTÉ ET L'ESPÈCE FONT PARTIE DU NOM.** « poivron rouge »,
+  « poivron vert », « oignon rouge », « chou vert », « lentilles corail »,
+  « sucre roux », « tomate cerise » : ce sont d'autres produits, qui ne
+  s'achètent pas au même endroit et n'ont pas les mêmes valeurs
+  nutritionnelles. Une couleur mise en note se perd : « 2 poivrons rouges » et
+  « 2 poivrons verts » balisés « poivron » + note « rouges » puis « poivron »
+  + note « verts » ne font plus qu'UNE ligne de deux poivrons dans la recette,
+  et la liste de courses en perd deux. La préparation, elle, reste en note :
+  nom « poivron rouge », note « en lanières ».
 - "unite" au SINGULIER (brin, gousse, pièce, c. à soupe, g, kg, ml, l).
 - Si le nom commence par une unité de mesure (brin, gousse, filet, noisette,
   pincée, bouquet, tranche, branche), c'est l'unité, et le reste est le nom.
@@ -440,6 +449,9 @@ Règles :
   ambiante »), préparation préalable (« émincé finement »), précision d'achat
   (« de préférence bio »), variante (« ou de la crème fraîche »), lien avec un
   autre ingrédient (« mélangée au miel »).
+
+  Ce qui n'y va PAS : la couleur, la variété, l'espèce. « rouge », « vert »,
+  « corail », « cerise » restent dans le nom — voir la règle sur le nom.
 
 - N'INVENTE JAMAIS une note : elle ne contient que des mots venus de la ligne.
   Mais ne la laisse pas vide quand la ligne dit quelque chose de plus — c'est

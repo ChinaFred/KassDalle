@@ -16,6 +16,26 @@ anciennes sans accents.
 
 ## 2026-09-12
 
+### v0.22.57 — fonctionnel
+
+#### Deux poivrons rouges et deux poivrons verts ne font plus deux poivrons
+
+Un livre disait « 2 poivrons rouges » puis « 2 poivrons verts ». Le balisage rendait deux
+entrées du même nom « poivron », deux pièces chacune, la couleur en note. La lecture de la
+recette fusionnait les entrées de même nom et n'en gardait qu'une : la fiche affichait deux
+poivrons sur quatre, et la liste de courses aussi.
+
+Deux corrections. Le prompt de balisage dit maintenant que la couleur, la variété et l'espèce
+font partie du nom — « poivron rouge », « oignon rouge », « lentilles corail », « sucre
+roux » — parce que ce sont d'autres produits à l'achat et d'autres entrées du référentiel
+nutritionnel ; la préparation, elle, reste en note. Et la lecture d'une recette ne fusionne
+plus deux entrées de même nom quand chacune porte une note et que les notes diffèrent : deux
+lignes du livre restent deux lignes. Une entrée sans note reste un doublon de celle qui en
+porte une, comme avant.
+
+Les recettes déjà importées ne changent pas. Une seule d'entre elles porte une couleur en
+note (« Ceviche », poivron « vert ») ; elle se corrige dans l'éditeur.
+
 ### v0.22.56 — fonctionnel
 
 #### Le texte de la recette se zoome sur la tablette

@@ -262,7 +262,7 @@ Document principal d'une recette.
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 | `portions` | `int?` | Nombre de portions extrait/saisi |
 | `rest_time` | `int?` | Temps de repos en minutes, distinct de la préparation et de la cuisson. Une pâte qui lève trois heures ne se prépare pas en trois heures |
-| `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?, note?}` — cf. « Contrat ingrédient ». `note` porte ce que la ligne du livre dit en plus de la quantité (« avec la peau mais écaillée ») : la quantité se compte, la précision se lit |
+| `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?, note?}` — cf. « Contrat ingrédient ». `note` porte ce que la ligne du livre dit en plus de la quantité (« avec la peau mais écaillée ») : la quantité se compte, la précision se lit. La couleur, la variété et l'espèce font partie de `name` (« poivron rouge »), jamais de `note` : la lecture fusionne les entrées de même nom et même section, sauf si chacune porte une note et que les notes diffèrent |
 | `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
