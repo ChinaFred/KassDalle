@@ -244,6 +244,16 @@ Aucun oubli ne lève d'erreur : le coût reste compté, il devient seulement
 illisible. Les variantes `_batch` sont des postes à part entière. Un poste
 retiré du code reste au catalogue — les mois déjà comptabilisés le nomment.
 
+## Une écriture ponctuelle sur les données passe par Admin › Backfills
+
+Semer un référentiel, reprendre un champ sur toutes les recettes, rattacher ce qui est
+orphelin : toute opération qui écrit **une fois** sur un ensemble de documents vit dans
+**Admin › Backfills** (`admin_backfills_screen.dart`), avec bannière de progression et
+compte rendu chiffré. L'écran d'un référentiel montre et corrige ; il ne lance pas
+d'opération de masse. Rien ne s'écrit dans Firestore de production depuis la machine de
+développement : quand un déploiement laisse une donnée à créer, le livrable inclut le
+backfill qui la crée, et la réponse dit lequel lancer.
+
 ## Git
 
 * Faire un commit qui résume les derniers ajouts puis `git push`.

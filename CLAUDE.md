@@ -427,6 +427,23 @@ Un poste retiré du code **reste** au catalogue, sinon les mois déjà
 comptabilisés cessent de le nommer. `test/feature_catalog_test.dart` garde la
 cohérence des deux tables entre elles.
 
+## Une écriture ponctuelle sur les données passe par Admin › Backfills
+
+Semer un référentiel, reprendre un champ sur toutes les recettes, rattacher ce qui est
+orphelin : toute opération qui écrit **une fois** sur un ensemble de documents est un
+backfill, et vit dans **Admin › Backfills** (`admin_backfills_screen.dart`), avec les
+autres. C'est là que l'utilisateur va chercher ce genre de bouton, et c'est là qu'il
+attend une bannière de progression et un compte rendu chiffré (créés, ignorés, en erreur).
+
+Un bouton de semis posé dans l'écran du référentiel lui-même a été livré une fois
+(garnitures simples, v0.22.58) : personne ne l'a trouvé, et la réponse « ouvrez
+l'écran du référentiel et appuyez sur l'icône » a dû être écrite à la main. L'écran
+du référentiel montre et corrige ; il ne lance pas d'opération de masse.
+
+Rien ne s'écrit dans Firestore de production depuis la machine de développement :
+le classifieur refuse, et c'est voulu. Quand un déploiement laisse une donnée à créer,
+le livrable inclut le backfill qui la crée, et la réponse dit lequel lancer.
+
 ## Git
 
 Faire un commit qui résume les ajouts, puis `git push`.
