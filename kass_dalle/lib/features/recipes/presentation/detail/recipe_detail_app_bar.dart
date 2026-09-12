@@ -16,6 +16,7 @@ import '../ai/ai_ui_copy.dart';
 import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
+import 'recipe_text_zoom.dart';
 
 /// AppBar de la page de détail d'une recette.
 class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -392,6 +393,10 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ],
       ),
       actions: [
+        // Le zoom du texte vient en tête : il règle la lecture, les autres
+        // icônes agissent sur la recette. Absent hors APK en présentation
+        // étendue — le widget le décide lui-même.
+        const RecipeTextZoomButtons(),
         SourceViewerButton(
           sourceFileUrl: recipe.sourceFileUrl,
           sourceFileName: recipe.sourceFileName,

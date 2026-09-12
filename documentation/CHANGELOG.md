@@ -14,6 +14,29 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-12
+
+### v0.22.56 — fonctionnel
+
+#### Le texte de la recette se zoome sur la tablette
+
+Posée sur le plan de travail, la tablette se lit à un mètre, et la fiche était trop petite ;
+tenue en main, elle se lisait bien. Deux boutons dans la barre de la fiche, réduire et agrandir,
+zooment l'onglet *Préparer* — ingrédients, étapes, puces — par paliers : 100, 125, 150, 175 et
+200 %. Le zoom s'ajoute à la taille de police du système, il ne la remplace pas. Le réglage est
+mémorisé sur l'appareil, pas dans le compte : il dépend de l'écran et de la distance de lecture,
+pas de la personne.
+
+Les boutons n'existent que sur l'APK Android en présentation étendue. Le téléphone garde la fiche
+telle quelle, le web et le bureau aussi.
+
+#### Les étapes ignoraient la taille de police du système
+
+Le texte des étapes était rendu par `RichText`, dont l'échelle de police est fixe par défaut. Le
+réglage « Taille de police » d'Android agrandissait les puces d'ingrédients et laissait les étapes
+à leur taille. Les étapes suivent maintenant le même réglage que le reste de la fiche, et le zoom
+ci-dessus.
+
 ## 2026-09-05
 
 ### v0.22.44 — fonctionnel

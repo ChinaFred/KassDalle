@@ -527,7 +527,7 @@ Widget cooklangBuildStepText(
     spans.add(TextSpan(text: normalizedStep.substring(lastEnd)));
   }
 
-  return RichText(
-    text: TextSpan(style: style ?? theme.textTheme.bodyMedium, children: spans),
+  return Text.rich(
+    TextSpan(style: style ?? theme.textTheme.bodyMedium, children: spans),
   );
 }

@@ -31,6 +31,7 @@ import 'tabs/photos_tab.dart';
 import 'tabs/prepare_tab.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
+import 'recipe_text_zoom.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -500,17 +501,22 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                         child: TabBarView(
                           controller: _tabController,
                           children: [
-                            PrepareTab(
-                              recipeId: recipeId,
-                              ctrl: ctrl,
-                              recipe: recipe,
-                              canEdit: canEdit,
-                              basePortions: _basePortions,
-                              selectedPortions: _selectedPortions,
-                              onSelectedPortionsChanged: (value) {
-                                unawaited(onSelectedPortionsChanged(value));
-                              },
-                              prepContext: widget.prepContext,
+                            // Seul cet onglet se zoome : c'est lui qu'on lit
+                            // à un mètre, les mains dans la pâte. Les autres
+                            // se consultent, tablette en main.
+                            RecipeTextZoomArea(
+                              child: PrepareTab(
+                                recipeId: recipeId,
+                                ctrl: ctrl,
+                                recipe: recipe,
+                                canEdit: canEdit,
+                                basePortions: _basePortions,
+                                selectedPortions: _selectedPortions,
+                                onSelectedPortionsChanged: (value) {
+                                  unawaited(onSelectedPortionsChanged(value));
+                                },
+                                prepContext: widget.prepContext,
+                              ),
                             ),
                             NutritionTab(
                               recipeId: recipeId,
