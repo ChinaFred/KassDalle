@@ -169,6 +169,92 @@ export interface PlanningInput {
   batchCookingDay?: number;
   /** Recettes déjà assignées dans le cycle (pour éviter les répétitions). */
   alreadyAssigned?: Array<{ slot: number; recipeId: string }>;
+  /**
+   * Repas servis AVANT le cycle, dans la fenêtre de variété choisie par
+   * l'utilisateur (« ne pas reproposer un plat servi dans les N dernières
+   * semaines »). Le client les lit dans ses propres repas planifiés ; le
+   * serveur les retire du corpus tant qu'il reste assez de recettes, et nomme
+   * ceux qu'il a dû garder. Absent ou vide : aucune fenêtre.
+   */
+  recentlyServed?: RecentlyServedMeal[];
+}
+
+/** Un repas servi avant le cycle : ce que la fenêtre de variété regarde. */
+export interface RecentlyServedMeal {
+  recipeId: string;
+  titre?: string;
+  /** Date ISO (YYYY-MM-DD) du repas. */
+  date: string;
+}
+
+/** Ce que la fenêtre de variété a fait du corpus. */
+export interface RecentlyServedOutcome {
+  /** Les recettes encore proposables au modèle. */
+  candidates: PlanningRecipeSummary[];
+  /** Retirées du corpus : servies dans la fenêtre, et le corpus restait suffisant. */
+  excludedIds: string[];
+  /** Servies dans la fenêtre, mais gardées faute d'alternatives : le prompt les nomme. */
+  keptRecentIds: string[];
+}
+
+/**
+ * Retire du corpus les recettes servies dans la fenêtre de variété.
+ *
+ * Un candidat absent de la liste est une certitude ; une consigne « évite »
+ * dans le prompt est un vœu. Mais retirer sans compter peut laisser moins de
+ * recettes que de créneaux : on retire donc du plus récent au plus ancien, et
+ * on s'arrête dès que le corpus tomberait sous le nombre de créneaux à
+ * remplir. Ce qui reste de récent est signalé au modèle, pas caché.
+ *
+ * Testé par la fixture `planning_slot_rules.json`, section `recently_served`.
+ */
+export function applyRecentlyServed(
+  recipes: PlanningRecipeSummary[],
+  recentlyServed: RecentlyServedMeal[],
+  slotsToFill: number,
+): RecentlyServedOutcome {
+  const floor = Math.max(1, slotsToFill);
+  const recentIds = recentlyServedIdsNewestFirst(recentlyServed);
+  const inCorpus = new Set(recipes.map((r) => r.id));
+  const excluded = new Set<string>();
+  const kept: string[] = [];
+  let remaining = recipes.length;
+  for (const id of recentIds) {
+    if (!inCorpus.has(id) || excluded.has(id)) continue;
+    if (remaining - 1 >= floor) {
+      excluded.add(id);
+      remaining--;
+    } else {
+      kept.push(id);
+    }
+  }
+  return {
+    candidates: recipes.filter((r) => !excluded.has(r.id)),
+    excludedIds: [...excluded],
+    keptRecentIds: kept,
+  };
+}
+
+/** Les identifiants servis, du plus récent au plus ancien, une fois chacun. */
+function recentlyServedIdsNewestFirst(meals: RecentlyServedMeal[]): string[] {
+  const ordered = [...meals]
+    .filter((m) => typeof m.recipeId === "string" && m.recipeId.length > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const m of ordered) {
+    if (seen.has(m.recipeId)) continue;
+    seen.add(m.recipeId);
+    ids.push(m.recipeId);
+  }
+  return ids;
+}
+
+/** Ce que rend une suggestion de cycle. */
+export interface PlanningSuggestion {
+  slots: PlanningSlotResult[];
+  /** Recettes retirées du corpus par la fenêtre de variété, pour le dire à l'écran. */
+  excludedRecentIds: string[];
 }
 
 export interface PlanningSlotResult {
@@ -223,8 +309,17 @@ export async function suggestMealPlan(
   apiKey: string,
   input: PlanningInput,
   ctx: ModelCallContext,
-): Promise<PlanningSlotResult[]> {
-  if (input.recipes.length === 0) return [];
+): Promise<PlanningSuggestion> {
+  if (input.recipes.length === 0) return { slots: [], excludedRecentIds: [] };
+
+  // La fenêtre de variété s'applique AVANT d'écrire le prompt : une recette
+  // absente de la liste ne peut pas être choisie, quoi que dise la consigne.
+  const slotsToFill = Math.max(1, input.slotDates.length - (input.alreadyAssigned?.length ?? 0));
+  const {
+    candidates,
+    excludedIds: excludedRecentIds,
+    keptRecentIds,
+  } = applyRecentlyServed(input.recipes, input.recentlyServed ?? [], slotsToFill);
 
   const lines: string[] = [];
   lines.push(
@@ -238,7 +333,7 @@ export async function suggestMealPlan(
   );
   lines.push("");
   lines.push("=== RECETTES DISPONIBLES ===");
-  for (const r of input.recipes) {
+  for (const r of candidates) {
     const attrs: string[] = [];
     if (r.prepTime) attrs.push(`${r.prepTime}min prép`);
     if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
@@ -268,6 +363,40 @@ export async function suggestMealPlan(
       const recipe = input.recipes.find((r) => r.id === a.recipeId);
       if (recipe) lines.push(`- Slot ${a.slot} : ${recipe.titre}`);
     }
+    lines.push("");
+  }
+
+  // Ce qui a été servi avant le cycle. La variété ne s'arrête pas au premier
+  // créneau : la semaine précédente s'est terminée par quelque chose, et le
+  // cycle doit enchaîner dessus. Les recettes retirées du corpus figurent ici
+  // par leur titre — le modèle sait ce qu'il ne voit plus, et pourquoi.
+  const recent = [...(input.recentlyServed ?? [])]
+    .filter((m) => typeof m.date === "string" && m.date.length > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 14);
+  if (recent.length > 0) {
+    lines.push("=== SERVIS RÉCEMMENT, AVANT CE CYCLE (du plus récent au plus ancien) ===");
+    for (const m of recent) {
+      const titre = m.titre?.trim() || input.recipes.find((r) => r.id === m.recipeId)?.titre;
+      if (titre) lines.push(`- ${m.date} : ${titre}`);
+    }
+    if (excludedRecentIds.length > 0) {
+      lines.push(
+        `${excludedRecentIds.length} de ces recettes ont été retirées de la liste des recettes disponibles : ne les propose pas.`,
+      );
+    }
+    if (keptRecentIds.length > 0) {
+      lines.push(
+        "Les recettes suivantes ont été servies récemment mais restent disponibles faute d'alternatives : ne les propose qu'en dernier recours, et dis-le dans \"why\".",
+      );
+      for (const id of keptRecentIds) {
+        const r = input.recipes.find((x) => x.id === id);
+        if (r) lines.push(`- ${r.titre}`);
+      }
+    }
+    lines.push(
+      "Enchaîne avec ces derniers repas comme s'ils faisaient partie du cycle : pas la même protéine principale ni le même féculent dominant que les deux derniers servis.",
+    );
     lines.push("");
   }
 
@@ -354,7 +483,7 @@ Règles spécifiques au batch cooking :
   });
 
   const text = result.text.trim();
-  if (!text) return [];
+  if (!text) return { slots: [], excludedRecentIds };
 
   try {
     const arr = JSON.parse(extractJsonArray(text)) as Array<{
@@ -410,7 +539,9 @@ Règles spécifiques au batch cooking :
     // Garde-fou variété : pas de doublon de recette sur le cycle tant qu'une
     // alternative existe. Le jour batch n'autorise pas automatiquement une
     // répétition avec un slot de réchauffage.
-    const validRecipeIds = new Set(input.recipes.map((r) => r.id));
+    // Les candidats, pas le corpus : une recette retirée par la fenêtre de
+    // variété et rendue quand même par le modèle ne passe pas.
+    const validRecipeIds = new Set(candidates.map((r) => r.id));
     const bySlot = [...base].sort((a, b) => a.slot - b.slot);
     const deduped: PlanningSlotResult[] = [];
     const usedRecipeIds = new Set<string>();
@@ -427,7 +558,7 @@ Règles spécifiques au batch cooking :
       deduped.push(s);
     }
 
-    return deduped;
+    return { slots: deduped, excludedRecentIds };
   } catch (e) {
     // Une réponse illisible ne doit pas passer pour « l'IA n'a rien trouvé » :
     // sans ce log, le client comble tous les créneaux en silence et l'utilisateur
@@ -441,7 +572,7 @@ Règles spécifiques au batch cooking :
       errorDescription: e instanceof Error ? e.message : String(e),
       extra: { slots: input.slotDates.length, responsePreview: text.slice(0, 500) },
     });
-    return [];
+    return { slots: [], excludedRecentIds };
   }
 }
 

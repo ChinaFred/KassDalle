@@ -88,6 +88,19 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
                 onTap: () => context.push(AppRoutes.planningConfig),
               ),
             ),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.rice_bowl_outlined),
+                title: const Text('Mes garnitures'),
+                subtitle: const Text(
+                  'Riz, pâtes, salade, yaourt : la part par personne, à '
+                  'votre main. Ne change rien pour les autres.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.myStaples),
+              ),
+            ),
           ],
         ),
       ),

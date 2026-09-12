@@ -18,8 +18,10 @@ Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation compl
 - **Bibliothèque** : livres, couvertures, mode lecture page à page (swipe, clavier).
 - **Recherche** : plein texte sur le titre et les ingrédients, filtres combinables,
   classement sémantique par l'IA.
-- **Planning des repas** : cycles générés avec l'aide de l'IA, export Google Calendar,
-  conseils de conservation, préparation groupée.
+- **Planning des repas** : cycles générés avec l'aide de l'IA, fenêtre de variété sur les
+  semaines passées, reprise d'une semaine sans IA, garnitures simples (riz, pâtes, salade)
+  avec la part par personne, export Google Calendar, conseils de conservation, préparation
+  groupée.
 - **Liste de courses** : construite depuis les repas à venir, rangée par rayon, envoyée dans
   Google Tasks (rayons en tâches, articles en sous-tâches cochables).
 - **Nutrition** : valeurs calculées depuis un référentiel partagé, recalculées à l'affichage

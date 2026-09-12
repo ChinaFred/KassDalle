@@ -30,6 +30,7 @@ import '../../features/admin/presentation/ai_spend_screen.dart';
 import '../../features/admin/presentation/app_check_screen.dart';
 import '../../features/admin/presentation/nutrition_policy_screen.dart';
 import '../../features/admin/presentation/nutrition_units_screen.dart';
+import '../../features/admin/presentation/meal_staples_screen.dart';
 import '../../features/sandbox/presentation/sandbox_hub_screen.dart';
 import '../../features/auth/presentation/preferences_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
@@ -42,6 +43,7 @@ import '../../features/planning/domain/meal_prep_context.dart';
 import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
+import '../../features/planning/presentation/my_staples_screen.dart';
 import '../presentation/app_shell.dart';
 
 /// Notifie GoRouter sans exposer notifyListeners() comme protected.
@@ -75,6 +77,7 @@ class AppRoutes {
   static const adminNutritionIngredients = '/admin/nutrition-ingredients';
   static const adminNutritionUnits = '/admin/nutrition-units';
   static const adminNutritionPolicy = '/admin/nutrition-policy';
+  static const adminMealStaples = '/admin/meal-staples';
   static const adminAiRouting = '/admin/ai-routing';
   static const adminAiPricing = '/admin/ai-pricing';
   static const adminAppCheck = '/admin/app-check';
@@ -92,6 +95,7 @@ class AppRoutes {
   static const planning = '/planning';
   static const batchPlanning = '/planning/batch';
   static const planningConfig = '/planning/config';
+  static const myStaples = '/planning/staples';
 
   /// Une expérience du bac à sable, désignée par son identifiant.
   static String sandboxExperiment(String id) => '$adminSandbox/$id';
@@ -363,6 +367,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const NutritionPolicyScreen(),
               ),
               GoRoute(
+                path: 'meal-staples',
+                builder: (context, state) => const MealStaplesScreen(),
+              ),
+              GoRoute(
                 path: 'ai-spend',
                 builder: (context, state) => const AiSpendScreen(),
               ),
@@ -435,6 +443,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'config',
                 builder: (context, state) => const PlanningConfigScreen(),
+              ),
+              GoRoute(
+                path: 'staples',
+                builder: (context, state) => const MyStaplesScreen(),
               ),
             ],
           ),

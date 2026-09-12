@@ -11,7 +11,7 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 - **Import intelligent** : photos, PDF, documents Word ou texte libre → CookLang, par un pipeline asynchrone côté serveur
 - **Format CookLang** : recettes structurées, ingrédients et étapes balisés, éditeur visuel ou brut
 - **Bibliothèque** : organisation par livres, mode lecture page à page
-- **Planning repas** : cycles assistés par l'IA, export Google Calendar, conseils de conservation
+- **Planning repas** : cycles assistés par l'IA, fenêtre de variété sur les semaines passées, reprise d'une semaine, garnitures simples, export Google Calendar, conseils de conservation
 - **Liste de courses** : depuis les repas à venir, rangée par rayon, envoyée dans Google Tasks
 - **Nutrition** : calculée depuis un référentiel partagé, recalculée pour le nombre de parts choisi
 - **Illustrations** : extraites automatiquement d'une page importée — cadrage, mise à plat, remise à l'endroit, découpe — ou retouchées, générées, mises en scène

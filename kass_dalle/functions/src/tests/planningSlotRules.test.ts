@@ -18,7 +18,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { asksForDessert, isDessertBag, slotKind, computePrepDate } from "../gemini/planning";
+import {
+  asksForDessert,
+  isDessertBag,
+  slotKind,
+  computePrepDate,
+  applyRecentlyServed,
+  type PlanningRecipeSummary,
+} from "../gemini/planning";
 
 const FIXTURE = path.join(__dirname, "..", "..", "..", "test-fixtures", "planning_slot_rules.json");
 
@@ -36,6 +43,15 @@ interface Fixture {
     slot_date: string;
     batch_weekday: number;
     expected: string;
+    why: string;
+  }>;
+  recently_served: Array<{
+    corpus: string[];
+    served: Array<{ recipe_id: string; date: string }>;
+    slots_to_fill: number;
+    expected_candidates: string[];
+    expected_excluded: string[];
+    expected_kept: string[];
     why: string;
   }>;
 }
@@ -91,4 +107,39 @@ describe("jour de préparation à l'avance", () => {
       assert.equal(computePrepDate(c.slot_date, c.batch_weekday), c.expected);
     });
   }
+});
+
+describe("fenêtre de variété : recettes servies avant le cycle", () => {
+  test("la fixture partagée est non vide", () => {
+    assert.ok(fixture.recently_served.length > 0);
+  });
+
+  for (const c of fixture.recently_served) {
+    test(`${c.corpus.join(",")} moins ${c.served.map((s) => s.recipe_id).join(",")} (${c.why})`, () => {
+      const corpus: PlanningRecipeSummary[] = c.corpus.map((id) => ({
+        id,
+        titre: `Recette ${id}`,
+      }));
+      const served = c.served.map((s) => ({ recipeId: s.recipe_id, date: s.date }));
+      const out = applyRecentlyServed(corpus, served, c.slots_to_fill);
+      assert.deepEqual(
+        out.candidates.map((r) => r.id),
+        c.expected_candidates,
+      );
+      assert.deepEqual(out.excludedIds, c.expected_excluded);
+      assert.deepEqual(out.keptRecentIds, c.expected_kept);
+    });
+  }
+
+  test("le corpus d'origine n'est pas modifié", () => {
+    const corpus: PlanningRecipeSummary[] = [
+      { id: "a", titre: "A" },
+      { id: "b", titre: "B" },
+    ];
+    applyRecentlyServed(corpus, [{ recipeId: "a", date: "2026-09-01" }], 1);
+    assert.deepEqual(
+      corpus.map((r) => r.id),
+      ["a", "b"],
+    );
+  });
 });

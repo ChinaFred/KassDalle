@@ -2,6 +2,8 @@
 //
 // Stocké dans Firestore : planning_config/{uid}
 
+import 'planning_history.dart';
+
 const Map<int, String> kWeekdayNames = {
   DateTime.monday: 'Lundi',
   DateTime.tuesday: 'Mardi',
@@ -129,6 +131,13 @@ class PlanningPreferences {
   /// Nom du calendrier Google cible (pour affichage).
   final String calendarName;
 
+  /// Fenêtre de variété, en semaines : un plat servi dans les N semaines qui
+  /// précèdent le cycle n'est pas reproposé. Zéro la désactive.
+  ///
+  /// Une préférence et non une constante : une famille de trois recettes
+  /// fétiches ne veut pas la même fenêtre qu'un corpus de deux cents.
+  final int varietyWindowWeeks;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
@@ -140,6 +149,7 @@ class PlanningPreferences {
     this.defaultCalendarDurationMinutes = 60,
     this.calendarId = 'primary',
     this.calendarName = 'Principal',
+    this.varietyWindowWeeks = kVarietyWindowDefaultWeeks,
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -161,6 +171,11 @@ class PlanningPreferences {
           data['default_calendar_duration_minutes'] as int? ?? 60,
       calendarId: data['calendar_id'] as String? ?? 'primary',
       calendarName: data['calendar_name'] as String? ?? 'Principal',
+      // Absent = le défaut, et jamais hors bornes : une valeur écrite à la
+      // main dans la console ne fait pas remonter dix ans de repas.
+      varietyWindowWeeks: clampVarietyWindow(
+        data['variety_window_weeks'] as int? ?? kVarietyWindowDefaultWeeks,
+      ),
     );
   }
 
@@ -178,6 +193,7 @@ class PlanningPreferences {
     'default_calendar_duration_minutes': defaultCalendarDurationMinutes,
     'calendar_id': calendarId,
     'calendar_name': calendarName,
+    'variety_window_weeks': varietyWindowWeeks,
   };
 
   PlanningPreferences copyWith({
@@ -192,6 +208,7 @@ class PlanningPreferences {
     int? defaultCalendarDurationMinutes,
     String? calendarId,
     String? calendarName,
+    int? varietyWindowWeeks,
   }) => PlanningPreferences(
     mealsPerCycle: mealsPerCycle ?? this.mealsPerCycle,
     cycleStartDay: cycleStartDay ?? this.cycleStartDay,
@@ -206,6 +223,9 @@ class PlanningPreferences {
         defaultCalendarDurationMinutes ?? this.defaultCalendarDurationMinutes,
     calendarId: calendarId ?? this.calendarId,
     calendarName: calendarName ?? this.calendarName,
+    varietyWindowWeeks: clampVarietyWindow(
+      varietyWindowWeeks ?? this.varietyWindowWeeks,
+    ),
   );
 
   /// Heure retenue pour un jour de la semaine : la sienne s'il en a une, celle

@@ -411,7 +411,9 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       feature: "planning",
       moduleType: "DESIGN",
     });
-    return { suggestions: data };
+    // Les recettes écartées par la fenêtre de variété voyagent avec les
+    // suggestions : l'écran dit combien de plats récents n'ont pas été proposés.
+    return { suggestions: data.slots, excludedRecentIds: data.excludedRecentIds };
   } catch (e) {
     throw toHttpsError(e);
   }

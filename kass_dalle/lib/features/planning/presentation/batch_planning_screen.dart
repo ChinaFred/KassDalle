@@ -10,12 +10,15 @@ import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/week_replay.dart';
 import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 import 'recipe_picker_sheet.dart';
+import 'replay_week_sheet.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
@@ -256,8 +259,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           if (e.value != null && e.value!.id.isNotEmpty)
             (slot: e.key, recipeId: e.value!.id),
       ];
-      final suggestions = pool.isEmpty
-          ? const <SlotSuggestion>[]
+      final recentlyServed = pool.isEmpty
+          ? const <RecentlyServedMeal>[]
+          : await _loadRecentlyServed();
+      final suggestion = pool.isEmpty
+          ? const MealPlanSuggestion(slots: [], excludedRecentCount: 0)
           : await ref
                 .read(planningAiServiceProvider)
                 .suggestMealPlan(
@@ -268,7 +274,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                   globalConstraints: _globalConstraintsCtrl.text.trim(),
                   batchCookingDay: prefs.batchCookingDay,
                   alreadyAssigned: alreadyAssigned,
+                  recentlyServed: recentlyServed,
                 );
+      final suggestions = suggestion.slots;
       if (mounted) {
         setState(() {
           _constraintsLocked = true;
@@ -319,7 +327,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           // un écran resté vide.
           _showError('L\'IA n\'a rien proposé pour ce cycle.');
         } else {
-          context.showSuccessSnackBar('Planning généré par l\'IA ✓');
+          // Les plats récents retirés du corpus sont dits : un plat qu'on ne
+          // voit pas proposé doit pouvoir s'expliquer.
+          final excluded = suggestion.excludedRecentCount;
+          final suffix = excluded > 0
+              ? ' · $excluded plat${excluded > 1 ? 's' : ''} récent'
+                    '${excluded > 1 ? 's' : ''} écarté${excluded > 1 ? 's' : ''}'
+              : '';
+          context.showSuccessSnackBar('Planning généré par l\'IA ✓$suffix');
         }
       }
     } catch (e, stackTrace) {
@@ -760,7 +775,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       SlotSuggestion? suggestion;
 
       if (candidates.isNotEmpty) {
-        final suggestions = await ref
+        final recentlyServed = await _loadRecentlyServed();
+        final result = await ref
             .read(planningAiServiceProvider)
             .suggestMealPlan(
               recipes: candidates,
@@ -770,7 +786,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               globalConstraints: _globalConstraintsCtrl.text.trim(),
               batchCookingDay: prefs.batchCookingDay,
               alreadyAssigned: alreadyAssigned,
+              recentlyServed: recentlyServed,
             );
+        final suggestions = result.slots;
         if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
           suggestion = suggestions[0];
         }
@@ -967,6 +985,162 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     context.push('${AppRoutes.recipes}/${recipe.id}$suffix');
   }
 
+  /// Les repas servis dans la fenêtre de variété, lus au moment de générer.
+  ///
+  /// Lus à la demande et non à l'ouverture : la fenêtre se compte depuis le
+  /// premier jour du cycle, et ce jour peut changer d'ici là. Best-effort :
+  /// une lecture qui échoue ne bloque pas la suggestion, elle la rend seulement
+  /// aveugle à l'historique — et le dit dans les rapports d'erreurs.
+  Future<List<RecentlyServedMeal>> _loadRecentlyServed() async {
+    final repo = ref.read(planningRepositoryProvider);
+    final prefs = _prefs;
+    if (repo == null || prefs == null || _slotDates.isEmpty) return const [];
+    if (prefs.varietyWindowWeeks == 0) return const [];
+    final cycleStart = _slotDates.first;
+    try {
+      final meals = await repo.getMealsBetween(
+        from: varietyWindowStart(
+          cycleStart: cycleStart,
+          windowWeeks: prefs.varietyWindowWeeks,
+        ),
+        to: DateTime(cycleStart.year, cycleStart.month, cycleStart.day - 1),
+      );
+      return recentlyServedBefore(
+        meals,
+        cycleStart: cycleStart,
+        windowWeeks: prefs.varietyWindowWeeks,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.loadRecentlyServed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return const [];
+    }
+  }
+
+  /// Reprend les repas d'une semaine passée sur les créneaux vides.
+  ///
+  /// « Prends ce qu'on a fait il y a deux semaines » ne demande rien à l'IA :
+  /// les repas sont déjà là. Les recettes absentes des corpus chargés sont
+  /// relues par identifiant — un repas peut pointer sur un brouillon ou une
+  /// recette de la famille ; celles qui n'existent plus sont comptées et
+  /// dites, pas inventées.
+  Future<void> _replayPastWeek() async {
+    final repo = ref.read(planningRepositoryProvider);
+    final prefs = _prefs;
+    if (repo == null || prefs == null || _slotDates.isEmpty) return;
+    if (!_slots.values.any((r) => r == null)) {
+      _showError('Tous les créneaux sont déjà remplis.');
+      return;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    List<ReplayableWeek> weeks;
+    try {
+      // La même profondeur que l'écran du planning : ce qu'on peut relire,
+      // on peut le reprendre.
+      final meals = await repo.getMealsBetween(
+        from: today.subtract(PlanningRepository.historyWindow),
+        to: _slotDates.last,
+      );
+      weeks = replayableWeeks(
+        meals,
+        cycleStartDay: prefs.cycleStartDay,
+        cycleDates: _slotDates,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.replayPastWeek.load',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _showError('Impossible de lire les semaines passées : $e');
+      return;
+    }
+    if (!mounted) return;
+    if (weeks.isEmpty) {
+      _showError('Aucune semaine passée avec des repas à reprendre.');
+      return;
+    }
+
+    final chosen = await showModalBottomSheet<ReplayableWeek>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => ReplayWeekSheet(weeks: weeks, today: today),
+    );
+    if (chosen == null || !mounted) return;
+
+    final byId = <String, Recipe>{
+      for (final r in _allRecipes)
+        if (r.id.isNotEmpty) r.id: r,
+    };
+    final missing = chosen.recipeIds
+        .where((id) => !byId.containsKey(id))
+        .toList(growable: false);
+    if (missing.isNotEmpty) {
+      try {
+        for (final r in await repo.getRecipesByIds(missing)) {
+          byId[r.id] = r;
+        }
+      } catch (e, stackTrace) {
+        // Elles resteront comptées introuvables : la reprise continue avec
+        // ce qu'on a, et l'échec part dans les rapports.
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.replayPastWeek.resolve',
+          error: e,
+          stackTrace: stackTrace,
+          context: {'missing': missing.length},
+        );
+      }
+    }
+    if (!mounted) return;
+
+    final replay = replayWeek(
+      source: chosen,
+      slotDates: _slotDates,
+      slots: _slots,
+      recipesById: byId,
+    );
+    final weekLabel = DateFormat('d MMM', 'fr').format(chosen.week.start);
+    if (replay.applied == 0) {
+      _showError(
+        replay.skippedMissing > 0
+            ? 'Aucun repas repris : les recettes de la semaine du $weekLabel '
+                  'sont introuvables.'
+            : 'Aucun repas de la semaine du $weekLabel ne tombe sur un '
+                  'créneau vide.',
+      );
+      return;
+    }
+    setState(() {
+      for (final e in replay.assignments.entries) {
+        _slots[e.key] = e.value;
+        _slotJustifications[e.key] = 'Repris de la semaine du $weekLabel.';
+        _slotWasResized[e.key] = false;
+        _slotResizeReasons.remove(e.key);
+        _slotPrepDates.remove(e.key);
+        _slotIsGenerated.remove(e.key);
+      }
+    });
+    final details = <String>[
+      if (replay.skippedMissing > 0)
+        '${replay.skippedMissing} recette'
+            '${replay.skippedMissing > 1 ? 's' : ''} introuvable'
+            '${replay.skippedMissing > 1 ? 's' : ''}',
+      if (replay.skippedDuplicate > 0)
+        '${replay.skippedDuplicate} déjà posée'
+            '${replay.skippedDuplicate > 1 ? 's' : ''}',
+    ];
+    context.showSuccessSnackBar(
+      '${replay.applied} repas repris de la semaine du $weekLabel'
+      '${details.isEmpty ? '' : ' · ${details.join(', ')}'} ✓',
+    );
+  }
+
   void _showError(String msg) {
     if (!mounted) return;
     context.showErrorSnackBar(msg);
@@ -1074,6 +1248,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               tooltip: 'Modifier les contraintes',
               onPressed: () => setState(() => _constraintsLocked = false),
             ),
+          // Reprendre une semaine passée n'est pas une action d'IA : elle a
+          // sa propre icône, sur les deux dispositions.
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Reprendre une semaine passée',
+            onPressed: _recipesLoaded && !_generating ? _replayPastWeek : null,
+          ),
           // Sur grand écran, la même action vit en bas, sous forme de bouton
           // nommé, au-dessus de « Valider ». Une icône seule dans un coin
           // n'apprend pas ce qu'elle fait, et c'est pourtant l'action

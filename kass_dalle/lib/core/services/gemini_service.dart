@@ -423,16 +423,20 @@ class GeminiService {
   ///
   /// Retourne des paires `(slot, recipeId, justification, resized, resizeReason, prepDate)` — le client résout les IDs.
   Future<
-    List<
-      ({
-        int slot,
-        String recipeId,
-        String? justification,
-        bool resized,
-        String? resizeReason,
-        String? prepDate,
-      })
-    >
+    ({
+      List<
+        ({
+          int slot,
+          String recipeId,
+          String? justification,
+          bool resized,
+          String? resizeReason,
+          String? prepDate,
+        })
+      >
+      suggestions,
+      List<String> excludedRecentIds,
+    })
   >
   suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
@@ -442,6 +446,7 @@ class GeminiService {
     int? batchCookingDay,
     List<Map<String, dynamic>> alreadyAssigned = const [],
     List<Map<String, dynamic>?>? slotConstraints,
+    List<Map<String, dynamic>> recentlyServed = const [],
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -453,20 +458,27 @@ class GeminiService {
       'globalConstraints': globalConstraints,
       'batchCookingDay': ?batchCookingDay,
       if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,
+      if (recentlyServed.isNotEmpty) 'recentlyServed': recentlyServed,
     });
     final suggestions = (data as Map)['suggestions'] as List? ?? [];
-    return suggestions
-        .map(
-          (item) => (
-            slot: (item['slot'] as num).toInt(),
-            recipeId: item['recipeId'] as String? ?? '',
-            justification: item['justification'] as String?,
-            resized: item['resized'] as bool? ?? false,
-            resizeReason: item['resizeReason'] as String?,
-            prepDate: item['prepDate'] as String?,
-          ),
-        )
-        .toList();
+    final excluded = (data['excludedRecentIds'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false);
+    return (
+      suggestions: suggestions
+          .map(
+            (item) => (
+              slot: (item['slot'] as num).toInt(),
+              recipeId: item['recipeId'] as String? ?? '',
+              justification: item['justification'] as String?,
+              resized: item['resized'] as bool? ?? false,
+              resizeReason: item['resizeReason'] as String?,
+              prepDate: item['prepDate'] as String?,
+            ),
+          )
+          .toList(),
+      excludedRecentIds: excluded,
+    );
   }
 
   /// Génère une recette de toutes pièces (conception IA) pour un slot donné.

@@ -168,5 +168,75 @@
       "expected": "2026-03-29",
       "why": "franchit le passage à l'heure d'été européenne"
     }
+  ],
+  "_recently_served_comment": "Fenêtre de variété — serveur seul (gemini/planning.ts, applyRecentlyServed). Les recettes servies avant le cycle sont retirées du corpus, du plus récent au plus ancien, tant qu'il reste au moins autant de recettes que de créneaux à remplir ; celles qu'on n'a pas pu retirer sont nommées au modèle (kept).",
+  "recently_served": [
+    {
+      "corpus": ["a", "b", "c", "d", "e"],
+      "served": [
+        { "recipe_id": "a", "date": "2026-09-01" },
+        { "recipe_id": "b", "date": "2026-09-03" }
+      ],
+      "slots_to_fill": 3,
+      "expected_candidates": ["c", "d", "e"],
+      "expected_excluded": ["b", "a"],
+      "expected_kept": [],
+      "why": "cinq recettes, deux servies, trois créneaux : les deux servies partent, le plus récent d'abord"
+    },
+    {
+      "corpus": ["a", "b", "c", "d"],
+      "served": [
+        { "recipe_id": "a", "date": "2026-09-01" },
+        { "recipe_id": "b", "date": "2026-09-03" }
+      ],
+      "slots_to_fill": 3,
+      "expected_candidates": ["a", "c", "d"],
+      "expected_excluded": ["b"],
+      "expected_kept": ["a"],
+      "why": "quatre recettes pour trois créneaux : on ne peut en retirer qu'une, la plus récente ; l'autre reste et le prompt la nomme"
+    },
+    {
+      "corpus": ["a", "b"],
+      "served": [
+        { "recipe_id": "a", "date": "2026-09-01" },
+        { "recipe_id": "b", "date": "2026-09-03" }
+      ],
+      "slots_to_fill": 7,
+      "expected_candidates": ["a", "b"],
+      "expected_excluded": [],
+      "expected_kept": ["b", "a"],
+      "why": "moins de recettes que de créneaux : rien n'est retiré, tout est nommé"
+    },
+    {
+      "corpus": ["a", "b", "c"],
+      "served": [
+        { "recipe_id": "z", "date": "2026-09-01" },
+        { "recipe_id": "a", "date": "2026-09-02" },
+        { "recipe_id": "a", "date": "2026-08-20" }
+      ],
+      "slots_to_fill": 1,
+      "expected_candidates": ["b", "c"],
+      "expected_excluded": ["a"],
+      "expected_kept": [],
+      "why": "une recette hors corpus est ignorée, une recette servie deux fois ne compte qu'une fois"
+    },
+    {
+      "corpus": ["a"],
+      "served": [{ "recipe_id": "a", "date": "2026-09-01" }],
+      "slots_to_fill": 0,
+      "expected_candidates": ["a"],
+      "expected_excluded": [],
+      "expected_kept": ["a"],
+      "why": "le plancher est d'une recette même sans créneau à remplir : le corpus ne se vide jamais"
+    },
+    {
+      "corpus": ["a", "b", "c"],
+      "served": [],
+      "slots_to_fill": 2,
+      "expected_candidates": ["a", "b", "c"],
+      "expected_excluded": [],
+      "expected_kept": [],
+      "why": "sans fenêtre, le corpus passe entier"
+    }
   ]
 }

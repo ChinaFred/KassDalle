@@ -1,6 +1,7 @@
 import '../../../../core/services/gemini_service.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 
 /// Résultat d'une suggestion de repas pour un slot donné.
@@ -32,6 +33,21 @@ class SlotSuggestion {
   });
 }
 
+/// Ce que rend une suggestion de cycle : une entrée par créneau, et le nombre
+/// de plats récents que la fenêtre de variété a retirés du corpus.
+///
+/// Ce nombre remonte à l'écran : un plat qu'on ne voit pas proposé doit
+/// pouvoir s'expliquer, sinon l'absence passe pour un oubli du modèle.
+class MealPlanSuggestion {
+  final List<SlotSuggestion> slots;
+  final int excludedRecentCount;
+
+  const MealPlanSuggestion({
+    required this.slots,
+    required this.excludedRecentCount,
+  });
+}
+
 /// Service d'IA pour la génération de planning de repas via Gemini.
 /// Délègue à la Cloud Function `suggestMealPlanFn` via [GeminiService].
 class PlanningAiService {
@@ -51,7 +67,11 @@ class PlanningAiService {
   /// Retourne une liste de la même taille que [slotDates].
   /// Chaque entrée contient la recette suggérée, une justification et
   /// éventuellement un jour de préparation à l'avance.
-  Future<List<SlotSuggestion>> suggestMealPlan({
+  ///
+  /// [recentlyServed] : les repas servis avant le cycle, dans la fenêtre de
+  /// variété. Le serveur les retire du corpus tant qu'il en reste assez, et
+  /// rend combien il en a retiré.
+  Future<MealPlanSuggestion> suggestMealPlan({
     required List<Recipe> recipes,
     required List<DateTime> slotDates,
     required Map<int, DayConstraint> dailyConstraints,
@@ -59,13 +79,17 @@ class PlanningAiService {
     int? batchCookingDay,
     List<({int slot, String recipeId})> alreadyAssigned = const [],
     List<DayConstraint?>? slotConstraints,
+    List<RecentlyServedMeal> recentlyServed = const [],
   }) async {
     if (recipes.isEmpty) {
-      return List.generate(slotDates.length, (_) => const SlotSuggestion());
+      return MealPlanSuggestion(
+        slots: List.generate(slotDates.length, (_) => const SlotSuggestion()),
+        excludedRecentCount: 0,
+      );
     }
 
     final gemini = _gemini;
-    final suggestions = await gemini.suggestMealPlan(
+    final response = await gemini.suggestMealPlan(
       recipes: recipes
           .map(
             (r) => {
@@ -96,7 +120,19 @@ class PlanningAiService {
       alreadyAssigned: alreadyAssigned
           .map((a) => {'slot': a.slot, 'recipeId': a.recipeId})
           .toList(),
+      // La date seule suffit au serveur : il trie du plus récent au plus
+      // ancien et cite le jour dans le prompt.
+      recentlyServed: recentlyServed
+          .map(
+            (m) => {
+              'recipeId': m.recipeId,
+              'titre': m.titre,
+              'date': m.servedAt.toIso8601String().substring(0, 10),
+            },
+          )
+          .toList(),
     );
+    final suggestions = response.suggestions;
 
     // Traduction pure de ce que le serveur a décidé : identifiant → recette.
     //
@@ -125,7 +161,10 @@ class PlanningAiService {
       );
     }
 
-    return result;
+    return MealPlanSuggestion(
+      slots: result,
+      excludedRecentCount: response.excludedRecentIds.length,
+    );
   }
 
   /// Génère une recette de toutes pièces (conception IA) pour un slot.

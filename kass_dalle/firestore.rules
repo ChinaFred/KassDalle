@@ -352,6 +352,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Garnitures simples : riz, pâtes, salade, yaourt — ce qui accompagne un
+    // plat sans recette, avec la part par personne. Référentiel partagé par
+    // la famille, tenu depuis Admin › Référentiels. Les retouches de chacun
+    // vivent sous `users/{uid}/preferences/meal_staples`, jamais ici.
+    match /meal_staples/{stapleId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
     // Journal de modération des images.
     //
     // Un administrateur lit tout — c'est lui qui arbitre. Celui qui a envoyé

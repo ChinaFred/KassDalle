@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
@@ -576,6 +577,52 @@ class _GeneralSection extends StatelessWidget {
                     ? null
                     : () => onChanged(
                         prefs.copyWith(mealsPerCycle: prefs.mealsPerCycle + 1),
+                      ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        // La fenêtre de variété : un plat servi dans les N semaines qui
+        // précèdent le cycle n'est pas reproposé. Zéro la coupe. Le sous-titre
+        // dit ce que la valeur fait, pas seulement ce qu'elle vaut.
+        ListTile(
+          title: const Text('Ne pas reproposer un plat récent'),
+          subtitle: Text(
+            prefs.varietyWindowWeeks == 0
+                ? 'Désactivé : l\'historique n\'est pas regardé'
+                : 'Un plat servi dans les ${prefs.varietyWindowWeeks} '
+                      'dernière${prefs.varietyWindowWeeks > 1 ? 's' : ''} '
+                      'semaine${prefs.varietyWindowWeeks > 1 ? 's' : ''} '
+                      'avant le cycle n\'est pas reproposé',
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Une semaine de moins',
+                icon: const Icon(Icons.remove),
+                onPressed: prefs.varietyWindowWeeks <= kVarietyWindowMinWeeks
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(
+                          varietyWindowWeeks: prefs.varietyWindowWeeks - 1,
+                        ),
+                      ),
+              ),
+              Text(
+                '${prefs.varietyWindowWeeks} sem.',
+                style: const TextStyle(fontSize: 18),
+              ),
+              IconButton(
+                tooltip: 'Une semaine de plus',
+                icon: const Icon(Icons.add),
+                onPressed: prefs.varietyWindowWeeks >= kVarietyWindowMaxWeeks
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(
+                          varietyWindowWeeks: prefs.varietyWindowWeeks + 1,
+                        ),
                       ),
               ),
             ],

@@ -129,6 +129,25 @@ class AdminReferentialsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.rice_bowl_outlined,
+                  color: theme.colorScheme.secondary,
+                ),
+                title: const Text('Garnitures simples'),
+                subtitle: const Text(
+                  'Riz, pâtes, salade, yaourt : ce qui accompagne un plat sans '
+                  'recette, avec la part par personne. Chacun peut retoucher '
+                  'sa copie depuis ses préférences.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.adminMealStaples),
+              ),
+            ),
+          ),
         ],
       ),
     );

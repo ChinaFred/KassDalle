@@ -1554,12 +1554,21 @@ sequenceDiagram
 
   U->>B: Nouveau planning
   B->>PC: lit PlanningPreferences
-  PC-->>B: repas par cycle, jour de démarrage, jour de batch,<br/>contraintes par jour, contraintes globales
+  PC-->>B: repas par cycle, jour de démarrage, jour de batch,<br/>contraintes par jour, contraintes globales, fenêtre de variété
+  opt Reprendre une semaine passée — sans IA
+    B->>PM: lit les semaines qui portent des repas
+    U-->>B: la semaine choisie
+    B->>B: replayWeek : jour de semaine pour jour de semaine,<br/>créneaux vides seulement, une recette une seule fois
+  end
   U->>B: Planifier avec l'IA — n créneaux vides
   B->>U: où chercher ? mes recettes validées, mes brouillons,<br/>celles de la famille, inventer si rien ne convient
   U-->>B: périmètre choisi
   B->>RE: charge le corpus, livres privés d'autrui exclus
-  B->>SP: slotDates, slotConstraints, alreadyAssigned, corpus
+  B->>PM: lit les repas des N semaines avant le cycle
+  PM-->>B: recentlyServed, une fois par recette, du plus récent au plus ancien
+  B->>SP: slotDates, slotConstraints, alreadyAssigned, corpus, recentlyServed
+  SP->>PL: applyRecentlyServed(corpus, recentlyServed, créneaux à remplir)
+  PL-->>SP: candidats sans les plats récents, tant qu'il en reste assez ;<br/>ceux qu'il a fallu garder sont nommés au modèle
 
   loop chaque créneau vide
     SP->>PL: slotKind(jour, jour de batch)
@@ -1569,7 +1578,7 @@ sequenceDiagram
     SP->>SP: ajoute au contexte du créneau suivant
   end
 
-  SP-->>B: une proposition par créneau, chacune avec sa raison
+  SP-->>B: une proposition par créneau, chacune avec sa raison,<br/>et les plats récents écartés — l'écran en dit le nombre
   U->>B: ajuste, puis Valider le planning
   B->>PM: écrit les repas
   Note over B,PM: un créneau sans proposition reste vide.<br/>Le client ne comble pas : il ne rejoue plus les règles

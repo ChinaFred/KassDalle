@@ -16,6 +16,50 @@ anciennes sans accents.
 
 ## 2026-09-12
 
+### v0.22.58 — fonctionnel
+
+#### Le planning regarde ce qu'on a déjà mangé
+
+Premier palier de la réflexion « un repas n'est pas une recette » : avant de composer des
+repas à plusieurs composants, le planning apprend à lire son propre historique.
+
+**Fenêtre de variété.** Un plat servi dans les N semaines qui précèdent le cycle n'est pas
+reproposé, N de 0 à 4 dans les préférences de planification, 2 par défaut. Le retrait se fait
+avant l'appel, dans la liste des candidats : une recette absente de la liste ne peut pas être
+choisie, quoi que dise la consigne. Le serveur retire du plus récent au plus ancien et
+s'arrête dès qu'il resterait moins de recettes que de créneaux ; ce qu'il a dû garder est
+nommé au modèle, à ne prendre qu'en dernier recours. Les derniers repas servis lui sont aussi
+donnés pour enchaîner sans répéter la protéine ni le féculent de la veille. Le message de fin
+dit combien de plats récents ont été écartés. Vaut pour le cycle entier, pour un créneau isolé
+et pour « Changer la recette » dans le planning.
+
+**Reprendre une semaine passée.** Une icône d'historique dans « Nouveau planning » liste les
+semaines qui portent des repas, chacune avec ses plats. La semaine choisie remplit les créneaux
+vides, jour de semaine pour jour de semaine, sans appel à l'IA. Un créneau rempli reste tel
+quel, une recette déjà posée n'est pas reposée, une recette disparue est comptée et dite.
+
+**Garnitures simples.** Riz, pâtes, salade verte, yaourt : ce qui accompagne un plat sans avoir
+de recette, avec la part par personne. Un référentiel de base de vingt-cinq entrées, tenu dans
+*Admin › Référentiels › Garnitures simples* et semé d'un bouton qui n'écrase jamais une valeur
+corrigée ; une copie par personne dans *Préférences › Mes garnitures* — une quantité à sa main,
+une garniture masquée, une garniture à soi — qui ne change rien pour les autres. Ce référentiel
+ne sert encore à rien dans les repas : il prépare le palier suivant, la composition d'un plat et
+de son accompagnement.
+
+### v0.22.58 — technique
+
+- `planning_config` reçoit `variety_window_weeks` ; `suggestMealPlanFn` accepte
+  `recentlyServed` et rend `excludedRecentIds` avec ses suggestions. La règle de retrait,
+  `applyRecentlyServed` dans `gemini/planning.ts`, est verrouillée par la section
+  `recently_served` de `planning_slot_rules.json` — serveur seul.
+- Côté client, `planning_history.dart` (fenêtre) et `week_replay.dart` (reprise) sont de la
+  logique pure, testée dans `test/planning_history_test.dart` et `test/week_replay_test.dart`.
+- Nouvelle collection `meal_staples/{id}` — lecture pour tout compte nommé, écriture admin — et
+  nouveau document `users/{uid}/preferences/meal_staples` pour les retouches, chaque entrée
+  remplacée en entier à l'écriture. Modèle et fusion dans `meal_staple.dart`, testés dans
+  `test/meal_staples_test.dart`. Deux routes de plus : `/admin/meal-staples` et
+  `/planning/staples`.
+
 ### v0.22.57 — fonctionnel
 
 #### Deux poivrons rouges et deux poivrons verts ne font plus deux poivrons

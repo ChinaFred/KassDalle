@@ -689,6 +689,7 @@ classDiagram
     +int defaultCalendarDurationMinutes
     +String calendarId
     +String calendarName
+    +int varietyWindowWeeks
   }
 
   class DayConstraint {
@@ -711,10 +712,68 @@ classDiagram
     freezer
   }
 
+  class RecentlyServedMeal {
+    +String recipeId
+    +String titre
+    +DateTime servedAt
+  }
+
+  class ReplayableWeek {
+    +PlanningWeek week
+    +List~PlannedMeal~ meals
+    +recipeIds() Set~String~
+  }
+
+  class WeekReplay {
+    +Map~int, Recipe~ assignments
+    +int skippedFilled
+    +int skippedMissing
+    +int skippedNoMeal
+    +int skippedDuplicate
+  }
+
+  class MealStaple {
+    +String id
+    +String name
+    +StapleCategory category
+    +double quantityPerPortion
+    +String unit
+    +String note
+    +String shoppingProduct
+    +int sortOrder
+    +bool active
+    +String source
+  }
+
+  class StapleOverride {
+    +String id
+    +bool isOwn
+    +bool hidden
+    +String? name
+    +double? quantityPerPortion
+    +String? unit
+    +String? note
+    +String? shoppingProduct
+  }
+
+  class UserStaple {
+    +MealStaple staple
+    +MealStaple? base
+    +bool isOwn
+    +bool isOverridden
+    +bool hidden
+  }
+
   class PlannedMeal
   class RecipeDetailScreen
 
+  MealStaple "1" <.. "0..1" StapleOverride : retouche, sous users/{uid}
+  MealStaple ..> UserStaple : mergeStaples, base + retouches
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
+  PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
+  PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
+  PlannedMeal "1..*" --o "1" ReplayableWeek : par semaine de planning
+  ReplayableWeek ..> WeekReplay : replayWeek, jour de semaine pour jour de semaine
   PlannedMeal ..> MealPrepContext : construit quand la préparation précède le repas
   MealPrepContext ..> RecipeDetailScreen : passé en paramètres d'URL
   MealPrepContext --> MealStorageMode : au-delà de kMaxFridgeDays

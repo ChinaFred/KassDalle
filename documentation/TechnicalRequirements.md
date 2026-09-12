@@ -155,6 +155,7 @@ firestore/
 ├── planning_config/{uid}/
 ├── nutrition_ingredients/{ingredientId}/
 ├── nutrition_units/{unitId}/
+├── meal_staples/{stapleId}/                       ← garnitures simples, référentiel partagé
 ├── plating_advice/{recipeId}/
 ├── image_moderation/{moderationId}/
 ├── ai_usage/{id}/                                 ← une ligne par appel
@@ -781,6 +782,7 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 | `default_meal_hour` · `default_meal_minute` | `int` | Heure par défaut d'un repas |
 | `default_calendar_duration_minutes` | `int` | Durée par défaut d'un événement Google Calendar |
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
+| `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien, et nomme au modèle celles qu'il a dû garder (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. |
 
 ---
 
@@ -814,6 +816,52 @@ de volume ni de comptage, où il n'aurait aucun sens.
 
 > Le référentiel dépasse le millier de documents : toute lecture plafonnée coupe la fin de
 > l'alphabet, et ressemble alors à un défaut d'enrichissement.
+
+---
+
+### 3.10 bis Garnitures simples — `meal_staples`, `users/{uid}/preferences/meal_staples`
+
+Ce qui accompagne un plat sans avoir de recette : riz, pâtes, salade verte, yaourt. Un repas
+en a besoin pour dire « blanquette et riz », pour compter le riz dans la liste de courses et
+pour connaître la part par personne. Deux niveaux, un seul modèle (`meal_staple.dart`).
+
+**Le référentiel partagé**, `meal_staples/{stapleId}` — lu par tout compte nommé, écrit par un
+administrateur depuis *Admin › Référentiels › Garnitures simples*. L'identifiant est un slug
+(`riz`, `pates`, `pommes_de_terre_vapeur`), dérivé du nom par `stapleIdFromName` quand il
+n'est pas saisi.
+
+| Champ | Type | Description |
+|---|---|---|
+| `name` | `String` | Nom affiché |
+| `category` | `String` | `feculent` \| `legume` \| `salade` \| `pain` \| `fromage` \| `fruit` \| `laitage` \| `autre` — tri, affichage, et plus tard la composition d'un repas |
+| `quantity_per_portion` | `num` | Quantité pour une part, dans `unit` |
+| `unit` | `String` | `g` \| `ml` \| `pièce` |
+| `note` | `String` | Précision de pesée ou d'achat : « poids sec » |
+| `shopping_product` | `String` | Nom du produit sur la liste de courses ; vide = `name` (la purée s'achète en pommes de terre) |
+| `sort_order` | `int` | Rang dans sa famille |
+| `active` | `bool` | Désactivée par un admin : proposée à personne, retouches comprises |
+| `source` | `String` | `builtin` (semée) \| `admin` (créée depuis l'écran) |
+| `created_at` · `updated_at` | `Timestamp` | Traçabilité |
+
+La **liste de base** (`kDefaultMealStaples`, 25 entrées) se sème d'un bouton et **ne remplace
+jamais** une entrée existante : une valeur corrigée dans Firestore fait foi, la liste du code
+ne sert qu'à créer ce qui manque — même règle que la grille tarifaire. Une part de pâtes y
+vaut 125 g secs, une part de riz 70 g crus.
+
+**Les retouches de chacun**, `users/{uid}/preferences/meal_staples` — un seul document,
+lu et écrit par son propriétaire depuis *Préférences › Mes garnitures*. Rien de personnel
+n'écrit dans le référentiel partagé.
+
+| Champ | Type | Description |
+|---|---|---|
+| `entries` | `Map<String, Map>` | Une entrée par identifiant de garniture. Sur un identifiant du référentiel, **seuls les champs présents remplacent** ceux de la base (`name`, `category`, `quantity_per_portion`, `unit`, `note`, `shopping_product`) : le reste continue de suivre les corrections de l'admin. `hidden: true` masque la garniture pour ce compte. `own: true` marque une garniture propre à l'utilisateur, qui porte alors tous ses champs |
+| `updated_at` | `Timestamp` | Dernière écriture |
+
+Chaque entrée est remplacée **en entier** à l'écriture (`SetOptions(mergeFields:
+[entries.{id}])`) : une retouche est un tout, pas une fusion — sinon effacer une quantité
+retouchée laisserait l'ancienne valeur en place. Une entrée qui ne dit plus rien est
+supprimée plutôt que stockée. La lecture fusionnée (`mergeStaples`) est testée par
+`test/meal_staples_test.dart`.
 
 ---
 
@@ -1146,6 +1194,7 @@ service cloud.firestore {
 | `app_config` | admin — plus la politique nutrition, ouverte à tout compte nommé | admin |
 | `nutrition_ingredients` | `isApproved()` | **serveur seul** |
 | `nutrition_units` | `isApproved()` | admin |
+| `meal_staples` | `isApproved()` | admin — les retouches de chacun vivent sous `users/{uid}/preferences/meal_staples`, jamais ici |
 | `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
 | `ai_usage` · `ai_daily_spend` | admin, ou le compte concerné | **serveur seul** — un client pouvait autrefois y inscrire des dépenses imaginaires que la réconciliation aurait présentées comme réelles |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
@@ -2368,7 +2417,7 @@ functions/src/
 
 ---
 
-### 13.1 Carte de navigation — les 40 routes
+### 13.1 Carte de navigation — les 42 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -2407,6 +2456,7 @@ règles Storage refusent.
 | `/planning` | `PlanningScreen` | `reader` |
 | `/planning/batch` | `BatchPlanningScreen` | `reader` |
 | `/planning/config` | `PlanningConfigScreen` | `reader` |
+| `/planning/staples` | `MyStaplesScreen` | `reader` — ses garnitures, retouchées pour soi |
 | `/groups` | `GroupsScreen` | `reader` |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
@@ -2430,6 +2480,7 @@ règles Storage refusent.
 | `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
+| `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples, et son semis |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer une reprise |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |

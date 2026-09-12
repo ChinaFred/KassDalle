@@ -7,6 +7,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
+import '../domain/planning_history.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
@@ -372,7 +373,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       final prefs =
           ref.read(planningPreferencesProvider).value ??
           const PlanningPreferences();
-      final suggestions = await ref
+      // La fenêtre de variété regarde les repas servis avant ce jour-là, lus
+      // dans ce que l'écran affiche déjà : aucune lecture de plus.
+      final recentlyServed = recentlyServedBefore(
+        ref.read(plannedMealsProvider).value ?? const [],
+        cycleStart: meal.plannedAt,
+        windowWeeks: prefs.varietyWindowWeeks,
+      );
+      final result = await ref
           .read(planningAiServiceProvider)
           .suggestMealPlan(
             recipes: candidates,
@@ -380,7 +388,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
             dailyConstraints: prefs.dailyConstraints,
             globalConstraints: prefs.globalConstraints,
             batchCookingDay: prefs.batchCookingDay,
+            recentlyServed: recentlyServed,
           );
+      final suggestions = result.slots;
       if (!mounted) return;
       if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
         final suggestion = suggestions[0];
