@@ -366,10 +366,14 @@ class _ModeToggle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        modeBtn(Icons.view_agenda_outlined, 'Visuel', _EditorMode.visual),
-        modeBtn(Icons.code, 'Texte', _EditorMode.text),
         if (hasPreview)
           modeBtn(Icons.visibility_outlined, 'Aperçu', _EditorMode.preview),
+        modeBtn(
+          Icons.view_agenda_outlined,
+          'Éditeur visuel',
+          _EditorMode.visual,
+        ),
+        modeBtn(Icons.code, 'Éditeur textuel', _EditorMode.text),
       ],
     );
   }
