@@ -583,6 +583,11 @@ class RecipeRepository {
     String? bookTitre,
     int? pageNumberOverride,
     RecipeTags? tagsOverride,
+
+    /// « Non classé » choisi dans la relecture : le rôle posé par l'import
+    /// part, et ce qui en dépendait avec lui. Sans ce drapeau, un rôle absent
+    /// de [tagsOverride] laisse celui de la base.
+    bool clearMealRole = false,
     int? portionsOverride,
     List<RecipeIngredient>? ingredientsOverride,
     void Function({
@@ -609,9 +614,18 @@ class RecipeRepository {
       'review_status': ReviewStatus.validated.name,
       // Champ par champ, et non la carte entière : le rôle dans un repas
       // (`meal_role`, `contains`, `suggested_sides`) est posé par l'import ou
-      // par le backfill, et les tags relus depuis le formulaire ou le CookLang
-      // ne le portent pas. Réécrire `tags` en bloc l'effacerait sans un mot.
+      // par le backfill ; les tags relus depuis le CookLang ne le portent pas,
+      // et le formulaire ne le porte que si l'utilisateur ou l'IA l'a posé.
+      // Réécrire `tags` en bloc l'effacerait sans un mot.
       for (final e in tags.toMap().entries) 'tags.${e.key}': e.value,
+      // Seul cas où l'on efface : « Non classé » choisi dans la liste. Et
+      // seulement si l'objet relu n'en porte pas, sinon deux écritures se
+      // disputeraient la même clé.
+      if (clearMealRole && tags.mealRole == null) ...{
+        'tags.meal_role': FieldValue.delete(),
+        'tags.contains': FieldValue.delete(),
+        'tags.suggested_sides': FieldValue.delete(),
+      },
       'ingredients_index': buildIngredientsIndex(ingredientsStructured),
       'ingredients': ingredientsStructured.map((i) => i.toMap()).toList(),
       'portions': portions,

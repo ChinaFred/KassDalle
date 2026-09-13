@@ -850,11 +850,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     selectedBookId: selectedBookId,
     selectedCuisines: selectedCuisines,
     selectedDishTypes: selectedDishTypes,
+    selectedMealRole: selectedMealRole,
     suggestingTags: suggestingTags,
     formIngredients: formIngredients,
     onBookChanged: setBook,
     onCuisinesChanged: setCuisines,
     onDishTypesChanged: setDishTypes,
+    onMealRoleChanged: setMealRole,
     onIngredientsChanged: setIngredients,
     onUploadImage: _uploadImageFromGallery,
     onExtractIllustrations: () => _doExtractIllustrations(recipe),
@@ -914,17 +916,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             bookTitre: selectedBookTitre,
             pageNumberOverride: int.tryParse(pageNumberCtrl.text.trim()),
             portionsOverride: int.tryParse(portionsCtrl.text.trim()),
-            tagsOverride: RecipeTags(
-              themes: recipe.tags.themes,
-              cuisines: selectedCuisines,
-              occasions: recipe.tags.occasions,
-              dishTypes: selectedDishTypes,
-              difficulty: difficultyCtrl.text.trim().isEmpty
-                  ? null
-                  : difficultyCtrl.text.trim(),
-              prepTime: int.tryParse(prepTimeCtrl.text.trim()),
-              cookTime: int.tryParse(cookTimeCtrl.text.trim()),
-            ),
+            // Le même constructeur que la correction et la création : le
+            // rôle choisi dans la liste, et le temps de repos du formulaire —
+            // un objet construit ici à la main l'omettait, et la validation
+            // écrivait `rest_time: null` par-dessus celui de l'import.
+            tagsOverride: buildTagsFromForm(recipe.tags),
+            clearMealRole: selectedMealRole == null,
             ingredientsOverride: formIngredients,
             onNormalizationApplied:
                 ({

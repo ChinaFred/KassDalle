@@ -1,3 +1,4 @@
+import '../../features/recipes/domain/meal_role.dart';
 import '../../features/recipes/domain/recipe.dart';
 
 class RecipeTagSection {
@@ -25,6 +26,17 @@ List<RecipeTagSection> buildRecipeTagSections(RecipeTags tags) {
   }
   if (occasions.isNotEmpty) {
     sections.add(RecipeTagSection(label: 'Occasion', values: occasions));
+  }
+  // En dernier : la liste des recettes ne montre que les deux premières
+  // sections, et Cuisine + Type de plat y disent plus qu'un mot sur cinq.
+  final mealRole = tags.mealRole?.trim() ?? '';
+  if (mealRole.isNotEmpty) {
+    sections.add(
+      RecipeTagSection(
+        label: 'Rôle dans un repas',
+        values: [mealRoleLabel(mealRole)],
+      ),
+    );
   }
   return sections;
 }

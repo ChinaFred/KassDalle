@@ -271,9 +271,12 @@ class RecipeTags {
   /// `snack`. Absent tant que la recette n'a pas été classée.
   ///
   /// Reconnu une fois par le modèle — à l'import, à la suggestion de tags, ou
-  /// par le backfill « Rôle des recettes » — et lu ensuite par le programme
-  /// pour composer un repas. Les valeurs vivent dans
-  /// `functions/src/gemini/mealRole.ts`, seul endroit qui les décide.
+  /// par le backfill « Rôle des recettes » —, corrigé par l'utilisateur dans
+  /// la liste « Rôle dans un repas » du formulaire, et lu ensuite par le
+  /// programme pour composer un repas. Les valeurs sont décidées par
+  /// `functions/src/gemini/mealRole.ts` et reprises dans `meal_role.dart`
+  /// pour la liste et l'affichage ; `test-fixtures/meal_roles.json` les
+  /// verrouille.
   final String? mealRole;
 
   /// Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`.

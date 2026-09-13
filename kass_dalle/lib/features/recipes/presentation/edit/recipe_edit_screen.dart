@@ -543,6 +543,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               onCuisinesChanged: setCuisines,
               dishTypes: selectedDishTypes,
               onDishTypesChanged: setDishTypes,
+              mealRole: selectedMealRole,
+              onMealRoleChanged: setMealRole,
               suggestingTags: suggestingTags,
               onSuggestTags: () =>
                   suggestTagsWithAI(_currentRecipe?.titre ?? ''),
@@ -662,6 +664,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onCuisinesChanged: setCuisines,
                     dishTypes: selectedDishTypes,
                     onDishTypesChanged: setDishTypes,
+                    mealRole: selectedMealRole,
+                    onMealRoleChanged: setMealRole,
                     suggestingTags: suggestingTags,
                     onSuggestTags: () =>
                         suggestTagsWithAI(_currentRecipe?.titre ?? ''),

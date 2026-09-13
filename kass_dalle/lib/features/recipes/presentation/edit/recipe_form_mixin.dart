@@ -36,6 +36,11 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   List<String> selectedCuisines = const [];
   List<String> selectedDishTypes = const [];
 
+  /// Rôle dans un repas tel que le formulaire le montre : celui de la base à
+  /// l'ouverture, puis ce que l'utilisateur choisit dans la liste ou ce que
+  /// « Suggérer les tags » a posé. `null` : non classé.
+  String? selectedMealRole;
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   void dispose() {
@@ -77,6 +82,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     selectedBookTitre = recipe.bookTitre;
     selectedCuisines = List<String>.from(recipe.tags.cuisines);
     selectedDishTypes = List<String>.from(recipe.tags.dishTypes);
+    selectedMealRole = recipe.tags.hasMealRole ? recipe.tags.mealRole : null;
     formInitialized = true;
   }
 
@@ -112,6 +118,8 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void setCuisines(List<String> v) => setState(() => selectedCuisines = v);
 
   void setDishTypes(List<String> v) => setState(() => selectedDishTypes = v);
+
+  void setMealRole(String? v) => setState(() => selectedMealRole = v);
 
   // ── CookLang meta sync ─────────────────────────────────────────────────────
 
@@ -163,21 +171,37 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// Build a [RecipeTags] from the current form state, keeping [baseTags]
   /// themes and occasions intact.
   RecipeTags buildTagsFromForm(RecipeTags baseTags) {
-    return baseTags.copyWith(
+    final tags = baseTags.copyWith(
       cuisines: selectedCuisines,
       dishTypes: selectedDishTypes,
-      // Le rôle dans un repas n'a pas de champ dans le formulaire : il vient
-      // de la base, ou de la dernière suggestion de l'IA dans cette session.
-      // Un `null` laisse celui de la base — `copyWith` ne l'efface pas.
-      mealRole: suggestedMealRole,
-      contains: suggestedMealRole == null ? null : suggestedContains,
-      suggestedSides: suggestedMealRole == null ? null : suggestedSidesByAI,
+      // Le rôle est celui de la liste du formulaire. Ce que la recette
+      // apporte et ses accompagnements classiques ne se saisissent pas : ils
+      // viennent de la base, ou de la dernière suggestion de l'IA dans cette
+      // session — un `null` laisse ceux de la base, `copyWith` n'efface pas.
+      mealRole: selectedMealRole,
+      contains: aiClassifiedInSession ? suggestedContains : null,
+      suggestedSides: aiClassifiedInSession ? suggestedSidesByAI : null,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),
       prepTime: int.tryParse(prepTimeCtrl.text.trim()),
       cookTime: int.tryParse(cookTimeCtrl.text.trim()),
       restTime: int.tryParse(restTimeCtrl.text.trim()),
+    );
+    if (selectedMealRole != null) return tags;
+    // « Non classé » : le rôle part, et ce qui en dépendait avec lui.
+    // `copyWith` ne sait pas effacer ; on reconstruit sans les trois champs,
+    // et `toMap` ne les écrit pas — une écriture de la carte entière les
+    // retire, une écriture champ par champ passe par `clearMealRole`.
+    return RecipeTags(
+      themes: tags.themes,
+      cuisines: tags.cuisines,
+      occasions: tags.occasions,
+      dishTypes: tags.dishTypes,
+      difficulty: tags.difficulty,
+      prepTime: tags.prepTime,
+      cookTime: tags.cookTime,
+      restTime: tags.restTime,
     );
   }
 
@@ -194,11 +218,10 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   bool suggestingTags = false;
 
-  /// Le rôle dans un repas rendu par la dernière suggestion de l'IA, s'il y en
-  /// a eu une dans cette session. Sans champ de formulaire, c'est le seul
-  /// chemin par lequel une recette saisie à la main reçoit son rôle avant le
-  /// backfill.
-  String? suggestedMealRole;
+  /// Vrai dès que « Suggérer les tags » a rendu un rôle dans cette session :
+  /// [suggestedContains] et [suggestedSidesByAI] valent alors pour la recette
+  /// et remplacent ceux de la base à l'enregistrement.
+  bool aiClassifiedInSession = false;
   List<String> suggestedContains = const [];
   List<String> suggestedSidesByAI = const [];
 
@@ -216,9 +239,12 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       setCuisines(result.cuisines);
       setDishTypes(result.dishTypes);
       if (result.mealRole != null) {
-        suggestedMealRole = result.mealRole;
-        suggestedContains = result.contains;
-        suggestedSidesByAI = result.suggestedSides;
+        setState(() {
+          selectedMealRole = result.mealRole;
+          aiClassifiedInSession = true;
+          suggestedContains = result.contains;
+          suggestedSidesByAI = result.suggestedSides;
+        });
       }
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');
     } catch (e, stackTrace) {

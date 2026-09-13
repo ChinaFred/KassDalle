@@ -11,9 +11,12 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   EMPTY_MEAL_ROLE_FIELDS,
+  MEAL_ROLES,
   needsSide,
   normalizeRoleKey,
   parseMealContains,
@@ -145,5 +148,16 @@ describe("appelle un accompagnement", () => {
     assert.equal(needsSide({ mealRole: "accompagnement", contains: [] }), false);
     assert.equal(needsSide({ mealRole: "dessert", contains: [] }), false);
     assert.equal(needsSide({ mealRole: null, contains: [] }), false);
+  });
+});
+
+describe("fixture partagée avec le client", () => {
+  // Le client propose ces rôles dans une liste et les affiche en français ;
+  // un rôle de plus ici sans son jumeau là-bas se choisirait au backfill et ne
+  // se verrait jamais dans le formulaire.
+  test("la liste des rôles est la même que côté client", () => {
+    const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as { roles: string[] };
+    assert.deepEqual([...MEAL_ROLES], fixture.roles);
   });
 });

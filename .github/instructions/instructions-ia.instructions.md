@@ -217,6 +217,7 @@ et `functions/src/tests/`) :
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul**, le client ne les rejoue plus |
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie. Le client redresse à la main dans l'atelier, le serveur redresse tout seul à l'import |
+| `meal_roles.json` | vocabulaire des rôles dans un repas — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur |
 
 * **La duplication est un coût, pas une méthode.** Ne dupliquer que si les deux
   côtés ont un besoin propre — le client pour afficher ou travailler hors ligne,

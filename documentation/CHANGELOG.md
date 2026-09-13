@@ -16,6 +16,47 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.66 — fonctionnel
+
+#### Le rôle dans un repas se voit et se corrige
+
+La fiche d'une recette affiche son rôle dans sa section Catégorisation : « Rôle dans un
+repas : Plat », après Cuisine et Type de plat. Le résumé de la liste des recettes ne change
+pas, et l'export PDF reprend la même section.
+
+Le panneau de métadonnées propose ce rôle dans une liste à cinq valeurs — Plat,
+Accompagnement, Entrée, Dessert, Snack — plus « Non classé ». La liste est là dans les trois
+écrans qui partagent ce panneau : la relecture d'un import, la correction d'une recette et la
+création à la main, qui reçoit au passage Cuisine et Type de plat. « Suggérer les tags » pose
+sa réponse dans la liste, et on la change d'un appui. « Non classé » retire le rôle et ce qui
+en dépend ; la reprise « Rôle des recettes » le redemandera au modèle.
+
+Valider un import gardait déjà le rôle posé par le balisage. Il conservait mal le temps de
+repos : la relecture le montrait, la validation écrivait `null` par-dessus. Le formulaire de
+relecture enregistre désormais ses tags par le même chemin que la correction, temps de
+repos compris.
+
+### v0.22.66 — technique
+
+- `features/recipes/domain/meal_role.dart` : `kMealRoles`, `mealRoleLabel`. Les valeurs
+  restent décidées par `gemini/mealRole.ts` ; `test-fixtures/meal_roles.json` verrouille
+  l'égalité des deux listes (`test/meal_role_test.dart`, `tests/mealRole.test.ts`), ligne
+  ajoutée au tableau « Logique dupliquée » de `CLAUDE.md` et de son miroir.
+- `buildRecipeTagSections` ajoute la section « Rôle dans un repas » en dernier.
+- `RecipeMetaPanel` : `mealRole` et `onMealRoleChanged` ; `DropdownButtonFormField` sur
+  `initialValue`, qui suit la valeur du parent (`didUpdateWidget` du SDK), chaîne vide pour
+  « Non classé », valeur hors liste proposée telle quelle plutôt que de faire échouer
+  l'assertion du menu.
+- `RecipeFormMixin` : `selectedMealRole` initialisé depuis la recette, `setMealRole`,
+  `aiClassifiedInSession` à la place de `suggestedMealRole`. `buildTagsFromForm` reconstruit
+  sans les trois champs quand le rôle est retiré.
+- `RecipeRepository.validateDraft(clearMealRole:)` : `FieldValue.delete()` sur
+  `tags.meal_role`, `tags.contains`, `tags.suggested_sides`, seulement si l'objet relu n'en
+  porte pas. `DraftReviewScreen` passe `buildTagsFromForm(recipe.tags)` au lieu d'un
+  `RecipeTags` construit à la main sans `restTime`.
+- `DraftReviewFormData` : `selectedMealRole`, `onMealRoleChanged`, passés aux trois
+  dispositions du panneau.
+
 ### v0.22.65 — fonctionnel
 
 #### Une idée retenue devient une recette

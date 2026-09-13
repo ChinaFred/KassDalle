@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/meal_role.dart';
 import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/theme/app_icon_size.dart';
+
+/// Valeur du menu déroulant pour « Non classé ». Un `DropdownButtonFormField`
+/// veut un élément par valeur, `null` compris ; une chaîne vide en tient lieu
+/// et redevient `null` au moment de prévenir le parent.
+const _kNoMealRole = '';
 
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
@@ -28,6 +34,11 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   final void Function(List<String>)? onCuisinesChanged;
   final List<String>? dishTypes;
   final void Function(List<String>)? onDishTypesChanged;
+
+  /// Rôle dans un repas (`plat`, `accompagnement`…), `null` pour « non
+  /// classé ». La liste n'apparaît que si [onMealRoleChanged] est donné.
+  final String? mealRole;
+  final void Function(String?)? onMealRoleChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
 
@@ -54,6 +65,8 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     this.onCuisinesChanged,
     this.dishTypes,
     this.onDishTypesChanged,
+    this.mealRole,
+    this.onMealRoleChanged,
     this.suggestingTags = false,
     this.onSuggestTags,
     this.pageType,
@@ -106,7 +119,17 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
     final isRecipe = (widget.pageType ?? PageType.recipe) == PageType.recipe;
     final showTags =
         isRecipe &&
-        (widget.onCuisinesChanged != null || widget.onDishTypesChanged != null);
+        (widget.onCuisinesChanged != null ||
+            widget.onDishTypesChanged != null ||
+            widget.onMealRoleChanged != null);
+    // Une valeur hors liste — écrite avant que la liste n'existe, ou par un
+    // serveur plus récent — reste proposée telle quelle : un menu déroulant
+    // exige que la valeur courante soit l'un de ses éléments.
+    final currentRole = widget.mealRole;
+    final roleHorsListe =
+        currentRole != null &&
+        currentRole.isNotEmpty &&
+        !kMealRoles.contains(currentRole);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,6 +280,50 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           const SizedBox(height: 20),
           Text('Catégorisation', style: theme.textTheme.labelMedium),
           const SizedBox(height: 8),
+
+          if (widget.onMealRoleChanged != null) ...[
+            DropdownButtonFormField<String>(
+              // `initialValue` suit la valeur du parent : le rôle posé par
+              // « Suggérer les tags » se voit ici sans rien recréer.
+              initialValue: (currentRole == null || currentRole.isEmpty)
+                  ? _kNoMealRole
+                  : currentRole,
+              // Le panneau fait 220 px dans sa disposition la plus étroite :
+              // « Accompagnement » avec l'icône et la flèche dépasse sans
+              // cela de six pixels.
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Rôle dans un repas',
+                helperText:
+                    'Ce que le planning compose autour : un plat reçoit un '
+                    'accompagnement, une entrée ou un dessert se placent à côté',
+                helperMaxLines: 3,
+                prefixIcon: Icon(Icons.restaurant_outlined),
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: _kNoMealRole,
+                  child: Text('Non classé'),
+                ),
+                for (final role in kMealRoles)
+                  DropdownMenuItem(
+                    value: role,
+                    child: Text(mealRoleLabel(role)),
+                  ),
+                if (roleHorsListe)
+                  DropdownMenuItem(
+                    value: currentRole,
+                    child: Text(mealRoleLabel(currentRole)),
+                  ),
+              ],
+              onChanged: widget.saving
+                  ? null
+                  : (v) => widget.onMealRoleChanged!(
+                      (v == null || v == _kNoMealRole) ? null : v,
+                    ),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           Text(
             'Cuisine',
