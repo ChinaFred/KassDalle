@@ -30,14 +30,20 @@ class SourceViewerButton extends StatelessWidget {
     }
     final allUrls = [sourceFileUrl!, ...additionalSourceFileUrls];
     final isMultiPage = allUrls.length > 1;
+    final colorScheme = Theme.of(context).colorScheme;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (isMultiPage)
-          // Bouton unique qui ouvre un menu listant toutes les pages
+          // Bouton unique qui ouvre un menu listant toutes les pages.
+          // Le compteur est une information, pas une alerte : il prend la
+          // couleur primaire et non le rouge par défaut de `Badge`, réservé
+          // dans l'application aux éléments en attente d'une action.
           IconButton(
             icon: Badge(
               label: Text('${allUrls.length}'),
+              backgroundColor: colorScheme.primary,
+              textColor: colorScheme.onPrimary,
               child: const Icon(Icons.document_scanner_outlined),
             ),
             tooltip: 'Voir les ${allUrls.length} pages originales',
