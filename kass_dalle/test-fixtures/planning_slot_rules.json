@@ -1,47 +1,97 @@
 {
-  "_comment": "Règles de créneau du planning, rejouées par Dart (test/planning_slot_rules_test.dart) et TypeScript (functions/src/tests/planningSlotRules.test.ts). Un écart entre les deux ne casse aucun écran : il laisse passer un dessert d'un côté, ou décale un jour de préparation de l'autre. Ajouter le cas ici AVANT de corriger un des deux côtés.",
-  "asks_for_dessert": [
+  "_comment": "Règles de créneau du planning — serveur seul (functions/src/tests/planningSlotRules.test.ts). Un écart ne casse aucun écran : il laisse passer un dessert en plat, ou décale un jour de préparation. Ajouter le cas ici AVANT de corriger.",
+  "_meal_format_comment": "Le format d'un créneau (mealFormatOf) : ce qu'il demande autour du plat. Absent ou inconnu = plat seul — un format deviné vaudrait un dessert que personne n'a demandé. C'est le format qui décide d'un dessert, et plus un mot-clé lu dans une contrainte en prose.",
+  "meal_format": [
     {
-      "global": "",
-      "notes": "",
-      "expected": false,
-      "why": "sans contrainte, pas de sucré au menu principal"
+      "key": null,
+      "expected": { "wantsStarter": false, "wantsDessert": false, "light": false },
+      "why": "pas réglé : plat seul"
     },
     {
-      "global": "Pas de poisson deux fois dans la semaine",
-      "notes": "",
-      "expected": false,
-      "why": "une contrainte quelconque ne vaut pas demande de dessert"
+      "key": "",
+      "expected": { "wantsStarter": false, "wantsDessert": false, "light": false },
+      "why": "vide : plat seul"
     },
     {
-      "global": "Prévoir un dessert le dimanche",
-      "notes": "",
-      "expected": true,
-      "why": "demande explicite dans les contraintes globales"
+      "key": "plat",
+      "expected": { "wantsStarter": false, "wantsDessert": false, "light": false },
+      "why": "le défaut, écrit en clair"
     },
     {
-      "global": "",
-      "notes": "Brunch tardif",
-      "expected": true,
-      "why": "la note du jour suffit, sans contrainte globale"
+      "key": "plat_dessert",
+      "expected": { "wantsStarter": false, "wantsDessert": true, "light": false },
+      "why": "un dessert, pas d'entrée"
     },
     {
-      "global": "",
-      "notes": "Un GOÛTER pour les enfants",
-      "expected": true,
-      "why": "insensible à la casse et aux accents portés"
+      "key": "entree_plat",
+      "expected": { "wantsStarter": true, "wantsDessert": false, "light": false },
+      "why": "une entrée, pas de dessert"
     },
     {
-      "global": "",
-      "notes": "petit-déjeuner copieux",
-      "expected": true,
-      "why": "forme composée avec trait d'union"
+      "key": "entree_plat_dessert",
+      "expected": { "wantsStarter": true, "wantsDessert": true, "light": false },
+      "why": "le repas complet"
     },
     {
-      "global": "",
-      "notes": "Repas léger, sport le soir",
-      "expected": false,
-      "why": "contrainte de charge, pas de sucré"
+      "key": "leger",
+      "expected": { "wantsStarter": false, "wantsDessert": false, "light": true },
+      "why": "un seul plat léger"
+    },
+    {
+      "key": "brunch",
+      "expected": { "wantsStarter": false, "wantsDessert": false, "light": false },
+      "why": "inconnu : plat seul, jamais deviné"
+    }
+  ],
+  "_planning_role_comment": "Le rôle sous lequel le planning propose une recette (planningRoleOf) : celui posé sur la recette ; sans rôle, un plat — sauf si le titre ou les types disent un dessert, repli par mots-clés pour ce que le backfill n'a pas encore vu. attributes[0] est le titre, la suite les types de plat.",
+  "planning_role": [
+    {
+      "meal_role": "plat",
+      "attributes": ["Tarte tatin"],
+      "expected": "plat",
+      "why": "le rôle posé l'emporte sur le mot-clé du titre"
+    },
+    {
+      "meal_role": "dessert",
+      "attributes": ["Poulet rôti"],
+      "expected": "dessert",
+      "why": "le rôle posé l'emporte, même contre le titre"
+    },
+    {
+      "meal_role": "entree",
+      "attributes": ["Soupe de courge"],
+      "expected": "entree",
+      "why": "une entrée classée"
+    },
+    {
+      "meal_role": "snack",
+      "attributes": ["Barre de céréales"],
+      "expected": "snack",
+      "why": "un en-cas classé"
+    },
+    {
+      "meal_role": "accompagnement",
+      "attributes": ["Riz pilaf"],
+      "expected": "accompagnement",
+      "why": "un accompagnement classé — jamais proposé seul"
+    },
+    {
+      "meal_role": null,
+      "attributes": ["Tarte tatin"],
+      "expected": "dessert",
+      "why": "sans rôle, le repli par mots-clés reconnaît un dessert"
+    },
+    {
+      "meal_role": null,
+      "attributes": ["Poulet rôti", "volaille"],
+      "expected": "plat",
+      "why": "sans rôle et sans mot-clé, un plat"
+    },
+    {
+      "meal_role": "cocktail",
+      "attributes": ["Mojito"],
+      "expected": "plat",
+      "why": "un rôle inconnu vaut pas de rôle"
     }
   ],
   "is_dessert": [

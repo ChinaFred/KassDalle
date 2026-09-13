@@ -2,7 +2,10 @@
 //
 // Stocké dans Firestore : planning_config/{uid}
 
+import 'meal_format.dart';
 import 'planning_history.dart';
+
+export 'meal_format.dart';
 
 const Map<int, String> kWeekdayNames = {
   DateTime.monday: 'Lundi',
@@ -39,6 +42,13 @@ class DayConstraint {
   final int? mealHour;
   final int? mealMinute;
 
+  /// Le format du repas ce jour-là : plat seul, plat et dessert, entrée et
+  /// plat, le repas complet, ou léger.
+  ///
+  /// `null` veut dire « le défaut », le plat seul — et non un format de plus.
+  /// Rien ne change pour un planning qui n'en dit rien.
+  final MealFormat? mealFormat;
+
   const DayConstraint({
     this.maxPrepMinutes = 0,
     this.targetPortions = 0,
@@ -46,10 +56,14 @@ class DayConstraint {
     this.notes = '',
     this.mealHour,
     this.mealMinute,
+    this.mealFormat,
   });
 
   /// Vrai si ce jour porte sa propre heure.
   bool get hasOwnTime => mealHour != null;
+
+  /// Le format appliqué : celui du jour, ou le plat seul.
+  MealFormat get effectiveFormat => mealFormat ?? MealFormat.defaultFormat;
 
   factory DayConstraint.fromMap(Map<String, dynamic> data) => DayConstraint(
     maxPrepMinutes: data['max_prep_minutes'] as int? ?? 0,
@@ -58,6 +72,7 @@ class DayConstraint {
     notes: data['notes'] as String? ?? '',
     mealHour: data['meal_hour'] as int?,
     mealMinute: data['meal_minute'] as int?,
+    mealFormat: MealFormat.fromKey(data['meal_format'] as String?),
   );
 
   Map<String, dynamic> toMap() => {
@@ -69,6 +84,7 @@ class DayConstraint {
     // clé absente se relisent pareil, mais l'absence dit mieux ce qu'elle est.
     if (mealHour != null) 'meal_hour': mealHour,
     if (mealMinute != null) 'meal_minute': mealMinute,
+    if (mealFormat != null) 'meal_format': mealFormat!.key,
   };
 
   DayConstraint copyWith({
@@ -78,10 +94,14 @@ class DayConstraint {
     String? notes,
     int? mealHour,
     int? mealMinute,
+    MealFormat? mealFormat,
 
     /// Rend le jour à l'heure par défaut. Un `copyWith` ne peut pas remettre un
     /// champ à `null` — sans ce drapeau, une heure posée ne se retirerait plus.
     bool clearMealTime = false,
+
+    /// Rend le jour au format par défaut, pour la même raison.
+    bool clearMealFormat = false,
   }) => DayConstraint(
     maxPrepMinutes: maxPrepMinutes ?? this.maxPrepMinutes,
     targetPortions: targetPortions ?? this.targetPortions,
@@ -89,6 +109,7 @@ class DayConstraint {
     notes: notes ?? this.notes,
     mealHour: clearMealTime ? null : (mealHour ?? this.mealHour),
     mealMinute: clearMealTime ? null : (mealMinute ?? this.mealMinute),
+    mealFormat: clearMealFormat ? null : (mealFormat ?? this.mealFormat),
   );
 
   bool get isEmpty =>
@@ -96,7 +117,8 @@ class DayConstraint {
       targetPortions == 0 &&
       !isBatchCooking &&
       notes.trim().isEmpty &&
-      mealHour == null;
+      mealHour == null &&
+      mealFormat == null;
 }
 
 /// Préférences globales de planification.

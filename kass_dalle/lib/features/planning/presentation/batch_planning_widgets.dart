@@ -38,6 +38,9 @@ class SlotConstraintsEditor extends StatefulWidget {
   final ValueChanged<bool> onReheatChanged;
   final ValueChanged<String> onNotesChanged;
 
+  /// Le format du repas sur ce créneau ; le plat seul remet au défaut.
+  final ValueChanged<MealFormat> onFormatChanged;
+
   const SlotConstraintsEditor({
     super.key,
     required this.constraint,
@@ -45,6 +48,7 @@ class SlotConstraintsEditor extends StatefulWidget {
     required this.onTargetPortionsChanged,
     required this.onReheatChanged,
     required this.onNotesChanged,
+    required this.onFormatChanged,
   });
 
   @override
@@ -128,6 +132,26 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
             ),
             onChanged: (value) =>
                 widget.onTargetPortionsChanged(int.tryParse(value.trim()) ?? 0),
+          ),
+        ),
+        // Le format du repas sur ce créneau : c'est lui qui demande une entrée
+        // ou un dessert à la suggestion, pas la contrainte en prose.
+        SizedBox(
+          width: 220,
+          child: DropdownButtonFormField<MealFormat>(
+            initialValue: widget.constraint.effectiveFormat,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Format du repas',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final f in MealFormat.values)
+                DropdownMenuItem(value: f, child: Text(f.label)),
+            ],
+            onChanged: (f) {
+              if (f != null) widget.onFormatChanged(f);
+            },
           ),
         ),
         Row(
@@ -218,6 +242,17 @@ class BatchSlotTile extends StatelessWidget {
   final VoidCallback? onChangeSide;
   final VoidCallback? onRemoveSide;
 
+  /// L'entrée et le dessert du créneau, quand son format en demande.
+  final MealComponent? starter;
+  final MealComponent? dessert;
+  final VoidCallback? onChangeStarter;
+  final VoidCallback? onRemoveStarter;
+  final VoidCallback? onChangeDessert;
+  final VoidCallback? onRemoveDessert;
+
+  /// Le format du repas sur ce créneau, changé dans l'éditeur de contraintes.
+  final ValueChanged<MealFormat> onFormatChanged;
+
   const BatchSlotTile({
     super.key,
     required this.index,
@@ -250,7 +285,72 @@ class BatchSlotTile extends StatelessWidget {
     this.side,
     this.onChangeSide,
     this.onRemoveSide,
+    this.starter,
+    this.dessert,
+    this.onChangeStarter,
+    this.onRemoveStarter,
+    this.onChangeDessert,
+    this.onRemoveDessert,
+    required this.onFormatChanged,
   });
+
+  /// Une entrée ou un dessert, quand le format du créneau en demande : posé
+  /// par la suggestion, changé ou retiré d'un appui. « À choisir » quand la
+  /// suggestion n'a rien rendu — un vide qui se voit vaut mieux qu'un vide
+  /// qui se devine.
+  Widget _buildCourseLine(
+    ThemeData theme,
+    MealComponentRole role,
+    MealComponent? course,
+    VoidCallback? onChange,
+    VoidCallback? onRemove,
+  ) {
+    final text = course == null
+        ? '${role.label} : à choisir'
+        : '${role.label} : ${course.label}';
+    return Padding(
+      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
+      child: Row(
+        children: [
+          Icon(
+            role == MealComponentRole.entree
+                ? Icons.soup_kitchen_outlined
+                : Icons.cake_outlined,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: course == null ? FontStyle.italic : null,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (onChange != null)
+            TextButton(
+              onPressed: onChange,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: theme.textTheme.labelSmall,
+              ),
+              child: Text(course == null ? 'Choisir' : 'Changer'),
+            ),
+          if (course != null && onRemove != null)
+            IconButton(
+              icon: const Icon(Icons.close, size: AppIconSize.inline),
+              tooltip: 'Retirer',
+              visualDensity: VisualDensity.compact,
+              onPressed: onRemove,
+            ),
+        ],
+      ),
+    );
+  }
 
   /// L'accompagnement du créneau : ce qu'on sert à côté, et pourquoi.
   ///
@@ -546,12 +646,34 @@ class BatchSlotTile extends StatelessWidget {
                   onTargetPortionsChanged: onTargetPortionsChanged,
                   onReheatChanged: onReheatChanged,
                   onNotesChanged: onNotesChanged,
+                  onFormatChanged: onFormatChanged,
                 ),
         ),
         // Ce qui accompagne le plat — choisi par le programme, changé d'un
         // appui. Après les contraintes, avant la conservation : c'est du repas,
         // pas de la logistique.
-        if (recipe != null) _buildSideLine(theme),
+        // Dans l'ordre du repas : l'entrée, le plat et son accompagnement, le
+        // dessert. L'entrée et le dessert n'apparaissent que si le format du
+        // créneau en demande.
+        if (recipe != null) ...[
+          if (dayConstraint.effectiveFormat.wantsStarter)
+            _buildCourseLine(
+              theme,
+              MealComponentRole.entree,
+              starter,
+              onChangeStarter,
+              onRemoveStarter,
+            ),
+          _buildSideLine(theme),
+          if (dayConstraint.effectiveFormat.wantsDessert)
+            _buildCourseLine(
+              theme,
+              MealComponentRole.dessert,
+              dessert,
+              onChangeDessert,
+              onRemoveDessert,
+            ),
+        ],
         // Jour de préparation à l'avance, et ce que le plat devra supporter.
         if (prepDate != null || onGenerateStorageAdvice != null)
           _buildStorageLine(theme),
@@ -700,6 +822,10 @@ class BatchSlotTile extends StatelessWidget {
         constraint.isBatchCooking ? 'Réchauffage: oui' : 'Réchauffage: non',
       ),
     );
+    // Le format ne se lit que s'il s'écarte du plat seul.
+    if (constraint.mealFormat != null) {
+      chips.add(_constraintChip(theme, constraint.mealFormat!.label));
+    }
 
     final notes = constraint.notes.trim();
     return Column(

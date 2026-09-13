@@ -96,6 +96,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       notes: notes,
       mealHour: existing?.mealHour,
       mealMinute: existing?.mealMinute,
+      mealFormat: existing?.mealFormat,
     );
   }
 
@@ -356,6 +357,14 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                       ),
                       onClearTime: () =>
                           _updateDay(d, (c) => c.copyWith(clearMealTime: true)),
+                      // Le plat seul est le défaut : le choisir remet le jour
+                      // à « pas réglé », il n'est jamais stocké comme format.
+                      onFormatChanged: (f) => _updateDay(
+                        d,
+                        (c) => f == null || f == MealFormat.defaultFormat
+                            ? c.copyWith(clearMealFormat: true)
+                            : c.copyWith(mealFormat: f),
+                      ),
                     ),
                 ],
               ),
@@ -716,6 +725,10 @@ class _DayConstraintTile extends StatelessWidget {
   final ValueChanged<TimeOfDay> onTimeChanged;
   final VoidCallback onClearTime;
 
+  /// Le format du repas choisi ; `null` ou le plat seul remettent le jour au
+  /// défaut.
+  final ValueChanged<MealFormat?> onFormatChanged;
+
   const _DayConstraintTile({
     super.key,
     required this.weekday,
@@ -727,6 +740,7 @@ class _DayConstraintTile extends StatelessWidget {
     required this.effectiveTime,
     required this.onTimeChanged,
     required this.onClearTime,
+    required this.onFormatChanged,
   });
 
   @override
@@ -838,6 +852,30 @@ class _DayConstraintTile extends StatelessWidget {
                     if (t != null) onTimeChanged(t);
                   },
                 ),
+                // Le format du repas : ce qu'on sert autour du plat ce
+                // jour-là. C'est lui qui ouvre l'entrée et le dessert dans la
+                // suggestion, pas un mot dans la contrainte en prose.
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: DropdownButtonFormField<MealFormat>(
+                    initialValue: constraint.effectiveFormat,
+                    decoration: InputDecoration(
+                      labelText: 'Format du repas',
+                      helperText: constraint.effectiveFormat.description,
+                      helperMaxLines: 2,
+                      isDense: true,
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surface,
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: [
+                      for (final f in MealFormat.values)
+                        DropdownMenuItem(value: f, child: Text(f.label)),
+                    ],
+                    onChanged: onFormatChanged,
+                  ),
+                ),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Jour de réchauffage'),
@@ -886,6 +924,11 @@ class _DayConstraintTile extends StatelessWidget {
       parts.add('${constraint.targetPortions} parts');
     }
     if (constraint.isBatchCooking) parts.add('réchauffage');
+    // Le format n'apparaît que s'il s'écarte du plat seul : le défaut sur
+    // sept lignes n'apprendrait rien.
+    if (constraint.mealFormat != null) {
+      parts.add(constraint.mealFormat!.label.toLowerCase());
+    }
     if (constraint.notes.trim().isNotEmpty) parts.add(constraint.notes.trim());
     return parts.join(' · ');
   }

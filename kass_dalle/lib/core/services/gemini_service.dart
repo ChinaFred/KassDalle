@@ -428,6 +428,8 @@ class GeminiService {
         ({
           int slot,
           String recipeId,
+          String? starterId,
+          String? dessertId,
           String? justification,
           bool resized,
           String? resizeReason,
@@ -470,6 +472,8 @@ class GeminiService {
             (item) => (
               slot: (item['slot'] as num).toInt(),
               recipeId: item['recipeId'] as String? ?? '',
+              starterId: item['starterId'] as String?,
+              dessertId: item['dessertId'] as String?,
               justification: item['justification'] as String?,
               resized: item['resized'] as bool? ?? false,
               resizeReason: item['resizeReason'] as String?,

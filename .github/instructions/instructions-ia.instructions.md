@@ -214,7 +214,7 @@ et `functions/src/tests/`) :
 | `unit_to_grams.json` | conversion d'unités en grammes, et quantité absente — « sel, pincée » et « poivre » nu se pèsent à la pincée |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
 | `ai_pricing.json` | résolution d’un modèle et coût d’un appel — les prix vivent dans `app_config/ai_pricing`, plus aucun en double |
-| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul**, le client ne les rejoue plus |
+| `planning_slot_rules.json` | format du repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de préparation, fenêtre de variété — **serveur seul**, le client ne les rejoue plus |
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie. Le client redresse à la main dans l'atelier, le serveur redresse tout seul à l'import |
 | `meal_roles.json` | vocabulaire des rôles dans un repas — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur |

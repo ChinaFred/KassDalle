@@ -76,6 +76,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // recalculé tant que le plat ne change pas.
   Map<int, MealComponent?> _slotSides = {};
   final Set<int> _slotSideManual = {};
+  // L'entrée et le dessert d'un créneau dont le format en demande : posés par
+  // la suggestion, changés ou retirés à la main.
+  Map<int, MealComponent?> _slotStarters = {};
+  Map<int, MealComponent?> _slotDesserts = {};
   // Les garnitures de l'utilisateur, lues une fois à l'ouverture.
   List<UserStaple> _staples = const [];
   PlanningPreferences? _prefs;
@@ -271,6 +275,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotIsGenerated.clear();
         _slotSides.clear();
         _slotSideManual.clear();
+        _slotStarters.clear();
+        _slotDesserts.clear();
       });
     } else if (!_slots.values.any((r) => r == null)) {
       _showError(
@@ -330,6 +336,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 _slotResizeReasons.remove(i);
               }
               _slotPrepDates[i] = s.prepDate;
+              // L'entrée et le dessert du même appel, quand le format du
+              // créneau en demandait : le serveur ne les rend que dans ce cas.
+              _slotStarters[i] = s.starter == null
+                  ? null
+                  : MealComponent.recipe(
+                      s.starter!,
+                      role: MealComponentRole.entree,
+                      justification: 'Entrée proposée par l\'IA.',
+                    );
+              _slotDesserts[i] = s.dessert == null
+                  ? null
+                  : MealComponent.recipe(
+                      s.dessert!,
+                      role: MealComponentRole.dessert,
+                      justification: 'Dessert proposé par l\'IA.',
+                    );
             }
           }
           // Les plats sont posés : le programme choisit leurs accompagnements,
@@ -455,9 +477,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           // planification puis jeté à la validation : l'écran qu'on relit
           // ensuite, celui du planning, n'en gardait rien.
           justification: _slotJustifications[i],
-          // L'accompagnement suit le repas : une garniture figée, ou une
-          // recette d'accompagnement.
-          components: [?_slotSides[i]],
+          // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
+          // l'entrée et le dessert seulement si le format du créneau en
+          // demande, l'accompagnement — garniture figée ou recette — toujours.
+          components: [
+            if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[i],
+            ?_slotSides[i],
+            if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[i],
+          ],
           createdAt: DateTime.now(),
         ),
       );
@@ -683,6 +710,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotConstraints = newConstraints;
         _slotDismissed = newDismissed;
         _slotSides = _shiftAfterInsert(_slotSides, gapIdx);
+        _slotStarters = _shiftAfterInsert(_slotStarters, gapIdx);
+        _slotDesserts = _shiftAfterInsert(_slotDesserts, gapIdx);
         final manual = _shiftAfterInsert({
           for (final i in _slotSideManual) i: true,
         }, gapIdx).keys.toSet();
@@ -757,6 +786,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotConstraints = newConstraints;
       _slotDismissed = newDismissed;
       _slotSides = _shiftAfterRemove(_slotSides, index);
+      _slotStarters = _shiftAfterRemove(_slotStarters, index);
+      _slotDesserts = _shiftAfterRemove(_slotDesserts, index);
       final manual = _shiftAfterRemove({
         for (final i in _slotSideManual) i: true,
       }, index).keys.toSet();
@@ -986,6 +1017,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotPrepDates[slotIndex] = suggestion.prepDate;
       _slotSideManual.remove(slotIndex);
       _recomputeSides(only: {slotIndex});
+      // L'entrée et le dessert rendus avec le plat, quand le format en
+      // demandait ; un créneau régénéré sans eux garde ceux qu'il avait.
+      if (suggestion.starter != null) {
+        _slotStarters[slotIndex] = MealComponent.recipe(
+          suggestion.starter!,
+          role: MealComponentRole.entree,
+          justification: 'Entrée proposée par l\'IA.',
+        );
+      }
+      if (suggestion.dessert != null) {
+        _slotDesserts[slotIndex] = MealComponent.recipe(
+          suggestion.dessert!,
+          role: MealComponentRole.dessert,
+          justification: 'Dessert proposé par l\'IA.',
+        );
+      }
     });
   }
 
@@ -1285,6 +1332,54 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       if (e.key != removedAt) (e.key < removedAt ? e.key : e.key - 1): e.value,
   };
 
+  /// Choisir l'entrée ou le dessert d'un créneau à la main, parmi les
+  /// recettes de ce rôle.
+  Future<void> _changeCourse(int index, MealComponentRole role) async {
+    final wanted = role == MealComponentRole.entree ? 'entree' : 'dessert';
+    final candidates = [
+      for (final r in _allRecipes)
+        if (r.id.isNotEmpty && r.tags.mealRole == wanted) r,
+    ];
+    if (candidates.isEmpty) {
+      _showError(
+        'Aucune recette classée en ${role.label.toLowerCase()}. Classez vos '
+        'recettes depuis Admin › Backfills, ou changez le format du créneau.',
+      );
+      return;
+    }
+    final recipe = await showModalBottomSheet<Recipe>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => RecipePickerSheet(
+        recipes: candidates,
+        dismissedRecipeIds: const {},
+        dismissedFrom: 'créneau',
+      ),
+    );
+    if (recipe == null || !mounted) return;
+    setState(() {
+      final component = MealComponent.recipe(
+        recipe,
+        role: role,
+        justification: 'Choisi à la main.',
+      );
+      if (role == MealComponentRole.entree) {
+        _slotStarters[index] = component;
+      } else {
+        _slotDesserts[index] = component;
+      }
+    });
+  }
+
+  void _removeCourse(int index, MealComponentRole role) => setState(() {
+    if (role == MealComponentRole.entree) {
+      _slotStarters[index] = null;
+    } else {
+      _slotDesserts[index] = null;
+    }
+  });
+
   void _showError(String msg) {
     if (!mounted) return;
     context.showErrorSnackBar(msg);
@@ -1325,7 +1420,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               prepDate: _slotPrepDates[index],
               mealDate: startTime,
             ),
-      components: [?_slotSides[index]],
+      components: [
+        if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[index],
+        ?_slotSides[index],
+        if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[index],
+      ],
       portions: slotConstraint.targetPortions > 0
           ? slotConstraint.targetPortions
           : recipe.portions,
@@ -1525,6 +1624,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                           _slots[index] = null;
                           _slotSides.remove(index);
                           _slotSideManual.remove(index);
+                          _slotStarters.remove(index);
+                          _slotDesserts.remove(index);
                           _slotJustifications.remove(index);
                           _slotPrepDates.remove(index);
                           _slotWasResized.remove(index);
@@ -1580,6 +1681,38 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         onRemoveSide: _slotSides[index] != null
                             ? () => _removeSide(index)
                             : null,
+                        starter: _slotStarters[index],
+                        dessert: _slotDesserts[index],
+                        onChangeStarter: _slots[index] != null
+                            ? () =>
+                                  _changeCourse(index, MealComponentRole.entree)
+                            : null,
+                        onRemoveStarter: _slotStarters[index] != null
+                            ? () =>
+                                  _removeCourse(index, MealComponentRole.entree)
+                            : null,
+                        onChangeDessert: _slots[index] != null
+                            ? () => _changeCourse(
+                                index,
+                                MealComponentRole.dessert,
+                              )
+                            : null,
+                        onRemoveDessert: _slotDesserts[index] != null
+                            ? () => _removeCourse(
+                                index,
+                                MealComponentRole.dessert,
+                              )
+                            : null,
+                        // Le plat seul est le défaut : le choisir remet le
+                        // créneau à « pas réglé », il n'est jamais stocké.
+                        onFormatChanged: (f) => setState(() {
+                          final current =
+                              _slotConstraints[index] ?? const DayConstraint();
+                          _slotConstraints[index] =
+                              f == MealFormat.defaultFormat
+                              ? current.copyWith(clearMealFormat: true)
+                              : current.copyWith(mealFormat: f);
+                        }),
                       );
                     },
                   ),

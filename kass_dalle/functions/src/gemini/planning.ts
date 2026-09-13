@@ -52,28 +52,137 @@ export interface PlanningRecipeSummary {
   cuisines?: string[];
   occasions?: string[];
   mainIngredients?: string[];
+  /**
+   * Rôle dans un repas, posé sur la recette par le modèle une fois pour
+   * toutes : `plat`, `accompagnement`, `entree`, `dessert`, `snack`. Absent
+   * pour une recette pas encore classée.
+   */
+  mealRole?: string | null;
 }
 
 /**
- * Règles de créneau, dupliquées côté Dart dans
- * `lib/features/planning/domain/planning_slot_rules.dart`.
+ * Règles de créneau — serveur seul, verrouillées par
+ * `test-fixtures/planning_slot_rules.json` (`planningSlotRules.test.ts`).
  *
- * Un écart ne casse aucun écran : il laisse simplement passer un dessert d'un
- * côté, ou décale un jour de préparation de l'autre. Les cas vivent dans
- * `test-fixtures/planning_slot_rules.json`, rejoués par les deux suites.
+ * Un écart ne lève aucune erreur : il laisse passer un dessert en plat, ou
+ * décale un jour de préparation. Les cas vivent dans la fixture.
  */
-const DESSERT_REQUEST_MARKERS = [
-  "dessert",
-  "sucre",
-  "sucré",
-  "gouter",
-  "goûter",
-  "petit dej",
-  "petit-déj",
-  "petit dejeuner",
-  "petit-déjeuner",
-  "brunch",
-];
+
+/** Ce qu'un format de repas demande autour du plat. */
+export type MealFormatKey =
+  "plat" | "plat_dessert" | "entree_plat" | "entree_plat_dessert" | "leger";
+
+export interface MealFormatSpec {
+  key: MealFormatKey;
+  wantsStarter: boolean;
+  wantsDessert: boolean;
+  /** Un seul plat léger : soupe, salade, entrée servie en plat, en-cas. */
+  light: boolean;
+  /** Comment le prompt nomme ce format. */
+  label: string;
+}
+
+const MEAL_FORMATS: Record<MealFormatKey, MealFormatSpec> = {
+  plat: { key: "plat", wantsStarter: false, wantsDessert: false, light: false, label: "plat seul" },
+  plat_dessert: {
+    key: "plat_dessert",
+    wantsStarter: false,
+    wantsDessert: true,
+    light: false,
+    label: "plat + dessert",
+  },
+  entree_plat: {
+    key: "entree_plat",
+    wantsStarter: true,
+    wantsDessert: false,
+    light: false,
+    label: "entrée + plat",
+  },
+  entree_plat_dessert: {
+    key: "entree_plat_dessert",
+    wantsStarter: true,
+    wantsDessert: true,
+    light: false,
+    label: "entrée + plat + dessert",
+  },
+  leger: {
+    key: "leger",
+    wantsStarter: false,
+    wantsDessert: false,
+    light: true,
+    label: "repas léger — un seul plat léger : soupe, salade, entrée servie en plat, en-cas",
+  },
+};
+
+/**
+ * Le format d'un créneau. Tout ce qui n'est pas réglé, ou inconnu, est le
+ * plat seul : un format deviné vaudrait un dessert que personne n'a demandé.
+ *
+ * C'est le format qui décide d'une entrée ou d'un dessert — et non plus un
+ * mot-clé lu dans une contrainte en langage naturel.
+ */
+export function mealFormatOf(key: string | null | undefined): MealFormatSpec {
+  if (!key) return MEAL_FORMATS.plat;
+  return (MEAL_FORMATS as Record<string, MealFormatSpec>)[key] ?? MEAL_FORMATS.plat;
+}
+
+export type PlanningRole = "plat" | "accompagnement" | "entree" | "dessert" | "snack";
+
+/**
+ * Le rôle sous lequel le planning propose une recette.
+ *
+ * Une recette classée porte son rôle. Une recette pas encore classée est un
+ * plat — sauf si son titre ou ses types disent un dessert : le repli par
+ * mots-clés d'avant, gardé pour ce que le backfill n'a pas encore vu.
+ */
+export function planningRoleOf(recipe: PlanningRecipeSummary): PlanningRole {
+  const role = recipe.mealRole;
+  if (
+    role === "plat" ||
+    role === "accompagnement" ||
+    role === "entree" ||
+    role === "dessert" ||
+    role === "snack"
+  ) {
+    return role;
+  }
+  return isDessertRecipe(recipe) ? "dessert" : "plat";
+}
+
+/**
+ * Ce que le prompt liste, par rôle. Un accompagnement ne se sert pas seul :
+ * il n'est proposé nulle part ici, c'est le programme qui le pose.
+ */
+export function partitionByRole(recipes: PlanningRecipeSummary[]): {
+  plats: PlanningRecipeSummary[];
+  entrees: PlanningRecipeSummary[];
+  desserts: PlanningRecipeSummary[];
+  encas: PlanningRecipeSummary[];
+} {
+  const plats: PlanningRecipeSummary[] = [];
+  const entrees: PlanningRecipeSummary[] = [];
+  const desserts: PlanningRecipeSummary[] = [];
+  const encas: PlanningRecipeSummary[] = [];
+  for (const r of recipes) {
+    switch (planningRoleOf(r)) {
+      case "plat":
+        plats.push(r);
+        break;
+      case "entree":
+        entrees.push(r);
+        break;
+      case "dessert":
+        desserts.push(r);
+        break;
+      case "snack":
+        encas.push(r);
+        break;
+      default:
+        break;
+    }
+  }
+  return { plats, entrees, desserts, encas };
+}
 
 const DESSERT_RECIPE_MARKERS = [
   "dessert",
@@ -95,13 +204,12 @@ const DESSERT_RECIPE_MARKERS = [
   "banane split",
 ];
 
-/** Vrai si les contraintes demandent explicitement du sucré. */
-export function asksForDessert(globalConstraints: string, dailyNotes: string): boolean {
-  const text = `${globalConstraints} ${dailyNotes}`.toLowerCase();
-  return DESSERT_REQUEST_MARKERS.some((k) => text.includes(k));
-}
-
-/** Vrai si les attributs d'une recette la désignent comme sucrée. */
+/**
+ * Vrai si les attributs d'une recette la désignent comme sucrée.
+ *
+ * Repli pour les recettes que le backfill des rôles n'a pas encore vues : une
+ * recette classée porte `meal_role`, et ce repli ne la regarde plus.
+ */
 export function isDessertBag(attributes: string[]): boolean {
   const bag = attributes.join(" ").toLowerCase();
   return DESSERT_RECIPE_MARKERS.some((k) => bag.includes(k));
@@ -156,6 +264,8 @@ export interface DayConstraint {
   targetPortions?: number;
   isBatchCooking?: boolean;
   notes?: string;
+  /** Format du repas (`MealFormatKey`) ; absent = plat seul. */
+  mealFormat?: string;
 }
 
 export interface PlanningInput {
@@ -267,6 +377,10 @@ export interface PlanningSuggestion {
 export interface PlanningSlotResult {
   slot: number;
   recipeId: string;
+  /** L'entrée, quand le format du créneau en demande une ; une recette de rôle `entree`. */
+  starterId?: string;
+  /** Le dessert, quand le format du créneau en demande un ; une recette de rôle `dessert`. */
+  dessertId?: string;
   /** Justification de la suggestion : critères respectés ou enfreints. */
   justification?: string;
   /** True si la suggestion implique un redimensionnement/ajustement. */
@@ -339,8 +453,18 @@ export async function suggestMealPlan(
     "Tu dois rigoureusement distinguer trois types de slots : (a) repas frais cuisiné le jour même, (b) repas servi un jour de batch cooking, qui reste un vrai repas de ce jour, (c) slot de réchauffage qui consomme un plat préparé un autre jour.",
   );
   lines.push("");
-  lines.push("=== RECETTES DISPONIBLES ===");
-  for (const r of candidates) {
+  // Les formats des créneaux décident des listes à montrer : pas de liste de
+  // desserts si aucun jour n'en veut. Le corpus est partitionné par rôle, pas
+  // envoyé en bloc — les mêmes lignes, sous trois titres.
+  const formats = input.slotDates.map((_, i) =>
+    mealFormatOf(constraintForSlot(input, i)?.mealFormat),
+  );
+  const anyStarter = formats.some((f) => f.wantsStarter);
+  const anyDessert = formats.some((f) => f.wantsDessert);
+  const anyLight = formats.some((f) => f.light);
+  const { plats, entrees, desserts, encas } = partitionByRole(candidates);
+
+  const describe = (r: PlanningRecipeSummary): string => {
     const attrs: string[] = [];
     if (r.prepTime) attrs.push(`${r.prepTime}min prép`);
     if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
@@ -354,9 +478,34 @@ export async function suggestMealPlan(
     if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine: ${r.cuisines.join(", ")}`);
     if (r.mainIngredients && r.mainIngredients.length > 0)
       attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
-    lines.push(`- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`);
-  }
+    return `- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`;
+  };
+
+  lines.push('=== PLATS DISPONIBLES (le "recipe_id" de chaque slot vient d\'ici) ===');
+  for (const r of plats) lines.push(describe(r));
+  if (plats.length === 0) lines.push("(aucun)");
   lines.push("");
+  if (anyStarter || anyLight) {
+    lines.push(
+      '=== ENTRÉES DISPONIBLES ("starter_id" des slots dont le format comprend une entrée ; ou plat d\'un repas léger) ===',
+    );
+    for (const r of entrees) lines.push(describe(r));
+    if (entrees.length === 0) lines.push("(aucune)");
+    lines.push("");
+  }
+  if (anyDessert) {
+    lines.push(
+      '=== DESSERTS DISPONIBLES ("dessert_id" des slots dont le format comprend un dessert — jamais en "recipe_id") ===',
+    );
+    for (const r of desserts) lines.push(describe(r));
+    if (desserts.length === 0) lines.push("(aucun)");
+    lines.push("");
+  }
+  if (anyLight && encas.length > 0) {
+    lines.push("=== EN-CAS (plat d'un repas léger seulement) ===");
+    for (const r of encas) lines.push(describe(r));
+    lines.push("");
+  }
 
   if (input.globalConstraints.trim()) {
     lines.push("=== PRÉFÉRENCES GÉNÉRALES (s'appliquent à TOUS les jours) ===");
@@ -438,6 +587,9 @@ export async function suggestMealPlan(
         "JOUR DE BATCH COOKING (jour avec plus de temps; repas servi ce jour = repas normal)",
       );
     if (isReheatDay) tags.push("SLOT DE RÉCHAUFFAGE (repas préparé un autre jour)");
+    // Le format est dit sur chaque slot, plat seul compris : c'est lui qui
+    // ouvre ou ferme l'entrée et le dessert, pas une contrainte en prose.
+    tags.push(`FORMAT : ${formats[i].label}`);
     if (tags.length > 0) line += ` [TYPE : ${tags.join(" + ")}]`;
     if (constraint) {
       const parts: string[] = [];
@@ -457,13 +609,15 @@ export async function suggestMealPlan(
   lines.push("=== INSTRUCTIONS ===");
   lines.push(`Réponds UNIQUEMENT avec un tableau JSON valide. Pour chaque slot, indique :
 - "slot" : numéro du slot
-- "recipe_id" : l'ID exact de la recette choisie
+- "recipe_id" : l'ID exact du plat choisi
+- "starter_id" : UNIQUEMENT pour un slot dont le FORMAT comprend une entrée — l'ID exact d'une recette de la liste ENTRÉES DISPONIBLES ; omets la clé sinon
+- "dessert_id" : UNIQUEMENT pour un slot dont le FORMAT comprend un dessert — l'ID exact d'une recette de la liste DESSERTS DISPONIBLES ; omets la clé sinon
 - "why" : en 1-2 phrases, explique pourquoi cette recette est adaptée (critères respectés) ou note les éventuelles contraintes enfreintes
 - "resized" : true si tu as dû redimensionner/adapter la proposition, sinon false
 - "resize_reason" : texte court décrivant ce qui a été redimensionné, chaîne vide si resized=false
 
 Format attendu :
-[{"slot": 0, "recipe_id": "abc123", "why": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas.", "resized": false, "resize_reason": ""}, ...]
+[{"slot": 0, "recipe_id": "abc123", "starter_id": "def456", "dessert_id": "ghi789", "why": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas.", "resized": false, "resize_reason": ""}, ...]
 
 Règles :
 - respecte toutes les contraintes globales ET quotidiennes
@@ -471,7 +625,8 @@ Règles :
 - VARIÉTÉ STRICTE DES RECETTES : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
 - VARIÉTÉ STRICTE DES INGRÉDIENTS / PROTÉINES : ne planifie pas plusieurs fois d'affilée la même protéine principale (porc, bœuf, poulet, poisson…) ni le même féculent dominant (pâtes, riz, pommes de terre…). Avant de proposer un plat, vérifie ses "type", "thèmes" et "ingrédients" dans la liste des recettes : si une protéine ou un féculent apparaît déjà 1 fois dans le cycle, ne le ressers que si AUCUNE autre recette compatible ne propose une alternative. Idéalement, alterne protéines et féculents pour couvrir le maximum de variété.
 - NOMBRE DE PARTS : quand un slot indique "N parts à servir", privilégie une recette qui se prête à cette quantité (plat familial, plat unique, cuisson au four…) plutôt qu'une recette individuelle difficile à multiplier. Si tu dois multiplier ou diviser les quantités de la recette pour atteindre N parts, mets "resized": true et dis-le en une phrase dans "resize_reason".
-- Par défaut, ne propose PAS de recette de type dessert/sucré pour un repas principal. N'autorise un dessert comme plat que si les contraintes globales ou du jour le demandent explicitement.
+- FORMAT DU REPAS : "recipe_id" vient TOUJOURS de la liste PLATS DISPONIBLES — sauf pour un slot au format "repas léger", où il peut venir des ENTRÉES ou des EN-CAS. Un dessert n'est JAMAIS un "recipe_id". Une entrée ("starter_id") ne va que sur un slot dont le format comprend une entrée ; un dessert ("dessert_id") que sur un slot dont le format comprend un dessert. Un slot au format "plat seul" ne reçoit ni entrée ni dessert, quoi que disent les contraintes en langage naturel.
+- VARIÉTÉ DES ENTRÉES ET DESSERTS : la même entrée ou le même dessert ne revient pas deux fois dans le cycle tant qu'il en reste d'autres.
 - ne suggère JAMAIS le même plat sur deux slots consécutifs
 - si une répétition (recette OU protéine/féculent) est vraiment inévitable, explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
 - n'invente jamais d'id
@@ -496,17 +651,23 @@ Règles spécifiques au batch cooking :
     const arr = JSON.parse(extractJsonArray(text)) as Array<{
       slot?: number;
       recipe_id?: string;
+      starter_id?: string;
+      dessert_id?: string;
       justification?: string;
       why?: string;
       resized?: boolean;
       resize_reason?: string;
       resizeReason?: string;
     }>;
+    const asId = (v: unknown): string | undefined =>
+      typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
     const base = arr
       .filter((e) => typeof e.slot === "number" && typeof e.recipe_id === "string")
       .map((e) => {
         const slot = e.slot as number;
         const recipeId = e.recipe_id as string;
+        const starterId = asId(e.starter_id);
+        const dessertId = asId(e.dessert_id);
         const why =
           typeof e.why === "string"
             ? e.why
@@ -536,6 +697,8 @@ Règles spécifiques au batch cooking :
         return {
           slot,
           recipeId,
+          starterId,
+          dessertId,
           justification: why,
           resized,
           resizeReason: resizeReason.length > 0 ? resizeReason : undefined,
@@ -548,21 +711,44 @@ Règles spécifiques au batch cooking :
     // répétition avec un slot de réchauffage.
     // Les candidats, pas le corpus : une recette retirée par la fenêtre de
     // variété et rendue quand même par le modèle ne passe pas.
-    const validRecipeIds = new Set(candidates.map((r) => r.id));
+    const roleOf = new Map(candidates.map((r) => [r.id, planningRoleOf(r)]));
     const bySlot = [...base].sort((a, b) => a.slot - b.slot);
     const deduped: PlanningSlotResult[] = [];
     const usedRecipeIds = new Set<string>();
 
     for (const s of bySlot) {
-      if (!validRecipeIds.has(s.recipeId)) continue;
-      const constraint = constraintForSlot(input, s.slot);
-      const dailyNotes = constraint?.notes ?? "";
-      const allowsDessert = asksForDessert(input.globalConstraints, dailyNotes);
-      const recipe = input.recipes.find((r) => r.id === s.recipeId);
-      if (recipe && isDessertRecipe(recipe) && !allowsDessert) continue;
+      const mainRole = roleOf.get(s.recipeId);
+      if (mainRole == null) continue;
+      const format = mealFormatOf(constraintForSlot(input, s.slot)?.mealFormat);
+      // Le plat vient des plats ; en repas léger, une entrée ou un en-cas
+      // passent aussi. Un dessert n'est jamais un plat, quoi que rende le
+      // modèle — c'est le format du jour qui décide, pas une consigne en prose.
+      const mainOk =
+        mainRole === "plat" || (format.light && (mainRole === "entree" || mainRole === "snack"));
+      if (!mainOk) continue;
       if (usedRecipeIds.has(s.recipeId)) continue;
       usedRecipeIds.add(s.recipeId);
-      deduped.push(s);
+
+      // Entrée et dessert : seulement si le format en demande, seulement du
+      // bon rôle, et une fois chacun dans le cycle.
+      const starterId =
+        format.wantsStarter &&
+        s.starterId &&
+        roleOf.get(s.starterId) === "entree" &&
+        !usedRecipeIds.has(s.starterId)
+          ? s.starterId
+          : undefined;
+      if (starterId) usedRecipeIds.add(starterId);
+      const dessertId =
+        format.wantsDessert &&
+        s.dessertId &&
+        roleOf.get(s.dessertId) === "dessert" &&
+        !usedRecipeIds.has(s.dessertId)
+          ? s.dessertId
+          : undefined;
+      if (dessertId) usedRecipeIds.add(dessertId);
+
+      deduped.push({ ...s, starterId, dessertId });
     }
 
     return { slots: deduped, excludedRecentIds };

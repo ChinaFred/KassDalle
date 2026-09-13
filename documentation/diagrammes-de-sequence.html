@@ -1566,15 +1566,16 @@ sequenceDiagram
   B->>RE: charge le corpus, livres privés d'autrui exclus
   B->>PM: lit les repas des N semaines avant le cycle
   PM-->>B: recentlyServed, une fois par recette, du plus récent au plus ancien
-  B->>SP: slotDates, slotConstraints, alreadyAssigned, corpus, recentlyServed
+  B->>SP: slotDates, slotConstraints (format du jour compris),<br/>alreadyAssigned, corpus, recentlyServed
   SP->>PL: applyRecentlyServed(corpus, recentlyServed, créneaux à remplir)
   PL-->>SP: candidats sans les plats récents, tant qu'il en reste assez ;<br/>ceux qu'il a fallu garder sont nommés au modèle
 
+  SP->>PL: partitionByRole(candidats) : plats, entrées, desserts, en-cas — jamais un accompagnement
   loop chaque créneau vide
     SP->>PL: slotKind(jour, jour de batch)
-    PL->>PL: batch, dessert demandé ?, jour de préparation ?
+    PL->>PL: mealFormatOf(format du jour) : entrée ? dessert ? léger ?<br/>batch, jour de préparation ?
     SP->>M: un créneau, avec les choix déjà faits
-    M-->>SP: recette retenue + raison
+    M-->>SP: plat retenu + raison, et entrée / dessert si le format en demande
     SP->>SP: ajoute au contexte du créneau suivant
   end
 
@@ -1591,9 +1592,9 @@ sequenceDiagram
         préparation, masquait qu'aucune suggestion n'avait été rendue, et faisait passer une
         recette choisie par lui pour une décision de l'IA. Un créneau vide est plus honnête.
         <span class="expect">
-          <b><code>planning_slot_rules.json</code> ne verrouille plus qu'un seul côté.</b> Dessert,
-          nature du créneau et jour de préparation sont testés par <code>gemini/planning.ts</code>
-          uniquement.
+          <b><code>planning_slot_rules.json</code> ne verrouille plus qu'un seul côté.</b> Format du
+          repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de
+          préparation et fenêtre de variété sont testés par <code>gemini/planning.ts</code> uniquement.
         </span>
         <span class="expect warn">
           <b>Le corpus exclut les livres privés des autres membres.</b> Le générateur chargeait les

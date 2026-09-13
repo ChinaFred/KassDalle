@@ -350,7 +350,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `unit_to_grams.json` | conversion en grammes, et quantité absente (pincée, assaisonnements) | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
-| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul** | — | `gemini/planning.ts` |
+| `planning_slot_rules.json` | format du repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de préparation, fenêtre de variété — **serveur seul** | — | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |

@@ -704,6 +704,19 @@ classDiagram
     +String notes
     +int? mealHour
     +int? mealMinute
+    +MealFormat? mealFormat
+  }
+
+  class MealFormat {
+    &lt;&lt;enumeration&gt;&gt;
+    plat
+    platDessert
+    entreePlat
+    entreePlatDessert
+    leger
+    +wantsStarter
+    +wantsDessert
+    +isLight
   }
 
   class MealPrepContext {
@@ -796,6 +809,7 @@ classDiagram
   MealComponent ..> Recipe : recette d'accompagnement
   SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
+  DayConstraint --> MealFormat : plat seul par défaut ; entrée, dessert, léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
   PlannedMeal "1..*" --o "1" ReplayableWeek : par semaine de planning

@@ -1,14 +1,14 @@
 /**
- * Règles de créneau du planning côté serveur.
+ * Règles de créneau du planning — serveur seul.
  *
- * Ces décisions existent en double, ici et dans
- * `lib/features/planning/domain/planning_slot_rules.dart`. Le serveur les
- * applique pour composer le prompt et dédoublonner la réponse du modèle, le
- * client les rejoue quand un créneau revient vide.
+ * Le serveur les applique pour composer le prompt et lire la réponse du
+ * modèle : le format d'un créneau (entrée ? dessert ? repas léger ?), le rôle
+ * sous lequel une recette est proposée, la nature du créneau, le jour de
+ * préparation, la fenêtre de variété.
  *
  * Un écart ne casse aucun écran et ne lève aucune erreur : il laisse passer un
- * dessert d'un côté, ou décale d'une semaine un jour de préparation de l'autre.
- * Les cas viennent donc de la fixture partagée, rejouée par les deux suites.
+ * dessert en plat, ou décale d'une semaine un jour de préparation. Les cas
+ * viennent donc de la fixture `planning_slot_rules.json`.
  *
  * Logique pure : ni Firestore, ni réseau, ni appel de modèle.
  */
@@ -19,18 +19,30 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  asksForDessert,
   isDessertBag,
   slotKind,
   computePrepDate,
   applyRecentlyServed,
+  mealFormatOf,
+  planningRoleOf,
+  partitionByRole,
   type PlanningRecipeSummary,
 } from "../gemini/planning";
 
 const FIXTURE = path.join(__dirname, "..", "..", "..", "test-fixtures", "planning_slot_rules.json");
 
 interface Fixture {
-  asks_for_dessert: Array<{ global: string; notes: string; expected: boolean; why: string }>;
+  meal_format: Array<{
+    key: string | null;
+    expected: { wantsStarter: boolean; wantsDessert: boolean; light: boolean };
+    why: string;
+  }>;
+  planning_role: Array<{
+    meal_role: string | null;
+    attributes: string[];
+    expected: string;
+    why: string;
+  }>;
   is_dessert: Array<{ attributes: string[]; expected: boolean; why: string }>;
   slot_kind: Array<{
     slot_weekday: number;
@@ -58,16 +70,58 @@ interface Fixture {
 
 const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as Fixture;
 
-describe("demande explicite de sucré", () => {
+describe("format d'un créneau", () => {
   test("la fixture partagée est non vide", () => {
-    assert.ok(fixture.asks_for_dessert.length > 0);
+    assert.ok(fixture.meal_format.length > 0);
   });
 
-  for (const c of fixture.asks_for_dessert) {
-    test(`« ${c.global} » / « ${c.notes} » (${c.why})`, () => {
-      assert.equal(asksForDessert(c.global, c.notes), c.expected);
+  for (const c of fixture.meal_format) {
+    test(`${c.key === null ? "(absent)" : `« ${c.key} »`} (${c.why})`, () => {
+      const spec = mealFormatOf(c.key);
+      assert.deepEqual(
+        { wantsStarter: spec.wantsStarter, wantsDessert: spec.wantsDessert, light: spec.light },
+        c.expected,
+      );
     });
   }
+});
+
+/** Une recette de la fixture : le titre d'abord, les types de plat ensuite. */
+function recipeOf(c: { meal_role: string | null; attributes: string[] }): PlanningRecipeSummary {
+  return {
+    id: "x",
+    titre: c.attributes[0] ?? "",
+    dishTypes: c.attributes.slice(1),
+    mealRole: c.meal_role,
+  };
+}
+
+describe("rôle sous lequel une recette est proposée", () => {
+  test("la fixture partagée est non vide", () => {
+    assert.ok(fixture.planning_role.length > 0);
+  });
+
+  for (const c of fixture.planning_role) {
+    test(`${c.meal_role ?? "(sans rôle)"} · ${c.attributes.join(" · ")} (${c.why})`, () => {
+      assert.equal(planningRoleOf(recipeOf(c)), c.expected);
+    });
+  }
+
+  test("les listes du prompt : plats, entrées, desserts, en-cas — jamais un accompagnement", () => {
+    const out = partitionByRole(
+      fixture.planning_role.map((c, i) => ({ ...recipeOf(c), id: `r${i}` })),
+    );
+    const roles = (list: PlanningRecipeSummary[]) => list.map((r) => planningRoleOf(r));
+    assert.ok(roles(out.plats).every((r) => r === "plat"));
+    assert.ok(roles(out.entrees).every((r) => r === "entree"));
+    assert.ok(roles(out.desserts).every((r) => r === "dessert"));
+    assert.ok(roles(out.encas).every((r) => r === "snack"));
+    const listed = out.plats.length + out.entrees.length + out.desserts.length + out.encas.length;
+    const accompagnements = fixture.planning_role.filter(
+      (c) => c.expected === "accompagnement",
+    ).length;
+    assert.equal(listed, fixture.planning_role.length - accompagnements);
+  });
 });
 
 describe("recette sucrée", () => {

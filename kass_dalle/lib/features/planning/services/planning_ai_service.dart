@@ -24,6 +24,12 @@ class SlotSuggestion {
   /// True si la recette a été générée de toutes pièces par l'IA (pas issue du pool existant).
   final bool isGenerated;
 
+  /// L'entrée et le dessert rendus par le même appel, quand le format du
+  /// créneau en demande. Le serveur ne les rend que parmi les recettes de ce
+  /// rôle, une fois chacune dans le cycle.
+  final Recipe? starter;
+  final Recipe? dessert;
+
   const SlotSuggestion({
     this.recipe,
     this.justification,
@@ -31,6 +37,8 @@ class SlotSuggestion {
     this.resizeReason,
     this.prepDate,
     this.isGenerated = false,
+    this.starter,
+    this.dessert,
   });
 }
 
@@ -61,6 +69,9 @@ class PlanningAiService {
     'targetPortions': c.targetPortions,
     'isBatchCooking': c.isBatchCooking,
     'notes': c.notes,
+    // Le format décide si le serveur demande une entrée ou un dessert ;
+    // absent, c'est le plat seul.
+    if (c.mealFormat != null) 'mealFormat': c.mealFormat!.key,
   };
 
   /// Suggère un planning de repas pour les [slotDates] données.
@@ -105,6 +116,9 @@ class PlanningAiService {
               if (r.tags.cuisines.isNotEmpty) 'cuisines': r.tags.cuisines,
               if (r.ingredientsIndex.isNotEmpty)
                 'mainIngredients': r.ingredientsIndex.take(8).toList(),
+              // Le rôle range la recette dans la bonne liste du prompt :
+              // plats, entrées, desserts. Absent, elle est un plat.
+              if (r.tags.hasMealRole) 'mealRole': r.tags.mealRole,
             },
           )
           .toList(),
@@ -159,6 +173,10 @@ class PlanningAiService {
         wasResized: s.resized,
         resizeReason: s.resizeReason,
         prepDate: s.prepDate != null ? DateTime.tryParse(s.prepDate!) : null,
+        // Une entrée ou un dessert que le corpus ne connaît pas est ignoré :
+        // le serveur ne les rend qu'en identifiants, jamais en titres.
+        starter: s.starterId == null ? null : recipeById[s.starterId!],
+        dessert: s.dessertId == null ? null : recipeById[s.dessertId!],
       );
     }
 

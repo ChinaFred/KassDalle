@@ -16,6 +16,44 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.67 — fonctionnel
+
+#### Le format du repas : entrée, dessert, repas léger
+
+Chaque jour de la semaine porte un format de repas dans les préférences du planning, à
+côté de l'heure et des parts : plat seul (le défaut), plat et dessert, entrée et plat,
+entrée, plat et dessert, ou repas léger. Un jour qui n'a rien réglé suit le plat seul et
+ne stocke rien. Dans le nouveau planning, chaque créneau peut prendre un autre format le
+temps du cycle, et le résumé du créneau le dit.
+
+Quand le format le demande, l'entrée et le dessert arrivent avec le plat, du même appel
+de planning, parmi les recettes classées entrée ou dessert — une fois chacune dans le
+cycle. Le créneau les montre sous le plat, avec l'accompagnement, et chacun se change ou
+se retire d'un appui ; le sélecteur ne propose que les recettes du bon rôle. Un repas
+léger accepte une entrée, un snack ou un petit plat, sans dessert. Les composants
+partent avec le repas validé et dans l'événement Google Calendar.
+
+Un mot « dessert » écrit dans une contrainte en langage naturel n'ouvrait un créneau de
+dessert que si le modèle le lisait ainsi. Il ne compte plus : seul le format du jour
+décide.
+
+### v0.22.67 — technique
+
+- `planning_config/{uid}.daily_constraints[jour].meal_format` : `plat` | `plat_dessert` |
+  `entree_plat` | `entree_plat_dessert` | `leger`, absent = plat seul. Côté client
+  `MealFormat` (`features/planning/domain/meal_format.dart`), porté par `DayConstraint`.
+- `suggestMealPlanFn` reçoit `mealFormat` par contrainte et `mealRole` par recette. Le
+  prompt sépare plats, entrées, desserts et en-cas (`partitionByRole`), annonce le
+  format de chaque créneau (`mealFormatOf`) et attend `starter_id` / `dessert_id` à côté
+  de `recipe_id`. La relecture rejette une entrée ou un dessert que le format ne demande
+  pas, du mauvais rôle, ou déjà servi dans le cycle ; un plat de rôle entrée ou snack
+  n'est accepté qu'en repas léger. La détection d'un mot « dessert » dans les
+  contraintes est retirée ; `isDessertBag` ne sert plus qu'aux recettes non classées.
+- `planning_slot_rules.json` : sections `meal_format` et `planning_role` ; la section
+  `asks_for_dessert` est retirée. `test/meal_format_test.dart` côté Dart.
+- `planned_meals.components` reçoit l'entrée et le dessert (`role: entree` / `dessert`)
+  quand le format du créneau les demande ; l'export calendrier les reprend.
+
 ### v0.22.66 — fonctionnel
 
 #### Le rôle dans un repas se voit et se corrige
