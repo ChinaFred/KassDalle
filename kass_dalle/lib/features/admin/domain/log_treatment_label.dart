@@ -82,6 +82,7 @@ const Map<String, String> kLogTreatmentLabels = {
   // ── Planning et courses ────────────────────────────────────────────────
   'planning': 'Planification des repas',
   'planning_concept': 'Idée de recette pour un créneau',
+  'planning_meal_ideas': 'Idées de repas sur une consigne',
   'storage_advice': 'Conseils de conservation',
   'shopping_list': 'Liste de courses',
 

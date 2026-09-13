@@ -464,103 +464,103 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 ),
               Expanded(
                 child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Card(
-                child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Enrichissement des référentiels',
-                        style: theme.textTheme.titleMedium,
+                  children: [
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Enrichissement des référentiels',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Complète automatiquement, via IA, les données manquantes '
+                              'des référentiels : poids des unités et valeurs '
+                              'nutritionnelles (per100g) des ingrédients.',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Complète automatiquement, via IA, les données manquantes '
-                        'des référentiels : poids des unités et valeurs '
-                        'nutritionnelles (per100g) des ingrédients.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _BackfillTile(
-                icon: Icons.auto_awesome_outlined,
-                title: 'Enrichir unités + ingrédients',
-                subtitle:
-                    'Estime les poids d\'unités manquants et les per100g des '
-                    'ingrédients. Idempotent, reprise sur checkpoint.',
-                onTap: _busy ? null : _runBackfillEnrichReferentials,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.science_outlined,
-                title: 'Reprendre le sel des ingrédients',
-                subtitle:
-                    'Réparation : le sel et le sodium étaient additionnés au '
-                    'lieu d\'être réconciliés, et tout ingrédient salé en porte '
-                    'le double. Réestime les profils concernés — dépense '
-                    'importante, à ne lancer qu\'une fois.',
-                onTap: _busy ? null : _runBackfillRefreshSodium,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.restore_outlined,
-                title: 'Reprendre la nutrition',
-                subtitle:
-                    'Recalcule les recettes dont la nutrition manque, a échoué '
-                    'ou reste incomplète. Le passage de 5 h le fait déjà ; '
-                    'ici, sans attendre vingt heures.',
-                onTap: _busy ? null : _runBackfillNutrition,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.menu_book_outlined,
-                title: 'Rattacher les recettes sans livre',
-                subtitle:
-                    'Range dans « Mes recettes libres » les recettes qui n\'ont '
-                    'aucun livre. Tourne déjà à chaque ouverture de la '
-                    'bibliothèque ; ici, elle rend un compte.',
-                onTap: _busy ? null : _runAttachOrphanRecipes,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.lock_outline,
-                title: 'Reprendre la confidentialité',
-                subtitle:
-                    'Pose « privé » ou « partagé » sur chaque recette, d\'après '
-                    'son livre. À lancer une fois : les recettes antérieures ne '
-                    'portent pas le champ, et un champ absent les exclut des '
-                    'écrans de la famille.',
-                onTap: _busy ? null : _runBackfillRecipePrivacy,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.rice_bowl_outlined,
-                title: 'Semer les garnitures simples',
-                subtitle:
-                    'Crée les garnitures de base — riz, pâtes, salade verte, '
-                    'yaourt… — avec la part par personne. Ne touche pas à '
-                    'celles qui existent. Aucun appel d\'IA.',
-                onTap: _busy ? null : _runSeedMealStaples,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.restaurant_outlined,
-                title: 'Rôle des recettes dans un repas',
-                subtitle:
-                    'Classe les recettes non classées : plat, accompagnement, '
-                    'entrée, dessert ou snack, ce qu\'elles apportent déjà et '
-                    'leurs accompagnements classiques. Un appel par recette, '
-                    'quarante par passage.'
-                    '${_rolesReportLine(rolesReport)}',
-                onTap: _busy ? null : _runBackfillRecipeRoles,
-              ),
-            ],
+                    ),
+                    const SizedBox(height: 12),
+                    _BackfillTile(
+                      icon: Icons.auto_awesome_outlined,
+                      title: 'Enrichir unités + ingrédients',
+                      subtitle:
+                          'Estime les poids d\'unités manquants et les per100g des '
+                          'ingrédients. Idempotent, reprise sur checkpoint.',
+                      onTap: _busy ? null : _runBackfillEnrichReferentials,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.science_outlined,
+                      title: 'Reprendre le sel des ingrédients',
+                      subtitle:
+                          'Réparation : le sel et le sodium étaient additionnés au '
+                          'lieu d\'être réconciliés, et tout ingrédient salé en porte '
+                          'le double. Réestime les profils concernés — dépense '
+                          'importante, à ne lancer qu\'une fois.',
+                      onTap: _busy ? null : _runBackfillRefreshSodium,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.restore_outlined,
+                      title: 'Reprendre la nutrition',
+                      subtitle:
+                          'Recalcule les recettes dont la nutrition manque, a échoué '
+                          'ou reste incomplète. Le passage de 5 h le fait déjà ; '
+                          'ici, sans attendre vingt heures.',
+                      onTap: _busy ? null : _runBackfillNutrition,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.menu_book_outlined,
+                      title: 'Rattacher les recettes sans livre',
+                      subtitle:
+                          'Range dans « Mes recettes libres » les recettes qui n\'ont '
+                          'aucun livre. Tourne déjà à chaque ouverture de la '
+                          'bibliothèque ; ici, elle rend un compte.',
+                      onTap: _busy ? null : _runAttachOrphanRecipes,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.lock_outline,
+                      title: 'Reprendre la confidentialité',
+                      subtitle:
+                          'Pose « privé » ou « partagé » sur chaque recette, d\'après '
+                          'son livre. À lancer une fois : les recettes antérieures ne '
+                          'portent pas le champ, et un champ absent les exclut des '
+                          'écrans de la famille.',
+                      onTap: _busy ? null : _runBackfillRecipePrivacy,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.rice_bowl_outlined,
+                      title: 'Semer les garnitures simples',
+                      subtitle:
+                          'Crée les garnitures de base — riz, pâtes, salade verte, '
+                          'yaourt… — avec la part par personne. Ne touche pas à '
+                          'celles qui existent. Aucun appel d\'IA.',
+                      onTap: _busy ? null : _runSeedMealStaples,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.restaurant_outlined,
+                      title: 'Rôle des recettes dans un repas',
+                      subtitle:
+                          'Classe les recettes non classées : plat, accompagnement, '
+                          'entrée, dessert ou snack, ce qu\'elles apportent déjà et '
+                          'leurs accompagnements classiques. Un appel par recette, '
+                          'quarante par passage.'
+                          '${_rolesReportLine(rolesReport)}',
+                      onTap: _busy ? null : _runBackfillRecipeRoles,
+                    ),
+                  ],
                 ),
               ),
             ],

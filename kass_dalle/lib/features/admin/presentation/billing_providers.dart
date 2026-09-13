@@ -98,8 +98,9 @@ final backfillReportsRepositoryProvider = Provider<BackfillReportsRepository>(
 /// en continu depuis son point de contrôle. `null` tant qu'aucun passage n'a
 /// fini. Sert à qui a quitté l'écran avant la fin d'un passage, et à dire
 /// combien de recettes restent à classer avant d'en lancer un autre.
-final recipeRolesBackfillReportProvider = StreamProvider.autoDispose<
-  RecipeRolesBackfillReport?
->((ref) {
-  return ref.watch(backfillReportsRepositoryProvider).watchRecipeRolesReport();
-});
+final recipeRolesBackfillReportProvider =
+    StreamProvider.autoDispose<RecipeRolesBackfillReport?>((ref) {
+      return ref
+          .watch(backfillReportsRepositoryProvider)
+          .watchRecipeRolesReport();
+    });

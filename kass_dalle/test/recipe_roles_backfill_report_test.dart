@@ -40,7 +40,10 @@ void main() {
     test('un décompte absent reste inconnu, il ne devient pas zéro', () {
       final absent = RecipeRolesBackfillReport.fromMap({'classees': 3});
       expect(absent.restantes, isNull);
-      expect(absent.restantesSentence, startsWith('Reste à classer : décompte'));
+      expect(
+        absent.restantesSentence,
+        startsWith('Reste à classer : décompte'),
+      );
 
       final nul = RecipeRolesBackfillReport.fromMap({'restantes': null});
       expect(nul.restantes, isNull);
