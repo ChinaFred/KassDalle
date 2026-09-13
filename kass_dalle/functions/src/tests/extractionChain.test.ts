@@ -131,6 +131,9 @@ function taggedGravlax(over: Partial<ReturnType<typeof parseTagged>> = {}) {
     ],
     cuisines: ["scandinave"],
     dishTypes: ["poisson"],
+    mealRole: null,
+    contains: [],
+    suggestedSides: [],
     ...over,
   };
 }

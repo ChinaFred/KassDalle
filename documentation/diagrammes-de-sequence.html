@@ -275,7 +275,7 @@ sequenceDiagram
 
     loop chaque recette transcrite
       P->>G: PASSE 2 — tagAndNormalize (texte seul, pas d'image)
-      G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines et types de plat
+      G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines, types de plat, rôle dans un repas
       P->>LOG: stage « balisage » — la sortie du modèle
 
       P->>P: contrôle de fidélité — AUCUN appel
@@ -2058,7 +2058,7 @@ sequenceDiagram
 
   FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
   T2->>M: transforme la transcription en CookLang
-  M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat
+  M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides)
 
   FN->>CF: compare passe 2 à passe 1 — aucun appel
   alt rupture

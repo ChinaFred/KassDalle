@@ -39,12 +39,10 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Garnitures simples'),
+        // Le semis de la liste de base ne vit pas ici : c'est une écriture
+        // ponctuelle, et elle se lance depuis Admin › Backfills avec les
+        // autres. Cet écran montre et corrige.
         actions: [
-          IconButton(
-            tooltip: 'Semer la liste de base',
-            onPressed: _seedDefaults,
-            icon: const Icon(Icons.restore_outlined),
-          ),
           IconButton(
             tooltip: 'Ajouter une garniture',
             onPressed: _openCreateDialog,
@@ -93,7 +91,7 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
                       padding: EdgeInsets.all(24),
                       child: Text(
                         'Aucune garniture. Semez la liste de base depuis '
-                        'l\'icône en haut à droite.',
+                        'Admin › Backfills, « Semer les garnitures simples ».',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -257,45 +255,6 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
       success: 'Garniture supprimée.',
       feature: 'admin_meal_staples_delete',
       context: {'id': staple.id},
-    );
-  }
-
-  Future<void> _seedDefaults() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Semer la liste de base ?'),
-        content: Text(
-          'Crée les ${kDefaultMealStaples.length} garnitures de base qui '
-          'manquent. Celles qui existent déjà ne sont pas touchées : une '
-          'valeur corrigée ici fait foi.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Semer'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || confirmed != true) return;
-    await _runAction(
-      messenger,
-      () async {
-        final r = await ref.read(mealStaplesRepositoryProvider).seedDefaults();
-        final msg = r.created == 0
-            ? 'Tout était déjà en place (${r.skipped} garnitures).'
-            : '${r.created} créée${r.created > 1 ? 's' : ''}, '
-                  '${r.skipped} déjà en place.';
-        messenger.showSnackBar(SnackBar(content: Text(msg)));
-      },
-      success: '',
-      feature: 'admin_meal_staples_seed',
     );
   }
 

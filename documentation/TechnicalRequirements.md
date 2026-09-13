@@ -674,6 +674,17 @@ documents déjà écrits, sans migration. Cas de test dans
 | `difficulty` | `String?` | `easy` \| `medium` \| `hard` |
 | `prep_time` | `int?` | Durée en minutes |
 | `cook_time` | `int?` | Durée en minutes |
+| `rest_time` | `int?` | Temps de repos en minutes — marinade, réfrigération, levée |
+| `meal_role` | `String?` | **Rôle dans un repas** : `plat` \| `accompagnement` \| `entree` \| `dessert` \| `snack`. Reconnu une fois par le modèle — passe 2 de l'import, suggestion de tags, backfill « Rôle des recettes » — et lu par le programme pour composer un repas. Absent = pas encore classée. Les valeurs et la lecture de la réponse vivent dans `functions/src/gemini/mealRole.ts`, seul endroit qui les décide |
+| `contains` | `List<String>` | Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`. Un plat à qui il manque l'un des deux derniers appelle un accompagnement (`needsSide`) |
+| `suggested_sides` | `List<String>` | Accompagnements classiques d'un plat, noms courts, quatre au plus ; vide pour les autres rôles. Le programme y choisit au moment du planning, jamais le modèle |
+| `roles_tagged_at` | `Timestamp?` | Quand le backfill a posé le rôle |
+
+**Le rôle survit aux réécritures de `tags`.** Côté client, `RecipeTags.toMap()` n'écrit
+les trois champs que si le rôle est connu, et `validateDraft` écrit `tags` champ par champ
+(`tags.themes`, `tags.cuisines`, …) au lieu de remplacer la carte : un brouillon validé depuis
+le formulaire, qui ne connaît pas le rôle, ne l'efface pas. Le pipeline d'import écrit
+`meal_role: null` quand la passe 2 n'a pas su ; le backfill repasse sur ces recettes.
 
 ---
 
@@ -843,8 +854,8 @@ n'est pas saisi.
 | `source` | `String` | `builtin` (semée) \| `admin` (créée depuis l'écran) |
 | `created_at` · `updated_at` | `Timestamp` | Traçabilité |
 
-La **liste de base** (`kDefaultMealStaples`, 25 entrées) se sème d'un bouton et **ne remplace
-jamais** une entrée existante : une valeur corrigée dans Firestore fait foi, la liste du code
+La **liste de base** (`kDefaultMealStaples`, 25 entrées) se sème depuis *Admin › Backfills*
+(« Semer les garnitures simples ») et **ne remplace jamais** une entrée existante : une valeur corrigée dans Firestore fait foi, la liste du code
 ne sert qu'à créer ce qui manque — même règle que la grille tarifaire. Une part de pâtes y
 vaut 125 g secs, une part de riz 70 g crus.
 

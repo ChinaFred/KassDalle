@@ -458,6 +458,9 @@ export const recipeProcessor = onTaskDispatched(
           ingredients: [],
           cuisines: [],
           dishTypes: [],
+          mealRole: null,
+          contains: [],
+          suggestedSides: [],
           userId,
           bookId,
           bookTitre,
@@ -526,6 +529,9 @@ export const recipeProcessor = onTaskDispatched(
           ingredients: tagged.ingredients,
           cuisines: tagged.cuisines,
           dishTypes: tagged.dishTypes,
+          mealRole: tagged.mealRole,
+          contains: tagged.contains,
+          suggestedSides: tagged.suggestedSides,
           userId,
           bookId,
           bookTitre,
@@ -692,6 +698,10 @@ async function saveDraft(args: {
   ingredients: NormalizedIngredientLine[];
   cuisines: string[];
   dishTypes: string[];
+  /** Rôle dans un repas rendu par la passe 2 ; `null` quand elle n'a pas su. */
+  mealRole: string | null;
+  contains: string[];
+  suggestedSides: string[];
   userId: string;
   bookId?: string;
   bookTitre?: string;
@@ -910,6 +920,11 @@ async function saveDraft(args: {
       rest_time: tags.restTime ?? null,
       cuisines,
       dish_types: dishTypes,
+      // Le rôle dans un repas, reconnu par la passe 2. `null` quand le modèle
+      // n'a pas su : le backfill « Rôle des recettes » repasse sur ceux-là.
+      meal_role: args.mealRole,
+      contains: args.contains,
+      suggested_sides: args.suggestedSides,
     },
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,

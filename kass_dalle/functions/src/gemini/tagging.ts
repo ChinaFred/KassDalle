@@ -17,6 +17,7 @@ import { logAiText, logError } from "../logging";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
+import { parseMealRoleFields, type MealComponent, type MealRole } from "./mealRole";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
 
@@ -65,6 +66,10 @@ export interface TaggedRecipe {
   ingredients: NormalizedIngredientLine[];
   cuisines: string[];
   dishTypes: string[];
+  /** Rôle dans un repas, reconnu par la même passe ; `null` si le modèle n'a pas su. */
+  mealRole: MealRole | null;
+  contains: MealComponent[];
+  suggestedSides: string[];
 }
 
 /**
@@ -236,6 +241,9 @@ export function parseTagged(json: Record<string, unknown>): TaggedRecipe {
       .filter((i) => i.nom.length > 0),
     cuisines: asStringList(json.cuisines),
     dishTypes: asStringList(json.dish_types),
+    // Le rôle dans un repas, lu par le même garde-fou que partout ailleurs :
+    // seules les valeurs admises passent, le reste vaut « pas su ».
+    ...parseMealRoleFields(json),
   };
 }
 

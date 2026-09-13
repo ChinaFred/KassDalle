@@ -607,7 +607,11 @@ class RecipeRepository {
       'raw_cooklang': editedCooklang,
       'draft_cooklang': editedCooklang,
       'review_status': ReviewStatus.validated.name,
-      'tags': tags.toMap(),
+      // Champ par champ, et non la carte entière : le rôle dans un repas
+      // (`meal_role`, `contains`, `suggested_sides`) est posé par l'import ou
+      // par le backfill, et les tags relus depuis le formulaire ou le CookLang
+      // ne le portent pas. Réécrire `tags` en bloc l'effacerait sans un mot.
+      for (final e in tags.toMap().entries) 'tags.${e.key}': e.value,
       'ingredients_index': buildIngredientsIndex(ingredientsStructured),
       'ingredients': ingredientsStructured.map((i) => i.toMap()).toList(),
       'portions': portions,

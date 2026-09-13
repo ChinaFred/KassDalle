@@ -267,6 +267,22 @@ class RecipeTags {
   /// « celle-là se commence la veille ».
   final int? restTime;
 
+  /// Rôle dans un repas : `plat`, `accompagnement`, `entree`, `dessert`,
+  /// `snack`. Absent tant que la recette n'a pas été classée.
+  ///
+  /// Reconnu une fois par le modèle — à l'import, à la suggestion de tags, ou
+  /// par le backfill « Rôle des recettes » — et lu ensuite par le programme
+  /// pour composer un repas. Les valeurs vivent dans
+  /// `functions/src/gemini/mealRole.ts`, seul endroit qui les décide.
+  final String? mealRole;
+
+  /// Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`.
+  final List<String> contains;
+
+  /// Accompagnements classiques d'un plat qui manque de féculent ou de
+  /// légume, nommés simplement. Vide pour tout autre rôle.
+  final List<String> suggestedSides;
+
   const RecipeTags({
     this.themes = const [],
     this.cuisines = const [],
@@ -276,6 +292,9 @@ class RecipeTags {
     this.prepTime,
     this.cookTime,
     this.restTime,
+    this.mealRole,
+    this.contains = const [],
+    this.suggestedSides = const [],
   });
 
   factory RecipeTags.fromMap(Map<String, dynamic> data) {
@@ -288,6 +307,9 @@ class RecipeTags {
       prepTime: data['prep_time'] as int?,
       cookTime: data['cook_time'] as int?,
       restTime: data['rest_time'] as int?,
+      mealRole: data['meal_role'] as String?,
+      contains: List<String>.from(data['contains'] as List? ?? []),
+      suggestedSides: List<String>.from(data['suggested_sides'] as List? ?? []),
     );
   }
 
@@ -301,8 +323,22 @@ class RecipeTags {
       'prep_time': prepTime,
       'cook_time': cookTime,
       'rest_time': restTime,
+      // Écrits seulement quand le rôle est connu : un objet construit sans
+      // rôle — un formulaire, un CookLang relu — qui écrirait `null`
+      // effacerait ce que l'import ou le backfill a posé. Les écritures qui
+      // remplacent la carte entière passent par un objet lu en base, donc
+      // porteur du rôle ; celle qui ne le peut pas écrit champ par champ
+      // (`RecipeRepository.validateDraft`).
+      if (mealRole != null) ...{
+        'meal_role': mealRole,
+        'contains': contains,
+        'suggested_sides': suggestedSides,
+      },
     };
   }
+
+  /// Vrai quand la recette a été classée : rôle connu.
+  bool get hasMealRole => mealRole != null && mealRole!.isNotEmpty;
 
   RecipeTags copyWith({
     List<String>? themes,
@@ -313,6 +349,9 @@ class RecipeTags {
     int? prepTime,
     int? cookTime,
     int? restTime,
+    String? mealRole,
+    List<String>? contains,
+    List<String>? suggestedSides,
   }) {
     return RecipeTags(
       themes: themes ?? this.themes,
@@ -323,6 +362,9 @@ class RecipeTags {
       prepTime: prepTime ?? this.prepTime,
       cookTime: cookTime ?? this.cookTime,
       restTime: restTime ?? this.restTime,
+      mealRole: mealRole ?? this.mealRole,
+      contains: contains ?? this.contains,
+      suggestedSides: suggestedSides ?? this.suggestedSides,
     );
   }
 }

@@ -199,6 +199,11 @@ export const ROUTABLE_FEATURES: Array<{
   { id: "polish_cooklang", label: "Relecture d'un CookLang", group: "Rédaction" },
   { id: "polish_markdown", label: "Relecture d'un document Markdown", group: "Rédaction" },
   { id: "suggest_tags", label: "Suggestion de tags", group: "Rédaction" },
+  {
+    id: "backfill_recipe_roles",
+    label: "Rôle des recettes dans un repas (backfill)",
+    group: "Planning",
+  },
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
   {
     id: "storage_advice",

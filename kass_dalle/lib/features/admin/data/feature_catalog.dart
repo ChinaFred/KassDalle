@@ -56,6 +56,10 @@ const kFeatureProcess = <String, String>{
   'shopping_list': 'Planning et courses',
   'shopping_products_refresh': 'Planning et courses',
   'shopping_products_backfill': 'Planning et courses',
+  // Le rôle d'une recette dans un repas sert le planning : c'est lui qui
+  // compose un plat et son accompagnement. La reprise se lit donc à côté
+  // des autres postes du planning, pas dans la rédaction.
+  'backfill_recipe_roles': 'Planning et courses',
   'search': 'Recherche',
   'upload_security_scan': 'Sécurité',
   'image_moderation': 'Sécurité',
@@ -226,6 +230,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Suggère un plan de repas hebdomadaire équilibré à partir '
         'des recettes disponibles dans le livre.',
+  ),
+  'backfill_recipe_roles': FeatureInfo(
+    label: 'Rôle des recettes (backfill)',
+    description:
+        'Classe chaque recette existante par son rôle dans un repas — plat, '
+        'accompagnement, entrée, dessert, snack —, ce qu\'elle apporte déjà '
+        'et ses accompagnements classiques. Un appel par recette, lancé '
+        'depuis Admin › Backfills.',
   ),
   'shopping_list': FeatureInfo(
     label: 'Consolidation liste de courses',

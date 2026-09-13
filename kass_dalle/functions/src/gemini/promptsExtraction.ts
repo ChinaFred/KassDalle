@@ -16,6 +16,8 @@
  * code, sans appel supplémentaire.
  */
 
+import { MEAL_ROLE_JSON_KEYS, MEAL_ROLE_PROMPT } from "./mealRole";
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PASSE 1 — TRANSCRIPTION
 // ══════════════════════════════════════════════════════════════════════════════
@@ -483,6 +485,15 @@ Règles :
   À l'inverse, une ligne qui ne nomme qu'un aliment reste UNE entrée : « farine
   de blé T55 » n'est pas deux ingrédients.
 
+════ TRAVAIL 3 — DIRE LE RÔLE DU PLAT DANS UN REPAS ════
+
+Trois champs de plus, lus par le planning pour composer un repas — un plat et
+son accompagnement. Ils se déduisent de la recette entière, pas de son titre.
+Un doute laisse "meal_role" vide : une recette sans rôle sera reclassée, une
+recette mal classée ne le sera pas.
+
+${MEAL_ROLE_PROMPT}
+
 ════ SORTIE ════
 
 UNIQUEMENT un JSON valide, sans markdown :
@@ -496,6 +507,7 @@ UNIQUEMENT un JSON valide, sans markdown :
       "note": "<précision ou vide>" }
   ],
   "cuisines": ["<cuisine déduite, ex: française, thaïlandaise>"],
-  "dish_types": ["<parmi : viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack>"]
+  "dish_types": ["<parmi : viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack>"],
+  ${MEAL_ROLE_JSON_KEYS}
 }
 `;

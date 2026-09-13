@@ -109,6 +109,7 @@ export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
 export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
 export { backfillRecipePrivacyFn } from "./callable/privacyBackfillCallable";
+export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

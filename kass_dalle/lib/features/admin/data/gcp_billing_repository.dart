@@ -381,6 +381,50 @@ class GcpBillingRepository {
     };
   }
 
+  /// Rôle des recettes dans un repas : plat, accompagnement, entrée, dessert,
+  /// snack, avec ce que la recette apporte déjà et ses accompagnements
+  /// classiques. Un appel de modèle par recette non classée.
+  ///
+  /// Réentrante, reprise sur point de contrôle : relancer tant que le
+  /// résultat indique « incomplet ». [force] reclasse aussi les recettes
+  /// déjà classées.
+  Future<Map<String, int>> backfillRecipeRoles({
+    double maxMinutes = 8,
+    int maxRecipes = 40,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+    bool force = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'maxRecipes': maxRecipes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+      'force': force,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRecipeRolesFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    int count(String key) => (data[key] as num?)?.toInt() ?? 0;
+    return {
+      'examinees': count('examinees'),
+      'classees': count('classees'),
+      'dejaClassees': count('dejaClassees'),
+      'horsRecette': count('horsRecette'),
+      'sansRole': count('sansRole'),
+      'echouees': count('echouees'),
+      'completed': (data['completed'] == true) ? 1 : 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+      'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
+      'stoppedByErrors': (data['stoppedByErrors'] == true) ? 1 : 0,
+    };
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

@@ -5,6 +5,8 @@ import 'admin_providers.dart';
 import 'billing_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/presentation/book_providers.dart';
+import '../../planning/domain/meal_staple.dart';
+import '../../planning/presentation/meal_staples_providers.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -304,6 +306,96 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Sème le référentiel des garnitures simples.
+  ///
+  /// Une écriture ponctuelle, donc ici et non dans l'écran du référentiel :
+  /// c'est là qu'on cherche ce genre de bouton, et là qu'on attend un compte.
+  /// Aucun appel d'IA. Ne remplace jamais une entrée existante.
+  Future<void> _runSeedMealStaples() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Semer les garnitures simples'),
+        content: Text(
+          'Crée les ${kDefaultMealStaples.length} garnitures de base qui '
+          'manquent — riz, pâtes, salade verte, yaourt… — avec la part par '
+          'personne. Celles qui existent déjà ne sont pas touchées : une '
+          'valeur corrigée dans Admin › Référentiels fait foi.\n\n'
+          'Aucun appel d\'IA, aucun coût de modèle. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Semer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<({int created, int skipped})>(
+      label: 'Semis des garnitures simples...',
+      feature: 'admin_backfill_seed_meal_staples',
+      run: () => ref.read(mealStaplesRepositoryProvider).seedDefaults(),
+      format: (r) => r.created == 0
+          ? 'Tout était déjà en place (${r.skipped} garnitures).'
+          : '${r.created} garniture(s) créée(s), ${r.skipped} déjà en place.',
+    );
+  }
+
+  /// Classe les recettes par leur rôle dans un repas.
+  ///
+  /// Le planning ne compose un plat et son accompagnement que pour une
+  /// recette classée. La passe 2 de l'import classe ce qui arrive ; cette
+  /// reprise classe l'existant, quarante recettes par passage.
+  Future<void> _runBackfillRecipeRoles() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rôle des recettes dans un repas'),
+        content: const Text(
+          'Demande au modèle, pour chaque recette qui ne l\'a pas encore, son '
+          'rôle dans un repas — plat, accompagnement, entrée, dessert, snack —, '
+          'ce qu\'elle apporte déjà (protéine, féculent, légume) et ses '
+          'accompagnements classiques. C\'est ce qui permet au planning de '
+          'composer un plat et son accompagnement.\n\n'
+          'Un appel de modèle par recette, quarante recettes par passage. '
+          'Idempotent, avec reprise sur point de contrôle : relancez tant que '
+          'le résultat indique « incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Classement des recettes en cours...',
+      feature: 'admin_backfill_recipe_roles',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeRoles(),
+      format: (r) =>
+          'Recettes: examinées=${r['examinees']}, classées=${r['classees']}, '
+          'déjà classées=${r['dejaClassees']}, hors recette=${r['horsRecette']}, '
+          'sans rôle=${r['sansRole']}, échecs=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
+          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
   // Trois opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
@@ -418,6 +510,27 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'portent pas le champ, et un champ absent les exclut des '
                     'écrans de la famille.',
                 onTap: _busy ? null : _runBackfillRecipePrivacy,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.rice_bowl_outlined,
+                title: 'Semer les garnitures simples',
+                subtitle:
+                    'Crée les garnitures de base — riz, pâtes, salade verte, '
+                    'yaourt… — avec la part par personne. Ne touche pas à '
+                    'celles qui existent. Aucun appel d\'IA.',
+                onTap: _busy ? null : _runSeedMealStaples,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.restaurant_outlined,
+                title: 'Rôle des recettes dans un repas',
+                subtitle:
+                    'Classe les recettes non classées : plat, accompagnement, '
+                    'entrée, dessert ou snack, ce qu\'elles apportent déjà et '
+                    'leurs accompagnements classiques. Un appel par recette, '
+                    'quarante par passage.',
+                onTap: _busy ? null : _runBackfillRecipeRoles,
               ),
             ],
           ),

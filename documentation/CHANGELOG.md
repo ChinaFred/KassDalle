@@ -14,6 +14,42 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-13
+
+### v0.22.59 — fonctionnel
+
+#### Chaque recette apprend son rôle dans un repas
+
+Deuxième palier de « un repas n'est pas une recette ». Avant de composer un plat et son
+accompagnement, il faut savoir ce qu'est chaque recette : ce que ne disaient pas les types
+de plat, qui mélangent la protéine et la structure.
+
+**Trois champs par recette**, reconnus une fois par le modèle : le rôle dans un repas — plat,
+accompagnement, entrée, dessert, snack —, ce que la recette apporte déjà — protéine, féculent,
+légume — et, pour un plat à qui il manque l'un des deux derniers, deux ou trois accompagnements
+classiques. L'import les pose dans la même passe que le balisage ; le bouton « Suggérer les
+tags » de l'éditeur les pose sur une recette saisie à la main ; la reprise *Admin › Backfills ›
+Rôle des recettes dans un repas* classe l'existant, quarante recettes par passage, avec reprise
+sur point de contrôle. Une recette « pas sûre » reste sans rôle plutôt que mal classée. Aucun
+écran ne montre encore ces champs : ils attendent le palier suivant.
+
+**Le semis des garnitures simples a rejoint Admin › Backfills**, avec les autres écritures
+ponctuelles. L'écran du référentiel montre et corrige ; il ne sème plus.
+
+### v0.22.59 — technique
+
+- `tags` reçoit `meal_role`, `contains`, `suggested_sides` et `roles_tagged_at`. Les valeurs
+  admises, le texte demandé au modèle et la lecture de sa réponse vivent dans
+  `functions/src/gemini/mealRole.ts`, seul endroit qui les décide ; `tests/mealRole.test.ts`
+  verrouille la lecture. La passe 2 de l'import (`TAGGING_PROMPT`, `parseTagged`) et le tagueur
+  (`suggestRecipeTags`, `suggestMealRole`) partagent ce texte.
+- Nouvelle callable `backfillRecipeRolesFn`, poste `backfill_recipe_roles` inscrit aux trois
+  endroits, curseur `app_config/recipe_roles_backfill_checkpoint`, arrêt après trois échecs
+  de suite.
+- Côté client, `RecipeTags` porte les trois champs et ne les écrit que si le rôle est connu ;
+  `validateDraft` écrit `tags` champ par champ pour ne pas effacer un rôle posé par l'import
+  ou le backfill (`test/recipe_tags_roles_test.dart`).
+
 ## 2026-09-12
 
 ### v0.22.58 — fonctionnel

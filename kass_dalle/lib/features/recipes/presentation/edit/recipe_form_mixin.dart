@@ -166,6 +166,12 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     return baseTags.copyWith(
       cuisines: selectedCuisines,
       dishTypes: selectedDishTypes,
+      // Le rôle dans un repas n'a pas de champ dans le formulaire : il vient
+      // de la base, ou de la dernière suggestion de l'IA dans cette session.
+      // Un `null` laisse celui de la base — `copyWith` ne l'efface pas.
+      mealRole: suggestedMealRole,
+      contains: suggestedMealRole == null ? null : suggestedContains,
+      suggestedSides: suggestedMealRole == null ? null : suggestedSidesByAI,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),
@@ -188,8 +194,16 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   bool suggestingTags = false;
 
-  /// Suggère des tags (Cuisine + Type de plat) via Gemini pour la recette
-  /// dont le titre est [titre].
+  /// Le rôle dans un repas rendu par la dernière suggestion de l'IA, s'il y en
+  /// a eu une dans cette session. Sans champ de formulaire, c'est le seul
+  /// chemin par lequel une recette saisie à la main reçoit son rôle avant le
+  /// backfill.
+  String? suggestedMealRole;
+  List<String> suggestedContains = const [];
+  List<String> suggestedSidesByAI = const [];
+
+  /// Suggère des tags (cuisine, type de plat, rôle dans un repas) via l'IA
+  /// pour la recette dont le titre est [titre].
   Future<void> suggestTagsWithAI(String titre) async {
     setState(() => suggestingTags = true);
     try {
@@ -201,6 +215,11 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       if (!mounted) return;
       setCuisines(result.cuisines);
       setDishTypes(result.dishTypes);
+      if (result.mealRole != null) {
+        suggestedMealRole = result.mealRole;
+        suggestedContains = result.contains;
+        suggestedSidesByAI = result.suggestedSides;
+      }
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');
     } catch (e, stackTrace) {
       reportUnexpectedError(
