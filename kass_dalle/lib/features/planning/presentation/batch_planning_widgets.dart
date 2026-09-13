@@ -9,6 +9,7 @@ import '../domain/planning_preferences.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
 
+import '../../../core/presentation/stylus_pad_text_field.dart';
 /// Sources disponibles pour la sélection de recettes dans la génération par slot.
 enum RecipeSource {
   myRecipes,
@@ -140,7 +141,7 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
         ),
         SizedBox(
           width: 340,
-          child: TextField(
+          child: StylusPadTextField(
             controller: _notesCtrl,
             maxLines: 2,
             minLines: 1,

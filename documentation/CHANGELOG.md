@@ -16,6 +16,43 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.60 — fonctionnel
+
+#### Le stylet ouvre un pavé d'écriture
+
+Sur une tablette Samsung, le survol du S Pen ne fait jamais apparaître le pavé d'écriture
+dans un champ de l'application : ce pavé ne s'ouvre que sur les champs natifs d'Android, et
+un champ Flutter n'en est pas un. Depuis Android 14, l'écriture au stylet fonctionne en
+revanche directement dans un champ qui a le clavier, mais dans quatre lignes de haut.
+
+**Un stylet posé sur un champ de texte libre ouvre un panneau bas** : un grand champ, toute
+la largeur de l'écran et tout l'espace au-dessus du clavier, où l'écriture système convertit
+les traits en texte. Le champ du panneau et celui de l'écran sont le même texte ; le bouton
+*Terminé* referme le panneau. Un doigt n'ouvre rien : le champ reste un champ ordinaire.
+
+Champs concernés : l'annotation d'une recette, la description d'un livre, les contraintes du
+planning (globales, du cycle, par jour), les instructions d'amélioration d'un brouillon, le
+texte d'une image à générer (brouillon et recette générée), la modification d'une recette
+générée et l'envie culinaire de la recherche. L'éditeur de recette n'en fait pas partie.
+
+Le panneau ne s'ouvre que là où le système convertit l'écriture : Android 14 et plus avec un
+clavier compatible, et l'iPad. Sous Android 13, sur le web et sur Windows, le stylet se
+comporte comme un doigt.
+
+### v0.22.60 — technique
+
+- `core/presentation/stylus_pad_text_field.dart` : `StylusPadTextField`, un `TextField` sous
+  un `Listener`. Une pose de `PointerDeviceKind.stylus` interroge `Scribe.isFeatureAvailable`
+  (Android) puis ouvre `showStylusHandwritingPad`, un `showModalBottomSheet` pleine largeur
+  dont le champ partage le contrôleur et reçoit le même `onChanged`. Le champ d'origine a
+  `stylusHandwritingEnabled: false` : il ne démarre pas une session d'écriture que
+  l'ouverture du pavé interromprait au premier trait.
+- La sonde répond `false` sur le web et les bureaux sans appeler le canal `flutter/scribe`,
+  `true` sur iOS. Une sonde qui échoue est signalée sous `stylus_pad_probe` et n'ouvre rien.
+- Deux `TextFormField` sans `validator` (description du livre, contraintes globales du
+  planning) deviennent des `TextField` : aucun formulaire ne les lisait.
+- `test/stylus_pad_text_field_test.dart` : neuf tests de widget, dont le canal Scribe simulé.
+
 ### v0.22.59 — fonctionnel
 
 #### Chaque recette apprend son rôle dans un repas

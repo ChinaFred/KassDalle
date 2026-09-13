@@ -10,6 +10,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../recipes/presentation/ai/ai_ui_copy.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Section photos d'une recette générée par l'IA, **avant** son enregistrement.
 ///
@@ -152,7 +153,7 @@ class _GeneratedRecipeIllustrationsState
             children: [
               const Text(RecipeAiUiCopy.generateImageDialogHelper),
               const SizedBox(height: 12),
-              TextField(
+              StylusPadTextField(
                 controller: promptCtrl,
                 autofocus: true,
                 maxLines: 3,

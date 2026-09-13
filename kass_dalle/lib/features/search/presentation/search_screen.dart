@@ -7,6 +7,7 @@ import 'generated_recipe_screen.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -177,8 +178,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           // ── Champ de saisie ───────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: TextField(
+            child: StylusPadTextField(
               controller: _controller,
+              padTitle: 'Votre envie culinaire',
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _explore(),
               decoration: InputDecoration(

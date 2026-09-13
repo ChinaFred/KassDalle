@@ -8,6 +8,7 @@ import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/presentation/stylus_pad_text_field.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -304,7 +305,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
               onSelectionChanged: (s) => setState(() => _type = s.first),
             ),
             const SizedBox(height: 16),
-            TextField(
+            StylusPadTextField(
               controller: _textCtrl,
               autofocus: true,
               maxLines: 4,

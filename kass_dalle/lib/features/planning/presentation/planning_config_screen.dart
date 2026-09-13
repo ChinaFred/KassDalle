@@ -10,6 +10,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
 ///
@@ -273,8 +274,9 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextFormField(
+                  StylusPadTextField(
                     controller: _globalConstraintsCtrl,
+                    padTitle: 'Contraintes globales',
                     maxLines: 4,
                     decoration: const InputDecoration(
                       hintText:

@@ -9,6 +9,7 @@ import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/presentation/image_action_card.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/photo_capture_service.dart';
 
@@ -446,7 +447,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             ),
             // ── Description (système + non-système) ──────────────────────────
             const SizedBox(height: 12),
-            TextFormField(
+            StylusPadTextField(
               controller: _descriptionCtrl,
               maxLines: 4,
               decoration: const InputDecoration(

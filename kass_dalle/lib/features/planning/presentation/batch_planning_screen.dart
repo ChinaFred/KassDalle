@@ -26,6 +26,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Décision prise au moment de valider un planning qui recouvre des repas
 /// déjà enregistrés.
@@ -1315,7 +1316,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
+            child: StylusPadTextField(
               controller: _globalConstraintsCtrl,
               minLines: 1,
               maxLines: 3,

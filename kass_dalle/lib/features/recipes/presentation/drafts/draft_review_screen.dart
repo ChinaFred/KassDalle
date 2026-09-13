@@ -21,6 +21,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../fidelity_banner.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Actions rangées derrière le menu « ⋮ » de la barre.
 ///
@@ -122,8 +123,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   style: TextStyle(fontSize: 13),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                StylusPadTextField(
                   controller: _refineCtrl,
+                  padTitle: RecipeAiUiCopy.refineDialogTitle,
                   autofocus: true,
                   minLines: 4,
                   maxLines: 4,

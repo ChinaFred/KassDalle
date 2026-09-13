@@ -16,6 +16,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
@@ -448,8 +449,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: TextField(
+                  child: StylusPadTextField(
                     controller: _refineCtrl,
+                    padTitle: 'Modifier la recette',
                     enabled: !_saving,
                     minLines: 1,
                     maxLines: 4,

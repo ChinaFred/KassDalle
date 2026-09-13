@@ -29,7 +29,7 @@ L'application est destinée à un cercle familial restreint :
 
 Les plateformes construites partagent le même backend Firebase et la même codebase Flutter. **Le scan n'est pas réservé au mobile** : la caméra fonctionne aussi sur le web par `getUserMedia`, et l'import de fichier est disponible partout.
 
-**Ce qui change n'est pas la plateforme, c'est la largeur.** Toutes les routes — y compris l'administration complète — sont ouvertes sur mobile. La bascule se fait sur trois seuils (`PlatformUtils`) : navigation latérale ou barre basse à 800 px, présentation compacte du détail à 700 px, raccourci galerie à 900 px. Un navigateur de bureau rétréci passe donc en présentation compacte, et un mobile en paysage large peut recevoir la présentation étendue. Aucune fonctionnalité n'est réservée à un format : la présentation compacte réorganise, elle ne retire pas. Dépendent réellement de la plateforme, et d'elle seule : la caméra (mobile et web), la mise à jour par APK et le lien de téléchargement de l'APK (Android natif / grand écran), le partage du PDF (feuille de partage sur mobile, téléchargement dans le navigateur), et les raccourcis clavier, sans effet là où il n'y a pas de clavier. Une seule fonctionnalité dépend des deux à la fois, plateforme et largeur : le zoom du texte de la recette (4.4), proposé sur l'APK Android en présentation étendue — la tablette posée sur le plan de travail.
+**Ce qui change n'est pas la plateforme, c'est la largeur.** Toutes les routes — y compris l'administration complète — sont ouvertes sur mobile. La bascule se fait sur trois seuils (`PlatformUtils`) : navigation latérale ou barre basse à 800 px, présentation compacte du détail à 700 px, raccourci galerie à 900 px. Un navigateur de bureau rétréci passe donc en présentation compacte, et un mobile en paysage large peut recevoir la présentation étendue. Aucune fonctionnalité n'est réservée à un format : la présentation compacte réorganise, elle ne retire pas. Dépendent réellement de la plateforme, et d'elle seule : la caméra (mobile et web), la mise à jour par APK et le lien de téléchargement de l'APK (Android natif / grand écran), le partage du PDF (feuille de partage sur mobile, téléchargement dans le navigateur), les raccourcis clavier, sans effet là où il n'y a pas de clavier, et le pavé d'écriture au stylet (4.5), ouvert par un stylet posé sur un champ de texte libre — Android 14 et plus, et iPad. Une seule fonctionnalité dépend des deux à la fois, plateforme et largeur : le zoom du texte de la recette (4.4), proposé sur l'APK Android en présentation étendue — la tablette posée sur le plan de travail.
 
 ---
 
@@ -189,6 +189,15 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   la note reste stockée dans `recipe_ratings`, jamais dans l'annotation.
 - Un utilisateur peut modifier ou supprimer **ses propres** annotations.
 - Un Admin ou Editor peut supprimer n'importe quelle annotation.
+- **Écriture au stylet** : un stylet posé sur le champ de l'annotation ouvre un pavé
+  d'écriture — un grand champ, toute la largeur, tout l'espace au-dessus du clavier — où
+  l'écriture manuscrite du système est convertie en texte ; *Terminé* le referme. Le champ du
+  pavé et celui du dialogue sont le même texte. Le même pavé sert aux autres champs de texte
+  libre : description d'un livre, contraintes du planning, instructions d'amélioration d'un
+  brouillon, texte d'une image à générer, modification d'une recette générée, envie culinaire
+  de la recherche. L'éditeur de recette n'en fait pas partie. Le pavé ne s'ouvre que là où le
+  système convertit l'écriture : Android 14 et plus avec un clavier compatible, et iPad.
+  Ailleurs, et sous le doigt, le champ reste un champ ordinaire.
 
 ---
 

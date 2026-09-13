@@ -15,6 +15,7 @@ import '../../data/recipe_repository.dart';
 import 'illustration_card.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Onglet « Illustrations » d'un brouillon : extraction par IA, amélioration,
 /// génération et gestion manuelle des images.
@@ -121,8 +122,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                StylusPadTextField(
                   controller: promptCtrl,
+                  padTitle: RecipeAiUiCopy.generateImageDialogTitle,
                   autofocus: true,
                   minLines: 8,
                   maxLines: 12,
