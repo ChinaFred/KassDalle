@@ -16,6 +16,72 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.64 — fonctionnel
+
+#### Le backfill des rôles dit ce qu'il reste à classer
+
+Le compte rendu d'un backfill s'affiche sous la barre de titre, en dehors de la liste. Il
+s'insérait en tête d'une liste qu'on avait fait défiler jusqu'à la dernière tuile, et trois
+passages du rôle des recettes ont été lancés sans que leur résultat soit lu.
+
+Le résultat du passage « Rôle des recettes dans un repas » commence par le chiffre attendu :
+« Reste à classer : 212 recettes. », compté sur toute la collection et non sur les quarante du
+passage. Ce compte rendu reste lisible sous la tuile — « Dernier passage le 13/09/26 12:20 :
+40 classées, 0 en échec. Reste à classer : 212 recettes. » — et dans la fenêtre de
+confirmation, même après avoir quitté l'écran pendant le traitement.
+
+### v0.22.64 — technique
+
+- `backfillRecipeRolesFn` rend `restantes` : total des pages, moins celles dont
+  `tags.meal_role` est renseigné (`!= null` — l'import écrit `null` quand la passe 2 n'a pas
+  su), moins celles dont `page_type` vaut autre chose que `recipe`. Trois agrégats `count()`,
+  aucun document lu. `null` quand le décompte échoue, et l'erreur est journalisée ; jamais un
+  zéro à la place.
+- La fonction écrit son compte rendu à côté du curseur : `last_report` dans
+  `app_config/recipe_roles_backfill_checkpoint`, avec `finished_at`. `setBackfillCursor`
+  reçoit un `lastReport` optionnel. Le client le lit en continu (`BackfillReportsRepository`,
+  `recipeRolesBackfillReportProvider`).
+- `GcpBillingRepository.backfillRecipeRoles` rend un `RecipeRolesBackfillReport` au lieu d'une
+  table de compteurs ; les phrases du compte rendu vivent sur ce type, et
+  `test/recipe_roles_backfill_report_test.dart` les couvre.
+
+### v0.22.63 — fonctionnel
+
+#### « Générer avec l'IA » dans le sélecteur du planning
+
+Sous « Saisir un nom libre », une nouvelle entrée : on écrit ce qu'on a envie de manger
+— « un plat léger sans viande, prêt en 30 min » — et l'IA rend trois idées de repas, chacune
+avec une phrase et des durées estimées. Ce qui est déjà tapé dans la recherche sert de
+première consigne.
+
+**Trois idées, et la consigne qu'on retouche.** On modifie la consigne et on relance :
+les idées déjà affichées ne reviennent pas, quelle que soit la relance. L'idée retenue se pose
+comme un repas libre, avec ses durées, exactement comme un nom saisi à la main. Aucune
+recette n'est créée, rien n'est écrit dans les livres. Les préférences générales du planning
+accompagnent la consigne.
+
+Un appel par consigne ou relance, compté sous « Idées de repas (planning) » et routable
+depuis Admin › Moteur d'IA.
+
+### v0.22.63 — technique
+
+- `functions/src/gemini/mealIdeas.ts` : `suggestMealIdeas` par `askJson` avec schéma de
+  sortie, poste `planning_meal_ideas`, 45 s, 2 000 jetons. `buildMealIdeasPrompt` porte la
+  consigne, les préférences et les titres déjà rendus, sans exemple rempli ; `parseMealIdeas`
+  rend au plus trois idées sans doublon de titre, ou `null`. `tests/mealIdeas.test.ts`.
+- `suggestMealIdeasFn` (`callable/geminiCallables.ts`) : consigne bornée à 600 caractères,
+  quinze titres précédents au plus, préférences à 2 000 caractères.
+- Poste inscrit aux trois endroits : `ctx.feature`, `ROUTABLE_FEATURES` (groupe Planning),
+  `feature_catalog.dart` (« Planning et courses »).
+- Client : `MealIdea` (`planning/domain/meal_idea.dart`) et son `toFreeRecipe()` — même
+  forme que la saisie libre, durées en plus ; `GeminiService.suggestMealIdeas` ;
+  `PlanningAiService.suggestMealIdeas` ; `MealIdeasSheet`
+  (`planning/presentation/meal_ideas_sheet.dart`), champ stylet, titres cumulés à chaque
+  relance. `RecipePickerSheet` reçoit un `onGenerateIdeas` facultatif : sans lui, rien ne
+  change — la composition d'un cycle ne le passe pas encore.
+- `test/meal_ideas_sheet_test.dart` : cinq tests, dont la relance qui cite tout ce qui a
+  déjà été affiché et le générateur en échec signalé sous `mealIdeasSheet.generate`.
+
 ### v0.22.62 — fonctionnel
 
 #### Un repas, c'est un plat et son accompagnement

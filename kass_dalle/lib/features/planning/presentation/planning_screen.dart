@@ -12,6 +12,7 @@ import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
 import '../domain/meal_component.dart';
+import '../domain/meal_idea.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/side_chooser.dart';
 import 'meal_staples_providers.dart';
@@ -143,6 +144,25 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     return [?choice?.component];
   }
 
+  /// Trois id\u00e9es de repas sur une consigne, pour \u00ab G\u00e9n\u00e9rer avec l'IA \u00bb du
+  /// s\u00e9lecteur. Les pr\u00e9f\u00e9rences g\u00e9n\u00e9rales du planning partent avec la
+  /// consigne ; rien n'est con\u00e7u ni enregistr\u00e9.
+  Future<List<MealIdea>> _generateMealIdeas({
+    required String prompt,
+    required List<String> previousTitles,
+  }) {
+    final prefs =
+        ref.read(planningPreferencesProvider).value ??
+        const PlanningPreferences();
+    return ref
+        .read(planningAiServiceProvider)
+        .suggestMealIdeas(
+          prompt: prompt,
+          globalConstraints: prefs.globalConstraints,
+          previousTitles: previousTitles,
+        );
+  }
+
   Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
@@ -155,6 +175,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
+        onGenerateIdeas: _generateMealIdeas,
       ),
     );
     if (recipe == null || !mounted) return;
@@ -867,6 +888,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         recipes: _availableRecipes,
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
+        onGenerateIdeas: _generateMealIdeas,
       ),
     );
     if (recipe == null || !mounted) return;

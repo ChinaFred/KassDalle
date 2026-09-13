@@ -52,6 +52,7 @@ const kFeatureProcess = <String, String>{
   'plating_image': 'Dressage',
   'planning': 'Planning et courses',
   'planning_concept': 'Planning et courses',
+  'planning_meal_ideas': 'Planning et courses',
   'storage_advice': 'Planning et courses',
   'shopping_list': 'Planning et courses',
   'shopping_products_refresh': 'Planning et courses',
@@ -269,6 +270,13 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         "Génère un concept de recette personnalisé pour combler un slot "
         'du planning quand aucune recette existante ne correspond.',
+  ),
+  'planning_meal_ideas': FeatureInfo(
+    label: 'Idées de repas (planning)',
+    description:
+        'Trois idées de repas sur une consigne libre, depuis « Générer avec '
+        'l\'IA » du sélecteur de recette. Un appel par consigne ou relance ; '
+        'l\'idée retenue devient un repas libre, sans recette créée.',
   ),
   'classify_page': FeatureInfo(
     label: 'Classification de page',

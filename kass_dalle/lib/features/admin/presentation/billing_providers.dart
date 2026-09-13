@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/ai_reconciliation_repository.dart';
+import '../data/backfill_reports_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
+import '../domain/recipe_roles_backfill_report.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
 
@@ -86,4 +88,18 @@ final referentialKpisProvider = FutureProvider.autoDispose<Map<String, int>>((
   ref,
 ) async {
   return ref.read(gcpBillingRepositoryProvider).getRecipeReferentialKpis();
+});
+
+final backfillReportsRepositoryProvider = Provider<BackfillReportsRepository>(
+  (ref) => BackfillReportsRepository(),
+);
+
+/// Dernier compte rendu du backfill « Rôle des recettes dans un repas », lu
+/// en continu depuis son point de contrôle. `null` tant qu'aucun passage n'a
+/// fini. Sert à qui a quitté l'écran avant la fin d'un passage, et à dire
+/// combien de recettes restent à classer avant d'en lancer un autre.
+final recipeRolesBackfillReportProvider = StreamProvider.autoDispose<
+  RecipeRolesBackfillReport?
+>((ref) {
+  return ref.watch(backfillReportsRepositoryProvider).watchRecipeRolesReport();
 });

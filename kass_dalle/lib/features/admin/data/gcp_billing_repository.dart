@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../domain/nutrition_policy.dart';
+import '../domain/recipe_roles_backfill_report.dart';
 
 const String _functionsRegion = 'europe-west1';
 
@@ -387,8 +388,9 @@ class GcpBillingRepository {
   ///
   /// Réentrante, reprise sur point de contrôle : relancer tant que le
   /// résultat indique « incomplet ». [force] reclasse aussi les recettes
-  /// déjà classées.
-  Future<Map<String, int>> backfillRecipeRoles({
+  /// déjà classées. Le compte rendu porte `restantes`, compté sur toute la
+  /// collection : ce qu'il reste à classer, et non ce que ce passage a fait.
+  Future<RecipeRolesBackfillReport> backfillRecipeRoles({
     double maxMinutes = 8,
     int maxRecipes = 40,
     bool resumeFromCheckpoint = true,
@@ -409,20 +411,10 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
 
-    final data = Map<String, dynamic>.from(raw as Map);
-    int count(String key) => (data[key] as num?)?.toInt() ?? 0;
-    return {
-      'examinees': count('examinees'),
-      'classees': count('classees'),
-      'dejaClassees': count('dejaClassees'),
-      'horsRecette': count('horsRecette'),
-      'sansRole': count('sansRole'),
-      'echouees': count('echouees'),
-      'completed': (data['completed'] == true) ? 1 : 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-      'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
-      'stoppedByErrors': (data['stoppedByErrors'] == true) ? 1 : 0,
-    };
+    return RecipeRolesBackfillReport.fromMap(
+      Map<String, dynamic>.from(raw as Map),
+      finishedAt: DateTime.now(),
+    );
   }
 
   /// KPIs courants de normalisation des référentiels.

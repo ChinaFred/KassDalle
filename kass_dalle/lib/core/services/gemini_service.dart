@@ -505,6 +505,38 @@ class GeminiService {
     );
   }
 
+  /// Trois idées de repas sur une consigne libre, pour le sélecteur du planning.
+  ///
+  /// [previousTitles] : les idées déjà rendues, pour que la relance en propose
+  /// d'autres. Le serveur ne conçoit pas de recette et n'écrit rien.
+  Future<
+    List<
+      ({String titre, String description, int? prepMinutes, int? cookMinutes})
+    >
+  >
+  suggestMealIdeas({
+    required String prompt,
+    String globalConstraints = '',
+    List<String> previousTitles = const [],
+  }) async {
+    final data = await _call('suggestMealIdeasFn', {
+      'prompt': prompt,
+      if (globalConstraints.isNotEmpty) 'globalConstraints': globalConstraints,
+      if (previousTitles.isNotEmpty) 'previousTitles': previousTitles,
+    });
+    final ideas = (data as Map)['ideas'] as List? ?? const [];
+    return [
+      for (final item in ideas)
+        if (item is Map && (item['titre'] as String? ?? '').trim().isNotEmpty)
+          (
+            titre: (item['titre'] as String).trim(),
+            description: (item['description'] as String? ?? '').trim(),
+            prepMinutes: (item['prepMinutes'] as num?)?.toInt(),
+            cookMinutes: (item['cookMinutes'] as num?)?.toInt(),
+          ),
+    ];
+  }
+
   // ── Web search query ────────────────────────────────────────────────────────
 
   Future<String> generateWebSearchQuery(String userQuery) async {

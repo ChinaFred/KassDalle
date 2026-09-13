@@ -43,6 +43,12 @@ import {
   type PlanningInput,
   type RecipeConceptInput,
 } from "../gemini/planning";
+import {
+  MEAL_IDEAS_MAX_PREVIOUS,
+  MEAL_IDEAS_MAX_PROMPT_CHARS,
+  suggestMealIdeas,
+  type MealIdeasInput,
+} from "../gemini/mealIdeas";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import {
   detectIllustrationRegions,
@@ -452,6 +458,42 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
       moduleType: "DESIGN",
     });
     return data;
+  } catch (e) {
+    throw toHttpsError(e);
+  }
+});
+
+/**
+ * Trois idées de repas sur une consigne libre, pour le sélecteur du planning.
+ *
+ * Ne conçoit pas de recette et n'écrit rien : l'idée retenue devient un repas
+ * libre. La consigne est bornée, et les titres déjà rendus voyagent avec la
+ * relance pour que « trois autres » en rende trois autres.
+ */
+export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
+  const ctx = await requireAuth(req, "planning_meal_ideas");
+  const raw = (req.data ?? {}) as Partial<MealIdeasInput>;
+  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
+  if (!prompt) throw new HttpsError("invalid-argument", "prompt est requis.");
+  if (prompt.length > MEAL_IDEAS_MAX_PROMPT_CHARS) {
+    throw new HttpsError(
+      "invalid-argument",
+      `prompt dépasse ${MEAL_IDEAS_MAX_PROMPT_CHARS} caractères.`,
+    );
+  }
+  const previousTitles = (Array.isArray(raw.previousTitles) ? raw.previousTitles : [])
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => t.trim().slice(0, 120))
+    .filter((t) => t.length > 0)
+    .slice(0, MEAL_IDEAS_MAX_PREVIOUS);
+  const globalConstraints =
+    typeof raw.globalConstraints === "string" ? raw.globalConstraints.trim().slice(0, 2_000) : "";
+  try {
+    const ideas = await suggestMealIdeas(
+      { prompt, globalConstraints, previousTitles },
+      { ...ctx, feature: "planning_meal_ideas", moduleType: "DESIGN" },
+    );
+    return { ideas };
   } catch (e) {
     throw toHttpsError(e);
   }

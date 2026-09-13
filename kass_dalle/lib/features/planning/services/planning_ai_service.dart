@@ -1,6 +1,7 @@
 import '../../../../core/services/gemini_service.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_idea.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 
@@ -235,5 +236,32 @@ class PlanningAiService {
       wasResized: false,
       isGenerated: true,
     );
+  }
+
+  /// Trois idées de repas sur une consigne libre.
+  ///
+  /// Rien n'est conçu ni enregistré : l'idée retenue devient un repas libre.
+  /// [previousTitles] transporte les idées déjà rendues, pour que « trois
+  /// autres » en rende trois autres. Le serveur peut en rendre moins de trois
+  /// quand sa réponse en contenait moins de valides ; l'écran le dit.
+  Future<List<MealIdea>> suggestMealIdeas({
+    required String prompt,
+    String globalConstraints = '',
+    List<String> previousTitles = const [],
+  }) async {
+    final ideas = await _gemini.suggestMealIdeas(
+      prompt: prompt,
+      globalConstraints: globalConstraints,
+      previousTitles: previousTitles,
+    );
+    return [
+      for (final i in ideas)
+        MealIdea(
+          titre: i.titre,
+          description: i.description,
+          prepMinutes: i.prepMinutes,
+          cookMinutes: i.cookMinutes,
+        ),
+    ];
   }
 }

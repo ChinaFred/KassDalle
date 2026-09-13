@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import 'admin_providers.dart';
 import 'billing_providers.dart';
+import '../domain/recipe_roles_backfill_report.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/presentation/book_providers.dart';
 import '../../planning/domain/meal_staple.dart';
@@ -353,11 +355,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   /// recette classée. La passe 2 de l'import classe ce qui arrive ; cette
   /// reprise classe l'existant, quarante recettes par passage.
   Future<void> _runBackfillRecipeRoles() async {
+    // Ce qu'il reste à classer, d'après le dernier passage : on sait avant de
+    // lancer si un passage de quarante suffira.
+    final lastReport = ref.read(recipeRolesBackfillReportProvider).value;
+    final reste = lastReport == null ? '' : ' ${lastReport.restantesSentence}';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Rôle des recettes dans un repas'),
-        content: const Text(
+        content: Text(
           'Demande au modèle, pour chaque recette qui ne l\'a pas encore, son '
           'rôle dans un repas — plat, accompagnement, entrée, dessert, snack —, '
           'ce qu\'elle apporte déjà (protéine, féculent, légume) et ses '
@@ -365,7 +371,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'composer un plat et son accompagnement.\n\n'
           'Un appel de modèle par recette, quarante recettes par passage. '
           'Idempotent, avec reprise sur point de contrôle : relancez tant que '
-          'le résultat indique « incomplet ». Continuer ?',
+          'le résultat indique « incomplet ».$reste Continuer ?',
         ),
         actions: [
           TextButton(
@@ -381,18 +387,30 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<RecipeRolesBackfillReport>(
       label: 'Classement des recettes en cours...',
       feature: 'admin_backfill_recipe_roles',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeRoles(),
-      format: (r) =>
-          'Recettes: examinées=${r['examinees']}, classées=${r['classees']}, '
-          'déjà classées=${r['dejaClassees']}, hors recette=${r['horsRecette']}, '
-          'sans rôle=${r['sansRole']}, échecs=${r['echouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
-          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+      format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
+    );
+  }
+
+  /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
+  /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
+  String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
+    return report.when(
+      data: (r) {
+        if (r == null) return '';
+        final at = r.finishedAt;
+        final quand = at == null
+            ? ''
+            : ' le ${DateFormat('dd/MM/yy HH:mm').format(at.toLocal())}';
+        return '\n\nDernier passage$quand : ${r.classees} classée'
+            '${r.classees > 1 ? 's' : ''}, ${r.echouees} en échec. '
+            '${r.restantesSentence}';
+      },
+      loading: () => '',
+      error: (_, _) => '\n\nDernier compte rendu illisible.',
     );
   }
 
@@ -422,14 +440,19 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final rolesReport = ref.watch(recipeRolesBackfillReportProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backfills')),
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.all(16),
+          Column(
             children: [
+              // Hors de la liste, pour rester visible. L'opération la plus
+              // récente est la dernière tuile : un compte rendu inséré en tête
+              // d'une liste défilée jusqu'en bas s'affichait hors de l'écran,
+              // et trois passages du rôle des recettes ont été lancés sans
+              // que leur résultat soit lu.
               if (_resultMessage != null || _errorMessage != null)
                 _OperationBanner(
                   isError: _resultIsError,
@@ -439,6 +462,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     _errorMessage = null;
                   }),
                 ),
+              Expanded(
+                child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -529,8 +556,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Classe les recettes non classées : plat, accompagnement, '
                     'entrée, dessert ou snack, ce qu\'elles apportent déjà et '
                     'leurs accompagnements classiques. Un appel par recette, '
-                    'quarante par passage.',
+                    'quarante par passage.'
+                    '${_rolesReportLine(rolesReport)}',
                 onTap: _busy ? null : _runBackfillRecipeRoles,
+              ),
+            ],
+                ),
               ),
             ],
           ),
@@ -617,7 +648,7 @@ class _OperationBanner extends StatelessWidget {
         : theme.colorScheme.onSecondaryContainer;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Material(
         color: bg,
         borderRadius: BorderRadius.circular(10),

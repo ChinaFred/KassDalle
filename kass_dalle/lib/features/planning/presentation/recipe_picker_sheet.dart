@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_idea.dart';
 import '../domain/recipe_picker_filter.dart';
+import 'meal_ideas_sheet.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 /// Le sélecteur de recette, commun au planning et au nouveau planning.
@@ -25,6 +27,11 @@ class RecipePickerSheet extends StatefulWidget {
   /// la saisie n'apparaît qu'une fois un nom tapé.
   final bool freeNameAlways;
 
+  /// Génère des idées de repas sur une consigne. Absent, l'entrée « Générer
+  /// avec l'IA » n'apparaît pas. Elle suit la saisie libre : même place, même
+  /// résultat — un repas sans recette liée.
+  final MealIdeasGenerator? onGenerateIdeas;
+
   const RecipePickerSheet({
     super.key,
     required this.recipes,
@@ -32,6 +39,7 @@ class RecipePickerSheet extends StatefulWidget {
     this.dismissedFrom = 'repas',
     this.hintText = 'Rechercher une recette…',
     this.freeNameAlways = false,
+    this.onGenerateIdeas,
   });
 
   @override
@@ -57,6 +65,11 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
   );
 
   bool get _hasFreeTile => widget.freeNameAlways || _query.trim().isNotEmpty;
+
+  bool get _hasAiTile => _hasFreeTile && widget.onGenerateIdeas != null;
+
+  /// Lignes fixes en tête de liste : la saisie libre, puis l'IA.
+  int get _headOffset => (_hasFreeTile ? 1 : 0) + (_hasAiTile ? 1 : 0);
 
   bool get _hasFacets =>
       _facets.dishTypes.isNotEmpty || _facets.cuisines.isNotEmpty;
@@ -102,6 +115,20 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
     ctrl.dispose();
     if (result == null || result.isEmpty) return;
     if (sheetContext.mounted) Navigator.pop(sheetContext, _freeRecipe(result));
+  }
+
+  /// Ouvre la feuille d'idées ; ce qui est tapé dans la recherche sert de
+  /// première consigne. L'idée retenue sort du sélecteur en repas libre.
+  Future<void> _askAiIdeas(BuildContext sheetContext) async {
+    final generate = widget.onGenerateIdeas;
+    if (generate == null) return;
+    final idea = await showMealIdeasSheet(
+      context,
+      generate: generate,
+      initialPrompt: _query.trim(),
+    );
+    if (idea == null) return;
+    if (sheetContext.mounted) Navigator.pop(sheetContext, idea.toFreeRecipe());
   }
 
   /// La feuille des filtres : deux groupes de puces, cochables à plusieurs.
@@ -207,7 +234,7 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
       expand: false,
       builder: (ctx, scrollController) {
         final filtered = _filtered;
-        final freeOffset = _hasFreeTile ? 1 : 0;
+        final headOffset = _headOffset;
         return Column(
           children: [
             Padding(
@@ -301,7 +328,7 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                     )
                   : ListView.builder(
                       controller: scrollController,
-                      itemCount: filtered.length + freeOffset,
+                      itemCount: filtered.length + headOffset,
                       itemBuilder: (_, i) {
                         if (_hasFreeTile && i == 0) {
                           final name = _query.trim();
@@ -325,7 +352,22 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                                 : () => Navigator.pop(ctx, _freeRecipe(name)),
                           );
                         }
-                        final r = filtered[i - freeOffset];
+                        if (_hasAiTile && i == 1) {
+                          return ListTile(
+                            leading: const CircleAvatar(
+                              child: Icon(
+                                Icons.auto_awesome,
+                                size: AppIconSize.small,
+                              ),
+                            ),
+                            title: const Text('Générer avec l\'IA…'),
+                            subtitle: const Text(
+                              'Trois idées sur une consigne, à affiner',
+                            ),
+                            onTap: () => _askAiIdeas(ctx),
+                          );
+                        }
+                        final r = filtered[i - headOffset];
                         final prep = r.tags.prepTime;
                         final cook = r.tags.cookTime;
                         final times = [

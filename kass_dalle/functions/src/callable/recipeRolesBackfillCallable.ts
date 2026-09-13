@@ -31,7 +31,7 @@ import {
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
-import { requireAdmin } from "./_auth";
+import { requireAdmin, type AuthContext } from "./_auth";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -67,6 +67,12 @@ interface BackfillRolesResponse {
   /** Le modèle n'a pas su : la recette reste sans rôle, reprise au prochain appel. */
   sansRole: number;
   echouees: number;
+  /**
+   * Recettes encore sans rôle après ce passage, sur toute la collection —
+   * le chiffre que l'on cherche quand on relance pour la troisième fois.
+   * `null` quand le décompte a échoué : un `0` à sa place dirait que tout est classé.
+   */
+  restantes: number | null;
   collectionParcourue: boolean;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
@@ -81,6 +87,43 @@ function asStrings(value: unknown): string[] {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/**
+ * Recettes encore sans rôle, comptées sur toute la collection et non sur ce
+ * passage. Trois agrégats, aucun document lu : toutes les pages, celles qui
+ * portent un rôle, celles qui ne sont pas des recettes. `!= null` ne retient
+ * que le champ présent et renseigné — l'import écrit `null` quand la passe 2
+ * n'a pas su, et cette recette-là reste à classer. Une page non-recette qui
+ * porterait un rôle serait déduite deux fois ; aucune n'en reçoit.
+ *
+ * `null` quand le décompte échoue : le passage a eu lieu et ses compteurs
+ * valent ; l'erreur est journalisée, et le client affiche « décompte
+ * impossible » plutôt qu'un zéro.
+ */
+async function countRecipesWithoutRole(
+  db: FirebaseFirestore.Firestore,
+  ctx: AuthContext,
+): Promise<number | null> {
+  try {
+    const recipes = db.collection(COLL_RECIPES);
+    const [total, avecRole, horsRecette] = await Promise.all([
+      recipes.count().get(),
+      recipes.where("tags.meal_role", "!=", null).count().get(),
+      recipes.where("page_type", "!=", "recipe").count().get(),
+    ]);
+    return Math.max(0, total.data().count - avecRole.data().count - horsRecette.data().count);
+  } catch (e) {
+    await logError("Rôle des recettes — décompte des recettes restantes impossible", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      geminiStatus: "ERROR",
+      feature: FEATURE,
+      errorDescription: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  }
 }
 
 export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
@@ -235,25 +278,29 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
       }
     }
 
-    // Le curseur revient au début quand tout est passé : un rappel de la
-    // fonction reprendrait sinon une collection déjà traitée en entier. Sinon
-    // il retient la dernière recette examinée, arrêt en cours de page compris.
-    await setBackfillCursor({
-      db,
-      docId: RECIPE_ROLES_CHECKPOINT_DOC_ID,
-      lastDocId: collectionParcourue ? null : cursor,
-      operation: FEATURE,
-      adminUid: ctx.userId,
-    });
-
     const response: BackfillRolesResponse = {
       ...counters,
+      restantes: await countRecipesWithoutRole(db, ctx),
       collectionParcourue,
       stoppedByDeadline,
       stoppedByBudget,
       stoppedByErrors,
       completed: collectionParcourue,
     };
+
+    // Le curseur revient au début quand tout est passé : un rappel de la
+    // fonction reprendrait sinon une collection déjà traitée en entier. Sinon
+    // il retient la dernière recette examinée, arrêt en cours de page compris.
+    // Le compte rendu part avec lui : l'écran le relit à l'ouverture, pour qui
+    // a quitté la page avant la fin du passage.
+    await setBackfillCursor({
+      db,
+      docId: RECIPE_ROLES_CHECKPOINT_DOC_ID,
+      lastDocId: collectionParcourue ? null : cursor,
+      operation: FEATURE,
+      adminUid: ctx.userId,
+      lastReport: { ...response },
+    });
 
     await logInfo({
       message: "Rôle des recettes — rattrapage",

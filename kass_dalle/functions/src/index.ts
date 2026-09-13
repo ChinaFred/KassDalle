@@ -55,6 +55,7 @@ export {
   searchRecipesFn,
   suggestMealPlanFn,
   generateRecipeConceptFn,
+  suggestMealIdeasFn,
   generateWebSearchQueryFn,
   suggestRecipeTagsFn,
   scanAndPromoteUploadFn,

@@ -222,6 +222,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Conception d'une recette pour un créneau",
     group: "Planning",
   },
+  {
+    id: "planning_meal_ideas",
+    label: "Idées de repas sur une consigne",
+    group: "Planning",
+  },
 
   // ── Courses ───────────────────────────────────────────────────────────────
   { id: "shopping_list", label: "Consolidation d'une liste de courses", group: "Courses" },
