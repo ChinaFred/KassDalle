@@ -7,6 +7,7 @@ import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/recipe_picker_filter.dart';
+import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 
@@ -112,6 +113,7 @@ class PlanningRepository {
     int? targetPortions,
     bool clearPortions = false,
     String? dismissRecipeId,
+    List<MealComponent>? components,
   }) async {
     final payload = <String, dynamic>{
       'recipe_id': recipeId,
@@ -121,6 +123,10 @@ class PlanningRepository {
       'cook_minutes': ?cookMinutes,
       'base_portions': ?basePortions,
       'target_portions': ?targetPortions,
+      // Les composants suivent le plat : changer de recette, c'est recomposer
+      // le repas. `null` laisse ceux en place ; une liste vide les retire.
+      if (components != null)
+        'components': [for (final c in components) c.toMap()],
     };
     // La recette remplacée reste écartée de ce repas : le prochain
     // « Suggérer » ne la verra pas dans ses candidats.

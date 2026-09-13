@@ -97,6 +97,20 @@ class MealStaplesRepository {
     return (created: created, skipped: skipped);
   }
 
+  /// Les garnitures d'un compte, fusionnées, lues une fois.
+  ///
+  /// Pour un écran qui compose un cycle sans s'abonner : ce qu'il lit à
+  /// l'ouverture lui suffit, une retouche faite pendant ce temps attendra le
+  /// prochain cycle.
+  Future<List<UserStaple>> loadMyStaples(String uid) async {
+    final base = await _base.orderBy(FieldPath.documentId).limit(1000).get();
+    final overrides = await _overridesDoc(uid).get();
+    return mergeStaples(
+      base.docs.map((d) => MealStaple.fromFirestore(d.id, d.data())),
+      parseStapleOverrides(overrides.data()),
+    );
+  }
+
   // ── Retouches d'un utilisateur ──────────────────────────────────────────────
 
   /// Les retouches du compte [uid], en direct.

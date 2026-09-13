@@ -103,14 +103,24 @@ planningAggregateIngredients(List<Recipe> recipes) {
   return (ingredients: result, sources: sources);
 }
 
+/// Un produit qui ne vient pas d'une recette — une garniture d'un repas — et
+/// d'où il vient, pour l'affichage.
+typedef PlanningExtraProduct = ({RecipeShoppingProduct product, String source});
+
 /// Agrège les produits d'achat de plusieurs recettes et retourne :
 /// - la liste consolidée par produit (même nom+unité → quantités additionnées),
 /// - une map `{nom_produit → "Recette A · Recette B"}` pour l'affichage.
 ///
 /// Utilise [shoppingProducts] si disponible, sinon construit des produits
 /// depuis les ingrédients bruts (fallback pour les anciennes recettes).
+/// [extras] : les garnitures des repas, déjà multipliées par les parts ; elles
+/// se fondent dans les mêmes lignes — le riz d'une garniture et le riz d'une
+/// recette font une seule ligne de courses.
 ({List<RecipeShoppingProduct> products, Map<String, String> sources})
-planningAggregateProducts(List<Recipe> recipes) {
+planningAggregateProducts(
+  List<Recipe> recipes, {
+  List<PlanningExtraProduct> extras = const [],
+}) {
   String normKey(String name, String unit) {
     String norm(String s) => s
         .toLowerCase()
@@ -148,24 +158,32 @@ planningAggregateProducts(List<Recipe> recipes) {
   final keyToIdx = <String, int>{};
   final Map<String, List<String>> sourceLists = {};
 
-  for (final recipe in recipes) {
-    // Utilise les produits pre-calculés si disponibles, sinon fallback ingrédients
-    final products = recipe.shoppingProducts.isNotEmpty
-        ? recipe.shoppingProducts
-        : recipe.ingredients
-              .map(
-                (i) => RecipeShoppingProduct(
-                  name: i.name,
-                  qty: i.qty,
-                  unit: i.unit,
-                ),
-              )
-              .toList(growable: false);
+  final batches = <({List<RecipeShoppingProduct> products, String source})>[
+    for (final recipe in recipes)
+      (
+        // Utilise les produits pré-calculés si disponibles, sinon les
+        // ingrédients bruts (anciennes recettes).
+        products: recipe.shoppingProducts.isNotEmpty
+            ? recipe.shoppingProducts
+            : recipe.ingredients
+                  .map(
+                    (i) => RecipeShoppingProduct(
+                      name: i.name,
+                      qty: i.qty,
+                      unit: i.unit,
+                    ),
+                  )
+                  .toList(growable: false),
+        source: recipe.titre,
+      ),
+    for (final e in extras) (products: [e.product], source: e.source),
+  ];
 
-    for (final p in products) {
+  for (final batch in batches) {
+    for (final p in batch.products) {
       if (p.name.trim().isEmpty) continue;
       final key = normKey(p.name, p.unit);
-      (sourceLists[key] ??= []).add(recipe.titre);
+      (sourceLists[key] ??= []).add(batch.source);
       if (keyToIdx.containsKey(key)) {
         final idx = keyToIdx[key]!;
         final ex = result[idx];
@@ -327,15 +345,56 @@ class PlanningMealTile extends StatelessWidget {
     );
   }
 
+  /// Ce qui accompagne le plat : « Accompagnement : Riz · 70 g par part ».
+  ///
+  /// Une ligne par composant, sous les temps et avant le pourquoi : c'est ce
+  /// qu'on lit pour savoir quoi cuisiner, pas pour savoir pourquoi.
+  Widget? _buildComponents(ThemeData theme) {
+    if (meal.components.isEmpty) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final c in meal.components)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.rice_bowl_outlined,
+                  size: AppIconSize.badge,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '${c.role.label} : ${c.label}'
+                    '${c.quantityLabel != null ? ' · ${c.quantityLabel}' : ''}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
     final why = _buildWhy(theme);
+    final components = _buildComponents(theme);
     final prep = meal.prepDate;
     if (prep == null) {
-      if (subtitle == null && why == null) return null;
+      if (subtitle == null && why == null && components == null) return null;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [if (subtitle != null) Text(subtitle), ?why],
+        children: [if (subtitle != null) Text(subtitle), ?components, ?why],
       );
     }
 
@@ -344,11 +403,11 @@ class PlanningMealTile extends StatelessWidget {
       mealDate: meal.plannedAt,
     );
     if (daysAhead <= 0) {
-      if (subtitle == null && why == null) return null;
+      if (subtitle == null && why == null && components == null) return null;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [if (subtitle != null) Text(subtitle), ?why],
+        children: [if (subtitle != null) Text(subtitle), ?components, ?why],
       );
     }
 
@@ -385,6 +444,7 @@ class PlanningMealTile extends StatelessWidget {
             ),
           ],
         ),
+        ?components,
         ?why,
       ],
     );

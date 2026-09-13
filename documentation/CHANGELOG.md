@@ -16,6 +16,46 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.62 — fonctionnel
+
+#### Un repas, c'est un plat et son accompagnement
+
+Troisième palier de « un repas n'est pas une recette ». La blanquette arrive avec son riz.
+
+**Le programme compose, le modèle ne choisit rien.** Quand le plat retenu n'apporte pas de
+féculent ou de légume, un accompagnement lui est posé : d'abord parmi les accompagnements
+classiques que le modèle a reconnus une fois pour toutes sur la recette, en préférant une
+recette d'accompagnement du corpus quand elle existe — les frites maison plutôt que les frites
+surgelées —, sinon une garniture de la famille qui manque, par rang. Le même accompagnement ne
+revient pas deux jours de suite quand un autre est possible, ni deux fois dans le cycle tant
+qu'il en reste. Un plat complet, une entrée, un dessert, une recette non classée ne reçoivent
+rien.
+
+**Dans « Nouveau planning »**, chaque créneau montre son accompagnement, la raison en infobulle
+(« le plat n'apporte pas de féculent : riz, accompagnement classique »), et un appui le change
+ou le retire ; un choix fait à la main n'est plus recalculé tant que le plat ne change pas.
+Dans le planning, « Changer la recette », « Suggestion IA » et la pose d'une recette sur un jour
+libre recomposent l'accompagnement de la même façon ; « Remettre à blanc » le retire.
+
+**La liste montre le repas entier** — « Accompagnement : Riz · 70 g par part » sous le plat —,
+**la liste de courses compte les garnitures** pour les parts du repas, sous leur produit de
+courses, fondues dans la ligne d'une recette qui demande le même produit, et **l'événement
+Google Calendar** porte l'accompagnement et sa quantité, avec le lien de la fiche quand c'est
+une recette.
+
+### v0.22.62 — technique
+
+- `planned_meals` reçoit `components` : une liste de composants (rôle, recette ou garniture
+  **figée** avec sa part par personne, justification). Le plat reste dans `recipe_id`.
+  Modèle dans `meal_component.dart`, testé par `test/meal_component_test.dart`.
+- Le choix vit dans `side_chooser.dart` — ce qui manque au plat (`sideNeedsFor`), les
+  candidats (`sideCandidatesFrom`), l'appariement d'un nom suggéré à une garniture ou une
+  recette (`sideNameMatches`), le choix avec rotation (`chooseSide`) — logique pure, testée
+  par `test/side_chooser_test.dart`. Aucun appel de modèle.
+- `planningAggregateProducts` accepte des produits hors recette (`extras`), testés par
+  `test/planning_shopping_aggregate_test.dart` ; `buildCalendarDescription` reçoit les
+  composants et les parts ; `updateMealRecipe` écrit ou retire les composants avec le plat.
+
 ### v0.22.61 — fonctionnel
 
 #### Le stylet ouvre un pavé d'écriture

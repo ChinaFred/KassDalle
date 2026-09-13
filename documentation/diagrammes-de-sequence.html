@@ -1579,7 +1579,8 @@ sequenceDiagram
   end
 
   SP-->>B: une proposition par créneau, chacune avec sa raison,<br/>et les plats récents écartés — l'écran en dit le nombre
-  U->>B: ajuste, puis Valider le planning
+  B->>B: chooseSide, par créneau : ce que le plat n'apporte pas,<br/>ses accompagnements classiques, les garnitures du compte,<br/>rotation sur les jours voisins — aucun appel de modèle
+  U->>B: ajuste — plat, accompagnement —, puis Valider le planning
   B->>PM: écrit les repas
   Note over B,PM: un créneau sans proposition reste vide.<br/>Le client ne comble pas : il ne rejoue plus les règles
 </pre>

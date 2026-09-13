@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'meal_component.dart';
+
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
 class PlannedMeal {
   final String id;
@@ -48,6 +50,15 @@ class PlannedMeal {
   /// ne dit rien du samedi suivant.
   final List<String> dismissedRecipeIds;
 
+  /// Ce qui accompagne le plat : une garniture ou une recette
+  /// d'accompagnement, plus tard une entrée ou un dessert.
+  ///
+  /// Le plat lui-même n'y figure pas : il reste dans [recipeId], et les
+  /// écrans qui ne connaissent pas les composants continuent de le voir.
+  /// Choisis par le programme depuis ce que le plat n'apporte pas — jamais
+  /// par le modèle au moment du planning.
+  final List<MealComponent> components;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -64,8 +75,14 @@ class PlannedMeal {
     this.prepDate,
     this.justification,
     this.dismissedRecipeIds = const [],
+    this.components = const [],
     required this.createdAt,
   });
+
+  /// Nombre de parts qui compte pour les garnitures : celles visées, sinon
+  /// celles de la recette.
+  int? get portionsForComponents =>
+      (targetPortions ?? 0) > 0 ? targetPortions : basePortions;
 
   factory PlannedMeal.fromFirestore(String id, Map<String, dynamic> data) {
     return PlannedMeal(
@@ -84,6 +101,7 @@ class PlannedMeal {
       dismissedRecipeIds: List<String>.from(
         data['dismissed_recipe_ids'] as List? ?? const [],
       ),
+      components: MealComponent.listFromFirestore(data['components']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -103,6 +121,8 @@ class PlannedMeal {
       'justification': justification!.trim(),
     if (dismissedRecipeIds.isNotEmpty)
       'dismissed_recipe_ids': dismissedRecipeIds,
+    if (components.isNotEmpty)
+      'components': [for (final c in components) c.toMap()],
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

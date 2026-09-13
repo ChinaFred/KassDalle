@@ -11,7 +11,10 @@ import '../domain/planning_history.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
+import '../domain/meal_component.dart';
 import '../domain/meal_recipe_location.dart';
+import '../domain/side_chooser.dart';
+import 'meal_staples_providers.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -122,6 +125,24 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     return current;
   }
 
+  /// L'accompagnement que le programme pose sur [recipe], depuis les
+  /// garnitures du compte et les recettes d'accompagnement chargées.
+  ///
+  /// Rien tant que les garnitures ne sont pas lues : mieux vaut un repas sans
+  /// accompagnement qu'un accompagnement au hasard.
+  List<MealComponent> _composeComponents(Recipe recipe) {
+    final staples = ref.read(myStaplesProvider).value;
+    if (staples == null) return const [];
+    final choice = chooseSide(
+      main: recipe,
+      candidates: sideCandidatesFrom(
+        staples: staples,
+        recipes: _availableRecipes,
+      ),
+    );
+    return [?choice?.component];
+  }
+
   Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
@@ -151,6 +172,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       basePortions: recipe.portions,
       targetPortions: meal.targetPortions ?? recipe.portions,
       dismissRecipeId: _oustedBy(meal, recipe.id),
+      // Un autre plat, un autre accompagnement.
+      components: _composeComponents(recipe),
     );
   }
 
@@ -273,7 +296,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     // Résoudre par identifiant : un repas peut pointer sur un brouillon ou une
     // recette de la famille, absente des recettes validées de l'utilisateur.
     final repo = ref.read(planningRepositoryProvider);
-    final ids = upcoming.map((m) => m.recipeId).whereType<String>().toList();
+    // Les plats, et les recettes d'accompagnement des repas : une garniture
+    // avec recette se compte comme le plat qu'elle accompagne.
+    final ids = <String>[
+      for (final m in upcoming) ...[
+        if (m.recipeId != null) m.recipeId!,
+        for (final c in m.components)
+          if (c.isRecipe) c.recipeId!,
+      ],
+    ];
     final List<Recipe> resolved;
     try {
       resolved = await repo?.getRecipesByIds(ids) ?? const [];
@@ -292,7 +323,42 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     final recipesById = {for (final r in resolved) r.id: r};
     final missing = <String>[];
     final planningRecipes = <Recipe>[];
+    // Les garnitures, multipliées par les parts du repas ; elles se fondent
+    // dans les lignes des recettes — le riz d'une garniture et le riz d'une
+    // recette font une seule ligne de courses.
+    final extras = <PlanningExtraProduct>[];
     for (final meal in upcoming) {
+      // Les composants d'abord : ils comptent même quand le plat est un repas
+      // libre, sans recette.
+      for (final c in meal.components) {
+        if (c.isStaple) {
+          final total = c.totalQuantityFor(meal.portionsForComponents);
+          if (total == null) continue;
+          extras.add((
+            product: RecipeShoppingProduct(
+              name: c.effectiveShoppingProduct,
+              qty: total == total.truncateToDouble()
+                  ? total.toInt().toString()
+                  : total.toStringAsFixed(1),
+              unit: c.unit ?? 'g',
+            ),
+            source: '${meal.recipeTitre} · ${c.role.label.toLowerCase()}',
+          ));
+        } else if (c.isRecipe) {
+          final side = recipesById[c.recipeId!];
+          if (side == null) {
+            missing.add(c.label);
+            continue;
+          }
+          planningRecipes.add(
+            planningScaleRecipeForMeal(
+              recipe: side,
+              basePortions: side.portions,
+              targetPortions: meal.portionsForComponents,
+            ),
+          );
+        }
+      }
       final recipeId = meal.recipeId;
       if (recipeId == null) continue;
       final recipe = recipesById[recipeId];
@@ -308,7 +374,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         ),
       );
     }
-    if (planningRecipes.isEmpty) {
+    if (planningRecipes.isEmpty && extras.isEmpty) {
       if (mounted) {
         context.showSnackBar(
           'Aucune recette avec ingrédients dans le planning.',
@@ -323,7 +389,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         'Recette introuvable, ingrédients non comptés : ${missing.join(', ')}',
       );
     }
-    final aggregated = planningAggregateProducts(planningRecipes);
+    final aggregated = planningAggregateProducts(
+      planningRecipes,
+      extras: extras,
+    );
     final uid = ref.read(planningRepositoryProvider)?.uid ?? '';
     if (!mounted) return;
     await showShoppingListSheet(
@@ -345,6 +414,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       durationMinutes: 0,
       clearPortions: true,
       dismissRecipeId: _oustedBy(meal, null),
+      // Sans plat, pas d'accompagnement.
+      components: const [],
     );
   }
 
@@ -408,6 +479,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           basePortions: recipe.portions,
           targetPortions: meal.targetPortions ?? recipe.portions,
           dismissRecipeId: _oustedBy(meal, recipe.id),
+          components: _composeComponents(recipe),
         );
         if (mounted) {
           final why = (suggestion.justification ?? '').trim();
@@ -510,6 +582,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     // Garder le provider de préférences vivant pour que ref.read() dans les
     // callbacks d'export ait toujours la valeur Firestore à jour.
     ref.watch(planningPreferencesProvider);
+    // Les garnitures aussi : « Changer la recette » compose l'accompagnement
+    // depuis ce que le compte a sous la main, lu ici pour être prêt.
+    ref.watch(myStaplesProvider);
     final theme = Theme.of(context);
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
@@ -826,6 +901,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           cookMinutes: cookMinutes,
           basePortions: recipe.portions,
           targetPortions: targetPortions,
+          components: _composeComponents(recipe),
           createdAt: DateTime.now(),
         ),
       );

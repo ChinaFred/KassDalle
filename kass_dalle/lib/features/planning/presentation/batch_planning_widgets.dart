@@ -4,12 +4,13 @@ import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
+import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
-
 import '../../../core/presentation/stylus_pad_text_field.dart';
+
 /// Sources disponibles pour la sélection de recettes dans la génération par slot.
 enum RecipeSource {
   myRecipes,
@@ -208,6 +209,15 @@ class BatchSlotTile extends StatelessWidget {
   /// Callback appelé quand l'utilisateur tape sur le titre de la recette.
   final VoidCallback? onRecipeTap;
 
+  /// L'accompagnement posé sur le créneau, choisi par le programme ou par
+  /// l'utilisateur ; null quand le plat se suffit, ou qu'on n'a rien trouvé.
+  final MealComponent? side;
+
+  /// Ouvre le choix d'un accompagnement — null tant qu'aucune recette n'est
+  /// posée.
+  final VoidCallback? onChangeSide;
+  final VoidCallback? onRemoveSide;
+
   const BatchSlotTile({
     super.key,
     required this.index,
@@ -237,7 +247,66 @@ class BatchSlotTile extends StatelessWidget {
     this.onGenerateWithAI,
     this.onExportToCalendar,
     this.onRecipeTap,
+    this.side,
+    this.onChangeSide,
+    this.onRemoveSide,
   });
+
+  /// L'accompagnement du créneau : ce qu'on sert à côté, et pourquoi.
+  ///
+  /// Le pourquoi est celui du programme — « le plat n'apporte pas de
+  /// féculent » — en infobulle : la ligne reste courte, la raison reste
+  /// accessible.
+  Widget _buildSideLine(ThemeData theme) {
+    final s = side;
+    final text = s == null
+        ? 'Sans accompagnement'
+        : 'Accompagnement : ${s.label}'
+              '${s.quantityLabel != null ? ' · ${s.quantityLabel}' : ''}';
+    return Padding(
+      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.rice_bowl_outlined,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Tooltip(
+              message: s?.justification ?? '',
+              child: Text(
+                text,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: s == null ? FontStyle.italic : null,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          if (onChangeSide != null)
+            TextButton(
+              onPressed: onChangeSide,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: theme.textTheme.labelSmall,
+              ),
+              child: Text(s == null ? 'Ajouter' : 'Changer'),
+            ),
+          if (s != null && onRemoveSide != null)
+            IconButton(
+              icon: const Icon(Icons.close, size: AppIconSize.inline),
+              tooltip: 'Retirer l\'accompagnement',
+              visualDensity: VisualDensity.compact,
+              onPressed: onRemoveSide,
+            ),
+        ],
+      ),
+    );
+  }
 
   /// Consigne calculée : jour de préparation et mode imposé par le délai.
   ///
@@ -479,6 +548,10 @@ class BatchSlotTile extends StatelessWidget {
                   onNotesChanged: onNotesChanged,
                 ),
         ),
+        // Ce qui accompagne le plat — choisi par le programme, changé d'un
+        // appui. Après les contraintes, avant la conservation : c'est du repas,
+        // pas de la logistique.
+        if (recipe != null) _buildSideLine(theme),
         // Jour de préparation à l'avance, et ce que le plat devra supporter.
         if (prepDate != null || onGenerateStorageAdvice != null)
           _buildStorageLine(theme),

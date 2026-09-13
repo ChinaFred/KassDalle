@@ -404,6 +404,7 @@ classDiagram
     +int? targetPortions
     +DateTime? prepDate
     +List~String~ dismissedRecipeIds
+    +List~MealComponent~ components
   }
 
   class ModerationEntry {
@@ -736,6 +737,23 @@ classDiagram
     +int skippedDuplicate
   }
 
+  class MealComponent {
+    +MealComponentRole role
+    +String? recipeId
+    +String? stapleId
+    +String label
+    +double? quantityPerPortion
+    +String? unit
+    +String? shoppingProduct
+    +String? justification
+  }
+
+  class SideChoice {
+    +MealComponent component
+    +SideNeed need
+    +bool fromSuggestion
+  }
+
   class MealStaple {
     +String id
     +String name
@@ -773,6 +791,10 @@ classDiagram
 
   MealStaple "1" <.. "0..1" StapleOverride : retouche, sous users/{uid}
   MealStaple ..> UserStaple : mergeStaples, base + retouches
+  PlannedMeal "1" *-- "0..*" MealComponent : components, le plat reste dans recipeId
+  MealComponent ..> MealStaple : garniture figée au choix
+  MealComponent ..> Recipe : recette d'accompagnement
+  SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette

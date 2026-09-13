@@ -13,20 +13,25 @@ import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/week_replay.dart';
+import '../domain/meal_component.dart';
+import '../domain/meal_staple.dart';
+import '../domain/side_chooser.dart';
 import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 import 'recipe_picker_sheet.dart';
 import 'replay_week_sheet.dart';
+import 'side_picker_sheet.dart';
+import 'meal_staples_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
-import '../../../core/presentation/stylus_pad_text_field.dart';
 
 /// Décision prise au moment de valider un planning qui recouvre des repas
 /// déjà enregistrés.
@@ -66,6 +71,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // Recettes écartées de chaque créneau pendant cette session : une nouvelle
   // suggestion ne les repropose pas, et elles suivent le repas à la validation.
   Map<int, Set<String>> _slotDismissed = {};
+  // L'accompagnement de chaque créneau, choisi par le programme depuis ce que
+  // le plat n'apporte pas. Un accompagnement posé à la main n'est plus
+  // recalculé tant que le plat ne change pas.
+  Map<int, MealComponent?> _slotSides = {};
+  final Set<int> _slotSideManual = {};
+  // Les garnitures de l'utilisateur, lues une fois à l'ouverture.
+  List<UserStaple> _staples = const [];
   PlanningPreferences? _prefs;
   final TextEditingController _globalConstraintsCtrl = TextEditingController();
   // Index du slot en cours de génération IA individuelle (null = aucun)
@@ -124,6 +136,20 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _familyRecipes = results[2];
           _recipesLoaded = true;
         });
+      }
+      // Les garnitures, à part : leur absence ne prive pas de planifier, elle
+      // prive seulement d'accompagnements — et le dit dans les rapports.
+      try {
+        final staples = await ref
+            .read(mealStaplesRepositoryProvider)
+            .loadMyStaples(repo.uid);
+        if (mounted) setState(() => _staples = staples);
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.loadStaples',
+          error: e,
+          stackTrace: stackTrace,
+        );
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -243,6 +269,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotWasResized.clear();
         _slotResizeReasons.clear();
         _slotIsGenerated.clear();
+        _slotSides.clear();
+        _slotSideManual.clear();
       });
     } else if (!_slots.values.any((r) => r == null)) {
       _showError(
@@ -304,6 +332,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               _slotPrepDates[i] = s.prepDate;
             }
           }
+          // Les plats sont posés : le programme choisit leurs accompagnements,
+          // dans l'ordre des jours, sans en servir deux fois le même de suite.
+          _recomputeSides();
         });
       }
 
@@ -372,6 +403,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotResizeReasons.remove(slotIndex);
         _slotPrepDates.remove(slotIndex);
         _slotIsGenerated.remove(slotIndex);
+        // Un autre plat, un autre accompagnement : le choix à la main tombe
+        // avec le plat qu'il accompagnait.
+        _slotSideManual.remove(slotIndex);
+        _recomputeSides(only: {slotIndex});
       });
     }
   }
@@ -420,6 +455,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           // planification puis jeté à la validation : l'écran qu'on relit
           // ensuite, celui du planning, n'en gardait rien.
           justification: _slotJustifications[i],
+          // L'accompagnement suit le repas : une garniture figée, ou une
+          // recette d'accompagnement.
+          components: [?_slotSides[i]],
           createdAt: DateTime.now(),
         ),
       );
@@ -644,6 +682,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotIsGenerated = newIsGenerated;
         _slotConstraints = newConstraints;
         _slotDismissed = newDismissed;
+        _slotSides = _shiftAfterInsert(_slotSides, gapIdx);
+        final manual = _shiftAfterInsert({
+          for (final i in _slotSideManual) i: true,
+        }, gapIdx).keys.toSet();
+        _slotSideManual
+          ..clear()
+          ..addAll(manual);
       } else {
         // Pas de trou : étendre d'un jour après le dernier
         final newDate = _slotDates.last.add(const Duration(days: 1));
@@ -711,6 +756,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotIsGenerated = newIsGenerated;
       _slotConstraints = newConstraints;
       _slotDismissed = newDismissed;
+      _slotSides = _shiftAfterRemove(_slotSides, index);
+      final manual = _shiftAfterRemove({
+        for (final i in _slotSideManual) i: true,
+      }, index).keys.toSet();
+      _slotSideManual
+        ..clear()
+        ..addAll(manual);
     });
   }
 
@@ -932,6 +984,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotResizeReasons.remove(slotIndex);
       }
       _slotPrepDates[slotIndex] = suggestion.prepDate;
+      _slotSideManual.remove(slotIndex);
+      _recomputeSides(only: {slotIndex});
     });
   }
 
@@ -1125,7 +1179,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotResizeReasons.remove(e.key);
         _slotPrepDates.remove(e.key);
         _slotIsGenerated.remove(e.key);
+        _slotSideManual.remove(e.key);
       }
+      _recomputeSides(only: replay.assignments.keys.toSet());
     });
     final details = <String>[
       if (replay.skippedMissing > 0)
@@ -1141,6 +1197,93 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       '${details.isEmpty ? '' : ' · ${details.join(', ')}'} ✓',
     );
   }
+
+  /// Les accompagnements possibles : les garnitures visibles de l'utilisateur
+  /// et les recettes d'accompagnement des corpus chargés.
+  List<SideCandidate> get _sideCandidates =>
+      sideCandidatesFrom(staples: _staples, recipes: _allRecipes);
+
+  /// Recompose les accompagnements des créneaux, dans l'ordre des jours.
+  ///
+  /// Le programme choisit ; un créneau dont l'accompagnement a été posé à la
+  /// main garde son choix tant que le plat ne change pas. Un accompagnement
+  /// ne revient pas deux jours de suite quand un autre est possible, ni deux
+  /// fois dans le cycle tant qu'il en reste. [only] limite le recalcul à
+  /// quelques créneaux, les autres gardant ce qu'ils ont.
+  void _recomputeSides({Set<int>? only}) {
+    final candidates = _sideCandidates;
+    final next = <int, MealComponent?>{};
+    final used = <String>{};
+    for (var i = 0; i < _slotDates.length; i++) {
+      final recipe = _slots[i];
+      if (recipe == null) {
+        next[i] = null;
+        continue;
+      }
+      final keep =
+          _slotSideManual.contains(i) || (only != null && !only.contains(i));
+      if (keep) {
+        next[i] = _slotSides[i];
+        final id = _slotSides[i]?.sourceId;
+        if (id != null) used.add(id);
+        continue;
+      }
+      final avoid = <String>{
+        ?next[i - 1]?.sourceId,
+        ?_slotSides[i + 1]?.sourceId,
+      };
+      final choice = chooseSide(
+        main: recipe,
+        candidates: candidates,
+        avoidIds: avoid,
+        usedInCycleIds: used,
+      );
+      next[i] = choice?.component;
+      if (choice != null) used.add(choice.component.sourceId);
+    }
+    _slotSides = next;
+  }
+
+  /// Choisir l'accompagnement d'un créneau à la main.
+  Future<void> _changeSide(int index) async {
+    final recipe = _slots[index];
+    if (recipe == null) return;
+    final result = await showModalBottomSheet<SidePickerResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => SidePickerSheet(
+        main: recipe,
+        candidates: _sideCandidates,
+        current: _slotSides[index],
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _slotSideManual.add(index);
+      _slotSides[index] = result.candidate?.toComponent(
+        justification: 'Choisi à la main.',
+      );
+    });
+  }
+
+  void _removeSide(int index) => setState(() {
+    _slotSideManual.add(index);
+    _slotSides[index] = null;
+  });
+
+  /// Décale les clés à partir de [insertedAt] d'un cran vers le haut, pour
+  /// un jour inséré au milieu du cycle.
+  static Map<int, T> _shiftAfterInsert<T>(Map<int, T> map, int insertedAt) => {
+    for (final e in map.entries)
+      (e.key < insertedAt ? e.key : e.key + 1): e.value,
+  };
+
+  /// Retire la clé [removedAt] et ramène les suivantes d'un cran.
+  static Map<int, T> _shiftAfterRemove<T>(Map<int, T> map, int removedAt) => {
+    for (final e in map.entries)
+      if (e.key != removedAt) (e.key < removedAt ? e.key : e.key - 1): e.value,
+  };
 
   void _showError(String msg) {
     if (!mounted) return;
@@ -1182,6 +1325,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               prepDate: _slotPrepDates[index],
               mealDate: startTime,
             ),
+      components: [?_slotSides[index]],
+      portions: slotConstraint.targetPortions > 0
+          ? slotConstraint.targetPortions
+          : recipe.portions,
     );
     try {
       await CalendarService.createEvent(
@@ -1376,6 +1523,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () => setState(() {
                           _slots[index] = null;
+                          _slotSides.remove(index);
+                          _slotSideManual.remove(index);
                           _slotJustifications.remove(index);
                           _slotPrepDates.remove(index);
                           _slotWasResized.remove(index);
@@ -1423,6 +1572,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                             : null,
                         onRecipeTap: _slots[index] != null
                             ? () => _onRecipeTap(_slots[index]!, index)
+                            : null,
+                        side: _slotSides[index],
+                        onChangeSide: _slots[index] != null
+                            ? () => _changeSide(index)
+                            : null,
+                        onRemoveSide: _slotSides[index] != null
+                            ? () => _removeSide(index)
                             : null,
                       );
                     },

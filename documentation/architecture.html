@@ -416,7 +416,7 @@ stateDiagram-v2
           <tr><td><code>groups</code></td><td>Groupes familiaux et leurs membres</td><td>Client</td></tr>
           <tr><td><code>recipe_ratings</code></td><td>Notes personnelles sur 10, clé <code>{uid}_{recipeId}</code></td><td>Client</td></tr>
           <tr><td><code>annotations</code></td><td>Remarques, astuces et corrections attachées à une recette</td><td>Client</td></tr>
-          <tr><td><code>planned_meals</code></td><td>Repas planifiés — le couple (personne, date), porteur de toute adaptation d'une recette à un contexte</td><td>Client</td></tr>
+          <tr><td><code>planned_meals</code></td><td>Repas planifiés — le couple (personne, date), porteur de toute adaptation d'une recette à un contexte, et de ses composants : l'accompagnement choisi par le programme, garniture figée ou recette</td><td>Client</td></tr>
           <tr><td><code>planning_config</code></td><td>Préférences de planning par compte : cycle, jour de départ, heure, fenêtre de variété, contraintes en langage naturel, calendrier Google cible</td><td>Client</td></tr>
           <tr><td><code>meal_staples</code></td><td>Garnitures simples — riz, pâtes, salade, yaourt — avec la part par personne. Référentiel partagé ; les retouches de chacun vivent sous <code>users/{uid}/preferences/meal_staples</code></td><td>Admin ; retouches par le client</td></tr>
           <tr><td><code>ai_routing_presets</code></td><td>Configurations de routage enregistrées : les sept réglages de l'écran <em>Moteur d'IA</em> sous un nom. Ne commandent rien tant qu'elles ne sont pas chargées puis enregistrées</td><td>Cloud Functions</td></tr>
