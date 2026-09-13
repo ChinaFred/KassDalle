@@ -144,9 +144,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     return [?choice?.component];
   }
 
-  /// Trois id\u00e9es de repas sur une consigne, pour \u00ab G\u00e9n\u00e9rer avec l'IA \u00bb du
-  /// s\u00e9lecteur. Les pr\u00e9f\u00e9rences g\u00e9n\u00e9rales du planning partent avec la
-  /// consigne ; rien n'est con\u00e7u ni enregistr\u00e9.
+  /// Trois idées de repas sur une consigne, pour « Générer avec l'IA » du
+  /// sélecteur. Les préférences générales du planning partent avec la
+  /// consigne ; rien n'est conçu ni enregistré.
   Future<List<MealIdea>> _generateMealIdeas({
     required String prompt,
     required List<String> previousTitles,
@@ -163,6 +163,64 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         );
   }
 
+  /// Rédige la recette d'une idée retenue, comme « Conception IA » de Nouveau
+  /// planning, et l'enregistre validée dans « Mes créations Kass'Dalle ».
+  ///
+  /// Validée, pas en brouillon : la personne a choisi ce plat elle-même, elle
+  /// veut l'ouvrir depuis le repas tout de suite. [on] est le jour du repas,
+  /// dont les contraintes cadrent la rédaction.
+  Future<Recipe> _conceiveMealIdea(
+    MealIdea idea, {
+    required DateTime on,
+  }) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) throw StateError('Utilisateur non connecté.');
+    final prefs =
+        ref.read(planningPreferencesProvider).value ??
+        const PlanningPreferences();
+    final dayConstraint = prefs.dailyConstraints[on.weekday];
+    final suggestion = await ref
+        .read(planningAiServiceProvider)
+        .generateRecipeConcept(
+          slotDate: on,
+          globalConstraints: prefs.globalConstraints,
+          dayConstraint: dayConstraint == null || dayConstraint.isEmpty
+              ? null
+              : dayConstraint,
+          requestedDish: idea,
+        );
+    final recipe = suggestion.recipe;
+    if (recipe == null) {
+      throw StateError(
+        suggestion.justification ?? 'L\'IA n\'a pas rendu de recette.',
+      );
+    }
+    final id = await repo.saveGenerated(
+      recipe,
+      reviewStatus: ReviewStatus.validated,
+    );
+    // La recette telle qu'enregistrée : l'identifiant, le statut, le livre.
+    // `copyWith` ne prend pas d'identifiant ; on la reconstruit avec tout ce
+    // que le repas et les courses liront (durées, parts, ingrédients).
+    return Recipe(
+      id: id,
+      titre: recipe.titre,
+      langue: recipe.langue,
+      rawCooklang: recipe.rawCooklang,
+      draftCooklang: recipe.draftCooklang,
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.validated,
+      tags: recipe.tags,
+      ingredientsIndex: recipe.ingredientsIndex,
+      ingredients: recipe.ingredients,
+      portions: recipe.portions,
+      origin: RecipeOrigin.ai,
+      createdBy: repo.uid,
+      createdAt: recipe.createdAt,
+      updatedAt: recipe.updatedAt,
+    );
+  }
+
   Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
@@ -176,6 +234,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
         onGenerateIdeas: _generateMealIdeas,
+        onConceiveIdea: (idea) => _conceiveMealIdea(idea, on: meal.plannedAt),
       ),
     );
     if (recipe == null || !mounted) return;
@@ -889,6 +948,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
         onGenerateIdeas: _generateMealIdeas,
+        onConceiveIdea: (idea) => _conceiveMealIdea(idea, on: day),
       ),
     );
     if (recipe == null || !mounted) return;

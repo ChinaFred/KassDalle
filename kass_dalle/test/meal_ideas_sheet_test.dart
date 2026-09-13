@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/features/planning/domain/meal_idea.dart';
 import 'package:kass_dalle/features/planning/presentation/meal_ideas_sheet.dart';
+import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 
 /// Enregistre les postes signalés, sans Firebase.
 class _RecordingErrorReportService extends ErrorReportService {
@@ -48,13 +49,14 @@ const _lot2 = [
 ];
 
 /// Ouvre la feuille depuis un bouton et rend ce qu'elle a renvoyé.
-Future<Future<MealIdea?> Function()> _pumpHost(
+Future<Future<Recipe?> Function()> _pumpHost(
   WidgetTester tester,
   MealIdeasGenerator generate, {
+  MealIdeaConceiver? conceive,
   String initialPrompt = '',
   ErrorReportService? errors,
 }) async {
-  MealIdea? result;
+  Recipe? result;
   var done = false;
   await tester.pumpWidget(
     MaterialApp(
@@ -65,6 +67,7 @@ Future<Future<MealIdea?> Function()> _pumpHost(
               result = await showMealIdeasSheet(
                 context,
                 generate: generate,
+                conceive: conceive,
                 initialPrompt: initialPrompt,
                 errorReportService: errors,
               );
@@ -157,6 +160,72 @@ void main() {
       await tester.pumpAndSettle();
       final picked = await read();
       expect(picked?.titre, 'Tarte aux poireaux');
+      // Sans rédaction, l'idée sort en repas libre.
+      expect(picked?.id, isEmpty);
+    });
+
+    testWidgets('avec un rédacteur, l\'idée retenue sort en recette '
+        'enregistrée', (tester) async {
+      MealIdea? conceived;
+      final read = await _pumpHost(
+        tester,
+        ({required prompt, required previousTitles}) async => _lot1,
+        conceive: (idea) async {
+          conceived = idea;
+          return idea.toFreeRecipe().copyWith(titre: 'Enregistrée');
+        },
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'un plat léger');
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Proposer trois idées'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Mes créations'), findsOneWidget);
+
+      await tester.tap(find.text('Omelette aux herbes'));
+      await tester.pumpAndSettle();
+
+      expect(conceived?.titre, 'Omelette aux herbes');
+      final picked = await read();
+      expect(picked?.titre, 'Enregistrée');
+    });
+
+    testWidgets('un rédacteur qui échoue laisse un message et les idées', (
+      tester,
+    ) async {
+      final errors = _RecordingErrorReportService();
+      await _pumpHost(
+        tester,
+        ({required prompt, required previousTitles}) async => _lot1,
+        conceive: (idea) async => throw StateError('rédaction impossible'),
+        errors: errors,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'un plat léger');
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Proposer trois idées'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Soupe de courge'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('rédaction impossible'), findsOneWidget);
+      expect(errors.features, ['mealIdeasSheet.conceive']);
+      // Les idées restent, et se retiennent encore.
+      expect(find.text('Dahl de lentilles corail'), findsOneWidget);
+      expect(
+        tester
+            .widget<ListTile>(find.widgetWithText(ListTile, 'Soupe de courge'))
+            .enabled,
+        isTrue,
+      );
     });
 
     testWidgets('la recherche du sélecteur sert de première consigne', (

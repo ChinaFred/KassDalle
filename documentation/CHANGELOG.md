@@ -16,6 +16,34 @@ anciennes sans accents.
 
 ## 2026-09-13
 
+### v0.22.65 — fonctionnel
+
+#### Une idée retenue devient une recette
+
+Dans « Générer avec l'IA », appuyer sur une idée rédige sa recette complète — même
+rédaction que « Conception IA » de Nouveau planning — et l'enregistre **validée** dans
+« Mes créations Kass'Dalle ✨ ». Le repas pointe vers cette recette : la fiche s'ouvre d'un
+appui, les ingrédients entrent dans les courses, l'accompagnement se compose.
+
+En v0.22.63, l'idée se posait en repas libre : un titre, deux durées, et rien à ouvrir. La
+feuille affiche « Rédaction de … » pendant l'écriture, jusqu'à une minute, et ne se ferme
+pas d'un geste pendant ce temps. Un appel de plus par idée retenue, sur le poste
+« Concept de recette (planning) ».
+
+### v0.22.65 — technique
+
+- `gemini/planning.ts` : `RecipeConceptInput.requestedDish` (titre, description), facultatif.
+  Présent, le prompt ouvre sur une section « plat demandé » et ordonne d'écrire cette
+  recette sous ce titre ; absent, rien ne change pour « Conception IA ».
+- `PlanningRepository.saveGenerated(recipe, reviewStatus:)` ; `saveAsDraft` y délègue avec
+  `draft`. Le sélecteur enregistre en `validated`, dans le livre Kass'Dalle, origine `ai`.
+- `MealIdeaConceiver` (`meal_idea.dart`) ; `MealIdeasSheet` reçoit `conceive`, rend une
+  `Recipe`, bloque la fermeture pendant la rédaction (`PopScope`, `isDismissible`).
+  `RecipePickerSheet.onConceiveIdea` ; `_conceiveMealIdea` dans `planning_screen.dart`,
+  cadré par les contraintes du jour du repas.
+- `test/meal_ideas_sheet_test.dart` : deux tests de plus, rédaction réussie et rédaction
+  en échec signalée sous `mealIdeasSheet.conceive`.
+
 ### v0.22.64 — fonctionnel
 
 #### Le backfill des rôles dit ce qu'il reste à classer

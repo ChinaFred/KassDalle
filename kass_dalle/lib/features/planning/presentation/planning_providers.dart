@@ -250,7 +250,18 @@ class PlanningRepository {
   }
 
   /// Sauvegarde une recette générée par l'IA comme brouillon et retourne son ID.
-  Future<String> saveAsDraft(Recipe recipe) async {
+  Future<String> saveAsDraft(Recipe recipe) =>
+      saveGenerated(recipe, reviewStatus: ReviewStatus.draft);
+
+  /// Enregistre une recette conçue par l'IA dans « Mes créations Kass'Dalle ».
+  ///
+  /// En brouillon pour « Conception IA » de Nouveau planning, à relire ;
+  /// validée pour une idée que la personne a choisie elle-même dans le
+  /// sélecteur : elle l'a demandée, elle la voit tout de suite dans son livre.
+  Future<String> saveGenerated(
+    Recipe recipe, {
+    required ReviewStatus reviewStatus,
+  }) async {
     final now = DateTime.now();
     // Une recette conçue par l'IA appartient à « Mes créations Kass'Dalle ».
     // Elle atterrissait sans livre, donc en recette libre : la bibliothèque ne
@@ -264,7 +275,7 @@ class PlanningRepository {
       rawCooklang: recipe.rawCooklang,
       draftCooklang: recipe.draftCooklang ?? recipe.rawCooklang,
       imageUrls: const [],
-      reviewStatus: ReviewStatus.draft,
+      reviewStatus: reviewStatus,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       // La liste structurée et les parts suivent : sans elles, la relecture

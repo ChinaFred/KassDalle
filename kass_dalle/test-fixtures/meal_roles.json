@@ -1,0 +1,4 @@
+{
+  "_comment": "Rôles d'une recette dans un repas. Décidés par functions/src/gemini/mealRole.ts (MEAL_ROLES), repris par lib/features/recipes/domain/meal_role.dart pour la liste déroulante et l'affichage. Même ordre des deux côtés.",
+  "roles": ["plat", "accompagnement", "entree", "dessert", "snack"]
+}

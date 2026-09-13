@@ -179,16 +179,27 @@ class PlanningAiService {
   /// indépendants à qui l'on demande « un plat familial » rendent sept fois le
   /// même réflexe, et une consigne de variété que chacun respecte isolément se
   /// solde par six poulets dans la semaine.
+  ///
+  /// [requestedDish] : le plat déjà choisi — une idée retenue dans « Générer
+  /// avec l'IA ». Le modèle rédige cette recette au lieu d'en inventer une.
   Future<SlotSuggestion> generateRecipeConcept({
     required DateTime slotDate,
     required String globalConstraints,
     DayConstraint? dayConstraint,
     List<String> alreadyPlanned = const [],
+    MealIdea? requestedDish,
   }) async {
     final result = await _gemini.generateRecipeConcept(
       slotDate: slotDate.toIso8601String(),
       globalConstraints: globalConstraints,
       alreadyPlanned: alreadyPlanned,
+      requestedDish: requestedDish == null
+          ? null
+          : {
+              'titre': requestedDish.titre,
+              if (requestedDish.description.isNotEmpty)
+                'description': requestedDish.description,
+            },
       dayConstraint: dayConstraint == null
           ? null
           : {

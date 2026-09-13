@@ -32,6 +32,10 @@ class RecipePickerSheet extends StatefulWidget {
   /// résultat — un repas sans recette liée.
   final MealIdeasGenerator? onGenerateIdeas;
 
+  /// Rédige et enregistre la recette de l'idée retenue. Absent, l'idée sort
+  /// en repas libre, sans recette.
+  final MealIdeaConceiver? onConceiveIdea;
+
   const RecipePickerSheet({
     super.key,
     required this.recipes,
@@ -40,6 +44,7 @@ class RecipePickerSheet extends StatefulWidget {
     this.hintText = 'Rechercher une recette…',
     this.freeNameAlways = false,
     this.onGenerateIdeas,
+    this.onConceiveIdea,
   });
 
   @override
@@ -118,17 +123,19 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
   }
 
   /// Ouvre la feuille d'idées ; ce qui est tapé dans la recherche sert de
-  /// première consigne. L'idée retenue sort du sélecteur en repas libre.
+  /// première consigne. La recette retenue sort du sélecteur : enregistrée
+  /// quand [RecipePickerSheet.onConceiveIdea] est fourni, libre sinon.
   Future<void> _askAiIdeas(BuildContext sheetContext) async {
     final generate = widget.onGenerateIdeas;
     if (generate == null) return;
-    final idea = await showMealIdeasSheet(
+    final recipe = await showMealIdeasSheet(
       context,
       generate: generate,
+      conceive: widget.onConceiveIdea,
       initialPrompt: _query.trim(),
     );
-    if (idea == null) return;
-    if (sheetContext.mounted) Navigator.pop(sheetContext, idea.toFreeRecipe());
+    if (recipe == null) return;
+    if (sheetContext.mounted) Navigator.pop(sheetContext, recipe);
   }
 
   /// La feuille des filtres : deux groupes de puces, cochables à plusieurs.
@@ -361,8 +368,11 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                               ),
                             ),
                             title: const Text('Générer avec l\'IA…'),
-                            subtitle: const Text(
-                              'Trois idées sur une consigne, à affiner',
+                            subtitle: Text(
+                              widget.onConceiveIdea == null
+                                  ? 'Trois idées sur une consigne, à affiner'
+                                  : 'Trois idées sur une consigne ; la recette '
+                                        'retenue est rédigée et enregistrée',
                             ),
                             onTap: () => _askAiIdeas(ctx),
                           );

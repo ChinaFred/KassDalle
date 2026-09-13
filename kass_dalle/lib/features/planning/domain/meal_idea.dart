@@ -52,3 +52,7 @@ typedef MealIdeasGenerator =
       required String prompt,
       required List<String> previousTitles,
     });
+
+/// Rédige la recette d'une idée retenue et l'enregistre ; rend la recette
+/// enregistrée, avec son identifiant. Lève si rien n'a pu être rédigé.
+typedef MealIdeaConceiver = Future<Recipe> Function(MealIdea idea);

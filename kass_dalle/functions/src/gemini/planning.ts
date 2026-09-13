@@ -25,6 +25,13 @@ export interface RecipeConceptInput {
    * on génère créneau par créneau.
    */
   alreadyPlanned?: string[];
+
+  /**
+   * Le plat à rédiger, quand la personne l'a déjà choisi — une idée retenue
+   * dans « Générer avec l'IA » du sélecteur. Le modèle écrit CETTE recette,
+   * sous ce titre, au lieu d'en inventer une.
+   */
+  requestedDish?: { titre: string; description?: string };
 }
 
 export interface RecipeConceptResult {
@@ -586,13 +593,29 @@ export async function generateRecipeConcept(
   ctx: ModelCallContext,
 ): Promise<RecipeConceptResult> {
   const lines: string[] = [];
-  lines.push(
-    "Tu es un chef cuisinier expert. Crée une recette originale et réaliste qui respecte exactement les contraintes suivantes.",
-  );
-  lines.push(
-    "La recette doit être faisable à la maison, délicieuse et adaptée à un repas familial.",
-  );
-  lines.push("");
+  const requestedTitre = (input.requestedDish?.titre ?? "").trim().slice(0, 200);
+  const requestedDescription = (input.requestedDish?.description ?? "").trim().slice(0, 600);
+  if (requestedTitre) {
+    lines.push(
+      "Tu es un chef cuisinier expert. Rédige la recette du plat demandé ci-dessous, réaliste et faisable à la maison, en respectant les contraintes qui suivent.",
+    );
+    lines.push("");
+    lines.push("=== PLAT DEMANDÉ ===");
+    lines.push(`Titre : ${requestedTitre}`);
+    if (requestedDescription) lines.push(`Description : ${requestedDescription}`);
+    lines.push(
+      "Écris CETTE recette, sous ce titre. Ne propose pas un autre plat, même si les contraintes s'y prêteraient mieux : la personne l'a choisi.",
+    );
+    lines.push("");
+  } else {
+    lines.push(
+      "Tu es un chef cuisinier expert. Crée une recette originale et réaliste qui respecte exactement les contraintes suivantes.",
+    );
+    lines.push(
+      "La recette doit être faisable à la maison, délicieuse et adaptée à un repas familial.",
+    );
+    lines.push("");
+  }
 
   if (input.globalConstraints.trim()) {
     lines.push("=== PRÉFÉRENCES GÉNÉRALES ===");
