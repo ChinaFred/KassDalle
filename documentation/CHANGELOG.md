@@ -16,7 +16,7 @@ anciennes sans accents.
 
 ## 2026-09-13
 
-### v0.22.60 — fonctionnel
+### v0.22.61 — fonctionnel
 
 #### Le stylet ouvre un pavé d'écriture
 
@@ -39,7 +39,7 @@ Le panneau ne s'ouvre que là où le système convertit l'écriture : Android 14
 clavier compatible, et l'iPad. Sous Android 13, sur le web et sur Windows, le stylet se
 comporte comme un doigt.
 
-### v0.22.60 — technique
+### v0.22.61 — technique
 
 - `core/presentation/stylus_pad_text_field.dart` : `StylusPadTextField`, un `TextField` sous
   un `Listener`. Une pose de `PointerDeviceKind.stylus` interroge `Scribe.isFeatureAvailable`
