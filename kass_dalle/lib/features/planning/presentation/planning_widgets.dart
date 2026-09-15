@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -290,6 +291,10 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback onTimeChanged;
   final VoidCallback onExportToCalendar;
 
+  /// Ouvre la fiche d'un composant qui est une recette — un accompagnement,
+  /// une entrée, un dessert du corpus. Une garniture n'a pas de fiche.
+  final ValueChanged<MealComponent>? onComponentTap;
+
   const PlanningMealTile({
     super.key,
     required this.meal,
@@ -304,6 +309,7 @@ class PlanningMealTile extends StatelessWidget {
     required this.onTimeChanged,
     required this.onExportToCalendar,
     this.onTap,
+    this.onComponentTap,
   });
 
   /// Sous-titre du repas, augmenté de la consigne de conservation quand le
@@ -349,6 +355,11 @@ class PlanningMealTile extends StatelessWidget {
   ///
   /// Une ligne par composant, sous les temps et avant le pourquoi : c'est ce
   /// qu'on lit pour savoir quoi cuisiner, pas pour savoir pourquoi.
+  ///
+  /// Un composant qui est une recette porte l'icône de livre, un titre
+  /// souligné, et s'ouvre d'un appui : la tuile entière ouvre le plat, et
+  /// rien d'autre ne menait au kimchi ou aux gaufrettes du corpus. Une
+  /// garniture reste un texte, avec sa part par personne.
   Widget? _buildComponents(ThemeData theme) {
     if (meal.components.isEmpty) return null;
     return Padding(
@@ -357,31 +368,42 @@ class PlanningMealTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final c in meal.components)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.rice_bowl_outlined,
-                  size: AppIconSize.badge,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '${c.role.label} : ${c.label}'
-                    '${c.quantityLabel != null ? ' · ${c.quantityLabel}' : ''}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
+          for (final c in meal.components) _buildComponentLine(theme, c),
         ],
       ),
+    );
+  }
+
+  Widget _buildComponentLine(ThemeData theme, MealComponent c) {
+    final opens = c.isRecipe && onComponentTap != null;
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          c.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,
+          size: AppIconSize.badge,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            '${c.role.label} : ${c.label}'
+            '${c.quantityLabel != null ? ' · ${c.quantityLabel}' : ''}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              decoration: opens ? TextDecoration.underline : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+    if (!opens) return row;
+    return InkWell(
+      onTap: () => onComponentTap!(c),
+      borderRadius: BorderRadius.circular(4),
+      child: row,
     );
   }
 

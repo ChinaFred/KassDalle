@@ -921,6 +921,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                       onTimeChanged: () => _changeTime(meal),
                       onExportToCalendar: () => _exportMealToCalendar(meal),
                       onTap: _openRecipeFor(meal),
+                      onComponentTap: (c) => _openComponentRecipe(meal, c),
                     ),
                   ),
                 ],
@@ -1100,6 +1101,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     onTimeChanged: () => _changeTime(meal),
                     onExportToCalendar: () => _exportMealToCalendar(meal),
                     onTap: _openRecipeFor(meal),
+                    onComponentTap: (c) => _openComponentRecipe(meal, c),
                   ),
                 ),
               // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
@@ -1215,6 +1217,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   VoidCallback? _openRecipeFor(PlannedMeal meal) {
     final location = mealRecipeLocation(meal);
     return location == null ? null : () => context.push(location);
+  }
+
+  /// Ouvre la fiche d'un composant du repas qui est une recette, pour les
+  /// parts du repas. Le jour de préparation n'est pas transmis : il est celui
+  /// du plat, pas de son accompagnement.
+  void _openComponentRecipe(PlannedMeal meal, MealComponent component) {
+    final recipeId = component.recipeId;
+    if (recipeId == null || recipeId.isEmpty) return;
+    context.push(
+      recipeLocationFor(
+        recipeId: recipeId,
+        targetPortions: meal.portionsForComponents,
+      ),
+    );
   }
 
   bool _isToday(DateTime day) {
