@@ -8,7 +8,6 @@ import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
-import '../domain/meal_recipe_location.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
@@ -71,6 +70,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // Recettes écartées de chaque créneau pendant cette session : une nouvelle
   // suggestion ne les repropose pas, et elles suivent le repas à la validation.
   Map<int, Set<String>> _slotDismissed = {};
+  // Identifiant du repas déjà enregistré pour un créneau, depuis son icône
+  // calendrier. « Valider » réécrit ce repas sous le même identifiant au lieu
+  // d'en créer un second sur la même date.
+  Map<int, String> _slotSavedMealIds = {};
   // L'accompagnement de chaque créneau, choisi par le programme depuis ce que
   // le plat n'apporte pas. Un accompagnement posé à la main n'est plus
   // recalculé tant que le plat ne change pas.
@@ -433,62 +436,90 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   }
 
+  /// Texte de la confirmation de « Valider » : ce qui sera ajouté, ce qui sera
+  /// mis à jour parce que déjà enregistré depuis un créneau, et ce que le
+  /// planning contient déjà d'autre sur la période.
+  static String _validateDialogText({
+    required int newCount,
+    required int updatedCount,
+    required int existingCount,
+  }) {
+    final ready = switch ((newCount, updatedCount)) {
+      (_, 0) => '$newCount repas seront ajoutés à votre planning',
+      (0, _) => 'Les $updatedCount repas déjà enregistrés seront mis à jour',
+      _ =>
+        '$newCount repas seront ajoutés à votre planning, et $updatedCount '
+            'déjà enregistrés seront mis à jour',
+    };
+    if (existingCount == 0) return '$ready.';
+    final others = updatedCount > 0 ? 'autres repas' : 'repas';
+    return '$ready. Votre planning contient déjà $existingCount $others sur '
+        'cette période : voulez-vous les remplacer, ou ajouter les nouveaux '
+        'à côté ?';
+  }
+
+  /// Le repas que le créneau [i] enregistrera, ou null s'il est vide.
+  ///
+  /// Un seul constructeur pour l'icône calendrier du créneau et pour
+  /// « Valider » : ce que l'un enregistre est ce que l'autre aurait écrit.
+  /// L'identifiant est celui du repas déjà enregistré pour ce créneau, s'il y
+  /// en a un, pour qu'il soit réécrit et non doublé.
+  PlannedMeal? _plannedMealForSlot(int i, {required String uid}) {
+    final recipe = _slots[i];
+    if (recipe == null) return null;
+    final date = _slotDates[i];
+    final slotConstraint = _slotConstraints[i] ?? const DayConstraint();
+    final targetPortions = slotConstraint.targetPortions > 0
+        ? slotConstraint.targetPortions
+        : recipe.portions;
+    final time = _slotTimes[i] ?? _defaultTime;
+    final plannedAt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    return PlannedMeal(
+      id: _slotSavedMealIds[i] ?? '',
+      uid: uid,
+      recipeId: recipe.id.isEmpty ? null : recipe.id,
+      recipeTitre: recipe.titre,
+      plannedAt: plannedAt,
+      durationMinutes: duration > 0 ? duration : 30,
+      prepMinutes: recipe.tags.prepTime,
+      cookMinutes: recipe.tags.cookTime,
+      basePortions: recipe.portions,
+      targetPortions: targetPortions,
+      prepDate: _slotPrepDates[i],
+      dismissedRecipeIds: (_slotDismissed[i] ?? const {}).toList(
+        growable: false,
+      ),
+      // Le « pourquoi » suit le repas. Il était affiché pendant la
+      // planification puis jeté à la validation : l'écran qu'on relit
+      // ensuite, celui du planning, n'en gardait rien.
+      justification: _slotJustifications[i],
+      // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
+      // l'entrée et le dessert seulement si le format du créneau en
+      // demande, l'accompagnement — garniture figée ou recette — toujours.
+      components: [
+        if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[i],
+        ?_slotSides[i],
+        if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[i],
+      ],
+      createdAt: DateTime.now(),
+    );
+  }
+
   Future<void> _validate() async {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
 
-    final mealsToAdd = <PlannedMeal>[];
-    final myUid = repo.uid;
-    for (int i = 0; i < _slotDates.length; i++) {
-      final recipe = _slots[i];
-      if (recipe == null) continue;
-      final date = _slotDates[i];
-      final slotConstraint = _slotConstraints[i] ?? const DayConstraint();
-      final targetPortions = slotConstraint.targetPortions > 0
-          ? slotConstraint.targetPortions
-          : recipe.portions;
-      final time = _slotTimes[i] ?? _defaultTime;
-      final plannedAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-      final duration =
-          (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
-      mealsToAdd.add(
-        PlannedMeal(
-          id: '',
-          uid: myUid,
-          recipeId: recipe.id.isEmpty ? null : recipe.id,
-          recipeTitre: recipe.titre,
-          plannedAt: plannedAt,
-          durationMinutes: duration > 0 ? duration : 30,
-          prepMinutes: recipe.tags.prepTime,
-          cookMinutes: recipe.tags.cookTime,
-          basePortions: recipe.portions,
-          targetPortions: targetPortions,
-          prepDate: _slotPrepDates[i],
-          dismissedRecipeIds: (_slotDismissed[i] ?? const {}).toList(
-            growable: false,
-          ),
-          // Le « pourquoi » suit le repas. Il était affiché pendant la
-          // planification puis jeté à la validation : l'écran qu'on relit
-          // ensuite, celui du planning, n'en gardait rien.
-          justification: _slotJustifications[i],
-          // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
-          // l'entrée et le dessert seulement si le format du créneau en
-          // demande, l'accompagnement — garniture figée ou recette — toujours.
-          components: [
-            if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[i],
-            ?_slotSides[i],
-            if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[i],
-          ],
-          createdAt: DateTime.now(),
-        ),
-      );
-    }
+    final mealsToAdd = <PlannedMeal>[
+      for (int i = 0; i < _slotDates.length; i++)
+        ?_plannedMealForSlot(i, uid: repo.uid),
+    ];
 
     if (mealsToAdd.isEmpty) {
       _showError('Aucun repas assigné à valider.');
@@ -496,13 +527,23 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
 
     // Ce que le cycle recouvre déjà : enregistrer sans le savoir empilait deux
-    // repas sur le même créneau, et le planning affichait les deux.
+    // repas sur le même créneau, et le planning affichait les deux. Les repas
+    // enregistrés depuis l'icône d'un créneau de cet écran n'en font pas
+    // partie : ils sont réécrits sous leur identifiant, pas remplacés.
+    final ownIds = {
+      for (final meal in mealsToAdd)
+        if (meal.id.isNotEmpty) meal.id,
+    };
     List<PlannedMeal> existing;
     try {
-      existing = await repo.getMealsBetween(
+      final between = await repo.getMealsBetween(
         from: _slotDates.first,
         to: _slotDates.last,
       );
+      existing = [
+        for (final meal in between)
+          if (!ownIds.contains(meal.id)) meal,
+      ];
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.validateExisting',
@@ -518,11 +559,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Valider le planning ?'),
         content: Text(
-          existing.isEmpty
-              ? '${mealsToAdd.length} repas seront ajoutés à votre planning.'
-              : '${mealsToAdd.length} repas sont prêts. Votre planning contient '
-                    'déjà ${existing.length} repas sur cette période : voulez-vous '
-                    'les remplacer, ou ajouter les nouveaux à côté ?',
+          _validateDialogText(
+            newCount: mealsToAdd.length - ownIds.length,
+            updatedCount: ownIds.length,
+            existingCount: existing.length,
+          ),
         ),
         actions: [
           TextButton(
@@ -553,15 +594,37 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       if (choice == _ValidateChoice.replace && existing.isNotEmpty) {
         await repo.deleteMeals(existing.map((m) => m.id).toList());
       }
-      await repo.addMeals(mealsToAdd);
+      await repo.saveMeals(mealsToAdd);
       await _ensureStorageAdviceForPreparedMeals(mealsToAdd);
+      // Les repas posés dans le calendrier depuis leur créneau n'y retournent
+      // pas ; les autres y entrent maintenant. Le planning est enregistré
+      // quoi qu'il arrive au calendrier.
+      final toExport = [
+        for (final meal in mealsToAdd)
+          if (meal.id.isEmpty) meal,
+      ];
+      final calendar = await _exportMealsToCalendar(toExport);
       if (mounted) {
         final replaced = choice == _ValidateChoice.replace
             ? ' (${existing.length} remplacés)'
             : '';
-        context.showSuccessSnackBar(
-          '${mealsToAdd.length} repas planifiés$replaced ✓',
-        );
+        final planned = '${mealsToAdd.length} repas planifiés$replaced';
+        if (calendar.tokenError != null) {
+          context.showSnackBar(
+            '$planned ; calendrier non autorisé : ${calendar.tokenError}',
+          );
+        } else if (calendar.exported < toExport.length) {
+          context.showSnackBar(
+            '$planned, ${calendar.exported} sur ${toExport.length} ajoutés '
+            'au calendrier',
+          );
+        } else {
+          context.showSuccessSnackBar(
+            toExport.isEmpty
+                ? '$planned ✓'
+                : '$planned, ajoutés au calendrier ✓',
+          );
+        }
         context.pop();
       }
     } catch (e, stackTrace) {
@@ -709,6 +772,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotIsGenerated = newIsGenerated;
         _slotConstraints = newConstraints;
         _slotDismissed = newDismissed;
+        _slotSavedMealIds = _shiftAfterInsert(_slotSavedMealIds, gapIdx);
         _slotSides = _shiftAfterInsert(_slotSides, gapIdx);
         _slotStarters = _shiftAfterInsert(_slotStarters, gapIdx);
         _slotDesserts = _shiftAfterInsert(_slotDesserts, gapIdx);
@@ -785,6 +849,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotIsGenerated = newIsGenerated;
       _slotConstraints = newConstraints;
       _slotDismissed = newDismissed;
+      _slotSavedMealIds = _shiftAfterRemove(_slotSavedMealIds, index);
       _slotSides = _shiftAfterRemove(_slotSides, index);
       _slotStarters = _shiftAfterRemove(_slotStarters, index);
       _slotDesserts = _shiftAfterRemove(_slotDesserts, index);
@@ -1390,61 +1455,76 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     return value.isNotEmpty ? value : fallback;
   }
 
-  /// Exporte le repas du slot [index] vers Google Calendar.
-  Future<void> _exportSlotToCalendar(int index) async {
-    final recipe = _slots[index];
-    if (recipe == null) return;
-    final date = _slotDates[index];
-    final time = _slotTimes[index] ?? _defaultTime;
-    final startTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
+  /// Pose l'événement Google Calendar d'un repas tel qu'il sera au planning :
+  /// même lien, mêmes parts, même jour de préparation, mêmes accompagnements.
+  ///
+  /// L'événement dure la durée par défaut des préférences : dans le
+  /// calendrier, le repas est le moment où l'on mange, pas celui où l'on
+  /// prépare. Les temps de la recette ne servent qu'au rappel.
+  ///
+  /// [token] : jeton déjà obtenu, pour une série d'événements sans rouvrir
+  /// la fenêtre d'autorisation à chacun.
+  Future<void> _createCalendarEvent(PlannedMeal meal, {String? token}) {
     final prefs = _prefs ?? const PlanningPreferences();
-    final dur = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
-    // Même contexte que le repas qui sera enregistré à la validation : les
-    // parts du créneau et son jour de préparation voyagent dans le lien.
-    final slotConstraint = _slotConstraints[index] ?? const DayConstraint();
-    final description = buildCalendarDescription(
-      recipeLocation: recipe.id.isEmpty
-          ? null
-          : recipeLocationFor(
-              recipeId: recipe.id,
-              targetPortions: slotConstraint.targetPortions > 0
-                  ? slotConstraint.targetPortions
-                  : null,
-              basePortions: recipe.portions,
-              prepDate: _slotPrepDates[index],
-              mealDate: startTime,
-            ),
-      components: [
-        if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[index],
-        ?_slotSides[index],
-        if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[index],
-      ],
-      portions: slotConstraint.targetPortions > 0
-          ? slotConstraint.targetPortions
-          : recipe.portions,
+    return CalendarService.createEvent(
+      titre: meal.recipeTitre,
+      startTime: meal.plannedAt,
+      duration: Duration(minutes: prefs.defaultCalendarDurationMinutes),
+      description: mealCalendarDescription(meal),
+      reminderMinutes: meal.prepMinutes ?? 30,
+      calendarId: prefs.calendarId,
+      token: token,
     );
+  }
+
+  /// Pose dans Google Calendar les événements de [meals], avec un seul jeton.
+  ///
+  /// Rend le nombre d'événements créés, et le message d'erreur si le jeton
+  /// n'a pas pu être obtenu. Un événement qui échoue est signalé et compté
+  /// en moins ; les autres sont posés quand même.
+  Future<({int exported, String? tokenError})> _exportMealsToCalendar(
+    List<PlannedMeal> meals,
+  ) async {
+    if (meals.isEmpty) return (exported: 0, tokenError: null);
+    final String token;
     try {
-      await CalendarService.createEvent(
-        titre: recipe.titre,
-        startTime: startTime,
-        duration: Duration(
-          minutes: dur > 0 ? dur : prefs.defaultCalendarDurationMinutes,
-        ),
-        description: description,
-        reminderMinutes: recipe.tags.prepTime ?? 30,
-        calendarId: prefs.calendarId,
+      token = await CalendarService.getToken();
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.exportMealsToCalendarToken',
+        error: e,
+        stackTrace: stackTrace,
       );
-      if (mounted) {
-        context.showSuccessSnackBar(
-          '« ${recipe.titre} » ajouté au calendrier ✓',
+      return (exported: 0, tokenError: '$e');
+    }
+    var exported = 0;
+    for (final meal in meals) {
+      try {
+        await _createCalendarEvent(meal, token: token);
+        exported++;
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.exportMealsToCalendar',
+          error: e,
+          stackTrace: stackTrace,
         );
       }
+    }
+    return (exported: exported, tokenError: null);
+  }
+
+  /// Exporte le repas du slot [index] vers Google Calendar, et l'enregistre
+  /// au planning dans le même geste.
+  ///
+  /// Le repas est écrit sous son identifiant s'il l'a déjà été depuis ce
+  /// créneau : un second appui met à jour, il ne double pas.
+  Future<void> _exportSlotToCalendar(int index) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    final meal = _plannedMealForSlot(index, uid: repo.uid);
+    if (meal == null) return;
+    try {
+      await _createCalendarEvent(meal);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.exportSlotToCalendar',
@@ -1452,6 +1532,30 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         stackTrace: stackTrace,
       );
       _showError('Erreur Calendar : $e');
+      return;
+    }
+
+    // L'événement est posé ; le repas entre au planning avec le même
+    // contenu. Un échec ici se dit tel quel : le calendrier a l'événement,
+    // le planning n'a pas le repas, et « Valider » le rattrapera.
+    try {
+      final ids = await repo.saveMeals([meal]);
+      if (!mounted) return;
+      setState(() => _slotSavedMealIds[index] = ids.single);
+      context.showSuccessSnackBar(
+        '« ${meal.recipeTitre} » ajouté au calendrier et au planning ✓',
+      );
+      await _ensureStorageAdviceForPreparedMeals([meal]);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.exportSlotSaveMeal',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _showError(
+        'Événement créé, mais le repas n\'a pas pu être enregistré au '
+        'planning : $e',
+      );
     }
   }
 
@@ -1595,6 +1699,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         index: index,
                         date: _slotDates[index],
                         recipe: _slots[index],
+                        savedToPlanning: _slotSavedMealIds.containsKey(index),
                         constraintsReadOnly: _constraintsLocked,
                         isBatchDay:
                             effectivePrefs.batchCookingDay ==

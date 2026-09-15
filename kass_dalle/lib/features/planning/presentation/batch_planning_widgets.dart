@@ -209,6 +209,10 @@ class BatchSlotTile extends StatelessWidget {
 
   final bool isGeneratedByAI;
 
+  /// Le repas du créneau est déjà enregistré au planning, depuis son icône
+  /// calendrier ; « Valider » le mettra à jour au lieu de l'ajouter.
+  final bool savedToPlanning;
+
   /// Conseil de conservation de la recette, s'il en existe un.
   final StorageAdvice? storageAdvice;
 
@@ -268,6 +272,7 @@ class BatchSlotTile extends StatelessWidget {
     this.wasResized = false,
     this.resizeReason,
     this.isGeneratedByAI = false,
+    this.savedToPlanning = false,
     this.storageAdvice,
     this.storageLoading = false,
     this.onGenerateStorageAdvice,
@@ -568,6 +573,17 @@ class BatchSlotTile extends StatelessWidget {
                           ),
                         ),
                       ],
+                      if (savedToPlanning) ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Déjà au planning',
+                          child: Icon(
+                            Icons.check_circle_outline,
+                            size: AppIconSize.inline,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 )
@@ -603,7 +619,9 @@ class BatchSlotTile extends StatelessWidget {
                     AppIcons.calendarExport,
                     size: AppIconSize.small,
                   ),
-                  tooltip: 'Ajouter au calendrier',
+                  tooltip: savedToPlanning
+                      ? 'Ajouter au calendrier et mettre à jour le planning'
+                      : 'Ajouter au calendrier et au planning',
                   onPressed: onExportToCalendar,
                 ),
                 IconButton(

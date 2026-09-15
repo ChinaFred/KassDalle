@@ -57,13 +57,23 @@ class PlanningRepository {
     await _col.add(meal.toFirestore());
   }
 
-  /// Ajoute un lot de repas planifiés (batch planning).
-  Future<void> addMeals(List<PlannedMeal> meals) async {
+  /// Enregistre un lot de repas planifiés (batch planning) et rend leurs
+  /// identifiants, dans l'ordre reçu.
+  ///
+  /// Un repas dont [PlannedMeal.id] est renseigné est **réécrit** sous cet
+  /// identifiant ; les autres reçoivent un nouveau document. C'est ce qui
+  /// permet à un créneau déjà enregistré depuis son icône calendrier d'être
+  /// mis à jour à la validation du cycle, au lieu d'être créé une seconde fois.
+  Future<List<String>> saveMeals(List<PlannedMeal> meals) async {
     final batch = _db.batch();
+    final ids = <String>[];
     for (final meal in meals) {
-      batch.set(_col.doc(), meal.toFirestore());
+      final doc = meal.id.isEmpty ? _col.doc() : _col.doc(meal.id);
+      batch.set(doc, meal.toFirestore());
+      ids.add(doc.id);
     }
     await batch.commit();
+    return ids;
   }
 
   /// Supprime un repas planifié.

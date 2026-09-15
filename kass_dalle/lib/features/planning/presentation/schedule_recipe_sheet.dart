@@ -129,16 +129,17 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         time.hour,
         time.minute,
       );
-      final totalMin = _totalDurationMin > 0
-          ? _totalDurationMin
-          : prefs.defaultCalendarDurationMinutes;
       final reminder =
           int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
 
+      // L'événement dure la durée par défaut des préférences : dans le
+      // calendrier, le repas est le moment où l'on mange, pas celui où l'on
+      // prépare. Les temps de la recette servent au rappel et à la durée
+      // affichée dans le planning.
       await CalendarService.createEvent(
         titre: widget.titre,
         startTime: start,
-        duration: Duration(minutes: totalMin),
+        duration: Duration(minutes: prefs.defaultCalendarDurationMinutes),
         description: _buildDescription(),
         reminderMinutes: reminder,
         calendarId: prefs.calendarId,
@@ -155,7 +156,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             recipeId: widget.recipeId,
             recipeTitre: widget.titre,
             plannedAt: start,
-            durationMinutes: totalMin,
+            durationMinutes: _totalDurationMin,
             prepMinutes: widget.prepTimeMin,
             cookMinutes: widget.cookTimeMin,
             createdAt: DateTime.now(),
