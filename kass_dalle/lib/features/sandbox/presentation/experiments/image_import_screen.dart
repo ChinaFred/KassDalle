@@ -16,6 +16,7 @@ import '../../data/sandbox_crop.dart';
 import '../../data/sandbox_functions.dart';
 import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
+import '../../data/sandbox_text_recognition.dart';
 import '../../data/sandbox_warp.dart';
 import '../../domain/detected_orientation.dart';
 import '../../domain/detected_page.dart';
@@ -53,6 +54,15 @@ enum _FrameStatus { idle, running, done, failed }
 
 /// Étape 4 : la page a-t-elle été remise à l'endroit ?
 enum _OrientStatus { idle, running, done, failed }
+
+/// Étape 6 : ML Kit a-t-il trouvé du texte, sur l'appareil ?
+///
+/// Piste testée le 2026-09-15 : si l'appareil trouvait déjà les coins de la
+/// page tout seul (ML Kit Document Scanner, voir `PhotoCaptureService`),
+/// pouvait-il aussi dire où est le texte, pour en déduire où ne l'est pas ? Ce
+/// bloc se retire d'un coup s'il ne sert à rien — voir `_PortedBanner` pour la
+/// discipline de portage du bac à sable.
+enum _TextBlocksStatus { idle, running, done, failed }
 
 /// Étape 3 : le cadre a-t-il été recalé, et la page redressée ?
 enum _StraightenStatus {
@@ -176,6 +186,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   bool _detecting = false;
   String? _detectMessage;
 
+  // ── Étape 6 : le texte, reconnu sur l'appareil (ML Kit) ───────────────────
+  _TextBlocksStatus _textBlocksStatus = _TextBlocksStatus.idle;
+  List<List<Offset>>? _textBlockQuads;
+  String? _textBlocksFailure;
+
   bool get _hasImage => _original != null;
   bool get _hasFrame => _detectedPage != null;
   bool get _hasPage =>
@@ -204,6 +219,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             // cadrage : sans redressement le modèle lirait un trapèze, et sur
             // une page à l'envers il lirait mal ce qu'elle porte.
             if (_hasOrientedPage) _buildDetectStep(context),
+            if (_hasOrientedPage) _buildTextBlocksStep(context),
             if (_hasRegions) _buildExtractStep(context),
             if (_hasCrops) _buildNextStep(context),
             const SizedBox(height: 24),
@@ -976,14 +992,169 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 6 : extraire les zones ──────────────────────────────────────────
+  // ── Étape 6 : le texte, reconnu sur l'appareil (ML Kit) ───────────────────
+
+  /// Sans appel serveur : ML Kit repère les blocs de texte sur l'appareil.
+  ///
+  /// Ce qu'elle ne fait pas : dire qu'un vide est une photo. Les blocs de
+  /// texte sont un fait mesuré par un modèle entraîné pour ça ; le reste de la
+  /// page, lui, reste à interpréter — c'est encore le rôle de l'étape 5. Ce
+  /// bloc sert à voir, à l'œil, si les blocs recouvrent bien le texte et
+  /// laissent les illustrations vides, avant d'écrire quoi que ce soit qui en
+  /// déduirait une zone.
+  Widget _buildTextBlocksStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final quads = _textBlockQuads;
+
+    if (!PlatformUtils.isMobile) {
+      return ExperimentStep(
+        index: 6,
+        title: 'Détecter le texte, sur l\'appareil (ML Kit)',
+        subtitle: 'ML Kit ne tourne que sur Android et iOS.',
+        child: Text(
+          'Indisponible sur cette plateforme.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    final (
+      String status,
+      IconData icon,
+      Color color,
+    ) = switch (_textBlocksStatus) {
+      _TextBlocksStatus.running => (
+        'ML Kit lit le texte…',
+        Icons.hourglass_empty,
+        theme.colorScheme.onSurfaceVariant,
+      ),
+      _TextBlocksStatus.done => (
+        quads == null || quads.isEmpty
+            ? 'Aucun bloc de texte reconnu.'
+            : '${quads.length} bloc${quads.length > 1 ? 's' : ''} de '
+                  'texte reconnu${quads.length > 1 ? 's' : ''}.',
+        Icons.text_fields,
+        theme.colorScheme.primary,
+      ),
+      _TextBlocksStatus.failed => (
+        _textBlocksFailure ?? 'Détection impossible.',
+        Icons.error_outline,
+        theme.colorScheme.error,
+      ),
+      _TextBlocksStatus.idle => (
+        'En attente.',
+        Icons.more_horiz,
+        theme.disabledColor,
+      ),
+    };
+
+    return ExperimentStep(
+      index: 6,
+      title: 'Détecter le texte, sur l\'appareil (ML Kit)',
+      subtitle:
+          'Aucun appel serveur : ML Kit repère les blocs de texte, sur '
+          'l\'appareil. Ce que les cadres laissent vide est un candidat à '
+          'être une illustration — à comparer avec les zones ci-dessus.',
+      done: _textBlocksStatus == _TextBlocksStatus.done,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEngines(context, const [
+            SandboxEngine.local(
+              stage: 'texte_mlkit',
+              model: 'ML Kit Text Recognition (latin)',
+            ),
+          ]),
+          FilledButton.icon(
+            onPressed: _textBlocksStatus == _TextBlocksStatus.running
+                ? null
+                : _detectTextBlocksOnDevice,
+            icon: const Icon(Icons.text_fields),
+            label: Text(
+              quads == null ? 'Détecter le texte' : 'Détecter à nouveau',
+            ),
+          ),
+          if (_textBlocksStatus == _TextBlocksStatus.running) ...[
+            const SizedBox(height: 16),
+            const LinearProgressIndicator(),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(status, style: theme.textTheme.bodyMedium)),
+            ],
+          ),
+          if (quads != null && quads.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildImageWithQuads(
+              context,
+              bytes: _orientedPage!,
+              width: _orientedWidth,
+              height: _orientedHeight,
+              quads: quads,
+              numbered: false,
+              maxHeight: 440,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _detectTextBlocksOnDevice() async {
+    final page = _orientedPage;
+    final width = _orientedWidth;
+    final height = _orientedHeight;
+    if (page == null || width == null || height == null) return;
+
+    setState(() {
+      _textBlocksStatus = _TextBlocksStatus.running;
+      _textBlocksFailure = null;
+    });
+
+    try {
+      final pixelBlocks = await recognizeTextBlocksOnDevice(page);
+      final quads = <List<Offset>>[
+        for (final rect in pixelBlocks)
+          [
+            Offset(rect.left / width, rect.top / height),
+            Offset(rect.right / width, rect.top / height),
+            Offset(rect.right / width, rect.bottom / height),
+            Offset(rect.left / width, rect.bottom / height),
+          ],
+      ];
+      if (!mounted) return;
+      setState(() {
+        _textBlockQuads = quads;
+        _textBlocksStatus = _TextBlocksStatus.done;
+      });
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.detectTextBlocksOnDevice',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      setState(() {
+        _textBlocksStatus = _TextBlocksStatus.failed;
+        _textBlocksFailure = 'Détection impossible : $error';
+      });
+    }
+  }
+
+  // ── Étape 7 : extraire les zones ──────────────────────────────────────────
 
   Widget _buildExtractStep(BuildContext context) {
     final theme = Theme.of(context);
     final regions = _regions ?? const <DetectedRegion>[];
 
     return ExperimentStep(
-      index: 6,
+      index: 7,
       title: 'Extraire les illustrations',
       subtitle:
           'Chaque zone devient une image autonome, découpée dans la page à '
@@ -1121,13 +1292,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 7 : à écrire ────────────────────────────────────────────────────
+  // ── Étape 8 : à écrire ────────────────────────────────────────────────────
 
   Widget _buildNextStep(BuildContext context) {
     final theme = Theme.of(context);
 
     return ExperimentStep(
-      index: 7,
+      index: 8,
       title: 'Et après',
       subtitle: 'Ce que l\'on fera de chaque zone une fois repérée.',
       child: Container(
@@ -1694,6 +1865,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _regions = null;
       _regionEngines = const [];
       _detectMessage = null;
+      _textBlocksStatus = _TextBlocksStatus.idle;
+      _textBlockQuads = null;
+      _textBlocksFailure = null;
       _crops = const [];
       _cropMessage = null;
     });
@@ -1889,6 +2063,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _regions = null;
     _regionEngines = const [];
     _detectMessage = null;
+    _textBlocksStatus = _TextBlocksStatus.idle;
+    _textBlockQuads = null;
+    _textBlocksFailure = null;
     _crops = const [];
     _cropMessage = null;
   }

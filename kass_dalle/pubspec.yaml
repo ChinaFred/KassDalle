@@ -73,6 +73,11 @@ dependencies:
   # Couvre Android, iOS, web et Windows.
   wakelock_plus: ^1.3.3
   cunning_document_scanner: ^3.0.2
+  # ML Kit Text Recognition : reconnaissance de texte sur l'appareil, Android
+  # et iOS seulement. Étape 6 de l'expérience « Importation d'image » du bac à
+  # sable — voir `sandbox_text_recognition.dart`. Aucun appel serveur, aucun
+  # coût : `google_mlkit_commons` (InputImage) arrive en transitif.
+  google_mlkit_text_recognition: ^0.17.1
 
 dev_dependencies:
   flutter_test:
