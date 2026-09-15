@@ -24,7 +24,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
-import { askJson } from "../ai/askJson";
 import {
   ANTHROPIC_API_KEY,
   COLL_NUTRITION_INGREDIENTS,
@@ -34,9 +33,12 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo } from "../logging";
-import { shoppingProductKey } from "../nutrition/shoppingDerivation";
 import { deriveShoppingProducts, type ShoppingProduct } from "../nutrition/shoppingDerivation";
 import { writeDocsMerged } from "../nutrition/firestoreBatch";
+import {
+  resolveShoppingAliasBatch,
+  type ShoppingAliasCandidate,
+} from "../nutrition/shoppingAliases";
 import { shoppingAliasesOrNone, shoppingInputsOf } from "../triggers/recipeShoppingProducts";
 import type { StoredIngredient } from "../triggers/recipeIngredients";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
@@ -135,31 +137,6 @@ interface Bounds {
 
 // ── Mode alias ──────────────────────────────────────────────────────────────
 
-const ALIAS_SCHEMA = {
-  type: "object",
-  properties: {
-    produits: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          produit: { type: "string" },
-        },
-        required: ["id", "produit"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["produits"],
-  additionalProperties: false,
-} as const;
-
-interface PendingIngredient {
-  id: string;
-  name: string;
-}
-
 /** Nom lisible d'un document du référentiel : son nom canonique, sinon son identifiant. */
 function ingredientDisplayName(id: string, data: Record<string, unknown>): string {
   const canonical = typeof data.canonical_name === "string" ? data.canonical_name.trim() : "";
@@ -169,79 +146,33 @@ function ingredientDisplayName(id: string, data: Record<string, unknown>): strin
 /**
  * Demande au modèle le produit acheté d'un lot d'ingrédients, et l'écrit.
  *
- * Rend le nombre d'ingrédients restés sans réponse : ils gardent le champ
- * absent et seront redemandés au passage suivant.
+ * La résolution — prompt, repli sur un produit déjà connu du référentiel —
+ * est partagée avec l'écriture automatique d'un ingrédient neuf
+ * (`resolveShoppingAliasBatch`) : un seul endroit décide ce qu'on achète.
+ * Ici s'ajoutent les compteurs du passage et l'écriture Firestore.
  */
 async function askAliasesForBatch(
-  batch: PendingIngredient[],
+  batch: ShoppingAliasCandidate[],
   ctx: AuthContext,
   counters: BackfillShoppingResponse,
 ): Promise<void> {
-  const prompt = `Tu prépares une LISTE DE COURSES. Pour chaque ingrédient de recette ci-dessous,
-donne le PRODUIT tel qu'on l'achète au magasin, au singulier, sans quantité.
-
-Règles :
-- Une préparation ou un état ramène au produit brut : « beurre fondu » → beurre,
-  « oignon haché » → oignon, « chocolat fondu » → chocolat, « pommes de terre
-  cuites » → pomme de terre.
-- Une partie d'un produit ramène au produit : « jaune d'œuf » → œuf,
-  « blanc d'œuf » → œuf, « gousse d'ail » → ail, « zeste de citron » → citron.
-- Un produit qui s'achète tel quel garde son nom, à l'identique : « huile
-  d'olive » → huile d'olive, « lait de coco » → lait de coco, « sauce soja »
-  → sauce soja. Ne pas généraliser : « crème fraîche épaisse » n'est pas
-  « crème », c'est un produit différent au rayon.
-- Ne change ni la langue ni la nature du produit. Dans le doute, renvoie le
-  nom inchangé.
-
-Ingrédients (identifiant : nom) :
-${batch.map((p, index) => `- "${index}" : ${p.name}`).join("\n")}
-
-Format strict : {"produits":[{"id":"0","produit":"beurre"}]}`;
-
-  const answers = await askJson({
-    prompt,
-    ctx: {
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      feature: ALIASES_FEATURE,
-      moduleType: "DESIGN",
-      timeoutMs: 60_000,
-    },
-    outputSchema: {
-      name: "shopping_product_aliases",
-      schema: ALIAS_SCHEMA as unknown as Record<string, unknown>,
-    },
-    validate: (parsed) => {
-      const list = (parsed as { produits?: unknown }).produits;
-      return Array.isArray(list) ? list : null;
-    },
+  const resolutions = await resolveShoppingAliasBatch(batch, {
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    feature: ALIASES_FEATURE,
   });
 
   const updates = new Map<string, Record<string, unknown>>();
-  const answered = new Set<number>();
-  for (const entry of answers) {
-    if (!entry || typeof entry !== "object") continue;
-    const record = entry as Record<string, unknown>;
-    const index = Number(record.id);
-    if (!Number.isInteger(index) || index < 0 || index >= batch.length) continue;
-    if (typeof record.produit !== "string") continue;
-    const alias = record.produit.trim();
-    if (!alias) continue;
-    const pending = batch[index];
-    answered.add(index);
-    // Un produit qui n'est que le nom réécrit — singulier, casse, accent —
-    // n'est pas un alias : le champ vide dit « déjà le produit », et la liste
-    // garde le nom tel que la recette l'écrit.
-    const sameProduct = shoppingProductKey(alias) === shoppingProductKey(pending.name);
-    updates.set(pending.id, {
-      shopping_product: sameProduct ? "" : alias,
+  for (const r of resolutions) {
+    updates.set(r.id, {
+      shopping_product: r.product,
       shopping_product_source: "ai_estimated",
       updated_at: FieldValue.serverTimestamp(),
     });
-    if (sameProduct) counters.inchanges += 1;
+    if (r.product === "") counters.inchanges += 1;
     else counters.renseignes += 1;
   }
-  counters.sansReponse += batch.length - answered.size;
+  counters.sansReponse += batch.length - resolutions.length;
   await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
 }
 
@@ -255,7 +186,7 @@ async function runAliasesMode(
   let cursor = startAfter;
   let consecutiveFailures = 0;
   let asked = 0;
-  let batch: PendingIngredient[] = [];
+  let batch: ShoppingAliasCandidate[] = [];
 
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return;

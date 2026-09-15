@@ -236,6 +236,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Produit acheté des ingrédients (backfill)",
     group: "Courses",
   },
+  {
+    id: "shopping_product_alias_auto",
+    label: "Produit acheté d'un ingrédient neuf (import)",
+    group: "Courses",
+  },
 
   // ── Nutrition ─────────────────────────────────────────────────────────────
   {

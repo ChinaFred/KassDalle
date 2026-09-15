@@ -401,10 +401,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Produit acheté des ingrédients'),
         content: const Text(
-          'Demande au modèle, pour chaque ingrédient du référentiel qui ne '
-          'l\'a pas encore, le produit qu\'on achète : « beurre fondu » '
-          's\'achète en beurre, « jaune d\'œuf » en œufs. Un ingrédient qui '
-          'est déjà le produit reçoit un champ vide et n\'est pas redemandé.\n\n'
+          'Rattrape le passé : un ingrédient neuf reçoit désormais son '
+          'produit acheté tout seul, dès son import. Ce backfill traite ce '
+          'qui existait déjà avant ce changement — pour chaque ingrédient du '
+          'référentiel qui n\'a pas encore le champ, le modèle dit ce qu\'on '
+          'achète : « beurre fondu » s\'achète en beurre, « jaune d\'œuf » en '
+          'œufs. Un ingrédient qui est déjà le produit reçoit un champ vide '
+          'et n\'est pas redemandé.\n\n'
           'Un appel de modèle par lot de quarante ingrédients, quatre cents '
           'ingrédients par passage. Idempotent, avec reprise sur point de '
           'contrôle : relancez tant que le résultat indique « incomplet ». '
@@ -661,11 +664,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                       icon: Icons.shopping_basket_outlined,
                       title: 'Produit acheté des ingrédients',
                       subtitle:
-                          'Demande au modèle, pour chaque ingrédient du '
-                          'référentiel qui ne l\'a pas, le produit qu\'on '
-                          'achète : beurre fondu → beurre, jaune d\'œuf → œuf. '
-                          'Un appel par lot de quarante, une fois. Se corrige '
-                          'ensuite à la main dans Référentiels › Ingrédients.',
+                          'Rattrape le passé : un ingrédient neuf le reçoit '
+                          'déjà tout seul à l\'import. Demande au modèle, '
+                          'pour chaque ingrédient antérieur du référentiel, '
+                          'le produit qu\'on achète : beurre fondu → beurre, '
+                          'jaune d\'œuf → œuf. Se corrige aussi à la main '
+                          'dans Référentiels › Ingrédients.',
                       onTap: _busy ? null : _runBackfillShoppingAliases,
                     ),
                     const SizedBox(height: 8),

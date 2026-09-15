@@ -12,6 +12,7 @@
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import { COLL_NUTRITION_INGREDIENTS } from "../config";
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { getKnownUnitMetadata, resolveWeighingInput } from "../nutrition/quantityConversion";
@@ -29,8 +30,21 @@ import {
   computeAndPersistRecipeNutrition,
   persistFailedNutritionSnapshot,
 } from "../nutrition/recipeNutrition";
+import { writeDocsMerged } from "../nutrition/firestoreBatch";
+import {
+  resolveShoppingProductsWithAI,
+  type ShoppingAliasCandidate,
+} from "../nutrition/shoppingAliases";
 
 import type { StoredIngredient } from "./recipeIngredients";
+
+/**
+ * Poste de coût du produit acheté d'un ingrédient NEUF, résolu ici même — à
+ * distinguer de `backfill_shopping_aliases`, qui rattrape le passé. Voir
+ * « Un poste d'IA vit à trois endroits » : ce nom apparaît aussi dans
+ * `ROUTABLE_FEATURES` et `kFeatureCatalog`/`kFeatureProcess`.
+ */
+const SHOPPING_ALIAS_AUTO_FEATURE = "shopping_product_alias_auto";
 
 type NormalizedIngredientInput = UnitResolvedIngredient;
 
@@ -285,6 +299,13 @@ export async function syncRecipeNutrition(args: {
       aliasesByCanonical.get(canonicalId)!.add(input.name);
     }
 
+    // Les ingrédients que CETTE écriture vient de créer — pas ceux qui
+    // existaient déjà, dont le produit acheté a soit été résolu, soit
+    // délibérément laissé vide par une correction admin. Un ingrédient neuf
+    // n'a ni l'un ni l'autre : c'est lui, et lui seul, qui a besoin d'être
+    // demandé au modèle.
+    const newlyCreated: ShoppingAliasCandidate[] = [];
+
     for (const [canonicalId, aliasSet] of aliasesByCanonical.entries()) {
       const aliases = [...aliasSet];
       const docRef = db.collection("nutrition_ingredients").doc(canonicalId);
@@ -304,6 +325,7 @@ export async function syncRecipeNutrition(args: {
           updated_at: FieldValue.serverTimestamp(),
         });
         createdRefs++;
+        newlyCreated.push({ id: canonicalId, name: aliases[0] ?? canonicalId.replace(/_/g, " ") });
       } catch (err) {
         const codeRaw = (err as { code?: unknown })?.code;
         const code =
@@ -322,6 +344,54 @@ export async function syncRecipeNutrition(args: {
           { merge: true },
         );
         updatedRefs++;
+      }
+    }
+
+    // Produit acheté des ingrédients neufs — un appel de modèle, pour eux
+    // seuls. « Beurre fondu » n'a pas encore de lien vers « beurre » dans le
+    // référentiel ; sans cette passe, ce lien n'existerait qu'après un
+    // backfill manuel, et la liste de courses afficherait le nom brut d'ici
+    // là. Best-effort : un échec n'empêche jamais le calcul de nutrition qui
+    // suit, l'ingrédient reste sans produit acheté et sera repris au
+    // prochain backfill.
+    if (newlyCreated.length > 0) {
+      try {
+        const resolutions = await resolveShoppingProductsWithAI(
+          newlyCreated,
+          { correlationId, userId, feature: SHOPPING_ALIAS_AUTO_FEATURE },
+          (err, failedBatch) => {
+            void logError({
+              message: "onRecipeNutritionAutoSync: produit acheté — échec d'un lot",
+              errorDescription: err instanceof Error ? err.message : String(err),
+              moduleType: "DESIGN",
+              correlationId,
+              scanId,
+              userId,
+              extra: { recipeId: after.id, lot: failedBatch.map((c) => c.name) },
+            });
+          },
+        );
+        if (resolutions.length > 0) {
+          const updates = new Map<string, Record<string, unknown>>();
+          for (const r of resolutions) {
+            updates.set(r.id, {
+              shopping_product: r.product,
+              shopping_product_source: "ai_estimated",
+              updated_at: FieldValue.serverTimestamp(),
+            });
+          }
+          await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
+        }
+      } catch (err) {
+        await logError({
+          message: "onRecipeNutritionAutoSync: produit acheté des ingrédients neufs — échec",
+          errorDescription: err instanceof Error ? err.message : String(err),
+          moduleType: "DESIGN",
+          correlationId,
+          scanId,
+          userId,
+          extra: { recipeId: after.id, ids: newlyCreated.map((c) => c.id) },
+        });
       }
     }
 
