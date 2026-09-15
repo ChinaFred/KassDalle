@@ -10,6 +10,7 @@ import '../domain/recipe_picker_filter.dart';
 import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/recipe_search_scope.dart';
 
 // ── Repository ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,15 @@ class PlanningRepository {
 
   DocumentReference<Map<String, dynamic>> get _prefsDoc =>
       _db.collection('planning_config').doc(_uid);
+
+  /// Périmètre choisi dans « Où chercher des recettes ? » — une préférence de
+  /// lecteur, comme le rangement de la bibliothèque (`book_order`) : la
+  /// bibliothèque est partagée, chacun y cherche à sa façon.
+  DocumentReference<Map<String, dynamic>> get _recipeSearchScopeDoc => _db
+      .collection('users')
+      .doc(_uid)
+      .collection('preferences')
+      .doc('recipe_search_scope');
 
   // ── Repas planifiés ─────────────────────────────────────────────────────────
 
@@ -183,6 +193,25 @@ class PlanningRepository {
   /// Sauvegarde les préférences de planning.
   Future<void> savePreferences(PlanningPreferences prefs) async {
     await _prefsDoc.set(prefs.toFirestore(), SetOptions(merge: true));
+  }
+
+  /// Lecture ponctuelle du dernier périmètre choisi, pour l'ouverture de
+  /// l'écran de génération. `null` tant que rien n'a jamais été enregistré —
+  /// l'appelant se rabat alors sur ses recettes validées, l'ensemble de la
+  /// bibliothèque accessible.
+  Future<RecipeSearchScope?> loadRecipeSearchScope() async {
+    final snap = await _recipeSearchScopeDoc.get();
+    final data = snap.data();
+    return data == null ? null : RecipeSearchScope.fromMap(data);
+  }
+
+  /// Enregistre le périmètre choisi, pour qu'il survive à la fermeture de
+  /// l'écran comme à une reconnexion sur un autre appareil.
+  Future<void> saveRecipeSearchScope(RecipeSearchScope scope) async {
+    await _recipeSearchScopeDoc.set({
+      ...scope.toMap(),
+      'updated_at': Timestamp.now(),
+    });
   }
 
   /// Récupère les recettes correspondant aux [ids] donnés, par lots de 30.

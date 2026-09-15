@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../../books/presentation/book_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
 import '../domain/planned_meal.dart';
@@ -62,8 +65,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   bool _recipesLoaded = false;
   List<Recipe> _draftRecipes = [];
   List<Recipe> _familyRecipes = [];
-  // Sources sélectionnées (persistées pendant la session)
+  // Périmètre de recherche choisi dans « Où chercher des recettes ? »,
+  // persisté sous l'utilisateur (`saveRecipeSearchScope`) : il survit à la
+  // fermeture de l'écran, pas seulement à cette session.
   Set<RecipeSource> _selectedSources = {RecipeSource.myRecipes};
+  // `null` tant que l'utilisateur n'a jamais restreint sa recherche à des
+  // livres précis : la feuille propose alors tous les livres du réservoir,
+  // cochés par défaut — la bibliothèque entière, comme avant ce réglage.
+  Set<String>? _selectedBookIds;
   // Marque les slots générés par IA (conception)
   Map<int, bool> _slotIsGenerated = {};
   Map<int, DayConstraint> _slotConstraints = {};
@@ -158,6 +167,24 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           stackTrace: stackTrace,
         );
       }
+      // Le périmètre de recherche, à part aussi : son absence laisse la
+      // feuille se rabattre sur ses défauts (recettes validées, tous les
+      // livres), pas planifier devenir impossible.
+      try {
+        final scope = await repo.loadRecipeSearchScope();
+        if (mounted && scope != null) {
+          setState(() {
+            _selectedSources = scope.sources;
+            _selectedBookIds = scope.bookIds;
+          });
+        }
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.loadRecipeSearchScope',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.init',
@@ -228,6 +255,44 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     ];
   }
 
+  /// Livres qui portent au moins une recette dans les trois réservoirs déjà
+  /// chargés, triés par titre.
+  ///
+  /// Le choix se fait parmi ce qui peut réellement être trouvé, pas parmi
+  /// tout ce qui existe : un livre sans recette validée ni brouillon
+  /// n'apporterait qu'une case à cocher qui ne changerait jamais rien.
+  List<({String id, String titre})> _booksInPool() {
+    final Map<String, String> titles = {
+      for (final book in ref.read(accessibleBooksProvider).value ?? const [])
+        book.id: book.titre,
+    };
+    final ids = <String>{
+      for (final r in _allRecipes)
+        if (r.bookId != null && r.bookId!.isNotEmpty) r.bookId!,
+    };
+    final books = [for (final id in ids) (id: id, titre: titles[id] ?? id)]
+      ..sort((a, b) => a.titre.toLowerCase().compareTo(b.titre.toLowerCase()));
+    return books;
+  }
+
+  /// Enregistre le périmètre choisi, pour qu'il retrouve l'utilisateur à sa
+  /// prochaine ouverture de l'écran — pas seulement pendant cette session.
+  /// Best-effort : un échec n'empêche pas de générer, il prive seulement de
+  /// mémoire pour la prochaine fois.
+  Future<void> _persistSearchScope(RecipeSearchScope scope) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    try {
+      await repo.saveRecipeSearchScope(scope);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.saveRecipeSearchScope',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   /// Demande où chercher des recettes, puis génère.
   ///
   /// La question est la même que pour un créneau isolé, et elle est posée par
@@ -240,21 +305,32 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// [replaceExisting] efface d'abord les créneaux remplis ; sinon les choix
   /// déjà faits (manuels ou IA) sont conservés.
   Future<void> _generateWithAI({bool replaceExisting = false}) async {
+    final books = _booksInPool();
     // La question AVANT tout effacement : annuler la feuille ne doit pas vider
     // l'écran de ce qui y était déjà.
-    final sources = await showModalBottomSheet<Set<RecipeSource>>(
+    final scope = await showModalBottomSheet<RecipeSearchScope>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => RecipeSourceSheet(initialSources: _selectedSources),
+      builder: (ctx) => RecipeSourceSheet(
+        initialSources: _selectedSources,
+        initialBookIds: _selectedBookIds ?? books.map((b) => b.id).toSet(),
+        availableBooks: books,
+      ),
     );
-    if (sources == null || sources.isEmpty || !mounted) return;
+    if (scope == null || scope.sources.isEmpty || !mounted) return;
+    final sources = scope.sources;
     _selectedSources = sources;
+    _selectedBookIds = scope.bookIds;
+    unawaited(_persistSearchScope(scope));
 
     final pool = <Recipe>[
-      if (sources.contains(RecipeSource.myRecipes)) ..._availableRecipes,
-      if (sources.contains(RecipeSource.myDrafts)) ..._draftRecipes,
-      if (sources.contains(RecipeSource.familyRecipes)) ..._familyRecipes,
+      if (sources.contains(RecipeSource.myRecipes))
+        ..._availableRecipes.where(scope.matchesBook),
+      if (sources.contains(RecipeSource.myDrafts))
+        ..._draftRecipes.where(scope.matchesBook),
+      if (sources.contains(RecipeSource.familyRecipes))
+        ..._familyRecipes.where(scope.matchesBook),
     ];
     final mayConceive = sources.contains(RecipeSource.aiCreation);
 
@@ -873,20 +949,31 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// Affiche d'abord une sheet pour sélectionner les sources.
   Future<void> _generateSlotWithAI(int slotIndex) async {
     // Sélection des sources
-    final sources = await showModalBottomSheet<Set<RecipeSource>>(
+    final books = _booksInPool();
+    final scope = await showModalBottomSheet<RecipeSearchScope>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => RecipeSourceSheet(initialSources: _selectedSources),
+      builder: (ctx) => RecipeSourceSheet(
+        initialSources: _selectedSources,
+        initialBookIds: _selectedBookIds ?? books.map((b) => b.id).toSet(),
+        availableBooks: books,
+      ),
     );
-    if (sources == null || sources.isEmpty || !mounted) return;
+    if (scope == null || scope.sources.isEmpty || !mounted) return;
+    final sources = scope.sources;
     _selectedSources = sources;
+    _selectedBookIds = scope.bookIds;
+    unawaited(_persistSearchScope(scope));
 
-    // Construire le pool de recettes selon les sources
+    // Construire le pool de recettes selon les sources et les livres choisis
     final pool = <Recipe>[
-      if (sources.contains(RecipeSource.myRecipes)) ..._availableRecipes,
-      if (sources.contains(RecipeSource.myDrafts)) ..._draftRecipes,
-      if (sources.contains(RecipeSource.familyRecipes)) ..._familyRecipes,
+      if (sources.contains(RecipeSource.myRecipes))
+        ..._availableRecipes.where(scope.matchesBook),
+      if (sources.contains(RecipeSource.myDrafts))
+        ..._draftRecipes.where(scope.matchesBook),
+      if (sources.contains(RecipeSource.familyRecipes))
+        ..._familyRecipes.where(scope.matchesBook),
     ];
 
     if (pool.isEmpty && !sources.contains(RecipeSource.aiCreation)) {

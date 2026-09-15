@@ -143,7 +143,7 @@ Côté Cloud Functions (Node 22, TypeScript) :
 firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
-│   └── preferences/{prefId}                       ← book_order : rangement de la bibliothèque
+│   └── preferences/{prefId}                       ← book_order, recipe_search_scope
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
 │   └── annotations/{annotationId}/
@@ -984,6 +984,13 @@ pourquoi.
   **ce** lecteur a rangé sa bibliothèque au glisser-déposer, et `updated_at`. Même raison : un
   livre est vu par toute la famille, chacun le range où il veut. Les identifiants disparus sont
   ignorés à la lecture, les livres créés depuis se rangent à la fin.
+- `users/{uid}/preferences/recipe_search_scope` : `sources` (clés de `RecipeSource` — recettes
+  validées, brouillons, recettes famille, conception IA) et `book_ids`, le dernier périmètre
+  choisi dans « Où chercher des recettes ? » du planning par lots. Un livre absent de `book_ids`
+  est écarté de la recherche — y compris un livre créé depuis le dernier choix, qui se coche à la
+  main comme les autres. Une recette sans `book_id` n'est jamais écartée par ce filtre : il ne
+  peut pas se prononcer sur elle. Document absent = comportement d'avant ce réglage, recettes
+  validées, tous les livres du moment.
 
 ---
 

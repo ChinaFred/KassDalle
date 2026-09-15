@@ -7,24 +7,13 @@ import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/recipe_search_scope.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 
-/// Sources disponibles pour la sélection de recettes dans la génération par slot.
-enum RecipeSource {
-  myRecipes,
-  myDrafts,
-  familyRecipes,
-  aiCreation;
-
-  String get label => switch (this) {
-    RecipeSource.myRecipes => 'Mes recettes validées',
-    RecipeSource.myDrafts => 'Mes brouillons',
-    RecipeSource.familyRecipes => 'Recettes famille',
-    RecipeSource.aiCreation => 'Conception IA (si aucun résultat)',
-  };
-}
+export '../domain/recipe_search_scope.dart'
+    show RecipeSource, RecipeSearchScope;
 
 /// Éditeur des contraintes d'un slot : prépa max, parts, réchauffage, note.
 ///
@@ -881,11 +870,24 @@ class BatchSlotTile extends StatelessWidget {
   }
 }
 
-/// Sheet de sélection des sources de recettes pour la génération IA par slot.
+/// Sheet de sélection des sources de recettes pour la génération IA par slot,
+/// et des livres dans lesquels chercher.
+///
+/// [availableBooks] est le réservoir de livres qui portent au moins une
+/// recette candidate — le choix se fait parmi ce qui peut réellement être
+/// trouvé, pas parmi tout ce qui existe. Vide, la section livres ne s'affiche
+/// pas : rien à restreindre.
 class RecipeSourceSheet extends StatefulWidget {
   final Set<RecipeSource> initialSources;
+  final Set<String> initialBookIds;
+  final List<({String id, String titre})> availableBooks;
 
-  const RecipeSourceSheet({super.key, required this.initialSources});
+  const RecipeSourceSheet({
+    super.key,
+    required this.initialSources,
+    this.initialBookIds = const {},
+    this.availableBooks = const [],
+  });
 
   @override
   State<RecipeSourceSheet> createState() => _RecipeSourceSheetState();
@@ -893,79 +895,157 @@ class RecipeSourceSheet extends StatefulWidget {
 
 class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
   late Set<RecipeSource> _selected;
+  late Set<String> _selectedBookIds;
 
   @override
   void initState() {
     super.initState();
     _selected = Set.of(widget.initialSources);
+    _selectedBookIds = Set.of(widget.initialBookIds);
+  }
+
+  void _selectAllBooks() {
+    setState(
+      () => _selectedBookIds = widget.availableBooks.map((b) => b.id).toSet(),
+    );
+  }
+
+  void _selectNoBook() {
+    setState(() => _selectedBookIds = {});
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Handle
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.4,
+    final hasBooks = widget.availableBooks.isNotEmpty;
+    return DraggableScrollableSheet(
+      initialChildSize: hasBooks ? 0.65 : 0.4,
+      minChildSize: 0.3,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Handle
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(
-              'Où chercher des recettes ?',
-              style: theme.textTheme.titleMedium,
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      'Où chercher des recettes ?',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final source in RecipeSource.values)
+                    CheckboxListTile(
+                      value: _selected.contains(source),
+                      title: Text(source.label),
+                      secondary: Icon(switch (source) {
+                        RecipeSource.myRecipes => Icons.check_circle_outline,
+                        RecipeSource.myDrafts => Icons.edit_outlined,
+                        RecipeSource.familyRecipes => Icons.group_outlined,
+                        RecipeSource.aiCreation => Icons.smart_toy_outlined,
+                      }),
+                      onChanged: (v) {
+                        setState(() {
+                          if (v == true) {
+                            _selected.add(source);
+                          } else {
+                            _selected.remove(source);
+                          }
+                        });
+                      },
+                    ),
+                  if (hasBooks) ...[
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Dans quels livres ?',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed:
+                                _selectedBookIds.length ==
+                                    widget.availableBooks.length
+                                ? _selectNoBook
+                                : _selectAllBooks,
+                            child: Text(
+                              _selectedBookIds.length ==
+                                      widget.availableBooks.length
+                                  ? 'Tout décocher'
+                                  : 'Tout cocher',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    for (final book in widget.availableBooks)
+                      CheckboxListTile(
+                        value: _selectedBookIds.contains(book.id),
+                        title: Text(book.titre),
+                        secondary: const Icon(Icons.menu_book_outlined),
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) {
+                              _selectedBookIds.add(book.id);
+                            } else {
+                              _selectedBookIds.remove(book.id);
+                            }
+                          });
+                        },
+                      ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          for (final source in RecipeSource.values)
-            CheckboxListTile(
-              value: _selected.contains(source),
-              title: Text(source.label),
-              secondary: Icon(switch (source) {
-                RecipeSource.myRecipes => Icons.check_circle_outline,
-                RecipeSource.myDrafts => Icons.edit_outlined,
-                RecipeSource.familyRecipes => Icons.group_outlined,
-                RecipeSource.aiCreation => Icons.smart_toy_outlined,
-              }),
-              onChanged: (v) {
-                setState(() {
-                  if (v == true) {
-                    _selected.add(source);
-                  } else {
-                    _selected.remove(source);
-                  }
-                });
-              },
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: FilledButton.icon(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () => Navigator.pop(
+                        context,
+                        RecipeSearchScope(
+                          sources: _selected,
+                          bookIds: _selectedBookIds,
+                        ),
+                      ),
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Générer'),
+              ),
             ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: FilledButton.icon(
-              onPressed: _selected.isEmpty
-                  ? null
-                  : () => Navigator.pop(context, _selected),
-              icon: const Icon(Icons.auto_awesome_outlined),
-              label: const Text('Générer'),
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 }
