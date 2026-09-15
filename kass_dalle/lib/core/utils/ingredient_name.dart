@@ -37,6 +37,38 @@ const Set<String> _preparationTokens = {
   'ciselees',
 };
 
+/// Le seul sous-ensemble de [_preparationTokens] qui reste neutre pour une
+/// viande.
+const Set<String> _hacheTokens = {'hache', 'hachee', 'haches', 'hachees'};
+
+/// Viandes pour lesquelles « haché » change le produit, pas seulement la
+/// coupe.
+///
+/// « persil haché » et « persil » sont le même achat : couper une herbe ne
+/// change rien à sa valeur nutritionnelle, et c'est pour ce cas que
+/// [_preparationTokens] existe. Pour une viande, « haché » désigne un produit
+/// du boucher à part entière, avec son propre taux de matière grasse — souvent
+/// plus élevé qu'une coupe entière. Fusionner « porc haché » et « porc » sous
+/// un même identifiant a donné le même chiffre de calories aux deux, faux
+/// pour l'un comme pour l'autre. Ces bases gardent donc « haché » dans leur
+/// identifiant canonique ; les autres mots de préparation (émincé, râpé,
+/// coupé, ciselé) restent neutres même pour elles.
+const Set<String> _meatBaseTokens = {
+  'porc',
+  'boeuf',
+  'veau',
+  'agneau',
+  'mouton',
+  'poulet',
+  'dinde',
+  'canard',
+  'oie',
+  'lapin',
+  'cheval',
+  'pintade',
+  'caille',
+};
+
 /// Minuscules, accents retirés, tout caractère non alphanumérique remplacé par
 /// un souligné. C'est la brique commune à toutes les normalisations.
 String normalizeBase(String value) {
@@ -97,11 +129,24 @@ String normalizeIngredientCanonicalId(String value) {
   final strict = normalizeBase(value);
   if (strict.isEmpty) return strict;
 
-  final collapsed = strict
-      .split('_')
-      .where((token) => token.isNotEmpty && !_preparationTokens.contains(token))
-      .join('_')
-      .replaceAll(RegExp(r'^_+|_+$'), '');
+  final tokens = strict.split('_').where((token) => token.isNotEmpty).toList();
+  // Les mots de préparation neutres partent toujours, « haché » y compris
+  // pour l'instant : il ne revient que si la base restante est une viande.
+  final withoutNeutralPrep = tokens
+      .where(
+        (token) =>
+            !_preparationTokens.contains(token) || _hacheTokens.contains(token),
+      )
+      .toList();
+  final baseTokens = withoutNeutralPrep
+      .where((token) => !_hacheTokens.contains(token))
+      .toList();
+  final hasHache = withoutNeutralPrep.length > baseTokens.length;
+  final isMeat =
+      baseTokens.length == 1 && _meatBaseTokens.contains(baseTokens.first);
+
+  final kept = isMeat && hasHache ? withoutNeutralPrep : baseTokens;
+  final collapsed = kept.join('_').replaceAll(RegExp(r'^_+|_+$'), '');
 
   return collapsed.isEmpty ? strict : collapsed;
 }

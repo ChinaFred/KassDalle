@@ -23,6 +23,38 @@ const PREPARATION_TOKENS = new Set<string>([
   "ciselees",
 ]);
 
+/** Le seul sous-ensemble de `PREPARATION_TOKENS` qui reste neutre pour une viande. */
+const HACHE_TOKENS = new Set<string>(["hache", "hachee", "haches", "hachees"]);
+
+/**
+ * Viandes pour lesquelles « haché » change le produit, pas seulement la coupe.
+ *
+ * « persil haché » et « persil » sont le même achat : couper une herbe ne
+ * change rien à sa valeur nutritionnelle, et c'est pour ce cas que
+ * `PREPARATION_TOKENS` existe. Pour une viande, « haché » désigne un produit
+ * du boucher à part entière, avec son propre taux de matière grasse — souvent
+ * plus élevé qu'une coupe entière. Fusionner « porc haché » et « porc » sous
+ * un même identifiant a donné le même chiffre de calories aux deux, faux pour
+ * l'un comme pour l'autre. Ces bases gardent donc « haché » dans leur
+ * identifiant canonique ; les autres mots de préparation (émincé, râpé,
+ * coupé, ciselé) restent neutres même pour elles.
+ */
+const MEAT_BASE_TOKENS = new Set<string>([
+  "porc",
+  "boeuf",
+  "veau",
+  "agneau",
+  "mouton",
+  "poulet",
+  "dinde",
+  "canard",
+  "oie",
+  "lapin",
+  "cheval",
+  "pintade",
+  "caille",
+]);
+
 /**
  * Ligatures que la normalisation Unicode NFD ne d\u00e9compose pas : ce sont des
  * lettres \u00e0 part enti\u00e8re, pas des caract\u00e8res accentu\u00e9s. Sans ce traitement
@@ -52,11 +84,18 @@ export function normalizeIngredientCanonicalId(value: string): string {
   const strict = normalizeBase(value);
   if (!strict) return strict;
 
-  const collapsed = strict
-    .split("_")
-    .filter((token) => token.length > 0 && !PREPARATION_TOKENS.has(token))
-    .join("_")
-    .replace(/^_|_$/g, "");
+  const tokens = strict.split("_").filter((token) => token.length > 0);
+  // Les mots de préparation neutres partent toujours, « haché » y compris
+  // pour l'instant : il ne revient que si la base restante est une viande.
+  const withoutNeutralPrep = tokens.filter(
+    (token) => !PREPARATION_TOKENS.has(token) || HACHE_TOKENS.has(token),
+  );
+  const baseTokens = withoutNeutralPrep.filter((token) => !HACHE_TOKENS.has(token));
+  const hasHache = withoutNeutralPrep.length > baseTokens.length;
+  const isMeat = baseTokens.length === 1 && MEAT_BASE_TOKENS.has(baseTokens[0]);
+
+  const kept = isMeat && hasHache ? withoutNeutralPrep : baseTokens;
+  const collapsed = kept.join("_").replace(/^_|_$/g, "");
 
   return collapsed || strict;
 }

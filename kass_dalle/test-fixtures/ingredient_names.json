@@ -43,6 +43,13 @@
     { "input": "carottes grossièrement coupées", "strict": "carottes_grossierement_coupees", "canonical": "carottes", "singular": "carotte", "lookup": ["carottes_grossierement_coupees", "carottes", "carotte"], "why": "idem" },
     { "input": "haché", "strict": "hache", "canonical": "hache", "singular": "hache", "lookup": ["hache"], "why": "ne rien laisser serait pire : on garde l'identifiant strict" },
 
+    { "input": "porc", "strict": "porc", "canonical": "porc", "singular": "porc", "lookup": ["porc"], "why": "une viande seule, sans préparation, n'est pas concernée" },
+    { "input": "porc haché", "strict": "porc_hache", "canonical": "porc_hache", "singular": "porc_hache", "lookup": ["porc_hache"], "why": "haché change le produit pour une viande, pas seulement la coupe : porc et porc haché restent deux identifiants" },
+    { "input": "bœuf haché", "strict": "boeuf_hache", "canonical": "boeuf_hache", "singular": "boeuf_hache", "lookup": ["boeuf_hache"], "why": "même règle, ligature œ" },
+    { "input": "poulet haché", "strict": "poulet_hache", "canonical": "poulet_hache", "singular": "poulet_hache", "lookup": ["poulet_hache"], "why": "même règle" },
+    { "input": "agneau haché", "strict": "agneau_hache", "canonical": "agneau_hache", "singular": "agneau_hache", "lookup": ["agneau_hache"], "why": "même règle" },
+    { "input": "porc émincé", "strict": "porc_emince", "canonical": "porc", "singular": "porc", "lookup": ["porc_emince", "porc"], "why": "émincer ne change pas le produit, même pour une viande : seul haché fait exception" },
+
     { "input": "tomates", "strict": "tomates", "canonical": "tomates", "singular": "tomate", "lookup": ["tomates", "tomate"], "why": "le pluriel simple rejoint le singulier en dernier recours" },
     { "input": "œufs", "strict": "oeufs", "canonical": "oeufs", "singular": "oeuf", "lookup": ["oeufs", "oeuf"], "why": "ligature et pluriel combinés" },
     { "input": "pommes de terre", "strict": "pommes_de_terre", "canonical": "pommes_de_terre", "singular": "pomme_de_terre", "lookup": ["pommes_de_terre", "pomme_de_terre"], "why": "seul le mot pluriel perd son s, « de » est trop court" },
