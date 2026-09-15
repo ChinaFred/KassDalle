@@ -5,8 +5,8 @@ import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 /// La liste de courses du planning additionne les recettes et les garnitures.
 ///
 /// Le riz d'une garniture et le riz d'une recette font une seule ligne ; une
-/// garniture dans une autre unité reste à part, et chaque ligne dit d'où elle
-/// vient.
+/// garniture dans une autre unité reste à part, sous le même nom ; et chaque
+/// ligne dit d'où elle vient, et pour combien.
 Recipe _recipe(String titre, List<RecipeShoppingProduct> products) {
   final t = DateTime(2026, 1, 1);
   return Recipe(
@@ -41,45 +41,104 @@ void main() {
       ],
     );
     expect(out.products, hasLength(1));
+    expect(out.products.single.name, 'Riz');
     expect(out.products.single.qty, '480');
     expect(out.products.single.unit, 'g');
     expect(
       out.sources['Riz'],
-      'Riz cantonais · Blanquette de veau · accompagnement',
+      'Riz cantonais (200 g) · Blanquette de veau · accompagnement (280 g)',
     );
   });
 
-  test('une autre unité reste une autre ligne', () {
-    final out = planningAggregateProducts(
-      const [],
-      extras: const [
-        (
-          product: RecipeShoppingProduct(
-            name: 'Yaourt',
-            qty: '4',
-            unit: 'pièce',
+  test(
+    'une autre famille d\'unité reste une autre entrée, sous le même nom',
+    () {
+      final out = planningAggregateProducts(
+        const [],
+        extras: const [
+          (
+            product: RecipeShoppingProduct(
+              name: 'Yaourt',
+              qty: '4',
+              unit: 'pièce',
+            ),
+            source: 'Lundi',
           ),
-          source: 'Lundi',
-        ),
-        (
-          product: RecipeShoppingProduct(
-            name: 'Yaourt',
-            qty: '2',
-            unit: 'pièce',
+          (
+            product: RecipeShoppingProduct(
+              name: 'Yaourt',
+              qty: '2',
+              unit: 'pièce',
+            ),
+            source: 'Mardi',
           ),
-          source: 'Mardi',
-        ),
-        (
-          product: RecipeShoppingProduct(name: 'Yaourt', qty: '500', unit: 'g'),
-          source: 'Mercredi',
-        ),
-      ],
-    );
-    expect(out.products, hasLength(2));
-    final pieces = out.products.firstWhere((p) => p.unit == 'pièce');
-    expect(pieces.qty, '6');
-    expect(out.sources['Yaourt'], isNotNull);
+          (
+            product: RecipeShoppingProduct(
+              name: 'Yaourt',
+              qty: '500',
+              unit: 'g',
+            ),
+            source: 'Mercredi',
+          ),
+        ],
+      );
+      expect(out.products, hasLength(2));
+      final pieces = out.products.firstWhere((p) => p.unit == 'pièce');
+      expect(pieces.qty, '6');
+      expect(out.products.map((p) => p.name).toSet(), {'Yaourt'});
+      expect(out.sources['Yaourt'], 'Lundi (4) · Mardi (2) · Mercredi (500 g)');
+    },
+  );
+
+  test(
+    'deux unités sans conversion : deux entrées, une provenance chacune',
+    () {
+      final out = planningAggregateProducts([
+        _recipe('Curry de poulet', const [
+          RecipeShoppingProduct(name: 'lait de coco', qty: '250', unit: 'g'),
+        ]),
+        _recipe('Riz au lait de coco', const [
+          RecipeShoppingProduct(name: 'Lait de coco', qty: '400', unit: 'ml'),
+        ]),
+      ]);
+      expect(out.products, hasLength(2));
+      expect(out.products.map((p) => p.name).toSet(), {'lait de coco'});
+      expect(
+        out.sources['lait de coco'],
+        'Curry de poulet (250 g) · Riz au lait de coco (400 ml)',
+      );
+    },
+  );
+
+  test('kilo et grammes s\'additionnent entre recettes', () {
+    final out = planningAggregateProducts([
+      _recipe('Gratin', const [
+        RecipeShoppingProduct(name: 'pommes de terre', qty: '1', unit: 'kg'),
+      ]),
+      _recipe('Purée', const [
+        RecipeShoppingProduct(name: 'pomme de terre', qty: '500', unit: 'g'),
+      ]),
+    ]);
+    expect(out.products.single.qty, '1,5');
+    expect(out.products.single.unit, 'kg');
+    expect(out.sources['pommes de terre'], 'Gratin (1 kg) · Purée (500 g)');
   });
+
+  test(
+    'la même recette deux jours de suite compte une fois dans la provenance',
+    () {
+      final out = planningAggregateProducts([
+        _recipe('Curry', const [
+          RecipeShoppingProduct(name: 'riz', qty: '200', unit: 'g'),
+        ]),
+        _recipe('Curry', const [
+          RecipeShoppingProduct(name: 'riz', qty: '200', unit: 'g'),
+        ]),
+      ]);
+      expect(out.products.single.qty, '400');
+      expect(out.sources['riz'], 'Curry (400 g)');
+    },
+  );
 
   test('sans garniture, rien ne change', () {
     final out = planningAggregateProducts([
@@ -88,6 +147,6 @@ void main() {
       ]),
     ]);
     expect(out.products.single.name, 'Sel');
-    expect(out.sources['Sel'], 'A');
+    expect(out.sources['Sel'], 'A (1 pincée)');
   });
 }

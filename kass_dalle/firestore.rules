@@ -342,7 +342,14 @@ service cloud.firestore {
     // reste réservée aux Cloud Functions (Admin SDK, hors de ces règles).
     match /nutrition_ingredients/{ingredientId} {
       allow read: if isApproved();
-      allow write: if false;
+      // Le référentiel s'écrit côté serveur. Une seule exception : le produit
+      // acheté, corrigé à la main par un administrateur depuis Admin ›
+      // Référentiels › Ingrédients — ces champs-là, et eux seuls.
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'shopping_product', 'shopping_product_source', 'updated_at'
+        ]);
+      allow create, delete: if false;
     }
 
     // Référentiel des unités : source de vérité des conversions, lue par le

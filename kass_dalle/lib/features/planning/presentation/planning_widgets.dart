@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/utils/recipe_portion_scaler.dart';
+import '../../../core/utils/ingredient_display.dart';
+import '../../../core/utils/shopping_products.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
@@ -109,8 +111,11 @@ planningAggregateIngredients(List<Recipe> recipes) {
 typedef PlanningExtraProduct = ({RecipeShoppingProduct product, String source});
 
 /// Agrège les produits d'achat de plusieurs recettes et retourne :
-/// - la liste consolidée par produit (même nom+unité → quantités additionnées),
-/// - une map `{nom_produit → "Recette A · Recette B"}` pour l'affichage.
+/// - la liste consolidée par produit et famille d'unité — même produit,
+///   unités convertibles entre elles → quantités additionnées ; un comptage et
+///   un poids restent deux entrées sous un même nom (`mergeShoppingProducts`) ;
+/// - une map `{nom_produit → "Recette A (200 g) · Recette B (300 g)"}` : d'où
+///   vient chaque ligne, et pour combien.
 ///
 /// Utilise [shoppingProducts] si disponible, sinon construit des produits
 /// depuis les ingrédients bruts (fallback pour les anciennes recettes).
@@ -122,43 +127,6 @@ planningAggregateProducts(
   List<Recipe> recipes, {
   List<PlanningExtraProduct> extras = const [],
 }) {
-  String normKey(String name, String unit) {
-    String norm(String s) => s
-        .toLowerCase()
-        .replaceAll(RegExp(r'[àâ]'), 'a')
-        .replaceAll(RegExp(r'[éèêë]'), 'e')
-        .replaceAll(RegExp(r'[îï]'), 'i')
-        .replaceAll(RegExp(r'[ôö]'), 'o')
-        .replaceAll(RegExp(r'[ùûü]'), 'u')
-        .replaceAll('ç', 'c')
-        .trim();
-    return '${norm(unit)}|${norm(name)}';
-  }
-
-  String mergeQty(String a, String b, String unit1, String unit2) {
-    final sameUnit =
-        unit1.toLowerCase() == unit2.toLowerCase() ||
-        unit1.isEmpty ||
-        unit2.isEmpty;
-    if (sameUnit) {
-      final va = double.tryParse(a.replaceAll(',', '.').trim());
-      final vb = double.tryParse(b.replaceAll(',', '.').trim());
-      if (va != null && vb != null) {
-        final total = va + vb;
-        return total == total.truncateToDouble()
-            ? total.toInt().toString()
-            : total.toStringAsFixed(1);
-      }
-    }
-    if (a.isEmpty) return b;
-    if (b.isEmpty) return a;
-    return '$a + $b';
-  }
-
-  final result = <RecipeShoppingProduct>[];
-  final keyToIdx = <String, int>{};
-  final Map<String, List<String>> sourceLists = {};
-
   final batches = <({List<RecipeShoppingProduct> products, String source})>[
     for (final recipe in recipes)
       (
@@ -180,34 +148,46 @@ planningAggregateProducts(
     for (final e in extras) (products: [e.product], source: e.source),
   ];
 
+  // Toutes les lignes dans l'ordre, et pour chaque produit ce que chaque
+  // source lui apporte — pour dire sous la ligne « Curry (400 ml) ».
+  final entries = <RecipeShoppingProduct>[];
+  final contributions = <String, Map<String, List<RecipeShoppingProduct>>>{};
   for (final batch in batches) {
     for (final p in batch.products) {
       if (p.name.trim().isEmpty) continue;
-      final key = normKey(p.name, p.unit);
-      (sourceLists[key] ??= []).add(batch.source);
-      if (keyToIdx.containsKey(key)) {
-        final idx = keyToIdx[key]!;
-        final ex = result[idx];
-        result[idx] = RecipeShoppingProduct(
-          name: ex.name,
-          qty: mergeQty(ex.qty, p.qty, ex.unit, p.unit),
-          unit: ex.unit.isNotEmpty ? ex.unit : p.unit,
-        );
-      } else {
-        keyToIdx[key] = result.length;
-        result.add(p);
-      }
+      entries.add(p);
+      final bySource = contributions.putIfAbsent(
+        shoppingProductKey(p.name),
+        () => {},
+      );
+      bySource.putIfAbsent(batch.source, () => []).add(p);
     }
   }
 
+  final products = mergeShoppingProducts(entries);
   final sources = <String, String>{};
-  for (final e in sourceLists.entries) {
-    final idx = keyToIdx[e.key];
-    if (idx == null) continue;
-    sources[result[idx].name] = e.value.toSet().join(' \u00b7 ');
+  for (final product in products) {
+    if (sources.containsKey(product.name)) continue;
+    final bySource = contributions[shoppingProductKey(product.name)];
+    if (bySource == null) continue;
+    sources[product.name] = bySource.entries
+        .map((e) => _describeContribution(e.key, e.value))
+        .join(' · ');
   }
 
-  return (products: result, sources: sources);
+  return (products: products, sources: sources);
+}
+
+/// « Curry de poulet (400 ml) » — la source, et ce qu'elle apporte au produit.
+///
+/// Les quantités d'une même source s'additionnent comme sur la ligne ; sans
+/// quantité lisible, la source seule.
+String _describeContribution(String source, List<RecipeShoppingProduct> given) {
+  final quantities = mergeShoppingProducts(given)
+      .map((p) => formatQuantityOnly(qty: p.qty, unit: p.unit))
+      .where((q) => q.isNotEmpty)
+      .join(' + ');
+  return quantities.isEmpty ? source : '$source ($quantities)';
 }
 
 Recipe planningScaleRecipeForMeal({

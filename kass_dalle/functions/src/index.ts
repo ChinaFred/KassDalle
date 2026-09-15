@@ -111,6 +111,11 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
 export { backfillRecipePrivacyFn } from "./callable/privacyBackfillCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
+// Une fonction, deux modes : le produit acheté des ingrédients (un appel de
+// modèle par lot, une fois), et le recalcul des produits d'achat de toutes
+// les recettes (aucun appel). Deux points d'entrée HTTPS pour une même reprise
+// auraient coûté une fonction de plus au déploiement.
+export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

@@ -57,6 +57,7 @@ const kFeatureProcess = <String, String>{
   'shopping_list': 'Planning et courses',
   'shopping_products_refresh': 'Planning et courses',
   'shopping_products_backfill': 'Planning et courses',
+  'backfill_shopping_aliases': 'Planning et courses',
   // Le rôle d'une recette dans un repas sert le planning : c'est lui qui
   // compose un plat et son accompagnement. La reprise se lit donc à côté
   // des autres postes du planning, pas dans la rédaction.
@@ -255,8 +256,17 @@ const kFeatureCatalog = <String, FeatureInfo>{
   'shopping_products_backfill': FeatureInfo(
     label: 'Backfill produits de courses',
     description:
-        'Migration historique des recettes pour calculer le champ '
-        'shopping_products sur les anciennes données.',
+        'Recalcule shopping_products sur toutes les recettes depuis '
+        'Admin › Backfills — après un changement de règle de regroupement ou '
+        'un produit acheté posé. Aucun appel de modèle.',
+  ),
+  'backfill_shopping_aliases': FeatureInfo(
+    label: 'Produit acheté des ingrédients (backfill)',
+    description:
+        'Demande au modèle, par lots de quarante, le produit qu\'on achète '
+        'pour chaque ingrédient du référentiel qui n\'en a pas — beurre fondu '
+        's\'achète en beurre, jaune d\'œuf en œufs. Une fois ; lancé depuis '
+        'Admin › Backfills.',
   ),
   'enhance_illustration': FeatureInfo(
     label: 'Amélioration photo',

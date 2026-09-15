@@ -31,6 +31,15 @@ class NutritionIngredientDoc {
   /// grandeur — un litre d'huile de friture pèse 8280 kcal à lui seul.
   final bool notConsumed;
 
+  /// Le produit qu'on achète pour cet ingrédient, sur la liste de courses.
+  ///
+  /// `null` : jamais examiné. Vide : le nom est déjà le produit. Renseigné :
+  /// « beurre » pour « beurre fondu », « œuf » pour « jaune d'œuf ». Posé par
+  /// le backfill « Produit acheté des ingrédients », corrigé à la main depuis
+  /// l'écran du référentiel. Lu par le serveur quand il compose les produits
+  /// d'achat d'une recette.
+  final String? shoppingProduct;
+
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
@@ -39,6 +48,7 @@ class NutritionIngredientDoc {
     this.gramsPerPiece,
     this.gramsPerUnit = const {},
     this.notConsumed = false,
+    this.shoppingProduct,
   });
 
   /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
@@ -97,6 +107,9 @@ class NutritionIngredientDoc {
           : null,
       gramsPerUnit: gramsPerUnit,
       notConsumed: data['not_consumed'] == true,
+      shoppingProduct: data['shopping_product'] is String
+          ? data['shopping_product'] as String
+          : null,
     );
   }
 }
@@ -207,6 +220,30 @@ class NutritionIngredientsRepository {
     );
 
     return controller.stream;
+  }
+
+  /// Pose le produit acheté d'un ingrédient.
+  ///
+  /// Seule écriture du référentiel ouverte au client : à un administrateur,
+  /// sur ces champs et eux seuls (règles Firestore). Vide = le nom est déjà
+  /// le produit. Les recettes existantes ne le reprennent qu'au backfill
+  /// « Recalculer les produits d'achat », ou à leur prochaine écriture.
+  Future<void> setShoppingProduct(String id, String value) async {
+    try {
+      await _firestore.collection('nutrition_ingredients').doc(id).update({
+        'shopping_product': value.trim(),
+        'shopping_product_source': 'admin',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'nutritionIngredients.setShoppingProduct',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'id': id, 'value': value},
+      );
+      rethrow;
+    }
   }
 
   /// Référentiel complet — réservé à l'écran d'administration qui le liste.

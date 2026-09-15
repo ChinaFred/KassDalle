@@ -333,9 +333,10 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Quatre logiques métier existent en double, plus deux résidus : parseur CookLang
+Cinq logiques métier existent en double, plus deux résidus : parseur CookLang
 (dont l'index de recherche et les libellés de type de page), parsing de
-quantité, conversion d'unités en grammes, normalisation des noms d'ingrédients.
+quantité, conversion d'unités en grammes, normalisation des noms d'ingrédients,
+regroupement des lignes de courses.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
 sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning et la
 **géométrie du redressement** : le client redresse à la main dans l'atelier de
@@ -355,6 +356,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
+| `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et dans la feuille de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

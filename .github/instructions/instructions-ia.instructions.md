@@ -203,7 +203,7 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Quatre logiques métier existent en double, plus deux résidus, asservies par les fixtures
+Cinq logiques métier existent en double, plus deux résidus, asservies par les fixtures
 `kass_dalle/test-fixtures/`, rejouées par **les deux** suites (`kass_dalle/test/*_test.dart`
 et `functions/src/tests/`) :
 
@@ -218,6 +218,7 @@ et `functions/src/tests/`) :
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie. Le client redresse à la main dans l'atelier, le serveur redresse tout seul à l'import |
 | `meal_roles.json` | vocabulaire des rôles dans un repas — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur |
+| `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et la feuille de courses |
 
 * **La duplication est un coût, pas une méthode.** Ne dupliquer que si les deux
   côtés ont un besoin propre — le client pour afficher ou travailler hors ligne,

@@ -7,24 +7,31 @@ import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/ingredient_display.dart';
+import '../../../../core/utils/shopping_products.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../services/google_tasks_service.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
+/// Une quantité d'une ligne de courses : une famille d'unité, un total.
+typedef _Qty = ({String qty, String unit});
+
 class _Item {
   final String name;
-  final String qty;
-  final String unit;
+
+  /// Une entrée par famille d'unité : « 400 ml » et « 250 g » sur la même
+  /// ligne quand les deux ne se convertissent pas l'une dans l'autre. On
+  /// achète le lait de coco une fois, même si une recette le compte en
+  /// grammes et l'autre en millilitres.
+  final List<_Qty> quantities;
   final String category;
   final String? source;
   bool checked;
 
   _Item({
     required this.name,
-    required this.qty,
-    required this.unit,
+    required this.quantities,
     required this.category,
     this.source,
     this.checked = false,
@@ -32,37 +39,33 @@ class _Item {
 
   Map<String, dynamic> toJson() => {
     'n': name,
-    'q': qty,
-    'u': unit,
+    'qs': [
+      for (final q in quantities) {'q': q.qty, 'u': q.unit},
+    ],
     'c': category,
     's': source,
     'x': checked,
   };
 
-  factory _Item.fromJson(Map<String, dynamic> j) => _Item(
-    name: j['n'] as String? ?? '',
-    qty: j['q'] as String? ?? '',
-    unit: j['u'] as String? ?? '',
-    category: j['c'] as String? ?? 'Autres',
-    source: j['s'] as String?,
-    checked: j['x'] as bool? ?? false,
-  );
-
-  factory _Item.from(RecipeIngredient ing, String source) => _Item(
-    name: ing.name,
-    qty: ing.qty,
-    unit: ing.unit,
-    category: IngredientCategorizer.categorize(ing.name),
-    source: source,
-  );
-
-  factory _Item.fromProduct(RecipeShoppingProduct p, String source) => _Item(
-    name: p.name,
-    qty: p.qty,
-    unit: p.unit,
-    category: IngredientCategorizer.categorize(p.name),
-    source: source,
-  );
+  /// Lit une ligne enregistrée. Une liste d'avant ce format porte `q` et `u`
+  /// à plat : une quantité unique.
+  factory _Item.fromJson(Map<String, dynamic> j) {
+    final raw = j['qs'];
+    final quantities = raw is List
+        ? <_Qty>[
+            for (final e in raw)
+              if (e is Map)
+                (qty: e['q'] as String? ?? '', unit: e['u'] as String? ?? ''),
+          ]
+        : <_Qty>[(qty: j['q'] as String? ?? '', unit: j['u'] as String? ?? '')];
+    return _Item(
+      name: j['n'] as String? ?? '',
+      quantities: quantities,
+      category: j['c'] as String? ?? 'Autres',
+      source: j['s'] as String?,
+      checked: j['x'] as bool? ?? false,
+    );
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,65 +97,11 @@ String _todayFr() {
 /// Une ligne de liste de courses, accordée comme le reste de l'application.
 ///
 /// Même règle que la fiche et que le PDF : « 3 cuillères à soupe de sauce
-/// soja », « 2 carottes ». Une liste qu'on lit dans un magasin mérite autant
-/// de soin qu'une recette qu'on imprime.
-String _formatItem(String qty, String unit, String name) =>
-    formatIngredientDisplay(qty: qty, unit: unit, name: name);
-
-String _mergeQty(
-  String existingQty,
-  String newQty,
-  String existingUnit,
-  String newUnit,
-) {
-  final sameUnit =
-      existingUnit.toLowerCase() == newUnit.toLowerCase() ||
-      existingUnit.isEmpty ||
-      newUnit.isEmpty;
-  if (sameUnit) {
-    final existingValue = double.tryParse(
-      existingQty.replaceAll(',', '.').trim(),
-    );
-    final newValue = double.tryParse(newQty.replaceAll(',', '.').trim());
-    if (existingValue != null && newValue != null) {
-      final total = existingValue + newValue;
-      return total == total.truncateToDouble()
-          ? total.toInt().toString()
-          : total.toStringAsFixed(1);
-    }
-  }
-  if (existingQty.isEmpty) return newQty;
-  if (newQty.isEmpty) return existingQty;
-  return '$existingQty + $newQty';
-}
-
-String _normItemKey(String name, String unit) {
-  String normalize(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[àâ]'), 'a')
-        .replaceAll(RegExp(r'[éèêë]'), 'e')
-        .replaceAll(RegExp(r'[îï]'), 'i')
-        .replaceAll(RegExp(r'[ôö]'), 'o')
-        .replaceAll(RegExp(r'[ùûü]'), 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll('æ', 'ae')
-        .replaceAll('œ', 'oe')
-        .replaceAll('\u2019', "'")
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  final normalizedName = normalize(name)
-      .split(' ')
-      .map(
-        (word) => word.endsWith('s') && word.length > 2
-            ? word.substring(0, word.length - 1)
-            : word,
-      )
-      .join(' ');
-  return '${normalize(unit)}|$normalizedName';
-}
+/// soja », « 2 carottes » — et « 400 ml + 250 g de lait de coco » quand deux
+/// familles d'unités se partagent la ligne. Une liste qu'on lit dans un
+/// magasin mérite autant de soin qu'une recette qu'on imprime.
+String _formatItem(_Item item) =>
+    formatShoppingLine(quantities: item.quantities, name: item.name);
 
 String? _mergeSources(String? left, String? right) {
   final values = <String>{};
@@ -167,38 +116,76 @@ String? _mergeSources(String? left, String? right) {
   return values.join(' · ');
 }
 
+/// Une ligne par produit.
+///
+/// `mergeShoppingProducts` rend une entrée par produit et famille d'unité,
+/// toutes sous le même nom ; elles se rangent ici sur une seule ligne, avec
+/// une quantité par famille. La provenance d'une ligne est celle que
+/// [sourceOf] donne à son produit — les titres de recettes dans le planning,
+/// le titre de la recette ouverte sinon.
+List<_Item> _itemsFromProducts(
+  Iterable<RecipeShoppingProduct> products,
+  String Function(RecipeShoppingProduct product) sourceOf,
+) {
+  final order = <String>[];
+  final byKey =
+      <String, ({String name, List<_Qty> quantities, Set<String> sources})>{};
+  for (final p in mergeShoppingProducts(products)) {
+    final key = shoppingProductKey(p.name);
+    final slot = byKey.putIfAbsent(key, () {
+      order.add(key);
+      return (name: p.name, quantities: <_Qty>[], sources: <String>{});
+    });
+    slot.quantities.add((qty: p.qty, unit: p.unit));
+    final source = sourceOf(p).trim();
+    if (source.isNotEmpty) slot.sources.add(source);
+  }
+  return [
+    for (final key in order)
+      _Item(
+        name: byKey[key]!.name,
+        quantities: byKey[key]!.quantities,
+        category: IngredientCategorizer.categorize(byKey[key]!.name),
+        source: byKey[key]!.sources.isEmpty
+            ? null
+            : byKey[key]!.sources.join(' · '),
+      ),
+  ];
+}
+
 List<_Item> _buildItems(
   List<RecipeShoppingProduct> products,
   List<RecipeIngredient> fallbackIngredients,
   String recipeTitre, {
   Map<String, String>? ingredientSources,
 }) {
-  if (products.isNotEmpty) {
-    return products
-        .map((p) => _Item.fromProduct(p, recipeTitre))
-        .toList(growable: false);
-  }
-  return fallbackIngredients
-      .map(
-        (ing) => _Item.from(ing, ingredientSources?[ing.name] ?? recipeTitre),
-      )
-      .toList(growable: false);
+  final source = products.isNotEmpty
+      ? products
+      : [
+          for (final ing in fallbackIngredients)
+            RecipeShoppingProduct(name: ing.name, qty: ing.qty, unit: ing.unit),
+        ];
+  return _itemsFromProducts(
+    source,
+    (p) => ingredientSources?[p.name] ?? recipeTitre,
+  );
 }
 
+/// Fusionne la liste du jour avec une nouvelle : même produit → même ligne,
+/// quantités additionnées famille par famille, provenances réunies.
 List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
   final merged = <_Item>[];
   final indexByKey = <String, int>{};
 
   for (final item in [...existing, ...incoming]) {
-    final key = _normItemKey(item.name, item.unit);
+    final key = shoppingProductKey(item.name);
     final existingIndex = indexByKey[key];
     if (existingIndex == null) {
       indexByKey[key] = merged.length;
       merged.add(
         _Item(
           name: item.name,
-          qty: item.qty,
-          unit: item.unit,
+          quantities: List.of(item.quantities),
           category: item.category,
           source: item.source,
           checked: item.checked,
@@ -208,10 +195,15 @@ List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
     }
 
     final current = merged[existingIndex];
+    final quantities = mergeShoppingProducts([
+      for (final q in current.quantities)
+        RecipeShoppingProduct(name: current.name, qty: q.qty, unit: q.unit),
+      for (final q in item.quantities)
+        RecipeShoppingProduct(name: item.name, qty: q.qty, unit: q.unit),
+    ]).map((p) => (qty: p.qty, unit: p.unit)).toList();
     merged[existingIndex] = _Item(
       name: current.name,
-      qty: _mergeQty(current.qty, item.qty, current.unit, item.unit),
-      unit: current.unit.isNotEmpty ? current.unit : item.unit,
+      quantities: quantities,
       category: current.category,
       source: _mergeSources(current.source, item.source),
       checked: current.checked && item.checked,
@@ -225,12 +217,14 @@ List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
 
 /// Affiche la feuille de liste de courses.
 ///
-/// [products] : produits pré-calculés par Gemini et scalés en mémoire.
-///   Si vide, [fallbackIngredients] est utilisé à la place.
+/// [products] : produits d'achat calculés par le serveur à l'écriture de la
+///   recette, mis à l'échelle en mémoire. Si vide, [fallbackIngredients] est
+///   utilisé à la place.
 /// [fallbackIngredients] : ingrédients bruts de la recette (utilisés si
 ///   les produits ne sont pas encore disponibles).
-/// [ingredientSources] : map optionnelle `{nom_ingrédient → "Recette A · B"}`
-///   pour l'affichage de provenance (planning).
+/// [ingredientSources] : map optionnelle `{nom_produit → "Recette A (200 g) ·
+///   Recette B (300 g)"}` — la provenance affichée sous chaque ligne. Sans
+///   elle, chaque ligne porte [recipeTitre].
 Future<void> showShoppingListSheet(
   BuildContext context,
   List<RecipeShoppingProduct> products,
@@ -412,9 +406,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     for (final key in orderedKeys) {
       groups.add((
         category: key,
-        items: grouped[key]!
-            .map((i) => _formatItem(i.qty, i.unit, i.name))
-            .toList(growable: false),
+        items: grouped[key]!.map((i) => _formatItem(i)).toList(growable: false),
       ));
     }
 
@@ -469,7 +461,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     for (final cat in orderedKeys) {
       buffer.writeln(cat.toUpperCase());
       for (final item in grouped[cat]!) {
-        buffer.writeln('\t${_formatItem(item.qty, item.unit, item.name)}');
+        buffer.writeln('\t${_formatItem(item)}');
       }
     }
     return buffer.toString().trim();
@@ -618,7 +610,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                         value: item.checked,
                         onChanged: (_) => _toggle(idx),
                         title: Text(
-                          _formatItem(item.qty, item.unit, item.name),
+                          _formatItem(item),
                           style: item.checked
                               ? TextStyle(
                                   decoration: TextDecoration.lineThrough,

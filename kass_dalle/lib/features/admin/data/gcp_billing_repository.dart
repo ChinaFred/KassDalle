@@ -417,6 +417,47 @@ class GcpBillingRepository {
     );
   }
 
+  /// Reprises de la liste de courses — une fonction, deux modes.
+  ///
+  /// `aliases` : demande au modèle le produit acheté de chaque ingrédient du
+  /// référentiel qui n'en a pas, par lots de quarante. `products` : recalcule
+  /// `shopping_products` sur toutes les recettes, sans appel de modèle. Les
+  /// deux sont réentrantes, avec reprise sur point de contrôle. Rend les
+  /// compteurs tels quels ; les drapeaux valent 1 ou 0.
+  Future<Map<String, int>> backfillShopping({
+    required String mode,
+    double maxMinutes = 8,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+    bool force = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'mode': mode,
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+      'force': force,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillShoppingFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    final out = <String, int>{};
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is num) {
+        out[entry.key] = value.toInt();
+      } else if (value is bool) {
+        out[entry.key] = value ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

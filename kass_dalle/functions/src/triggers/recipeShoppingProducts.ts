@@ -13,8 +13,53 @@
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { deriveShoppingProducts, type ShoppingInput } from "../nutrition/shoppingDerivation";
+import { loadShoppingProductAliases } from "../nutrition/shoppingAliases";
 import { logError, logInfo } from "../logging";
 import type { StoredIngredient } from "./recipeIngredients";
+
+/**
+ * Alias de courses des ingrédients, ou aucun si le référentiel ne répond pas.
+ *
+ * Une lecture qui échoue ne bloque pas les courses : la liste se calcule avec
+ * les noms bruts, comme avant l'alias, et l'échec est journalisé.
+ */
+export async function shoppingAliasesOrNone(
+  names: Iterable<string>,
+  log: { correlationId: string; scanId?: string; userId?: string; recipeId: string },
+): Promise<Map<string, string>> {
+  try {
+    return await loadShoppingProductAliases(names);
+  } catch (err) {
+    logError({
+      message: "refreshShoppingProducts: alias de courses illisibles, noms bruts conservés",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: log.correlationId,
+      scanId: log.scanId,
+      userId: log.userId,
+      extra: { recipeId: log.recipeId },
+    });
+    return new Map();
+  }
+}
+
+/** Entrées du regroupement : nom brut, quantité, unité, et l'alias s'il existe. */
+export function shoppingInputsOf(
+  ingredients: StoredIngredient[],
+  aliases: ReadonlyMap<string, string>,
+): ShoppingInput[] {
+  return ingredients
+    .filter((i) => (i.name ?? "").trim().length > 0)
+    .map((i) => {
+      const name = i.name!.trim();
+      return {
+        name,
+        qty: i.qty ?? "",
+        unit: i.unit ?? "",
+        shoppingProduct: aliases.get(name) ?? null,
+      };
+    });
+}
 
 /**
  * Consolide les ingrédients d'une recette en produits d'achat.
@@ -55,13 +100,11 @@ export async function refreshShoppingProducts(args: {
     extra: { recipeId: after.id, ingredientsCount: ingredients.length },
   });
 
-  const inputs: ShoppingInput[] = ingredients
-    .filter((i) => (i.name ?? "").trim().length > 0)
-    .map((i) => ({
-      name: i.name!.trim(),
-      qty: i.qty ?? "",
-      unit: i.unit ?? "",
-    }));
+  const aliases = await shoppingAliasesOrNone(
+    ingredients.map((i) => i.name ?? ""),
+    { correlationId, scanId, userId, recipeId: after.id },
+  );
+  const inputs: ShoppingInput[] = shoppingInputsOf(ingredients, aliases);
 
   try {
     // Plus d'appel de modèle ici.
@@ -70,6 +113,8 @@ export async function refreshShoppingProducts(args: {
     // était reconstituée depuis les balises des étapes, où le même aliment
     // apparaissait sous plusieurs orthographes. Elle vient maintenant de la
     // liste du livre, une entrée par ligne : regrouper est devenu une addition.
+    // Ce que l'addition ne sait pas — beurre fondu s'achète en beurre — vient
+    // du référentiel, par `shopping_product`.
     const products = deriveShoppingProducts(inputs);
 
     await after.ref.update({

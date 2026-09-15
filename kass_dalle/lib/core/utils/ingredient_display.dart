@@ -254,6 +254,69 @@ String formatIngredientDisplay({
   return _joinWithLiaison(head, cleanName);
 }
 
+/// Une quantité seule, telle qu'elle se lit : « 400 ml », « 2 cuillères à
+/// soupe », « 6 » pour un comptage.
+///
+/// Sert aux provenances de la liste de courses — « Curry (400 ml) » — où le
+/// nom du produit est déjà sur la ligne.
+String formatQuantityOnly({required String qty, required String unit}) {
+  final cleanQty = qty.trim();
+  final cleanUnit = unit.trim();
+  if (cleanUnit.isEmpty) return cleanQty;
+  final canonicalUnit = NutritionQuantityConverter.normalizeObservedUnit(
+    cleanUnit,
+  );
+  if (kCountingUnits.contains(canonicalUnit)) return cleanQty;
+  final unitText = displayUnit(cleanUnit, plural: quantityIsPlural(cleanQty));
+  return cleanQty.isEmpty ? unitText : '$cleanQty $unitText';
+}
+
+/// Une ligne de courses qui porte plusieurs quantités : « 400 ml + 250 g de
+/// lait de coco », « 2 kg + 6 pommes de terre ».
+///
+/// Deux familles d'unités sans conversion exacte restent deux quantités, sur
+/// une seule ligne : c'est un produit, on l'achète une fois. Les mesures
+/// viennent d'abord ; le comptage, s'il y en a un, vient en dernier et c'est
+/// lui qui accorde le nom. Une seule quantité se lit comme une ligne
+/// d'ingrédient ordinaire.
+String formatShoppingLine({
+  required List<({String qty, String unit})> quantities,
+  required String name,
+}) {
+  final cleanName = name.trim();
+  if (quantities.isEmpty) return cleanName;
+  if (quantities.length == 1) {
+    return formatIngredientDisplay(
+      qty: quantities.single.qty,
+      unit: quantities.single.unit,
+      name: cleanName,
+    );
+  }
+  final measured = <String>[];
+  String? counted;
+  for (final q in quantities) {
+    final cleanUnit = q.unit.trim();
+    final canonicalUnit = cleanUnit.isEmpty
+        ? ''
+        : NutritionQuantityConverter.normalizeObservedUnit(cleanUnit);
+    final counting =
+        cleanUnit.isEmpty || kCountingUnits.contains(canonicalUnit);
+    if (counting) {
+      final qty = q.qty.trim();
+      counted = counted == null ? qty : '$counted + $qty';
+    } else {
+      measured.add(formatQuantityOnly(qty: q.qty, unit: q.unit));
+    }
+  }
+  if (counted == null || counted.isEmpty) {
+    return _joinWithLiaison(measured.join(' + '), cleanName);
+  }
+  final displayName = quantityIsPlural(counted)
+      ? pluralizeNounPhrase(cleanName)
+      : cleanName;
+  return '${[...measured, counted].join(' + ')} $displayName';
+}
+
 /// Le nom d'un ingrédient tel qu'il se lit **dans une phrase**.
 ///
 /// « Émincer finement le poivron, les carotte » : le nom canonique était

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
+import '../data/nutrition_ingredients_repository.dart';
+import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -22,6 +24,68 @@ class _NutritionIngredientsScreenState
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Corrige le produit acheté d'un ingrédient — la seule valeur du
+  /// référentiel qui s'édite ici. Vide = le nom est déjà le produit.
+  Future<void> _editShoppingProduct(NutritionIngredientDoc doc) async {
+    final controller = TextEditingController(text: doc.shoppingProduct ?? '');
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Produit acheté'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sur la liste de courses, « ${doc.id.replaceAll('_', ' ')} » '
+              's\'achète sous ce nom. Laissez vide si le nom est déjà le '
+              'produit.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Produit acheté',
+                hintText: 'beurre, œuf, ail…',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (v) => Navigator.of(ctx).pop(v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || !mounted) return;
+    try {
+      await ref
+          .read(nutritionIngredientsRepositoryProvider)
+          .setShoppingProduct(doc.id, value);
+      if (!mounted) return;
+      context.showSuccessSnackBar(
+        value.trim().isEmpty
+            ? 'Produit acheté effacé : le nom est le produit. Lancez '
+                  '« Recalculer les produits d\'achat » pour les recettes.'
+            : 'Produit acheté enregistré : ${value.trim()}. Lancez '
+                  '« Recalculer les produits d\'achat » pour les recettes.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Enregistrement impossible : $e');
+    }
   }
 
   @override
@@ -96,6 +160,16 @@ class _NutritionIngredientsScreenState
                     // d'un ingrédient jamais rencontré.
                     final failed = doc.qualityStatus == 'estimation_failed';
 
+                    // Trois états : jamais examiné, déjà le produit, ou un
+                    // autre produit. Les trois se lisent, sinon un alias absent
+                    // et un alias vide se confondent.
+                    final shopping = doc.shoppingProduct;
+                    final shoppingText = shopping == null
+                        ? 'non examiné'
+                        : shopping.trim().isEmpty
+                        ? 'le nom lui-même'
+                        : shopping.trim();
+
                     return Card(
                       child: ExpansionTile(
                         title: Row(
@@ -133,6 +207,22 @@ class _NutritionIngredientsScreenState
                           12,
                         ),
                         children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text('Produit acheté : $shoppingText'),
+                              ),
+                              IconButton(
+                                tooltip: 'Corriger le produit acheté',
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  size: AppIconSize.small,
+                                ),
+                                onPressed: () => _editShoppingProduct(doc),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           if (keys.isEmpty)
                             const Align(
                               alignment: Alignment.centerLeft,

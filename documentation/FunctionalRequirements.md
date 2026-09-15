@@ -509,8 +509,11 @@ déjà transmise continue de fonctionner.
 
 - Construite depuis les repas **à venir** du planning : une liste qui reprend les courses de repas déjà mangés ne sert à rien.
 - Elle connaît les brouillons et les recettes des autres membres du groupe, pas seulement les recettes validées de l'utilisateur.
-- **Les accompagnements comptent** : une garniture (riz, salade verte) entre pour sa part par personne multipliée par les parts du repas, sous son produit de courses — la purée s'achète en pommes de terre —, et se fond dans la ligne d'une recette qui demande le même produit ; une recette d'accompagnement entre avec ses ingrédients, à l'échelle du repas. Chaque ligne dit d'où elle vient.
-- Les ingrédients sont fusionnés en produits d'achat et rangés par rayon.
+- **Les accompagnements comptent** : une garniture (riz, salade verte) entre pour sa part par personne multipliée par les parts du repas, sous son produit de courses — la purée s'achète en pommes de terre —, et se fond dans la ligne d'une recette qui demande le même produit ; une recette d'accompagnement entre avec ses ingrédients, à l'échelle du repas.
+- **Une ligne par produit.** Les quantités s'additionnent quand la conversion est exacte — kilo et grammes, litre et millilitre — et restent côte à côte sinon : « 400 ml + 250 g de lait de coco », « 2 kg + 6 pommes de terre ». Aucune densité ni poids moyen inventé : ce qui est affiché est vrai. Singulier et pluriel, casse et accents ne font pas deux produits.
+- **Le produit acheté, pas l'ingrédient.** « Beurre fondu » s'achète en beurre, « jaune d'œuf » en œufs : le référentiel des ingrédients porte, pour chacun, le produit qu'on achète. Il se remplit une fois depuis *Admin › Backfills* (« Produit acheté des ingrédients », un appel de modèle par lot de quarante) et se corrige à la main dans *Admin › Référentiels › Ingrédients*. « Recalculer les produits d'achat », dans le même écran, reprend ensuite toutes les recettes sans appel de modèle.
+- **Chaque ligne dit d'où elle vient, et pour combien** : « Curry de poulet (400 ml) · Riz au lait de coco (250 g) ». Depuis une recette, son titre.
+- Les lignes sont rangées par rayon.
 - **Envoi vers Google Tasks** : les rayons deviennent des tâches, les articles des sous-tâches cochables. Seuls les articles non cochés partent.
 
 ### 5.11 Module Modération des images (tous les clients — revue réservée à l'Admin)

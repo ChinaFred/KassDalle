@@ -395,6 +395,102 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillShoppingAliases() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Produit acheté des ingrédients'),
+        content: const Text(
+          'Demande au modèle, pour chaque ingrédient du référentiel qui ne '
+          'l\'a pas encore, le produit qu\'on achète : « beurre fondu » '
+          's\'achète en beurre, « jaune d\'œuf » en œufs. Un ingrédient qui '
+          'est déjà le produit reçoit un champ vide et n\'est pas redemandé.\n\n'
+          'Un appel de modèle par lot de quarante ingrédients, quatre cents '
+          'ingrédients par passage. Idempotent, avec reprise sur point de '
+          'contrôle : relancez tant que le résultat indique « incomplet ». '
+          'Ensuite, lancez « Recalculer les produits d\'achat » pour que les '
+          'recettes existantes s\'en servent. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Produit acheté des ingrédients en cours...',
+      feature: 'admin_backfill_shopping_aliases',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillShopping(mode: 'aliases'),
+      format: (r) =>
+          'Ingrédients : examinés=${r['examinees']}, '
+          'déjà renseignés=${r['dejaRenseignes']}, '
+          'produit posé=${r['renseignes']}, déjà le produit=${r['inchanges']}, '
+          'sans réponse=${r['sansReponse']}, échecs=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
+          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
+  Future<void> _runBackfillShoppingProducts() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recalculer les produits d\'achat'),
+        content: const Text(
+          'Recalcule la liste de courses de toutes les recettes : une ligne '
+          'par produit et famille d\'unité, kilo et grammes additionnés, '
+          'produit acheté du référentiel appliqué. Le déclencheur d\'écriture '
+          'ne le fait que quand les ingrédients changent ; les recettes '
+          'existantes gardent sinon leurs anciennes lignes.\n\n'
+          'Aucun appel de modèle. Une recette dont le résultat ne change pas '
+          'n\'est pas réécrite. Cinq cents recettes par passage, avec reprise '
+          'sur point de contrôle : relancez tant que le résultat indique '
+          '« incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Recalcul des produits d\'achat en cours...',
+      feature: 'admin_backfill_shopping_products',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillShopping(mode: 'products'),
+      format: (r) =>
+          'Recettes : examinées=${r['examinees']}, '
+          'recalculées=${r['recalculees']}, identiques=${r['identiques']}, '
+          'sans ingrédients=${r['sansIngredients']}, '
+          'hors recette=${r['horsRecette']}, échecs=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
+          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
   /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
   /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
   String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
@@ -559,6 +655,29 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'quarante par passage.'
                           '${_rolesReportLine(rolesReport)}',
                       onTap: _busy ? null : _runBackfillRecipeRoles,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.shopping_basket_outlined,
+                      title: 'Produit acheté des ingrédients',
+                      subtitle:
+                          'Demande au modèle, pour chaque ingrédient du '
+                          'référentiel qui ne l\'a pas, le produit qu\'on '
+                          'achète : beurre fondu → beurre, jaune d\'œuf → œuf. '
+                          'Un appel par lot de quarante, une fois. Se corrige '
+                          'ensuite à la main dans Référentiels › Ingrédients.',
+                      onTap: _busy ? null : _runBackfillShoppingAliases,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.shopping_cart_outlined,
+                      title: 'Recalculer les produits d\'achat',
+                      subtitle:
+                          'Refait la liste de courses de toutes les recettes '
+                          'avec la règle du jour et les produits achetés du '
+                          'référentiel. Aucun appel d\'IA. À lancer après '
+                          '« Produit acheté des ingrédients ».',
+                      onTap: _busy ? null : _runBackfillShoppingProducts,
                     ),
                   ],
                 ),

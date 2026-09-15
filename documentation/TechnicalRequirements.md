@@ -265,7 +265,7 @@ Document principal d'une recette.
 | `rest_time` | `int?` | Temps de repos en minutes, distinct de la préparation et de la cuisson. Une pâte qui lève trois heures ne se prépare pas en trois heures |
 | `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?, note?}` — cf. « Contrat ingrédient ». `note` porte ce que la ligne du livre dit en plus de la quantité (« avec la peau mais écaillée ») : la quantité se compte, la précision se lit. La couleur, la variété et l'espèce font partie de `name` (« poivron rouge »), jamais de `note` : la lecture fusionne les entrées de même nom et même section, sauf si chacune porte une note et que les notes diffèrent |
 | `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
-| `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
+| `shopping_products` | `List<Map>` | Produits d'achat `{name, qty, unit}`, écrits par `onRecipeWritten` (`deriveShoppingProducts`, fixture `shopping_products.json`). **Une entrée par produit et famille d'unité** : kilo et grammes s'additionnent (`1,5 kg`), litre, centilitre et millilitre aussi ; un comptage et un poids restent deux entrées sous le même nom — le client les affiche sur une ligne, « 2 kg + 6 pommes de terre ». Le nom est le `shopping_product` du référentiel quand il existe (« beurre » pour « beurre fondu »), sinon la première orthographe lue. Absent tant qu'aucun calcul n'a eu lieu ; *Admin › Backfills › Recalculer les produits d'achat* le refait sur tout le fonds sans appel de modèle |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait |
@@ -817,6 +817,8 @@ donne, pas à la recette.
 | `aliases` | `String[]` | Toutes les orthographes rencontrées |
 | `per100g` | `Map` | Valeurs pour 100 g (énergie, macronutriments, …) |
 | `grams_per_piece` | `num?` | Poids d'une pièce, quand l'ingrédient se compte |
+| `shopping_product` | `String?` | Le produit qu'on achète, sur la liste de courses : « beurre » pour `beurre_fondu`, « œuf » pour `jaune_d_oeuf`. **Absent** : jamais examiné. **Vide** : le nom est déjà le produit. Posé par le backfill « Produit acheté des ingrédients » (`backfillShoppingFn`, mode `aliases`), corrigé à la main depuis *Admin › Référentiels › Ingrédients* — la seule écriture du référentiel ouverte au client, à un administrateur, sur ce champ et sa source. Lu par `onRecipeWritten` quand il compose `shopping_products` |
+| `shopping_product_source` | `String?` | `ai_estimated` \| `admin` |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
@@ -1949,6 +1951,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillRecipePrivacyFn` | `admin` | recopie `is_private` du livre porteur sur ses recettes, même point de reprise |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
+| `backfillShoppingFn` | `admin` | une fonction, deux modes, un curseur chacun. `aliases` : demande au modèle, par lots de quarante, le produit acheté des ingrédients du référentiel sans `shopping_product` (poste `backfill_shopping_aliases`) ; `products` : recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.

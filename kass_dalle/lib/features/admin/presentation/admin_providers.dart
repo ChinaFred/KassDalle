@@ -30,7 +30,12 @@ final nutritionIngredientsRepositoryProvider =
 
 final allNutritionIngredientsProvider =
     StreamProvider.autoDispose<List<NutritionIngredientDoc>>((ref) {
-      return ref.watch(nutritionIngredientsRepositoryProvider).watchAll();
+      // Le référentiel dépasse le millier de documents : plafonné à mille, la
+      // fin de l'alphabet manquait à l'écran, et un produit acheté ne pouvait
+      // pas s'y corriger.
+      return ref
+          .watch(nutritionIngredientsRepositoryProvider)
+          .watchAll(limit: 3000);
     });
 
 final nutritionUnitsRepositoryProvider = Provider<NutritionUnitsRepository>((

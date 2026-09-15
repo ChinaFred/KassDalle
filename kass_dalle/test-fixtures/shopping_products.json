@@ -1,0 +1,189 @@
+{
+  "_comment": "Produits d'achat : regroupement des lignes d'ingrédients en lignes de courses. Rejouée par functions/src/tests/shoppingProducts.test.ts et test/shopping_products_test.dart. Le serveur regroupe à l'écriture d'une recette (shoppingDerivation.ts), le client regroupe entre recettes dans le planning et dans la feuille de courses (shopping_products.dart). Clé de regroupement : identité singularisée du produit + famille d'unité. Seules les conversions exactes s'additionnent (kg → g, cl/dl/l → ml) ; deux familles restent deux lignes, jamais de densité ni de poids moyen inventé. Un `shopping_product` remplace le nom AVANT le regroupement : c'est le produit qu'on achète (beurre fondu → beurre, jaune d'œuf → œuf).",
+  "unit_families": [
+    { "unit": "", "family": "piece", "factor": 1 },
+    { "unit": "pièce", "family": "piece", "factor": 1 },
+    { "unit": "pièces", "family": "piece", "factor": 1 },
+    { "unit": "unité", "family": "piece", "factor": 1 },
+    { "unit": "g", "family": "g", "factor": 1 },
+    { "unit": "gr", "family": "g", "factor": 1 },
+    { "unit": "grammes", "family": "g", "factor": 1 },
+    { "unit": "kg", "family": "g", "factor": 1000 },
+    { "unit": "Kilo", "family": "g", "factor": 1000 },
+    { "unit": "mg", "family": "g", "factor": 0.001 },
+    { "unit": "ml", "family": "ml", "factor": 1 },
+    { "unit": "cl", "family": "ml", "factor": 10 },
+    { "unit": "dl", "family": "ml", "factor": 100 },
+    { "unit": "L", "family": "ml", "factor": 1000 },
+    { "unit": "litres", "family": "ml", "factor": 1000 },
+    { "unit": "cuillère à soupe", "family": "c_a_s", "factor": 1 },
+    { "unit": "c. à soupe", "family": "c_a_s", "factor": 1 },
+    { "unit": "gousses", "family": "gousse", "factor": 1 },
+    { "unit": "pincée", "family": "pincee", "factor": 1 }
+  ],
+  "totals": [
+    { "why": "sous le kilo, en grammes", "total": 480, "family": "g", "qty": "480", "unit": "g" },
+    { "why": "un kilo rond", "total": 1000, "family": "g", "qty": "1", "unit": "kg" },
+    { "why": "kilo avec une décimale", "total": 1500, "family": "g", "qty": "1,5", "unit": "kg" },
+    { "why": "kilo avec deux décimales", "total": 2250, "family": "g", "qty": "2,25", "unit": "kg" },
+    { "why": "pas multiple de 10 g : reste en grammes plutôt qu'arrondir", "total": 1234, "family": "g", "qty": "1234", "unit": "g" },
+    { "why": "fraction de gramme", "total": 0.5, "family": "g", "qty": "0,5", "unit": "g" },
+    { "why": "sous le litre, en millilitres", "total": 400, "family": "ml", "qty": "400", "unit": "ml" },
+    { "why": "litre avec une décimale", "total": 1200, "family": "ml", "qty": "1,2", "unit": "l" },
+    { "why": "autre famille : le nombre seul, l'unité vient de la ligne", "total": 3, "family": "gousse", "qty": "3", "unit": null },
+    { "why": "arrondi à deux décimales", "total": 2.3333, "family": "piece", "qty": "2,33", "unit": null }
+  ],
+  "cases": [
+    {
+      "why": "deux familles d'unités font deux lignes, sous un même nom",
+      "inputs": [
+        { "name": "lait de coco", "qty": "250", "unit": "g" },
+        { "name": "lait de coco", "qty": "400", "unit": "ml" }
+      ],
+      "expected": [
+        { "name": "lait de coco", "qty": "250", "unit": "g" },
+        { "name": "lait de coco", "qty": "400", "unit": "ml" }
+      ]
+    },
+    {
+      "why": "un comptage et un poids ne s'additionnent pas",
+      "inputs": [
+        { "name": "pommes de terre", "qty": "6", "unit": "" },
+        { "name": "pommes de terre", "qty": "2", "unit": "kg" }
+      ],
+      "expected": [
+        { "name": "pommes de terre", "qty": "6", "unit": "" },
+        { "name": "pommes de terre", "qty": "2", "unit": "kg" }
+      ]
+    },
+    {
+      "why": "le produit acheté remplace le nom avant le regroupement",
+      "inputs": [
+        { "name": "beurre", "qty": "100", "unit": "g" },
+        { "name": "beurre fondu", "qty": "50", "unit": "g", "shopping_product": "beurre" }
+      ],
+      "expected": [{ "name": "beurre", "qty": "150", "unit": "g" }]
+    },
+    {
+      "why": "une partie d'un produit se compte avec le produit ; singulier et pluriel font un",
+      "inputs": [
+        { "name": "jaune d'œuf", "qty": "2", "unit": "", "shopping_product": "œuf" },
+        { "name": "œufs", "qty": "3", "unit": "" }
+      ],
+      "expected": [{ "name": "œuf", "qty": "5", "unit": "" }]
+    },
+    {
+      "why": "la section est ignorée : deux cuillères pour la farce et six pour la sauce font une bouteille",
+      "inputs": [
+        { "name": "sauce soja claire", "qty": "2", "unit": "c. à soupe" },
+        { "name": "porc haché", "qty": "250", "unit": "g" },
+        { "name": "sauce soja claire", "qty": "6", "unit": "c. à soupe" }
+      ],
+      "expected": [
+        { "name": "sauce soja claire", "qty": "8", "unit": "c. à soupe" },
+        { "name": "porc haché", "qty": "250", "unit": "g" }
+      ]
+    },
+    {
+      "why": "kilo et grammes s'additionnent, le total repasse en kilo",
+      "inputs": [
+        { "name": "farine", "qty": "1", "unit": "kg" },
+        { "name": "farine", "qty": "500", "unit": "g" }
+      ],
+      "expected": [{ "name": "farine", "qty": "1,5", "unit": "kg" }]
+    },
+    {
+      "why": "deux centilitres s'additionnent en millilitres",
+      "inputs": [
+        { "name": "crème liquide", "qty": "20", "unit": "cl" },
+        { "name": "crème liquide", "qty": "20", "unit": "cl" }
+      ],
+      "expected": [{ "name": "crème liquide", "qty": "400", "unit": "ml" }]
+    },
+    {
+      "why": "une ligne seule garde sa quantité et son unité telles qu'écrites",
+      "inputs": [{ "name": "sucre", "qty": "0,5", "unit": "kg" }],
+      "expected": [{ "name": "sucre", "qty": "0,5", "unit": "kg" }]
+    },
+    {
+      "why": "une fraction écrite garde sa forme tant qu'elle est seule",
+      "inputs": [{ "name": "citron", "qty": "1/2", "unit": "" }],
+      "expected": [{ "name": "citron", "qty": "1/2", "unit": "" }]
+    },
+    {
+      "why": "deux fractions s'additionnent",
+      "inputs": [
+        { "name": "citron", "qty": "1/2", "unit": "" },
+        { "name": "citrons", "qty": "½", "unit": "pièce" }
+      ],
+      "expected": [{ "name": "citron", "qty": "1", "unit": "" }]
+    },
+    {
+      "why": "casse et accents ne font pas deux produits ; le premier nom lu nomme la ligne",
+      "inputs": [
+        { "name": "Lait de coco", "qty": "250", "unit": "g" },
+        { "name": "lait de coco", "qty": "400", "unit": "ml" }
+      ],
+      "expected": [
+        { "name": "Lait de coco", "qty": "250", "unit": "g" },
+        { "name": "Lait de coco", "qty": "400", "unit": "ml" }
+      ]
+    },
+    {
+      "why": "une quantité non chiffrable est conservée, pas jetée",
+      "inputs": [{ "name": "huile", "qty": "à volonté", "unit": "" }],
+      "expected": [{ "name": "huile", "qty": "à volonté", "unit": "" }]
+    },
+    {
+      "why": "le chiffrable et le non-chiffrable se lisent ensemble",
+      "inputs": [
+        { "name": "huile", "qty": "2", "unit": "c. à soupe" },
+        { "name": "huile", "qty": "pour la friture", "unit": "c. à soupe" }
+      ],
+      "expected": [{ "name": "huile", "qty": "2 + pour la friture", "unit": "c. à soupe" }]
+    },
+    {
+      "why": "le pluriel d'une unité ne crée pas un second produit",
+      "inputs": [
+        { "name": "oeuf", "qty": "2", "unit": "pièce" },
+        { "name": "oeuf", "qty": "1", "unit": "pièces" }
+      ],
+      "expected": [{ "name": "oeuf", "qty": "3", "unit": "pièce" }]
+    },
+    {
+      "why": "deux unités sans conversion exacte restent deux lignes",
+      "inputs": [
+        { "name": "ail", "qty": "2", "unit": "gousse" },
+        { "name": "ail", "qty": "1", "unit": "c. à café" }
+      ],
+      "expected": [
+        { "name": "ail", "qty": "2", "unit": "gousse" },
+        { "name": "ail", "qty": "1", "unit": "c. à café" }
+      ]
+    },
+    {
+      "why": "un mot de préparation ne fait pas un second produit ; le premier nom lu reste",
+      "inputs": [
+        { "name": "oignon haché", "qty": "1", "unit": "" },
+        { "name": "oignon", "qty": "2", "unit": "" }
+      ],
+      "expected": [{ "name": "oignon haché", "qty": "3", "unit": "" }]
+    },
+    {
+      "why": "un ingrédient sans nom ne devient pas une ligne",
+      "inputs": [
+        { "name": "  ", "qty": "2", "unit": "g" },
+        { "name": "sel", "qty": "1", "unit": "pincée" }
+      ],
+      "expected": [{ "name": "sel", "qty": "1", "unit": "pincée" }]
+    },
+    {
+      "why": "un produit acheté vide vaut le nom",
+      "inputs": [
+        { "name": "riz", "qty": "200", "unit": "g", "shopping_product": "" },
+        { "name": "riz", "qty": "100", "unit": "g" }
+      ],
+      "expected": [{ "name": "riz", "qty": "300", "unit": "g" }]
+    }
+  ]
+}

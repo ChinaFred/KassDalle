@@ -231,6 +231,11 @@ export const ROUTABLE_FEATURES: Array<{
   // ── Courses ───────────────────────────────────────────────────────────────
   { id: "shopping_list", label: "Consolidation d'une liste de courses", group: "Courses" },
   { id: "shopping_products_refresh", label: "Produits d'achat d'une recette", group: "Courses" },
+  {
+    id: "backfill_shopping_aliases",
+    label: "Produit acheté des ingrédients (backfill)",
+    group: "Courses",
+  },
 
   // ── Nutrition ─────────────────────────────────────────────────────────────
   {
