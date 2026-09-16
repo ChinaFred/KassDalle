@@ -222,10 +222,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                   _selectedIntent == ScanIntent.bookDocument
                                   ? 'Livre cible (recommandé)'
                                   : 'Assigner à un livre',
-                              helperText:
-                                  _selectedIntent == ScanIntent.bookDocument
-                                  ? null
-                                  : 'À défaut, la recette rejoint « Mes recettes libres »',
                               prefixIcon: Icon(Icons.menu_book_outlined),
                             ),
                             initialValue: _selectedBookId,
