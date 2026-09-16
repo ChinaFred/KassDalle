@@ -100,7 +100,7 @@ String _reinjectHiddenMeta(String filteredText, String fullText) {
 }
 
 class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
-  _EditorMode _mode = _EditorMode.visual;
+  _EditorMode _mode = _EditorMode.text;
   late final CooklangSyntaxController _syntaxCtrl;
 
   @override

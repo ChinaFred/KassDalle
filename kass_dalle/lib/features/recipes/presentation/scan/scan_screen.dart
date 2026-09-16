@@ -643,9 +643,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>
-      'Une photo, des fichiers (PDF, DOCX, image) ou un texte à coller. '
-          'Une recette sur plusieurs pages se choisit en une seule fois. '
-          'L\'IA extrait les recettes en brouillons.',
+      'Photo, fichier (PDF, DOCX, image) ou texte à coller, même sur '
+          'plusieurs pages. L\'IA en fait des brouillons.',
     ScanIntent.bookCover =>
       'Photographiez la page de garde pour créer un livre. La caméra se lance automatiquement sur mobile.',
     ScanIntent.bookDocument =>
