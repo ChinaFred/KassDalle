@@ -519,6 +519,47 @@ describe("ce que le contrôle ne voyait pas — cas réels", () => {
     );
   });
 
+  test("un nom au singulier pour une ligne au pluriel ne déclenche rien", () => {
+    // Faux positifs remontés : « filet de poulet » absent de « 240 g de
+    // filets de poulet », « galette de riz » absent de « 8 galettes de riz de
+    // 22 cm de diamètre », « crevette » absent de « 16 crevettes cuites et
+    // décortiquées ». Le pluriel du dénombrement n'est pas un mot différent.
+    const report = checkFidelity(gravlax(), {
+      ...taggedGravlax(),
+      ingredients: [
+        {
+          brut: "240 g de filets de poulet",
+          section: "",
+          nom: "filet de poulet",
+          qte: "240",
+          unite: "g",
+          note: "",
+        },
+        {
+          brut: "8 galettes de riz de 22 cm de diamètre",
+          section: "",
+          nom: "galette de riz",
+          qte: "8",
+          unite: "",
+          note: "",
+        },
+        {
+          brut: "16 crevettes cuites et décortiquées",
+          section: "",
+          nom: "crevette",
+          qte: "16",
+          unite: "",
+          note: "",
+        },
+      ],
+    });
+    assert.equal(
+      report.findings.some((f) => f.code === "ingredient_invente"),
+      false,
+      JSON.stringify(report.findings),
+    );
+  });
+
   test("une note perdue au balisage est signalée", () => {
     // Rien d'autre ne la porte : ni les étapes, ni les ingrédients. Elle
     // disparaîtrait sans laisser de trace.

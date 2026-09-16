@@ -133,6 +133,21 @@ export function stripCooklangTags(cooklang: string): string {
  * disparition d'un CONTENU — « miel », « aneth », « frais » — pas une
  * réécriture de forme.
  */
+/**
+ * Ramène un pluriel régulier à son singulier : « galettes » → « galette ».
+ *
+ * La ligne du livre écrit « 8 galettes de riz », le nom retenu dit
+ * « galette de riz » — le pluriel du dénombrement, pas un mot différent. Sans
+ * cette réduction, chaque ingrédient compté au pluriel ressortait comme
+ * « inventé », et le bandeau se couvrait de faux positifs sur les cas les plus
+ * ordinaires (filet(s), crevette(s)). On ne réduit que le « s » final, et
+ * seulement quand le mot reste assez long pour rester reconnaissable : « bras »
+ * ou « gars » ne sont pas des pluriels.
+ */
+function singularized(word: string): string {
+  return word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
+}
+
 export function significantWords(text: string): Set<string> {
   const normalized = text
     .normalize("NFD")
@@ -140,7 +155,7 @@ export function significantWords(text: string): Set<string> {
     .toLowerCase();
   const out = new Set<string>();
   for (const word of normalized.split(/[^a-z]+/)) {
-    if (word.length >= 4 && !MOTS_DE_MESURE.has(word)) out.add(word);
+    if (word.length >= 4 && !MOTS_DE_MESURE.has(word)) out.add(singularized(word));
   }
   return out;
 }
