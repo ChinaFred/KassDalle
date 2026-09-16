@@ -239,6 +239,7 @@ class DraftReviewWideBody extends StatelessWidget {
                         aiTooltip: RecipeAiUiCopy.cooklangRefineTooltip,
                         aiProcessing: data.aiRefining,
                         onUploadImage: data.onUploadImage,
+                        startInPreview: true,
                         previewWidget: CooklangPreview(
                           ctrl: data.cooklangCtrl,
                           overrideIngredients: data.formIngredients,
@@ -381,6 +382,7 @@ class DraftReviewNarrowBody extends StatelessWidget {
                   aiTooltip: RecipeAiUiCopy.cooklangRefineTooltip,
                   aiProcessing: data.aiRefining,
                   onUploadImage: data.onUploadImage,
+                  startInPreview: true,
                   previewWidget: CooklangPreview(
                     ctrl: data.cooklangCtrl,
                     overrideIngredients: data.formIngredients,

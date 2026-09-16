@@ -47,6 +47,12 @@ class HybridRecipeEditor extends StatefulWidget {
   final Future<String?> Function(Uint8List bytes, String fileName)?
   onUploadImage;
 
+  /// Ouvre l'écran sur l'aperçu non éditable plutôt que sur le texte brut.
+  ///
+  /// Sans effet si [previewWidget] est null : il n'y a alors rien à montrer
+  /// en aperçu, et l'écran s'ouvre en texte comme d'habitude.
+  final bool startInPreview;
+
   const HybridRecipeEditor({
     super.key,
     required this.ctrl,
@@ -58,6 +64,7 @@ class HybridRecipeEditor extends StatefulWidget {
     this.aiTooltip = 'Améliorer la recette avec l\'IA',
     this.aiProcessing = false,
     this.onUploadImage,
+    this.startInPreview = false,
   });
 
   @override
@@ -100,12 +107,15 @@ String _reinjectHiddenMeta(String filteredText, String fullText) {
 }
 
 class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
-  _EditorMode _mode = _EditorMode.text;
+  late _EditorMode _mode;
   late final CooklangSyntaxController _syntaxCtrl;
 
   @override
   void initState() {
     super.initState();
+    _mode = widget.startInPreview && widget.previewWidget != null
+        ? _EditorMode.preview
+        : _EditorMode.text;
     // Le syntax controller affiche le texte filtré (sans les métas cachées).
     _syntaxCtrl = CooklangSyntaxController()
       ..text = _filterHiddenMeta(widget.ctrl.text);
