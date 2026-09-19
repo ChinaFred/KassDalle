@@ -343,7 +343,8 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
   Toujours ustensiles : moule à, plaque, casserole, poêle, saladier, bol,
   mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse,
   ramequin, terrine, papier aluminium, film alimentaire, papier cuisson.
-  Exception : « moule » seul est le mollusque en contexte fruits de mer.
+  Exceptions : « moule » seul est le mollusque en contexte fruits de mer ;
+  « baguette » seule est le pain.
   Ne crée jamais de section == Matériel == : les ustensiles se balisent dans
   l'étape où ils servent.
 
