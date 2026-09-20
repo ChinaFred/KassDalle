@@ -162,6 +162,19 @@ class PlanningRepository {
     await _col.doc(id).update(payload);
   }
 
+  /// Remplace les composants d'un repas planifié — accompagnements ajoutés,
+  /// retirés ou choisis à la main, sans toucher au plat ni à sa recette.
+  Future<void> updateMealComponents(
+    String id,
+    List<MealComponent> components,
+  ) async {
+    await _col.doc(id).update({
+      'components': components.isEmpty
+          ? FieldValue.delete()
+          : [for (final c in components) c.toMap()],
+    });
+  }
+
   /// Met à jour l'heure d'un repas planifié existant.
   Future<void> updateMealTime(String id, DateTime newTime) async {
     await _col.doc(id).update({'planned_at': Timestamp.fromDate(newTime)});

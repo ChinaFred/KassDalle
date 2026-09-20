@@ -268,6 +268,69 @@ void main() {
     });
   });
 
+  group('choix de plusieurs accompagnements', () {
+    final blanquette = _recipe(
+      'blanquette',
+      'Blanquette de veau',
+      role: 'plat',
+      contains: ['proteine'],
+      sides: ['riz', 'pommes vapeur'],
+    );
+
+    test(
+      'un plat qui n\'apporte que la protéine reçoit féculent et légume',
+      () {
+        final out = chooseSides(main: blanquette, candidates: _candidates());
+        expect(out.map((c) => c.need), [SideNeed.feculent, SideNeed.legume]);
+        expect(out[0].component.stapleId, 'riz');
+        expect(out[1].component.stapleId, 'haricots_verts');
+      },
+    );
+
+    test('jamais deux fois le même candidat pour deux besoins', () {
+      // Une seule recette d'accompagnement au dossier, taguée féculent ET
+      // légume : elle ne doit pas se retrouver deux fois dans la sortie.
+      final gratin = _recipe(
+        'gratin_complet',
+        'Gratin complet',
+        role: 'accompagnement',
+        contains: ['feculent', 'legume'],
+      );
+      final steakSansCote = _recipe(
+        'steak2',
+        'Steak',
+        role: 'plat',
+        contains: ['proteine'],
+        sides: ['gratin complet'],
+      );
+      final out = chooseSides(
+        main: steakSansCote,
+        candidates: _candidates(recipes: [gratin]),
+      );
+      final ids = out.map((c) => c.component.recipeId ?? c.component.stapleId);
+      expect(ids.toSet().length, out.length);
+    });
+
+    test('un plat complet ne reçoit rien', () {
+      expect(
+        chooseSides(
+          main: _recipe(
+            'couscous',
+            'Couscous',
+            role: 'plat',
+            contains: ['proteine', 'feculent', 'legume'],
+          ),
+          candidates: _candidates(),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('rien sans candidat', () {
+      expect(chooseSides(main: blanquette, candidates: const []), isEmpty);
+    });
+  });
+
   group('candidats suggérés', () {
     test('dans l\'ordre des suggestions, recette avant garniture', () {
       final main = _recipe(

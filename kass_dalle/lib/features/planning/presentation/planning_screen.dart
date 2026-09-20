@@ -26,6 +26,7 @@ import 'planning_providers.dart';
 import 'planning_week_bar.dart';
 import 'planning_widgets.dart';
 import 'recipe_picker_sheet.dart';
+import 'side_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
@@ -126,7 +127,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     return current;
   }
 
-  /// L'accompagnement que le programme pose sur [recipe], depuis les
+  /// Les accompagnements que le programme pose sur [recipe] — féculent et
+  /// légume, quand le plat n'apporte ni l'un ni l'autre —, depuis les
   /// garnitures du compte et les recettes d'accompagnement chargées.
   ///
   /// Rien tant que les garnitures ne sont pas lues : mieux vaut un repas sans
@@ -134,14 +136,65 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   List<MealComponent> _composeComponents(Recipe recipe) {
     final staples = ref.read(myStaplesProvider).value;
     if (staples == null) return const [];
-    final choice = chooseSide(
+    final choices = chooseSides(
       main: recipe,
       candidates: sideCandidatesFrom(
         staples: staples,
         recipes: _availableRecipes,
       ),
     );
-    return [?choice?.component];
+    return [for (final c in choices) c.component];
+  }
+
+  /// Recette validée dont l'identifiant est [id], ou rien si elle n'est pas
+  /// chargée — un repas peut pointer une recette de la famille, absente des
+  /// recettes validées du compte.
+  Recipe? _validatedRecipeById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final r in _availableRecipes) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  /// Ajoute un accompagnement de plus à la main, en plus de ceux déjà posés.
+  Future<void> _addComponent(PlannedMeal meal) async {
+    await _loadRecipesIfNeeded();
+    if (!mounted) return;
+    final main = _validatedRecipeById(meal.recipeId);
+    if (main == null) {
+      context.showSnackBar('Recette introuvable pour ce repas.');
+      return;
+    }
+    final staples = ref.read(myStaplesProvider).value ?? const [];
+    final result = await showModalBottomSheet<SidePickerResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => SidePickerSheet(
+        main: main,
+        candidates: sideCandidatesFrom(
+          staples: staples,
+          recipes: _availableRecipes,
+        ),
+      ),
+    );
+    if (result == null || result.isNone || !mounted) return;
+    final repo = ref.read(planningRepositoryProvider);
+    await repo?.updateMealComponents(meal.id, [
+      ...meal.components,
+      result.candidate!.toComponent(justification: 'Choisi à la main.'),
+    ]);
+  }
+
+  /// Retire un accompagnement déjà posé sur ce repas, auto ou choisi à la
+  /// main.
+  Future<void> _removeComponent(PlannedMeal meal, MealComponent component) {
+    final repo = ref.read(planningRepositoryProvider);
+    final updated = meal.components
+        .where((c) => !identical(c, component))
+        .toList();
+    return repo?.updateMealComponents(meal.id, updated) ?? Future.value();
   }
 
   /// Trois idées de repas sur une consigne, pour « Générer avec l'IA » du
@@ -938,6 +991,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                       onDelete: () => _deleteMeal(meal),
                       onChangeRecipe: () => _changeRecipe(meal),
                       onReschedule: () => _rescheduleMeal(meal),
+                      onAddComponent: () => _addComponent(meal),
+                      onRemoveComponent: (c) => _removeComponent(meal, c),
                       onClearRecipe: () => _clearRecipe(meal),
                       onSuggestWithAI: () => _suggestRecipeWithAI(meal),
                       onStorageAdvice: () => _showStorageAdvice(meal),
@@ -1119,6 +1174,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     onDelete: () => _deleteMeal(meal),
                     onChangeRecipe: () => _changeRecipe(meal),
                     onReschedule: () => _rescheduleMeal(meal),
+                    onAddComponent: () => _addComponent(meal),
+                    onRemoveComponent: (c) => _removeComponent(meal, c),
                     onClearRecipe: () => _clearRecipe(meal),
                     onSuggestWithAI: () => _suggestRecipeWithAI(meal),
                     onStorageAdvice: () => _showStorageAdvice(meal),

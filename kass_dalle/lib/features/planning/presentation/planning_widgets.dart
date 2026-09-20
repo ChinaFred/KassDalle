@@ -267,6 +267,12 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback onSuggestWithAI;
   final VoidCallback onReschedule;
 
+  /// Ajoute un accompagnement de plus, choisi à la main.
+  final VoidCallback onAddComponent;
+
+  /// Retire un accompagnement déjà posé, auto ou choisi à la main.
+  final ValueChanged<MealComponent> onRemoveComponent;
+
   /// Produit — ou réaffiche — le conseil de conservation de la recette.
   final VoidCallback onStorageAdvice;
   final VoidCallback onTimeChanged;
@@ -287,6 +293,8 @@ class PlanningMealTile extends StatelessWidget {
     required this.onClearRecipe,
     required this.onSuggestWithAI,
     required this.onReschedule,
+    required this.onAddComponent,
+    required this.onRemoveComponent,
     required this.onStorageAdvice,
     required this.onTimeChanged,
     required this.onExportToCalendar,
@@ -358,7 +366,7 @@ class PlanningMealTile extends StatelessWidget {
 
   Widget _buildComponentLine(ThemeData theme, MealComponent c) {
     final opens = c.isRecipe && onComponentTap != null;
-    final row = Row(
+    final label = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
@@ -381,11 +389,35 @@ class PlanningMealTile extends StatelessWidget {
         ),
       ],
     );
-    if (!opens) return row;
-    return InkWell(
-      onTap: () => onComponentTap!(c),
-      borderRadius: BorderRadius.circular(4),
-      child: row,
+    final content = opens
+        ? InkWell(
+            onTap: () => onComponentTap!(c),
+            borderRadius: BorderRadius.circular(4),
+            child: label,
+          )
+        : label;
+    // Le retrait vit hors de la zone qui ouvre la fiche : les deux gestes ne
+    // doivent jamais se disputer le même appui.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: content),
+        Tooltip(
+          message: 'Retirer',
+          child: InkWell(
+            onTap: () => onRemoveComponent(c),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.close,
+                size: AppIconSize.badge,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -544,6 +576,8 @@ class PlanningMealTile extends StatelessWidget {
                             onChangeRecipe();
                           case PlanningMealAction.reschedule:
                             onReschedule();
+                          case PlanningMealAction.addComponent:
+                            onAddComponent();
                           case PlanningMealAction.clearRecipe:
                             onClearRecipe();
                           case PlanningMealAction.storageAdvice:
@@ -579,6 +613,15 @@ class PlanningMealTile extends StatelessWidget {
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
+                        if (meal.recipeId != null)
+                          const PopupMenuItem(
+                            value: PlanningMealAction.addComponent,
+                            child: ListTile(
+                              leading: Icon(Icons.add_circle_outline),
+                              title: Text('Ajouter un accompagnement'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
                         const PopupMenuItem(
                           value: PlanningMealAction.clearRecipe,
                           child: ListTile(
@@ -630,6 +673,7 @@ enum PlanningMealAction {
   suggestWithAI,
   changeRecipe,
   reschedule,
+  addComponent,
   clearRecipe,
   storageAdvice,
   exportToCalendar,

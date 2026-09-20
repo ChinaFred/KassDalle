@@ -219,3 +219,76 @@ SideChoice? chooseSide({
     fromSuggestion: fromSuggestion,
   );
 }
+
+/// Choisit un accompagnement par besoin non couvert par [main] — féculent et
+/// légume, quand le plat n'apporte ni l'un ni l'autre — sans jamais poser
+/// deux fois le même candidat pour deux besoins différents.
+///
+/// Même logique que [chooseSide], rejouée par besoin : d'abord les
+/// accompagnements classiques du plat qui apportent ce besoin précis, à
+/// défaut une garniture de la famille qui manque, par rang. Un besoin sans
+/// candidat restant se saute — mieux vaut un repas à deux accompagnements
+/// qu'un même plat posé deux fois pour faire nombre.
+List<SideChoice> chooseSides({
+  required Recipe main,
+  required List<SideCandidate> candidates,
+  Set<String> avoidIds = const {},
+  Set<String> usedInCycleIds = const {},
+}) {
+  final needs = sideNeedsFor(main.tags);
+  if (needs.isEmpty || candidates.isEmpty) return const [];
+  final suggested = suggestedCandidatesFor(main, candidates);
+  final taken = <String>{};
+  final out = <SideChoice>[];
+
+  for (final need in needs) {
+    final ordered = <SideCandidate>[];
+    final seen = <String>{};
+    for (final c in suggested) {
+      if (c.provides(need) && seen.add(c.id)) ordered.add(c);
+    }
+    final suggestedCount = ordered.length;
+    final fallback = candidates.where((c) => c.provides(need)).toList()
+      ..sort((x, y) {
+        final byOrder = x.sortOrder.compareTo(y.sortOrder);
+        return byOrder != 0
+            ? byOrder
+            : x.name.toLowerCase().compareTo(y.name.toLowerCase());
+      });
+    for (final c in fallback) {
+      if (seen.add(c.id)) ordered.add(c);
+    }
+    if (ordered.isEmpty) continue;
+
+    SideCandidate? pick;
+    for (final c in ordered) {
+      if (!taken.contains(c.id) &&
+          !avoidIds.contains(c.id) &&
+          !usedInCycleIds.contains(c.id)) {
+        pick = c;
+        break;
+      }
+    }
+    pick ??= ordered.cast<SideCandidate?>().firstWhere(
+      (c) => !taken.contains(c!.id) && !avoidIds.contains(c.id),
+      orElse: () => null,
+    );
+    if (pick == null) continue;
+
+    taken.add(pick.id);
+    final fromSuggestion = ordered.indexOf(pick) < suggestedCount;
+    final justification = fromSuggestion
+        ? 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, '
+              'accompagnement classique.'
+        : 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, faute '
+              'd\'accompagnement classique disponible.';
+    out.add(
+      SideChoice(
+        component: pick.toComponent(justification: justification),
+        need: need,
+        fromSuggestion: fromSuggestion,
+      ),
+    );
+  }
+  return out;
+}
