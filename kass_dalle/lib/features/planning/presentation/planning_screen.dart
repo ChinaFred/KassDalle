@@ -272,6 +272,28 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     await repo?.updateMealTime(meal.id, newTime);
   }
 
+  Future<void> _rescheduleMeal(PlannedMeal meal) async {
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final mealDay = DateTime(
+      meal.plannedAt.year,
+      meal.plannedAt.month,
+      meal.plannedAt.day,
+    );
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: mealDay,
+      firstDate: mealDay.isBefore(today) ? mealDay : today,
+      lastDate: today.add(const Duration(days: 730)),
+    );
+    if (picked == null || !mounted) return;
+    final repo = ref.read(planningRepositoryProvider);
+    await repo?.rescheduleMeal(meal, picked);
+  }
+
   Future<void> _exportAllToCalendar(List<PlannedMeal> meals) async {
     final now = DateTime.now();
     final futureMeals = meals
@@ -915,6 +937,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                       isWide: isWide,
                       onDelete: () => _deleteMeal(meal),
                       onChangeRecipe: () => _changeRecipe(meal),
+                      onReschedule: () => _rescheduleMeal(meal),
                       onClearRecipe: () => _clearRecipe(meal),
                       onSuggestWithAI: () => _suggestRecipeWithAI(meal),
                       onStorageAdvice: () => _showStorageAdvice(meal),
@@ -1095,6 +1118,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     isWide: isWide,
                     onDelete: () => _deleteMeal(meal),
                     onChangeRecipe: () => _changeRecipe(meal),
+                    onReschedule: () => _rescheduleMeal(meal),
                     onClearRecipe: () => _clearRecipe(meal),
                     onSuggestWithAI: () => _suggestRecipeWithAI(meal),
                     onStorageAdvice: () => _showStorageAdvice(meal),

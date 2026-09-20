@@ -167,6 +167,37 @@ class PlanningRepository {
     await _col.doc(id).update({'planned_at': Timestamp.fromDate(newTime)});
   }
 
+  /// Déplace un repas planifié vers une autre date, en gardant son heure.
+  ///
+  /// Le jour de préparation ([PlannedMeal.prepDate]) suit le même décalage
+  /// que [PlannedMeal.plannedAt] : reporter un repas d'une semaine reporte sa
+  /// préparation d'autant, sinon la conservation calculée redeviendrait fausse.
+  Future<void> rescheduleMeal(PlannedMeal meal, DateTime newDate) async {
+    final newPlannedAt = DateTime(
+      newDate.year,
+      newDate.month,
+      newDate.day,
+      meal.plannedAt.hour,
+      meal.plannedAt.minute,
+    );
+    final payload = <String, dynamic>{
+      'planned_at': Timestamp.fromDate(newPlannedAt),
+    };
+    final prep = meal.prepDate;
+    if (prep != null) {
+      final oldDay = DateTime(
+        meal.plannedAt.year,
+        meal.plannedAt.month,
+        meal.plannedAt.day,
+      );
+      final newDay = DateTime(newDate.year, newDate.month, newDate.day);
+      payload['prep_date'] = Timestamp.fromDate(
+        prep.add(newDay.difference(oldDay)),
+      );
+    }
+    await _col.doc(meal.id).update(payload);
+  }
+
   // ── Préférences de planning ─────────────────────────────────────────────────
 
   /// Stream des préférences de planning de l'utilisateur.

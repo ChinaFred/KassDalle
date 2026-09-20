@@ -265,6 +265,7 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
   final VoidCallback onSuggestWithAI;
+  final VoidCallback onReschedule;
 
   /// Produit — ou réaffiche — le conseil de conservation de la recette.
   final VoidCallback onStorageAdvice;
@@ -285,6 +286,7 @@ class PlanningMealTile extends StatelessWidget {
     required this.onChangeRecipe,
     required this.onClearRecipe,
     required this.onSuggestWithAI,
+    required this.onReschedule,
     required this.onStorageAdvice,
     required this.onTimeChanged,
     required this.onExportToCalendar,
@@ -540,6 +542,8 @@ class PlanningMealTile extends StatelessWidget {
                             onSuggestWithAI();
                           case PlanningMealAction.changeRecipe:
                             onChangeRecipe();
+                          case PlanningMealAction.reschedule:
+                            onReschedule();
                           case PlanningMealAction.clearRecipe:
                             onClearRecipe();
                           case PlanningMealAction.storageAdvice:
@@ -564,6 +568,14 @@ class PlanningMealTile extends StatelessWidget {
                           child: ListTile(
                             leading: Icon(Icons.swap_horiz_outlined),
                             title: Text('Changer la recette'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: PlanningMealAction.reschedule,
+                          child: ListTile(
+                            leading: Icon(Icons.calendar_month_outlined),
+                            title: Text('Replanifier'),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
@@ -617,6 +629,7 @@ class PlanningMealTile extends StatelessWidget {
 enum PlanningMealAction {
   suggestWithAI,
   changeRecipe,
+  reschedule,
   clearRecipe,
   storageAdvice,
   exportToCalendar,
