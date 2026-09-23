@@ -14,6 +14,7 @@ import '../domain/meal_candidates.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/registered_meals.dart';
 import '../domain/week_replay.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_staple.dart';
@@ -81,8 +82,17 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   Map<int, Set<String>> _slotDismissed = {};
   // Identifiant du repas déjà enregistré pour un créneau, depuis son icône
   // calendrier. « Valider » réécrit ce repas sous le même identifiant au lieu
-  // d'en créer un second sur la même date.
+  // d'en créer un second sur la même date. Les repas déjà au planning à
+  // l'ouverture y figurent aussi (voir `_prefillRegisteredMeals`).
   Map<int, String> _slotSavedMealIds = {};
+  // Les repas déjà au planning sur les dates du cycle, tels qu'ils étaient à
+  // l'ouverture, par identifiant. Ils occupent leur créneau : l'IA les
+  // contourne, et « Valider » ne les réécrit que s'ils ont changé sur l'écran.
+  final Map<String, PlannedMeal> _registeredMeals = {};
+  // L'empreinte de chacun juste après sa reprise (`plannedMealContentKey`) :
+  // identique à la validation, le repas n'a pas été touché.
+  final Map<String, String> _registeredBaseline = {};
+  bool _prefillStarted = false;
   // L'accompagnement de chaque créneau, choisi par le programme depuis ce que
   // le plat n'apporte pas. Un accompagnement posé à la main n'est plus
   // recalculé tant que le plat ne change pas.
@@ -153,6 +163,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _recipesLoaded = true;
         });
       }
+      unawaited(_prefillRegisteredMeals());
       // Les garnitures, à part : leur absence ne prive pas de planifier, elle
       // prive seulement d'accompagnements — et le dit dans les rapports.
       try {
@@ -194,6 +205,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       if (mounted) {
         setState(() => _recipesLoaded = true);
         _showError('Impossible de charger les recettes : $e');
+        unawaited(_prefillRegisteredMeals());
       }
     }
   }
@@ -215,7 +227,212 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         i: prefs.dailyConstraints[dates[i].weekday] ?? const DayConstraint(),
     };
     _globalConstraintsCtrl.text = prefs.globalConstraints;
+    // Les préférences arrivent parfois après les recettes : c'est alors ici que
+    // les deux conditions de la reprise sont réunies.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_prefillRegisteredMeals()),
+    );
   }
+
+  /// Reprend sur l'écran les repas déjà au planning sur les dates du cycle.
+  ///
+  /// Sans cette lecture, un jour déjà planifié s'affichait « à assigner » :
+  /// « Compléter les créneaux vides » lui cherchait une suggestion, et
+  /// « Valider » proposait ensuite de remplacer ou de doubler ce qui existait.
+  /// Le repas repris occupe son créneau : l'IA le contourne et le compte dans
+  /// la variété du cycle, et « Valider » ne le réécrit que s'il a changé ici.
+  ///
+  /// Un repas par jour, le premier de la journée. Un repas sans recette liée
+  /// (repas libre) est repris sous la forme d'une recette sans identifiant,
+  /// comme le sélecteur en rend une.
+  Future<void> _prefillRegisteredMeals() async {
+    if (_prefillStarted || !_recipesLoaded || _slotDates.isEmpty) return;
+    _prefillStarted = true;
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+
+    final List<PlannedMeal> meals;
+    try {
+      meals = await repo.getMealsBetween(
+        from: _slotDates.first,
+        to: _slotDates.last,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.prefillRegisteredMeals',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _showError(
+        'Impossible de lire les repas déjà au planning : $e. Un créneau '
+        'affiché vide peut être déjà occupé.',
+      );
+      return;
+    }
+    if (!mounted || meals.isEmpty) return;
+
+    // Les recettes absentes des corpus chargés sont relues par identifiant : un
+    // repas peut pointer sur un brouillon ou une recette de la famille.
+    final byId = <String, Recipe>{
+      for (final r in _allRecipes)
+        if (r.id.isNotEmpty) r.id: r,
+    };
+    final missing = <String>{
+      for (final m in meals)
+        if (m.recipeId != null &&
+            m.recipeId!.isNotEmpty &&
+            !byId.containsKey(m.recipeId))
+          m.recipeId!,
+    }.toList(growable: false);
+    if (missing.isNotEmpty) {
+      try {
+        for (final r in await repo.getRecipesByIds(missing)) {
+          byId[r.id] = r;
+        }
+      } catch (e, stackTrace) {
+        // Le repas est repris quand même, sous son titre et son identifiant :
+        // le lien vers la recette n'est pas perdu.
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.prefillRegisteredMeals.resolve',
+          error: e,
+          stackTrace: stackTrace,
+          context: {'missing': missing.length},
+        );
+      }
+    }
+    if (!mounted) return;
+
+    // Le rapprochement se fait après la dernière attente : une date ajoutée ou
+    // retirée entre-temps a déjà décalé les créneaux.
+    setState(() {
+      final bySlot = registeredMealsBySlot(slotDates: _slotDates, meals: meals);
+      for (final e in bySlot.entries) {
+        final meal = e.value;
+        if (_slots[e.key] != null || _slotSavedMealIds.containsValue(meal.id)) {
+          continue;
+        }
+        _seedRegisteredMeal(
+          e.key,
+          meal,
+          byId[meal.recipeId] ?? _recipeStandingFor(meal),
+          uid: repo.uid,
+        );
+      }
+    });
+  }
+
+  /// Pose sur le créneau [i] le repas déjà enregistré, avec tout ce que l'écran
+  /// sait en montrer : heure, parts, jour de préparation, écarts, entrée,
+  /// accompagnement et dessert.
+  void _seedRegisteredMeal(
+    int i,
+    PlannedMeal meal,
+    Recipe recipe, {
+    required String uid,
+  }) {
+    MealComponent? first(MealComponentRole role) {
+      for (final c in meal.components) {
+        if (c.role == role) return c;
+      }
+      return null;
+    }
+
+    final starter = first(MealComponentRole.entree);
+    final dessert = first(MealComponentRole.dessert);
+
+    _slots[i] = recipe;
+    _slotSavedMealIds[i] = meal.id;
+    _slotTimes[i] = TimeOfDay(
+      hour: meal.plannedAt.hour,
+      minute: meal.plannedAt.minute,
+    );
+    final why = (meal.justification ?? '').trim();
+    if (why.isNotEmpty) _slotJustifications[i] = why;
+    if (meal.prepDate != null) _slotPrepDates[i] = meal.prepDate;
+    if (meal.dismissedRecipeIds.isNotEmpty) {
+      _slotDismissed[i] = meal.dismissedRecipeIds.toSet();
+    }
+    _slotSides[i] = first(MealComponentRole.accompagnement);
+    _slotStarters[i] = starter;
+    _slotDesserts[i] = dessert;
+    // Sa composition est décidée : le programme ne la recalcule pas.
+    _slotSideManual.add(i);
+
+    // Les parts et le format du créneau suivent le repas : sans eux, la
+    // validation réécrirait les parts de la recette et écarterait l'entrée ou
+    // le dessert que le format du jour ne demande pas.
+    var constraint = _slotConstraints[i] ?? const DayConstraint();
+    final format = constraint.effectiveFormat;
+    if ((starter != null && !format.wantsStarter) ||
+        (dessert != null && !format.wantsDessert)) {
+      final withStarter = starter != null || format.wantsStarter;
+      final withDessert = dessert != null || format.wantsDessert;
+      constraint = constraint.copyWith(
+        mealFormat: withStarter && withDessert
+            ? MealFormat.entreePlatDessert
+            : withStarter
+            ? MealFormat.entreePlat
+            : MealFormat.platDessert,
+      );
+    }
+    final target = meal.targetPortions ?? 0;
+    if (target > 0 && target != constraint.targetPortions) {
+      constraint = constraint.copyWith(targetPortions: target);
+    }
+    _slotConstraints[i] = constraint;
+
+    _registeredMeals[meal.id] = meal;
+    final built = _plannedMealForSlot(i, uid: uid);
+    if (built != null) {
+      _registeredBaseline[meal.id] = plannedMealContentKey(built);
+    }
+  }
+
+  /// La recette qui tient lieu d'un repas dont la recette n'est pas chargée :
+  /// un repas libre, ou une recette supprimée ou devenue privée. Le titre et
+  /// l'identifiant du repas y sont conservés, pour que rien ne se perde si le
+  /// repas est réécrit.
+  Recipe _recipeStandingFor(PlannedMeal meal) {
+    final now = DateTime.now();
+    return Recipe(
+      id: meal.recipeId ?? '',
+      titre: meal.recipeTitre,
+      langue: 'fr',
+      rawCooklang: '',
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.validated,
+      tags: RecipeTags(prepTime: meal.prepMinutes, cookTime: meal.cookMinutes),
+      ingredientsIndex: const [],
+      portions: meal.basePortions,
+      createdBy: '',
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  /// Ce que « Valider » enregistrera, et les repas déjà au planning qu'il
+  /// laisse tels quels parce que l'écran ne les a pas modifiés.
+  ({List<PlannedMeal> toWrite, Set<String> keptIds}) _validationPlan(
+    String uid,
+  ) {
+    final toWrite = <PlannedMeal>[];
+    final keptIds = <String>{};
+    for (int i = 0; i < _slotDates.length; i++) {
+      final meal = _plannedMealForSlot(i, uid: uid);
+      if (meal == null) continue;
+      if (_isUnchangedRegistered(meal)) {
+        keptIds.add(meal.id);
+      } else {
+        toWrite.add(meal);
+      }
+    }
+    return (toWrite: toWrite, keptIds: keptIds);
+  }
+
+  /// Vrai pour un repas déjà au planning, repris sur l'écran et resté tel quel.
+  bool _isUnchangedRegistered(PlannedMeal meal) =>
+      meal.id.isNotEmpty &&
+      _registeredBaseline[meal.id] == plannedMealContentKey(meal);
 
   Map<int, DayConstraint> _dailyConstraintsForAI() {
     final out = <int, DayConstraint>{};
@@ -363,6 +580,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       );
       return;
     }
+    // Les créneaux déjà remplis, dont ceux repris du planning : le constat
+    // « rien proposé » se fait sur ce que l'IA ajoute, pas sur ce qui y était.
+    final filledBefore = _slots.values.where((r) => r != null).length;
     setState(() => _generating = true);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
@@ -454,8 +674,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       }
 
       if (mounted) {
-        final filled = _slots.values.where((r) => r != null).length;
-        if (filled == 0) {
+        final added =
+            _slots.values.where((r) => r != null).length - filledBefore;
+        if (added <= 0) {
           // Aucune suggestion : le dire, plutôt qu'annoncer un succès devant
           // un écran resté vide.
           _showError('L\'IA n\'a rien proposé pour ce cycle.');
@@ -513,11 +734,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   /// Texte de la confirmation de « Valider » : ce qui sera ajouté, ce qui sera
-  /// mis à jour parce que déjà enregistré depuis un créneau, et ce que le
-  /// planning contient déjà d'autre sur la période.
+  /// mis à jour parce que déjà enregistré depuis un créneau, ce qui est déjà
+  /// au planning et reste tel quel, et ce que le planning contient déjà
+  /// d'autre sur la période.
   static String _validateDialogText({
     required int newCount,
     required int updatedCount,
+    required int keptCount,
     required int existingCount,
   }) {
     final ready = switch ((newCount, updatedCount)) {
@@ -527,11 +750,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         '$newCount repas seront ajoutés à votre planning, et $updatedCount '
             'déjà enregistrés seront mis à jour',
     };
-    if (existingCount == 0) return '$ready.';
-    final others = updatedCount > 0 ? 'autres repas' : 'repas';
-    return '$ready. Votre planning contient déjà $existingCount $others sur '
-        'cette période : voulez-vous les remplacer, ou ajouter les nouveaux '
-        'à côté ?';
+    final kept = switch (keptCount) {
+      0 => '',
+      1 => ' Le repas déjà au planning reste tel quel.',
+      _ => ' Les $keptCount repas déjà au planning restent tels quels.',
+    };
+    if (existingCount == 0) return '$ready.$kept';
+    final others = updatedCount > 0 || keptCount > 0 ? 'autres repas' : 'repas';
+    return '$ready.$kept Votre planning contient déjà $existingCount $others '
+        'sur cette période : voulez-vous les remplacer, ou ajouter les '
+        'nouveaux à côté ?';
   }
 
   /// Le repas que le créneau [i] enregistrera, ou null s'il est vide.
@@ -584,7 +812,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         ?_slotSides[i],
         if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[i],
       ],
-      createdAt: DateTime.now(),
+      // Un repas déjà au planning garde sa date de création.
+      createdAt:
+          _registeredMeals[_slotSavedMealIds[i]]?.createdAt ?? DateTime.now(),
     );
   }
 
@@ -592,13 +822,18 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
 
-    final mealsToAdd = <PlannedMeal>[
-      for (int i = 0; i < _slotDates.length; i++)
-        ?_plannedMealForSlot(i, uid: repo.uid),
-    ];
+    // Les repas déjà au planning et restés tels quels ne sont pas réécrits :
+    // ils sont conservés, ni remplacés ni doublés.
+    final plan = _validationPlan(repo.uid);
+    final mealsToAdd = plan.toWrite;
 
     if (mealsToAdd.isEmpty) {
-      _showError('Aucun repas assigné à valider.');
+      _showError(
+        plan.keptIds.isEmpty
+            ? 'Aucun repas assigné à valider.'
+            : 'Aucun nouveau repas à valider : les repas déjà au planning '
+                  'sont conservés.',
+      );
       return;
     }
 
@@ -618,7 +853,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       );
       existing = [
         for (final meal in between)
-          if (!ownIds.contains(meal.id)) meal,
+          if (!ownIds.contains(meal.id) && !plan.keptIds.contains(meal.id))
+            meal,
       ];
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -638,6 +874,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _validateDialogText(
             newCount: mealsToAdd.length - ownIds.length,
             updatedCount: ownIds.length,
+            keptCount: plan.keptIds.length,
             existingCount: existing.length,
           ),
         ),
@@ -1622,6 +1859,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       return;
     }
 
+    // Un repas déjà au planning et resté tel quel n'a pas à y être réécrit :
+    // l'écran ne connaît pas tout ce qu'il porte.
+    if (_isUnchangedRegistered(meal)) {
+      if (!mounted) return;
+      context.showSuccessSnackBar(
+        '« ${meal.recipeTitre} » ajouté au calendrier ✓',
+      );
+      return;
+    }
+
     // L'événement est posé ; le repas entre au planning avec le même
     // contenu. Un échec ici se dit tel quel : le calendrier a l'événement,
     // le planning n'a pas le repas, et « Valider » le rattrapera.
@@ -1672,6 +1919,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final theme = Theme.of(context);
     final assignedCount = _slots.values.where((r) => r != null).length;
     final totalSlots = _slotDates.length;
+    // Ce que « Valider » écrira : les repas déjà au planning et restés tels
+    // quels n'y comptent pas.
+    final writeCount = _validationPlan(
+      ref.read(planningRepositoryProvider)?.uid ?? '',
+    ).toWrite.length;
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
@@ -1932,7 +2184,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 const SizedBox(height: 8),
               ],
               FilledButton.icon(
-                onPressed: (assignedCount == 0 || _saving) ? null : _validate,
+                onPressed: (writeCount == 0 || _saving) ? null : _validate,
                 icon: _saving
                     ? const SizedBox.square(
                         dimension: 18,
@@ -1942,7 +2194,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         ),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label: Text('Valider le planning ($assignedCount repas)'),
+                label: Text('Valider le planning ($writeCount repas)'),
               ),
             ],
           ),
