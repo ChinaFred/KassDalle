@@ -22,9 +22,9 @@ Future<Recipe?> showMealIdeasSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    // Pendant la rédaction, un geste hors de la feuille ne doit pas la fermer :
-    // la recette arriverait dans le vide.
-    isDismissible: conceive == null,
+    // Un clic hors de la feuille la ferme, sauf pendant la rédaction : la
+    // recette arriverait dans le vide. C'est le `PopScope` de la feuille qui
+    // le refuse alors, car `isDismissible` est fixé à l'ouverture.
     builder: (_) => MealIdeasSheet(
       generate: generate,
       conceive: conceive,
@@ -183,7 +183,7 @@ class _MealIdeasSheetState extends State<MealIdeasSheet> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
                 child: Row(
                   children: [
                     const Icon(Icons.auto_awesome, size: AppIconSize.small),
@@ -193,6 +193,15 @@ class _MealIdeasSheetState extends State<MealIdeasSheet> {
                         'Générer avec l\'IA',
                         style: theme.textTheme.titleMedium,
                       ),
+                    ),
+                    // Retour au sélecteur, sans rien retenir. Inactif pendant
+                    // la rédaction, comme le geste hors de la feuille.
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Fermer',
+                      onPressed: conceiving == null
+                          ? () => Navigator.pop(context)
+                          : null,
                     ),
                   ],
                 ),

@@ -6,6 +6,8 @@
 /// écran figé.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
@@ -226,6 +228,68 @@ void main() {
             .enabled,
         isTrue,
       );
+    });
+
+    testWidgets('le bouton Fermer et un clic hors de la feuille la quittent '
+        'sans rien retenir, même avec un rédacteur', (tester) async {
+      final read = await _pumpHost(
+        tester,
+        ({required prompt, required previousTitles}) async => _lot1,
+        conceive: (idea) async => idea.toFreeRecipe(),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      expect(find.text('Générer avec l\'IA'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Fermer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Générer avec l\'IA'), findsNothing);
+      expect(await read(), isNull);
+
+      // Rouverte : le clic sur le fond fait de même.
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('Générer avec l\'IA'), findsNothing);
+    });
+
+    testWidgets('pendant la rédaction, ni le bouton Fermer ni le fond ne '
+        'quittent la feuille', (tester) async {
+      final writing = Completer<Recipe>();
+      final read = await _pumpHost(
+        tester,
+        ({required prompt, required previousTitles}) async => _lot1,
+        conceive: (idea) => writing.future,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'un plat léger');
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Proposer trois idées'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Omelette aux herbes'));
+      await tester.pump();
+
+      expect(find.textContaining('Rédaction de'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.close))
+            .onPressed,
+        isNull,
+      );
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump();
+      expect(find.text('Générer avec l\'IA'), findsOneWidget);
+
+      // La recette écrite sort ensuite normalement.
+      writing.complete(_lot1[1].toFreeRecipe().copyWith(titre: 'Écrite'));
+      await tester.pumpAndSettle();
+      expect((await read())?.titre, 'Écrite');
     });
 
     testWidgets('la recherche du sélecteur sert de première consigne', (
