@@ -11,6 +11,8 @@
 /// du planning.
 library;
 
+import 'planned_meal.dart';
+
 /// Sept jours, du [start] inclus au sixième jour suivant.
 class PlanningWeek {
   /// Premier jour, à minuit heure locale.
@@ -55,6 +57,26 @@ PlanningWeek planningWeekOf(DateTime day, {required int cycleStartDay}) {
   final d = DateTime(day.year, day.month, day.day);
   final back = (d.weekday - cycleStartDay + 7) % 7;
   return PlanningWeek(DateTime(d.year, d.month, d.day - back));
+}
+
+/// Les repas dont les ingrédients vont sur la liste de courses.
+///
+/// Seuls comptent ceux qui restent à cuisiner : le jour même compte, quelle
+/// que soit l'heure du repas. Avec une [week], on ne garde que les repas de
+/// cette semaine ; sans elle, toutes les semaines à venir — c'est la puce
+/// « Tout » de l'onglet Liste.
+List<PlannedMeal> mealsToShop(
+  Iterable<PlannedMeal> meals, {
+  required DateTime today,
+  PlanningWeek? week,
+}) {
+  final firstDay = DateTime(today.year, today.month, today.day);
+  return [
+    for (final meal in meals)
+      if (!meal.plannedAt.isBefore(firstDay) &&
+          (week == null || week.contains(meal.plannedAt)))
+        meal,
+  ];
 }
 
 /// Les semaines à proposer dans la barre de navigation.

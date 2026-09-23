@@ -432,19 +432,33 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     }
   }
 
+  /// La semaine que la liste de courses couvre : celle qu'on est en train de lire.
+  ///
+  /// Onglet Liste : la semaine choisie dans la barre, ou toutes avec la puce
+  /// « Tout » (null). Onglet Calendrier : la semaine du jour sélectionné.
+  PlanningWeek? _shoppingWeek(DateTime today) {
+    final cycleStartDay =
+        ref.read(planningPreferencesProvider).value?.cycleStartDay ??
+        DateTime.friday;
+    if (_tabs.index == 1) {
+      return planningWeekOf(_selectedDay, cycleStartDay: cycleStartDay);
+    }
+    if (_allWeeks) return null;
+    return planningWeekOf(_weekAnchor ?? today, cycleStartDay: cycleStartDay);
+  }
+
   Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
     final today = DateTime.now();
-    // Les courses ne concernent que ce qui reste à cuisiner.
-    final upcoming = meals
-        .where(
-          (m) => !m.plannedAt.isBefore(
-            DateTime(today.year, today.month, today.day),
-          ),
-        )
-        .toList();
+    final week = _shoppingWeek(today);
+    // Les courses ne concernent que ce qui reste à cuisiner, dans la période lue.
+    final upcoming = mealsToShop(meals, today: today, week: week);
     if (upcoming.isEmpty) {
       if (mounted) {
-        context.showSnackBar('Aucun repas à venir dans le planning.');
+        context.showSnackBar(
+          week == null
+              ? 'Aucun repas à venir dans le planning.'
+              : 'Aucun repas à venir cette semaine.',
+        );
       }
       return;
     }

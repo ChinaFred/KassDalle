@@ -1625,7 +1625,7 @@ sequenceDiagram
   participant GT as Google Tasks
 
   U->>P: Liste de courses
-  P->>S: les repas à venir, recettes incluses
+  P->>S: les repas à venir de la semaine lue (tous avec « Tout »), recettes incluses
   Note over S: brouillons et recettes des membres du groupe compris,<br/>pas seulement les recettes validées de l'utilisateur
   S->>M: consolidateShoppingList — les lignes d'ingrédients
   M-->>S: produits d'achat fusionnés, rangés par rayon
