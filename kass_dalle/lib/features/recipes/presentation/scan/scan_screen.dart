@@ -7,6 +7,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
+import '../../../books/presentation/book_picker_field.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
 import '../../../auth/data/user_preferences_repository.dart';
@@ -115,7 +116,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
 
     final scanState = ref.watch(scanUploadProvider);
-    final booksAsync = ref.watch(myBooksProvider);
+    final booksAsync = ref.watch(myBooksOrderedProvider);
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
     // Auto-démarrage caméra uniquement sur mobile natif (pas web : le navigateur
@@ -216,46 +217,27 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                     error: (_, _) => const SizedBox.shrink(),
                     data: (books) => books.isEmpty
                         ? const SizedBox.shrink()
-                        : DropdownButtonFormField<String>(
-                            decoration: InputDecoration(
-                              labelText:
-                                  _selectedIntent == ScanIntent.bookDocument
-                                  ? 'Livre cible (recommandé)'
-                                  : 'Assigner à un livre',
-                              prefixIcon: Icon(Icons.menu_book_outlined),
-                            ),
-                            initialValue: _selectedBookId,
+                        : BookPickerField(
+                            books: books,
+                            selectedBookId: _selectedBookId,
+                            label: _selectedIntent == ScanIntent.bookDocument
+                                ? 'Livre cible (recommandé)'
+                                : 'Assigner à un livre',
                             // Pas d'option « Aucun livre » pour une recette :
                             // sans choix, elle rejoint le livre des recettes
                             // libres. L'import d'un livre entier, lui, en crée
                             // un — le laisser vide y a un sens.
-                            items: [
-                              if (_selectedIntent == ScanIntent.bookDocument)
-                                const DropdownMenuItem<String>(
-                                  value: null,
-                                  child: Text('Aucun livre'),
-                                ),
-                              ...books.map(
-                                (b) => DropdownMenuItem(
-                                  value: b.id,
-                                  child: Text(b.titre),
-                                ),
-                              ),
-                            ],
-                            onChanged: scanState.isRunning
-                                ? null
-                                : lockBook
-                                ? null
-                                : (val) {
-                                    setState(() {
-                                      _selectedBookId = val;
-                                      _selectedBookTitre = val == null
-                                          ? null
-                                          : books
-                                                .firstWhere((b) => b.id == val)
-                                                .titre;
-                                    });
-                                  },
+                            noneLabel:
+                                _selectedIntent == ScanIntent.bookDocument
+                                ? 'Aucun livre'
+                                : null,
+                            enabled: !scanState.isRunning && !lockBook,
+                            onChanged: (id, titre) {
+                              setState(() {
+                                _selectedBookId = id;
+                                _selectedBookTitre = titre;
+                              });
+                            },
                           ),
                   ),
                 if (lockBook && _selectedIntent != ScanIntent.bookCover)

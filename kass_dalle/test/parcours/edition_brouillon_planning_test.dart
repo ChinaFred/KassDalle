@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'package:kass_dalle/core/widgets/app_states.dart';
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
+import 'package:kass_dalle/features/books/presentation/book_picker_field.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 import 'package:kass_dalle/features/recipes/presentation/drafts/work_queue_screen.dart';
 import 'package:kass_dalle/features/recipes/presentation/edit/recipe_edit_screen.dart';
@@ -35,6 +36,69 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets(
+      'le champ Livre montre le livre de la recette et liste les livres '
+      'dans l\'ordre de la bibliothèque',
+      (tester) async {
+        final backend = TestBackend();
+        // Par date de modification, l'ordre naturel serait A, B, C.
+        await backend.seedBook(
+          testBook(
+            id: 'b-a',
+            titre: 'Livre A',
+            updatedAt: DateTime.utc(2026, 6, 3),
+          ),
+        );
+        await backend.seedBook(
+          testBook(
+            id: 'b-b',
+            titre: 'Livre B',
+            updatedAt: DateTime.utc(2026, 6, 2),
+          ),
+        );
+        await backend.seedBook(
+          testBook(
+            id: 'b-c',
+            titre: 'Livre C',
+            updatedAt: DateTime.utc(2026, 6, 1),
+          ),
+        );
+        await backend.firestore
+            .collection('users')
+            .doc('uid-test')
+            .collection('preferences')
+            .doc('book_order')
+            .set({
+              'book_ids': ['b-c', 'b-a', 'b-b'],
+            });
+        await backend.seedRecipe(
+          testRecipe(id: 'r1', titre: 'Blanquette de veau', bookId: 'b-b'),
+        );
+
+        await pumpScreen(
+          tester,
+          const RecipeEditScreen(recipeId: 'r1'),
+          backend: backend,
+        );
+        await tester.pumpAndSettle();
+
+        final field = find.descendant(
+          of: find.byType(BookPickerField),
+          matching: find.byType(TextField),
+        );
+        expect(tester.widget<TextField>(field).controller!.text, 'Livre B');
+
+        await tester.tap(field);
+        await tester.pumpAndSettle();
+
+        final labels = tester
+            .widgetList<MenuItemButton>(find.byType(MenuItemButton))
+            .map((b) => ((b.child as Padding).child as Text).data)
+            .toList();
+        expect(labels, ['Livre C', 'Livre A', 'Livre B']);
+      },
+    );
 
     testWidgets('une recette effacée entre-temps ne montre pas d\'exception', (
       tester,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/meal_role.dart';
 import '../../domain/recipe.dart';
+import '../../../books/presentation/book_picker_field.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -114,7 +115,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final booksAsync = ref.watch(myBooksProvider);
+    final booksAsync = ref.watch(myBooksOrderedProvider);
     final theme = Theme.of(context);
     final isRecipe = (widget.pageType ?? PageType.recipe) == PageType.recipe;
     final showTags =
@@ -151,33 +152,18 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           booksAsync.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
-            data: (books) => DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: 'Livre',
-                helperText:
-                    'À défaut de choix, la recette rejoint « Mes recettes libres »',
-                prefixIcon: Icon(Icons.menu_book_outlined),
-              ),
-              // ignore: deprecated_member_use
-              value: widget.selectedBookId,
-              // « Aucun livre » n'est plus une option : toute recette a un
-              // livre. Ce choix laissait des recettes orphelines, rangées dans
-              // une section qui portait le nom d'un livre système existant —
-              // deux endroits pour une même idée, et un livre qui restait vide
-              // à côté de ses propres recettes.
-              items: [
-                ...books.map(
-                  (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
-                ),
-              ],
-              onChanged: widget.saving
-                  ? null
-                  : (val) {
-                      final titre = val == null
-                          ? null
-                          : books.firstWhere((b) => b.id == val).titre;
-                      widget.onBookChanged(val, titre);
-                    },
+            // « Aucun livre » n'est plus une option : toute recette a un
+            // livre. Ce choix laissait des recettes orphelines, rangées dans
+            // une section qui portait le nom d'un livre système existant —
+            // deux endroits pour une même idée, et un livre qui restait vide
+            // à côté de ses propres recettes.
+            data: (books) => BookPickerField(
+              books: books,
+              selectedBookId: widget.selectedBookId,
+              helperText:
+                  'À défaut de choix, la recette rejoint « Mes recettes libres »',
+              enabled: !widget.saving,
+              onChanged: widget.onBookChanged,
             ),
           )
         else if (widget.infoBookLabel != null)
