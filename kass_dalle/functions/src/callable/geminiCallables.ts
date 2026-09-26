@@ -71,7 +71,8 @@ import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageA
 import { recordUsage } from "../ai/usage";
 import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
-import { scanUpload } from "../utils/uploadSecurity";
+import { scanUpload, scanUploadHead, streamContainsEicar } from "../utils/uploadSecurity";
+import { BOOK_UPLOAD_FOLDER } from "../books/bookFile";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
 import { logAiText, logError, logInfo, qualify } from "../logging";
 
@@ -543,6 +544,18 @@ type PromotedUpload = {
   sizeBytes: number;
 };
 
+/** Les premiers octets d'un objet Storage, sans télécharger le reste. */
+async function readHead(
+  file: { createReadStream(options: { start: number; end: number }): AsyncIterable<Buffer> },
+  length: number,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of file.createReadStream({ start: 0, end: length - 1 })) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 /** Code HTTP porté par une erreur du SDK Storage (404, 412…), sinon null. */
 function storageErrorCode(err: unknown): number | null {
   const code = (err as { code?: unknown } | null)?.code;
@@ -629,6 +642,8 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
   const bucket = getStorage().bucket();
   const sourceFile = bucket.file(storagePath);
   const promotedPath = storagePath.replace("quarantine/", "scans/");
+  // Un livre entier arrive sous `livres/` : plafond de 300 Mo, contrôle en flux.
+  const isBookUpload = storagePath.startsWith(`${expectedPrefix}${BOOK_UPLOAD_FOLDER}/`);
 
   // Relit la promotion faite par l'autre requête, et le dit dans le journal :
   // sans cette ligne, un appel rejoué ressemble à un appel qui n'a rien coûté.
@@ -665,18 +680,38 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
 
     const [meta] = await sourceFile.getMetadata();
     const fileName = storagePath.split("/").pop() ?? "upload";
-    const [bytes] = await sourceFile.download();
-    const scan = scanUpload({
-      fileName,
-      mimeType: meta.contentType,
-      bytes,
-    });
+
+    // Un livre entier ne se charge pas en mémoire : la fonction en a 512 Mo, le
+    // livre jusqu'à 300. On lit son en-tête pour la signature, et on parcourt le
+    // reste en flux pour la recherche de signature antivirus.
+    let scan: ReturnType<typeof scanUpload>;
+    let sizeBytes: number;
+    if (isBookUpload) {
+      sizeBytes = Number(meta.size ?? 0);
+      scan = scanUploadHead({
+        fileName,
+        mimeType: meta.contentType,
+        size: sizeBytes,
+        head: await readHead(sourceFile, 64 * 1024),
+      });
+      if (scan.clean && (await streamContainsEicar(sourceFile.createReadStream()))) {
+        scan = { clean: false, reason: "Fichier detecte comme malveillant (signature EICAR)." };
+      }
+    } else {
+      const [bytes] = await sourceFile.download();
+      sizeBytes = bytes.length;
+      scan = scanUpload({
+        fileName,
+        mimeType: meta.contentType,
+        bytes,
+      });
+    }
     const detectedMime = scan.normalizedMimeType ?? meta.contentType ?? "application/octet-stream";
     await logUploadScanUsage({
       uid: ctx.userId,
       correlationId: ctx.correlationId,
       scanId,
-      sizeBytes: bytes.length,
+      sizeBytes,
       mimeType: detectedMime,
       scanStatus: scan.clean ? "clean" : "blocked",
       reason: scan.reason,
@@ -764,7 +799,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
         quarantinePath: storagePath,
         promotedPath,
         mimeType: detectedMime,
-        sizeBytes: bytes.length,
+        sizeBytes,
       },
     });
 
@@ -773,7 +808,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       downloadUrl,
       storagePath: promotedPath,
       mimeType: detectedMime,
-      sizeBytes: bytes.length,
+      sizeBytes,
     };
     return result;
   } catch (e) {

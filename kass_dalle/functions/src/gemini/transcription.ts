@@ -15,7 +15,12 @@ import { logAiText, logError } from "../logging";
 import { callModel } from "../ai/router";
 import { attachmentPart } from "../ai/attachment";
 import { filePart, textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
-import { TEXT_TRANSCRIPTION_PREAMBLE, TRANSCRIPTION_PROMPT } from "./promptsExtraction";
+import {
+  bookWindowPreamble,
+  TEXT_TRANSCRIPTION_PREAMBLE,
+  TRANSCRIPTION_PROMPT,
+  type BookWindowInfo,
+} from "./promptsExtraction";
 /** Une page de livre peut être longue, et la transcription ne résume rien. */
 const TRANSCRIPTION_MAX_TOKENS = 24_000;
 
@@ -251,10 +256,15 @@ export async function transcribePage(
   mimeType: string,
   ctx: ModelCallContext,
   additionalPages: ExtraPage[] = [],
+  bookWindow?: BookWindowInfo,
 ): Promise<PageTranscription> {
+  // Le préambule d'une tranche de livre passe APRÈS la pièce jointe et AVANT le
+  // prompt : il dit quelles pages appartiennent à cet appel, puis les règles de
+  // recopie s'appliquent sans changement.
   const parts = [
     await attachmentPart(mimeType, bytes, ctx),
     ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
+    ...(bookWindow ? [textPart(bookWindowPreamble(bookWindow))] : []),
     textPart(TRANSCRIPTION_PROMPT),
   ];
 
@@ -279,7 +289,7 @@ export async function transcribePage(
     ctx,
     feature: "transcription_page",
     message: "Page recopiée par le modèle, avant tout balisage",
-    extra: { pages: 1 + additionalPages.length, mimeType },
+    extra: { pages: 1 + additionalPages.length, mimeType, tranche: bookWindow?.kind ?? null },
     echec: "La transcription de la page n'a pas pu être lue.",
   });
 }

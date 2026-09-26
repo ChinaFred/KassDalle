@@ -86,6 +86,16 @@ Creation automatique via scan de couverture :
 - Un brouillon livre est cree avec statut `draft`.
 - L'utilisateur valide ensuite ce brouillon depuis l'ecran d'edition du livre via l'action "Valider le livre".
 
+Création à partir d'un PDF ou d'un EPUB (« Ajouter à partir d'un PDF ou d'un EPUB », dans la feuille « Ajouter un livre ») :
+- L'utilisateur choisit un fichier PDF, EPUB ou Word, jusqu'à **300 Mo**. Sur mobile et desktop le fichier part depuis le disque sans être chargé en mémoire ; sur le web il passe par la mémoire du navigateur.
+- Le serveur contrôle le fichier, l'ouvre et **le lit avant tout import** : l'écran affiche le nombre de pages (PDF) ou de caractères (EPUB, Word), le nombre d'imports que le livre va créer, et un **coût estimé**. Rien n'est facturé avant le bouton « Lancer l'import » ; « Annuler » supprime le fichier envoyé.
+- Le coût estimé est la moyenne **mesurée** sur les 15 derniers imports de l'utilisateur, multipliée par le nombre d'imports. Avec moins de 3 imports passés, l'écran dit que l'estimation est impossible ; il n'affiche jamais une valeur par défaut.
+- Le livre est créé depuis le fichier. Un EPUB donne titre, auteur, éditeur, année, langue, ISBN, description et couverture sans appel d'IA. Un PDF est lu par l'IA sur sa première page, comme une couverture scannée ; sa couverture est l'image JPEG de la première page quand le PDF en embarque une, sinon le livre se crée sans couverture.
+- Le contenu est découpé en tranches de 3 pages (PDF) ou d'environ 6 000 caractères (EPUB, Word), avec une page de contexte à la suite pour terminer la dernière recette entamée. Chaque tranche devient un import de page ordinaire : ses recettes arrivent une à une dans les **brouillons**, rattachées au nouveau livre.
+- Depuis le menu d'un livre existant, « Importer un livre complet » suit le même chemin et rattache les recettes à ce livre.
+- Chaque import est facturé et soumis au plafond quotidien d'IA. Quand il est atteint, les imports restants passent en erreur et se relancent, le lendemain ou après relèvement du plafond, depuis la file « Brouillons & Traitements » (sélection multiple, « Relancer »).
+- Sont refusés avec un message clair : un PDF chiffré, un EPUB sans texte (pages en images), un livre qui demanderait plus de 400 imports.
+
 **Modification / Suppression :** accessible via le détail du livre. La suppression d'un livre demande une confirmation explicite car elle entraîne la dissociation des recettes liées (les recettes ne sont pas supprimées, elles deviennent "sans livre").
 
 ---

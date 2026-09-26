@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'error_report_service.dart';
+import '../../features/recipes/data/book_import_analysis.dart';
 import '../../features/recipes/domain/recipe.dart';
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
@@ -603,6 +604,28 @@ class GeminiService {
       mimeType: map['mimeType'] as String? ?? 'application/octet-stream',
       sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  // ── Import d'un livre entier ──────────────────────────────────────────────
+
+  /// Fait lire un livre déjà promu par le serveur : pages ou texte, nombre de
+  /// jobs qu'il va créer, coût estimé d'après les imports précédents.
+  ///
+  /// Ne dépense rien. `storagePath` est celui rendu par
+  /// [scanAndPromoteUpload].
+  Future<BookImportAnalysis> analyzeBookFile({
+    required String storagePath,
+  }) async {
+    final data = await _call('analyzeBookFileFn', {'storagePath': storagePath});
+    return BookImportAnalysis.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// Supprime un livre envoyé puis abandonné avant l'import.
+  Future<void> discardBookFile({required String storagePath}) async {
+    await _call('analyzeBookFileFn', {
+      'storagePath': storagePath,
+      'discard': true,
+    });
   }
 }
 

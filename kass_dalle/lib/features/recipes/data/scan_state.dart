@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'book_import_analysis.dart';
+
 // ── État du scan ──────────────────────────────────────────────────────────────
 
 enum ScanStatus {
@@ -7,6 +9,8 @@ enum ScanStatus {
   picking,
   pendingEnhancement,
   pendingFiles, // pages accumulées en attente de traitement
+  readingBook, // livre entier : envoi, contrôle de sécurité, lecture par le serveur
+  pendingBookConfirmation, // livre lu, en attente du feu vert de l'utilisateur
   uploading,
   scanning,
   processing,
@@ -88,6 +92,13 @@ class ScanState {
   /// rester disponibles pendant qu'un envoi se termine.
   final List<ActiveImport> activeImports;
 
+  /// Où en est la préparation d'un livre : « Envoi », « Contrôle de sécurité »,
+  /// « Lecture du livre ». N'a de sens qu'en [ScanStatus.readingBook].
+  final String? bookStep;
+
+  /// Ce que le serveur a lu du livre, en attente de confirmation.
+  final BookImportAnalysis? bookAnalysis;
+
   const ScanState({
     this.status = ScanStatus.idle,
     this.filename,
@@ -102,6 +113,8 @@ class ScanState {
     this.pendingImageFilename,
     this.pendingPageNames = const [],
     this.activeImports = const [],
+    this.bookStep,
+    this.bookAnalysis,
   });
 
   ScanState copyWith({
@@ -118,10 +131,15 @@ class ScanState {
     String? pendingImageFilename,
     List<String>? pendingPageNames,
     List<ActiveImport>? activeImports,
+    String? bookStep,
+    BookImportAnalysis? bookAnalysis,
 
     /// Efface l'image en attente : elle a été traitée, et la garder ferait
     /// rouvrir l'atelier sur l'original au lieu du résultat du recadrage.
     bool clearPendingImage = false,
+
+    /// Efface la lecture du livre : l'import est parti ou a été abandonné.
+    bool clearBook = false,
   }) {
     return ScanState(
       status: status ?? this.status,
@@ -141,6 +159,10 @@ class ScanState {
           : (pendingImageFilename ?? this.pendingImageFilename),
       pendingPageNames: pendingPageNames ?? this.pendingPageNames,
       activeImports: activeImports ?? this.activeImports,
+      // Une valeur passée l'emporte sur l'effacement : `clearBook` vide ce qui
+      // précède, et ce qu'on écrit dans le même appel reste.
+      bookStep: bookStep ?? (clearBook ? null : this.bookStep),
+      bookAnalysis: bookAnalysis ?? (clearBook ? null : this.bookAnalysis),
     );
   }
 
@@ -152,7 +174,9 @@ class ScanState {
   /// fichier ouvert, ou une image en cours d'amélioration. L'envoi, lui, n'en
   /// fait plus partie — il se poursuit pendant qu'on prépare le suivant.
   bool get isRunning =>
-      status == ScanStatus.picking || status == ScanStatus.pendingEnhancement;
+      status == ScanStatus.picking ||
+      status == ScanStatus.pendingEnhancement ||
+      status == ScanStatus.readingBook;
 
   String get statusLabel => switch (status) {
     ScanStatus.idle => 'Prêt',
@@ -163,6 +187,9 @@ class ScanState {
     // l'écran lui-même.
     ScanStatus.pendingEnhancement => 'Ouverture de l\'atelier…',
     ScanStatus.pendingFiles => 'Pages en attente',
+    ScanStatus.readingBook => '${bookStep ?? 'Lecture du livre'}…',
+    ScanStatus.pendingBookConfirmation =>
+      'Livre lu, en attente de confirmation',
     ScanStatus.uploading => 'Envoi en cours…',
     ScanStatus.scanning => 'Scanner les fichiers…',
     ScanStatus.processing => 'Analyse IA en cours…',

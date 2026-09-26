@@ -6,6 +6,7 @@ import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
@@ -16,8 +17,41 @@ import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../processing/domain/processing_job.dart';
+import 'book_file_upload_stub.dart'
+    if (dart.library.io) 'book_file_upload_io.dart'
+    as book_file_upload;
 import 'scan_state.dart';
 export 'scan_state.dart';
+
+/// Plafond d'un livre envoyé, en octets. Même valeur que la règle Storage
+/// `quarantine/{uid}/livres/` et que `MAX_BOOK_UPLOAD_SIZE_BYTES` côté
+/// serveur : les trois bougent ensemble.
+const int _maxBookBytes = 300 * 1024 * 1024;
+
+/// Un livre envoyé, contrôlé et lu par le serveur, qui attend le feu vert.
+class _PendingBook {
+  final String uid;
+  final String filename;
+  final String scanId;
+  final String storagePath;
+  final String downloadUrl;
+  final String mimeType;
+  final int sizeBytes;
+  final String? bookId;
+  final String? bookTitre;
+
+  const _PendingBook({
+    required this.uid,
+    required this.filename,
+    required this.scanId,
+    required this.storagePath,
+    required this.downloadUrl,
+    required this.mimeType,
+    required this.sizeBytes,
+    required this.bookId,
+    required this.bookTitre,
+  });
+}
 
 // ── Notifier ───────────────────────────────────────────────────────────────────────
 
@@ -291,16 +325,329 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
   }
 
+  /// Le livre que le serveur a lu, en attente du feu vert de l'utilisateur.
+  _PendingBook? _pendingBook;
+
+  /// Choisit un livre entier — PDF, EPUB ou Word — l'envoie, le fait contrôler
+  /// puis lire par le serveur, et attend la confirmation.
+  ///
+  /// L'import ne part pas tout seul : un livre déclenche autant d'imports de page
+  /// qu'il a de tranches, chacun facturé. L'écran montre d'abord ce que le
+  /// serveur a lu et ce que cela coûtera, puis [confirmBookImport] crée le job.
+  ///
+  /// Sans [bookId], le serveur crée le livre depuis le fichier ; avec, les
+  /// recettes sont rattachées à ce livre.
   Future<int> pickAndQueueBookDocument({
     required String? bookId,
     required String? bookTitre,
-  }) {
-    return _pickAndQueue(
+  }) async {
+    state = state.copyWith(
+      status: ScanStatus.picking,
       intent: ScanIntent.bookDocument,
-      allowedExtensions: const ['pdf', 'docx', 'jpg', 'jpeg', 'png'],
-      bookId: bookId,
-      bookTitre: bookTitre,
     );
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'epub', 'docx'],
+        // Sur le web le fichier n'existe qu'en mémoire ; ailleurs il s'envoie
+        // depuis le disque, sans jamais être chargé.
+        withData: kIsWeb,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) {
+        state = ScanState(activeImports: state.activeImports);
+        return 0;
+      }
+      await _prepareBook(
+        result.files.first,
+        bookId: bookId,
+        bookTitre: bookTitre,
+      );
+      return 0;
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.pickBookDocument',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'Impossible d\'ouvrir le livre : $e',
+        clearBook: true,
+      );
+      return 0;
+    }
+  }
+
+  Future<void> _prepareBook(
+    PlatformFile file, {
+    required String? bookId,
+    required String? bookTitre,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'Utilisateur non connecté.',
+      );
+      return;
+    }
+    if (file.size > _maxBookBytes) {
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage:
+            'Ce livre pèse ${(file.size / (1024 * 1024)).round()} Mo : '
+            'le maximum est de ${_maxBookBytes ~/ (1024 * 1024)} Mo.',
+      );
+      return;
+    }
+
+    final extension = (file.extension ?? '').toLowerCase();
+    final mimeType = _mimeTypeFor(extension);
+    final scanId = _newScanId();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final storageRef = _storage.ref(
+      'quarantine/$uid/livres/${ts}_${_sanitizeFilename(file.name)}',
+    );
+
+    state = state.copyWith(
+      status: ScanStatus.readingBook,
+      bookStep: 'Envoi',
+      filename: file.name,
+      uploadProgress: 0,
+      clearBook: true,
+    );
+
+    // 1. Envoi vers la quarantaine.
+    late final Reference uploaded;
+    try {
+      final metadata = SettableMetadata(contentType: mimeType);
+      final UploadTask task;
+      if (kIsWeb) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          throw StateError('Fichier sans octets lisibles.');
+        }
+        task = storageRef.putData(bytes, metadata);
+      } else {
+        final path = file.path;
+        if (path == null) {
+          throw StateError('Fichier sans chemin lisible.');
+        }
+        task = book_file_upload.putBookFile(storageRef, path, metadata);
+      }
+      // `onError` absorbe le doublon : l'erreur utile est celle que `await task`
+      // lève juste en dessous, avec tout son contexte.
+      task.snapshotEvents.listen(
+        (snap) {
+          final total = snap.totalBytes > 0 ? snap.totalBytes : 1;
+          state = state.copyWith(uploadProgress: snap.bytesTransferred / total);
+        },
+        onError: (Object _) {},
+        cancelOnError: true,
+      );
+      uploaded = (await task).ref;
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.bookUpload',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+        context: {
+          'filename': file.name,
+          'mimeType': mimeType,
+          'sizeBytes': file.size,
+          'storagePath': 'quarantine/$uid/livres/',
+        },
+      );
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'L\'envoi du livre a échoué : $e',
+        clearBook: true,
+      );
+      return;
+    }
+
+    // 2. Contrôle de sécurité, puis promotion hors de la quarantaine.
+    state = state.copyWith(bookStep: 'Contrôle de sécurité', uploadProgress: 1);
+    final ({
+      String downloadUrl,
+      String storagePath,
+      String mimeType,
+      int sizeBytes,
+    })
+    promoted;
+    try {
+      promoted = await _gemini.scanAndPromoteUpload(
+        storagePath: uploaded.fullPath,
+        scanId: scanId,
+      );
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.bookScan',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+        context: {
+          'filename': file.name,
+          'sizeBytes': file.size,
+          'securityRejection': _isSecurityRejection(e),
+        },
+      );
+      if (_isSecurityRejection(e)) {
+        await _recordRejectedJob(
+          uid: uid,
+          filename: file.name,
+          mimeType: mimeType,
+          intent: ScanIntent.bookDocument,
+          reason: _rejectionReason(e),
+          bookId: bookId,
+          bookTitre: bookTitre,
+        );
+      }
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: _scanErrorMessage(
+          e,
+          'Échec du scan de sécurité du livre.',
+        ),
+        clearBook: true,
+      );
+      return;
+    }
+
+    // 3. Lecture par le serveur : pages ou texte, tranches, coût estimé.
+    state = state.copyWith(bookStep: 'Lecture du livre');
+    try {
+      final analysis = await _gemini.analyzeBookFile(
+        storagePath: promoted.storagePath,
+      );
+      _pendingBook = _PendingBook(
+        uid: uid,
+        filename: file.name,
+        scanId: scanId,
+        storagePath: promoted.storagePath,
+        downloadUrl: promoted.downloadUrl,
+        mimeType: promoted.mimeType,
+        sizeBytes: promoted.sizeBytes,
+        bookId: bookId,
+        bookTitre: bookTitre,
+      );
+      state = state.copyWith(
+        status: ScanStatus.pendingBookConfirmation,
+        bookAnalysis: analysis,
+      );
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.bookAnalysis',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+        context: {'filename': file.name, 'sizeBytes': file.size},
+      );
+      // Le livre est promu mais ne servira pas : on ne le laisse pas en
+      // stockage. Le message du serveur — PDF chiffré, EPUB sans texte — est
+      // écrit pour l'utilisateur, on le montre tel quel.
+      await _discardPromotedBook(promoted.storagePath);
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: e is GeminiCallableException && e.message.isNotEmpty
+            ? e.message
+            : 'Le livre n\'a pas pu être lu : $e',
+        clearBook: true,
+      );
+    }
+  }
+
+  /// Lance l'import du livre que le serveur vient de lire.
+  Future<void> confirmBookImport() async {
+    final pending = _pendingBook;
+    if (pending == null) return;
+    state = state.copyWith(
+      status: ScanStatus.readingBook,
+      bookStep: 'Mise en file',
+    );
+    try {
+      final now = DateTime.now();
+      final jobId = await _jobsRepo.createJob(
+        ProcessingJob(
+          id: '',
+          type: ProcessingJobType.bookDocumentScan,
+          status: ProcessingJobStatus.queued,
+          createdBy: pending.uid,
+          createdAt: now,
+          updatedAt: now,
+          fileName: pending.filename,
+          fileUrl: pending.downloadUrl,
+          mimeType: pending.mimeType,
+          bookId: pending.bookId,
+          bookTitre: pending.bookTitre,
+          scanId: pending.scanId,
+        ),
+      );
+      _pendingBook = null;
+
+      try {
+        await _usage.recordScan(fileBytes: pending.sizeBytes);
+      } catch (error, stackTrace) {
+        _errorReportService.reportError(
+          feature: 'scanUpload.recordScan',
+          error: error,
+          stackTrace: stackTrace,
+          jobId: jobId,
+          context: {'uploadedBytes': pending.sizeBytes},
+        );
+      }
+
+      state = state.copyWith(
+        status: ScanStatus.done,
+        uploadProgress: 1,
+        queuedJobId: jobId,
+        createdRecipeIds: const [],
+        successMessage: pending.bookId == null
+            ? 'Livre en cours d\'import : il apparaît dans la bibliothèque, '
+                  'et ses recettes arrivent une à une dans les brouillons.'
+            : 'Livre en cours d\'import : ses recettes arrivent une à une '
+                  'dans les brouillons.',
+        clearBook: true,
+      );
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.confirmBook',
+        error: e,
+        stackTrace: stackTrace,
+        userId: pending.uid,
+        context: {'filename': pending.filename},
+      );
+      // Le livre reste lu et promu : l'utilisateur peut réessayer sans renvoyer.
+      state = state.copyWith(
+        status: ScanStatus.pendingBookConfirmation,
+        errorMessage: 'L\'import n\'a pas pu démarrer : $e',
+      );
+    }
+  }
+
+  /// Abandonne le livre lu : supprime le fichier envoyé et remet l'écran à zéro.
+  Future<void> cancelBookImport() async {
+    final pending = _pendingBook;
+    _pendingBook = null;
+    state = ScanState(activeImports: state.activeImports);
+    if (pending != null) await _discardPromotedBook(pending.storagePath);
+  }
+
+  /// Supprime un livre promu qui ne servira pas. Un échec est rapporté : le
+  /// fichier reste alors en stockage sans que personne le référence.
+  Future<void> _discardPromotedBook(String storagePath) async {
+    try {
+      await _gemini.discardBookFile(storagePath: storagePath);
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.discardBook',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'storagePath': storagePath},
+      );
+    }
   }
 
   Future<int> _pickAndQueue({
@@ -701,18 +1048,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // appel séparé. Il n'emprunte pas `importId`, qui contient le nom du
     // fichier : un libellé de journal doit rester filtrable, donc court et
     // sans caractère surprenant.
-    //
-    // La borne s'écrit en littéral, jamais `1 << 32`.
-    //
-    // dart2js compile les opérateurs de bits sur des entiers 32 bits : `1 << 32`
-    // vaut 4 294 967 296 sur la machine virtuelle et **0** dans un navigateur.
-    // `Random.nextInt(0)` lève alors `RangeError` dès cette ligne, avant le
-    // moindre envoi. Livré le 30 août 2026, ce décalage a bloqué tous les
-    // imports web pendant deux versions : le bouton « Appliquer » de l'atelier
-    // ne faisait plus rien, sans une erreur ni une trace.
-    final scanId =
-        'scan_${DateTime.now().millisecondsSinceEpoch}_'
-        '${(_random.nextInt(0x100000000)).toRadixString(36)}';
+    final scanId = _newScanId();
     // Ce qui part réellement, pour une couverture.
     //
     // C'est le dernier maillon : l'atelier dit ce qu'il a produit, celui-ci dit
@@ -997,10 +1333,34 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// Les effacer afficherait un écran au repos pendant que des octets montent
   /// encore, et l'envoi qui se termine ferait réapparaître sa ligne. Ce qui est
   /// parti continue, et continue de se voir.
+  ///
+  /// Un livre lu qui attendait le feu vert est abandonné : quitter l'écran
+  /// laisserait sinon son fichier, parfois de plusieurs centaines de Mo, en
+  /// stockage sans que rien le référence.
   void reset() {
     _pendingPages.clear();
+    final abandoned = _pendingBook;
+    _pendingBook = null;
+    if (abandoned != null) {
+      unawaited(_discardPromotedBook(abandoned.storagePath));
+    }
     state = ScanState(activeImports: state.activeImports);
   }
+
+  /// Identifiant d'un scan : ce qui relie, dans les journaux, tous les
+  /// traitements qu'un même acte de l'utilisateur déclenche.
+  ///
+  /// La borne s'écrit en littéral, jamais `1 << 32`.
+  ///
+  /// dart2js compile les opérateurs de bits sur des entiers 32 bits : `1 << 32`
+  /// vaut 4 294 967 296 sur la machine virtuelle et **0** dans un navigateur.
+  /// `Random.nextInt(0)` lève alors `RangeError` dès cette ligne, avant le
+  /// moindre envoi. Livré le 30 août 2026, ce décalage a bloqué tous les
+  /// imports web pendant deux versions : le bouton « Appliquer » de l'atelier
+  /// ne faisait plus rien, sans une erreur ni une trace.
+  String _newScanId() =>
+      'scan_${DateTime.now().millisecondsSinceEpoch}_'
+      '${(_random.nextInt(0x100000000)).toRadixString(36)}';
 
   /// Appelé depuis l'UI après que l'utilisateur a confirmé l'amélioration
   /// de la couverture dans [ImageEnhancerScreen].
@@ -1179,6 +1539,7 @@ String _mimeTypeFor(String ext) => switch (ext.toLowerCase()) {
   'pdf' => 'application/pdf',
   'docx' =>
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'epub' => 'application/epub+zip',
   'jpg' || 'jpeg' => 'image/jpeg',
   'png' => 'image/png',
   _ => 'application/octet-stream',

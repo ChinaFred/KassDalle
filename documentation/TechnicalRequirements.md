@@ -713,6 +713,13 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `current_step` | `String?` | Étape courante du traitement IA |
 | `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
+| `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
+| `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
+| `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
+
+**`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
+
+**Découpage** (`books/bookFile.ts`). PDF : `pdf-lib` (chargé à la demande), fenêtres de 3 pages + 1 page de contexte (`planWindows`) ; une tranche de plus de 12 Mo est coupée en deux, chaque moitié gardant son contexte, parce que le fichier part en base64 dans une requête plafonnée à 20 Mo chez Gemini. EPUB et Word : texte extrait par du code (OPF + XHTML pour l'EPUB, `docxToPlainText` pour Word), fenêtres d'environ 6 000 caractères + 1 500 de contexte, un paragraphe n'étant jamais coupé (`planTextWindows`). La ligne `BOOK_WINDOW_CONTEXT_MARKER` sépare le texte à transcrire du contexte. Mesuré sur un PDF synthétique de 190 Mo et 300 pages : ouverture 0,14 s, découpage en 100 tranches 0,3 s, pic de mémoire 462 Mo (`recipeProcessor` passe à 2 GiB).
 
 **Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
 
@@ -1314,6 +1321,22 @@ service firebase.storage {
         && isImportableUnder(50 * 1024 * 1024);
     }
 
+    // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
+    // 300 Mo, et seulement sous `livres/`. Les deux blocs `match` se recouvrent :
+    // l'accès est accordé si l'un d'eux l'autorise, et le premier refuse toujours
+    // plus de 50 Mo. Même plafond que `MAX_BOOK_UPLOAD_SIZE_BYTES`
+    // (`utils/uploadSecurity.ts`) et que `_maxBookBytes` (`scan_upload_service.dart`).
+    match /quarantine/{uid}/livres/{fileName} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid) && isApprovedToken()
+        && request.resource.size < 300 * 1024 * 1024
+        && baseContentType() in [
+             'application/pdf',
+             'application/epub+zip',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+           ];
+    }
+
     match /scans/{uid}/{allPaths=**} {
       allow read: if isActive();
       allow write: if false;              // Admin SDK uniquement
@@ -1354,8 +1377,8 @@ service firebase.storage {
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
 pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
-avant la propagation — une heure au plus), le fichier dépasse 50 Mo, ou son type MIME n'est
-pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
+avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo sous
+`quarantine/{uid}/livres/`), ou son type MIME n'est pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
 `storagePath` et `mimeType` : sans eux, les quatre causes sont indiscernables.
 
 ---
@@ -1941,6 +1964,25 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
 **La reprise manuelle.** `relaunchDeadLetterFn` (admin) recrée un `processing_jobs` en
 `queued` avec `attempt_count: 0` et horodate `relaunched_at` sur la dead letter.
 `deleteDeadLetterFn` purge. Les deux sont exposées dans *Admin › File d'échecs*.
+
+**L'import d'un livre entier** passe par trois étapes côté client, et deux fonctions côté serveur.
+
+1. Le client envoie le fichier dans `quarantine/{uid}/livres/` (`putFile` depuis le disque, `putData`
+   sur le web) puis appelle `scanAndPromoteUploadFn`. Sous `livres/`, celle-ci ne charge pas le
+   fichier : elle lit les 64 premiers Ko pour la signature (`scanUploadHead`) et parcourt le reste
+   en flux pour la signature EICAR (`streamContainsEicar`, qui reporte la fin de chaque morceau
+   devant le suivant). Une archive ZIP est admise sous `.docx` et `.epub` seulement.
+2. `analyzeBookFileFn` (éditeur ou admin, 2 GiB) ouvre le livre promu et rend le nombre de pages
+   ou de caractères, le nombre de tranches, et le coût estimé (`books/importEstimate.ts` :
+   moyenne, par scan, de la somme des lignes `ai_usage` des 15 derniers imports réussis de
+   l'utilisateur ; un scan dont un appel n'a pas de montant est écarté ; sous 3 scans la mesure
+   est `null`). Avec `discard: true`, elle supprime le fichier — seul son propriétaire, et
+   seulement sous `scans/{uid}/livres/`. Elle ne dépense rien.
+3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` ; `recipeProcessor` prend le
+   relais (voir § 3.4). Quitter l'écran avec un livre lu en attente appelle `discard`.
+
+Aucun poste d'IA nouveau : la lecture de la première page d'un PDF s'impute à `book_cover`, chaque
+tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `scan_id` du livre.
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 

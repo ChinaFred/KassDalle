@@ -166,6 +166,7 @@
       <li><a href="#pdf">Export PDF d'une recette</a></li>
       <li><a href="#texte-colle">Import d'un texte collé</a></li>
       <li><a href="#annoter">Annoter et noter une recette</a></li>
+      <li><a href="#livre-entier">Import d'un livre entier (PDF, EPUB)</a></li>
     </ol>
   </nav>
 
@@ -2144,6 +2145,94 @@ sequenceDiagram
         <span class="expect">
           <b>Les notes alimentent la recherche.</b> Les recettes notées partent avec leur valeur
           dans la demande adressée au moteur, qui en déduit les goûts — voir la séquence 07.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="livre-entier"><span class="n">24</span>Import d'un livre entier (PDF, EPUB)</h2>
+    <p class="sec-note">
+      Un livre ne se lit pas en un appel : la réponse d'un modèle plafonne, et l'appel coûterait tout
+      d'un coup. Le fichier est lu avant tout import, puis découpé en tranches qui deviennent des
+      jobs d'import de page ordinaires.
+      <span class="path">book_list_screen.dart → scan_screen.dart → scan_upload_service.dart →
+      geminiCallables.ts (scanAndPromoteUploadFn) → bookImportCallable.ts →
+      recipeProcessor.ts → pipeline/bookImport.ts → books/bookFile.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant SC as ScanScreen
+  participant S as ScanUploadNotifier
+  participant ST as Cloud Storage
+  participant SP as scanAndPromoteUploadFn
+  participant AN as analyzeBookFileFn
+  participant J as processing_jobs
+  participant P as recipeProcessor
+  participant B as runBookImport
+  participant G as Modèle (Gemini ou Claude)
+  participant BK as books
+  participant R as recipes
+
+  U->>SC: « Ajouter à partir d'un PDF ou d'un EPUB »
+  SC->>S: pickAndQueueBookDocument
+  S->>ST: quarantine/{uid}/livres/ — putFile (disque) ou putData (web), 300 Mo au plus
+  S->>SP: scanAndPromoteUpload
+  Note over SP: en-tête de 64 Ko pour la signature,<br/>flux pour la signature EICAR — jamais en mémoire
+  SP->>ST: copie vers scans/{uid}/livres/
+  S->>AN: analyzeBookFile
+  AN->>ST: download du livre promu
+  AN->>AN: openBookFile — pages ou texte, tranches
+  AN->>AN: coût moyen des 15 derniers scans (ai_usage)
+  AN-->>SC: pages, tranches, coût estimé ou « indisponible »
+
+  alt l'utilisateur annule
+    SC->>AN: discard — supprime le fichier
+  else « Lancer l'import »
+    S->>J: createJob bookDocumentScan
+    J-->>P: dispatch Cloud Tasks
+    P->>B: runBookImport
+
+    opt aucun livre cible
+      alt PDF
+        B->>G: première page — titre, auteur, éditeur (poste book_cover)
+      else EPUB ou Word
+        Note over B: métadonnées et couverture lues dans le fichier,<br/>aucun appel d'IA
+      end
+      B->>BK: books/book_import_{jobId}
+    end
+
+    loop chaque tranche
+      B->>ST: scans/{uid}/book_import_{jobId}/{NNNN}.pdf ou .txt
+      B->>J: create book_import_{jobId}_{NNNN} — recipeScan, book_window, scan_id du livre
+    end
+    B->>J: parent done, windows_total
+
+    loop chaque job de tranche
+      J-->>P: dispatch Cloud Tasks
+      P->>G: transcription avec bookWindowPreamble
+      Note over P,G: les pages à transcrire, puis une page de contexte<br/>qui ne sert qu'à finir la dernière recette
+      P->>R: brouillons rattachés au livre
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Rien n'est facturé avant le feu vert.</b> L'analyse ouvre le fichier et compte ; elle ne
+        fait aucun appel de modèle. Le coût affiché est une moyenne mesurée sur les imports passés,
+        et absente quand il en manque : un chiffre par défaut aurait l'air d'une mesure.
+        <span class="expect">
+          <b>Chaque tranche transcrit ses propres pages, et une seule fois.</b> La page de contexte
+          appartient à la tranche suivante ; le préambule dit au modèle d'ignorer la fin d'une
+          recette dont il ne voit pas le titre. C'est ce qui évite deux brouillons de la même recette.
+        </span>
+        <span class="expect warn">
+          <b>Le plafond quotidien d'IA peut couper l'import au milieu.</b> Les tranches restantes
+          passent en erreur, sans nouvelle tentative, et se relancent depuis la file des traitements.
         </span>
       </figcaption>
     </figure>

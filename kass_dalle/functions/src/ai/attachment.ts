@@ -39,6 +39,13 @@ export async function attachmentPart(
   bytes: Buffer,
   ctx: ModelCallContext,
 ): Promise<ModelPart> {
+  // Un texte brut est du texte : le passer en pièce jointe le rangeait parmi les
+  // documents, que Claude refuse, et le routage retombait sur Gemini. C'est le
+  // cas d'un livre numérique découpé en tranches — voir `books/bookFile.ts`.
+  if (mimeType.split(";")[0].trim().toLowerCase() === "text/plain") {
+    return textPart(bytes.toString("utf8"));
+  }
+
   if (!isDocxMimeType(mimeType)) {
     return filePart(mimeType, bytes);
   }

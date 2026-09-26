@@ -47,6 +47,8 @@ import {
   type StoredRecipeIngredient,
 } from "../nutrition/referentialNormalization";
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
+import { BookFileError } from "../books/bookFile";
+import { parseBookWindow, runBookImport } from "./bookImport";
 import {
   extractTitle,
   extractPortions,
@@ -127,7 +129,12 @@ export const recipeProcessor = onTaskDispatched(
   {
     region: REGION,
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
-    memory: "1GiB",
+    // Deux gigaoctets pour le job « livre entier » : un PDF de plusieurs
+    // centaines de mégaoctets se charge en mémoire, une fois en octets bruts et
+    // une fois dans l'arbre de `pdf-lib`. La mémoire allouée se facture pendant
+    // tout le traitement, y compris pour une page de recette qui n'en utilise
+    // qu'une fraction : quelques millièmes de dollar par import.
+    memory: "2GiB",
     timeoutSeconds: 540,
     retryConfig: {
       maxAttempts: MAX_RETRY_ATTEMPTS,
@@ -293,6 +300,40 @@ export const recipeProcessor = onTaskDispatched(
         return;
       }
 
+      if (jobType === "bookDocumentScan") {
+        // ── Pipeline livre entier ───────────────────────────────────────────
+        //
+        // Ce job ne transcrit rien : il crée le livre puis un job d'import par
+        // tranche, qui suivent le pipeline ci-dessous comme une page scannée.
+        const imported = await runBookImport({
+          job,
+          bytes: primaryBytes,
+          apiKey,
+          ctx,
+          onProgress: async (fields) => {
+            await jobRef.update({ ...fields, updated_at: Timestamp.now() });
+          },
+        });
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "done",
+          current_step: "done",
+          titre: imported.bookTitre,
+          created_book_id: imported.createdBook ? imported.bookId : null,
+          windows_total: imported.windows,
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+        logInfo({
+          message: "Pipeline livre entier terminé",
+          moduleType: "IMPORT",
+          executionTimeMs: elapsed,
+          ...ctx,
+          extra: { bookId: imported.bookId, windows: imported.windows },
+        });
+        return;
+      }
+
       // ── PASSE 1 : transcription de la page ────────────────────────────────
       //
       // Un seul appel là où trois se succédaient : classifier, extraire une
@@ -301,11 +342,16 @@ export const recipeProcessor = onTaskDispatched(
       // travaux à la fois — transcrire et restructurer — en perdant le premier.
       await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
       const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
+      // Présent quand ce job lit une tranche d'un livre entier : le modèle sait
+      // alors quelles pages lui appartiennent et lesquelles ne servent que de
+      // contexte. Absent pour une page scannée ordinaire.
+      const bookWindow = parseBookWindow(job.book_window);
       const transcription = await transcribePage(
         primaryBytes,
         mimeType,
         { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
         extraPages,
+        bookWindow,
       );
 
       logInfo({
@@ -425,7 +471,10 @@ export const recipeProcessor = onTaskDispatched(
             publiees: stored.publiees,
             pagesEnEchec: stored.pagesEnEchec,
           };
-        } else {
+        } else if (!bookWindow) {
+          // Une tranche de livre n'a pas de comptage de photographies : c'est un
+          // appel d'IA de plus par tranche, sur un livre qui en compte des
+          // centaines, pour une information que l'atelier manuel n'attend pas.
           illustrationReport = await countPageImages({
             pages,
             mimeType,
@@ -584,6 +633,9 @@ export const recipeProcessor = onTaskDispatched(
       // un administrateur le relancera demain — ou après avoir relevé le
       // plafond.
       const isBudget = err instanceof BudgetExceededError;
+      // Un livre illisible — PDF chiffré, EPUB sans texte — le reste à chaque
+      // tentative, et chacune retélécharge le fichier en entier.
+      const isUnreadableBook = err instanceof BookFileError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -607,20 +659,23 @@ export const recipeProcessor = onTaskDispatched(
         moduleType: "IMPORT",
         executionTimeMs: Date.now() - start,
         ...ctx,
-        extra: { attempt, isQuota, isBudget },
+        extra: { attempt, isQuota, isBudget, isUnreadableBook },
       });
 
-      // Dernière tentative — ou plafond atteint, qu'il est inutile de réessayer.
-      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget) {
+      // Dernière tentative — ou plafond atteint, ou fichier illisible : les deux
+      // se rejouent à l'identique, il est inutile de les réessayer.
+      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget || isUnreadableBook) {
         await moveToDeadLetter({
           jobId,
           userId,
           correlationId,
           failureReason: isBudget
             ? "budget_exceeded"
-            : isQuota
-              ? "quota_exceeded"
-              : "pipeline_error",
+            : isUnreadableBook
+              ? "book_file_unreadable"
+              : isQuota
+                ? "quota_exceeded"
+                : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",

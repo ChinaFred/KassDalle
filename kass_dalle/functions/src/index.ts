@@ -67,6 +67,9 @@ export {
   generatePlatingImageFn,
 } from "./callable/geminiCallables";
 
+// Analyse d'un livre entier avant son import : pages, tranches, coût estimé.
+export { analyzeBookFileFn } from "./callable/bookImportCallable";
+
 // ── Bac à sable ──────────────────────────────────────────────────────────────
 //
 // UN seul point d'entrée, une fois pour toutes : `sandboxFn` aiguille sur un

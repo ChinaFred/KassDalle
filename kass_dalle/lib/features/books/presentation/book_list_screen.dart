@@ -42,6 +42,14 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
               onTap: () => Navigator.of(ctx).pop(_BookCreationMethod.scanCover),
             ),
             ListTile(
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('Ajouter à partir d\'un PDF ou d\'un EPUB'),
+              subtitle: const Text(
+                'Créer le livre depuis le fichier, puis en extraire les recettes.',
+              ),
+              onTap: () => Navigator.of(ctx).pop(_BookCreationMethod.fromFile),
+            ),
+            ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Saisir manuellement'),
               subtitle: const Text(
@@ -58,6 +66,9 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     switch (choice) {
       case _BookCreationMethod.scanCover:
         context.push('/scan?mode=book-cover');
+        break;
+      case _BookCreationMethod.fromFile:
+        context.push('/scan?mode=book-document');
         break;
       case _BookCreationMethod.manual:
         context.push('/books/new');
@@ -250,7 +261,7 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
   }
 }
 
-enum _BookCreationMethod { scanCover, manual }
+enum _BookCreationMethod { scanCover, fromFile, manual }
 
 // ── En-tête de section ─────────────────────────────────────────────────────────
 

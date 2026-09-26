@@ -290,6 +290,95 @@ tu le ranges dans les bons champs. Ce qui manque manque : ne l'invente pas,
 signale-le dans "lectures_incertaines".
 `;
 
+/**
+ * Ligne qui sépare, dans un extrait de texte, ce qu'on transcrit de ce qui ne
+ * sert que de contexte. Écrite dans le texte par le découpage, citée par le
+ * préambule : les deux doivent porter exactement la même chaîne.
+ */
+export const BOOK_WINDOW_CONTEXT_MARKER = "════ SUITE DU LIVRE — CONTEXTE SEULEMENT ════";
+
+/** Ce que porte un job d'import qui lit une tranche d'un livre entier. */
+export interface BookWindowInfo {
+  /** `pdf` : des pages entières ; `text` : un texte extrait d'un livre numérique. */
+  kind: "pdf" | "text";
+  /** Pages à transcrire, en tête de l'extrait. Absent pour un texte. */
+  owned?: number;
+  /** Pages de contexte, à la suite. `0` pour la dernière tranche. */
+  context: number;
+}
+
+/**
+ * Ce qui précède le prompt de transcription quand la source est une tranche
+ * d'un livre entier.
+ *
+ * Un livre entier ne se lit pas en un appel : la réponse plafonne, et l'appel
+ * coûterait l'ensemble d'un coup. Il est donc découpé en tranches, et une
+ * recette n'a aucune raison de tenir dans une seule. Chaque tranche reçoit ses
+ * pages à transcrire, suivies d'une page de contexte qui sert à FINIR la
+ * dernière recette entamée — la tranche suivante, elle, la voit comme sa
+ * première page et doit l'ignorer.
+ *
+ * Le préambule ne modifie aucune règle de recopie : il dit seulement quelles
+ * recettes appartiennent à cet appel. C'est ce qui empêche deux tranches voisines
+ * de produire chacune un brouillon de la même recette.
+ */
+export function bookWindowPreamble(window: BookWindowInfo): string {
+  if (window.kind === "text") {
+    const lines = [
+      "Ce que tu reçois n'est PAS l'image d'une page : c'est un extrait du texte d'un livre numérique,",
+      "découpé en tranches qui se chevauchent. Toutes les règles ci-dessous s'appliquent au texte, mot pour mot.",
+      "",
+      '  • "page" — le numéro — vaut null : le texte n\'en porte pas.',
+    ];
+    if (window.context > 0) {
+      lines.push(
+        `  • Le texte se divise en deux par la ligne « ${BOOK_WINDOW_CONTEXT_MARKER} ».`,
+        "    Avant cette ligne : le texte que tu transcris.",
+        "    Après : il ne sert qu'à terminer une recette commencée avant la ligne.",
+        "    Ne transcris JAMAIS une recette qui commence après la ligne : elle a sa propre tranche.",
+      );
+    }
+    lines.push(
+      "  • Si le texte s'ouvre sur la fin d'une recette dont le titre n'est pas visible, cette fin",
+      "    appartient à la tranche précédente : ignore-la.",
+      "  • Table des matières, remerciements, mentions légales, biographie, publicité ne sont pas",
+      "    des recettes : ne les recopie pas.",
+      '  • Si aucune recette ne commence dans la partie à transcrire, réponds "no_recipe" avec',
+      '    "recettes": [].',
+    );
+    return lines.join("\n");
+  }
+
+  const owned = Math.max(1, window.owned ?? 1);
+  const total = owned + window.context;
+  const lines = [
+    "Ce que tu reçois n'est PAS une recette isolée : c'est un EXTRAIT d'un livre entier, découpé en",
+    `tranches de pages qui se chevauchent. Cet extrait compte ${total} page${total > 1 ? "s" : ""}.`,
+    "Toutes les règles ci-dessous s'appliquent à ces pages, mot pour mot.",
+    "",
+    owned === 1
+      ? "  • La page 1 est celle que tu transcris."
+      : `  • Les pages 1 à ${owned} sont celles que tu transcris.`,
+  ];
+  if (window.context > 0) {
+    lines.push(
+      window.context === 1
+        ? `  • La page ${total} ne sert qu'à terminer une recette commencée sur les pages précédentes.`
+        : `  • Les pages ${owned + 1} à ${total} ne servent qu'à terminer une recette commencée sur les pages précédentes.`,
+      "    Ne transcris JAMAIS une recette dont le titre est sur ces pages : elle a sa propre tranche.",
+      "    Une recette qui commence sur tes pages et se poursuit sur celles-ci se transcrit en entier.",
+    );
+  }
+  lines.push(
+    "  • Si la première page s'ouvre sur la fin d'une recette dont le titre n'est pas visible, cette fin",
+    "    appartient à la tranche précédente : ignore-la.",
+    "  • Sommaire, index, remerciements, mentions légales, page de titre ne sont pas des recettes.",
+    '  • Si aucune recette ne commence sur les pages à transcrire, réponds "no_recipe" avec',
+    '    "recettes": [].',
+  );
+  return lines.join("\n");
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PASSE 2 — BALISAGE ET NORMALISATION
 // ══════════════════════════════════════════════════════════════════════════════

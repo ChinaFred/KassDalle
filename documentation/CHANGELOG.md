@@ -14,6 +14,48 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-26
+
+### v0.22.86 — fonctionnel
+
+#### Ajouter un livre à partir d'un PDF ou d'un EPUB
+
+La feuille « Ajouter un livre » propose une troisième voie : « Ajouter à partir d'un PDF ou
+d'un EPUB ». Le fichier peut peser jusqu'à 300 Mo (PDF, EPUB ou Word). Avant tout import,
+l'écran montre ce que le serveur a lu — nombre de pages ou de caractères, nombre d'imports
+que le livre va créer — et un coût estimé, mesuré sur les 15 derniers imports de
+l'utilisateur. Sans assez d'imports passés pour le mesurer, l'écran le dit et n'affiche
+aucun montant. Rien n'est facturé avant « Lancer l'import ».
+
+Le livre est créé depuis le fichier : un EPUB donne titre, auteur, éditeur, année, langue,
+ISBN, description et couverture sans appel d'IA ; un PDF est lu par l'IA sur sa première
+page. Le contenu est découpé en tranches, et les recettes arrivent une à une dans les
+brouillons, rattachées au livre. « Importer un livre complet », dans le menu d'un livre
+existant, suit le même chemin : il ne traitait auparavant tout le fichier que comme une seule
+page.
+
+### v0.22.86 — technique
+
+- `bookDocumentScan` n'est plus une page : `recipeProcessor` l'aiguille sur `runBookImport`
+  (`pipeline/bookImport.ts`), qui crée le livre puis un job `recipeScan` par tranche. Champs
+  nouveaux sur `processing_jobs` : `parent_job_id`, `book_window`, `windows_total`,
+  `windows_created`. Détail en § 3.4 de `TechnicalRequirements.md`.
+- `books/bookFile.ts` : lecture PDF (`pdf-lib`, ajouté aux dépendances, chargé à la demande),
+  EPUB (`jszip`, OPF et XHTML) et Word ; fenêtres de 3 pages + 1 de contexte, ou de 6 000
+  caractères + 1 500. `bookWindowPreamble` dit au modèle quelles pages lui appartiennent.
+- `analyzeBookFileFn` : lecture avant import et suppression d'un livre abandonné.
+  `books/importEstimate.ts` : moyenne par scan des lignes `ai_usage`, sans repli figé.
+- `scanAndPromoteUploadFn` : sous `quarantine/{uid}/livres/`, plafond de 300 Mo, contrôle en
+  flux (`scanUploadHead`, `streamContainsEicar`). `storage.rules` : bloc `livres/`. Une archive
+  ZIP est admise sous `.docx` et `.epub`.
+- `attachmentPart` : un `text/plain` part comme texte, donc lisible par Claude ; il partait
+  en document et retombait sur Gemini.
+- `recipeProcessor` : mémoire portée à 2 GiB ; un `BookFileError` part en dead letter sans
+  nouvelle tentative ; le comptage d'illustrations est sauté pour une tranche de livre.
+- Tests : `bookFile.test.ts`, `bookImport.test.ts`, `book_import_analysis_test.dart`.
+
+---
+
 ## 2026-09-13
 
 ### v0.22.67 — fonctionnel

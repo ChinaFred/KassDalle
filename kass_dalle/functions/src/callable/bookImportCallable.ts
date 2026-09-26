@@ -1,0 +1,117 @@
+/**
+ * Analyse d'un livre avant son import.
+ *
+ * Importer un livre entier déclenche des dizaines d'appels d'IA facturés. Avant
+ * de les lancer, l'utilisateur voit ce que le fichier contient — nombre de pages
+ * ou de tranches — et ce que cela coûtera d'après ses imports précédents. Cette
+ * fonction ne dépense rien : elle ouvre le fichier et compte.
+ *
+ * Le même appel, avec `discard`, supprime le fichier quand l'utilisateur renonce :
+ * sans lui, un livre de plusieurs centaines de mégaoctets resterait dans
+ * `scans/` sans que rien ne le référence.
+ */
+
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { getStorage } from "firebase-admin/storage";
+
+import { REGION, MAX_CALLABLE_INSTANCES } from "../config";
+import { requireEditor } from "./_auth";
+import { getUsdToEurRate } from "../ai/budget";
+import {
+  BOOK_UPLOAD_FOLDER,
+  BookFileError,
+  detectBookFileKind,
+  openBookFile,
+} from "../books/bookFile";
+import { referenceCostPerScan } from "../books/importEstimate";
+import { logError, logInfo } from "../logging";
+
+const ALLOWED_ORIGINS = [
+  "https://kassdale-6d948.web.app",
+  "https://kassdale-6d948.firebaseapp.com",
+];
+
+export const analyzeBookFileFn = onCall(
+  {
+    region: REGION,
+    // Un PDF de trois cents mégaoctets se charge en mémoire pour être compté.
+    memory: "2GiB",
+    timeoutSeconds: 300,
+    cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
+  },
+  async (req) => {
+    const ctx = await requireEditor(req, "book_import_analysis");
+    const { storagePath, discard } = (req.data ?? {}) as {
+      storagePath?: string;
+      discard?: boolean;
+    };
+
+    // Le dossier de l'appelant, et lui seul : cette fonction lit et supprime.
+    const expectedPrefix = `scans/${ctx.userId}/${BOOK_UPLOAD_FOLDER}/`;
+    if (typeof storagePath !== "string" || !storagePath.startsWith(expectedPrefix)) {
+      throw new HttpsError("permission-denied", "Chemin de livre invalide.");
+    }
+    const file = getStorage().bucket().file(storagePath);
+
+    if (discard === true) {
+      await file.delete({ ignoreNotFound: true });
+      await logInfo({
+        message: "Livre abandonné avant l'import : fichier supprimé",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { storagePath },
+      });
+      return { discarded: true };
+    }
+
+    try {
+      const [meta] = await file.getMetadata();
+      const fileName = storagePath.split("/").pop() ?? "livre";
+      const kind = detectBookFileKind(meta.contentType, fileName);
+      if (!kind) {
+        throw new BookFileError("Format non reconnu : un livre s'importe en PDF, EPUB ou Word.");
+      }
+      const [bytes] = await file.download();
+      const opened = await openBookFile(bytes, kind);
+
+      const [reference, usdToEur] = await Promise.all([
+        referenceCostPerScan(ctx.userId),
+        getUsdToEurRate(),
+      ]);
+
+      return {
+        kind,
+        sizeBytes: bytes.length,
+        pages: opened.pages,
+        characters: opened.characters,
+        windows: opened.windows,
+        titre: opened.metadata.titre ?? null,
+        auteur: opened.metadata.auteur ?? null,
+        // Absent quand la mesure manque : le client affiche « indisponible », pas zéro.
+        costPerWindowUsd: reference.meanUsd,
+        estimatedCostUsd: reference.meanUsd != null ? reference.meanUsd * opened.windows : null,
+        referenceScans: reference.scans,
+        usdToEur,
+      };
+    } catch (err) {
+      if (err instanceof BookFileError) {
+        throw new HttpsError("failed-precondition", err.message);
+      }
+      if (err instanceof HttpsError) throw err;
+      await logError({
+        message: "Analyse du livre en échec technique",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { storagePath },
+      });
+      throw new HttpsError(
+        "internal",
+        err instanceof Error ? err.message : "Analyse du livre impossible.",
+      );
+    }
+  },
+);

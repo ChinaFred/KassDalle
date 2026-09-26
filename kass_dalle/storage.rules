@@ -133,6 +133,27 @@ service firebase.storage {
         && isImportableUnder(50 * 1024 * 1024);
     }
 
+    /// Un livre entier — PDF, EPUB ou Word — à découper en recettes.
+    ///
+    /// Plafond de 300 Mo au lieu de 50, et seulement sous `livres/` : une page de
+    /// recette n'a aucune raison de peser autant, et le dossier commun reste
+    /// borné. Deux blocs `match` se recouvrent ici, et l'accès est accordé si
+    /// l'un d'eux l'autorise — le premier bloc refuse toujours un fichier de plus
+    /// de 50 Mo, celui-ci ne l'autorise que sous `livres/`.
+    ///
+    /// Même liste de types que `scanUploadHead` (`functions/src/utils/uploadSecurity.ts`),
+    /// même plafond que `MAX_BOOK_UPLOAD_SIZE_BYTES` : les trois bougent ensemble.
+    match /quarantine/{uid}/livres/{fileName} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid) && isApprovedToken()
+        && request.resource.size < 300 * 1024 * 1024
+        && baseContentType() in [
+             'application/pdf',
+             'application/epub+zip',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+           ];
+    }
+
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
       allow read: if isActive();

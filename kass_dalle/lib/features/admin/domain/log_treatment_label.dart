@@ -25,6 +25,7 @@ library;
 const Map<String, String> kLogTreatmentLabels = {
   // ── Import d'une recette, de bout en bout ──────────────────────────────
   'upload_security_scan': 'Contrôle du fichier importé',
+  'book_import_analysis': 'Lecture d\'un livre avant son import',
   // Un seul fil couvre la mise en file ET tout le traitement : le dispatcher
   // transmet son identifiant au processeur. « disp » et « proc » nommaient
   // chacun un morceau du couloir, jamais le voyage.

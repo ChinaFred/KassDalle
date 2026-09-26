@@ -14,6 +14,8 @@ import '../../../auth/data/user_preferences_repository.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../admin/presentation/costs_format.dart';
+import '../../data/book_import_analysis.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -196,7 +198,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 // ── Illustration compacte ──────────────────────────────────
                 const SizedBox(height: 8),
                 Icon(
-                  Icons.photo_camera_outlined,
+                  _selectedIntent == ScanIntent.bookDocument
+                      ? Icons.auto_stories_outlined
+                      : Icons.photo_camera_outlined,
                   size: AppIconSize.large,
                   color: Theme.of(context).colorScheme.primary,
                 ),
@@ -231,7 +235,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 _selectedIntent == ScanIntent.bookDocument
                                 ? 'Aucun livre'
                                 : null,
-                            enabled: !scanState.isRunning && !lockBook,
+                            // Verrouillé aussi pendant la confirmation : le
+                            // livre lu par le serveur a déjà son livre cible.
+                            enabled:
+                                !scanState.isRunning &&
+                                !lockBook &&
+                                scanState.status !=
+                                    ScanStatus.pendingBookConfirmation,
                             onChanged: (id, titre) {
                               setState(() {
                                 _selectedBookId = id;
@@ -256,7 +266,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 if (scanState.status == ScanStatus.idle ||
                     scanState.status == ScanStatus.done ||
                     scanState.status == ScanStatus.error) ...[
-                  if (PlatformUtils.hasCameraSupport) ...[
+                  // Un livre entier est un fichier : la caméra n'a rien à y faire.
+                  if (PlatformUtils.hasCameraSupport &&
+                      _selectedIntent != ScanIntent.bookDocument) ...[
                     FilledButton.icon(
                       onPressed: () {
                         if (scanState.status != ScanStatus.idle) {
@@ -277,9 +289,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 .pickFromCameraAndQueueBookCover();
                             break;
                           case ScanIntent.bookDocument:
-                            context.showSnackBar(
-                              'Utilisez l\'import fichier pour un livre complet.',
-                            );
                             break;
                         }
                       },
@@ -347,6 +356,25 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                   const SizedBox(height: 12),
                   ...scanState.activeImports.map(
                     (u) => _ActiveImportTile(upload: u),
+                  ),
+                ],
+
+                // ── Livre lu, en attente du feu vert ───────────────────────
+                if (scanState.status == ScanStatus.pendingBookConfirmation &&
+                    scanState.bookAnalysis != null) ...[
+                  const SizedBox(height: 8),
+                  _BookConfirmationCard(
+                    analysis: scanState.bookAnalysis!,
+                    filename: scanState.filename ?? '',
+                    targetBookTitre: _selectedBookTitre,
+                    targetsExistingBook: (_selectedBookId ?? '').isNotEmpty,
+                    errorMessage: scanState.errorMessage,
+                    onConfirm: () => ref
+                        .read(scanUploadProvider.notifier)
+                        .confirmBookImport(),
+                    onCancel: () => ref
+                        .read(scanUploadProvider.notifier)
+                        .cancelBookImport(),
                   ),
                 ],
 
@@ -626,7 +654,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     ScanIntent.bookCover =>
       'Photographiez la page de garde pour créer un livre. La caméra se lance automatiquement sur mobile.',
     ScanIntent.bookDocument =>
-      'Importez un PDF ou DOCX de livre pour extraire les recettes et les rattacher au livre choisi.',
+      'Importez un livre en PDF, EPUB ou Word. Sans livre choisi, il est créé '
+          'depuis le fichier ; chaque recette devient un brouillon.',
   };
 
   /// Route de la saisie manuelle, en emportant le livre choisi sur cet écran.
@@ -646,7 +675,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       ScanIntent.recipe =>
         'Choisir un ou plusieurs fichiers (PDF, DOCX, image)',
       ScanIntent.bookCover => 'Choisir une couverture (image ou PDF)',
-      ScanIntent.bookDocument => 'Choisir un livre (PDF, DOCX, image)',
+      ScanIntent.bookDocument => 'Choisir un livre (PDF, EPUB, Word)',
     };
   }
 
@@ -766,7 +795,21 @@ class _ProgressCard extends StatelessWidget {
                 Text(state.statusLabel),
               ],
             ),
-            if (state.status == ScanStatus.uploading) ...[
+            // Un livre : la barre suit l'envoi, puis devient indéterminée
+            // pendant que le serveur contrôle et lit le fichier.
+            if (state.status == ScanStatus.readingBook) ...[
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: state.bookStep == 'Envoi' ? state.uploadProgress : null,
+              ),
+              if (state.bookStep == 'Envoi') ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${(state.uploadProgress * 100).toInt()}%',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ] else if (state.status == ScanStatus.uploading) ...[
               const SizedBox(height: 12),
               LinearProgressIndicator(value: state.uploadProgress),
               const SizedBox(height: 4),
@@ -779,6 +822,129 @@ class _ProgressCard extends StatelessWidget {
               const SizedBox(height: 12),
               const LinearProgressIndicator(),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ce que le serveur a lu du livre, et ce que l'import va faire.
+///
+/// L'import d'un livre déclenche autant d'appels d'IA que de tranches, et chacun
+/// est facturé : rien ne part avant que l'utilisateur ait lu ces chiffres.
+class _BookConfirmationCard extends StatelessWidget {
+  final BookImportAnalysis analysis;
+  final String filename;
+  final String? targetBookTitre;
+  final bool targetsExistingBook;
+  final String? errorMessage;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _BookConfirmationCard({
+    required this.analysis,
+    required this.filename,
+    required this.targetBookTitre,
+    required this.targetsExistingBook,
+    required this.errorMessage,
+    required this.onConfirm,
+    required this.onCancel,
+  });
+
+  String get _windowsLabel {
+    final n = analysis.windows;
+    final what = analysis.pages != null ? 'de 3 pages' : 'de texte';
+    return '$n import${n > 1 ? 's' : ''} $what';
+  }
+
+  String _costLine() {
+    final total = analysis.estimatedCostUsd;
+    final perWindow = analysis.costPerWindowUsd;
+    if (total == null || perWindow == null) {
+      return 'Le coût n\'a pas pu être estimé : il faut au moins 3 imports '
+          'passés pour le mesurer. Chaque import est facturé comme une page '
+          'scannée.';
+    }
+    // Sans taux de change, le dollar est affiché tel quel : `formatMoney` ne
+    // convertit jamais au hasard.
+    final rate = analysis.usdToEur ?? 0;
+    return 'Coût estimé : environ ${formatMoney(total, rate)}. Mesuré sur vos '
+        '${analysis.referenceScans} derniers imports : '
+        '${formatMoney(perWindow, rate)} par import.';
+  }
+
+  String _targetLine() {
+    if (targetsExistingBook) {
+      return 'Les recettes seront rattachées au livre '
+          '« ${targetBookTitre ?? ''} ».';
+    }
+    final titre = analysis.titre;
+    return titre == null
+        ? 'Un nouveau livre sera créé depuis le fichier.'
+        : 'Un nouveau livre sera créé depuis le fichier. Titre relevé : '
+              '« $titre ».';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final body = theme.textTheme.bodyMedium;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              filename,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${analysis.contentLabel} · ${analysis.sizeLabel}',
+              style: body,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Le livre sera découpé en $_windowsLabel. Chaque import est un '
+              'appel d\'IA facturé.',
+              style: body,
+            ),
+            const SizedBox(height: 8),
+            Text(_costLine(), style: body),
+            const SizedBox(height: 8),
+            Text(_targetLine(), style: body),
+            const SizedBox(height: 8),
+            Text(
+              'Si le plafond quotidien d\'IA est atteint, les imports restants '
+              'se relancent le lendemain depuis la file des traitements.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                errorMessage!,
+                style: body?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: onCancel, child: const Text('Annuler')),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: onConfirm,
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('Lancer l\'import'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
