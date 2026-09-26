@@ -304,8 +304,82 @@ void main() {
       ).singleWhere((e) => e.kind == NutritionLegendKind.assumedQuantity);
       expect(
         legende.label,
-        '2 ingrédient(s) sans quantité, comptés pour une unité '
-        '(pincée, brin, bouquet…)',
+        '2 ingrédient(s) sans quantité, comptés pour une quantité usuelle',
+      );
+    });
+  });
+
+  group('la portion usuelle d\'une ligne nue', () {
+    NutritionIngredientDoc fiche(String nom, {double? portion}) =>
+        NutritionIngredientDoc(
+          id: normalizeIngredientStrictId(nom),
+          source: 'test',
+          qualityStatus: 'verified',
+          per100g: const {'kcal': 25},
+          usualPortionGrams: portion,
+        );
+
+    NutritionContributionTable tableDe(NutritionIngredientDoc doc) =>
+        buildNutritionContributions(
+          recipe: recette(
+            ingredients: [RecipeIngredient(name: doc.id, qty: '', unit: '')],
+          ),
+          nutritionById: {doc.id: doc},
+          unitOverrides: const {},
+          unitInfos: const {},
+        );
+
+    test('une ligne nue prend la portion de la fiche et se pèse', () {
+      final table = tableDe(fiche('roquette', portion: 30));
+      final row = table.rows.single;
+      expect(row.isMissing, isFalse);
+      expect(row.weightGrams, 30);
+      expect(row.usualPortion, isTrue);
+      expect(row.quantityAssumed, isTrue);
+      expect(row.perIngredient!['kcal'], closeTo(7.5, 1e-9));
+      expect(table.totalFor('kcal'), closeTo(7.5, 1e-9));
+    });
+
+    test('la ligne dit son poids et sa source', () {
+      final row = tableDe(fiche('roquette', portion: 30)).rows.single;
+      expect(
+        nutritionAssumedUnitPhrase(row),
+        'une portion usuelle (30 g, estimée par l\'IA)',
+      );
+      expect(nutritionQuantityCellText(row), 'Portion usuelle');
+    });
+
+    test('sans portion sur la fiche, la ligne reste sans poids', () {
+      final row = tableDe(fiche('roquette')).rows.single;
+      expect(row.isMissing, isTrue);
+      expect(row.usualPortion, isFalse);
+    });
+
+    test('un ingrédient qui a une quantité écrite ignore la portion', () {
+      final table = buildNutritionContributions(
+        recipe: recette(
+          ingredients: const [
+            RecipeIngredient(name: 'roquette', qty: '100', unit: 'g'),
+          ],
+        ),
+        nutritionById: {'roquette': fiche('roquette', portion: 30)},
+        unitOverrides: const {},
+        unitInfos: const {},
+      );
+      final row = table.rows.single;
+      expect(row.weightGrams, 100);
+      expect(row.usualPortion, isFalse);
+      expect(row.quantityAssumed, isFalse);
+    });
+
+    test('la légende parle d\'une quantité usuelle', () {
+      final table = tableDe(fiche('roquette', portion: 30));
+      final legende = nutritionLegendEntries(
+        table,
+      ).singleWhere((e) => e.kind == NutritionLegendKind.assumedQuantity);
+      expect(
+        legende.label,
+        '1 ingrédient(s) sans quantité, comptés pour une quantité usuelle',
       );
     });
   });

@@ -136,6 +136,43 @@ void main() {
     }
   });
 
+  group('portion usuelle — cas partagés Dart/TypeScript', () {
+    final fixture = _loadFixture('unit_to_grams.json');
+    final cases = (fixture['usual_portion'] as List)
+        .cast<Map<String, dynamic>>();
+
+    test('la section usual_portion de la fixture n\'est pas vide', () {
+      expect(cases, isNotEmpty);
+    });
+
+    for (final c in cases) {
+      final ingredient = c['ingredient'] as String;
+      final qty = c['qty'] as String;
+      final unit = c['unit'] as String;
+      final portion = (c['usualPortionGrams'] as num?)?.toDouble();
+      final expected = (c['grams'] as num?)?.toDouble();
+      final why = c['why'] as String;
+
+      test('$qty $unit de $ingredient, portion ${portion ?? 'absente'} → '
+          '${expected ?? 'null'} g  ($why)', () {
+        final actual = NutritionQuantityConverter.toGrams(
+          ingredientName: ingredient,
+          qty: qty,
+          unit: unit,
+          ingredientOverride: IngredientWeightOverride(
+            usualPortionGrams: portion,
+          ),
+        );
+        if (expected == null) {
+          expect(actual, isNull);
+        } else {
+          expect(actual, isNotNull);
+          expect(actual!, closeTo(expected, 1e-6));
+        }
+      });
+    }
+  });
+
   group('toGrams — divergences connues avec le référentiel TypeScript', () {
     final fixture = _loadFixture('unit_to_grams.json');
     final divergences = (fixture['divergences'] as List)

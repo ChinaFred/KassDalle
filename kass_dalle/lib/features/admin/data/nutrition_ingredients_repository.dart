@@ -24,6 +24,11 @@ class NutritionIngredientDoc {
   /// les unités qui ne sont pas « pièce » : une branche de céleri en pèse 60.
   final Map<String, double> gramsPerUnit;
 
+  /// Quantité qu'une recette emploie d'ordinaire de cet ingrédient quand elle
+  /// n'en écrit aucune — la roquette d'une garniture, le parmesan « à râper
+  /// dessus ». Estimée par l'IA (`usual_portion_source`), pour quatre personnes.
+  final double? usualPortionGrams;
+
   /// Vrai quand cet ingrédient ne finit pas dans l'assiette.
   ///
   /// Bain de friture, foin de fumage, gros sel de cuisson : présents dans la
@@ -47,6 +52,7 @@ class NutritionIngredientDoc {
     required this.per100g,
     this.gramsPerPiece,
     this.gramsPerUnit = const {},
+    this.usualPortionGrams,
     this.notConsumed = false,
     this.shoppingProduct,
   });
@@ -86,6 +92,7 @@ class NutritionIngredientDoc {
     }
 
     final rawGramsPerPiece = data['grams_per_piece'];
+    final rawUsualPortion = data['usual_portion_g'];
 
     final rawGramsPerUnit = data['grams_per_unit'];
     final gramsPerUnit = <String, double>{};
@@ -106,6 +113,9 @@ class NutritionIngredientDoc {
           ? rawGramsPerPiece.toDouble()
           : null,
       gramsPerUnit: gramsPerUnit,
+      usualPortionGrams: rawUsualPortion is num && rawUsualPortion > 0
+          ? rawUsualPortion.toDouble()
+          : null,
       notConsumed: data['not_consumed'] == true,
       shoppingProduct: data['shopping_product'] is String
           ? data['shopping_product'] as String

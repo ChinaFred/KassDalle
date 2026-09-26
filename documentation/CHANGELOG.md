@@ -16,6 +16,56 @@ anciennes sans accents.
 
 ## 2026-09-26
 
+### v0.22.91 — fonctionnel
+
+#### Un ingrédient écrit sans quantité (« roquette », « parmesan pour râper dessus ») est compté
+
+Une ligne sans nombre ni unité sortait du calcul : la garniture et le fromage ne comptaient
+ni dans les calories ni dans le poids. Une IA estime maintenant, une fois par ingrédient, la
+quantité qu'une recette pour quatre personnes en emploie d'ordinaire. La ligne s'affiche
+avec la mention « portion usuelle (30 g, estimée par l'IA) ». Les recettes déjà importées
+l'obtiennent par la reprise de la nutrition (*Admin › Backfills*). Un assaisonnement garde sa
+pincée, et une quantité ou une unité écrite garde son poids.
+
+### v0.22.91 — technique
+
+- `IngredientWeightOverride.usualPortionGrams` et `resolveWeighingInput(…, usualPortionGrams)`,
+  cinquième cas de la règle « quantité absente », des deux côtés. Fixture partagée :
+  section `usual_portion` de `unit_to_grams.json`.
+- `estimateUsualPortionsWithAI` (`nutrition/aiEnrichment.ts`), appelée par `syncRecipeNutrition`
+  avant le calcul. Poste `estimate_usual_portions`, inscrit dans `ROUTABLE_FEATURES`,
+  `kFeatureCatalog` et `kFeatureProcess`. Champs de la fiche : voir § 3.10 de
+  `TechnicalRequirements.md`.
+- `NutritionContributionRow.usualPortion` et `nutritionAssumedUnitPhrase` : le tableau, le
+  PDF et l'infobulle disent le poids et la source. La légende des quantités supposées parle
+  d'une « quantité usuelle » dès qu'autre chose qu'une pincée s'y mêle.
+- Aucun écran n'édite `usual_portion_g` : une correction se fait aujourd'hui dans la console
+  Firestore.
+
+### v0.22.90 — technique
+
+- Prompt d'import (`promptsExtraction.ts`, passe de balisage) : quand une ligne nomme deux
+  aliments et ne donne qu'un poids ou un volume, ce chiffre est celui du mélange. Il se
+  répartit en parts égales, une par entrée, la taille du sachet restant dans la note. Deux
+  entrées portant chacune le poids complet compteraient le double de l'achat. La règle
+  n'agit qu'à l'import : une recette déjà importée garde ses quantités.
+
+### v0.22.89 — fonctionnel
+
+#### « Brin de basilic » se lit un brin
+
+Un nombre absent devant « brin », « branche », « bouquet », « feuille » ou « gousse » vaut 1.
+La ligne se pèse (2 g pour un brin de basilic) et s'affiche avec la mention « un brin ». Avant,
+elle restait sans poids et sortait du calcul.
+
+### v0.22.89 — technique
+
+- `IMPLIED_ONE_UNITS` (TypeScript) et `_impliedOneUnits` (Dart), troisième cas de
+  `resolveWeighingInput`. Sous-ensemble de `INGREDIENT_DEPENDENT_UNITS` : « pièce », « tranche »,
+  « morceau » et « poignée » n'en font pas partie.
+- La légende du tableau nutrition dit « à la pincée » quand toutes les quantités supposées sont
+  des pincées, et « pour une quantité usuelle » sinon.
+
 ### v0.22.88 — fonctionnel
 
 #### Quitter l'import d'un livre en cours d'envoi demande confirmation

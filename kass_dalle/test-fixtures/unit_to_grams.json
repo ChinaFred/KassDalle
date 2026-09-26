@@ -88,6 +88,30 @@
     { "ingredient": "sel",   "qty": "1", "unit": "tbsp",    "grams": 18,  "why": "alias anglais de la cuillère à soupe (15 ml × 1.2)" },
     { "ingredient": "sucre", "qty": "1", "unit": "cuillère à dessert", "grams": 8.5, "why": "10 ml × densité sucre 0.85" }
   ],
+  "_usual_portion_comment": [
+    "Portion usuelle d'un ingrédient écrit sans quantité ni unité (« roquette », « parmesan »).",
+    "",
+    "  - Dart : NutritionQuantityConverter.toGrams(…, ingredientOverride: usualPortionGrams)",
+    "  - TS   : resolveWeighingInput(…, usualPortionGrams)  (functions/src/nutrition/quantityConversion.ts)",
+    "",
+    "La portion est écrite sur la fiche de l'ingrédient (`usual_portion_g`) et ne sert qu'à une",
+    "ligne nue. La pincée d'un assaisonnement, le nombre supposé d'une unité comptée, une unité",
+    "écrite et une quantité lue passent toutes avant elle.",
+    "",
+    "`usualPortionGrams: null` signifie « la fiche ne porte pas de portion »."
+  ],
+  "usual_portion": [
+    { "ingredient": "roquette",  "qty": "",         "unit": "",      "usualPortionGrams": 30,   "grams": 30,   "why": "ligne nue : la portion usuelle de la fiche donne le poids" },
+    { "ingredient": "roquette",  "qty": "",         "unit": "",      "usualPortionGrams": null, "grams": null, "why": "fiche sans portion : la ligne reste sans poids, comme avant" },
+    { "ingredient": "parmesan",  "qty": "",         "unit": "",      "usualPortionGrams": 25,   "grams": 25,   "why": "« pour râper dessus » : aucune quantité écrite, la portion de la fiche s'applique" },
+    { "ingredient": "persil",    "qty": "",         "unit": "",      "usualPortionGrams": 10,   "grams": 10,   "why": "herbe fraîche hors de la table des assaisonnements : la portion remplace le refus" },
+    { "ingredient": "roquette",  "qty": "quelques", "unit": "",      "usualPortionGrams": 30,   "grams": 30,   "why": "quantité littérale illisible : traitée comme absente" },
+    { "ingredient": "sel",       "qty": "",         "unit": "",      "usualPortionGrams": 40,   "grams": 0.5,  "why": "assaisonnement : la pincée passe avant la portion" },
+    { "ingredient": "basilic",   "qty": "",         "unit": "brin",  "usualPortionGrams": 40,   "grams": 2,    "why": "unité comptée une à une : le brin passe avant la portion" },
+    { "ingredient": "farine",    "qty": "",         "unit": "g",     "usualPortionGrams": 40,   "grams": null, "why": "quantité absente devant une vraie unité : donnée abîmée, la portion ne s'y substitue pas" },
+    { "ingredient": "roquette",  "qty": "100",      "unit": "g",     "usualPortionGrams": 30,   "grams": 100,  "why": "une quantité écrite passe avant la portion" },
+    { "ingredient": "oignon",    "qty": "3",        "unit": "",      "usualPortionGrams": 30,   "grams": 330,  "why": "une ligne qui a un nombre n'est pas nue : la portion ne la touche pas" }
+  ],
   "_referential_comment": [
     "Arbitrage entre le référentiel Firestore `nutrition_units` et la table intégrée.",
     "",

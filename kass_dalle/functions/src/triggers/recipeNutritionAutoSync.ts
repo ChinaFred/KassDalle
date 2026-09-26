@@ -15,7 +15,11 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { COLL_NUTRITION_INGREDIENTS } from "../config";
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
-import { getKnownUnitMetadata, resolveWeighingInput } from "../nutrition/quantityConversion";
+import {
+  getKnownUnitMetadata,
+  isBareIngredientLine,
+  resolveWeighingInput,
+} from "../nutrition/quantityConversion";
 import {
   resolveIngredientUnitFields,
   type UnitResolvedIngredient,
@@ -24,6 +28,7 @@ import { hasPer100gValues } from "../nutrition/per100gEnrichment";
 import {
   enrichUnknownIngredientsWithAI,
   enrichUnknownUnitsWithAI,
+  estimateUsualPortionsWithAI,
 } from "../nutrition/aiEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import {
@@ -424,6 +429,22 @@ export async function syncRecipeNutrition(args: {
         }
       }
     }
+
+    // Portion usuelle des lignes écrites sans quantité — « roquette »,
+    // « parmesan pour râper dessus ». Sans elle ces lignes n'ont aucun poids et
+    // sortent du calcul. Le déclencheur et le rattrapage passent tous deux par
+    // ici : une recette déjà importée l'obtient à sa prochaine reprise, sans
+    // passe dédiée. Best-effort — la fonction ne lève pas, et le calcul qui suit
+    // n'attend qu'elle.
+    await estimateUsualPortionsWithAI({
+      ingredientNames: inputs
+        .filter((i) => isBareIngredientLine(i.name, i.qty, i.unit_canonical))
+        .map((i) => i.name),
+      recipeId: after.id,
+      correlationId,
+      scanId,
+      userId,
+    });
 
     await computeAndPersistRecipeNutrition({
       aiEnabled: true,

@@ -519,6 +519,13 @@ export interface ReferentialUnitOverride {
 export interface IngredientWeightOverride {
   gramsPerPiece?: number;
   gramsPerUnit?: Record<string, number>;
+  /**
+   * Quantité qu'une recette emploie d'ordinaire de cet ingrédient quand elle
+   * n'en écrit aucune — la roquette d'une garniture, le parmesan « à râper
+   * dessus ». Estimée par l'IA, lue par `resolveWeighingInput` seul : elle ne
+   * sert jamais à convertir une unité.
+   */
+  usualPortionGrams?: number;
 }
 
 /**
@@ -668,10 +675,24 @@ export function isSeasoning(name: unknown): boolean {
   return SEASONING_MATCHERS.some((matcher) => padded.includes(`_${matcher}_`));
 }
 
+/**
+ * La ligne ne dit ni combien ni en quoi, et n'est pas un assaisonnement.
+ *
+ * C'est la ligne « roquette » ou « parmesan » d'une garniture : ni nombre, ni
+ * unité. Les assaisonnements en sont exclus, une pincée les pèse déjà.
+ */
+export function isBareIngredientLine(name: unknown, qty: unknown, unit: unknown): boolean {
+  if (parseQuantityToNumber(qty) != null) return false;
+  if (normalizeObservedUnit(unit) !== "") return false;
+  return !isSeasoning(name);
+}
+
 /** Ce qui sera réellement pesé : un nombre, et l'unité qui va avec. */
 export interface WeighingInput {
   qty: number;
   unit: string;
+  /** Vrai quand le nombre est la portion usuelle de l'ingrédient, pas un mot de la recette. */
+  usualPortion?: boolean;
 }
 
 /**
@@ -682,13 +703,15 @@ export interface WeighingInput {
  * `NutritionQuantityConverter.resolveWeighingInput` côté Dart et asservi par
  * `test-fixtures/unit_to_grams.json`.
  *
- * Quatre cas, et rien d'autre :
+ * Cinq cas, et rien d'autre :
  *
  *  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
  *  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on lit 1 ;
  *  3. elle manque sur une unité comptée une à une (« brin », « bouquet ») — on
  *     lit 1, et le poids de l'unité vient de l'ingrédient ;
- *  4. elle manque sans unité, sur un assaisonnement connu — on lit une pincée.
+ *  4. elle manque sans unité, sur un assaisonnement connu — on lit une pincée ;
+ *  5. elle manque sans unité, sur un autre ingrédient dont la fiche porte une
+ *     portion usuelle — on lit cette portion, en grammes.
  *
  * Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. »
  * est une donnée abîmée, pas une convention d'écriture : lui prêter un 1
@@ -697,11 +720,16 @@ export interface WeighingInput {
  * L'unité rendue au cas 4 est « pincée » et non une constante en grammes :
  * c'est ce qui fait suivre la surcharge du référentiel Firestore. Un
  * administrateur qui corrige le poids d'une pincée corrige les cas 2 et 4.
+ *
+ * Le cas 5 rend des grammes, parce que la portion en est déjà : elle appartient
+ * à l'ingrédient, pas à une unité que la recette n'a pas écrite. Il passe après
+ * les autres — l'assaisonnement garde sa pincée, l'unité écrite garde son poids.
  */
 export function resolveWeighingInput(
   ingredientName: string,
   qty: unknown,
   unit: unknown,
+  usualPortionGrams?: number | null,
 ): WeighingInput | null {
   const unitStr = typeof unit === "string" ? unit.trim() : "";
   const quantity = parseQuantityToNumber(qty);
@@ -713,6 +741,9 @@ export function resolveWeighingInput(
   }
   if (normalizedUnit === "" && isSeasoning(ingredientName)) {
     return { qty: 1, unit: SEASONING_DEFAULT_UNIT };
+  }
+  if (normalizedUnit === "" && usualPortionGrams != null && usualPortionGrams > 0) {
+    return { qty: usualPortionGrams, unit: "g", usualPortion: true };
   }
   return null;
 }

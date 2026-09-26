@@ -286,6 +286,11 @@ export const ROUTABLE_FEATURES: Array<{
   { id: "enrich_unit_weights", label: "Poids d'une unité inconnue", group: "Nutrition" },
   { id: "estimate_piece_weights", label: "Poids d'un ingrédient à la pièce", group: "Nutrition" },
   {
+    id: "estimate_usual_portions",
+    label: "Portion usuelle d'un ingrédient sans quantité",
+    group: "Nutrition",
+  },
+  {
     id: "estimate_unit_couple_weights",
     label: "Poids d'une unité pour un ingrédient donné",
     group: "Nutrition",

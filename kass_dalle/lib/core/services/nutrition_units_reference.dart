@@ -146,6 +146,7 @@ double? resolveIngredientWeightGrams({
     ingredientName: ingredientName,
     qty: qty,
     unit: unit,
+    usualPortionGrams: ingredientOverride?.usualPortionGrams,
   );
   if (weighing == null) return null;
   final normalized = NutritionQuantityConverter.normalizeObservedUnit(

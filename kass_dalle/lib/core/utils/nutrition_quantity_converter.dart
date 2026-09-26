@@ -27,7 +27,15 @@ class WeighingInput {
   final double qty;
   final String unit;
 
-  const WeighingInput({required this.qty, required this.unit});
+  /// Vrai quand le nombre est la portion usuelle de l'ingrédient, pas un mot de
+  /// la recette.
+  final bool usualPortion;
+
+  const WeighingInput({
+    required this.qty,
+    required this.unit,
+    this.usualPortion = false,
+  });
 }
 
 /// Valeurs issues d'un document du référentiel Firestore `nutrition_units`.
@@ -58,9 +66,16 @@ class IngredientWeightOverride {
   final double? gramsPerPiece;
   final Map<String, double> gramsPerUnit;
 
+  /// Quantité qu'une recette emploie d'ordinaire de cet ingrédient quand elle
+  /// n'en écrit aucune — la roquette d'une garniture, le parmesan « à râper
+  /// dessus ». Estimée par l'IA, lue par `resolveWeighingInput` seul : elle ne
+  /// sert jamais à convertir une unité.
+  final double? usualPortionGrams;
+
   const IngredientWeightOverride({
     this.gramsPerPiece,
     this.gramsPerUnit = const {},
+    this.usualPortionGrams,
   });
 }
 
@@ -238,7 +253,7 @@ class NutritionQuantityConverter {
   /// `resolveWeighingInput` côté TypeScript et asservi par
   /// `test-fixtures/unit_to_grams.json`.
   ///
-  /// Quatre cas, et rien d'autre :
+  /// Cinq cas, et rien d'autre :
   ///
   ///  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
   ///  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on
@@ -246,7 +261,9 @@ class NutritionQuantityConverter {
   ///  3. elle manque sur une unité comptée une à une (« brin », « bouquet ») —
   ///     on lit 1, et le poids de l'unité vient de l'ingrédient ;
   ///  4. elle manque sans unité, sur un assaisonnement connu — on lit une
-  ///     pincée.
+  ///     pincée ;
+  ///  5. elle manque sans unité, sur un autre ingrédient dont la fiche porte
+  ///     une portion usuelle — on lit cette portion, en grammes.
   ///
   /// Tout le reste rend `null`. Une quantité absente devant « g » ou
   /// « c. à c. » est une donnée abîmée, pas une convention d'écriture : lui
@@ -255,10 +272,16 @@ class NutritionQuantityConverter {
   /// L'unité rendue au cas 4 est « pincée » et non une constante en grammes :
   /// c'est ce qui fait suivre la surcharge du référentiel Firestore. Un
   /// administrateur qui corrige le poids d'une pincée corrige les cas 2 et 4.
+  ///
+  /// Le cas 5 rend des grammes, parce que la portion en est déjà : elle
+  /// appartient à l'ingrédient, pas à une unité que la recette n'a pas écrite.
+  /// Il passe après les autres — l'assaisonnement garde sa pincée, l'unité
+  /// écrite garde son poids.
   static WeighingInput? resolveWeighingInput({
     required String ingredientName,
     required String qty,
     required String unit,
+    double? usualPortionGrams,
   }) {
     final unitStr = unit.trim();
     final quantity = parseQuantity(qty);
@@ -273,6 +296,15 @@ class NutritionQuantityConverter {
     }
     if (normalizedUnit.isEmpty && isSeasoning(ingredientName)) {
       return const WeighingInput(qty: 1, unit: seasoningDefaultUnit);
+    }
+    if (normalizedUnit.isEmpty &&
+        usualPortionGrams != null &&
+        usualPortionGrams > 0) {
+      return WeighingInput(
+        qty: usualPortionGrams,
+        unit: 'g',
+        usualPortion: true,
+      );
     }
     return null;
   }
@@ -785,6 +817,7 @@ class NutritionQuantityConverter {
       ingredientName: ingredientName,
       qty: qty,
       unit: unit,
+      usualPortionGrams: ingredientOverride?.usualPortionGrams,
     );
     if (weighing == null) return null;
     final factor = resolveUnitFactorToGrams(

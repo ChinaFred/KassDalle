@@ -319,10 +319,14 @@ export async function computeAndPersistRecipeNutrition(args: {
             }
           }
           const hasPiece = typeof grams === "number" && grams > 0;
-          if (!hasPiece && Object.keys(perUnit).length === 0) continue;
+          const usualPortion = data.usual_portion_g;
+          const hasUsualPortion =
+            typeof usualPortion === "number" && Number.isFinite(usualPortion) && usualPortion > 0;
+          if (!hasPiece && Object.keys(perUnit).length === 0 && !hasUsualPortion) continue;
           weightPerIngredient.set(snap.id, {
             ...(hasPiece ? { gramsPerPiece: grams as number } : {}),
             ...(Object.keys(perUnit).length > 0 ? { gramsPerUnit: perUnit } : {}),
+            ...(hasUsualPortion ? { usualPortionGrams: usualPortion as number } : {}),
           });
         }
       }
@@ -407,16 +411,24 @@ export async function computeAndPersistRecipeNutrition(args: {
    * La quantité, elle, passe d'abord par `resolveWeighingInput` : « sel,
    * pincée » et « poivre » tout court n'écrivent aucun nombre, et l'absence
    * d'un mot que personne n'écrit ne doit pas sortir l'ingrédient du calcul.
+   * Une ligne nue — « roquette », « parmesan » — prend la portion usuelle que
+   * la fiche de l'ingrédient porte, quand elle en porte une.
    */
   function weightOf(ingredient: IngredientInput, name: string): number | null {
-    const weighing = resolveWeighingInput(name, ingredient.qty, ingredient.unit);
+    const ingredientWeights = referentialWeights(name);
+    const weighing = resolveWeighingInput(
+      name,
+      ingredient.qty,
+      ingredient.unit,
+      ingredientWeights?.usualPortionGrams,
+    );
     if (weighing == null) return null;
     const normalizedUnit = weighing.unit ? normalizeObservedUnit(weighing.unit) : "";
     const factor = resolveUnitFactorToGrams(
       weighing.unit,
       name,
       normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
-      referentialWeights(name),
+      ingredientWeights,
     );
     if (factor == null) return null;
     return weighing.qty * factor;

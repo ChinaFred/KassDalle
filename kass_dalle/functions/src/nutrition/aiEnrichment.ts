@@ -735,6 +735,241 @@ Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans tex
   }
 }
 
+// ── Portion usuelle d'un ingrédient écrit sans quantité ──────────────────────
+
+/**
+ * Poste de coût de cette passe. Il apparaît aussi dans `ROUTABLE_FEATURES` et
+ * dans `kFeatureCatalog` / `kFeatureProcess` — voir « Un poste d'IA vit à trois
+ * endroits ».
+ */
+export const USUAL_PORTION_FEATURE = "estimate_usual_portions";
+
+/**
+ * Au-delà, la réponse n'est plus une portion de garniture : c'est un poids de
+ * plat, ou une erreur d'unité. Même rôle que `MAX_PLAUSIBLE_KCAL` pour les
+ * calories.
+ */
+export const MAX_USUAL_PORTION_GRAMS = 500;
+
+/** Ingrédients posés au modèle dans un même appel. */
+const USUAL_PORTION_BATCH_SIZE = 20;
+
+const USUAL_PORTION_SCHEMA = {
+  type: "object",
+  properties: {
+    ingredients: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          grams: { type: "number" },
+        },
+        required: ["id", "grams"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ingredients"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Une portion exploitable : des grammes, strictement positifs, plausibles.
+ *
+ * Rend `null` pour tout le reste, et l'appelant repose la question plus tard
+ * plutôt que d'écrire sur la fiche d'un ingrédient un chiffre qui fausserait
+ * toutes les recettes qui le citent.
+ */
+export function sanitizeUsualPortion(value: unknown): number | null {
+  const grams =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replace(",", "."))
+        : Number.NaN;
+  if (!Number.isFinite(grams) || grams <= 0 || grams > MAX_USUAL_PORTION_GRAMS) return null;
+  return Math.round(grams * 10) / 10;
+}
+
+/** Construit la demande de portions usuelles pour une liste d'ingrédients. */
+export function buildUsualPortionPrompt(targets: Array<{ id: string; name: string }>): string {
+  return [
+    "Tu es un expert en cuisine française.",
+    "",
+    "Une recette cite parfois un ingrédient sans aucune quantité : une garniture, un",
+    "accompagnement, ce que l'on ajoute à volonté ou que l'on râpe dessus.",
+    "Pour chacun des ingrédients ci-dessous, estime en grammes la quantité NETTE",
+    "qu'une recette pour quatre personnes en emploie d'ordinaire dans ce cas.",
+    "",
+    "Règles :",
+    "- Donne TOUJOURS une estimation : une approximation raisonnable vaut mieux qu'une absence.",
+    "- C'est la quantité mangée, sans peau, sans noyau, sans emballage.",
+    "- C'est une quantité d'usage dans une recette, pas le contenu d'un conditionnement.",
+    "- Un liquide se compte en grammes, à raison d'un gramme par millilitre.",
+    "",
+    "Ingrédients (identifiant : nom) :",
+    ...targets.map((t) => `- "${t.id}" : ${t.name}`),
+    "",
+    'Retourne UNIQUEMENT du JSON : {"ingredients":[{"id":"<identifiant>","grams":<grammes>}]}',
+    "Une entrée par identifiant fourni, et le champ `id` reprend l'identifiant EXACTEMENT",
+    "tel qu'il est écrit ci-dessus.",
+  ].join("\n");
+}
+
+/**
+ * Estime par IA la portion usuelle des ingrédients qu'une recette écrit sans
+ * quantité — « roquette », « cresson », « parmesan pour râper dessus ».
+ *
+ * Sans elle, ces lignes n'ont aucun poids : elles sortent du calcul, et la
+ * recette annonce des calories qui ne comptent ni la garniture ni le fromage.
+ * La portion est écrite sur la fiche de l'ingrédient, donc demandée une seule
+ * fois dans sa vie, et lue ensuite par `resolveWeighingInput` — côté serveur
+ * comme côté client. Un ingrédient déjà doté d'une portion n'est jamais
+ * redemandé : cela protège au passage une valeur corrigée à la main.
+ *
+ * Le chiffre est un ordre de grandeur pour quatre personnes, pas une mesure. Il
+ * s'affiche comme tel — « estimée par l'IA » — sur la ligne concernée.
+ *
+ * Best-effort : ne lève jamais. Un ingrédient sans réponse exploitable reçoit
+ * une marque de tentative, et n'est redemandé qu'après vingt-quatre heures.
+ * Retourne le nombre de portions écrites.
+ */
+export async function estimateUsualPortionsWithAI(args: {
+  ingredientNames: string[];
+  recipeId?: string;
+  /** Fil du traitement appelant : import, déclencheur, rattrapage. */
+  correlationId?: string;
+  /** Scan de l'utilisateur d'où vient ce travail, quand il en vient un. */
+  scanId?: string;
+  userId?: string;
+  /** Poste de coût : celui du courant, sauf pour un rattrapage qui a le sien. */
+  feature?: string;
+}): Promise<number> {
+  const correlationId = args.correlationId ?? `usual-portions-${args.recipeId ?? "norecipe"}`;
+  const scanId = args.scanId;
+
+  const byId = new Map<string, string>();
+  for (const raw of args.ingredientNames) {
+    const name = raw.trim();
+    const id = normalizeIngredientCanonicalId(name);
+    if (name && id && !byId.has(id)) byId.set(id, name);
+  }
+  if (byId.size === 0) return 0;
+
+  let known = new Map<string, Record<string, unknown>>();
+  try {
+    known = (await readDocsByIds(COLL_NUTRITION_INGREDIENTS, [...byId.keys()])) as Map<
+      string,
+      Record<string, unknown>
+    >;
+  } catch (err) {
+    // Référentiel illisible : on demande quand même, mais l'incident se voit.
+    void logError({
+      message: "estimateUsualPortionsWithAI: lecture groupée des fiches impossible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId,
+      scanId,
+    });
+  }
+
+  const nowMs = Date.now();
+  const targets: Array<{ id: string; name: string }> = [];
+  for (const [id, name] of byId) {
+    const data = known.get(id);
+    if (sanitizeUsualPortion(data?.usual_portion_g) != null) continue;
+    if (enrichmentAttemptIsRecent(data?.usual_portion_attempt_at, nowMs)) continue;
+    targets.push({ id, name });
+  }
+  if (targets.length === 0) return 0;
+
+  const estimated = new Map<string, number>();
+  for (let i = 0; i < targets.length; i += USUAL_PORTION_BATCH_SIZE) {
+    const chunk = targets.slice(i, i + USUAL_PORTION_BATCH_SIZE);
+    try {
+      const answer = await askJson({
+        prompt: buildUsualPortionPrompt(chunk),
+        ctx: {
+          correlationId,
+          scanId,
+          feature: args.feature ?? USUAL_PORTION_FEATURE,
+          userId: args.userId ?? "system",
+          moduleType: "DESIGN",
+          timeoutMs: 45_000,
+        },
+        outputSchema: {
+          name: "usual_portions",
+          schema: USUAL_PORTION_SCHEMA as unknown as Record<string, unknown>,
+        },
+        validate: (parsed) => {
+          const list = (parsed as { ingredients?: unknown } | null)?.ingredients;
+          return Array.isArray(list) ? list : null;
+        },
+      });
+      for (const item of answer) {
+        if (!item || typeof item !== "object") continue;
+        const entry = item as Record<string, unknown>;
+        const id = typeof entry.id === "string" ? normalizeIngredientCanonicalId(entry.id) : "";
+        const grams = sanitizeUsualPortion(entry.grams);
+        if (id && grams != null && chunk.some((t) => t.id === id)) estimated.set(id, grams);
+      }
+    } catch (err) {
+      void logError({
+        message: "estimateUsualPortionsWithAI: lot en échec",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId,
+        scanId,
+        extra: { recipeId: args.recipeId, ingredients: chunk.map((t) => t.id) },
+      });
+    }
+  }
+
+  const updates = new Map<string, Record<string, unknown>>();
+  for (const target of targets) {
+    const grams = estimated.get(target.id);
+    updates.set(
+      target.id,
+      grams != null
+        ? {
+            usual_portion_g: grams,
+            usual_portion_source: "ai_estimated",
+            usual_portion_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
+          }
+        : { usual_portion_attempt_at: FieldValue.serverTimestamp() },
+    );
+  }
+
+  try {
+    await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
+  } catch (err) {
+    void logError({
+      message: "estimateUsualPortionsWithAI: écriture groupée du référentiel échouée",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId,
+      scanId,
+    });
+    return 0;
+  }
+
+  const failed = targets.filter((t) => !estimated.has(t.id));
+  if (failed.length > 0) {
+    void logError({
+      message: `estimateUsualPortionsWithAI: ${failed.length} ingrédient(s) sans portion exploitable`,
+      errorDescription:
+        "Aucune réponse plausible — ces lignes sans quantité restent hors du calcul nutritionnel",
+      correlationId,
+      scanId,
+      extra: { recipeId: args.recipeId, ingredients: failed.map((t) => t.id) },
+    });
+  }
+  void logInfo({
+    message: `estimateUsualPortionsWithAI: ${estimated.size}/${targets.length} portion(s) enregistrée(s)`,
+    extra: { recipeId: args.recipeId, estimated: [...estimated.entries()] },
+  });
+  return estimated.size;
+}
+
 const NOT_CONSUMED_SCHEMA = {
   type: "object",
   properties: {

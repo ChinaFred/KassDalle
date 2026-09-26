@@ -78,6 +78,7 @@ const kFeatureProcess = <String, String>{
   'complete_ingredient_quantities': 'Valeurs nutritionnelles',
   'enrich_unit_weights': 'Valeurs nutritionnelles',
   'estimate_piece_weights': 'Valeurs nutritionnelles',
+  'estimate_usual_portions': 'Valeurs nutritionnelles',
   'estimate_unit_couple_weights': 'Valeurs nutritionnelles',
   'detect_not_consumed': 'Valeurs nutritionnelles',
   'detect_duplicate_ingredients': 'Valeurs nutritionnelles',
@@ -396,6 +397,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Estime le poids d\'une pièce d\'un ingrédient donné : une échalote '
         'et un concombre ne pèsent pas la même chose.',
+  ),
+  'estimate_usual_portions': FeatureInfo(
+    label: 'Portion usuelle d\'un ingrédient sans quantité',
+    description:
+        'Estime la quantité qu\'une recette emploie d\'ordinaire d\'un '
+        'ingrédient qu\'elle écrit sans quantité — une garniture, un fromage '
+        'à râper dessus. Écrite sur la fiche de l\'ingrédient : demandée une '
+        'seule fois dans sa vie.',
   ),
   'estimate_unit_couple_weights': FeatureInfo(
     label: 'Poids d\'une unité pour un ingrédient donné',

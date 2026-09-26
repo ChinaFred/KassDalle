@@ -98,6 +98,20 @@ String _missingExplanation(
   required bool isAdmin,
 }) {
   if (row.weightGrams == null) {
+    // Ligne nue : la recette n'écrit ni nombre ni unité, et la fiche de
+    // l'ingrédient ne porte pas encore de portion usuelle. Dire « la quantité
+    // «  » ne se convertit pas » renverrait à un texte vide.
+    final bare =
+        row.ingredient.qty.trim().isEmpty && row.ingredient.unit.trim().isEmpty;
+    if (bare) {
+      final base =
+          'La recette ne donne aucune quantité pour « ${row.ingredient.name} » '
+          'et sa portion usuelle n\'est pas encore estimée : il est exclu du '
+          'total.';
+      return isAdmin
+          ? '$base Relancez la reprise de la nutrition depuis Admin → Backfills.'
+          : base;
+    }
     final base =
         'Poids inconnu : la quantité « ${row.ingredient.qty} '
         '${row.ingredient.unit} » ne se convertit pas en grammes.';

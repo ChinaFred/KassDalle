@@ -230,6 +230,33 @@ describe("resolveUnitFactorToGrams — cas partagés Dart/TypeScript", () => {
   }
 });
 
+// ── Portion usuelle d'une ligne nue ──────────────────────────────────────────
+
+interface UsualPortionCase {
+  ingredient: string;
+  qty: string;
+  unit: string;
+  usualPortionGrams: number | null;
+  grams: number | null;
+  why: string;
+}
+
+describe("portion usuelle — cas partagés Dart/TypeScript", () => {
+  const fixture = loadFixture<{ usual_portion: UsualPortionCase[] }>("unit_to_grams.json");
+  assert.ok(fixture.usual_portion.length > 0, "la section usual_portion est vide");
+
+  for (const c of fixture.usual_portion) {
+    test(`${c.qty} ${c.unit} de ${c.ingredient}, portion ${c.usualPortionGrams ?? "absente"} → ${
+      c.grams ?? "null"
+    } g  (${c.why})`, () => {
+      const weighing = resolveWeighingInput(c.ingredient, c.qty, c.unit, c.usualPortionGrams);
+      const factor = weighing === null ? null : unitFactorToGrams(weighing.unit, c.ingredient);
+      const actual = weighing === null || factor === null ? null : weighing.qty * factor;
+      assertCloseOrNull(actual, c.grams, `${c.qty} ${c.unit} de ${c.ingredient}`);
+    });
+  }
+});
+
 // ── Parseur CookLang ──────────────────────────────────────────────────────────
 
 interface CookLangRecipeCase {

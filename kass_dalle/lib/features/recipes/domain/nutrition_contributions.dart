@@ -38,6 +38,11 @@ class NutritionContributionRow {
   /// doit se dire, sinon il se lit comme une donnée de la recette.
   final bool quantityAssumed;
 
+  /// La quantité lue est la portion usuelle de l'ingrédient, estimée par l'IA :
+  /// la recette l'écrit « roquette » ou « parmesan » sans rien de plus. C'est un
+  /// ordre de grandeur pour quatre personnes, et il doit s'annoncer comme tel.
+  final bool usualPortion;
+
   /// L'ingrédient appartient à la recette mais pas au repas : bain de friture,
   /// foin de fumage, marinade jetée. Ses valeurs restent affichées — les
   /// masquer reviendrait à cacher un ingrédient — mais sortent du total.
@@ -54,6 +59,7 @@ class NutritionContributionRow {
     this.perIngredient,
     this.weightGrams,
     this.quantityAssumed = false,
+    this.usualPortion = false,
     this.weightEstimated = false,
     this.notConsumed = false,
     this.duplicate = false,
@@ -170,7 +176,8 @@ class NutritionLegendEntry {
 }
 
 /// Ce que la légende dit des quantités supposées : « à la pincée » quand toutes
-/// le sont ainsi, « pour une unité » dès qu'un brin ou un bouquet s'y mêle.
+/// le sont ainsi, « pour une quantité usuelle » dès qu'un brin, un bouquet ou
+/// une portion estimée s'y mêle.
 String _assumedUnitsLegend(NutritionContributionTable table) {
   final units = {
     for (final row in table.rows)
@@ -178,7 +185,7 @@ String _assumedUnitsLegend(NutritionContributionTable table) {
   };
   return units.length == 1 && units.first == 'pincée'
       ? 'à la pincée'
-      : 'pour une unité (pincée, brin, bouquet…)';
+      : 'pour une quantité usuelle';
 }
 
 /// Les explications à porter sous le tableau, dans l'ordre d'affichage.
@@ -306,17 +313,25 @@ NutritionContributionTable buildNutritionContributions({
       .map((ingredient) {
         final profile = _profileFor(ingredient, nutritionById);
         final doc = _docFor(ingredient, nutritionById);
+        final weightOverride = doc == null
+            ? null
+            : IngredientWeightOverride(
+                gramsPerPiece: doc.gramsPerPiece,
+                gramsPerUnit: doc.gramsPerUnit,
+                usualPortionGrams: doc.usualPortionGrams,
+              );
         final weight = resolveIngredientWeightGrams(
           overrides: unitOverrides,
           ingredientName: ingredient.name,
           qty: ingredient.qty,
           unit: ingredient.unit,
-          ingredientOverride: doc == null
-              ? null
-              : IngredientWeightOverride(
-                  gramsPerPiece: doc.gramsPerPiece,
-                  gramsPerUnit: doc.gramsPerUnit,
-                ),
+          ingredientOverride: weightOverride,
+        );
+        final weighing = NutritionQuantityConverter.resolveWeighingInput(
+          ingredientName: ingredient.name,
+          qty: ingredient.qty,
+          unit: ingredient.unit,
+          usualPortionGrams: weightOverride?.usualPortionGrams,
         );
         return NutritionContributionRow(
           notConsumed: doc?.notConsumed ?? false,
@@ -332,6 +347,7 @@ NutritionContributionTable buildNutritionContributions({
           quantityAssumed:
               weight != null &&
               NutritionQuantityConverter.parseQuantity(ingredient.qty) == null,
+          usualPortion: weight != null && (weighing?.usualPortion ?? false),
           weightEstimated: isUnitWeightEstimated(
             infos: unitInfos,
             unit: ingredient.unit,
@@ -358,6 +374,9 @@ String formatNutritionValue(double? v, {bool integer = false}) {
 /// grammes : le poids d'une pincée se corrige depuis Admin → Unités, et un
 /// message qui annonce « 0,5 g » vieillirait le jour où quelqu'un le change.
 String nutritionAssumedUnitName(NutritionContributionRow row) {
+  // La portion usuelle n'est pas une unité : elle vient de la fiche de
+  // l'ingrédient, que ce calcul-ci ne reçoit pas.
+  if (row.usualPortion) return 'portion usuelle';
   final weighing = NutritionQuantityConverter.resolveWeighingInput(
     ingredientName: row.ingredient.name,
     qty: row.ingredient.qty,
@@ -386,12 +405,20 @@ const _feminineAssumedUnits = {
   'feuille',
   'gousse',
   'unité',
+  'portion usuelle',
 };
 
 /// L'unité appliquée avec son article : « une pincée », « un brin ».
+///
+/// Une portion usuelle dit son poids et sa source : c'est une estimation, et un
+/// chiffre estimé affiché comme un chiffre lu de la recette serait un mensonge
+/// par omission.
 String nutritionAssumedUnitPhrase(NutritionContributionRow row) {
   final name = nutritionAssumedUnitName(row);
-  return '${_feminineAssumedUnits.contains(name) ? 'une' : 'un'} $name';
+  final phrase = '${_feminineAssumedUnits.contains(name) ? 'une' : 'un'} $name';
+  final grams = row.weightGrams;
+  if (!row.usualPortion || grams == null) return phrase;
+  return '$phrase (${grams.round()} g, estimée par l\'IA)';
 }
 
 /// Ce qu'affiche la colonne « Quantite ».
