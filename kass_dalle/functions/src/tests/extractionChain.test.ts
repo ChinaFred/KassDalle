@@ -26,7 +26,11 @@ import {
   verbatimCooklang,
 } from "../gemini/fidelity";
 import { deriveShoppingProducts, numericQty } from "../nutrition/shoppingDerivation";
-import { TEXT_TRANSCRIPTION_PREAMBLE, TRANSCRIPTION_PROMPT } from "../gemini/promptsExtraction";
+import {
+  TAGGING_PROMPT,
+  TEXT_TRANSCRIPTION_PREAMBLE,
+  TRANSCRIPTION_PROMPT,
+} from "../gemini/promptsExtraction";
 
 /** Une recette de livre à deux sections, telle que la passe 1 la rend. */
 function gravlax(): TranscribedRecipe {
@@ -707,6 +711,54 @@ describe("erreur de lecture — le seul défaut que rien ne peut prouver", () =>
       lecturesIncertaines: ["peau"],
     };
     assert.equal(checkTranscriptionInventory(recette).length, 1);
+  });
+});
+
+describe("un seul poids pour un mélange de deux aliments", () => {
+  // Un poids unique, écrit après les aliments : c'est le cas où la quantité
+  // restait dans la note et où les deux entrées sortaient du calcul sans poids.
+  const ligne = "roquette mélangée avec du cresson prêt à l'emploi, en sachet de 100 g";
+
+  test("le prompt de balisage demande le partage en parts égales", () => {
+    assert.ok(TAGGING_PROMPT.includes("UN SEUL POIDS POUR UN MÉLANGE"));
+    assert.ok(TAGGING_PROMPT.includes("parts égales"));
+  });
+
+  test("deux entrées à parts égales ne déclenchent aucun contrôle de fidélité", () => {
+    // La quantité de chaque entrée est un calcul, pas un mot de la page : le
+    // contrôle ne doit ni la réclamer dans la ligne, ni reprocher à la note un
+    // mot perdu — la taille du sachet y reste écrite.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      sectionsIngredients: [{ titre: "", lignes: [ligne] }],
+      sectionsEtapes: [{ titre: "", etapes: ["Mélangez le tout."] }],
+      notes: [],
+    };
+    const report = checkFidelity(recette, {
+      ...taggedGravlax(),
+      cooklang: "Mélangez le tout.",
+      ingredients: [
+        {
+          brut: ligne,
+          section: "",
+          nom: "roquette",
+          qte: "50",
+          unite: "g",
+          note: "mélangée avec du cresson prêt à l'emploi, en sachet de 100 g",
+        },
+        {
+          brut: ligne,
+          section: "",
+          nom: "cresson",
+          qte: "50",
+          unite: "g",
+          note: "mélangé avec de la roquette prête à l'emploi, en sachet de 100 g",
+        },
+      ],
+    });
+    const codes = report.findings.map((f) => f.code);
+    assert.equal(codes.includes("ingredients_compte"), false, JSON.stringify(report.findings));
+    assert.equal(codes.includes("precision_perdue"), false, JSON.stringify(report.findings));
   });
 });
 

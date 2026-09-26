@@ -575,6 +575,21 @@ Règles :
   À l'inverse, une ligne qui ne nomme qu'un aliment reste UNE entrée : « farine
   de blé T55 » n'est pas deux ingrédients.
 
+- **UN SEUL POIDS POUR UN MÉLANGE.** Quand la ligne nomme deux aliments mais ne
+  donne qu'UN poids ou qu'UN volume, ce chiffre est celui du mélange entier, pas
+  celui de chaque aliment. Il peut s'écrire en tête de ligne ou après les
+  aliments, comme la taille d'un sachet.
+
+  Répartis-le en parts égales, une par entrée : "qte" vaut le poids divisé par
+  le nombre d'aliments, "unite" reste celle de la ligne. Deux entrées qui
+  portent chacune le poids complet compteraient le double de ce qui a été
+  acheté, dans la liste de courses comme dans le calcul nutritionnel.
+
+  Les deux notes gardent tous les mots de la ligne, la taille du sachet
+  comprise : le partage se lit dans "qte", la précision de la page reste dans
+  "note". Une ligne qui donne une quantité à CHAQUE aliment n'est pas concernée :
+  deux quantités écrites, deux entrées, comme plus haut.
+
 ════ TRAVAIL 3 — DIRE LE RÔLE DU PLAT DANS UN REPAS ════
 
 Trois champs de plus, lus par le planning pour composer un repas — un plat et
