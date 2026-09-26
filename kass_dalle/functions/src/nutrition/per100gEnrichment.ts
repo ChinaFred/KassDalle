@@ -120,8 +120,9 @@ function estimationRules(): string[] {
     "Champs autorisés (nombres >= 0) : kcal, protein_g, carbs_g, sugar_g, fiber_g, fat_g, saturated_fat_g, sodium_mg, salt_g.",
     "RÈGLES IMPÉRATIVES :",
     "- Donne TOUJOURS une estimation. N'omets aucun ingrédient demandé, ne réponds jamais « inconnu ».",
-    "- kcal, protein_g, carbs_g et fat_g sont strictement positifs pour tout aliment réel.",
+    "- kcal, protein_g, carbs_g et fat_g sont strictement positifs pour tout aliment qui apporte de l'énergie.",
     "- 0 n'est acceptable que pour un nutriment réellement absent (fibres d'une viande, sucre d'une huile).",
+    "- Un ingrédient sans aucune énergie (sel, eau) vaut 0 pour kcal et pour les macronutriments : renseigne alors sodium_mg et salt_g.",
     "- Nom proposant une alternative (« bacon ou pancetta », « beurre ou margarine ») : estime la MOYENNE des produits cités.",
     "- Nom vague ou générique : prends le produit le plus courant en cuisine française.",
     "- Qualificatif présent (fumé, frais, sec, demi-écrémé) : il change la composition, tiens-en compte.",
@@ -148,7 +149,15 @@ export function sanitizePer100g(raw: Record<string, unknown>): Record<string, nu
     if (rebuilt > 0) normalized.kcal = Math.round(rebuilt);
   }
 
-  if (!(normalized.kcal > 0) || normalized.kcal > MAX_PLAUSIBLE_KCAL) return {};
+  // Un aliment sans énergie existe : le sel, l'eau. Sa réponse juste porte 0
+  // partout sauf le sodium, et `normalizeNutrients` a retiré les zéros. Sans ce
+  // cas, le sel était refusé à chaque essai — calories nulles, donc
+  // « invraisemblable » — et restait sans valeur dans toutes les recettes. Le
+  // sodium (ou le sel, que `normalizeNutrients` convertit en sodium) suffit à
+  // distinguer cette réponse d'un modèle qui hésite et remplit des zéros.
+  const withoutEnergy = !(normalized.kcal > 0);
+  const zeroEnergyFood = withoutEnergy && (normalized.sodium_mg ?? 0) > 0;
+  if (!zeroEnergyFood && (withoutEnergy || normalized.kcal > MAX_PLAUSIBLE_KCAL)) return {};
   for (const key of MACRO_KEYS) {
     if ((normalized[key] ?? 0) > 100) return {};
   }

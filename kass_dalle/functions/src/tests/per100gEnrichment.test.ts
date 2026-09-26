@@ -40,6 +40,33 @@ describe("sanitizePer100g — ce qui est récupéré", () => {
     assert.equal(values.kcal, 417);
     assert.equal(values.protein_g, 13.5);
   });
+
+  test("garde un aliment sans énergie dont le sodium est renseigné", () => {
+    // Le sel pur : 0 kcal, aucun macronutriment, 38 758 mg de sodium. La
+    // réponse est juste, et elle était refusée parce que les calories devaient
+    // être strictement positives — le sel restait donc sans valeur dans toutes
+    // les recettes qui en contiennent.
+    const values = sanitizePer100g({
+      kcal: 0,
+      protein_g: 0,
+      carbs_g: 0,
+      sugar_g: 0,
+      fiber_g: 0,
+      fat_g: 0,
+      saturated_fat_g: 0,
+      sodium_mg: 38758,
+      salt_g: 98.5,
+    });
+    assert.equal(values.sodium_mg, 38758);
+    assert.ok(values.salt_g > 0);
+    assert.equal(values.kcal, undefined);
+  });
+
+  test("garde un aliment sans énergie dont seul le sel est renseigné", () => {
+    const values = sanitizePer100g({ kcal: 0, fat_g: 0, salt_g: 99 });
+    assert.ok(values.sodium_mg > 0);
+    assert.equal(values.salt_g, 99);
+  });
 });
 
 describe("sanitizePer100g — ce qui est refusé", () => {
@@ -47,6 +74,12 @@ describe("sanitizePer100g — ce qui est refusé", () => {
     // Le cas « Gemini hésite et remplit des zéros » : rien à écrire, et
     // l'appelant doit relancer plutôt que de croire l'ingrédient enrichi.
     assert.deepEqual(sanitizePer100g({ kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }), {});
+  });
+
+  test("refuse une réponse sans énergie ni sodium", () => {
+    // Des fibres seules ne décrivent pas un aliment : sans calories, macros ni
+    // sodium, la réponse reste un modèle qui hésite.
+    assert.deepEqual(sanitizePer100g({ kcal: 0, fiber_g: 3 }), {});
   });
 
   test("refuse une réponse vide", () => {
