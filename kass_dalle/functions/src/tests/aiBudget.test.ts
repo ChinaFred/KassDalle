@@ -94,7 +94,7 @@ describe("quand un chiffre manque", () => {
   });
 });
 
-describe("le fondateur a dix fois le plafond", () => {
+describe("le fondateur a cent fois le plafond", () => {
   const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 100 });
   const m = FOUNDER_DAILY_BUDGET_MULTIPLIER;
 
@@ -106,8 +106,8 @@ describe("le fondateur a dix fois le plafond", () => {
 
   test("le multiplicateur porte sur les deux plafonds, pas seulement l'argent", () => {
     // Sinon le compteur d'appels bloquerait précisément celui qui a le droit
-    // d'en faire dix fois plus. Les seuils suivent le multiplicateur : mille
-    // appels passent, mille cinq cents non.
+    // d'en faire cent fois plus. Les seuils suivent le multiplicateur : avec
+    // cent appels par compte, dix mille passent et dix mille un ne passent pas.
     const s = spend({ costUsd: 0, calls: 300 });
     assert.equal(budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: m }), null);
     assert.equal(
@@ -121,8 +121,8 @@ describe("le fondateur a dix fois le plafond", () => {
     );
   });
 
-  test("il reste plafonné — dix fois plus haut, pas illimité", () => {
-    // Le plafond est en EUROS (2 € × 10), la dépense en dollars : il faut donc
+  test("il reste plafonné — cent fois plus haut, pas illimité", () => {
+    // Le plafond est en EUROS (2 € × 100), la dépense en dollars : il faut donc
     // diviser par le taux pour trouver le montant qui le franchit, pas le
     // multiplier — l'inverse laisse passer et ne teste plus rien.
     const s = spend({ costUsd: (2 * m) / RATE + 1, calls: 10 });

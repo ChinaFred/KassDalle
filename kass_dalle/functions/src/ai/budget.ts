@@ -46,7 +46,7 @@ import { FOUNDER_EMAIL } from "../triggers/founderRole";
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
 
 /**
- * Le compte fondateur dispose de dix fois le plafond commun.
+ * Le compte fondateur dispose de cent fois le plafond commun.
  *
  * Règle codée en dur, et volontairement : elle dit que le propriétaire du
  * projet est aussi celui qui l'éprouve — c'est lui qui importe des livres
@@ -60,10 +60,15 @@ export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
  * milieu d'une session d'essais — le seul moment où l'on a besoin d'appeler
  * beaucoup, et le seul où être coupé ne protège de rien.
  *
- * Elle ne dispense de rien : le fondateur reste plafonné, dix fois plus haut.
- * Une boucle atteint vingt euros aussi vite que deux.
+ * Passé de dix à cent le 26 septembre 2026, à la demande du propriétaire :
+ * l'import d'un livre entier crée une centaine de jobs, chacun déclenchant
+ * plusieurs appels d'IA, et le plafond se refermait avant la fin du livre.
+ *
+ * Elle ne dispense de rien : le fondateur reste plafonné, cent fois plus haut —
+ * deux cents euros et quarante mille appels par jour avec les défauts. Une
+ * boucle atteint deux cents euros aussi vite que deux.
  */
-export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 10;
+export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 100;
 
 export interface AiBudgetPolicy {
   /** Plafond quotidien par compte, en **euros**. `0` désactive ce plafond. */
@@ -290,7 +295,7 @@ export async function founderUid(): Promise<string | null> {
   }
 }
 
-/** Le multiplicateur de plafond d'un compte : cinq pour le fondateur, un sinon. */
+/** Le multiplicateur de plafond d'un compte : cent pour le fondateur, un sinon. */
 export async function budgetMultiplierFor(userId: string): Promise<number> {
   return (await founderUid()) === userId ? FOUNDER_DAILY_BUDGET_MULTIPLIER : 1;
 }

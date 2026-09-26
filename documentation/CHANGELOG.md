@@ -16,6 +16,13 @@ anciennes sans accents.
 
 ## 2026-09-26
 
+### v0.22.87 — technique
+
+- `FOUNDER_DAILY_BUDGET_MULTIPLIER` passe de 10 à 100 (`ai/budget.ts`). Avec les plafonds par
+  défaut (2 € et 400 appels par compte et par jour), le compte fondateur dispose de 200 € et
+  40 000 appels par jour. Le multiplicateur porte sur les deux plafonds, et l'écran Admin › Coûts
+  l'affiche tel que la fonction le rend (`×100`). Les autres comptes ne changent pas.
+
 ### v0.22.86 — fonctionnel
 
 #### Ajouter un livre à partir d'un PDF ou d'un EPUB
