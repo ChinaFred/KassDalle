@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "867114764221-mejroo064lp3f49814gqvtrjjg0p992v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "dev.kassbi.kass_dalle",
+            "certificate_hash": "9473887ec5d609dcca113d2c38c28b24131275ed"
+          }
+        },
+        {
           "client_id": "867114764221-vdv2g16b8v8b9ehts31n5fm7jj234pks.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
