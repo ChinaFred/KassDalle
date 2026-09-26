@@ -303,6 +303,19 @@ privait le titre de la place dont il manquait.
   secondaire, celle de sa puce et de son icône. En erreur ou rejeté, la couleur d'erreur. Un
   brouillon garde le fond de la liste.
 - Indicateur de traitements actifs visible dans la zone Brouillons.
+- **Sélection multiple.** Le bouton « Sélectionner » de la barre du haut, ou un appui long sur
+  une ligne, fait apparaître une case sur chaque ligne. « Tout sélectionner » coche ce qui est
+  affiché. En vue Groupe familial ou Tous les utilisateurs, la case d'une section coche les
+  éléments d'une personne ; une section repliée sort de la sélection. Une barre en bas propose
+  trois actions, avec le nombre d'éléments que chacune touche : **Valider** (les brouillons
+  cochés), **Relancer** (les traitements cochés en erreur ou rejetés), **Supprimer** (tout ce qui
+  est coché). Les trois demandent confirmation ; Relancer le rappelle parce que chaque import
+  relancé est facturé à nouveau. Le lot avance élément par élément avec une barre de progression.
+  Un échec n'arrête pas les suivants : il est compté dans le compte rendu.
+- **Un lot ne valide pas ce que personne n'a relu.** Un brouillon qui porte une réserve de
+  fidélité, ou qui n'a pas de contenu, reste de côté, et le compte rendu le dit. Valider efface la
+  réserve : cela se fait brouillon par brouillon, depuis l'écran de relecture, où le bandeau la
+  montre. L'action « Valider » d'une seule ligne suit la même règle.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 

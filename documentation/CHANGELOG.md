@@ -16,6 +16,35 @@ anciennes sans accents.
 
 ## 2026-09-26
 
+### v0.22.92 — fonctionnel
+
+#### Valider ou supprimer des brouillons par lot
+
+La file « Brouillons & Traitements » a un bouton « Sélectionner » dans la barre du haut. Il
+fait apparaître une case sur chaque ligne, sans appui long. Une barre en bas propose « Valider »,
+« Relancer » et « Supprimer », avec le nombre d'éléments que chaque action touche. Une sélection
+qui mêle brouillons et traitements garde les trois actions, chacune sur sa part.
+
+Un lot avance avec une barre de progression. Un brouillon qui échoue n'arrête pas les suivants :
+le compte rendu dit combien ont réussi et combien ont échoué. Un brouillon avec une réserve de
+fidélité, ou sans contenu, n'est pas validé en lot : valider efface la réserve, et personne n'a
+relu la page. Le compte rendu les nomme, et l'écran de relecture les valide un par un.
+
+### v0.22.92 — technique
+
+- `work_queue_batch.dart` (nouveau) : `planDraftValidation` répartit les brouillons cochés entre
+  validés, réserve de fidélité et sans contenu ; `draftContent` ne remplace plus l'import par une
+  copie de travail vide (valider écrit ce texte dans `raw_cooklang`) ; libellés des comptes rendus.
+- `WorkQueueScreen` : mode sélection explicite (`_selectionMode`), actions lues sur les seuls
+  éléments à l'écran (une clé cochée dont la ligne a disparu, ou dont la section est repliée, n'est
+  jamais traitée), `_runBatch` séquentiel avec `reportUnexpectedError` par élément en échec. Les
+  actions « Valider » et « Supprimer » d'une ligne passent par les mêmes chemins : elles
+  signalent maintenant leurs erreurs, et « Valider » applique la règle de la réserve de fidélité.
+- Une section gardée repliée depuis un autre filtre ne cache plus la liste quand la vue n'a plus
+  d'en-tête pour la rouvrir.
+- Tests : `work_queue_batch_test.dart` (logique) et `parcours/file_brouillons_selection_test.dart`
+  (l'écran, sur Firestore en mémoire).
+
 ### v0.22.91 — fonctionnel
 
 #### Un ingrédient écrit sans quantité (« roquette », « parmesan pour râper dessus ») est compté

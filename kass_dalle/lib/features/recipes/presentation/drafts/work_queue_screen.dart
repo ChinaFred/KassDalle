@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'work_queue_batch.dart';
 import 'work_queue_widgets.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/app_states.dart';
 
@@ -53,6 +55,14 @@ class _Section {
   _Section({required this.ownerUid, required this.items});
 }
 
+/// Avancement d'une action en lot, affiché en bas de l'écran.
+class _BatchProgress {
+  final String label;
+  final int done;
+  final int total;
+  const _BatchProgress(this.label, this.done, this.total);
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class WorkQueueScreen extends ConsumerStatefulWidget {
@@ -64,21 +74,58 @@ class WorkQueueScreen extends ConsumerStatefulWidget {
 
 class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
   WorkQueueFilter _filterMode = WorkQueueFilter.me;
+
+  /// Le mode sélection s'ouvre par le bouton « Sélectionner » de la barre du
+  /// haut ou par un appui long sur une ligne. Il se ferme par la croix, après
+  /// une action, ou quand on décoche le dernier élément.
+  bool _selectionMode = false;
   final Set<String> _selected = {};
   final Set<String> _collapsedOwners = {};
+  _BatchProgress? _progress;
 
-  bool get _isSelecting => _selected.isNotEmpty;
-  bool get _hasSelectedDrafts => _selected.any((k) => k.startsWith('d:'));
-  bool get _hasSelectedJobs => _selected.any((k) => k.startsWith('j:'));
+  bool get _busy => _progress != null;
 
-  void _toggleSelect(String key) => setState(() {
-    _selected.contains(key) ? _selected.remove(key) : _selected.add(key);
+  void _resetSelection() {
+    _selectionMode = false;
+    _selected.clear();
+  }
+
+  void _startSelection() => setState(() => _selectionMode = true);
+
+  void _clearSelection() => setState(_resetSelection);
+
+  void _toggleSelect(String key) {
+    if (_busy) return;
+    setState(() {
+      _selectionMode = true;
+      if (!_selected.remove(key)) _selected.add(key);
+      if (_selected.isEmpty) _selectionMode = false;
+    });
+  }
+
+  void _selectAll(Iterable<_QueueItem> items) =>
+      setState(() => _selected.addAll(items.map((i) => i.key)));
+
+  /// Coche toute la section, ou la décoche si elle l'est déjà entièrement.
+  void _toggleSection(_Section section) => setState(() {
+    final keys = section.items.map((i) => i.key).toList();
+    if (keys.every(_selected.contains)) {
+      _selected.removeAll(keys);
+    } else {
+      _selected.addAll(keys);
+    }
+    if (_selected.isEmpty) _selectionMode = false;
   });
 
-  void _clearSelection() => setState(() => _selected.clear());
-
-  void _selectAll(List<_QueueItem> items) =>
-      setState(() => _selected.addAll(items.map((i) => i.key)));
+  /// Une section repliée cache ses lignes : elles sortent de la sélection, pour
+  /// qu'une action ne touche jamais ce qui n'est pas à l'écran.
+  void _toggleCollapse(_Section section) => setState(() {
+    if (!_collapsedOwners.remove(section.ownerUid)) {
+      _collapsedOwners.add(section.ownerUid);
+      _selected.removeAll(section.items.map((i) => i.key));
+      if (_selected.isEmpty) _selectionMode = false;
+    }
+  });
 
   // ── Construction des sections ──────────────────────────────────────────────
 
@@ -170,26 +217,100 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
   // ── Actions groupées ───────────────────────────────────────────────────────
 
-  Future<void> _batchValidate(List<_QueueItem> allItems) async {
-    final drafts = allItems
-        .whereType<_DraftItem>()
-        .where((i) => _selected.contains(i.key))
-        .toList();
-    if (drafts.isEmpty) return;
-    final confirmed = await _showConfirmDialog(
-      title: 'Valider ${drafts.length} brouillon(s) ?',
-      content: 'Les recettes sélectionnées seront publiées.',
-    );
-    if (!confirmed || !mounted) return;
-    _clearSelection();
+  /// Exécute [action] sur chaque élément, l'un après l'autre, en affichant
+  /// l'avancement. Un élément qui échoue est signalé (`reportUnexpectedError`)
+  /// et n'arrête pas les suivants : une écriture refusée au milieu d'un lot de
+  /// trente ne doit pas laisser vingt-neuf éléments dans l'état d'avant.
+  ///
+  /// Les dépôts sont lus par l'appelant avant l'appel : `ref` ne sert plus une
+  /// fois l'écran quitté, et le lot doit aller à son terme même si
+  /// l'utilisateur change d'onglet.
+  ///
+  /// Retourne les éléments en échec.
+  Future<List<T>> _runBatch<T>({
+    required String label,
+    required List<T> items,
+    required Future<void> Function(T item) action,
+    required String feature,
+    required Map<String, dynamic> Function(T item) errorContext,
+  }) async {
+    final failed = <T>[];
+    setState(() {
+      _resetSelection();
+      _progress = _BatchProgress(label, 0, items.length);
+    });
+    for (var i = 0; i < items.length; i++) {
+      try {
+        await action(items[i]);
+      } catch (error, stackTrace) {
+        failed.add(items[i]);
+        reportUnexpectedError(
+          feature: feature,
+          error: error,
+          stackTrace: stackTrace,
+          context: errorContext(items[i]),
+        );
+      }
+      if (mounted) {
+        setState(() => _progress = _BatchProgress(label, i + 1, items.length));
+      }
+    }
+    if (mounted) setState(() => _progress = null);
+    return failed;
+  }
+
+  /// Le compte rendu d'un lot : succès s'il n'y a rien à redire, erreur s'il y
+  /// a des échecs, message neutre et plus long quand des éléments sont restés
+  /// de côté.
+  void _report(String message, {required int failed, bool partial = false}) {
+    if (!mounted) return;
+    if (failed > 0) {
+      context.showErrorSnackBar(message);
+    } else if (partial) {
+      context.showSnackBar(message, duration: const Duration(seconds: 6));
+    } else {
+      context.showSuccessSnackBar(message);
+    }
+  }
+
+  /// Valide des brouillons sans les ouvrir. Sert à la fois la sélection
+  /// multiple et l'action « Valider » d'une ligne.
+  ///
+  /// Les brouillons à réserve de fidélité et les brouillons vides restent de
+  /// côté (voir [planDraftValidation]).
+  Future<void> _validateDrafts(
+    List<Recipe> drafts, {
+    required bool confirm,
+  }) async {
+    if (_busy) return;
+    final plan = planDraftValidation(drafts);
+    if (plan.toValidate.isEmpty) {
+      _report(validationSummary(plan, failed: 0), failed: 0, partial: true);
+      return;
+    }
+    if (confirm) {
+      final note = notValidatedNote(plan);
+      final count = plan.toValidate.length;
+      final ok = await _showConfirmDialog(
+        title: 'Valider ${countOf(count, 'brouillon', 'brouillons')} ?',
+        content:
+            '${count >= 2 ? 'Ils seront publiés tels quels' : 'Il sera publié tel quel'}'
+            ', sans relecture.'
+            '${note == null ? '' : '\n\n$note'}',
+        confirmLabel: 'Valider',
+      );
+      if (!ok || !mounted) return;
+    }
     final repo = ref.read(recipeRepositoryProvider);
     final myUid = ref.read(appUserProvider).value?.uid ?? '';
-    for (final item in drafts) {
-      final r = item.recipe;
-      final content = r.draftCooklang ?? r.rawCooklang;
-      await repo.validateDraft(
+    final failed = await _runBatch<Recipe>(
+      label: 'Validation',
+      items: plan.toValidate,
+      feature: 'workQueueScreen.validateDraft',
+      errorContext: (r) => {'recipe_id': r.id},
+      action: (r) => repo.validateDraft(
         recipeId: r.id,
-        editedCooklang: content,
+        editedCooklang: draftContent(r),
         titre: r.titre,
         callerUid: myUid,
         bookId: r.bookId,
@@ -198,51 +319,87 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         tagsOverride: r.tags,
         portionsOverride: r.portions,
         ingredientsOverride: r.ingredients,
-      );
-    }
-    if (mounted) {
-      context.showSuccessSnackBar('${drafts.length} brouillon(s) validé(s) !');
-    }
+      ),
+    );
+    _report(
+      validationSummary(plan, failed: failed.length),
+      failed: failed.length,
+      partial: plan.skipped > 0,
+    );
   }
 
-  Future<void> _batchRetry(List<_QueueItem> allItems) async {
-    final jobs = allItems
-        .whereType<_JobItem>()
-        .where((i) => _selected.contains(i.key))
-        .toList();
-    if (jobs.isEmpty) return;
-    _clearSelection();
+  /// Relance des traitements en erreur ou rejetés. Chaque import relancé est
+  /// facturé à nouveau : la sélection multiple demande donc confirmation.
+  Future<void> _retryJobs(List<ProcessingJob> jobs) async {
+    if (_busy || jobs.isEmpty) return;
+    final ok = await _showConfirmDialog(
+      title: 'Relancer ${countOf(jobs.length, 'traitement', 'traitements')} ?',
+      content: 'Chaque import relancé est facturé à nouveau.',
+      confirmLabel: 'Relancer',
+    );
+    if (!ok || !mounted) return;
     final notifier = ref.read(scanUploadProvider.notifier);
-    for (final item in jobs) {
-      await notifier.retryJob(item.job);
-    }
+    final failed = await _runBatch<ProcessingJob>(
+      label: 'Relance',
+      items: jobs,
+      feature: 'workQueueScreen.retryJob',
+      errorContext: (j) => {'job_id': j.id},
+      action: notifier.retryJob,
+    );
+    _report(
+      actionSummary(
+        verb: 'Relancé',
+        drafts: 0,
+        jobs: jobs.length - failed.length,
+        failed: failed.length,
+      ),
+      failed: failed.length,
+    );
   }
 
-  Future<void> _batchDelete(List<_QueueItem> allItems) async {
-    final count = _selected.length;
-    final confirmed = await _showConfirmDialog(
-      title: 'Supprimer $count élément(s) ?',
+  Future<void> _deleteItems(List<_QueueItem> items) async {
+    if (_busy || items.isEmpty) return;
+    final label = selectionLabel(
+      drafts: items.whereType<_DraftItem>().length,
+      jobs: items.whereType<_JobItem>().length,
+    );
+    final ok = await _showConfirmDialog(
+      title: 'Supprimer $label ?',
       content: 'Cette action est irréversible.',
       isDangerous: true,
+      confirmLabel: 'Supprimer',
     );
-    if (!confirmed || !mounted) return;
-    final keys = Set<String>.from(_selected);
-    _clearSelection();
+    if (!ok || !mounted) return;
     final jobRepo = ref.read(processingJobRepositoryProvider);
     final recipeRepo = ref.read(recipeRepositoryProvider);
-    for (final key in keys) {
-      if (key.startsWith('j:')) {
-        await jobRepo.deleteJob(key.substring(2));
-      } else if (key.startsWith('d:')) {
-        await recipeRepo.deleteRecipe(key.substring(2));
-      }
-    }
+    final failed = await _runBatch<_QueueItem>(
+      label: 'Suppression',
+      items: items,
+      feature: 'workQueueScreen.deleteItem',
+      errorContext: (i) => {'item': i.key},
+      action: (i) => switch (i) {
+        _JobItem(:final job) => jobRepo.deleteJob(job.id),
+        _DraftItem(:final recipe) => recipeRepo.deleteRecipe(recipe.id),
+      },
+    );
+    final failedDrafts = failed.whereType<_DraftItem>().length;
+    final failedJobs = failed.whereType<_JobItem>().length;
+    _report(
+      actionSummary(
+        verb: 'Supprimé',
+        drafts: items.whereType<_DraftItem>().length - failedDrafts,
+        jobs: items.whereType<_JobItem>().length - failedJobs,
+        failed: failed.length,
+      ),
+      failed: failed.length,
+    );
   }
 
   Future<bool> _showConfirmDialog({
     required String title,
     required String content,
     bool isDangerous = false,
+    String confirmLabel = 'Confirmer',
   }) async {
     final result = await showDialog<bool>(
       context: context,
@@ -262,7 +419,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   )
                 : null,
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirmer'),
+            child: Text(confirmLabel),
           ),
         ],
       ),
@@ -320,19 +477,60 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     );
 
     final allItems = sections.expand((s) => s.items).toList();
-    final allKeys = allItems.map((i) => i.key).toSet();
+
+    // Les en-têtes n'existent qu'à partir de deux sections. Sans en-tête, rien
+    // ne permet de rouvrir une section : un repli gardé d'un autre filtre ne
+    // doit donc pas cacher la seule liste.
+    final showSectionHeaders = sections.length > 1;
+    bool isCollapsed(_Section s) =>
+        showSectionHeaders && _collapsedOwners.contains(s.ownerUid);
+
+    // Ce qui est à l'écran, et seulement cela, est sélectionnable. Une clé
+    // cochée dont la ligne a disparu (validée ou supprimée ailleurs, section
+    // repliée) ne compte pas et n'est jamais traitée.
+    final visibleItems = [
+      for (final s in sections)
+        if (!isCollapsed(s)) ...s.items,
+    ];
+    final selectedItems = visibleItems
+        .where((i) => _selected.contains(i.key))
+        .toList();
+    final selectedDrafts = selectedItems.whereType<_DraftItem>().toList();
+    final selectedJobs = selectedItems.whereType<_JobItem>().toList();
+    final retryableJobs = selectedJobs
+        .where(
+          (i) =>
+              i.job.status == ProcessingJobStatus.error ||
+              i.job.status == ProcessingJobStatus.rejected,
+        )
+        .map((i) => i.job)
+        .toList();
+    final selecting = _selectionMode && allItems.isNotEmpty;
     final allSelected =
-        allKeys.isNotEmpty && allKeys.every((k) => _selected.contains(k));
+        visibleItems.isNotEmpty &&
+        visibleItems.every((i) => _selected.contains(i.key));
+
+    // La file s'est vidée pendant la sélection : le mode ne doit pas rester
+    // armé et resurgir à l'arrivée du prochain import.
+    if (_selectionMode && allItems.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _clearSelection();
+      });
+    }
 
     // AppBar dynamique
-    final appBar = _isSelecting
+    final appBar = selecting
         ? AppBar(
             leading: IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Annuler la sélection',
               onPressed: _clearSelection,
             ),
-            title: Text('${_selected.length} sélectionné(s)'),
+            title: Text(
+              selectedItems.isEmpty
+                  ? 'Sélectionnez des éléments'
+                  : '${selectedItems.length} sélectionné(s)',
+            ),
             actions: [
               IconButton(
                 icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
@@ -341,34 +539,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                     : 'Tout sélectionner',
                 onPressed: allSelected
                     ? _clearSelection
-                    : () => _selectAll(allItems),
-              ),
-              // Valider — actif uniquement si sélection = brouillons uniquement
-              IconButton(
-                icon: const Icon(Icons.check_circle_outline),
-                tooltip: 'Valider les brouillons',
-                color: (_hasSelectedDrafts && !_hasSelectedJobs)
-                    ? null
-                    : Theme.of(context).disabledColor,
-                onPressed: (_hasSelectedDrafts && !_hasSelectedJobs)
-                    ? () => _batchValidate(allItems)
-                    : null,
-              ),
-              // Relancer — actif uniquement si sélection = jobs uniquement
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Relancer les traitements',
-                color: (!_hasSelectedDrafts && _hasSelectedJobs)
-                    ? null
-                    : Theme.of(context).disabledColor,
-                onPressed: (!_hasSelectedDrafts && _hasSelectedJobs)
-                    ? () => _batchRetry(allItems)
-                    : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Supprimer la sélection',
-                onPressed: () => _batchDelete(allItems),
+                    : () => _selectAll(visibleItems),
               ),
             ],
           )
@@ -382,6 +553,12 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               ),
               if (isAdmin && _filterMode == WorkQueueFilter.allUsers)
                 WorkQueueAdminUidFilter(allJobs: allJobs, allDrafts: allDrafts),
+              if (allItems.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.checklist),
+                  tooltip: 'Sélectionner',
+                  onPressed: _busy ? null : _startSelection,
+                ),
               IconButton(
                 icon: const Icon(Icons.upload_file),
                 tooltip: 'Importer un scan',
@@ -390,6 +567,33 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               const SizedBox(width: 8),
             ],
           );
+
+    // Pendant un lot, la barre du bas montre l'avancement ; sinon, les actions
+    // de la sélection quand elle n'est pas vide.
+    final progress = _progress;
+    final Widget? bottomBar = progress != null
+        ? WorkQueueProgressBar(
+            label: progress.label,
+            done: progress.done,
+            total: progress.total,
+          )
+        : (selecting && selectedItems.isNotEmpty)
+        ? WorkQueueSelectionBar(
+            validateCount: selectedDrafts.isEmpty
+                ? null
+                : planDraftValidation(
+                    selectedDrafts.map((d) => d.recipe),
+                  ).toValidate.length,
+            retryCount: retryableJobs.isEmpty ? null : retryableJobs.length,
+            deleteCount: selectedItems.length,
+            onValidate: () => _validateDrafts(
+              selectedDrafts.map((d) => d.recipe).toList(),
+              confirm: true,
+            ),
+            onRetry: () => _retryJobs(retryableJobs),
+            onDelete: () => _deleteItems(selectedItems),
+          )
+        : null;
 
     if (allItems.isEmpty) {
       return Scaffold(
@@ -418,6 +622,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
             ],
           ),
         ),
+        bottomNavigationBar: bottomBar,
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => context.go('/scan'),
           icon: const Icon(Icons.upload_file),
@@ -427,26 +632,31 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     }
 
     // Construction de la liste
-    final showSectionHeaders = sections.length > 1;
     final listItems = <Widget>[];
 
     for (final section in sections) {
-      final isCollapsed = _collapsedOwners.contains(section.ownerUid);
+      final collapsed = isCollapsed(section);
       if (showSectionHeaders) {
+        final checked = section.items
+            .where((i) => _selected.contains(i.key))
+            .length;
         listItems.add(
           WorkQueueSectionHeader(
             ownerUid: section.ownerUid,
             count: section.items.length,
-            expanded: !isCollapsed,
-            onToggle: () => setState(() {
-              isCollapsed
-                  ? _collapsedOwners.remove(section.ownerUid)
-                  : _collapsedOwners.add(section.ownerUid);
-            }),
+            expanded: !collapsed,
+            onToggle: () => _toggleCollapse(section),
+            selection: checked == 0
+                ? false
+                : (checked == section.items.length ? true : null),
+            onToggleSelection:
+                selecting && !collapsed && section.items.isNotEmpty
+                ? () => _toggleSection(section)
+                : null,
           ),
         );
       }
-      if (!isCollapsed) {
+      if (!collapsed) {
         for (final item in section.items) {
           switch (item) {
             case _JobItem(:final job):
@@ -455,8 +665,8 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   job: job,
                   isAdmin: isAdmin,
                   isSelected: _selected.contains(item.key),
-                  isSelecting: _isSelecting,
-                  onTap: () => _isSelecting
+                  isSelecting: selecting,
+                  onTap: () => selecting
                       ? _toggleSelect(item.key)
                       : _handleJobTap(context, job),
                   onLongPress: () => _toggleSelect(item.key),
@@ -464,18 +674,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                       ref.read(scanUploadProvider.notifier).retryJob(job),
                   onCancel: () =>
                       ref.read(scanUploadProvider.notifier).cancelJob(job.id),
-                  onDelete: () async {
-                    final ok = await _showConfirmDialog(
-                      title: 'Supprimer ce traitement ?',
-                      content: 'Cette action est irréversible.',
-                      isDangerous: true,
-                    );
-                    if (ok && mounted) {
-                      await ref
-                          .read(processingJobRepositoryProvider)
-                          .deleteJob(job.id);
-                    }
-                  },
+                  onDelete: () => _deleteItems([item]),
                 ),
               );
             case _DraftItem(:final recipe):
@@ -483,47 +682,13 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 QueueDraftTile(
                   recipe: recipe,
                   isSelected: _selected.contains(item.key),
-                  isSelecting: _isSelecting,
-                  onTap: () => _isSelecting
+                  isSelecting: selecting,
+                  onTap: () => selecting
                       ? _toggleSelect(item.key)
                       : context.go('/drafts/${recipe.id}'),
                   onLongPress: () => _toggleSelect(item.key),
-                  onValidate: () async {
-                    final content = recipe.draftCooklang ?? recipe.rawCooklang;
-                    final myUid = ref.read(appUserProvider).value?.uid ?? '';
-                    final messenger = ScaffoldMessenger.of(context);
-                    await ref
-                        .read(recipeRepositoryProvider)
-                        .validateDraft(
-                          recipeId: recipe.id,
-                          editedCooklang: content,
-                          titre: recipe.titre,
-                          callerUid: myUid,
-                          bookId: recipe.bookId,
-                          bookTitre: recipe.bookTitre,
-                          pageNumberOverride: recipe.pageNumber,
-                          tagsOverride: recipe.tags,
-                          portionsOverride: recipe.portions,
-                          ingredientsOverride: recipe.ingredients,
-                        );
-                    if (mounted) {
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('Brouillon validé !')),
-                      );
-                    }
-                  },
-                  onDelete: () async {
-                    final ok = await _showConfirmDialog(
-                      title: 'Supprimer ce brouillon ?',
-                      content: 'Cette action est irréversible.',
-                      isDangerous: true,
-                    );
-                    if (ok && mounted) {
-                      await ref
-                          .read(recipeRepositoryProvider)
-                          .deleteRecipe(recipe.id);
-                    }
-                  },
+                  onValidate: () => _validateDrafts([recipe], confirm: false),
+                  onDelete: () => _deleteItems([item]),
                 ),
               );
           }
@@ -546,7 +711,8 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
           itemBuilder: (_, i) => listItems[i],
         ),
       ),
-      floatingActionButton: _isSelecting
+      bottomNavigationBar: bottomBar,
+      floatingActionButton: (selecting || _busy)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => context.go('/scan'),

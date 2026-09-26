@@ -115,12 +115,19 @@ class WorkQueueSectionHeader extends ConsumerWidget {
   final bool expanded;
   final VoidCallback onToggle;
 
+  /// Case « tout cocher dans cette section », visible pendant une sélection.
+  /// `true` : tout est coché, `null` : une partie, `false` : rien.
+  final bool? selection;
+  final VoidCallback? onToggleSelection;
+
   const WorkQueueSectionHeader({
     super.key,
     required this.ownerUid,
     required this.count,
     required this.expanded,
     required this.onToggle,
+    this.selection = false,
+    this.onToggleSelection,
   });
 
   @override
@@ -133,9 +140,20 @@ class WorkQueueSectionHeader extends ConsumerWidget {
     return InkWell(
       onTap: onToggle,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: EdgeInsets.fromLTRB(
+          onToggleSelection == null ? 16 : 4,
+          onToggleSelection == null ? 12 : 4,
+          16,
+          onToggleSelection == null ? 8 : 4,
+        ),
         child: Row(
           children: [
+            if (onToggleSelection != null)
+              Checkbox(
+                tristate: true,
+                value: selection,
+                onChanged: (_) => onToggleSelection!(),
+              ),
             Text(
               name,
               style: theme.textTheme.titleSmall?.copyWith(
@@ -155,6 +173,118 @@ class WorkQueueSectionHeader extends ConsumerWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Barre d'actions d'une sélection ───────────────────────────────────────────
+
+/// Les actions d'une sélection, en bas de l'écran, avec le nombre d'éléments
+/// que chacune touche.
+///
+/// « Valider » ne concerne que les brouillons, « Relancer » que les traitements
+/// en erreur ou rejetés, « Supprimer » tout ce qui est coché. Un compte nul
+/// masque l'action, sauf « Valider » : il reste affiché à zéro quand des
+/// brouillons sont cochés mais qu'aucun n'est admis, et l'appui dit pourquoi.
+/// Une sélection mêlée garde ainsi chaque action disponible, sur la part qui
+/// la concerne — les icônes grisées de la barre du haut faisaient croire à une
+/// sélection sans issue.
+class WorkQueueSelectionBar extends StatelessWidget {
+  /// Nul : aucun brouillon coché, l'action est masquée.
+  final int? validateCount;
+
+  /// Nul : aucun traitement relançable coché, l'action est masquée.
+  final int? retryCount;
+  final int deleteCount;
+  final VoidCallback onValidate;
+  final VoidCallback onRetry;
+  final VoidCallback onDelete;
+
+  const WorkQueueSelectionBar({
+    super.key,
+    required this.validateCount,
+    required this.retryCount,
+    required this.deleteCount,
+    required this.onValidate,
+    required this.onRetry,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 8,
+      color: scheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: OverflowBar(
+            alignment: MainAxisAlignment.end,
+            spacing: 8,
+            overflowSpacing: 8,
+            overflowAlignment: OverflowBarAlignment.end,
+            children: [
+              if (retryCount != null)
+                OutlinedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: Text('Relancer ($retryCount)'),
+                ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+                label: Text('Supprimer ($deleteCount)'),
+              ),
+              if (validateCount != null)
+                FilledButton.icon(
+                  onPressed: onValidate,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: Text('Valider ($validateCount)'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// L'avancement d'une action en lot : « Validation 3/12 » et une barre.
+class WorkQueueProgressBar extends StatelessWidget {
+  final String label;
+  final int done;
+  final int total;
+
+  const WorkQueueProgressBar({
+    super.key,
+    required this.label,
+    required this.done,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 8,
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$label $done/$total'),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: total == 0 ? null : done / total),
+            ],
+          ),
         ),
       ),
     );
