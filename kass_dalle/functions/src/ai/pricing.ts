@@ -104,14 +104,24 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   // cours de mois, comparée à une estimation complète. Deux mesures prises à
   // des instants différents, ce que l'écran reproche maintenant lui-même.
   //
-  // Août clos et ventilé par modèle dit l'inverse : Anthropic facture un prix
-  // unitaire SUPÉRIEUR au tarif catalogue, jamais promotionnel. Sur ce compte,
-  // la promotion n'existe pas.
+  // Août clos et ventilé par modèle disait l'inverse : un prix unitaire facturé
+  // SUPÉRIEUR au tarif catalogue, donc aucune promotion. Cette lecture était
+  // fausse : l'agrégat d'août portait alors deux comptabilités parallèles.
   //
-  // Ce tarif n'est pas corrigé ici, et c'est volontaire : cette table ne sert
-  // qu'à semer la grille au premier démarrage, et la corriger ne changerait
-  // rien à la grille en vigueur. La correction se fait dans Firestore, depuis
-  // Admin → Moteur d'IA, où la promotion se décoche désormais.
+  // Septembre 2026, relu ligne à ligne dans `ai_usage` et comparé au rapport de
+  // coûts d'Anthropic du 26 septembre : Sonnet 5 revient à 1,91 $ l'entrée et
+  // 9,05 $ la sortie par million de jetons comptés, Opus 5 à 4,66 $ et 22,30 $.
+  // Les deux modèles s'écartent de 5 à 11 % de leur tarif dans le même sens, ce
+  // qui est un retard de relevé. Sonnet 5 vaut donc 2 $ / 10 $. La page des tarifs
+  // d'Anthropic le confirme : ce prix est devenu le prix courant, le relèvement à
+  // 3 $ / 15 $ prévu le 1er septembre n'a pas eu lieu.
+  //
+  // La graine garde 3 $ / 15 $ et sa promotion, et c'est volontaire : la fixture
+  // `ai_pricing.json` les verrouille pour éprouver le MÉCANISME d'une promotion
+  // datée, et cette table ne sert qu'à semer la grille au premier démarrage. La
+  // grille en vigueur vit dans Firestore : Sonnet 5 s'y corrige depuis
+  // Admin → Moteur d'IA (2 / 10, promotion décochée), puis Admin → Coûts →
+  // « Reconstruire les agrégats » avec « Rechiffrer aussi les appels ».
   "claude-opus-5": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
   "claude-opus-4-8": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
   "claude-sonnet-5": {

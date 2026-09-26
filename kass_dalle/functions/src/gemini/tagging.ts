@@ -13,7 +13,7 @@
  */
 
 import { extractJsonObject } from "./client";
-import { logAiText, logError } from "../logging";
+import { logAiText, logError, logWarn } from "../logging";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
@@ -47,6 +47,99 @@ import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNot
  * plafond.
  */
 const TAGGING_MAX_TOKENS = 36_000;
+
+type Effort = NonNullable<ModelCallContext["effort"]>;
+
+/**
+ * Effort de réflexion du balisage.
+ *
+ * Il valait `high`, par analogie avec la transcription : « baliser sans rien
+ * perdre demande le même soin que transcrire ». L'import du livre de Jamie
+ * Oliver (26 septembre 2026, 75 appels) l'a mesuré : 28 000 jetons de sortie en
+ * moyenne, dont environ 4 000 de réponse — une recette de 4 500 caractères et
+ * une trentaine d'ingrédients. Le reste était de la réflexion, facturée au tarif
+ * de sortie : 0,30 $ par appel, et 0,38 $ pour les 40 appels sur 75 qui butaient
+ * sur le plafond et ne rendaient rien de lisible.
+ *
+ * Les deux passes ne se ressemblent pas. La transcription lit une image : le
+ * soin y évite de recoller « en poudre » au mauvais ingrédient. Le balisage
+ * recopie un texte déjà lu, et `checkFidelity` le compare à cette entrée sans
+ * appeler personne : une erreur de balisage se voit, une erreur de lecture, non.
+ * Le soin se dépense donc dans la transcription.
+ *
+ * **Le réglage reste à `high` tant que la mesure n'a pas eu lieu.** Le candidat
+ * est `medium`, puis `low` : rejouer les transcriptions d'un même livre à chaque
+ * effort et comparer le taux d'avertissements de fidélité — pas le prix. Cette
+ * mesure demande d'appeler l'API Claude depuis un poste de développement, ce que
+ * le projet n'a pas encore autorisé (la clé ne quitte pas Secret Manager). Ce
+ * réglage sert TOUTES les pages scannées, pas seulement les livres : le baisser
+ * sans mesure changerait la qualité de chaque import.
+ *
+ * En attendant, la reprise à `low` borne déjà la perte : un balisage coupé au
+ * plafond n'est plus rejoué à l'identique par Cloud Tasks.
+ */
+export const TAGGING_EFFORT: Effort = "high";
+
+/**
+ * Effort de la reprise quand la réponse a été coupée au plafond.
+ *
+ * Un balisage coupé ne dit rien de lisible : il est refait une fois, avec le
+ * moins de réflexion possible, plutôt que relancé à l'identique.
+ */
+export const TAGGING_RETRY_EFFORT: Effort = "low";
+
+/** Les efforts essayés dans l'ordre, sans répéter deux fois le même. */
+export function taggingEfforts(): Effort[] {
+  return TAGGING_EFFORT === TAGGING_RETRY_EFFORT
+    ? [TAGGING_EFFORT]
+    : [TAGGING_EFFORT, TAGGING_RETRY_EFFORT];
+}
+
+/**
+ * Le fournisseur s'est arrêté sur le plafond de sortie.
+ *
+ * Claude écrit `max_tokens`, Gemini `MAX_TOKENS`. Sur un JSON, une réponse
+ * arrêtée là est coupée en plein milieu : elle ne se lit pas.
+ */
+export function isTruncatedStop(stopReason: string | undefined): boolean {
+  return stopReason === "max_tokens" || stopReason === "MAX_TOKENS";
+}
+
+/**
+ * Le balisage a été coupé au plafond à tous les efforts essayés.
+ *
+ * Un type à part : le pipeline ne relance pas ce job à l'identique. Cloud Tasks
+ * rejouerait les deux mêmes appels, et le résultat serait le même.
+ */
+export class TaggingTruncatedError extends Error {
+  constructor() {
+    super(
+      "Le balisage de la recette a dépassé la longueur permise, même avec un raisonnement réduit.",
+    );
+    this.name = "TaggingTruncatedError";
+  }
+}
+
+/**
+ * Appelle le modèle à chaque effort tour à tour, jusqu'à une réponse non coupée.
+ *
+ * Seule une réponse arrêtée sur le plafond déclenche l'essai suivant. Une
+ * réponse complète mais illisible n'est pas reprise ici : la refaire au même
+ * prix ne change pas ce que le modèle sait écrire, et `tagAndNormalize` la
+ * signale.
+ */
+export async function runTaggingAttempts<T extends { stopReason?: string }>(args: {
+  efforts: readonly Effort[];
+  call: (effort: Effort) => Promise<T>;
+  onTruncated?: (effort: Effort, result: T) => Promise<void> | void;
+}): Promise<T> {
+  for (const effort of args.efforts) {
+    const result = await args.call(effort);
+    if (!isTruncatedStop(result.stopReason)) return result;
+    await args.onTruncated?.(effort, result);
+  }
+  throw new TaggingTruncatedError();
+}
 
 /** Une ligne d'ingrédient du livre, séparée en ce qui se compte et ce qui se dit. */
 export interface NormalizedIngredientLine {
@@ -258,15 +351,29 @@ export async function tagAndNormalize(
   ctx: ModelCallContext,
 ): Promise<TaggedRecipe> {
   const transcription = renderTranscriptionForTagging(recipe);
+  const parts = [
+    textPart(`${TAGGING_PROMPT}\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
+  ];
 
-  const result = await callModel({
-    parts: [
-      textPart(`${TAGGING_PROMPT}\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
-    ],
-    // Baliser sans rien perdre demande le même soin que transcrire : c'est la
-    // passe qui décide quel mot est un ingrédient et quel mot est une phrase.
-    ctx: { ...ctx, feature: "recipe_tagging", timeoutMs: 3 * 60 * 1000, effort: "high" },
-    maxTokens: TAGGING_MAX_TOKENS,
+  const result = await runTaggingAttempts({
+    efforts: taggingEfforts(),
+    call: (effort) =>
+      callModel({
+        parts,
+        ctx: { ...ctx, feature: "recipe_tagging", timeoutMs: 3 * 60 * 1000, effort },
+        maxTokens: TAGGING_MAX_TOKENS,
+      }),
+    onTruncated: (effort, truncated) =>
+      logWarn({
+        message: `Balisage coupé au plafond de ${TAGGING_MAX_TOKENS} jetons à l'effort ${effort}`,
+        moduleType: "IMPORT",
+        correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        jobId: ctx.jobId,
+        userId: ctx.userId,
+        callId: truncated.callId,
+        extra: { titre: recipe.titre, effort, outputTokens: truncated.usage.outputTokens },
+      }),
   });
 
   const text = result.text.trim();

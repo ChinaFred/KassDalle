@@ -305,6 +305,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Dépense d'IA par scan — le compteur, et le plafond d'un import de livre.
+    // Écrite par les Cloud Functions ; ouverte au client, elle laisserait relever
+    // son propre plafond.
+    match /scan_spend/{scanId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Repas planifiés
     match /planned_meals/{mealId} {
       allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;

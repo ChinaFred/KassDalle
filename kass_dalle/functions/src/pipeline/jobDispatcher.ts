@@ -19,6 +19,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFunctions } from "firebase-admin/functions";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { REGION, COLL_PROCESSING_JOBS, PROJECT_ID, TASK_QUEUE_FUNCTION } from "../config";
+import { raiseImportCeiling } from "../ai/importBudget";
 import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
 
 export const jobDispatcher = onDocumentWritten(
@@ -76,6 +77,27 @@ export const jobDispatcher = onDocumentWritten(
     // C'est le cas de notre propre marquage (correlation_id, dispatched_at)
     // juste en dessous — sans cette garde, il se redéclencherait sans fin.
     if (before?.status === "queued") return;
+
+    // Une tranche de livre qui revient en `queued` après avoir existé est une
+    // relance de l'utilisateur. Si l'import a atteint son plafond, la relance
+    // l'ouvre d'un palier : sans cela, la tranche échouerait au même endroit.
+    // Une création n'a pas d'état précédent, et n'y touche pas.
+    if (before && job.book_window) {
+      try {
+        await raiseImportCeiling({ scanId, userId, jobId });
+      } catch (err) {
+        // Best-effort : la tranche est mise en file quand même. Si le plafond n'a
+        // pas pu être relevé, elle s'arrêtera à nouveau, et l'erreur le dit.
+        await logError({
+          message: "Plafond de l'import non relevé par la relance",
+          errorDescription: err instanceof Error ? err.message : String(err),
+          moduleType: "IMPORT",
+          jobId,
+          userId,
+          scanId,
+        });
+      }
+    }
 
     try {
       // Marque le job avec le correlationId avant enqueue (traçabilité).

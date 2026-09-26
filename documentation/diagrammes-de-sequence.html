@@ -2172,6 +2172,7 @@ sequenceDiagram
   participant SP as scanAndPromoteUploadFn
   participant AN as analyzeBookFileFn
   participant J as processing_jobs
+  participant SS as scan_spend
   participant P as recipeProcessor
   participant B as runBookImport
   participant G as Modèle (Gemini ou Claude)
@@ -2187,15 +2188,17 @@ sequenceDiagram
   S->>AN: analyzeBookFile
   AN->>ST: download du livre promu
   AN->>AN: openBookFile — pages ou texte, tranches
-  AN->>AN: coût moyen des 15 derniers scans (ai_usage)
-  AN-->>SC: pages, tranches, coût estimé ou « indisponible »
+  AN->>AN: coût par tranche des derniers livres importés (ai_usage),<br/>sinon moyenne des 15 dernières pages scannées
+  AN-->>SC: pages, tranches, coût estimé ou « indisponible », plafond proposé
 
   alt l'utilisateur annule
     SC->>AN: discard — supprime le fichier
   else « Lancer l'import »
-    S->>J: createJob bookDocumentScan
+    U->>SC: fixe le plafond de l'import (dollars)
+    S->>J: createJob bookDocumentScan — budget_limit_usd
     J-->>P: dispatch Cloud Tasks
     P->>B: runBookImport
+    B->>SS: pose le plafond (limit_usd, step_usd)
 
     opt aucun livre cible
       alt PDF
@@ -2214,9 +2217,23 @@ sequenceDiagram
 
     loop chaque job de tranche
       J-->>P: dispatch Cloud Tasks
-      P->>G: transcription avec bookWindowPreamble
-      Note over P,G: les pages à transcrire, puis une page de contexte<br/>qui ne sert qu'à finir la dernière recette
-      P->>R: brouillons rattachés au livre
+      P->>SS: plafond de l'import atteint ?
+      alt atteint
+        P->>J: error budget_exceeded — dead letter, sans nouvelle tentative
+        Note over U,J: relancer la tranche depuis la file<br/>relève le plafond d'un palier (jobDispatcher)
+      else sous le plafond
+        alt point de reprise sur le job
+          Note over P: transcription relue,<br/>aucun appel de modèle
+        else première tentative
+          P->>G: transcription avec bookWindowPreamble
+          Note over P,G: les pages à transcrire, puis une page de contexte<br/>qui ne sert qu'à finir la dernière recette
+          P->>J: transcription_checkpoint
+        end
+        P->>G: balisage — effort high, refait à low si la réponse est coupée
+        G-->>SS: recordUsage ajoute le coût du scan
+        P->>R: brouillons rattachés au livre
+        P->>J: done — le point de reprise est effacé
+      end
     end
   end
 </pre>

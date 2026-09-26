@@ -31,9 +31,13 @@ import {
   COLL_BOOKS,
   COLL_DEAD_LETTERS,
 } from "../config";
-import { logAiText, logError, logInfo, newCorrelationId } from "../logging";
+import { logAiText, logError, logInfo, logWarn, newCorrelationId } from "../logging";
 import { transcribePage, type PageTranscription } from "../gemini/transcription";
-import { tagAndNormalize, type NormalizedIngredientLine } from "../gemini/tagging";
+import {
+  tagAndNormalize,
+  TaggingTruncatedError,
+  type NormalizedIngredientLine,
+} from "../gemini/tagging";
 import { checkFidelity, verbatimCooklang, type FidelityReport } from "../gemini/fidelity";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
@@ -41,6 +45,7 @@ import { precheckPageImages } from "../illustrations/extract";
 import { extractAndStorePageIllustrations } from "../illustrations/store";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
+import { assertWithinImportBudget } from "../ai/importBudget";
 import { expectedPrivacy } from "../triggers/recipePrivacy";
 import {
   normalizeRecipeReferentialsCore,
@@ -49,6 +54,7 @@ import {
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
 import { BookFileError } from "../books/bookFile";
 import { parseBookWindow, runBookImport } from "./bookImport";
+import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
   extractTitle,
   extractPortions,
@@ -346,13 +352,32 @@ export const recipeProcessor = onTaskDispatched(
       // alors quelles pages lui appartiennent et lesquelles ne servent que de
       // contexte. Absent pour une page scannée ordinaire.
       const bookWindow = parseBookWindow(job.book_window);
-      const transcription = await transcribePage(
-        primaryBytes,
-        mimeType,
-        { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
-        extraPages,
-        bookWindow,
-      );
+
+      // Une tentative qui suit un échec relit la transcription déjà obtenue au
+      // lieu de la refaire : c'est l'appel le plus cher du job, et le balisage
+      // qui a échoué ne le remet pas en cause.
+      let transcription = await readTranscriptionCheckpoint(job, ctx);
+      if (transcription) {
+        logInfo({
+          message:
+            "Transcription reprise du point de reprise du job : l'appel de modèle n'est pas refait",
+          moduleType: "IMPORT",
+          ...ctx,
+        });
+      } else {
+        // Le plafond de l'import se vérifie avant le premier appel de la tranche.
+        // Une page scannée ordinaire n'a pas de plafond propre : elle relève du
+        // plafond du jour, que le routeur contrôle.
+        if (bookWindow) await assertWithinImportBudget(ctx.scanId, "transcription_page");
+        transcription = await transcribePage(
+          primaryBytes,
+          mimeType,
+          { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
+          extraPages,
+          bookWindow,
+        );
+        await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
+      }
 
       logInfo({
         message: `Page transcrite: ${transcription.pageType} — "${transcription.titre}"`,
@@ -375,6 +400,7 @@ export const recipeProcessor = onTaskDispatched(
           status: "done",
           current_step: "done",
           created_recipe_ids: [],
+          transcription_checkpoint: FieldValue.delete(),
           updated_at: Timestamp.now(),
           execution_time_ms: elapsed,
         });
@@ -400,6 +426,7 @@ export const recipeProcessor = onTaskDispatched(
           status: "done",
           current_step: "done",
           created_recipe_ids: [],
+          transcription_checkpoint: FieldValue.delete(),
           updated_at: Timestamp.now(),
           execution_time_ms: elapsed,
         });
@@ -534,6 +561,7 @@ export const recipeProcessor = onTaskDispatched(
         // a recopié. C'est ce qui rend la fidélité vérifiable — et vérifiée,
         // juste en dessous, sans un appel de plus.
         await jobRef.update({ current_step: "tagging", updated_at: Timestamp.now() });
+        if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_tagging");
         const tagged = await tagAndNormalize(recette, {
           ...ctx,
           feature: "recipe_tagging",
@@ -614,6 +642,7 @@ export const recipeProcessor = onTaskDispatched(
         status: "done",
         current_step: "done",
         created_recipe_ids: createdIds,
+        transcription_checkpoint: FieldValue.delete(),
         updated_at: Timestamp.now(),
         execution_time_ms: elapsed,
       });
@@ -636,6 +665,9 @@ export const recipeProcessor = onTaskDispatched(
       // Un livre illisible — PDF chiffré, EPUB sans texte — le reste à chaque
       // tentative, et chacune retélécharge le fichier en entier.
       const isUnreadableBook = err instanceof BookFileError;
+      // Un balisage coupé au plafond à tous les efforts essayés se rejouerait à
+      // l'identique : les deux appels ont déjà eu lieu.
+      const isTruncatedTagging = err instanceof TaggingTruncatedError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -659,12 +691,13 @@ export const recipeProcessor = onTaskDispatched(
         moduleType: "IMPORT",
         executionTimeMs: Date.now() - start,
         ...ctx,
-        extra: { attempt, isQuota, isBudget, isUnreadableBook },
+        extra: { attempt, isQuota, isBudget, isUnreadableBook, isTruncatedTagging },
       });
 
-      // Dernière tentative — ou plafond atteint, ou fichier illisible : les deux
-      // se rejouent à l'identique, il est inutile de les réessayer.
-      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget || isUnreadableBook) {
+      // Dernière tentative — ou plafond atteint, fichier illisible, balisage
+      // coupé : ces trois cas se rejouent à l'identique, il est inutile de les
+      // réessayer.
+      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget || isUnreadableBook || isTruncatedTagging) {
         await moveToDeadLetter({
           jobId,
           userId,
@@ -673,9 +706,11 @@ export const recipeProcessor = onTaskDispatched(
             ? "budget_exceeded"
             : isUnreadableBook
               ? "book_file_unreadable"
-              : isQuota
-                ? "quota_exceeded"
-                : "pipeline_error",
+              : isTruncatedTagging
+                ? "tagging_truncated"
+                : isQuota
+                  ? "quota_exceeded"
+                  : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",
@@ -1050,6 +1085,63 @@ async function moveToDeadLetter(args: {
     relaunched_at: null,
     queue_name: QUEUE_RECIPE_PROCESSING,
   });
+}
+
+type JobLogContext = { jobId: string; userId: string; correlationId: string; scanId?: string };
+
+/**
+ * Relit le point de reprise de la transcription écrit sur le job, s'il y en a un.
+ *
+ * Un point de reprise illisible n'arrête pas le job : la page est transcrite de
+ * nouveau, et l'incident est journalisé.
+ */
+async function readTranscriptionCheckpoint(
+  job: Record<string, unknown>,
+  ctx: JobLogContext,
+): Promise<PageTranscription | null> {
+  try {
+    return parseCheckpoint(job.transcription_checkpoint);
+  } catch (err) {
+    await logError({
+      message: "Point de reprise de la transcription illisible : la page est transcrite de nouveau",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      ...ctx,
+    });
+    return null;
+  }
+}
+
+/**
+ * Écrit la transcription sur le job, pour qu'une nouvelle tentative ne la refasse pas.
+ *
+ * Best-effort : un point de reprise qui n'a pas pu s'écrire coûte une
+ * transcription de plus à la tentative suivante, il ne fait pas échouer celle-ci.
+ */
+async function saveTranscriptionCheckpoint(
+  jobRef: FirebaseFirestore.DocumentReference,
+  transcription: PageTranscription,
+  ctx: JobLogContext,
+): Promise<void> {
+  const json = serializeCheckpoint(transcription);
+  if (json == null) {
+    await logWarn({
+      message: "Transcription trop volumineuse pour un point de reprise : non enregistrée",
+      moduleType: "IMPORT",
+      ...ctx,
+    });
+    return;
+  }
+  try {
+    await jobRef.update({ transcription_checkpoint: json, updated_at: Timestamp.now() });
+  } catch (err) {
+    await logError({
+      message: "Point de reprise de la transcription non écrit : une nouvelle tentative la refera",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      ...ctx,
+    });
+  }
 }
 
 /**

@@ -48,4 +48,45 @@ void main() {
       );
     });
   });
+
+  group('ProcessingJob.budgetLimitUsd', () {
+    Map<String, dynamic> livre({num? plafond}) => {
+      ...document(),
+      'type': 'bookDocumentScan',
+      'budget_limit_usd': ?plafond,
+    };
+
+    test('absent d\'un job ordinaire : rien n\'est écrit', () {
+      final job = ProcessingJob.fromFirestore('j1', document());
+      expect(job.budgetLimitUsd, isNull);
+      expect(job.toFirestore().containsKey('budget_limit_usd'), isFalse);
+    });
+
+    test('lu depuis le document d\'un livre, entier ou décimal', () {
+      expect(
+        ProcessingJob.fromFirestore('j1', livre(plafond: 30)).budgetLimitUsd,
+        30.0,
+      );
+      expect(
+        ProcessingJob.fromFirestore('j1', livre(plafond: 12.5)).budgetLimitUsd,
+        12.5,
+      );
+    });
+
+    test(
+      'écrit à la création du job du livre, pour que le serveur le pose',
+      () {
+        final job = ProcessingJob.fromFirestore('j1', livre(plafond: 30));
+        expect(job.toFirestore()['budget_limit_usd'], 30.0);
+      },
+    );
+
+    test('conservé par copyWith', () {
+      final job = ProcessingJob.fromFirestore('j1', livre(plafond: 30));
+      expect(
+        job.copyWith(status: ProcessingJobStatus.error).budgetLimitUsd,
+        30.0,
+      );
+    });
+  });
 }

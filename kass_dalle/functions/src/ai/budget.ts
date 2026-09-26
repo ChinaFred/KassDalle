@@ -129,7 +129,8 @@ export function dailySpendDocId(userId: string, day: string): string {
 
 /** Ce que le plafond décide. `null` quand l'appel peut passer. */
 export interface BudgetDenial {
-  reason: "cost" | "calls";
+  /** `import` : le plafond fixé pour un livre entier, voir `importBudget.ts`. */
+  reason: "cost" | "calls" | "import";
   message: string;
 }
 

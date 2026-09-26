@@ -142,6 +142,16 @@ export const COLL_AI_USAGE_MONTHLY = "ai_usage_monthly";
  * écrit ailleurs, et l'historique reste lisible tel quel.
  */
 export const COLL_AI_DAILY_SPEND = "ai_daily_spend";
+
+/**
+ * Dépense d'IA par scan — `{scanId}`.
+ *
+ * Porte le compteur de ce qu'un scan a coûté et, pour un livre importé, le
+ * plafond que l'utilisateur a fixé sur l'écran de confirmation. Un import de
+ * livre est un seul scan qui déclenche une centaine de jobs : le plafond du jour
+ * ne le borne pas pour le fondateur, ce document oui.
+ */
+export const COLL_SCAN_SPEND = "scan_spend";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 /**

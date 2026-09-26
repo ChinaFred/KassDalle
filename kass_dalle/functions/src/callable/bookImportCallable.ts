@@ -23,7 +23,8 @@ import {
   detectBookFileKind,
   openBookFile,
 } from "../books/bookFile";
-import { referenceCostPerScan } from "../books/importEstimate";
+import { referenceCostPerScan, referenceCostPerWindow } from "../books/importEstimate";
+import { suggestImportBudgetUsd } from "../ai/importBudget";
 import { logError, logInfo } from "../logging";
 
 const ALLOWED_ORIGINS = [
@@ -86,10 +87,23 @@ export const analyzeBookFileFn = onCall(
       const [bytes] = await file.download();
       const opened = await openBookFile(bytes, kind);
 
-      const [reference, usdToEur] = await Promise.all([
+      const [bookReference, pageReference, usdToEur] = await Promise.all([
+        referenceCostPerWindow(ctx.userId),
         referenceCostPerScan(ctx.userId),
         getUsdToEurRate(),
       ]);
+
+      // Un livre déjà importé mesure ce que coûte une tranche. À défaut, la
+      // moyenne des pages scannées : une tranche est facturée comme l'une d'elles.
+      const referenceKind =
+        bookReference.perWindowUsd != null
+          ? "books"
+          : pageReference.meanUsd != null
+            ? "pages"
+            : null;
+      const costPerWindowUsd =
+        referenceKind === "books" ? bookReference.perWindowUsd : pageReference.meanUsd;
+      const estimatedCostUsd = costPerWindowUsd != null ? costPerWindowUsd * opened.windows : null;
 
       return {
         kind,
@@ -100,9 +114,13 @@ export const analyzeBookFileFn = onCall(
         titre: opened.metadata.titre ?? null,
         auteur: opened.metadata.auteur ?? null,
         // Absent quand la mesure manque : le client affiche « indisponible », pas zéro.
-        costPerWindowUsd: reference.meanUsd,
-        estimatedCostUsd: reference.meanUsd != null ? reference.meanUsd * opened.windows : null,
-        referenceScans: reference.scans,
+        costPerWindowUsd,
+        estimatedCostUsd,
+        referenceKind,
+        referenceScans: referenceKind === "books" ? bookReference.books : pageReference.scans,
+        // Une décision, pas une mesure : le plafond proposé existe même sans
+        // estimation, et l'utilisateur le règle sur l'écran.
+        suggestedBudgetUsd: suggestImportBudgetUsd({ windows: opened.windows, estimatedCostUsd }),
         usdToEur,
       };
     } catch (err) {

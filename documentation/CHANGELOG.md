@@ -16,6 +16,60 @@ anciennes sans accents.
 
 ## 2026-09-26
 
+### v0.22.93 — fonctionnel
+
+#### Import d'un livre : un plafond de dépense, et une relance qui ne relit plus la page
+
+L'import du livre de Jamie Oliver a coûté 59,89 $ affichés, avec 77 tranches, 37 recettes créées et
+6 tranches en erreur. 31,54 $ (53 %) ont été facturés pour des appels dont le résultat a été écarté :
+40 balisages sur 75 se sont arrêtés au plafond de sortie sans rien rendre de lisible, et chaque échec
+rejouait le job depuis le début, transcription comprise.
+
+- **Le plafond de l'import se fixe avant son départ.** L'écran de confirmation propose un montant en
+  dollars — l'estimation plus la moitié, ou 0,50 $ par import sans estimation — avec son équivalent
+  en euros. Le bouton « Lancer l'import » reste grisé sans montant supérieur à zéro. Quand le plafond
+  est atteint, les imports restants s'arrêtent avec « Plafond de cet import atteint ». Relancer une
+  tranche depuis la file relève le plafond d'un palier de la même taille.
+- **La relance ne relit plus la page.** La transcription réussie est gardée sur le traitement : un
+  balisage qui échoue, puis se rejoue, ne refait plus l'appel le plus cher.
+- **Un balisage coupé est refait une fois avec moins de réflexion**, au lieu d'être rejoué trois fois
+  à l'identique.
+- **L'estimation de coût d'un livre se mesure sur les livres déjà importés**, par tranche. Elle
+  comptait le livre entier comme un seul scan, et aurait annoncé un coût multiplié par le nombre de
+  tranches au livre suivant.
+
+Non modifié : l'effort de réflexion du balisage reste à `high`. Le passer à `medium` demande une
+mesure du taux d'avertissements de fidélité sur les mêmes transcriptions.
+
+### v0.22.93 — technique
+
+- `ai/importBudget.ts` (nouveau) : `scan_spend/{scanId}` porte le compteur du scan (`recordUsage` y
+  ajoute chaque appel qui a un `scanId`) et le plafond (`limit_usd`, `step_usd`). `runBookImport` le
+  pose depuis `budget_limit_usd` sans jamais le baisser ; `recipeProcessor` le relit avant le premier
+  appel de chaque tranche de livre (`assertWithinImportBudget`) ; `jobDispatcher` le relève à
+  `cost_usd + step_usd` quand une tranche revient en `queued` et que le plafond est atteint. La
+  nutrition calculée plus tard sur ces recettes n'est pas contrôlée. Règle Firestore : lecture admin,
+  écriture serveur seul.
+- `pipeline/transcriptionCheckpoint.ts` (nouveau) : la transcription est écrite sur le job
+  (`transcription_checkpoint`, chaîne JSON, 300 000 caractères au plus) et relue par la tentative
+  suivante ; effacée quand le job aboutit. Illisible, elle est journalisée et la page est transcrite
+  de nouveau.
+- `gemini/tagging.ts` : `runTaggingAttempts` refait le balisage à `low` quand `stop_reason` vaut
+  `max_tokens` ; coupé aux deux efforts, `TaggingTruncatedError` envoie le job en dead letter
+  `tagging_truncated` sans nouvelle tentative Cloud Tasks.
+- `books/importEstimate.ts` : `referenceCostPerWindow` (somme des coûts sur somme des tranches des 3
+  derniers livres) remplace la moyenne des pages scannées quand un livre existe ; les tranches
+  (`book_window`) sont exclues de la moyenne des pages, lue sur 300 jobs au lieu de 80.
+  `analyzeBookFileFn` rend aussi `referenceKind` et `suggestedBudgetUsd`.
+- Client : `ProcessingJob.budgetLimitUsd` (`budget_limit_usd`), `confirmBookImport({required
+  budgetLimitUsd})`, champ « Plafond de cet import » dans `_BookConfirmationCard`
+  (`parseBudgetInput`, `formatBudgetInput`).
+- `ai/pricing.ts` et `ai_pricing.json` : commentaires corrigés. Sonnet 5 vaut 2 $ / 10 $ en
+  permanence (page des tarifs d'Anthropic ; rapport de coûts du 26 septembre relu contre les jetons
+  de `ai_usage`). La grille en vigueur, dans Firestore, portait 3 $ / 15 $ : elle se corrige depuis
+  Admin → Moteur d'IA, puis Admin → Coûts → « Reconstruire les agrégats » avec « Rechiffrer aussi
+  les appels ».
+
 ### v0.22.92 — fonctionnel
 
 #### Valider ou supprimer des brouillons par lot

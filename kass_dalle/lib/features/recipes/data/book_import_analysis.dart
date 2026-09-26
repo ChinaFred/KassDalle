@@ -17,6 +17,8 @@ class BookImportAnalysis {
     this.estimatedCostUsd,
     this.costPerWindowUsd,
     this.referenceScans = 0,
+    this.referenceKind,
+    this.suggestedBudgetUsd,
     this.usdToEur,
   });
 
@@ -43,8 +45,18 @@ class BookImportAnalysis {
   /// Coût moyen mesuré d'un import de page, en dollars.
   final double? costPerWindowUsd;
 
-  /// Nombre d'imports passés qui ont servi à la mesure.
+  /// Nombre de livres ou de pages scannées qui ont servi à la mesure.
   final int referenceScans;
+
+  /// Ce que la mesure a porté : `books` (des livres déjà importés, coût mesuré
+  /// par tranche), `pages` (des pages scannées, faute de livre), ou null.
+  final String? referenceKind;
+
+  /// Plafond proposé pour cet import, en dollars.
+  ///
+  /// Une décision du serveur, pas une mesure : elle existe même quand aucune
+  /// estimation n'est possible. L'utilisateur la lit et la règle.
+  final double? suggestedBudgetUsd;
 
   /// Taux dollar → euro relevé sur la facturation, ou null.
   final double? usdToEur;
@@ -61,6 +73,8 @@ class BookImportAnalysis {
       estimatedCostUsd: (map['estimatedCostUsd'] as num?)?.toDouble(),
       costPerWindowUsd: (map['costPerWindowUsd'] as num?)?.toDouble(),
       referenceScans: (map['referenceScans'] as num?)?.toInt() ?? 0,
+      referenceKind: map['referenceKind'] as String?,
+      suggestedBudgetUsd: (map['suggestedBudgetUsd'] as num?)?.toDouble(),
       usdToEur: (map['usdToEur'] as num?)?.toDouble(),
     );
   }
@@ -81,4 +95,28 @@ class BookImportAnalysis {
     final mb = sizeBytes / (1024 * 1024);
     return '${NumberFormat('0.#', 'fr_FR').format(mb)} Mo';
   }
+}
+
+/// Le plafond saisi sur l'écran de confirmation, en dollars.
+///
+/// Accepte la virgule comme le point : le champ est rempli par quelqu'un qui
+/// écrit « 12,5 ». Rend null pour tout ce qui n'est pas un nombre strictement
+/// positif — un plafond à zéro, négatif ou illisible n'est pas un plafond, et
+/// l'import ne part pas sans en avoir un.
+double? parseBudgetInput(String text) {
+  final cleaned = text
+      .trim()
+      .replaceAll(RegExp(r'\s'), '')
+      .replaceAll(',', '.');
+  if (cleaned.isEmpty) return null;
+  final value = double.tryParse(cleaned);
+  if (value == null || !value.isFinite || value <= 0) return null;
+  return value;
+}
+
+/// Le plafond proposé, tel qu'il s'écrit dans le champ : sans décimale inutile.
+String formatBudgetInput(double usd) {
+  return usd == usd.roundToDouble()
+      ? usd.toInt().toString()
+      : usd.toStringAsFixed(2).replaceAll('.', ',');
 }

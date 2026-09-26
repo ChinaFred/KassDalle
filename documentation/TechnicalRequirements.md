@@ -83,7 +83,12 @@ grille tarifaire — un modèle hors grille se facturerait sans montant et gonfl
 une justification qui ne vaut que pour la nutrition — estimer les calories d'un ingrédient
 est un rappel de connaissances, pas un problème de raisonnement, et les jetons de réflexion
 se facturent au tarif de sortie. Transcrire une page de livre est l'exact contraire :
-`transcription_page` et `recipe_tagging` demandent `high`. La panne n'était visible que
+`transcription_page` et `recipe_tagging` demandent `high`. Le balisage est le candidat à un effort
+réduit : il recopie un texte déjà lu et `checkFidelity` le compare à cette entrée, alors que la
+transcription lit une image sans contrôle équivalent. Mesuré sur 75 appels (26 septembre 2026), le
+balisage à `high` sortait 28 000 jetons en moyenne pour environ 4 000 de réponse. Le passage à
+`medium` attend une mesure du taux d'avertissements de fidélité sur les mêmes transcriptions. La
+panne n'était visible que
 depuis la réparation du streaming : jusque-là Claude échouait sur la transcription et Gemini
 prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
 aller vite. Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans
@@ -161,6 +166,7 @@ firestore/
 ├── ai_usage/{id}/                                 ← une ligne par appel
 ├── ai_usage_monthly/{AAAA-MM}/
 ├── ai_daily_spend/{uid}_{AAAA-MM-JJ}/
+├── scan_spend/{scanId}/                           ← compteur et plafond d'un import de livre
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
@@ -716,6 +722,8 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
+| `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche. Absent d'un job créé par un client d'avant ce champ : l'import n'a alors pas de plafond propre. |
+| `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
 
@@ -899,6 +907,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul.
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd` et `step_usd` depuis `budget_limit_usd`, jamais à la baisse. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -1228,6 +1237,7 @@ service cloud.firestore {
 | `meal_staples` | `isApproved()` | admin — les retouches de chacun vivent sous `users/{uid}/preferences/meal_staples`, jamais ici |
 | `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
 | `ai_usage` · `ai_daily_spend` | admin, ou le compte concerné | **serveur seul** — un client pouvait autrefois y inscrire des dépenses imaginaires que la réconciliation aurait présentées comme réelles |
+| `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
@@ -1515,11 +1525,17 @@ réglage.
 
 Deux réglages tiennent à ce que ces passes demandent :
 
-- **`effort: "high"`** sur `transcription_page`, `text_extraction` et `recipe_tagging`. Le
-  défaut `low` venait de la chaîne nutrition, où estimer des calories est un rappel de
-  connaissances. Appliqué à une page de livre, il donnait un modèle pressé : « en poudre »
-  recollé au mauvais ingrédient, une énumération de grains de poivre et de graines de
-  coriandre résumée en « les épices ».
+- **`effort: "high"`** sur `transcription_page` et `text_extraction`. Le défaut `low` venait de
+  la chaîne nutrition, où estimer des calories est un rappel de connaissances. Appliqué à une
+  page de livre, il donnait un modèle pressé : « en poudre » recollé au mauvais ingrédient, une
+  énumération de grains de poivre et de graines de coriandre résumée en « les épices ».
+- **`effort: "high"`** sur `recipe_tagging` (`TAGGING_EFFORT` dans `gemini/tagging.ts`), en
+  attendant la mesure de fidélité qui décidera de `medium`. Si la réponse s'arrête sur le plafond
+  de sortie (`stop_reason: max_tokens`, `MAX_TOKENS` chez Gemini), le balisage est refait une fois à
+  `low` (`TAGGING_RETRY_EFFORT`, `runTaggingAttempts`). Coupé aux deux efforts, il lève
+  `TaggingTruncatedError` : `recipeProcessor` envoie le job en dead letter
+  (`failure_reason: tagging_truncated`) sans nouvelle tentative Cloud Tasks, qui rejouerait les deux
+  mêmes appels.
 - **`maxTokens: 24 000`** sur la transcription, qui ne résume rien. C'est ce plafond qui
   impose le streaming côté Claude (chapitre 1).
 
@@ -1976,13 +1992,21 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
    en flux pour la signature EICAR (`streamContainsEicar`, qui reporte la fin de chaque morceau
    devant le suivant). Une archive ZIP est admise sous `.docx` et `.epub` seulement.
 2. `analyzeBookFileFn` (éditeur ou admin, 2 GiB) ouvre le livre promu et rend le nombre de pages
-   ou de caractères, le nombre de tranches, et le coût estimé (`books/importEstimate.ts` :
-   moyenne, par scan, de la somme des lignes `ai_usage` des 15 derniers imports réussis de
-   l'utilisateur ; un scan dont un appel n'a pas de montant est écarté ; sous 3 scans la mesure
-   est `null`). Avec `discard: true`, elle supprime le fichier — seul son propriétaire, et
-   seulement sous `scans/{uid}/livres/`. Elle ne dépense rien.
-3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` ; `recipeProcessor` prend le
-   relais (voir § 3.4). Quitter l'écran avec un livre lu en attente appelle `discard`.
+   ou de caractères, le nombre de tranches, le coût estimé et le plafond proposé. L'estimation
+   (`books/importEstimate.ts`) vient d'abord des **livres déjà importés** : somme des lignes
+   `ai_usage` de leur scan divisée par leur nombre de tranches (`windows_total`), sur les 3
+   derniers ; un livre dont un appel n'a pas de montant est écarté. À défaut, de la moyenne par
+   scan des 15 dernières **pages scannées** de l'utilisateur — les tranches de livre en sont
+   exclues (`book_window`), sinon un livre à soixante dollars compterait pour un scan — avec au
+   moins 3 scans, sinon la mesure est `null`. Le plafond proposé (`suggestedBudgetUsd`,
+   `suggestImportBudgetUsd`) est l'estimation plus la moitié, arrondie au dollar supérieur, ou
+   0,50 $ par tranche sans estimation : une décision, pas une mesure. Avec `discard: true`, la
+   fonction supprime le fichier — seul son propriétaire, et seulement sous
+   `scans/{uid}/livres/`. Elle ne dépense rien.
+3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` avec `budget_limit_usd`, le
+   plafond lu dans le champ de l'écran de confirmation : le bouton reste grisé sans montant
+   valide. `recipeProcessor` prend le relais (voir § 3.4 et `scan_spend`). Quitter l'écran avec un
+   livre lu en attente appelle `discard`.
 
 Aucun poste d'IA nouveau : la lecture de la première page d'un PDF s'impute à `book_cover`, chaque
 tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `scan_id` du livre.

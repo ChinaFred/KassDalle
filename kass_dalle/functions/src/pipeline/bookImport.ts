@@ -24,6 +24,7 @@ import {
   type BookMetadata,
 } from "../books/bookFile";
 import { BudgetExceededError } from "../ai/budget";
+import { parseBudgetLimit, setImportCeiling } from "../ai/importBudget";
 import { extractBookCover } from "../gemini/search";
 import type { BookWindowInfo } from "../gemini/promptsExtraction";
 import { logError, logInfo } from "../logging";
@@ -166,6 +167,20 @@ export async function runBookImport(args: {
     ...ctx,
     extra: { kind, pages: opened.pages, characters: opened.characters, windows: opened.windows },
   });
+
+  // Le plafond que l'utilisateur a fixé sur l'écran de confirmation, posé avant
+  // que la première tranche existe : chacune le relit avant son premier appel
+  // d'IA. Un job créé sans plafond — un client d'avant ce champ — n'en a pas.
+  const budgetLimitUsd = parseBudgetLimit(job.budget_limit_usd);
+  if (budgetLimitUsd != null && ctx.scanId) {
+    await setImportCeiling({ scanId: ctx.scanId, userId, limitUsd: budgetLimitUsd });
+    await logInfo({
+      message: `Plafond de l'import posé : ${budgetLimitUsd} $`,
+      moduleType: "IMPORT",
+      ...ctx,
+      extra: { budgetLimitUsd },
+    });
+  }
 
   const db = getFirestore();
   const bucket = getStorage().bucket();

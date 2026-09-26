@@ -148,4 +148,56 @@ void main() {
       },
     );
   });
+
+  group('plafond de l\'import', () {
+    test('lit le plafond proposé et la nature de la mesure', () {
+      final analysis = BookImportAnalysis.fromMap({
+        'kind': 'pdf',
+        'sizeBytes': 1,
+        'windows': 77,
+        'estimatedCostUsd': 12.4,
+        'costPerWindowUsd': 0.161,
+        'referenceScans': 1,
+        'referenceKind': 'books',
+        'suggestedBudgetUsd': 19,
+        'usdToEur': 0.88,
+      });
+      expect(analysis.suggestedBudgetUsd, 19.0);
+      expect(analysis.referenceKind, 'books');
+    });
+
+    test('un plafond proposé absent reste absent : le champ reste vide', () {
+      final analysis = BookImportAnalysis.fromMap({
+        'kind': 'epub',
+        'sizeBytes': 1,
+        'windows': 3,
+      });
+      expect(analysis.suggestedBudgetUsd, isNull);
+      expect(analysis.referenceKind, isNull);
+    });
+
+    test('la saisie accepte la virgule comme le point', () {
+      expect(parseBudgetInput('12,5'), 12.5);
+      expect(parseBudgetInput('12.5'), 12.5);
+      expect(parseBudgetInput(' 30 '), 30.0);
+      expect(parseBudgetInput('1 500'), 1500.0);
+    });
+
+    test('zéro, un négatif, du texte ou du vide ne sont pas un plafond', () {
+      expect(parseBudgetInput(''), isNull);
+      expect(parseBudgetInput('   '), isNull);
+      expect(parseBudgetInput('0'), isNull);
+      expect(parseBudgetInput('-5'), isNull);
+      expect(parseBudgetInput('beaucoup'), isNull);
+      expect(parseBudgetInput('1,2,3'), isNull);
+      expect(parseBudgetInput('Infinity'), isNull);
+      expect(parseBudgetInput('NaN'), isNull);
+    });
+
+    test('le plafond proposé s\'écrit sans décimale inutile', () {
+      expect(formatBudgetInput(30), '30');
+      expect(formatBudgetInput(12.5), '12,50');
+      expect(parseBudgetInput(formatBudgetInput(12.5)), 12.5);
+    });
+  });
 }

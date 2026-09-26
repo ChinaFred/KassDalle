@@ -58,6 +58,15 @@ class ProcessingJob {
   /// au moment de l'import est ce qui doit être fait.
   final bool importIllustrations;
 
+  /// Plafond de dépense d'un import de livre, en dollars.
+  ///
+  /// Fixé par l'utilisateur sur l'écran de confirmation et écrit sur le job
+  /// parent : le serveur le pose sur le scan avant de créer la première tranche,
+  /// et chaque tranche le relit avant son premier appel d'IA. Absent pour tout
+  /// ce qui n'est pas un livre entier. Le client ne s'en sert jamais pour
+  /// décider : c'est le serveur qui arrête.
+  final double? budgetLimitUsd;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -79,6 +88,7 @@ class ProcessingJob {
     this.importIllustrations = false,
     this.scanId,
     this.titre,
+    this.budgetLimitUsd,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -113,6 +123,7 @@ class ProcessingJob {
       importIllustrations: data['import_illustrations'] as bool? ?? false,
       scanId: data['scan_id'] as String?,
       titre: data['titre'] as String?,
+      budgetLimitUsd: (data['budget_limit_usd'] as num?)?.toDouble(),
     );
   }
 
@@ -137,6 +148,7 @@ class ProcessingJob {
       'import_illustrations': importIllustrations,
       if (scanId != null) 'scan_id': scanId,
       if (titre != null) 'titre': titre,
+      if (budgetLimitUsd != null) 'budget_limit_usd': budgetLimitUsd,
     };
   }
 
@@ -171,6 +183,7 @@ class ProcessingJob {
       importIllustrations: importIllustrations,
       scanId: scanId,
       titre: titre,
+      budgetLimitUsd: budgetLimitUsd,
     );
   }
 

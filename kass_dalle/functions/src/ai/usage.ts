@@ -9,14 +9,16 @@
  * utilisateur. Additionner ces trois écritures revenait à additionner trois
  * unités différentes.
  *
- * Tout passe désormais par `recordUsage`, qui écrit trois choses d'un coup :
+ * Tout passe désormais par `recordUsage`, qui écrit ces choses d'un coup :
  *
  *  1. `ai_usage/{auto}` — la ligne d'appel, pour l'audit et la réconciliation ;
  *  2. `token_usage/{uid}` — l'agrégat par utilisateur, schéma unique ;
  *  3. `ai_usage_monthly/{AAAA-MM}` — l'agrégat mensuel par poste, moteur et
  *     modèle, qui est ce que lisent les écrans ;
  *  4. `ai_daily_spend/{uid}_{AAAA-MM-JJ}` — la dépense du jour, que le plafond
- *     relit avant chaque appel.
+ *     relit avant chaque appel ;
+ *  5. `scan_spend/{scanId}` — la dépense du scan, que relit le plafond d'un
+ *     import de livre (voir `importBudget.ts`).
  *
  * Le coût est calculé **ici et une seule fois**. Les écrans l'affichent, ils ne
  * le recalculent pas : deux grilles tarifaires appliquées au même appel finissent
@@ -30,6 +32,7 @@ import { logError } from "../logging";
 import { periodOf } from "../billing/periods";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
 import { addToDailySpend } from "./budget";
+import { addToScanSpend } from "./importBudget";
 import type { AiProvider } from "./types";
 
 /** Fournisseur d'un appel — `internal` couvre ce qui n'est pas de l'inférence. */
@@ -488,6 +491,26 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         message: "Dépense du jour non incrémentée : le plafond en est faussé d'autant",
         errorDescription: err instanceof Error ? err.message : String(err),
         userId: trimmedUserId,
+        extra: { feature: entry.feature },
+      });
+    }
+  }
+
+  // 5. Le compteur du scan — ce que relit le plafond d'un import de livre.
+  //
+  // Même règle que la dépense du jour : écrit après l'appel, et un échec
+  // d'écriture ne fait pas échouer un appel déjà facturé. Il rend seulement le
+  // plafond de l'import trop permissif d'un appel, et cela doit se voir.
+  const scanId = (entry.scanId ?? "").trim();
+  if (scanId.length > 0) {
+    try {
+      await addToScanSpend({ scanId, costUsd });
+    } catch (err) {
+      await logError({
+        message: "Dépense du scan non incrémentée : le plafond de l'import en est faussé d'autant",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        scanId,
+        userId: trimmedUserId || undefined,
         extra: { feature: entry.feature },
       });
     }

@@ -603,7 +603,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   /// Lance l'import du livre que le serveur vient de lire.
-  Future<void> confirmBookImport() async {
+  ///
+  /// [budgetLimitUsd] est le plafond de dépense que l'utilisateur a fixé sur
+  /// l'écran de confirmation. Il est obligatoire : un import de livre sans
+  /// plafond est celui qui a coûté 59,89 $ sans que rien l'arrête.
+  Future<void> confirmBookImport({required double budgetLimitUsd}) async {
     final pending = _pendingBook;
     if (pending == null) return;
     // Le livre n'attend plus : un abandon pendant la mise en file ne doit pas
@@ -629,6 +633,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           bookId: pending.bookId,
           bookTitre: pending.bookTitre,
           scanId: pending.scanId,
+          budgetLimitUsd: budgetLimitUsd,
         ),
       );
 

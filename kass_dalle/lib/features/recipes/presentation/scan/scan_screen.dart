@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
@@ -409,9 +410,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                     targetBookTitre: _selectedBookTitre,
                     targetsExistingBook: (_selectedBookId ?? '').isNotEmpty,
                     errorMessage: scanState.errorMessage,
-                    onConfirm: () => ref
+                    onConfirm: (budgetLimitUsd) => ref
                         .read(scanUploadProvider.notifier)
-                        .confirmBookImport(),
+                        .confirmBookImport(budgetLimitUsd: budgetLimitUsd),
                     onCancel: () => ref
                         .read(scanUploadProvider.notifier)
                         .cancelBookImport(),
@@ -937,14 +938,17 @@ class _ProgressCard extends StatelessWidget {
 /// Ce que le serveur a lu du livre, et ce que l'import va faire.
 ///
 /// L'import d'un livre déclenche autant d'appels d'IA que de tranches, et chacun
-/// est facturé : rien ne part avant que l'utilisateur ait lu ces chiffres.
-class _BookConfirmationCard extends StatelessWidget {
+/// est facturé : rien ne part avant que l'utilisateur ait lu ces chiffres et
+/// fixé le plafond de dépense de l'import.
+class _BookConfirmationCard extends StatefulWidget {
   final BookImportAnalysis analysis;
   final String filename;
   final String? targetBookTitre;
   final bool targetsExistingBook;
   final String? errorMessage;
-  final VoidCallback onConfirm;
+
+  /// Reçoit le plafond saisi, en dollars. Appelé seulement quand il est valide.
+  final ValueChanged<double> onConfirm;
   final VoidCallback onCancel;
 
   const _BookConfirmationCard({
@@ -957,6 +961,33 @@ class _BookConfirmationCard extends StatelessWidget {
     required this.onCancel,
   });
 
+  @override
+  State<_BookConfirmationCard> createState() => _BookConfirmationCardState();
+}
+
+class _BookConfirmationCardState extends State<_BookConfirmationCard> {
+  late final TextEditingController _budget;
+
+  BookImportAnalysis get analysis => widget.analysis;
+
+  @override
+  void initState() {
+    super.initState();
+    final suggested = analysis.suggestedBudgetUsd;
+    _budget = TextEditingController(
+      text: suggested == null ? '' : formatBudgetInput(suggested),
+    );
+  }
+
+  @override
+  void dispose() {
+    _budget.dispose();
+    super.dispose();
+  }
+
+  /// Le plafond saisi, ou null tant qu'il n'est pas un montant valide.
+  double? get _limit => parseBudgetInput(_budget.text);
+
   String get _windowsLabel {
     final n = analysis.windows;
     final what = analysis.pages != null ? 'de 3 pages' : 'de texte';
@@ -967,22 +998,34 @@ class _BookConfirmationCard extends StatelessWidget {
     final total = analysis.estimatedCostUsd;
     final perWindow = analysis.costPerWindowUsd;
     if (total == null || perWindow == null) {
-      return 'Le coût n\'a pas pu être estimé : il faut au moins 3 imports '
-          'passés pour le mesurer. Chaque import est facturé comme une page '
-          'scannée.';
+      return 'Le coût n\'a pas pu être estimé : il faut au moins un livre '
+          'importé, ou 3 pages scannées, pour le mesurer. Le plafond '
+          'ci-dessous borne la dépense.';
     }
     // Sans taux de change, le dollar est affiché tel quel : `formatMoney` ne
     // convertit jamais au hasard.
     final rate = analysis.usdToEur ?? 0;
-    return 'Coût estimé : environ ${formatMoney(total, rate)}. Mesuré sur vos '
-        '${analysis.referenceScans} derniers imports : '
+    final n = analysis.referenceScans;
+    final basis = analysis.referenceKind == 'books'
+        ? 'Mesuré sur vos $n dernier${n > 1 ? 's' : ''} livre'
+              '${n > 1 ? 's' : ''} importé${n > 1 ? 's' : ''}'
+        : 'Mesuré sur vos $n dernières pages scannées';
+    return 'Coût estimé : environ ${formatMoney(total, rate)}. $basis : '
         '${formatMoney(perWindow, rate)} par import.';
   }
 
+  /// L'équivalent en euros du plafond saisi, quand un taux est connu.
+  String? _budgetHelper() {
+    final limit = _limit;
+    final rate = analysis.usdToEur ?? 0;
+    if (limit == null || rate <= 0) return null;
+    return '≈ ${formatEur(limit * rate)}';
+  }
+
   String _targetLine() {
-    if (targetsExistingBook) {
+    if (widget.targetsExistingBook) {
       return 'Les recettes seront rattachées au livre '
-          '« ${targetBookTitre ?? ''} ».';
+          '« ${widget.targetBookTitre ?? ''} ».';
     }
     final titre = analysis.titre;
     return titre == null
@@ -995,6 +1038,8 @@ class _BookConfirmationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final body = theme.textTheme.bodyMedium;
+    final limit = _limit;
+    final errorMessage = widget.errorMessage;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -1002,7 +1047,7 @@ class _BookConfirmationCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              filename,
+              widget.filename,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall,
@@ -1022,6 +1067,40 @@ class _BookConfirmationCard extends StatelessWidget {
             Text(_costLine(), style: body),
             const SizedBox(height: 8),
             Text(_targetLine(), style: body),
+            const SizedBox(height: 16),
+            Text('Plafond de cet import', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              'L\'import s\'arrête dès que ce montant est dépensé. Relancer '
+              'une tranche depuis la file le relève d\'un palier de la même '
+              'taille.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: 220,
+              child: TextField(
+                controller: _budget,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Plafond',
+                  suffixText: '\$',
+                  helperText: _budgetHelper(),
+                  errorText: limit == null
+                      ? 'Indiquez un montant supérieur à zéro'
+                      : null,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
             const SizedBox(height: 8),
             Text(
               'Si le plafond quotidien d\'IA est atteint, les imports restants '
@@ -1033,7 +1112,7 @@ class _BookConfirmationCard extends StatelessWidget {
             if (errorMessage != null) ...[
               const SizedBox(height: 12),
               Text(
-                errorMessage!,
+                errorMessage,
                 style: body?.copyWith(color: theme.colorScheme.error),
               ),
             ],
@@ -1041,10 +1120,17 @@ class _BookConfirmationCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: onCancel, child: const Text('Annuler')),
+                TextButton(
+                  onPressed: widget.onCancel,
+                  child: const Text('Annuler'),
+                ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
-                  onPressed: onConfirm,
+                  // Pas de plafond valide, pas d'import : c'est le montant que
+                  // le serveur fera respecter.
+                  onPressed: limit == null
+                      ? null
+                      : () => widget.onConfirm(limit),
                   icon: const Icon(Icons.auto_awesome_outlined),
                   label: const Text('Lancer l\'import'),
                 ),

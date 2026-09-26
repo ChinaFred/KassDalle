@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 
 import { BOOK_WINDOW_CONTEXT_MARKER, bookWindowPreamble } from "../gemini/promptsExtraction";
 import { parseBookWindow, titleFromFileName } from "../pipeline/bookImport";
-import { meanCostPerScan } from "../books/importEstimate";
+import { costPerWindowOfBooks, meanCostPerScan } from "../books/importEstimate";
 import {
   MAX_BOOK_UPLOAD_SIZE_BYTES,
   scanUpload,
@@ -214,5 +214,37 @@ describe("meanCostPerScan", () => {
 
   test("aucun appel : pas de mesure", () => {
     assert.deepEqual(meanCostPerScan([]), { meanUsd: null, scans: 0 });
+  });
+});
+
+describe("costPerWindowOfBooks", () => {
+  test("somme des coûts sur somme des tranches : un grand livre pèse plus qu'un petit", () => {
+    const result = costPerWindowOfBooks([
+      { windows: 100, costUsd: 20 },
+      { windows: 10, costUsd: 5 },
+    ]);
+    assert.equal(result.books, 2);
+    assert.ok(Math.abs((result.perWindowUsd ?? 0) - 25 / 110) < 1e-9);
+  });
+
+  test("écarte un livre dont un appel n'a pas de montant", () => {
+    const result = costPerWindowOfBooks([
+      { windows: 50, costUsd: null },
+      { windows: 40, costUsd: 8 },
+    ]);
+    assert.equal(result.books, 1);
+    assert.ok(Math.abs((result.perWindowUsd ?? 0) - 0.2) < 1e-9);
+  });
+
+  test("aucun livre mesurable : pas de mesure, et pas de valeur inventée", () => {
+    assert.deepEqual(costPerWindowOfBooks([]), { perWindowUsd: null, books: 0 });
+    assert.deepEqual(costPerWindowOfBooks([{ windows: 0, costUsd: 3 }]), {
+      perWindowUsd: null,
+      books: 0,
+    });
+    assert.deepEqual(costPerWindowOfBooks([{ windows: 20, costUsd: 0 }]), {
+      perWindowUsd: null,
+      books: 0,
+    });
   });
 });
