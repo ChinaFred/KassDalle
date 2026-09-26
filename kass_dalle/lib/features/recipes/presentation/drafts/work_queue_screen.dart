@@ -16,7 +16,11 @@ import '../../../../core/widgets/app_states.dart';
 sealed class _QueueItem {
   String get key;
   String get ownerId;
-  DateTime get sortDate;
+
+  /// Date du scan. La file se lit dans l'ordre où les pages ont été scannées :
+  /// la plus ancienne en haut. `updatedAt` ne convient pas, elle avance à
+  /// chaque enrichissement du pipeline et à chaque retouche.
+  DateTime get scannedAt;
 }
 
 final class _JobItem extends _QueueItem {
@@ -27,7 +31,7 @@ final class _JobItem extends _QueueItem {
   @override
   String get ownerId => job.createdBy;
   @override
-  DateTime get sortDate => job.updatedAt;
+  DateTime get scannedAt => job.createdAt;
 }
 
 final class _DraftItem extends _QueueItem {
@@ -38,7 +42,7 @@ final class _DraftItem extends _QueueItem {
   @override
   String get ownerId => recipe.createdBy;
   @override
-  DateTime get sortDate => recipe.updatedAt;
+  DateTime get scannedAt => recipe.createdAt;
 }
 
 // ── Section par propriétaire ──────────────────────────────────────────────────
@@ -109,7 +113,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
           ...myJobs.where(isVisible).map(_JobItem.new),
           ...myDrafts.map(_DraftItem.new),
         ];
-        items.sort((a, b) => b.sortDate.compareTo(a.sortDate));
+        items.sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
         return [_Section(ownerUid: '__me', items: items)];
 
       case WorkQueueFilter.family:
@@ -117,13 +121,13 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
           ...myJobs.where(isVisible).map(_JobItem.new),
           ...myDrafts.map(_DraftItem.new),
         ];
-        myItems.sort((a, b) => b.sortDate.compareTo(a.sortDate));
+        myItems.sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
         final byOwner = <String, List<_QueueItem>>{};
         for (final r in familyDrafts) {
           (byOwner[r.createdBy] ??= []).add(_DraftItem(r));
         }
         for (final items in byOwner.values) {
-          items.sort((a, b) => b.sortDate.compareTo(a.sortDate));
+          items.sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
         }
         return [
           _Section(ownerUid: '__me', items: myItems),
@@ -152,13 +156,13 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
           (byOwner[d.createdBy] ??= []).add(_DraftItem(d));
         }
         for (final items in byOwner.values) {
-          items.sort((a, b) => b.sortDate.compareTo(a.sortDate));
+          items.sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
         }
         final sections = byOwner.entries
             .map((e) => _Section(ownerUid: e.key, items: e.value))
             .toList();
         sections.sort(
-          (a, b) => b.items.first.sortDate.compareTo(a.items.first.sortDate),
+          (a, b) => a.items.first.scannedAt.compareTo(b.items.first.scannedAt),
         );
         return sections;
     }
