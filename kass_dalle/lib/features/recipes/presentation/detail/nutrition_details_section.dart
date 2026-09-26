@@ -173,7 +173,7 @@ DataRow _absorbedOilDataRow(
 
 /// Ce que vaut la ligne, faute de quantité écrite dans la recette.
 String _assumedQuantityLabel(NutritionContributionRow row) =>
-    'une ${nutritionAssumedUnitName(row)}';
+    nutritionAssumedUnitPhrase(row);
 
 /// Même règle pour le poids estimé par l'IA.
 String _estimatedUnitExplanation(

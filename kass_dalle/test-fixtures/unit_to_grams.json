@@ -72,6 +72,14 @@
     { "ingredient": "huile", "qty": "1", "unit": "filet",   "grams": 5,   "why": "unité botanique" },
     { "ingredient": "persil", "qty": "1", "unit": "bouquet", "grams": 30, "why": "unité botanique" },
     { "ingredient": "basilic", "qty": "3", "unit": "feuilles", "grams": 3, "why": "unité botanique au pluriel → canonique singulier" },
+
+    { "ingredient": "basilic", "qty": "", "unit": "brin",    "grams": 2,  "why": "nombre absent devant une unité botanique : « brin de basilic » se lit un brin" },
+    { "ingredient": "basilic", "qty": "", "unit": "Brin",    "grams": 2,  "why": "même règle, unité écrite avec une majuscule comme l'affiche l'écran" },
+    { "ingredient": "persil",  "qty": "", "unit": "bouquet", "grams": 30, "why": "même règle : « bouquet de persil » se lit un bouquet" },
+    { "ingredient": "céleri",  "qty": "", "unit": "branche", "grams": 15, "why": "même règle : « branche de céleri » se lit une branche" },
+    { "ingredient": "menthe",  "qty": "", "unit": "feuille", "grams": 1,  "why": "même règle : « feuille de menthe » se lit une feuille" },
+    { "ingredient": "basilic", "qty": "quelques", "unit": "brin", "grams": 2, "why": "quantité littérale illisible : traitée comme absente, comme « au goût » pour le sel" },
+
     { "ingredient": "lait",  "qty": "1", "unit": "tasse_metrique", "grams": 250, "why": "unité étendue" },
     { "ingredient": "lait",  "qty": "1", "unit": "fl_oz",   "grams": 29.5, "why": "once liquide américaine" },
     { "ingredient": "biere", "qty": "1", "unit": "pinte_imperiale", "grams": 568, "why": "unité étendue" },

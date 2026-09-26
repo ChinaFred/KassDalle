@@ -256,4 +256,57 @@ void main() {
       expect(kinds, contains(NutritionLegendKind.missing));
     });
   });
+
+  group('une quantité que la recette ne donne pas', () {
+    NutritionContributionTable tableDe(List<RecipeIngredient> ingredients) =>
+        buildNutritionContributions(
+          recipe: recette(ingredients: ingredients),
+          nutritionById: referentiel([
+            profil('basilic', per100g: {'kcal': 23}),
+            profil('sel', per100g: {'sodium_mg': 38758}),
+          ]),
+          unitOverrides: const {},
+          unitInfos: const {},
+        );
+
+    test('« brin de basilic » se lit un brin et se pèse', () {
+      final table = tableDe(const [
+        RecipeIngredient(name: 'basilic', qty: '', unit: 'brin'),
+      ]);
+      final row = table.rows.single;
+      expect(row.isMissing, isFalse);
+      expect(row.weightGrams, 2);
+      expect(row.quantityAssumed, isTrue);
+      expect(nutritionAssumedUnitPhrase(row), 'un brin');
+    });
+
+    test('la légende parle de pincée quand il n\'y a que des pincées', () {
+      final table = tableDe(const [
+        RecipeIngredient(name: 'sel', qty: '', unit: ''),
+      ]);
+      expect(nutritionAssumedUnitPhrase(table.rows.single), 'une pincée');
+      final legende = nutritionLegendEntries(
+        table,
+      ).singleWhere((e) => e.kind == NutritionLegendKind.assumedQuantity);
+      expect(
+        legende.label,
+        '1 ingrédient(s) sans quantité, comptés à la pincée',
+      );
+    });
+
+    test('la légende nomme l\'unité en général dès qu\'un brin s\'y mêle', () {
+      final table = tableDe(const [
+        RecipeIngredient(name: 'sel', qty: '', unit: ''),
+        RecipeIngredient(name: 'basilic', qty: '', unit: 'brin'),
+      ]);
+      final legende = nutritionLegendEntries(
+        table,
+      ).singleWhere((e) => e.kind == NutritionLegendKind.assumedQuantity);
+      expect(
+        legende.label,
+        '2 ingrédient(s) sans quantité, comptés pour une unité '
+        '(pincée, brin, bouquet…)',
+      );
+    });
+  });
 }

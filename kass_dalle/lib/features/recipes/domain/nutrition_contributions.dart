@@ -169,6 +169,18 @@ class NutritionLegendEntry {
   const NutritionLegendEntry(this.kind, this.label);
 }
 
+/// Ce que la légende dit des quantités supposées : « à la pincée » quand toutes
+/// le sont ainsi, « pour une unité » dès qu'un brin ou un bouquet s'y mêle.
+String _assumedUnitsLegend(NutritionContributionTable table) {
+  final units = {
+    for (final row in table.rows)
+      if (!row.isMissing && row.quantityAssumed) nutritionAssumedUnitName(row),
+  };
+  return units.length == 1 && units.first == 'pincée'
+      ? 'à la pincée'
+      : 'pour une unité (pincée, brin, bouquet…)';
+}
+
 /// Les explications à porter sous le tableau, dans l'ordre d'affichage.
 ///
 /// Du plus étonnant au plus banal : une huile qui n'est écrite nulle part se
@@ -187,8 +199,8 @@ List<NutritionLegendEntry> nutritionLegendEntries(
     if (table.assumedCount > 0)
       NutritionLegendEntry(
         NutritionLegendKind.assumedQuantity,
-        '${table.assumedCount} ingrédient(s) sans quantité, comptés à la '
-        'pincée',
+        '${table.assumedCount} ingrédient(s) sans quantité, comptés '
+        '${_assumedUnitsLegend(table)}',
       ),
     if (table.estimatedUnitCount > 0)
       NutritionLegendEntry(
@@ -357,8 +369,29 @@ String nutritionAssumedUnitName(NutritionContributionRow row) {
   return switch (normalized) {
     'pincee' => 'pincée',
     'pointe_de_couteau' => 'pointe de couteau',
+    'brin' => 'brin',
+    'branche' => 'branche',
+    'bouquet' => 'bouquet',
+    'feuille' => 'feuille',
+    'gousse' => 'gousse',
     _ => 'unité',
   };
+}
+
+/// Les unités du calcul qui s'accordent au féminin.
+const _feminineAssumedUnits = {
+  'pincée',
+  'pointe de couteau',
+  'branche',
+  'feuille',
+  'gousse',
+  'unité',
+};
+
+/// L'unité appliquée avec son article : « une pincée », « un brin ».
+String nutritionAssumedUnitPhrase(NutritionContributionRow row) {
+  final name = nutritionAssumedUnitName(row);
+  return '${_feminineAssumedUnits.contains(name) ? 'une' : 'un'} $name';
 }
 
 /// Ce qu'affiche la colonne « Quantite ».

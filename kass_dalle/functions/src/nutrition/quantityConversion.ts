@@ -560,6 +560,21 @@ export function isIngredientDependentUnit(unit: unknown): boolean {
  */
 const FIXED_SMALL_MEASURE_UNITS = new Set(["pincee", "pointe_de_couteau"]);
 
+/**
+ * Unités comptées une à une dont le « un » va de soi.
+ *
+ * « brin de basilic », « bouquet de persil », « branche de céleri » : la recette
+ * écrit l'unité et l'aliment, jamais le nombre. Même convention que la pincée,
+ * avec une différence : le poids d'un brin dépend de l'ingrédient. La règle ne
+ * donne que le nombre ; `resolveUnitFactorToGrams` en tire les grammes, le
+ * référentiel d'ingrédients compris.
+ *
+ * Sous-ensemble de `INGREDIENT_DEPENDENT_UNITS`. Les autres unités de cette
+ * liste (pièce, tranche, morceau, poignée) restent hors de la règle : « pièce »
+ * sans nombre ne dit pas si la recette compte un œuf ou un poulet.
+ */
+const IMPLIED_ONE_UNITS = new Set(["brin", "branche", "bouquet", "feuille", "gousse"]);
+
 /** Unité prêtée à un assaisonnement dont la recette ne dit ni combien ni en quoi. */
 export const SEASONING_DEFAULT_UNIT = "pincee";
 
@@ -667,19 +682,21 @@ export interface WeighingInput {
  * `NutritionQuantityConverter.resolveWeighingInput` côté Dart et asservi par
  * `test-fixtures/unit_to_grams.json`.
  *
- * Trois cas, et rien d'autre :
+ * Quatre cas, et rien d'autre :
  *
  *  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
  *  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on lit 1 ;
- *  3. elle manque avec l'unité, sur un assaisonnement connu — on lit une pincée.
+ *  3. elle manque sur une unité comptée une à une (« brin », « bouquet ») — on
+ *     lit 1, et le poids de l'unité vient de l'ingrédient ;
+ *  4. elle manque sans unité, sur un assaisonnement connu — on lit une pincée.
  *
  * Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. »
  * est une donnée abîmée, pas une convention d'écriture : lui prêter un 1
  * inventerait un poids là où la recette attendait un nombre.
  *
- * L'unité rendue au cas 3 est « pincée » et non une constante en grammes :
+ * L'unité rendue au cas 4 est « pincée » et non une constante en grammes :
  * c'est ce qui fait suivre la surcharge du référentiel Firestore. Un
- * administrateur qui corrige le poids d'une pincée corrige les trois cas.
+ * administrateur qui corrige le poids d'une pincée corrige les cas 2 et 4.
  */
 export function resolveWeighingInput(
   ingredientName: string,
@@ -691,7 +708,9 @@ export function resolveWeighingInput(
   if (quantity != null) return { qty: quantity, unit: unitStr };
 
   const normalizedUnit = normalizeObservedUnit(unitStr);
-  if (FIXED_SMALL_MEASURE_UNITS.has(normalizedUnit)) return { qty: 1, unit: unitStr };
+  if (FIXED_SMALL_MEASURE_UNITS.has(normalizedUnit) || IMPLIED_ONE_UNITS.has(normalizedUnit)) {
+    return { qty: 1, unit: unitStr };
+  }
   if (normalizedUnit === "" && isSeasoning(ingredientName)) {
     return { qty: 1, unit: SEASONING_DEFAULT_UNIT };
   }
