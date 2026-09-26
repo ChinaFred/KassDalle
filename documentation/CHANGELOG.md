@@ -16,6 +16,31 @@ anciennes sans accents.
 
 ## 2026-09-26
 
+### v0.22.88 — fonctionnel
+
+#### Quitter l'import d'un livre en cours d'envoi demande confirmation
+
+Quitter l'écran d'import pendant l'envoi, le contrôle ou la lecture d'un livre — ou pendant
+que le livre lu attend le feu vert — ouvre une boîte avec « Continuer » et « Annuler
+l'import ». Le blocage couvre le retour, le menu de navigation (barre du bas et menu latéral)
+et Ctrl+K. « Annuler l'import » coupe l'envoi en cours et supprime le fichier déjà arrivé.
+Auparavant, quitter l'écran laissait l'envoi se poursuivre sans écran, et revenir remettait
+tout à zéro. Le retour du navigateur web n'est pas couvert.
+
+### v0.22.88 — technique
+
+- `core/presentation/leave_guard.dart` : `leaveGuardProvider` et `goGuarded`. Un écran pose un
+  garde de sortie ; `AppShell` le consulte avant chaque `context.go` de navigation.
+  `PopScope` ne voit que le retour, pas ces appels.
+- `ScanUploadNotifier` : `_bookAttempt` invalide une préparation abandonnée, qui s'arrête à
+  sa prochaine étape et supprime ce qu'elle avait envoyé ; `_bookUpload.cancel()` coupe
+  l'envoi. `reset()` et `cancelBookImport()` passent par `_abandonBook()`.
+- `ScanScreen` : le retour au premier plan après une boîte de dialogue ne remet plus l'écran
+  à zéro quand un livre est en préparation.
+- `analyzeBookFileFn` : `discard` accepte aussi `quarantine/{uid}/livres/`, pour un livre
+  abandonné avant la fin du contrôle.
+- Tests : `leave_guard_test.dart`, `scan_screen_leave_test.dart`.
+
 ### v0.22.87 — technique
 
 - `FOUNDER_DAILY_BUDGET_MULTIPLIER` passe de 10 à 100 (`ai/budget.ts`). Avec les plafonds par

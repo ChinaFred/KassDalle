@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../app_version.dart';
 import '../services/app_update_service.dart';
 import 'app_update_dialog.dart';
+import 'leave_guard.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -60,7 +61,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     // n'importe quel écran, sans que chacun ait à le savoir. Ctrl+S reste
     // local aux écrans d'édition, seuls à savoir ce qu'enregistrer veut dire.
     return AppShortcuts(
-      onSearch: () => context.go(AppRoutes.search),
+      onSearch: () => goGuarded(context, ref, AppRoutes.search),
       child: isWide
           ? _WideShell(child: widget.child)
           : _NarrowShell(child: widget.child),
@@ -86,7 +87,8 @@ class _WideShell extends ConsumerWidget {
         children: [
           NavigationRail(
             selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-            onDestinationSelected: (i) => context.go(destinations[i].route),
+            onDestinationSelected: (i) =>
+                goGuarded(context, ref, destinations[i].route),
             labelType: NavigationRailLabelType.all,
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -199,7 +201,8 @@ class _NarrowShell extends ConsumerWidget {
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-          onDestinationSelected: (i) => context.go(destinations[i].route),
+          onDestinationSelected: (i) =>
+              goGuarded(context, ref, destinations[i].route),
           // Sans libellé.
           //
           // Ils avaient été affichés parce que cinq icônes muettes se

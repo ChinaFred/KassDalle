@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
+import '../../../../core/presentation/leave_guard.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
@@ -38,7 +39,14 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   bool _seededIllustrations = false;
   bool _autoStartedCamera = false;
   late final ScanUploadNotifier _scanNotifier;
+  late final LeaveGuardNotifier _leaveGuardNotifier;
   bool? _wasCurrentRoute;
+
+  /// Le garde de sortie de cet écran : la question posée avant de quitter un
+  /// livre en préparation. Un seul objet, pour que la navigation puisse le
+  /// reconnaître quand elle le retire.
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+  bool _leaveGuardSet = false;
 
   /// Combien de fois l'atelier s'est ouvert depuis l'arrivée sur l'écran.
   ///
@@ -56,6 +64,16 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   void initState() {
     super.initState();
     _scanNotifier = ref.read(scanUploadProvider.notifier);
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+  }
+
+  @override
+  void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
+    super.dispose();
   }
 
   @override
@@ -74,6 +92,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
 
     if (_wasCurrentRoute == false && isCurrentRoute) {
+      // Une boîte de dialogue posée par-dessus cet écran — « abandonner le
+      // livre ? » — le remet au premier plan en se fermant. Repartir de zéro
+      // ici annulerait le livre que l'utilisateur vient de choisir de garder.
+      if (ref.read(scanUploadProvider).isPreparingBook) {
+        _wasCurrentRoute = isCurrentRoute;
+        return;
+      }
       _scanNotifier.reset();
       _seededFromQuery = false;
       _autoStartedCamera = false;
@@ -118,6 +143,21 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
 
     final scanState = ref.watch(scanUploadProvider);
+
+    // Le garde de sortie suit l'état du livre. Il se pose après le rendu : un
+    // provider ne se modifie pas pendant `build`.
+    final preparingBook = scanState.isPreparingBook;
+    if (preparingBook != _leaveGuardSet) {
+      _leaveGuardSet = preparingBook;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (preparingBook) {
+          _leaveGuardNotifier.set(_leaveGuard);
+        } else {
+          _leaveGuardNotifier.clearIf(_leaveGuard);
+        }
+      });
+    }
     final booksAsync = ref.watch(myBooksOrderedProvider);
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
@@ -564,37 +604,102 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       ),
     );
 
-    if (_showingEnhancer && _enhancerBytes != null) {
-      return Stack(
-        children: [
-          scaffold,
-          Positioned.fill(
-            child: ImageEnhancerScreen(
-              imageBytes: _enhancerBytes!,
-              title: 'Améliorer la couverture',
-              onResult: (result) async {
-                if (result == null) {
-                  // Annulation : ferme immédiatement
-                  setState(() => _showingEnhancer = false);
-                  ref.read(scanUploadProvider.notifier).cancelEnhancement();
-                  return;
-                }
-                // Upload + création du job en gardant le spinner visible
-                try {
-                  await ref
-                      .read(scanUploadProvider.notifier)
-                      .confirmEnhancedCover(result, _enhancerFilename!);
-                } finally {
-                  // Ferme l'enhancer une fois le job créé (ou en cas d'erreur)
-                  if (mounted) setState(() => _showingEnhancer = false);
-                }
-              },
-            ),
+    final Widget content = _showingEnhancer && _enhancerBytes != null
+        ? _withEnhancer(scaffold)
+        : scaffold;
+
+    // Le retour — bouton, geste, flèche de la barre — passe par ici ; le menu de
+    // navigation, lui, passe par le garde de sortie posé plus haut.
+    return PopScope(
+      canPop: !preparingBook,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _leaveAfterConfirmation();
+      },
+      child: content,
+    );
+  }
+
+  /// Quitte l'écran si l'utilisateur abandonne le livre en préparation.
+  Future<void> _leaveAfterConfirmation() async {
+    if (!await _confirmLeave() || !mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
+  }
+
+  /// La question posée avant de quitter un livre en préparation.
+  ///
+  /// Vrai quand l'utilisateur abandonne — l'envoi est coupé, le fichier déjà
+  /// arrivé supprimé — et que l'écran peut être quitté. Faux quand il continue.
+  Future<bool> _confirmLeave() async {
+    final status = ref.read(scanUploadProvider);
+    if (!status.isPreparingBook) return true;
+    final waiting = status.status == ScanStatus.pendingBookConfirmation;
+    final abandon = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          waiting ? 'Import du livre non lancé' : 'Envoi du livre en cours',
+        ),
+        content: Text(
+          waiting
+              ? 'Le livre est lu, mais l\'import n\'est pas lancé. Si vous '
+                    'quittez cette page, l\'import est annulé et le fichier '
+                    'envoyé est supprimé.'
+              : 'Le livre n\'est pas encore entièrement envoyé et lu. Si vous '
+                    'quittez cette page, l\'import est annulé.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Annuler l\'import'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Continuer'),
           ),
         ],
-      );
-    }
-    return scaffold;
+      ),
+    );
+    if (abandon != true) return false;
+    await ref.read(scanUploadProvider.notifier).cancelBookImport();
+    return true;
+  }
+
+  /// L'écran d'import, avec l'atelier de retouche posé par-dessus.
+  Widget _withEnhancer(Widget scaffold) {
+    return Stack(
+      children: [
+        scaffold,
+        Positioned.fill(
+          child: ImageEnhancerScreen(
+            imageBytes: _enhancerBytes!,
+            title: 'Améliorer la couverture',
+            onResult: (result) async {
+              if (result == null) {
+                // Annulation : ferme immédiatement
+                setState(() => _showingEnhancer = false);
+                ref.read(scanUploadProvider.notifier).cancelEnhancement();
+                return;
+              }
+              // Upload + création du job en gardant le spinner visible
+              try {
+                await ref
+                    .read(scanUploadProvider.notifier)
+                    .confirmEnhancedCover(result, _enhancerFilename!);
+              } finally {
+                // Ferme l'enhancer une fois le job créé (ou en cas d'erreur)
+                if (mounted) setState(() => _showingEnhancer = false);
+              }
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   /// Ouvre l'atelier de retouche, une seule fois par image.

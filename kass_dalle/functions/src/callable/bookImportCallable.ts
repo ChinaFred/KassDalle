@@ -48,8 +48,18 @@ export const analyzeBookFileFn = onCall(
     };
 
     // Le dossier de l'appelant, et lui seul : cette fonction lit et supprime.
-    const expectedPrefix = `scans/${ctx.userId}/${BOOK_UPLOAD_FOLDER}/`;
-    if (typeof storagePath !== "string" || !storagePath.startsWith(expectedPrefix)) {
+    //
+    // La suppression accepte aussi la quarantaine : un livre abandonné pendant
+    // son envoi, ou avant la fin du contrôle, n'est pas encore promu. Ce chemin
+    // ne sert qu'à supprimer — l'analyse ne lit jamais ce qui n'a pas été
+    // contrôlé.
+    const promotedPrefix = `scans/${ctx.userId}/${BOOK_UPLOAD_FOLDER}/`;
+    const quarantinePrefix = `quarantine/${ctx.userId}/${BOOK_UPLOAD_FOLDER}/`;
+    const allowed =
+      typeof storagePath === "string" &&
+      (storagePath.startsWith(promotedPrefix) ||
+        (discard === true && storagePath.startsWith(quarantinePrefix)));
+    if (typeof storagePath !== "string" || !allowed) {
       throw new HttpsError("permission-denied", "Chemin de livre invalide.");
     }
     const file = getStorage().bucket().file(storagePath);

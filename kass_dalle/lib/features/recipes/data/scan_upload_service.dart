@@ -328,6 +328,17 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// Le livre que le serveur a lu, en attente du feu vert de l'utilisateur.
   _PendingBook? _pendingBook;
 
+  /// Numéro de la préparation de livre en cours.
+  ///
+  /// Une préparation dont le numéro n'est plus le bon a été abandonnée : elle
+  /// s'arrête à sa prochaine étape, sans toucher à l'état de l'écran, et
+  /// supprime ce qu'elle avait déjà envoyé. Sans lui, un livre abandonné en
+  /// plein envoi faisait réapparaître sa carte de confirmation à la fin.
+  int _bookAttempt = 0;
+
+  /// L'envoi du livre en vol, pour pouvoir le couper.
+  UploadTask? _bookUpload;
+
   /// Choisit un livre entier — PDF, EPUB ou Word — l'envoie, le fait contrôler
   /// puis lire par le serveur, et attend la confirmation.
   ///
@@ -409,6 +420,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     final storageRef = _storage.ref(
       'quarantine/$uid/livres/${ts}_${_sanitizeFilename(file.name)}',
     );
+    final attempt = ++_bookAttempt;
+    bool abandoned() => attempt != _bookAttempt;
 
     state = state.copyWith(
       status: ScanStatus.readingBook,
@@ -436,10 +449,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         }
         task = book_file_upload.putBookFile(storageRef, path, metadata);
       }
+      _bookUpload = task;
       // `onError` absorbe le doublon : l'erreur utile est celle que `await task`
       // lève juste en dessous, avec tout son contexte.
       task.snapshotEvents.listen(
         (snap) {
+          if (abandoned()) return;
           final total = snap.totalBytes > 0 ? snap.totalBytes : 1;
           state = state.copyWith(uploadProgress: snap.bytesTransferred / total);
         },
@@ -447,7 +462,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         cancelOnError: true,
       );
       uploaded = (await task).ref;
+      _bookUpload = null;
     } catch (e, stackTrace) {
+      _bookUpload = null;
+      // L'envoi coupé par l'utilisateur lève à son tour : ce n'est pas une panne.
+      if (abandoned()) return;
       _errorReportService.reportError(
         feature: 'scanUpload.bookUpload',
         error: e,
@@ -468,6 +487,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       return;
     }
 
+    // Abandonné pendant que les derniers octets montaient : le fichier est
+    // arrivé en quarantaine, on l'y supprime.
+    if (abandoned()) {
+      await _discardPromotedBook(uploaded.fullPath);
+      return;
+    }
+
     // 2. Contrôle de sécurité, puis promotion hors de la quarantaine.
     state = state.copyWith(bookStep: 'Contrôle de sécurité', uploadProgress: 1);
     final ({
@@ -483,6 +509,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         scanId: scanId,
       );
     } catch (e, stackTrace) {
+      if (abandoned()) {
+        await _discardPromotedBook(uploaded.fullPath);
+        return;
+      }
       _errorReportService.reportError(
         feature: 'scanUpload.bookScan',
         error: e,
@@ -516,12 +546,21 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       return;
     }
 
+    if (abandoned()) {
+      await _discardPromotedBook(promoted.storagePath);
+      return;
+    }
+
     // 3. Lecture par le serveur : pages ou texte, tranches, coût estimé.
     state = state.copyWith(bookStep: 'Lecture du livre');
     try {
       final analysis = await _gemini.analyzeBookFile(
         storagePath: promoted.storagePath,
       );
+      if (abandoned()) {
+        await _discardPromotedBook(promoted.storagePath);
+        return;
+      }
       _pendingBook = _PendingBook(
         uid: uid,
         filename: file.name,
@@ -538,6 +577,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookAnalysis: analysis,
       );
     } catch (e, stackTrace) {
+      if (abandoned()) {
+        await _discardPromotedBook(promoted.storagePath);
+        return;
+      }
       _errorReportService.reportError(
         feature: 'scanUpload.bookAnalysis',
         error: e,
@@ -563,9 +606,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   Future<void> confirmBookImport() async {
     final pending = _pendingBook;
     if (pending == null) return;
+    // Le livre n'attend plus : un abandon pendant la mise en file ne doit pas
+    // supprimer le fichier que le job va lire. Il revient en cas d'échec.
+    _pendingBook = null;
     state = state.copyWith(
       status: ScanStatus.readingBook,
-      bookStep: 'Mise en file',
+      bookStep: ScanState.bookStepQueueing,
     );
     try {
       final now = DateTime.now();
@@ -585,7 +631,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           scanId: pending.scanId,
         ),
       );
-      _pendingBook = null;
 
       try {
         await _usage.recordScan(fileBytes: pending.sizeBytes);
@@ -620,6 +665,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         context: {'filename': pending.filename},
       );
       // Le livre reste lu et promu : l'utilisateur peut réessayer sans renvoyer.
+      _pendingBook = pending;
       state = state.copyWith(
         status: ScanStatus.pendingBookConfirmation,
         errorMessage: 'L\'import n\'a pas pu démarrer : $e',
@@ -627,12 +673,39 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
   }
 
-  /// Abandonne le livre lu : supprime le fichier envoyé et remet l'écran à zéro.
+  /// Abandonne le livre — envoi en cours ou livre lu qui attend le feu vert —,
+  /// supprime ce qui a été envoyé et remet l'écran à zéro.
   Future<void> cancelBookImport() async {
-    final pending = _pendingBook;
-    _pendingBook = null;
+    final pending = _abandonBook();
     state = ScanState(activeImports: state.activeImports);
     if (pending != null) await _discardPromotedBook(pending.storagePath);
+  }
+
+  /// Invalide la préparation en vol, coupe l'envoi, et rend le livre lu qui
+  /// attendait le feu vert, à supprimer par l'appelant.
+  ///
+  /// Ce que la préparation avait déjà envoyé, elle le supprime elle-même en
+  /// constatant qu'elle est abandonnée : voir [_bookAttempt].
+  _PendingBook? _abandonBook() {
+    _bookAttempt++;
+    final upload = _bookUpload;
+    _bookUpload = null;
+    if (upload != null) unawaited(_cancelUpload(upload));
+    final pending = _pendingBook;
+    _pendingBook = null;
+    return pending;
+  }
+
+  Future<void> _cancelUpload(UploadTask upload) async {
+    try {
+      await upload.cancel();
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.cancelBookUpload',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Supprime un livre promu qui ne servira pas. Un échec est rapporté : le
@@ -1339,8 +1412,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// stockage sans que rien le référence.
   void reset() {
     _pendingPages.clear();
-    final abandoned = _pendingBook;
-    _pendingBook = null;
+    final abandoned = _abandonBook();
     if (abandoned != null) {
       unawaited(_discardPromotedBook(abandoned.storagePath));
     }

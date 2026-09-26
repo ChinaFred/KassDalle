@@ -170,6 +170,18 @@ class ScanState {
   /// les boutons : c'est toute la différence avec [isRunning].
   bool get hasActiveImports => activeImports.isNotEmpty;
 
+  /// Étape d'un livre dont le job est créé : rien ne s'abandonne plus.
+  static const String bookStepQueueing = 'Mise en file';
+
+  /// Un livre est en préparation : envoi, contrôle, lecture, ou lu et en attente
+  /// du feu vert. Quitter l'écran l'abandonnerait, fichier supprimé compris.
+  ///
+  /// La mise en file n'en fait pas partie : le job est en train d'être créé, et
+  /// c'est lui qui porte désormais le fichier.
+  bool get isPreparingBook =>
+      status == ScanStatus.pendingBookConfirmation ||
+      (status == ScanStatus.readingBook && bookStep != bookStepQueueing);
+
   /// L'écran attend une réponse qu'il ne peut pas doubler : un sélecteur de
   /// fichier ouvert, ou une image en cours d'amélioration. L'envoi, lui, n'en
   /// fait plus partie — il se poursuit pendant qu'on prépare le suivant.
