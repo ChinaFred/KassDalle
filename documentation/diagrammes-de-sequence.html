@@ -2229,7 +2229,7 @@ sequenceDiagram
           Note over P,G: les pages à transcrire, puis une page de contexte<br/>qui ne sert qu'à finir la dernière recette
           P->>J: transcription_checkpoint
         end
-        P->>G: balisage — effort high, refait à low si la réponse est coupée
+        P->>G: balisage — effort low (mesuré équivalent à high sur la fidélité)
         G-->>SS: recordUsage ajoute le coût du scan
         P->>R: brouillons rattachés au livre
         P->>J: done — le point de reprise est effacé

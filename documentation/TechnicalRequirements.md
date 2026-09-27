@@ -83,12 +83,12 @@ grille tarifaire — un modèle hors grille se facturerait sans montant et gonfl
 une justification qui ne vaut que pour la nutrition — estimer les calories d'un ingrédient
 est un rappel de connaissances, pas un problème de raisonnement, et les jetons de réflexion
 se facturent au tarif de sortie. Transcrire une page de livre est l'exact contraire :
-`transcription_page` et `recipe_tagging` demandent `high`. Le balisage est le candidat à un effort
-réduit : il recopie un texte déjà lu et `checkFidelity` le compare à cette entrée, alors que la
-transcription lit une image sans contrôle équivalent. Mesuré sur 75 appels (26 septembre 2026), le
-balisage à `high` sortait 28 000 jetons en moyenne pour environ 4 000 de réponse. Le passage à
-`medium` attend une mesure du taux d'avertissements de fidélité sur les mêmes transcriptions. La
-panne n'était visible que
+`transcription_page` demande `high` ; `recipe_tagging` est passé à `low` le 26 septembre 2026,
+mesuré sur les mêmes 33 transcriptions rejouées aux deux efforts : même contrôle `checkFidelity`,
+aucune rupture de plus, 0,118 $ l'appel contre 0,298 $. Le balisage recopie un texte déjà lu et
+`checkFidelity` le compare à cette entrée, alors que la transcription lit une image sans contrôle
+équivalent — c'est ce qui rend l'effort réduit sûr d'un côté et risqué de l'autre. La panne n'était
+visible que
 depuis la réparation du streaming : jusque-là Claude échouait sur la transcription et Gemini
 prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
 aller vite. Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans
@@ -1529,12 +1529,18 @@ Deux réglages tiennent à ce que ces passes demandent :
   la chaîne nutrition, où estimer des calories est un rappel de connaissances. Appliqué à une
   page de livre, il donnait un modèle pressé : « en poudre » recollé au mauvais ingrédient, une
   énumération de grains de poivre et de graines de coriandre résumée en « les épices ».
-- **`effort: "high"`** sur `recipe_tagging` (`TAGGING_EFFORT` dans `gemini/tagging.ts`), en
-  attendant la mesure de fidélité qui décidera de `medium`. Si la réponse s'arrête sur le plafond
-  de sortie (`stop_reason: max_tokens`, `MAX_TOKENS` chez Gemini), le balisage est refait une fois à
-  `low` (`TAGGING_RETRY_EFFORT`, `runTaggingAttempts`). Coupé aux deux efforts, il lève
-  `TaggingTruncatedError` : `recipeProcessor` envoie le job en dead letter
-  (`failure_reason: tagging_truncated`) sans nouvelle tentative Cloud Tasks, qui rejouerait les deux
+- **`effort: "low"`** sur `recipe_tagging` (`TAGGING_EFFORT` dans `gemini/tagging.ts`). Mesuré sur
+  33 recettes rejouées à `high` et à `low` (26 septembre 2026) : même contrôle `checkFidelity`,
+  aucune rupture de plus. Dans les ÉTAPES, `low` remplit environ 27 % de quantités en moins (21
+  recettes sur 27) — sans conséquence quand la LISTE d'ingrédients porte déjà le nombre, ce qui est
+  le cas ordinaire. Le risque accepté est l'inverse : un ingrédient dont l'ÉTAPE est la seule
+  source du nombre, la liste ne le portant pas (une pincée de sel, par exemple) — rejoué deux fois
+  sur la même recette, `low` l'a perdu les deux fois. `TAGGING_RETRY_EFFORT` valant déjà `low`,
+  `taggingEfforts()` ne tente plus qu'un seul effort : il n'y a rien de plus bas où retomber si la
+  réponse est coupée, mais le risque de coupure recule avec l'effort (0 appel coupé sur 33 mesurés
+  à `low`, contre 40 sur 75 à `high`). Coupé malgré tout (`stop_reason: max_tokens`,
+  `MAX_TOKENS` chez Gemini), il lève `TaggingTruncatedError` : `recipeProcessor` envoie le job en
+  dead letter (`failure_reason: tagging_truncated`) sans nouvelle tentative Cloud Tasks, qui rejouerait la
   mêmes appels.
 - **`maxTokens: 24 000`** sur la transcription, qui ne résume rien. C'est ce plafond qui
   impose le streaming côté Claude (chapitre 1).

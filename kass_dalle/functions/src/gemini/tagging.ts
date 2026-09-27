@@ -56,29 +56,38 @@ type Effort = NonNullable<ModelCallContext["effort"]>;
  * Il valait `high`, par analogie avec la transcription : « baliser sans rien
  * perdre demande le même soin que transcrire ». L'import du livre de Jamie
  * Oliver (26 septembre 2026, 75 appels) l'a mesuré : 28 000 jetons de sortie en
- * moyenne, dont environ 4 000 de réponse — une recette de 4 500 caractères et
- * une trentaine d'ingrédients. Le reste était de la réflexion, facturée au tarif
- * de sortie : 0,30 $ par appel, et 0,38 $ pour les 40 appels sur 75 qui butaient
- * sur le plafond et ne rendaient rien de lisible.
+ * moyenne, dont environ 4 000 de réponse. Le reste était de la réflexion,
+ * facturée au tarif de sortie : 0,30 $ par appel, et 0,38 $ pour les 40 appels
+ * sur 75 qui butaient sur le plafond et ne rendaient rien de lisible.
  *
  * Les deux passes ne se ressemblent pas. La transcription lit une image : le
  * soin y évite de recoller « en poudre » au mauvais ingrédient. Le balisage
  * recopie un texte déjà lu, et `checkFidelity` le compare à cette entrée sans
  * appeler personne : une erreur de balisage se voit, une erreur de lecture, non.
- * Le soin se dépense donc dans la transcription.
+ * Le soin se dépense donc dans la transcription, qui reste à `high`.
  *
- * **Le réglage reste à `high` tant que la mesure n'a pas eu lieu.** Le candidat
- * est `medium`, puis `low` : rejouer les transcriptions d'un même livre à chaque
- * effort et comparer le taux d'avertissements de fidélité — pas le prix. Cette
- * mesure demande d'appeler l'API Claude depuis un poste de développement, ce que
- * le projet n'a pas encore autorisé (la clé ne quitte pas Secret Manager). Ce
- * réglage sert TOUTES les pages scannées, pas seulement les livres : le baisser
- * sans mesure changerait la qualité de chaque import.
+ * **Mesuré le 26 septembre 2026, sur les mêmes transcriptions rejouées à `low` :**
+ * 33 recettes, aucune rupture de fidélité de plus, même contrôle
+ * `checkFidelity` qu'à `high`. `low` sort ~10 000 jetons contre ~28 000 —
+ * 0,118 $ l'appel contre 0,298 $ — pour un texte recopié tout aussi fidèlement.
  *
- * En attendant, la reprise à `low` borne déjà la perte : un balisage coupé au
- * plafond n'est plus rejoué à l'identique par Cloud Tasks.
+ * Ce qui se perd : dans les ÉTAPES, `low` remplit environ 27 % de quantités en
+ * moins (21 recettes sur 27). Sans conséquence tant que la LISTE
+ * d'ingrédients — vérifiée séparément, elle ne varie pas avec cet effort —
+ * porte déjà le nombre : un cuisinier qui l'a lue une fois n'a besoin de rien
+ * de plus dans l'étape. Le cas qui compte est celui où l'étape est la SEULE
+ * source du nombre, la liste ne le portant pas : rejoué deux fois sur la même
+ * recette (une pincée de sel de mer, quatre fois dans les étapes, absente de
+ * la liste), `low` l'a perdu les deux fois. C'est le risque accepté de ce
+ * réglage — un ingrédient d'assaisonnement sans indication de dose, dans les
+ * recettes où le livre ne la donne qu'une fois, en passant.
+ *
+ * Avec `TAGGING_RETRY_EFFORT` déjà à `low`, `taggingEfforts()` ne tente plus
+ * qu'un seul effort : il n'y a rien de plus bas où retomber si la réponse est
+ * coupée au plafond. Le risque de coupure recule aussi avec l'effort — 0 appel
+ * coupé sur 33 mesurés à `low`, contre 40 sur 75 à `high`.
  */
-export const TAGGING_EFFORT: Effort = "high";
+export const TAGGING_EFFORT: Effort = "low";
 
 /**
  * Effort de la reprise quand la réponse a été coupée au plafond.

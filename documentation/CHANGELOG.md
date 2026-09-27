@@ -14,6 +14,31 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-27
+
+### v0.22.94 — technique
+
+#### Balisage d'une recette : effort de réflexion réduit
+
+Suite à v0.22.93 (voir plus bas), l'effort de réflexion du balisage (`recipe_tagging`) passe de
+`high` à `low`. Mesuré le 26 septembre 2026 sur 33 recettes d'un même livre, rejouées aux deux
+efforts : même contrôle de fidélité (`checkFidelity`), aucune rupture de plus, 0,118 $ l'appel
+contre 0,298 $, et 0 réponse coupée au plafond sur 33 (contre 40 sur 75 à `high`).
+
+Ce qui se perd, mesuré sur les mêmes 33 recettes : dans les étapes, `low` remplit environ 27 % de
+quantités en moins (21 recettes sur 27). Sans conséquence tant que la liste d'ingrédients — qui ne
+varie pas avec cet effort — porte déjà le nombre, ce qui est le cas ordinaire. Le risque accepté
+est le cas où l'étape est la seule source du nombre, la liste ne le portant pas : rejoué deux fois
+sur la même recette (une pincée de sel de mer, quatre fois dans les étapes, absente de la liste),
+`low` l'a perdu les deux fois. Un ingrédient d'assaisonnement sans dose indiquée, dans les recettes
+où le livre ne la donne qu'en passant, est le compromis retenu.
+
+- `gemini/tagging.ts` : `TAGGING_EFFORT` passe à `low`. `TAGGING_RETRY_EFFORT` valant déjà `low`,
+  `taggingEfforts()` ne tente plus qu'un seul effort par balisage — il n'y a rien de plus bas où
+  retomber si la réponse est coupée, mais le risque de coupure recule avec l'effort.
+- Ce réglage s'applique à toutes les recettes scannées, livre ou page seule, pas seulement à
+  l'import qui a servi de mesure.
+
 ## 2026-09-26
 
 ### v0.22.93 — fonctionnel
