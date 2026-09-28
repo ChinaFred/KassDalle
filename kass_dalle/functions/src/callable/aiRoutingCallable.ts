@@ -27,7 +27,7 @@ import { requireAdmin } from "./_auth";
 import type { AiProvider } from "../ai/types";
 import { anthropicApiKey } from "../ai/anthropic";
 import { AI_ROUTING_POLICY_DOC_ID, getAiRoutingPolicy, type AiRoutingPolicy } from "../ai/router";
-import { logError, logInfo } from "../logging";
+import { logError } from "../logging";
 import {
   buildRoutingCatalog,
   normalizePresetName,
@@ -678,45 +678,86 @@ interface SetAiRoutingPolicyRequest {
   policy?: Partial<AiRoutingPolicy>;
 }
 
+/**
+ * Pose, en chemins à points, une clé par entrée de `next` et un
+ * `FieldValue.delete()` par entrée de `current` absente de `next`.
+ *
+ * `set(..., {merge: true})` ne fusionne PAS les clés d'une carte imbriquée
+ * fournie dans l'écriture : redonner la carte ENTIÈRE sans une clé ne
+ * l'efface pas, elle survit. Retirer `transcription_page` de
+ * `anthropicModels` depuis l'écran, enregistrer, puis relire Firestore : la
+ * valeur d'avant y était toujours (confirmé le 28 septembre 2026, journal de
+ * diagnostic à l'appui). Poser CHAQUE clé par son chemin — jamais la carte
+ * entière — est la forme que Firestore résout sans ambiguïté, y compris pour
+ * l'effacer : deux raisons de l'utiliser aussi pour les clés qui restent, pas
+ * seulement pour celles qui partent. Écrire à la fois `champ` (la carte
+ * entière) et `champ.clé` dans le même appel serait par ailleurs refusé par
+ * Firestore — un chemin ne peut pas être le préfixe d'un autre dans la même
+ * écriture.
+ */
+export function applyMapDiff(
+  target: Record<string, unknown>,
+  fieldPath: string,
+  next: Record<string, unknown>,
+  current: Record<string, unknown> | undefined,
+): void {
+  for (const [key, value] of Object.entries(next)) {
+    target[`${fieldPath}.${key}`] = value;
+  }
+  for (const key of Object.keys(current ?? {})) {
+    if (!(key in next)) target[`${fieldPath}.${key}`] = FieldValue.delete();
+  }
+}
+
 export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOpts, async (req) => {
-  const ctx = await requireAdmin(req, "routage_ia_ecriture");
+  await requireAdmin(req, "routage_ia_ecriture");
 
   const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
 
-  // Diagnostic temporaire (28 septembre 2026) : un modèle par poste effacé
-  // depuis l'écran (retour au « défaut ») ne ressortait pas de la grille en
-  // vigueur après enregistrement, malgré un écran qui affiche la réussite. Ce
-  // journal compare ce qui arrive à ce qui est validé, pour trancher entre un
-  // brouillon client qui n'a pas changé et une validation qui réintroduit une
-  // clé. À retirer une fois la cause connue.
-  await logInfo({
-    message: "setAiRoutingPolicyFn: modèles et efforts reçus vs validés",
-    userId: ctx.userId,
-    correlationId: ctx.correlationId,
-    feature: "routage_ia_ecriture",
-    extra: {
-      recuAnthropicModels: req.data?.policy?.anthropicModels ?? null,
-      valideAnthropicModels: policy.anthropicModels,
-      recuAnthropicEfforts: req.data?.policy?.anthropicEfforts ?? null,
-      valideAnthropicEfforts: policy.anthropicEfforts,
-    },
-  });
+  const docRef = getFirestore().collection(COLL_APP_CONFIG).doc(AI_ROUTING_POLICY_DOC_ID);
+  const current = (await docRef.get()).data() ?? {};
+  const payload = presetPolicyToMap(policy) as Record<string, unknown>;
 
-  await getFirestore()
-    .collection(COLL_APP_CONFIG)
-    .doc(AI_ROUTING_POLICY_DOC_ID)
-    .set(
-      {
-        // Les sept champs sont écrits en entier, plafonds à `null` compris :
-        // c'est ainsi qu'on revient au comportement du modèle après avoir posé
-        // un plafond. Un champ simplement omis en fusion laisserait l'ancienne
-        // valeur en place.
-        ...presetPolicyToMap(policy),
-        updated_at: FieldValue.serverTimestamp(),
-        updated_by: req.auth?.uid ?? null,
-      },
-      { merge: true },
-    );
+  const writeData: Record<string, unknown> = {
+    // Les quatre champs simples s'écrivent en entier, plafond global à `null`
+    // compris : c'est ainsi qu'on revient au comportement du modèle après
+    // avoir posé un plafond. Un champ simplement omis en fusion laisserait
+    // l'ancienne valeur en place.
+    default_provider: payload.default_provider,
+    anthropic_model: payload.anthropic_model,
+    fallback_enabled: payload.fallback_enabled,
+    thinking_budget: payload.thinking_budget,
+    updated_at: FieldValue.serverTimestamp(),
+    updated_by: req.auth?.uid ?? null,
+  };
+  // Les quatre cartes par poste, elles, s'écrivent clé par clé — voir
+  // `applyMapDiff`.
+  applyMapDiff(
+    writeData,
+    "features",
+    payload.features as Record<string, unknown>,
+    current.features as Record<string, unknown> | undefined,
+  );
+  applyMapDiff(
+    writeData,
+    "anthropic_models",
+    payload.anthropic_models as Record<string, unknown>,
+    current.anthropic_models as Record<string, unknown> | undefined,
+  );
+  applyMapDiff(
+    writeData,
+    "anthropic_efforts",
+    payload.anthropic_efforts as Record<string, unknown>,
+    current.anthropic_efforts as Record<string, unknown> | undefined,
+  );
+  applyMapDiff(
+    writeData,
+    "thinking_budgets",
+    payload.thinking_budgets as Record<string, unknown>,
+    current.thinking_budgets as Record<string, unknown> | undefined,
+  );
+
+  await docRef.set(writeData, { merge: true });
 
   return { policy, anthropicKeyPresent: anthropicApiKey() != null };
 });
@@ -816,14 +857,46 @@ export const aiRoutingPresetsFn = onCall<AiRoutingPresetsRequest>(callableOpts, 
       const id = readId();
       const ref = await requirePreset(id);
       const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
-      await ref.set(
-        {
-          policy: presetPolicyToMap(policy),
-          updated_at: FieldValue.serverTimestamp(),
-          updated_by: uid,
-        },
-        { merge: true },
+      // Même défaut que `setAiRoutingPolicyFn`, un niveau plus bas : `policy`
+      // est lui-même un objet imbriqué, et le remplacer sans soustraire les
+      // clés disparues laisserait un ancien modèle ou un ancien effort par
+      // poste survivre dans la configuration mise à jour. Mêmes chemins à
+      // points que là-bas, préfixés de `policy.` — voir `applyMapDiff`.
+      const currentPolicy = ((await ref.get()).data()?.policy ?? {}) as Record<string, unknown>;
+      const nextPolicy = presetPolicyToMap(policy) as Record<string, unknown>;
+      const writeData: Record<string, unknown> = {
+        "policy.default_provider": nextPolicy.default_provider,
+        "policy.anthropic_model": nextPolicy.anthropic_model,
+        "policy.fallback_enabled": nextPolicy.fallback_enabled,
+        "policy.thinking_budget": nextPolicy.thinking_budget,
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: uid,
+      };
+      applyMapDiff(
+        writeData,
+        "policy.features",
+        nextPolicy.features as Record<string, unknown>,
+        currentPolicy.features as Record<string, unknown> | undefined,
       );
+      applyMapDiff(
+        writeData,
+        "policy.anthropic_models",
+        nextPolicy.anthropic_models as Record<string, unknown>,
+        currentPolicy.anthropic_models as Record<string, unknown> | undefined,
+      );
+      applyMapDiff(
+        writeData,
+        "policy.anthropic_efforts",
+        nextPolicy.anthropic_efforts as Record<string, unknown>,
+        currentPolicy.anthropic_efforts as Record<string, unknown> | undefined,
+      );
+      applyMapDiff(
+        writeData,
+        "policy.thinking_budgets",
+        nextPolicy.thinking_budgets as Record<string, unknown>,
+        currentPolicy.thinking_budgets as Record<string, unknown> | undefined,
+      );
+      await ref.set(writeData, { merge: true });
       break;
     }
 

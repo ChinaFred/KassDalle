@@ -16,6 +16,34 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.99 — technique
+
+#### Cause trouvée : `set(..., {merge: true})` ne fusionne pas une carte par poste
+
+Le journal de v0.22.98 a tranché en un essai : le client envoyait le bon brouillon —
+`anthropic_models` reçu par le serveur ne portait déjà plus `transcription_page` — et la
+validation le laissait tel quel. La disparition avait donc lieu à l'écriture Firestore elle-même.
+
+`set(champ, {merge: true})`, quand `champ` est fourni comme un objet entier, ne supprime pas les
+clés absentes de ce nouvel objet : elles survivent telles quelles dans le document. Redonner la
+carte `anthropic_models` sans `transcription_page` ne l'efface donc pas — c'est le mécanisme
+inverse de ce que documentait, à tort, le commentaire retiré cette version-ci.
+
+Le corrigé : chaque clé s'écrit désormais par son propre chemin à points
+(`anthropic_models.transcription_page`), jamais la carte entière — la seule forme que Firestore
+résout sans ambiguïté, y compris pour la supprimer (`FieldValue.delete()` posé sur le chemin
+exact d'une clé retirée du brouillon). Écrire à la fois le champ entier et un chemin à l'intérieur
+de ce champ dans le même appel serait par ailleurs refusé par Firestore.
+
+Même défaut, même corrigé sur « Mettre à jour » une préconfiguration enregistrée : la carte
+`policy.anthropic_models` d'une configuration existante avait le même problème, un niveau plus
+bas. Le journal temporaire de v0.22.98 est retiré, la cause n'a plus besoin d'être observée.
+
+- `callable/aiRoutingCallable.ts` : `applyMapDiff`, appliqué aux quatre cartes par poste
+  (`features`, `anthropic_models`, `anthropic_efforts`, `thinking_budgets`) dans
+  `setAiRoutingPolicyFn` et dans l'action `update` des préconfigurations.
+- `tests/aiRoutingPolicyWrite.test.ts` — nouveau.
+
 ### v0.22.98 — technique
 
 #### Journal temporaire : un modèle Claude effacé par poste ne ressort pas de la grille
