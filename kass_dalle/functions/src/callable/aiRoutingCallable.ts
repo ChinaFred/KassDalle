@@ -27,7 +27,7 @@ import { requireAdmin } from "./_auth";
 import type { AiProvider } from "../ai/types";
 import { anthropicApiKey } from "../ai/anthropic";
 import { AI_ROUTING_POLICY_DOC_ID, getAiRoutingPolicy, type AiRoutingPolicy } from "../ai/router";
-import { logError } from "../logging";
+import { logError, logInfo } from "../logging";
 import {
   buildRoutingCatalog,
   normalizePresetName,
@@ -679,9 +679,28 @@ interface SetAiRoutingPolicyRequest {
 }
 
 export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOpts, async (req) => {
-  await requireAdmin(req, "routage_ia_ecriture");
+  const ctx = await requireAdmin(req, "routage_ia_ecriture");
 
   const { policy } = readPolicyOrThrow(req.data?.policy, "reject");
+
+  // Diagnostic temporaire (28 septembre 2026) : un modèle par poste effacé
+  // depuis l'écran (retour au « défaut ») ne ressortait pas de la grille en
+  // vigueur après enregistrement, malgré un écran qui affiche la réussite. Ce
+  // journal compare ce qui arrive à ce qui est validé, pour trancher entre un
+  // brouillon client qui n'a pas changé et une validation qui réintroduit une
+  // clé. À retirer une fois la cause connue.
+  await logInfo({
+    message: "setAiRoutingPolicyFn: modèles et efforts reçus vs validés",
+    userId: ctx.userId,
+    correlationId: ctx.correlationId,
+    feature: "routage_ia_ecriture",
+    extra: {
+      recuAnthropicModels: req.data?.policy?.anthropicModels ?? null,
+      valideAnthropicModels: policy.anthropicModels,
+      recuAnthropicEfforts: req.data?.policy?.anthropicEfforts ?? null,
+      valideAnthropicEfforts: policy.anthropicEfforts,
+    },
+  });
 
   await getFirestore()
     .collection(COLL_APP_CONFIG)

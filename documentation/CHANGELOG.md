@@ -16,6 +16,24 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.98 — technique
+
+#### Journal temporaire : un modèle Claude effacé par poste ne ressort pas de la grille
+
+Retirer l'exception de `transcription_page` dans Admin → Moteur d'IA (retour au modèle par
+défaut) affiche « enregistré », un nouvel horodatage s'écrit dans `app_config/ai_routing_policy`,
+et pourtant `anthropic_models.transcription_page` garde sa valeur d'avant. Le mécanisme
+d'écriture (`setAiRoutingPolicyFn`, remplacement complet de la carte, pas une fusion clé par
+clé) et la lecture du brouillon (`_ModelPicker`, `_setModelFor`) ont été relus sans y trouver de
+défaut : cause encore ouverte.
+
+`setAiRoutingPolicyFn` journalise désormais, à chaque enregistrement, les modèles et efforts
+reçus du client en face de ceux retenus après validation — de quoi trancher entre un brouillon
+qui n'a pas changé et une validation qui réintroduit une clé. Journal temporaire, à retirer une
+fois la cause connue.
+
+- `callable/aiRoutingCallable.ts` : `logInfo` dans `setAiRoutingPolicyFn`.
+
 ### v0.22.97 — technique
 
 #### Le bouton Enregistrer de Moteur d'IA était hors champ
