@@ -31,12 +31,20 @@ export type AiProvider = "gemini" | "anthropic" | "vision";
  * pas une.
  */
 export type ModelPart =
-  | { kind: "text"; text: string }
-  | { kind: "image"; mimeType: string; dataBase64: string }
-  | { kind: "document"; mimeType: string; dataBase64: string };
+  | { kind: "text"; text: string; cache?: boolean }
+  | { kind: "image"; mimeType: string; dataBase64: string; cache?: boolean }
+  | { kind: "document"; mimeType: string; dataBase64: string; cache?: boolean };
 
-export function textPart(text: string): ModelPart {
-  return { kind: "text", text };
+/**
+ * `cache: true` marque la fin d'un préfixe identique d'un appel à l'autre —
+ * un prompt qui ne varie jamais, servi avant un fragment qui, lui, change à
+ * chaque appel. Anthropic met en cache tout ce qui précède CE fragment
+ * inclus, à condition qu'il soit dans la même position, mot pour mot, que la
+ * fois précédente : un fragment marqué après un fragment qui varie ne sert à
+ * rien, le préfixe divergeait déjà avant lui. Ignoré par Gemini.
+ */
+export function textPart(text: string, options?: { cache?: boolean }): ModelPart {
+  return { kind: "text", text, cache: options?.cache };
 }
 
 export function imagePart(mimeType: string, dataBase64: string): ModelPart {
@@ -86,9 +94,10 @@ export interface ModelUsage {
    * que la facture. Ils se facturent à un autre tarif que l'entrée : 1,25 fois
    * pour l'écriture, un dixième pour la relecture.
    *
-   * Le projet ne pose aujourd'hui aucun `cache_control` : ces compteurs
-   * devraient rester à zéro. C'est précisément pour le **vérifier** qu'ils sont
-   * lus — jusqu'ici, rien ne l'aurait dit s'ils avaient cessé de l'être.
+   * Deux prompts posent `cache_control` depuis le 28 septembre 2026 — voir
+   * `textPart` et son option `cache`. Sur les autres postes, ces compteurs
+   * devraient rester à zéro ; les lire partout permet de le vérifier plutôt
+   * que de le supposer.
    */
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;

@@ -115,6 +115,22 @@ recette. Décision : `transcription_page` passe à Sonnet 5, effort `high` incha
 changement de MODÈLE, posé dans `anthropic_models` depuis Admin → Moteur d'IA, sans
 déploiement.
 
+**Deux prompts se mettent en cache, depuis le 28 septembre 2026** —
+`TRANSCRIPTION_PROMPT` (`gemini/transcription.ts` → `transcribePage`, ~2 900 jetons) et
+`TAGGING_PROMPT` (`gemini/tagging.ts` → `tagAndNormalize`, ~3 250 jetons, rôle du repas
+inclus) : les deux plus gros prompts du projet, sur les deux postes les plus appelés.
+`textPart(texte, { cache: true })` marque le fragment ; `toAnthropicContent`
+(`ai/anthropic.ts`) pose `cache_control: { type: "ephemeral" }` sur le bloc correspondant —
+Anthropic met alors en cache tout ce qui précède ce bloc, lui compris, et le relit à un
+dixième du tarif d'entrée pendant cinq minutes, prolongées à chaque relecture.
+
+Un bloc marqué ne sert que s'il est un PRÉFIXE identique d'un appel à l'autre — jamais ce
+qu'il précède. `TRANSCRIPTION_PROMPT` est donc passé en tête des `parts`, devant l'image de
+la page (qui change à chaque appel) : il y était en dernier, ce qui aurait empêché tout cache,
+l'image divergente arrivant avant lui. `TAGGING_PROMPT` était déjà en tête, mais fondu avec la
+transcription dans une seule chaîne — Anthropic ne met en cache qu'un bloc ENTIER, jamais un
+fragment d'une chaîne : il fallait le séparer en deux `textPart`, pas le déplacer.
+
 **Les réponses Claude sont streamées.** Le SDK Anthropic refuse un appel non-streamé dès
 que `max_tokens` dépasse `128 000 / 6 ≈ 21 333` — au-delà, il estime que la réponse
 *pourrait* demander plus de dix minutes et lève « Streaming is required for operations that

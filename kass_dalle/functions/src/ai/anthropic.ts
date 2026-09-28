@@ -86,10 +86,15 @@ export function anthropicSupportsParts(parts: ModelPart[]): boolean {
   });
 }
 
-function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockParam[] {
+export function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockParam[] {
   return parts.map((part) => {
+    // `undefined` disparaît au sérialisage JSON : un fragment qui ne demande
+    // pas la mise en cache part donc sans `cache_control`, comme avant.
+    const cache_control: Anthropic.CacheControlEphemeral | undefined = part.cache
+      ? { type: "ephemeral" }
+      : undefined;
     if (part.kind === "text") {
-      return { type: "text", text: part.text } satisfies Anthropic.TextBlockParam;
+      return { type: "text", text: part.text, cache_control } satisfies Anthropic.TextBlockParam;
     }
     if (part.kind === "document") {
       return {
@@ -99,6 +104,7 @@ function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockParam[] {
           media_type: "application/pdf",
           data: part.dataBase64,
         },
+        cache_control,
       } satisfies Anthropic.DocumentBlockParam;
     }
     return {
@@ -108,6 +114,7 @@ function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockParam[] {
         media_type: part.mimeType as (typeof SUPPORTED_IMAGE_MIME_TYPES)[number],
         data: part.dataBase64,
       },
+      cache_control,
     } satisfies Anthropic.ImageBlockParam;
   });
 }
@@ -199,9 +206,11 @@ export async function callAnthropic(args: {
     // cache s'enregistrait avec zéro jeton d'entrée, coût nul, sans anomalie
     // visible nulle part.
     //
-    // Aucun prompt du projet ne pose `cache_control`, donc ces deux compteurs
-    // devraient valoir zéro. Les lire, c'est pouvoir l'affirmer plutôt que le
-    // supposer : s'ils cessent de l'être, le rapport de coûts le dira.
+    // Deux prompts posent `cache_control` depuis le 28 septembre 2026 —
+    // `TRANSCRIPTION_PROMPT` et `TAGGING_PROMPT`, voir `textPart(..., {cache:
+    // true})` dans `gemini/transcription.ts` et `gemini/tagging.ts`. Les
+    // autres postes n'en posent aucun ; ces deux compteurs y restent à zéro.
+    // Les lire, c'est pouvoir le vérifier plutôt que le supposer.
     const cacheCreationInputTokens = response.usage.cache_creation_input_tokens ?? 0;
     const cacheReadInputTokens = response.usage.cache_read_input_tokens ?? 0;
     const inputTokens = response.usage.input_tokens ?? 0;

@@ -258,14 +258,19 @@ export async function transcribePage(
   additionalPages: ExtraPage[] = [],
   bookWindow?: BookWindowInfo,
 ): Promise<PageTranscription> {
-  // Le préambule d'une tranche de livre passe APRÈS la pièce jointe et AVANT le
-  // prompt : il dit quelles pages appartiennent à cet appel, puis les règles de
-  // recopie s'appliquent sans changement.
+  // `TRANSCRIPTION_PROMPT` passe en PREMIER, marqué `cache: true` : c'est le
+  // seul fragment identique d'un appel à l'autre, sur toutes les pages de
+  // tous les livres, et Anthropic ne met en cache que ce qui précède un
+  // fragment marqué — jamais ce qui le suit. Le mettre après la pièce jointe
+  // (l'image, différente à chaque page) empêcherait tout cache : ce serait
+  // déjà divergent avant même d'atteindre le prompt. Le préambule de tranche
+  // vient ensuite, non mis en cache — il varie avec le livre — puis la pièce
+  // jointe, qui varie à chaque page.
   const parts = [
+    textPart(TRANSCRIPTION_PROMPT, { cache: true }),
+    ...(bookWindow ? [textPart(bookWindowPreamble(bookWindow))] : []),
     await attachmentPart(mimeType, bytes, ctx),
     ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
-    ...(bookWindow ? [textPart(bookWindowPreamble(bookWindow))] : []),
-    textPart(TRANSCRIPTION_PROMPT),
   ];
 
   const result = await callModel({

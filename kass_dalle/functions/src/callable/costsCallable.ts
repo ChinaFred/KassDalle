@@ -388,9 +388,10 @@ export const getMonthlyCostsFn = onCall(
         inputTokens: toNumber(entry.input_tokens),
         outputTokens: toNumber(entry.output_tokens),
         thinkingTokens: toNumber(entry.thinking_tokens),
-        // Jetons de prompt passés par le cache. Ils devraient valoir zéro —
-        // aucun prompt du projet ne pose `cache_control` — et c'est justement
-        // ce que l'écran doit pouvoir montrer plutôt que laisser supposer.
+        // Jetons de prompt passés par le cache. Non nuls sur `transcription_page`
+        // et `recipe_tagging` depuis le 28 septembre 2026, zéro partout ailleurs
+        // — c'est justement ce que l'écran doit pouvoir montrer plutôt que
+        // laisser supposer.
         cacheWriteTokens: toNumber(entry.cache_creation_input_tokens),
         cacheReadTokens: toNumber(entry.cache_read_input_tokens),
       };

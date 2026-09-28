@@ -348,10 +348,11 @@ export function effectivePricingIn(
  *
  * Le multiplicateur d'écriture vaut 1,25 pour une durée de vie de cinq minutes,
  * et 2 pour une heure. L'API rend le détail par durée dans un objet
- * `cache_creation` ; tant que le projet ne pose aucun `cache_control`, et donc
- * aucune durée d'une heure, le compteur agrégé et le tarif court suffisent.
- * Le jour où une durée d'une heure serait posée, il faudra lire ce détail :
- * l'écart serait silencieux, comme toujours ici.
+ * `cache_creation` ; les deux prompts qui posent `cache_control` (voir
+ * `textPart`) le font tous les deux à la durée par défaut — cinq minutes,
+ * jamais une heure —, donc le compteur agrégé et le tarif court suffisent
+ * encore. Le jour où une durée d'une heure serait posée, il faudra lire ce
+ * détail : l'écart serait silencieux, comme toujours ici.
  */
 export const CACHE_WRITE_MULTIPLIER = 1.25;
 export const CACHE_READ_MULTIPLIER = 0.1;

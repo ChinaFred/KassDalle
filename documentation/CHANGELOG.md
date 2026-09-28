@@ -16,6 +16,34 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.101 — technique
+
+#### Les deux plus gros prompts Claude se mettent en cache
+
+`TRANSCRIPTION_PROMPT` (~2 900 jetons, `transcription_page`) et `TAGGING_PROMPT` (~3 250
+jetons, `recipe_tagging`) sont les deux plus gros prompts du projet, sur les deux postes les
+plus appelés — jamais mis en cache jusqu'ici, ce que le code documentait lui-même sans jamais
+le faire. Un fragment relu depuis le cache Anthropic coûte un dixième du tarif d'entrée : de
+quoi économiser environ 90 % sur cette partie du prompt, à chaque appel après le premier
+d'une fenêtre de cinq minutes.
+
+`textPart(texte, { cache: true })` marque le fragment à mettre en cache ;
+`toAnthropicContent` pose `cache_control: { type: "ephemeral" }` sur le bloc correspondant.
+Chaque prompt a demandé un geste différent, pas la même correction :
+
+- **Transcription** : le prompt statique passait en DERNIER dans le message, l'image de la
+  page en premier — jamais de cache possible, l'image change à chaque appel et divergeait
+  avant même d'atteindre le prompt. Il passe désormais en tête.
+- **Balisage** : le prompt statique était déjà en tête, mais fondu avec la transcription de la
+  recette dans une seule chaîne de caractères. Anthropic met en cache un bloc ENTIER, jamais un
+  fragment d'une chaîne : il fallait séparer les deux en deux `textPart`, pas les réordonner.
+
+- `ai/types.ts` : `ModelPart.cache`, option de `textPart`.
+- `ai/anthropic.ts` : `toAnthropicContent` (exporté) pose `cache_control`.
+- `gemini/transcription.ts`, `gemini/tagging.ts` : `TRANSCRIPTION_PROMPT` et `TAGGING_PROMPT`
+  marqués, réordonné pour le premier, séparé pour le second.
+- `tests/anthropicPromptCache.test.ts` — nouveau.
+
 ### v0.22.100 — technique
 
 #### Le chemin à points ne suffisait pas : `set()` ne le lit pas comme `update()`

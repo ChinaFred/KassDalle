@@ -360,8 +360,18 @@ export async function tagAndNormalize(
   ctx: ModelCallContext,
 ): Promise<TaggedRecipe> {
   const transcription = renderTranscriptionForTagging(recipe);
+  // Deux blocs, pas un seul texte concaténé : Anthropic ne met en cache
+  // qu'un bloc ENTIER, jamais un fragment d'une chaîne. `TAGGING_PROMPT` ne
+  // varie ni avec la recette ni avec le livre — c'est le prompt le plus
+  // rejoué du projet, une fois par recette balisée depuis toujours — et passe
+  // donc seul, marqué `cache: true` ; la transcription, différente à chaque
+  // appel, reste dans son propre bloc.
   const parts = [
-    textPart(`${TAGGING_PROMPT}\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
+    textPart(TAGGING_PROMPT, { cache: true }),
+    // Les deux sauts de ligne reproduisent l'espacement de l'ancien bloc
+    // unique — deux blocs concaténés par Anthropic ne portent aucun séparateur
+    // implicite.
+    textPart(`\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
   ];
 
   const result = await runTaggingAttempts({
