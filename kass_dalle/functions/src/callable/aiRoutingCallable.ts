@@ -101,6 +101,24 @@ const PROVIDERS: readonly AiProvider[] = ["gemini", "anthropic"];
  * l'autre. Un modèle trop petit rend une page abîmée qui a l'air correcte, un
  * modèle trop grand rend une facture qui a l'air normale.
  */
+/**
+ * Efforts de réflexion Claude proposés à l'écran, du plus rapide au plus
+ * appliqué.
+ *
+ * Le code de chaque poste garde le sien par défaut ; ce choix n'écrit une
+ * exception que si l'administrateur en pose une explicitement (voir
+ * `resolveAnthropicEffort`).
+ */
+export const ANTHROPIC_EFFORT_CHOICES: Array<{
+  id: "low" | "medium" | "high";
+  label: string;
+  hint: string;
+}> = [
+  { id: "low", label: "Basse", hint: "Le moins de réflexion, le moins cher." },
+  { id: "medium", label: "Moyenne", hint: "Un compromis, pas toujours moins cher que « basse »." },
+  { id: "high", label: "Haute", hint: "Le plus de soin, le plus cher." },
+];
+
 export const ANTHROPIC_MODEL_CHOICES: Array<{ id: string; label: string; hint: string }> = [
   {
     id: "claude-opus-5",
@@ -649,6 +667,7 @@ export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
     anthropicKeyPresent: anthropicApiKey() != null,
     routableFeatures: ROUTABLE_FEATURES,
     anthropicModelChoices: ANTHROPIC_MODEL_CHOICES,
+    anthropicEffortChoices: ANTHROPIC_EFFORT_CHOICES,
     imageGenerationFeatures: IMAGE_GENERATION_FEATURES,
     imageModel: GEMINI_IMAGE_MODEL,
     imageModelLabel: GEMINI_IMAGE_MODEL_LABEL,

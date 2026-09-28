@@ -14,6 +14,49 @@ anciennes sans accents.
 
 ---
 
+## 2026-09-28
+
+### v0.22.95 — technique
+
+#### L'effort de réflexion Claude se règle depuis Admin, poste par poste
+
+Le modèle Claude se choisissait déjà par poste depuis Admin → Moteur d'IA, sans déploiement ;
+l'effort de réflexion, lui, restait une constante de code (`TAGGING_EFFORT`, l'« high » de
+`transcription.ts`). Une mesure sur la lecture de page (27-28 septembre 2026, voir plus bas) a
+montré que ce levier mérite le même geste : `app_config/ai_routing_policy` porte désormais
+`anthropic_efforts` (par poste), résolu par `resolveAnthropicEffort` et appliqué dans
+`callModel` avant l'appel. Absent d'un poste, celui-ci garde l'effort que son propre code
+demande — il n'y a pas de repli commun sensé entre la lecture d'une page et un rappel de
+calories. L'écran affiche le sélecteur à côté de celui du modèle, avec une puce « Réglage du
+code » qui efface l'exception plutôt que de la pointer vers une valeur partagée.
+
+- `ai/router.ts` : `AiRoutingPolicy.anthropicEfforts`, `resolveAnthropicEffort`, branchement
+  dans `callProvider`.
+- `ai/routingPresets.ts` : validation, lecture et écriture du nouveau champ dans les
+  configurations enregistrées.
+- `callable/aiRoutingCallable.ts` : `ANTHROPIC_EFFORT_CHOICES` exposé à l'écran.
+- Client : `AiRoutingPolicy.anthropicEfforts` (Dart), `_EffortPicker`, et une ligne de plus
+  dans `AiRoutingDiff` — un chargement de configuration qui changerait l'effort d'un poste le
+  dit, comme il le fait déjà pour le modèle.
+
+#### Lecture de page : décision prise, Sonnet 5 remplace Opus 5
+
+Sur les 6 pages mesurées (voir § 6 de `TechnicalRequirements.md`), les deux erreurs trouvées —
+une lettre insérée par Sonnet 5 dans un titre à lettrine décorative, un désaccord de comptage
+par candidat sur deux autres pages — ont été jugées mineures et sans effet sur la
+compréhension de la recette. `transcription_page` passe donc à Sonnet 5, effort `high`
+inchangé. **C'est un réglage d'Admin → Moteur d'IA (`anthropic_models`), pas un déploiement** :
+aucun changement de code ne l'accompagne, il reste à le poser depuis l'écran.
+
+#### Rappel : la grille tarifaire de Sonnet 5 est encore fausse en production
+
+`app_config/ai_pricing` porte toujours 3 $ / 15 $ pour `claude-sonnet-5` ; le tarif réel,
+vérifié le 26 septembre 2026 contre la page officielle et contre le rapport de coûts
+d'Anthropic, est 2 $ / 10 $ (voir v0.22.94 et la mémoire du projet). Basculer
+`transcription_page` sur Sonnet 5 sans corriger ce prix ferait mentir le reporting de coûts
+sur un poste dont le volume augmente. À corriger dans Admin → Moteur d'IA, puis
+Admin → Coûts → « Reconstruire les agrégats » avec « Rechiffrer aussi les appels ».
+
 ## 2026-09-27
 
 ### v0.22.94 — technique

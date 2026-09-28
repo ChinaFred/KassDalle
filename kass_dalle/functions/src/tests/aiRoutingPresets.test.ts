@@ -83,6 +83,27 @@ describe("readRoutingPolicy — écriture de la politique en vigueur", () => {
     assert.deepEqual(policy.anthropicModels, {});
   });
 
+  test("un effort de réflexion hors des trois niveaux admis est refusé", () => {
+    assert.throws(
+      () =>
+        readRoutingPolicy(
+          { anthropicEfforts: { transcription_page: "xhigh" as unknown as "high" } },
+          CATALOG,
+          { onUnknown: "reject" },
+        ),
+      RoutingPolicyError,
+    );
+  });
+
+  test("un effort réglé sur un poste connu est conservé", () => {
+    const { policy } = readRoutingPolicy(
+      { anthropicEfforts: { transcription_page: "medium" } },
+      CATALOG,
+      { onUnknown: "reject" },
+    );
+    assert.deepEqual(policy.anthropicEfforts, { transcription_page: "medium" });
+  });
+
   test("un plafond de raisonnement hors bornes est refusé", () => {
     assert.throws(
       () => readRoutingPolicy({ thinkingBudget: 999999 }, CATALOG, { onUnknown: "reject" }),
@@ -136,6 +157,18 @@ describe("readRoutingPolicy — relecture d'une configuration enregistrée", () 
     assert.equal(stale.length, 1);
   });
 
+  test("un effort de réflexion invalide est écarté, sans emporter la configuration", () => {
+    const { policy, stale } = readRoutingPolicy(
+      { anthropicEfforts: { transcription_page: "xhigh" as unknown as "high", generate: "low" } },
+      CATALOG,
+      { onUnknown: "drop" },
+    );
+
+    assert.deepEqual(policy.anthropicEfforts, { generate: "low" });
+    assert.equal(stale.length, 1);
+    assert.match(stale[0], /transcription_page/);
+  });
+
   test("un poste verrouillé écarte la valeur sans emporter la configuration", () => {
     const { policy, stale } = readRoutingPolicy(
       { features: { image_moderation: "anthropic", generate: "anthropic" } },
@@ -156,7 +189,7 @@ describe("readRoutingPolicy — relecture d'une configuration enregistrée", () 
 });
 
 describe("aller-retour Firestore d'une configuration", () => {
-  test("les sept réglages survivent à l'écriture puis à la relecture", () => {
+  test("les huit réglages survivent à l'écriture puis à la relecture", () => {
     // C'est ce que subit « Haute performance » : la politique en vigueur est
     // écrite telle quelle, puis relue à chaque ouverture de l'écran. Un champ
     // égaré ici ne se verrait qu'à la facture.
@@ -165,6 +198,7 @@ describe("aller-retour Firestore d'une configuration", () => {
       features: { transcription_page: "anthropic", generate: "gemini" },
       anthropicModel: "claude-opus-5",
       anthropicModels: { generate: "claude-haiku-4-5" },
+      anthropicEfforts: { transcription_page: "medium" },
       fallbackEnabled: false,
       thinkingBudget: 2048,
       thinkingBudgets: { generate: 0 },

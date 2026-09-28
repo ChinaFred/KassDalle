@@ -172,6 +172,23 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     setState(() => _draft = draft.copyWith(anthropicModels: models));
   }
 
+  /// Choisit l'effort de réflexion d'un poste, ou l'efface (retour au code).
+  ///
+  /// Contrairement au modèle, il n'y a pas de valeur « par défaut » à
+  /// retrouver : effacer un réglage enlève la clé, et le poste reprend
+  /// l'effort que son propre code demande.
+  void _setEffortFor(String featureId, String? effort) {
+    final draft = _draft;
+    if (draft == null) return;
+    final efforts = Map<String, String>.from(draft.anthropicEfforts);
+    if (effort == null) {
+      efforts.remove(featureId);
+    } else {
+      efforts[featureId] = effort;
+    }
+    setState(() => _draft = draft.copyWith(anthropicEfforts: efforts));
+  }
+
   // ── Configurations enregistrées ────────────────────────────────────────────
 
   AiRoutingPreset? get _selectedPreset {
@@ -933,6 +950,18 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                               onChanged: (model) =>
                                   _setModelFor(feature.id, model),
                             ),
+                          // Même condition que le modèle : l'effort ne se
+                          // règle que là où Claude répond effectivement.
+                          if ((feature.lockedProvider ??
+                                      draft.providerFor(feature.id)) ==
+                                  AiProvider.anthropic &&
+                              snapshot.anthropicEffortChoices.isNotEmpty)
+                            _EffortPicker(
+                              choices: snapshot.anthropicEffortChoices,
+                              value: draft.anthropicEffortFor(feature.id),
+                              onChanged: (effort) =>
+                                  _setEffortFor(feature.id, effort),
+                            ),
                           if (feature != group.value.last)
                             const Divider(height: 1),
                         ],
@@ -1313,6 +1342,79 @@ class _ModelPicker extends StatelessWidget {
                               ? '${choice.label} · défaut'
                               : choice.label,
                         ),
+                        selected: choice.id == value,
+                        onSelected: (_) => onChanged(choice.id),
+                      ),
+                  ],
+                ),
+                if (courant != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    courant.hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Effort de réflexion Claude d'un poste, sous le même sélecteur que le modèle.
+///
+/// Contrairement au modèle, il n'y a pas de « défaut » à afficher : un poste
+/// sans réglage garde l'effort que SON propre code demande, pas un effort
+/// commun à tous — d'où la puce « code », qui efface le réglage plutôt que de
+/// le pointer vers une valeur partagée.
+class _EffortPicker extends StatelessWidget {
+  const _EffortPicker({
+    required this.choices,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<AnthropicEffortChoice> choices;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final courant = choices.where((c) => c.id == value).firstOrNull;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.psychology_outlined,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Réglage du code'),
+                      selected: value == null,
+                      onSelected: (_) => onChanged(null),
+                    ),
+                    for (final choice in choices)
+                      ChoiceChip(
+                        label: Text('Réflexion ${choice.label.toLowerCase()}'),
                         selected: choice.id == value,
                         onSelected: (_) => onChanged(choice.id),
                       ),

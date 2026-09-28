@@ -78,6 +78,15 @@ identifiants de `ANTHROPIC_MODEL_CHOICES` sont acceptés à l'écriture, tous pr
 grille tarifaire — un modèle hors grille se facturerait sans montant et gonflerait
 `total_unpriced_calls`.
 
+**L'effort de réflexion Claude se choisit aussi par POSTE, depuis le 27 septembre 2026.**
+`AiRoutingPolicy.anthropicEfforts` (`Record<feature, "low"|"medium"|"high">`) est résolu par
+`resolveAnthropicEffort(policy, feature)` et appliqué dans `callModel`, avant l'appel Claude.
+Contrairement au modèle, il n'y a pas de repli global : un poste sans réglage garde l'effort
+que **son propre code** pose (`ModelCallContext.effort`), parce qu'aucun effort commun n'a de
+sens entre la lecture d'une page et un rappel de calories. Écran **Admin → Moteur d'IA**, même
+sélecteur de visibilité que le modèle, avec une puce « Réglage du code » qui efface
+l'exception plutôt que de la pointer vers une valeur partagée.
+
 **Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
 `output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
 une justification qui ne vaut que pour la nutrition — estimer les calories d'un ingrédient
@@ -88,11 +97,23 @@ mesuré sur les mêmes 33 transcriptions rejouées aux deux efforts : même cont
 aucune rupture de plus, 0,118 $ l'appel contre 0,298 $. Le balisage recopie un texte déjà lu et
 `checkFidelity` le compare à cette entrée, alors que la transcription lit une image sans contrôle
 équivalent — c'est ce qui rend l'effort réduit sûr d'un côté et risqué de l'autre. La panne n'était
-visible que
-depuis la réparation du streaming : jusque-là Claude échouait sur la transcription et Gemini
-prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
-aller vite. Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans
-déploiement — `thinking_budgets` par poste dans `app_config/ai_routing_policy`.
+visible que depuis la réparation du streaming : jusque-là Claude échouait sur la transcription et
+Gemini prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
+aller vite.
+
+Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans déploiement —
+`thinking_budgets` par poste dans `app_config/ai_routing_policy` (`anthropic_efforts` côté
+Claude, en snake_case dans le même document).
+
+**La lecture de page a été mesurée sur 6 pages, à trois réglages** (27-28 septembre 2026) :
+Opus 5 forte (la référence de l'époque), Sonnet 5 forte, Opus 5 moyenne. Sonnet 5 coûte 14 à
+62 % de moins qu'Opus 5 à effort égal ; réduire l'effort d'Opus, lui, économise entre rien et
+16 %, parfois négatif. Chaque candidat a montré une fois un résultat différent de la référence
+— une lettre insérée par Sonnet dans un titre à lettrine décorative, un désaccord de comptage
+par candidat sur deux autres pages — jugés mineurs et sans effet sur la compréhension de la
+recette. Décision : `transcription_page` passe à Sonnet 5, effort `high` inchangé — un
+changement de MODÈLE, posé dans `anthropic_models` depuis Admin → Moteur d'IA, sans
+déploiement.
 
 **Les réponses Claude sont streamées.** Le SDK Anthropic refuse un appel non-streamé dès
 que `max_tokens` dépasse `128 000 / 6 ≈ 21 333` — au-delà, il estime que la réponse

@@ -57,6 +57,22 @@ export interface AiRoutingPolicy {
    * payer Opus pour la carotte, soit lire le livre avec Haiku.
    */
   anthropicModels: Record<string, string>;
+  /**
+   * Effort de réflexion Claude PAR POSTE — l'emporte sur le réglage que le
+   * code du poste pose lui-même (`ModelCallContext.effort`).
+   *
+   * Le modèle se choisissait déjà poste par poste ; l'effort restait une
+   * constante de code (`TAGGING_EFFORT`, l'« high » de `transcription.ts`),
+   * qui ne se changeait qu'en redéployant. Une mesure du 27 septembre 2026 a
+   * montré que, pour la lecture de page, le levier qui économise vraiment est
+   * le modèle — et que l'effort, lui, mérite d'être ajusté sans attendre un
+   * déploiement, comme le modèle.
+   *
+   * Absent d'un poste, ce poste garde l'effort que son propre code demande :
+   * ce champ ne fixe pas de défaut global, parce qu'aucun effort commun n'a de
+   * sens — la nutrition veut `low`, la lecture de page veut `high`.
+   */
+  anthropicEfforts: Record<string, "low" | "medium" | "high">;
   /** Repli automatique sur l'autre moteur en cas d'échec technique. */
   fallbackEnabled: boolean;
   /**
@@ -89,6 +105,7 @@ export const DEFAULT_AI_ROUTING_POLICY: AiRoutingPolicy = {
   features: {},
   anthropicModel: ANTHROPIC_MODEL,
   anthropicModels: {},
+  anthropicEfforts: {},
   fallbackEnabled: true,
   thinkingBudget: null,
   thinkingBudgets: {},
@@ -132,6 +149,28 @@ export function resolveAnthropicModel(policy: AiRoutingPolicy, feature: string):
     : policy.anthropicModel;
 }
 
+function isEffort(value: unknown): value is "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+/**
+ * Effort de réflexion imposé à un poste par la politique, ou `null` en
+ * l'absence de réglage.
+ *
+ * `null` n'est pas un défaut à appliquer : c'est le signal que le poste garde
+ * l'effort qu'il pose lui-même dans son propre code. Contrairement au modèle
+ * (`resolveAnthropicModel`), il n'existe pas de repli global sensé — aucun
+ * effort commun ne convient à la fois à la lecture d'une page et à un rappel
+ * de calories.
+ */
+export function resolveAnthropicEffort(
+  policy: AiRoutingPolicy,
+  feature: string,
+): "low" | "medium" | "high" | null {
+  const perFeature = policy.anthropicEfforts[feature];
+  return isEffort(perFeature) ? perFeature : null;
+}
+
 let cachedPolicy: { value: AiRoutingPolicy; readAt: number } | null = null;
 /** Durée de vie du cache mémoire — une bascule prend effet en moins d'une minute. */
 const POLICY_TTL_MS = 60_000;
@@ -172,6 +211,12 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
       if (value != null) thinkingBudgets[feature] = value;
     }
 
+    const rawEfforts = (data.anthropic_efforts ?? {}) as Record<string, unknown>;
+    const anthropicEfforts: Record<string, "low" | "medium" | "high"> = {};
+    for (const [feature, effort] of Object.entries(rawEfforts)) {
+      if (isEffort(effort)) anthropicEfforts[feature] = effort;
+    }
+
     const policy: AiRoutingPolicy = {
       defaultProvider: isProvider(data.default_provider)
         ? data.default_provider
@@ -182,6 +227,7 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
           ? data.anthropic_model.trim()
           : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
       anthropicModels,
+      anthropicEfforts,
       fallbackEnabled: data.fallback_enabled !== false,
       thinkingBudget: readBudget(data.thinking_budget),
       thinkingBudgets,
@@ -287,10 +333,13 @@ async function callProvider(args: {
     if (!key) {
       throw new ModelCallError("Clé Anthropic absente de l'environnement", "anthropic", false);
     }
+    // Un effort réglé depuis Admin l'emporte sur celui du code ; en son
+    // absence, le poste garde l'effort qu'il pose lui-même.
+    const effortOverride = resolveAnthropicEffort(args.policy, args.ctx.feature);
     return callAnthropic({
       apiKey: key,
       parts: args.parts,
-      ctx: args.ctx,
+      ctx: effortOverride ? { ...args.ctx, effort: effortOverride } : args.ctx,
       callId: args.callId,
       model: resolveAnthropicModel(args.policy, args.ctx.feature),
       maxTokens: args.maxTokens,

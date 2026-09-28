@@ -165,6 +165,25 @@ export function readRoutingPolicy(
     if (wanted !== anthropicModel) anthropicModels[feature] = wanted;
   }
 
+  // L'effort n'a pas de valeur par défaut commune à valider : un poste sans
+  // réglage garde celui de son propre code, jamais celui d'un autre poste.
+  const EFFORTS = new Set(["low", "medium", "high"]);
+  const anthropicEfforts: Record<string, "low" | "medium" | "high"> = {};
+  for (const [feature, effort] of Object.entries(
+    (raw.anthropicEfforts ?? {}) as Record<string, unknown>,
+  )) {
+    if (!catalog.featureProviders.has(feature)) {
+      refuse(`Poste inconnu : ${feature}.`);
+      continue;
+    }
+    if (effort == null || effort === "") continue;
+    if (typeof effort !== "string" || !EFFORTS.has(effort)) {
+      refuse(`Effort de réflexion invalide pour ${feature} : ${effort}.`);
+      continue;
+    }
+    anthropicEfforts[feature] = effort as "low" | "medium" | "high";
+  }
+
   const readBudget = (value: unknown, label: string): number | null => {
     if (value == null) return null;
     const n = Number(value);
@@ -194,6 +213,7 @@ export function readRoutingPolicy(
       features,
       anthropicModel,
       anthropicModels,
+      anthropicEfforts,
       fallbackEnabled: raw.fallbackEnabled !== false,
       thinkingBudget,
       thinkingBudgets,
@@ -232,6 +252,7 @@ export function presetPolicyToMap(policy: AiRoutingPolicy): Record<string, unkno
     features: policy.features,
     anthropic_model: policy.anthropicModel,
     anthropic_models: policy.anthropicModels,
+    anthropic_efforts: policy.anthropicEfforts,
     fallback_enabled: policy.fallbackEnabled,
     thinking_budget: policy.thinkingBudget,
     thinking_budgets: policy.thinkingBudgets,
@@ -257,6 +278,7 @@ export function presetPolicyFromMap(
     features: asRecord(data.features),
     anthropicModel: typeof data.anthropic_model === "string" ? data.anthropic_model : undefined,
     anthropicModels: asRecord(data.anthropic_models),
+    anthropicEfforts: asRecord(data.anthropic_efforts),
     fallbackEnabled: data.fallback_enabled !== false,
     thinkingBudget: data.thinking_budget == null ? null : (data.thinking_budget as number),
     thinkingBudgets: asRecord(data.thinking_budgets),

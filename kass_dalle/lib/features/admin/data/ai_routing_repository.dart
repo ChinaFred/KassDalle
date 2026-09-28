@@ -150,6 +150,16 @@ class AiRoutingPolicy {
   /// carotte est un rappel de connaissances répété quinze fois par recette.
   final Map<String, String> anthropicModels;
 
+  /// Effort de réflexion Claude par poste — `null` pour un poste sans réglage.
+  ///
+  /// Le modèle se choisissait déjà poste par poste ; l'effort restait une
+  /// constante de code, qui ne se changeait qu'en redéployant. Une mesure du
+  /// 27 septembre 2026 a montré que, pour la lecture de page, le levier qui
+  /// économise vraiment est le modèle — et que l'effort mérite le même geste
+  /// sans déploiement. Absent d'un poste, ce poste garde l'effort que son
+  /// propre code demande : aucun effort commun n'a de sens pour tous.
+  final Map<String, String> anthropicEfforts;
+
   const AiRoutingPolicy({
     required this.defaultProvider,
     required this.features,
@@ -158,6 +168,7 @@ class AiRoutingPolicy {
     this.thinkingBudget,
     this.thinkingBudgets = const {},
     this.anthropicModels = const {},
+    this.anthropicEfforts = const {},
   });
 
   AiProvider providerFor(String featureId) =>
@@ -171,6 +182,13 @@ class AiRoutingPolicy {
   String anthropicModelFor(String featureId) =>
       anthropicModels[featureId] ?? anthropicModel;
 
+  /// Effort de réflexion réglé pour un poste, ou `null` s'il n'y en a pas.
+  ///
+  /// Contrairement au modèle, il n'y a pas de repli global à proposer : `null`
+  /// veut dire « ce poste garde l'effort de son propre code », pas « aucun
+  /// effort ».
+  String? anthropicEffortFor(String featureId) => anthropicEfforts[featureId];
+
   AiRoutingPolicy copyWith({
     AiProvider? defaultProvider,
     Map<String, AiProvider>? features,
@@ -183,6 +201,7 @@ class AiRoutingPolicy {
     bool clearThinkingBudget = false,
     Map<String, int>? thinkingBudgets,
     Map<String, String>? anthropicModels,
+    Map<String, String>? anthropicEfforts,
   }) {
     return AiRoutingPolicy(
       defaultProvider: defaultProvider ?? this.defaultProvider,
@@ -194,6 +213,7 @@ class AiRoutingPolicy {
           : (thinkingBudget ?? this.thinkingBudget),
       thinkingBudgets: thinkingBudgets ?? this.thinkingBudgets,
       anthropicModels: anthropicModels ?? this.anthropicModels,
+      anthropicEfforts: anthropicEfforts ?? this.anthropicEfforts,
     );
   }
 
@@ -207,6 +227,7 @@ class AiRoutingPolicy {
     'thinkingBudget': thinkingBudget,
     'thinkingBudgets': thinkingBudgets,
     'anthropicModels': anthropicModels,
+    'anthropicEfforts': anthropicEfforts,
   };
 }
 
@@ -220,6 +241,22 @@ class AiRoutingPolicy {
 /// l'air normale.
 class AnthropicModelChoice {
   const AnthropicModelChoice({
+    required this.id,
+    required this.label,
+    required this.hint,
+  });
+
+  final String id;
+  final String label;
+  final String hint;
+}
+
+/// Un effort de réflexion Claude proposé à l'écran, et ce à quoi il sert.
+///
+/// Le code de chaque poste garde le sien par défaut : choisir ici n'écrit une
+/// exception que pour CE poste, jamais un réglage global.
+class AnthropicEffortChoice {
+  const AnthropicEffortChoice({
     required this.id,
     required this.label,
     required this.hint,
@@ -277,6 +314,12 @@ class AiRoutingSnapshot {
   /// de proposer une liste devinée qui se ferait refuser à l'écriture.
   final List<AnthropicModelChoice> anthropicModelChoices;
 
+  /// Efforts de réflexion Claude proposés, du plus rapide au plus appliqué.
+  ///
+  /// Vide sur un backend antérieur : le sélecteur disparaît alors, comme pour
+  /// [anthropicModelChoices].
+  final List<AnthropicEffortChoice> anthropicEffortChoices;
+
   /// Postes qui produisent une image — affichés, jamais basculables.
   ///
   /// Aucun modèle Anthropic ne fabrique d'image. Les taire laissait croire que
@@ -306,6 +349,7 @@ class AiRoutingSnapshot {
     required this.anthropicKeyPresent,
     required this.routableFeatures,
     this.anthropicModelChoices = const [],
+    this.anthropicEffortChoices = const [],
     this.imageGenerationFeatures = const [],
     this.imageModel = '',
     this.imageModelLabel = '',
@@ -329,6 +373,7 @@ class AiRoutingSnapshot {
       anthropicKeyPresent: anthropicKeyPresent ?? this.anthropicKeyPresent,
       routableFeatures: routableFeatures,
       anthropicModelChoices: anthropicModelChoices,
+      anthropicEffortChoices: anthropicEffortChoices,
       imageGenerationFeatures: imageGenerationFeatures,
       imageModel: imageModel,
       imageModelLabel: imageModelLabel,
@@ -450,6 +495,9 @@ class AiRoutingRepository {
       anthropicKeyPresent: data['anthropicKeyPresent'] == true,
       routableFeatures: features,
       anthropicModelChoices: _parseModelChoices(data['anthropicModelChoices']),
+      anthropicEffortChoices: _parseEffortChoices(
+        data['anthropicEffortChoices'],
+      ),
       imageGenerationFeatures: imageFeatures,
       imageModel: data['imageModel'] as String? ?? '',
       imageModelLabel: data['imageModelLabel'] as String? ?? '',
@@ -464,6 +512,21 @@ class AiRoutingRepository {
         .map((e) {
           final m = Map<String, dynamic>.from(e);
           return AnthropicModelChoice(
+            id: m['id'] as String? ?? '',
+            label: m['label'] as String? ?? '',
+            hint: m['hint'] as String? ?? '',
+          );
+        })
+        .where((c) => c.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<AnthropicEffortChoice> _parseEffortChoices(Object? raw) {
+    return (raw as List? ?? const [])
+        .whereType<Map>()
+        .map((e) {
+          final m = Map<String, dynamic>.from(e);
+          return AnthropicEffortChoice(
             id: m['id'] as String? ?? '',
             label: m['label'] as String? ?? '',
             hint: m['hint'] as String? ?? '',
@@ -508,6 +571,13 @@ AiRoutingPolicy parseRoutingPolicy(Map<String, dynamic> data) {
     anthropicModels: {
       for (final entry in Map<String, dynamic>.from(
         data['anthropicModels'] as Map? ?? const {},
+      ).entries)
+        if (entry.value is String && (entry.value as String).isNotEmpty)
+          entry.key: entry.value as String,
+    },
+    anthropicEfforts: {
+      for (final entry in Map<String, dynamic>.from(
+        data['anthropicEfforts'] as Map? ?? const {},
       ).entries)
         if (entry.value is String && (entry.value as String).isNotEmpty)
           entry.key: entry.value as String,

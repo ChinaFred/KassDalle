@@ -31,6 +31,7 @@ void main() {
     int? thinkingBudget,
     Map<String, int> thinkingBudgets = const {},
     Map<String, String> anthropicModels = const {},
+    Map<String, String> anthropicEfforts = const {},
   }) => AiRoutingPolicy(
     defaultProvider: defaultProvider,
     features: features,
@@ -39,10 +40,11 @@ void main() {
     thinkingBudget: thinkingBudget,
     thinkingBudgets: thinkingBudgets,
     anthropicModels: anthropicModels,
+    anthropicEfforts: anthropicEfforts,
   );
 
   group('parseRoutingPolicy', () {
-    test('les sept réglages survivent au transport', () {
+    test('les huit réglages survivent au transport', () {
       final read = parseRoutingPolicy({
         'defaultProvider': 'anthropic',
         'features': {'generate': 'gemini'},
@@ -51,6 +53,7 @@ void main() {
         'thinkingBudget': 2048,
         'thinkingBudgets': {'generate': 0},
         'anthropicModels': {'transcription_page': 'claude-haiku-4-5'},
+        'anthropicEfforts': {'transcription_page': 'medium'},
       });
 
       expect(read.defaultProvider, AiProvider.anthropic);
@@ -60,6 +63,7 @@ void main() {
       expect(read.thinkingBudget, 2048);
       expect(read.thinkingBudgets, {'generate': 0});
       expect(read.anthropicModels, {'transcription_page': 'claude-haiku-4-5'});
+      expect(read.anthropicEfforts, {'transcription_page': 'medium'});
     });
 
     test('un plafond coupé ne se confond pas avec un plafond absent', () {
@@ -224,6 +228,25 @@ void main() {
       final surGemini = AiRoutingDiff.between(
         current: policy(),
         next: policy(anthropicModels: {'generate': 'claude-haiku-4-5'}),
+        features: catalogue,
+      );
+      expect(surGemini.isEmpty, isTrue);
+    });
+
+    test('l\'effort ne compte que sur un poste servi par Claude', () {
+      final surClaude = AiRoutingDiff.between(
+        current: policy(features: {'generate': AiProvider.anthropic}),
+        next: policy(
+          features: {'generate': AiProvider.anthropic},
+          anthropicEfforts: {'generate': 'medium'},
+        ),
+        features: catalogue,
+      );
+      expect(surClaude.lines.single, contains('effort de réflexion'));
+
+      final surGemini = AiRoutingDiff.between(
+        current: policy(),
+        next: policy(anthropicEfforts: {'generate': 'medium'}),
         features: catalogue,
       );
       expect(surGemini.isEmpty, isTrue);
