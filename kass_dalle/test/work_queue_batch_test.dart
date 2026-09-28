@@ -92,6 +92,15 @@ void main() {
       expect(plan.emptyContent, hasLength(1));
       expect(plan.withFidelityReserve, isEmpty);
     });
+
+    test('validatableInBatch compte la réserve, jamais le contenu vide', () {
+      final plan = planDraftValidation([
+        _brouillon(id: 'ok'),
+        _brouillon(id: 'reserve', fidelity: 'rupture'),
+        _brouillon(id: 'vide', raw: ''),
+      ]);
+      expect(plan.validatableInBatch, 2);
+    });
   });
 
   group('libellés', () {
@@ -163,6 +172,56 @@ void main() {
     test('pas de note quand tout est admis', () {
       expect(notValidatedNote(planDraftValidation([_brouillon()])), isNull);
     });
+
+    test(
+      'un lot valide la réserve de fidélité quand reserveIncluded vaut vrai',
+      () {
+        final plan = planDraftValidation([
+          _brouillon(id: 'ok'),
+          _brouillon(id: 'r1', fidelity: 'rupture'),
+        ]);
+        expect(
+          validationSummary(plan, reserveIncluded: true, failed: 0),
+          '2 brouillons validés.',
+        );
+      },
+    );
+
+    test('un lot ne cache pas l\'échec d\'un brouillon à réserve inclus', () {
+      final plan = planDraftValidation([
+        _brouillon(id: 'ok'),
+        _brouillon(id: 'r1', fidelity: 'rupture'),
+      ]);
+      expect(
+        validationSummary(plan, reserveIncluded: true, failed: 1),
+        '1 brouillon validé, 1 en échec.',
+      );
+    });
+
+    test('reserveIncluded ne dispense pas de nommer le contenu vide', () {
+      final plan = planDraftValidation([
+        _brouillon(id: 'ok'),
+        _brouillon(id: 'r1', fidelity: 'rupture'),
+        _brouillon(id: 'vide', raw: ''),
+      ]);
+      expect(
+        validationSummary(plan, reserveIncluded: true, failed: 0),
+        '2 brouillons validés. Non validés : 1 sans contenu.',
+      );
+    });
+
+    test(
+      'sans reserveIncluded, la note continue de nommer la réserve — comportement d\'une ligne seule',
+      () {
+        final plan = planDraftValidation([
+          _brouillon(id: 'r1', fidelity: 'rupture'),
+        ]);
+        expect(
+          notValidatedNote(plan),
+          'Non validés : 1 avec réserve de fidélité, à relire un par un.',
+        );
+      },
+    );
   });
 
   group('actionSummary', () {

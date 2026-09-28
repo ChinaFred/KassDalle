@@ -16,6 +16,29 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.102 — fonctionnel
+
+#### Valider en lot n'exclut plus silencieusement les brouillons à réserve de fidélité
+
+La validation groupée (Brouillons & Traitements) laissait de côté, sans recours, tout brouillon
+portant une réserve de fidélité — l'unique façon de le valider était de le rouvrir un par un
+depuis l'écran de relecture. Sur un lot de plusieurs dizaines de brouillons, ça obligeait à
+cliquer autant de fois que de réserves, pour des recettes que personne n'allait relire de toute
+façon.
+
+Le geste change : le dialogue de confirmation **avertit** — combien portent une réserve, et que
+l'IA a un doute sur la fidélité de la copie — mais n'empêche plus de continuer. Confirmer valide
+tout le lot, réserve comprise, exactement comme une validation individuelle l'aurait fait. Le
+bouton annonce désormais ce compte complet (`Valider (N)`), pas seulement la part sans réserve.
+
+Un brouillon sans contenu reste exclu dans tous les cas : il n'y a rien à publier, avertir n'y
+changerait rien. La relecture individuelle, elle, continue d'exclure la réserve — un geste sur un
+seul brouillon n'a pas la même raison d'être pressé qu'un lot de cinquante.
+
+- `work_queue_batch.dart` : `DraftValidationPlan.validatableInBatch`, `notValidatedNote` et
+  `validationSummary` prennent `reserveIncluded`.
+- `work_queue_screen.dart` : `_validateDrafts` inclut la réserve en lot, après confirmation.
+
 ### v0.22.101 — technique
 
 #### Les deux plus gros prompts Claude se mettent en cache

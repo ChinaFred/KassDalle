@@ -158,42 +158,53 @@ void main() {
       expect(find.text('Clafoutis'), findsOneWidget);
     });
 
-    testWidgets('un brouillon à réserve de fidélité n\'est pas validé en lot', (
-      tester,
-    ) async {
-      final backend = TestBackend();
-      await backend.seedRecipe(_brouillon('ok', 'Gravlax', jour: 1));
-      await backend.seedRecipe(
-        _brouillon('reserve', 'Blanquette', fidelity: 'rupture', jour: 2),
-      );
-      await _ouvrir(tester, backend);
+    testWidgets(
+      'un brouillon à réserve de fidélité est validé en lot, après avertissement',
+      (tester) async {
+        // En lot, la réserve avertit sans bloquer : personne ne va relire
+        // cinquante brouillons un par un pour lever un doute que l'import a
+        // déjà signalé. Seule une ligne isolée (l'écran de relecture) laisse
+        // encore la réserve de côté.
+        final backend = TestBackend();
+        await backend.seedRecipe(_brouillon('ok', 'Gravlax', jour: 1));
+        await backend.seedRecipe(
+          _brouillon('reserve', 'Blanquette', fidelity: 'rupture', jour: 2),
+        );
+        await _ouvrir(tester, backend);
 
-      await tester.tap(find.byTooltip('Sélectionner'));
-      await tester.pump();
-      await tester.tap(find.byTooltip('Tout sélectionner'));
-      await tester.pump();
+        await tester.tap(find.byTooltip('Sélectionner'));
+        await tester.pump();
+        await tester.tap(find.byTooltip('Tout sélectionner'));
+        await tester.pump();
 
-      // Deux cochés, un seul admis : le bouton annonce ce qui sera validé.
-      expect(find.text('2 sélectionné(s)'), findsOneWidget);
-      expect(find.text('Valider (1)'), findsOneWidget);
+        // Les deux cochés sont annoncés : le lot les valide tous les deux.
+        expect(find.text('2 sélectionné(s)'), findsOneWidget);
+        expect(find.text('Valider (2)'), findsOneWidget);
 
-      await tester.tap(find.text('Valider (1)'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('1 avec réserve de fidélité, à relire un par un'),
-        findsOneWidget,
-      );
-      await _confirmer(tester, 'Valider');
+        await tester.tap(find.text('Valider (2)'));
+        await tester.pumpAndSettle();
+        expect(find.text('Valider 2 brouillons ?'), findsOneWidget);
+        expect(
+          find.textContaining(
+            'Dont 1 avec réserve de fidélité '
+            '(l\'IA a un doute sur la fidélité de la copie) : validé '
+            'quand même, sans relecture individuelle.',
+          ),
+          findsOneWidget,
+        );
+        await _confirmer(tester, 'Valider');
 
-      expect(await _statut(backend, 'ok'), 'validated');
-      expect(await _statut(backend, 'reserve'), 'draft');
-      // La réserve n'est pas levée : personne ne l'a relue.
-      final reserve = await backend.firestore
-          .collection('recipes')
-          .doc('reserve')
-          .get();
-      expect(reserve.data()?['fidelity_level'], 'rupture');
-    });
+        expect(await _statut(backend, 'ok'), 'validated');
+        expect(await _statut(backend, 'reserve'), 'validated');
+        expect(find.text('2 brouillons validés.'), findsOneWidget);
+        // La réserve est levée par la validation, comme pour une ligne seule.
+        final reserve = await backend.firestore
+            .collection('recipes')
+            .doc('reserve')
+            .get();
+        expect(reserve.data()?.containsKey('fidelity_level'), isFalse);
+      },
+    );
 
     testWidgets('supprimer les brouillons cochés demande confirmation', (
       tester,

@@ -17,14 +17,17 @@ String draftContent(Recipe recipe) {
   return recipe.rawCooklang;
 }
 
-/// Ce qu'une validation en lot fait de chaque brouillon sélectionné.
+/// Ce qu'une validation fait de chaque brouillon sélectionné.
 ///
 /// Valider écrit `review_status = validated` et **supprime** la réserve de
 /// fidélité (`RecipeRepository.validateDraft`) : la validation dit que
-/// quelqu'un a relu la page. Un lot ne relit rien. Un brouillon qui porte une
-/// réserve reste donc à valider seul, depuis l'écran de relecture où le
-/// bandeau la montre. Un brouillon sans contenu reste de côté pour la même
-/// raison que dans cet écran : il n'y a rien à publier.
+/// quelqu'un a relu la page, et un lot ne relit rien. Sur une ligne seule,
+/// un brouillon à réserve reste donc à valider depuis l'écran de relecture,
+/// où le bandeau la montre. En lot, la réserve avertit sans bloquer — cliquer
+/// cinquante fois pour des recettes qu'on ne relira pas ne protège personne
+/// — voir [validatableInBatch] et le dialogue de confirmation de l'écran.
+/// Un brouillon sans contenu, lui, reste de côté dans tous les cas : il n'y a
+/// rien à publier, avertir ne changerait rien.
 class DraftValidationPlan {
   const DraftValidationPlan({
     required this.toValidate,
@@ -37,6 +40,10 @@ class DraftValidationPlan {
   final List<Recipe> emptyContent;
 
   int get skipped => withFidelityReserve.length + emptyContent.length;
+
+  /// Ce qu'une validation EN LOT valide réellement, réserve de fidélité
+  /// comprise — après avertissement, jamais silencieusement.
+  int get validatableInBatch => toValidate.length + withFidelityReserve.length;
 }
 
 DraftValidationPlan planDraftValidation(Iterable<Recipe> drafts) {
@@ -72,11 +79,18 @@ String selectionLabel({required int drafts, required int jobs}) {
   return parts.join(' et ');
 }
 
-/// Ce qui reste de côté dans une validation en lot, et pourquoi. Null quand
-/// tout est admis.
-String? notValidatedNote(DraftValidationPlan plan) {
+/// Ce qui reste de côté dans une validation, et pourquoi. Null quand tout est
+/// admis.
+///
+/// [reserveIncluded] dit si la réserve de fidélité a été validée quand même
+/// (lot, après avertissement) : la note ne la nomme alors plus comme un
+/// reste, elle a été traitée.
+String? notValidatedNote(
+  DraftValidationPlan plan, {
+  bool reserveIncluded = false,
+}) {
   final left = <String>[
-    if (plan.withFidelityReserve.isNotEmpty)
+    if (!reserveIncluded && plan.withFidelityReserve.isNotEmpty)
       '${plan.withFidelityReserve.length} avec réserve de fidélité, '
           'à relire un par un',
     if (plan.emptyContent.isNotEmpty)
@@ -85,10 +99,19 @@ String? notValidatedNote(DraftValidationPlan plan) {
   return left.isEmpty ? null : 'Non validés : ${left.join(', ')}.';
 }
 
-/// Le compte rendu d'une validation en lot. [failed] compte les écritures
-/// refusées ou tombées en erreur.
-String validationSummary(DraftValidationPlan plan, {required int failed}) {
-  final validated = plan.toValidate.length - failed;
+/// Le compte rendu d'une validation. [failed] compte les écritures refusées
+/// ou tombées en erreur ; [reserveIncluded] doit valoir ce que l'appelant a
+/// réellement tenté (voir [DraftValidationPlan.validatableInBatch]), sans
+/// quoi le compte de brouillons validés mentirait.
+String validationSummary(
+  DraftValidationPlan plan, {
+  bool reserveIncluded = false,
+  required int failed,
+}) {
+  final attempted =
+      plan.toValidate.length +
+      (reserveIncluded ? plan.withFidelityReserve.length : 0);
+  final validated = attempted - failed;
   final first = <String>[
     if (validated > 0)
       countOf(validated, 'brouillon validé', 'brouillons validés')
@@ -96,7 +119,7 @@ String validationSummary(DraftValidationPlan plan, {required int failed}) {
       'Aucun brouillon validé',
     if (failed > 0) '$failed en échec',
   ].join(', ');
-  final note = notValidatedNote(plan);
+  final note = notValidatedNote(plan, reserveIncluded: reserveIncluded);
   return note == null ? '$first.' : '$first. $note';
 }
 

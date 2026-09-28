@@ -276,26 +276,45 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
   /// Valide des brouillons sans les ouvrir. Sert à la fois la sélection
   /// multiple et l'action « Valider » d'une ligne.
   ///
-  /// Les brouillons à réserve de fidélité et les brouillons vides restent de
-  /// côté (voir [planDraftValidation]).
+  /// Les brouillons sans contenu restent toujours de côté (voir
+  /// [planDraftValidation]) : il n'y a rien à publier. La réserve de fidélité
+  /// diffère selon le geste : sur une ligne seule (`confirm: false`), elle
+  /// reste de côté — direction l'écran de relecture, où le bandeau la montre.
+  /// En lot (`confirm: true`), le dialogue avertit et le brouillon est
+  /// validé quand même si l'utilisateur confirme : personne ne va relire
+  /// cinquante brouillons un par un pour lever un doute que l'import a déjà
+  /// signalé, et laisser la réserve bloquer chaque lot revenait à imposer
+  /// cette relecture par défaut.
   Future<void> _validateDrafts(
     List<Recipe> drafts, {
     required bool confirm,
   }) async {
     if (_busy) return;
     final plan = planDraftValidation(drafts);
-    if (plan.toValidate.isEmpty) {
-      _report(validationSummary(plan, failed: 0), failed: 0, partial: true);
+    final reserveIncluded = confirm && plan.withFidelityReserve.isNotEmpty;
+    final toValidate = reserveIncluded
+        ? [...plan.toValidate, ...plan.withFidelityReserve]
+        : plan.toValidate;
+    if (toValidate.isEmpty) {
+      _report(
+        validationSummary(plan, reserveIncluded: reserveIncluded, failed: 0),
+        failed: 0,
+        partial: true,
+      );
       return;
     }
     if (confirm) {
-      final note = notValidatedNote(plan);
-      final count = plan.toValidate.length;
+      final note = notValidatedNote(plan, reserveIncluded: reserveIncluded);
+      final reserveCount = plan.withFidelityReserve.length;
+      final count = toValidate.length;
       final ok = await _showConfirmDialog(
         title: 'Valider ${countOf(count, 'brouillon', 'brouillons')} ?',
         content:
             '${count >= 2 ? 'Ils seront publiés tels quels' : 'Il sera publié tel quel'}'
             ', sans relecture.'
+            '${reserveIncluded ? '\n\nDont $reserveCount avec réserve de fidélité '
+                      '(l\'IA a un doute sur la fidélité de la copie) : validé${reserveCount >= 2 ? 's' : ''} '
+                      'quand même, sans relecture individuelle.' : ''}'
             '${note == null ? '' : '\n\n$note'}',
         confirmLabel: 'Valider',
       );
@@ -305,7 +324,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final myUid = ref.read(appUserProvider).value?.uid ?? '';
     final failed = await _runBatch<Recipe>(
       label: 'Validation',
-      items: plan.toValidate,
+      items: toValidate,
       feature: 'workQueueScreen.validateDraft',
       errorContext: (r) => {'recipe_id': r.id},
       action: (r) => repo.validateDraft(
@@ -322,9 +341,13 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
       ),
     );
     _report(
-      validationSummary(plan, failed: failed.length),
+      validationSummary(
+        plan,
+        reserveIncluded: reserveIncluded,
+        failed: failed.length,
+      ),
       failed: failed.length,
-      partial: plan.skipped > 0,
+      partial: plan.emptyContent.isNotEmpty,
     );
   }
 
@@ -579,11 +602,14 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
           )
         : (selecting && selectedItems.isNotEmpty)
         ? WorkQueueSelectionBar(
+            // Réserve de fidélité comprise : un lot avertit plutôt que de
+            // l'exclure, voir `_validateDrafts`. Le compte affiché doit donc
+            // annoncer ce qui sera réellement validé après confirmation.
             validateCount: selectedDrafts.isEmpty
                 ? null
                 : planDraftValidation(
                     selectedDrafts.map((d) => d.recipe),
-                  ).toValidate.length,
+                  ).validatableInBatch,
             retryCount: retryableJobs.isEmpty ? null : retryableJobs.length,
             deleteCount: selectedItems.length,
             onValidate: () => _validateDrafts(
