@@ -682,18 +682,16 @@ interface SetAiRoutingPolicyRequest {
  * Pose, en chemins à points, une clé par entrée de `next` et un
  * `FieldValue.delete()` par entrée de `current` absente de `next`.
  *
- * `set(..., {merge: true})` ne fusionne PAS les clés d'une carte imbriquée
- * fournie dans l'écriture : redonner la carte ENTIÈRE sans une clé ne
- * l'efface pas, elle survit. Retirer `transcription_page` de
- * `anthropicModels` depuis l'écran, enregistrer, puis relire Firestore : la
- * valeur d'avant y était toujours (confirmé le 28 septembre 2026, journal de
- * diagnostic à l'appui). Poser CHAQUE clé par son chemin — jamais la carte
- * entière — est la forme que Firestore résout sans ambiguïté, y compris pour
- * l'effacer : deux raisons de l'utiliser aussi pour les clés qui restent, pas
- * seulement pour celles qui partent. Écrire à la fois `champ` (la carte
- * entière) et `champ.clé` dans le même appel serait par ailleurs refusé par
- * Firestore — un chemin ne peut pas être le préfixe d'un autre dans la même
- * écriture.
+ * Deux essais ont précédé celui-ci. `set(carte: {...}, {merge: true})` ne
+ * supprime pas une clé absente de la carte redonnée : elle survit — constaté
+ * le 28 septembre 2026 sur `transcription_page`, journal de diagnostic à
+ * l'appui. Poser les mêmes chemins à points EN GARDANT `set(..., {merge:
+ * true})` n'a rien changé non plus : cette méthode-là ne les résout pas comme
+ * des chemins imbriqués, elle les prend pour des noms de champs littéraux —
+ * `"anthropic_models.transcription_page"` devenait un champ à part entière,
+ * pas un chemin vers la carte `anthropic_models`. Seul `update()` réserve la
+ * notation à points à cet usage ; c'est lui qui écrit désormais la politique,
+ * voir plus bas.
  */
 export function applyMapDiff(
   target: Record<string, unknown>,
@@ -757,7 +755,12 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
     current.thinking_budgets as Record<string, unknown> | undefined,
   );
 
-  await docRef.set(writeData, { merge: true });
+  // `update()`, pas `set(..., {merge: true})` : c'est la seule des deux
+  // méthodes qui résout une clé à points comme un chemin vers un champ
+  // imbriqué plutôt que comme un nom de champ littéral. Le document existe
+  // toujours à ce point — `getAiRoutingPolicy()` le sème dès sa première
+  // lecture — donc `update()` ne risque pas de le trouver absent.
+  await docRef.update(writeData);
 
   return { policy, anthropicKeyPresent: anthropicApiKey() != null };
 });
@@ -896,7 +899,10 @@ export const aiRoutingPresetsFn = onCall<AiRoutingPresetsRequest>(callableOpts, 
         nextPolicy.thinking_budgets as Record<string, unknown>,
         currentPolicy.thinking_budgets as Record<string, unknown> | undefined,
       );
-      await ref.set(writeData, { merge: true });
+      // update(), pas set(..., {merge: true}) — voir le commentaire
+      // d'`applyMapDiff`. Le préfixe `policy.` ne change rien à l'argument :
+      // `requirePreset` a déjà vérifié que le document existe.
+      await ref.update(writeData);
       break;
     }
 

@@ -16,6 +16,24 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.100 — technique
+
+#### Le chemin à points ne suffisait pas : `set()` ne le lit pas comme `update()`
+
+Le corrigé de v0.22.99 posait les bons chemins (`anthropic_models.transcription_page`) mais par
+`docRef.set(writeData, {merge: true})` — et `set()`, même en fusion, ne résout pas une clé à
+points comme un chemin vers un champ imbriqué : il la prend pour un nom de champ littéral. Le
+poste ne bougeait toujours pas, cette fois parce que l'écriture posait un champ superflu au lieu
+d'atteindre `anthropic_models.transcription_page`.
+
+Seul `update()` réserve la notation à points à cet usage. `setAiRoutingPolicyFn` et l'action
+`update` des préconfigurations appellent désormais `update()`, jamais `set()` — sans risque
+d'y trouver un document absent : le premier existe toujours (`getAiRoutingPolicy()` le sème dès
+sa première lecture), le second vient d'être vérifié par `requirePreset`.
+
+- `callable/aiRoutingCallable.ts` : `docRef.update(writeData)` / `ref.update(writeData)`, à la
+  place de `set(..., {merge: true})`.
+
 ### v0.22.99 — technique
 
 #### Cause trouvée : `set(..., {merge: true})` ne fusionne pas une carte par poste
