@@ -377,14 +377,23 @@ revenait à additionner trois unités différentes.
 | `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
 | `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`, `analyzed_image_units`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
 
-**La grille tarifaire est datée.** Claude Sonnet 5 bénéficie d'un tarif
-d'introduction (2,00 / 10,00 au lieu de 3,00 / 15,00) jusqu'au 31 août 2026.
-La table portait volontairement le tarif plein, au motif qu'une surestimation
-valait mieux qu'une sous-estimation. La facture d'août a montré l'erreur :
-1,20 € estimés contre 0,80 € facturés, **50 % d'écart** — assez pour rendre le
-rapprochement inexploitable, et pour masquer un vrai défaut de comptage le jour
-où il s'en produirait un. Une marge de sécurité posée sur un instrument de
-mesure ne le sécurise pas.
+**La grille tarifaire peut rester périmée sans lever d'erreur.** Claude Sonnet 5
+portait un tarif d'introduction (2,00 / 10,00 au lieu de 3,00 / 15,00) censé
+s'arrêter le 1er septembre 2026. Relu ligne à ligne dans `ai_usage` et comparé
+au rapport de coûts d'Anthropic du 26 septembre 2026, le tarif plein n'a jamais
+pris effet : la page tarifaire d'Anthropic confirme que Sonnet 5 vaut toujours
+2 $ / 10 $. La grille en vigueur portait donc 3 $ / 15 $ depuis un mois sans
+qu'aucun écran ne le signale — un tarif faux ne casse rien, il fait seulement
+mentir le reporting.
+
+La correction vit dans `PRICING_CORRECTIONS` (`ai/pricing.ts`) : une table
+distincte de la grille d'amorçage, faite de valeurs MESURÉES et non d'un repli.
+`backfillAiPricingFn` (Admin → Backfills → « Corriger les tarifs ») l'applique
+à `app_config/ai_pricing` — un modèle déjà au bon tarif n'est pas réécrit, et
+relancer après une première correction ne rend que des modèles « déjà
+corrects ». Une correction de tarif est un cas comme un autre de la règle
+« une écriture ponctuelle passe par Admin › Backfills » : elle ne dépend plus
+de la mémoire de qui corrige, et elle se rejoue sans risque.
 
 Chaque entrée de la table peut donc porter un bloc `introductory`
 (`inputPerMillion`, `outputPerMillion`, `untilIso` — **borne exclue**), et

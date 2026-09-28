@@ -119,6 +119,7 @@ export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 // les recettes (aucun appel). Deux points d'entrée HTTPS pour une même reprise
 // auraient coûté une fonction de plus au déploiement.
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
+export { backfillAiPricingFn } from "./callable/aiPricingBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

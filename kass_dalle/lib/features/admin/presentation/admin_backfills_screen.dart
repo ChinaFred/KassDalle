@@ -494,6 +494,50 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Corrige la grille tarifaire aux valeurs vérifiées du code.
+  ///
+  /// Un seul document Firestore, aucun appel d'IA : pas de progression à
+  /// afficher, juste un avant/après. Réentrant — un tarif déjà corrigé ne
+  /// bouge plus au passage suivant.
+  Future<void> _runBackfillAiPricing() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Corriger les tarifs'),
+        content: const Text(
+          'Applique à la grille tarifaire (Admin › Moteur d\'IA) les valeurs '
+          'vérifiées dans le code — aujourd\'hui, Claude Sonnet 5 à 2 \$ / '
+          '10 \$ au lieu de 3 \$ / 15 \$.\n\n'
+          'Un modèle déjà au bon tarif n\'est pas touché. Aucun appel d\'IA. '
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Corriger'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<
+      ({int corriges, int dejaCorrects, List<Map<String, String>> details})
+    >(
+      label: 'Correction des tarifs en cours...',
+      feature: 'admin_backfill_ai_pricing',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillAiPricing(),
+      format: (r) => r.corriges == 0
+          ? 'Rien à corriger : ${r.dejaCorrects} tarif(s) déjà correct(s).'
+          : '${r.corriges} tarif(s) corrigé(s) : '
+                '${r.details.map((d) => '${d['model']} ${d['avant']} → ${d['apres']}').join(', ')}.',
+    );
+  }
+
   /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
   /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
   String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
@@ -682,6 +726,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À lancer après '
                           '« Produit acheté des ingrédients ».',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.price_change_outlined,
+                      title: 'Corriger les tarifs',
+                      subtitle:
+                          'Applique à la grille tarifaire les valeurs '
+                          'vérifiées du code — Claude Sonnet 5 à 2 \$ / 10 \$ '
+                          'aujourd\'hui. Un tarif déjà correct n\'est pas '
+                          'touché. Aucun appel d\'IA.',
+                      onTap: _busy ? null : _runBackfillAiPricing,
                     ),
                   ],
                 ),

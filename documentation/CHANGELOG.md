@@ -54,8 +54,32 @@ aucun changement de code ne l'accompagne, il reste à le poser depuis l'écran.
 vérifié le 26 septembre 2026 contre la page officielle et contre le rapport de coûts
 d'Anthropic, est 2 $ / 10 $ (voir v0.22.94 et la mémoire du projet). Basculer
 `transcription_page` sur Sonnet 5 sans corriger ce prix ferait mentir le reporting de coûts
-sur un poste dont le volume augmente. À corriger dans Admin → Moteur d'IA, puis
-Admin → Coûts → « Reconstruire les agrégats » avec « Rechiffrer aussi les appels ».
+sur un poste dont le volume augmente. La v0.22.96, ci-dessous, livre le backfill qui corrige
+ce tarif en un clic.
+
+### v0.22.96 — technique
+
+#### Un backfill corrige la grille tarifaire, au lieu d'une saisie à la main
+
+Le tarif de Sonnet 5 restait faux dans `app_config/ai_pricing` (3 $ / 15 $ au lieu de
+2 $ / 10 $) parce que la seule façon de le corriger était une saisie manuelle depuis
+Admin → Tarifs — une valeur tapée à la main, sans trace de sa source, dans le seul endroit
+du projet où un nombre de facturation s'écrit ainsi.
+
+`PRICING_CORRECTIONS` (`ai/pricing.ts`) porte désormais la valeur vérifiée, documentée avec sa
+source. `backfillAiPricingFn`, exposé dans **Admin → Backfills → « Corriger les tarifs »**,
+l'applique à la grille en vigueur : un modèle déjà au bon tarif ressort « déjà correct », les
+autres sont corrigés et comptés. Aucun appel d'IA, un seul document Firestore, réentrant par
+construction — relancer après une première correction ne trouve plus rien à corriger.
+
+Une correction de tarif rejoint ainsi la règle générale du projet : une écriture ponctuelle sur
+des données passe par Admin › Backfills, jamais par une saisie ad hoc ni par un script lancé
+depuis la machine de développement.
+
+- `ai/pricing.ts` : `PRICING_CORRECTIONS`, `pricingNeedsCorrection`.
+- `callable/aiPricingBackfillCallable.ts` : `backfillAiPricingFn`.
+- Client : `GcpBillingRepository.backfillAiPricing`, tuile « Corriger les tarifs » dans
+  `AdminBackfillsScreen`.
 
 ## 2026-09-27
 
