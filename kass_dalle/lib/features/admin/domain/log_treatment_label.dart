@@ -38,6 +38,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'rattrapage_nutrition': 'Rattrapage quotidien de la nutrition',
   'backfill_nutrition': 'Reprise de la nutrition demandée',
   'backfill_recipe_privacy': 'Reprise de la confidentialité des recettes',
+  'backfill_ai_pricing': 'Correction de la grille tarifaire',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',
   'polish_cooklang': 'Mise au propre d\'une recette',

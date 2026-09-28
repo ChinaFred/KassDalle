@@ -702,6 +702,16 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     for (final entry in draft.thinkingBudgets.entries) {
       if (loaded.thinkingBudgets[entry.key] != entry.value) return true;
     }
+    // Même garde que le modèle et le plafond, pour le même risque : sans elle,
+    // ne changer QUE des efforts de réflexion laisse `_dirty` à faux, la barre
+    // d'enregistrement ne s'affiche pas, et `PopScope` laisse quitter l'écran
+    // sans prévenir — vingt-sept réglages perdus en silence.
+    if (draft.anthropicEfforts.length != loaded.anthropicEfforts.length) {
+      return true;
+    }
+    for (final entry in draft.anthropicEfforts.entries) {
+      if (loaded.anthropicEfforts[entry.key] != entry.value) return true;
+    }
     return false;
   }
 
@@ -755,7 +765,32 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     AiRoutingPolicy? draft,
   ) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Moteur d\'IA')),
+      appBar: AppBar(
+        title: const Text('Moteur d\'IA'),
+        actions: [
+          // Doublon volontaire de la barre du bas : celle-ci vit en fin d'un
+          // formulaire de plus de quarante postes, et se confond au premier
+          // coup d'œil avec « Enregistrer sous… » de la carte des
+          // préconfigurations — deux boutons qui portent presque le même nom,
+          // l'un range une configuration à part, l'autre écrit le routage en
+          // vigueur. Celui-ci reste sous les yeux, sans défilement possible.
+          IconButton(
+            tooltip: _saving
+                ? 'Enregistrement en cours…'
+                : _dirty
+                ? 'Enregistrer le routage en vigueur'
+                : 'Aucune modification à enregistrer',
+            onPressed: (_saving || !_dirty) ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+          ),
+        ],
+      ),
       body: _loadError != null
           ? _ErrorState(error: _loadError!, onRetry: _load)
           : (snapshot == null || draft == null)
@@ -1030,7 +1065,10 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                 // montants qu'il produit.
                 //
                 // Le bouton d'enregistrement n'est plus ici non plus : il vit
-                // dans la barre du bas, voir `bottomNavigationBar`.
+                // dans la barre du bas (`bottomNavigationBar`) et dans le
+                // bandeau (`appBar.actions`), pour rester visible sans
+                // défiler jusqu'en bas d'un formulaire de plus de quarante
+                // postes.
                 const SizedBox(height: 20),
               ],
             ),

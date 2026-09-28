@@ -16,6 +16,53 @@ anciennes sans accents.
 
 ## 2026-09-28
 
+### v0.22.97 — technique
+
+#### Le bouton Enregistrer de Moteur d'IA était hors champ
+
+Ajouter `anthropicEfforts` (v0.22.95) a manqué la comparaison `_dirty` de l'écran : ne
+changer QUE des efforts de réflexion laissait le drapeau à faux, la barre d'enregistrement ne
+s'affichait pas, et `PopScope` laissait quitter l'écran sans prévenir. Un cas réel l'a montré :
+vingt-sept efforts posés à la main, aucun bouton visible, rien enregistré — la configuration
+avait fini dans une préconfiguration nommée (« Enregistrer sous… ») au lieu du routage en
+vigueur, faute de trouver le bon bouton.
+
+Deux corrections :
+
+- `_dirty` compare désormais aussi `anthropicEfforts`, comme il le fait déjà pour le modèle et
+  le plafond de raisonnement par poste.
+- Une icône « Enregistrer » rejoint le bandeau du haut, toujours visible, en plus de la barre du
+  bas qui vit en fin d'un formulaire de plus de quarante postes — et se confondait au premier
+  coup d'œil avec « Enregistrer sous… », qui range une préconfiguration à part sans toucher au
+  routage en vigueur.
+
+- `ai_routing_screen.dart` : `_dirty` (comparaison `anthropicEfforts`), icône dans
+  `appBar.actions`.
+
+### v0.22.96 — technique
+
+#### Un backfill corrige la grille tarifaire, au lieu d'une saisie à la main
+
+Le tarif de Sonnet 5 restait faux dans `app_config/ai_pricing` (3 $ / 15 $ au lieu de
+2 $ / 10 $) parce que la seule façon de le corriger était une saisie manuelle depuis
+Admin → Tarifs — une valeur tapée à la main, sans trace de sa source, dans le seul endroit
+du projet où un nombre de facturation s'écrit ainsi.
+
+`PRICING_CORRECTIONS` (`ai/pricing.ts`) porte désormais la valeur vérifiée, documentée avec sa
+source. `backfillAiPricingFn`, exposé dans **Admin → Backfills → « Corriger les tarifs »**,
+l'applique à la grille en vigueur : un modèle déjà au bon tarif ressort « déjà correct », les
+autres sont corrigés et comptés. Aucun appel d'IA, un seul document Firestore, réentrant par
+construction — relancer après une première correction ne trouve plus rien à corriger.
+
+Une correction de tarif rejoint ainsi la règle générale du projet : une écriture ponctuelle sur
+des données passe par Admin › Backfills, jamais par une saisie ad hoc ni par un script lancé
+depuis la machine de développement.
+
+- `ai/pricing.ts` : `PRICING_CORRECTIONS`, `pricingNeedsCorrection`.
+- `callable/aiPricingBackfillCallable.ts` : `backfillAiPricingFn`.
+- Client : `GcpBillingRepository.backfillAiPricing`, tuile « Corriger les tarifs » dans
+  `AdminBackfillsScreen`.
+
 ### v0.22.95 — technique
 
 #### L'effort de réflexion Claude se règle depuis Admin, poste par poste
@@ -54,32 +101,8 @@ aucun changement de code ne l'accompagne, il reste à le poser depuis l'écran.
 vérifié le 26 septembre 2026 contre la page officielle et contre le rapport de coûts
 d'Anthropic, est 2 $ / 10 $ (voir v0.22.94 et la mémoire du projet). Basculer
 `transcription_page` sur Sonnet 5 sans corriger ce prix ferait mentir le reporting de coûts
-sur un poste dont le volume augmente. La v0.22.96, ci-dessous, livre le backfill qui corrige
+sur un poste dont le volume augmente. La v0.22.96, ci-dessus, livre le backfill qui corrige
 ce tarif en un clic.
-
-### v0.22.96 — technique
-
-#### Un backfill corrige la grille tarifaire, au lieu d'une saisie à la main
-
-Le tarif de Sonnet 5 restait faux dans `app_config/ai_pricing` (3 $ / 15 $ au lieu de
-2 $ / 10 $) parce que la seule façon de le corriger était une saisie manuelle depuis
-Admin → Tarifs — une valeur tapée à la main, sans trace de sa source, dans le seul endroit
-du projet où un nombre de facturation s'écrit ainsi.
-
-`PRICING_CORRECTIONS` (`ai/pricing.ts`) porte désormais la valeur vérifiée, documentée avec sa
-source. `backfillAiPricingFn`, exposé dans **Admin → Backfills → « Corriger les tarifs »**,
-l'applique à la grille en vigueur : un modèle déjà au bon tarif ressort « déjà correct », les
-autres sont corrigés et comptés. Aucun appel d'IA, un seul document Firestore, réentrant par
-construction — relancer après une première correction ne trouve plus rien à corriger.
-
-Une correction de tarif rejoint ainsi la règle générale du projet : une écriture ponctuelle sur
-des données passe par Admin › Backfills, jamais par une saisie ad hoc ni par un script lancé
-depuis la machine de développement.
-
-- `ai/pricing.ts` : `PRICING_CORRECTIONS`, `pricingNeedsCorrection`.
-- `callable/aiPricingBackfillCallable.ts` : `backfillAiPricingFn`.
-- Client : `GcpBillingRepository.backfillAiPricing`, tuile « Corriger les tarifs » dans
-  `AdminBackfillsScreen`.
 
 ## 2026-09-27
 
