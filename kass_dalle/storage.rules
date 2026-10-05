@@ -54,13 +54,10 @@ service firebase.storage {
       return isActive() && request.auth.token.role == 'admin';
     }
 
-    /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers.
-    ///
-    /// Ne concerne que l'ÉCRITURE. Les lectures restent sur `isActive()` :
-    /// fermer aussi la lecture ferait clignoter les images de tout utilisateur
-    /// dont le jeton n'a pas encore été renouvelé, pour un gain nul — les URL
-    /// de téléchargement ne se devinent pas, et un compte en attente n'a aucun
-    /// écran d'où les découvrir.
+    /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers,
+    /// et désormais pour leur lecture — un compte `pending` ne doit pas plus
+    /// lire une image partagée qu'il ne lit un livre ou une recette côté
+    /// Firestore.
     function isApprovedToken() {
       return isActive()
         && request.auth.token.role in ['reader', 'editor', 'admin'];
@@ -111,7 +108,7 @@ service firebase.storage {
     // modération avant d'atterrir ici. Laisser le client y écrire en direct
     // rendrait la modération contournable en une ligne de code.
     match /covers/{allPaths=**} {
-      allow read: if isActive();
+      allow read: if isApprovedToken();
       allow write: if false;
     }
 
@@ -156,7 +153,7 @@ service firebase.storage {
 
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow read: if isApprovedToken();
       allow write: if false;
     }
 
@@ -177,7 +174,7 @@ service firebase.storage {
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow read: if isApprovedToken();
       allow write: if false;
     }
 
@@ -185,13 +182,13 @@ service firebase.storage {
     // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle ne
     // peut pas être une égalité d'uid. Il porte donc sur le rôle.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isActive();
+      allow read: if isApprovedToken();
       allow write: if false;
     }
 
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow read: if isApprovedToken();
       allow write: if false;
     }
   }

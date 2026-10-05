@@ -341,10 +341,12 @@ async function runChain(args: {
       y: (y / 1000) * fullHeight,
     })) as PixelQuad;
 
-    page = await warpQuadrilateral(upright, pixelQuad, {
-      maxWorkDimension: PAGE_MAX_DIMENSION,
-      quality: 95,
-    });
+    page = Buffer.from(
+      await warpQuadrilateral(upright, pixelQuad, {
+        maxWorkDimension: PAGE_MAX_DIMENSION,
+        quality: 95,
+      }),
+    );
   }
 
   // ── 4. À l'endroit ────────────────────────────────────────────────────────

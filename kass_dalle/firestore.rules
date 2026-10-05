@@ -201,7 +201,7 @@ service cloud.firestore {
       // Annotations
       match /annotations/{annotationId} {
         allow read: if isApproved();
-        allow create: if isApproved();
+        allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
         allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
     }
@@ -222,7 +222,9 @@ service cloud.firestore {
       allow read: if isApproved() &&
         (resource.data.owner_id == request.auth.uid
           || request.auth.uid in resource.data.member_ids);
-      allow create: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.owner_id == request.auth.uid
+        && request.resource.data.member_ids == [request.auth.uid];
       allow update, delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
     }
 
@@ -236,10 +238,37 @@ service cloud.firestore {
     // rien de confidentiel, et l'écran doit pouvoir annoncer ce que coûtera une
     // génération à celui qui la déclenche — pas seulement à un administrateur.
     // Son écriture reste réservée aux administrateurs, via la Cloud Function.
+    // Le client écrit toujours exactement trois champs sur `usage` :
+    // `storage_bytes`, `updated_at`, et un compteur mensuel nommé
+    // dynamiquement (`scans_2026_10`). Un `hasOnly()` ne peut lister un nom
+    // qui change chaque mois qu'en le construisant depuis la date du jour.
+    // Le mois précédent est toléré en plus du mois courant, pour couvrir un
+    // décalage d'horloge client autour d'un changement de mois. Sans cette
+    // liste, un compte non-administrateur pouvait réécrire ce document avec
+    // n'importe quel contenu, y compris falsifier les compteurs affichés.
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+    function scansKeyFor(y, m) {
+      return 'scans_' + string(y) + '_' + pad2(m);
+    }
+    function currentScansKey() {
+      return scansKeyFor(request.time.year(), request.time.month());
+    }
+    function previousScansKey() {
+      return request.time.month() == 1
+        ? scansKeyFor(request.time.year() - 1, 12)
+        : scansKeyFor(request.time.year(), request.time.month() - 1);
+    }
+
     match /app_config/{docId} {
       allow read: if isAdmin() ||
                      (isApproved() && (docId == 'usage' || docId == 'ai_pricing'));
-      allow write: if isAdmin() || (isApproved() && docId == 'usage');
+      allow write: if isAdmin() || (
+        isApproved() && docId == 'usage' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['storage_bytes', 'updated_at', currentScansKey(), previousScansKey()])
+      );
     }
 
     // Configurations de routage enregistrées.

@@ -26,7 +26,7 @@
  * laid de près, parfaitement lisible à 900 px, et ça ne dépend de rien.
  */
 
-import type sharpType from "sharp";
+import type { OverlayOptions } from "sharp";
 
 /** L'ordre des cases. La case A porte la page telle quelle. */
 export const SHEET_ROTATIONS: readonly number[] = [0, 90, 180, 270];
@@ -108,7 +108,7 @@ export async function buildOrientationSheet(bytes: Buffer): Promise<OrientationS
   const sheetWidth = CELL * 2;
   const sheetHeight = (CELL + BAND) * 2;
 
-  const layers: sharpType.OverlayOptions[] = [];
+  const layers: OverlayOptions[] = [];
 
   for (let index = 0; index < SHEET_ROTATIONS.length; index++) {
     const rotation = SHEET_ROTATIONS[index];

@@ -1,32 +1,22 @@
 /**
- * Liste de courses — deux reprises de l'existant, une seule fonction.
+ * Liste de courses — recalcule `shopping_products` sur toutes les recettes,
+ * sans appel de modèle.
  *
- * `mode: "aliases"` — le PRODUIT ACHETÉ de chaque ingrédient du référentiel.
- * « Beurre fondu » s'achète en beurre, « jaune d'œuf » en œufs : ce jugement
- * était rendu par le modèle quand il composait la liste, et l'addition qui l'a
- * remplacé ne le rend pas. Une fois pour toutes, par lots de quarante noms, le
- * modèle dit pour chaque ingrédient sans `shopping_product` ce qu'on achète.
- * Le champ vide veut dire « le nom est déjà le produit » : l'ingrédient n'est
- * pas redemandé. Poste de coût `backfill_shopping_aliases`. Aucun appel par
- * recette ensuite.
+ * Le déclencheur d'écriture ne recalcule que si les ingrédients changent :
+ * après un changement de règle de regroupement, les recettes existantes
+ * garderaient leurs anciennes lignes. Une recette dont le résultat ne change
+ * pas n'est pas réécrite.
  *
- * `mode: "products"` — RECALCULE `shopping_products` sur toutes les recettes,
- * sans appel de modèle. Le déclencheur d'écriture ne recalcule que si les
- * ingrédients changent : après un changement de règle de regroupement, ou un
- * alias posé, les recettes existantes garderaient leurs anciennes lignes. Une
- * recette dont le résultat ne change pas n'est pas réécrite.
- *
- * Les deux modes sont réentrants, bornés par le délai et par un nombre de
- * documents par appel, et reprennent où l'appel précédent s'est arrêté — un
- * curseur par mode, le compte rendu du dernier passage posé à côté.
+ * Réentrante, bornée par le délai et par un nombre de documents par appel, et
+ * reprend où l'appel précédent s'est arrêté — curseur et compte rendu du
+ * dernier passage posés à côté.
  */
 
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { onCall } from "firebase-functions/v2/https";
+import { getFirestore } from "firebase-admin/firestore";
 
 import {
   ANTHROPIC_API_KEY,
-  COLL_NUTRITION_INGREDIENTS,
   COLL_RECIPES,
   GEMINI_API_KEY,
   MAX_CALLABLE_INSTANCES,
@@ -34,11 +24,6 @@ import {
 } from "../config";
 import { logError, logInfo } from "../logging";
 import { deriveShoppingProducts, type ShoppingProduct } from "../nutrition/shoppingDerivation";
-import { writeDocsMerged } from "../nutrition/firestoreBatch";
-import {
-  resolveShoppingAliasBatch,
-  type ShoppingAliasCandidate,
-} from "../nutrition/shoppingAliases";
 import { shoppingAliasesOrNone, shoppingInputsOf } from "../triggers/recipeShoppingProducts";
 import type { StoredIngredient } from "../triggers/recipeIngredients";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
@@ -49,17 +34,11 @@ const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.firebaseapp.com",
 ];
 
-/** Où chaque mode retient le dernier document examiné. */
-export const SHOPPING_ALIASES_CHECKPOINT_DOC_ID = "shopping_aliases_backfill_checkpoint";
+/** Où l'on retient le dernier document examiné. */
 export const SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID = "shopping_products_backfill_checkpoint";
 
-const ALIASES_FEATURE = "backfill_shopping_aliases";
 const PRODUCTS_FEATURE = "shopping_products_backfill";
 
-/** Ingrédients soumis au modèle en un appel. */
-const ALIAS_BATCH = 40;
-/** Ingrédients demandés au modèle par appel de la fonction, par défaut. */
-const DEFAULT_MAX_ALIASES = 400;
 /** Recettes recalculées par appel de la fonction, par défaut. */
 const DEFAULT_MAX_RECIPES = 500;
 const PAGE_SIZE = 200;
@@ -68,36 +47,22 @@ const DEADLINE_MARGIN_MS = 45_000;
 /** Trois échecs de suite : une panne, pas trois lots difficiles. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-type Mode = "aliases" | "products";
-
 interface BackfillShoppingRequest {
-  mode?: Mode;
   maxMinutes?: number;
   maxDocs?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
-  /** Redemander aussi les ingrédients qui portent déjà un produit acheté. */
-  force?: boolean;
 }
 
 interface BackfillShoppingResponse {
-  mode: Mode;
   examinees: number;
-  /** Mode alias : ingrédients qui portaient déjà le champ. */
-  dejaRenseignes: number;
-  /** Mode alias : un produit différent du nom a été posé. */
-  renseignes: number;
-  /** Mode alias : le nom est déjà le produit — champ vide posé. */
-  inchanges: number;
-  /** Mode alias : le modèle n'a rien dit pour cet ingrédient ; redemandé au prochain passage. */
-  sansReponse: number;
-  /** Mode recettes : `shopping_products` réécrit. */
+  /** `shopping_products` réécrit. */
   recalculees: number;
-  /** Mode recettes : résultat identique, rien d'écrit. */
+  /** Résultat identique, rien d'écrit. */
   identiques: number;
-  /** Mode recettes : pas d'ingrédients, liste vide. */
+  /** Pas d'ingrédients, liste vide. */
   sansIngredients: number;
-  /** Mode recettes : page qui n'est pas une recette. */
+  /** Page qui n'est pas une recette. */
   horsRecette: number;
   echouees: number;
   collectionParcourue: boolean;
@@ -108,14 +73,9 @@ interface BackfillShoppingResponse {
   completed: boolean;
 }
 
-function emptyResponse(mode: Mode): BackfillShoppingResponse {
+function emptyResponse(): BackfillShoppingResponse {
   return {
-    mode,
     examinees: 0,
-    dejaRenseignes: 0,
-    renseignes: 0,
-    inchanges: 0,
-    sansReponse: 0,
     recalculees: 0,
     identiques: 0,
     sansIngredients: 0,
@@ -132,137 +92,6 @@ function emptyResponse(mode: Mode): BackfillShoppingResponse {
 interface Bounds {
   deadline: number;
   maxDocs: number;
-  force: boolean;
-}
-
-// ── Mode alias ──────────────────────────────────────────────────────────────
-
-/** Nom lisible d'un document du référentiel : son nom canonique, sinon son identifiant. */
-function ingredientDisplayName(id: string, data: Record<string, unknown>): string {
-  const canonical = typeof data.canonical_name === "string" ? data.canonical_name.trim() : "";
-  return canonical || id.replace(/_/g, " ");
-}
-
-/**
- * Demande au modèle le produit acheté d'un lot d'ingrédients, et l'écrit.
- *
- * La résolution — prompt, repli sur un produit déjà connu du référentiel —
- * est partagée avec l'écriture automatique d'un ingrédient neuf
- * (`resolveShoppingAliasBatch`) : un seul endroit décide ce qu'on achète.
- * Ici s'ajoutent les compteurs du passage et l'écriture Firestore.
- */
-async function askAliasesForBatch(
-  batch: ShoppingAliasCandidate[],
-  ctx: AuthContext,
-  counters: BackfillShoppingResponse,
-): Promise<void> {
-  const resolutions = await resolveShoppingAliasBatch(batch, {
-    correlationId: ctx.correlationId,
-    userId: ctx.userId,
-    feature: ALIASES_FEATURE,
-  });
-
-  const updates = new Map<string, Record<string, unknown>>();
-  for (const r of resolutions) {
-    updates.set(r.id, {
-      shopping_product: r.product,
-      shopping_product_source: "ai_estimated",
-      updated_at: FieldValue.serverTimestamp(),
-    });
-    if (r.product === "") counters.inchanges += 1;
-    else counters.renseignes += 1;
-  }
-  counters.sansReponse += batch.length - resolutions.length;
-  await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
-}
-
-async function runAliasesMode(
-  db: FirebaseFirestore.Firestore,
-  ctx: AuthContext,
-  bounds: Bounds,
-  startAfter: string | null,
-): Promise<{ response: BackfillShoppingResponse; cursor: string | null }> {
-  const response = emptyResponse("aliases");
-  let cursor = startAfter;
-  let consecutiveFailures = 0;
-  let asked = 0;
-  let batch: ShoppingAliasCandidate[] = [];
-
-  const flush = async (): Promise<void> => {
-    if (batch.length === 0) return;
-    const current = batch;
-    batch = [];
-    try {
-      await askAliasesForBatch(current, ctx, response);
-      consecutiveFailures = 0;
-    } catch (e) {
-      response.echouees += current.length;
-      consecutiveFailures += 1;
-      await logError("Produit acheté des ingrédients — échec d'un lot", {
-        correlationId: ctx.correlationId,
-        userId: ctx.userId,
-        moduleType: "DESIGN",
-        geminiStatus: "ERROR",
-        feature: ALIASES_FEATURE,
-        errorDescription: e instanceof Error ? e.message : String(e),
-        extra: { lot: current.map((p) => p.name), consecutiveFailures },
-      });
-    }
-  };
-
-  pages: for (;;) {
-    let query = db.collection(COLL_NUTRITION_INGREDIENTS).orderBy("__name__").limit(PAGE_SIZE);
-    if (cursor) query = query.startAfter(cursor);
-    const page = await query.get();
-    if (page.empty) {
-      response.collectionParcourue = true;
-      break;
-    }
-
-    for (const doc of page.docs) {
-      if (Date.now() > bounds.deadline) {
-        response.stoppedByDeadline = true;
-        break pages;
-      }
-      if (asked >= bounds.maxDocs) {
-        response.stoppedByBudget = true;
-        break pages;
-      }
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        response.stoppedByErrors = true;
-        break pages;
-      }
-
-      response.examinees += 1;
-      const data = doc.data() as Record<string, unknown>;
-      if (!bounds.force && typeof data.shopping_product === "string") {
-        response.dejaRenseignes += 1;
-        cursor = doc.id;
-        continue;
-      }
-      batch.push({ id: doc.id, name: ingredientDisplayName(doc.id, data) });
-      asked += 1;
-      cursor = doc.id;
-      if (batch.length >= ALIAS_BATCH) await flush();
-    }
-
-    await flush();
-    await setBackfillCursor({
-      db,
-      docId: SHOPPING_ALIASES_CHECKPOINT_DOC_ID,
-      lastDocId: cursor,
-      operation: ALIASES_FEATURE,
-      adminUid: ctx.userId,
-    });
-
-    if (page.size < PAGE_SIZE) {
-      response.collectionParcourue = true;
-      break;
-    }
-  }
-  await flush();
-
-  return { response, cursor };
 }
 
 // ── Mode recettes ───────────────────────────────────────────────────────────
@@ -288,7 +117,7 @@ async function runProductsMode(
   bounds: Bounds,
   startAfter: string | null,
 ): Promise<{ response: BackfillShoppingResponse; cursor: string | null }> {
-  const response = emptyResponse("products");
+  const response = emptyResponse();
   let cursor = startAfter;
   let consecutiveFailures = 0;
   let treated = 0;
@@ -399,45 +228,32 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<BackfillShoppingResponse> => {
-    const mode = req.data?.mode;
-    if (mode !== "aliases" && mode !== "products") {
-      throw new HttpsError("invalid-argument", "mode attendu : « aliases » ou « products »");
-    }
-    const feature = mode === "aliases" ? ALIASES_FEATURE : PRODUCTS_FEATURE;
-    const checkpointDocId =
-      mode === "aliases" ? SHOPPING_ALIASES_CHECKPOINT_DOC_ID : SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID;
-    const defaultMaxDocs = mode === "aliases" ? DEFAULT_MAX_ALIASES : DEFAULT_MAX_RECIPES;
-
-    const ctx = await requireAdmin(req, feature);
+    const ctx = await requireAdmin(req, PRODUCTS_FEATURE);
     const db = getFirestore();
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8);
     const maxMinutes = Number.isFinite(maxMinutesRaw)
       ? Math.max(1, Math.min(8.5, maxMinutesRaw))
       : 8;
-    const maxDocsRaw = Number(req.data?.maxDocs ?? defaultMaxDocs);
+    const maxDocsRaw = Number(req.data?.maxDocs ?? DEFAULT_MAX_RECIPES);
     const maxDocs = Number.isFinite(maxDocsRaw)
       ? Math.max(1, Math.min(5000, Math.trunc(maxDocsRaw)))
-      : defaultMaxDocs;
+      : DEFAULT_MAX_RECIPES;
     const bounds: Bounds = {
       deadline: Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS,
       maxDocs,
-      force: parseBoolean(req.data?.force, false),
     };
     const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
     const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
     const startAfter = await getBackfillCursor({
       db,
-      docId: checkpointDocId,
+      docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
       resumeFromCheckpoint,
       resetCheckpoint,
     });
 
-    const { response, cursor } =
-      mode === "aliases"
-        ? await runAliasesMode(db, ctx, bounds, startAfter)
-        : await runProductsMode(db, ctx, bounds, startAfter);
+    const { response, cursor } = await runProductsMode(db, ctx, bounds, startAfter);
     response.completed = response.collectionParcourue;
 
     // Le curseur revient au début quand tout est passé ; sinon il retient le
@@ -445,23 +261,20 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
     // relit à l'ouverture, pour qui a quitté la page avant la fin du passage.
     await setBackfillCursor({
       db,
-      docId: checkpointDocId,
+      docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
       lastDocId: response.collectionParcourue ? null : cursor,
-      operation: feature,
+      operation: PRODUCTS_FEATURE,
       adminUid: ctx.userId,
       lastReport: { ...response },
     });
 
     await logInfo({
-      message:
-        mode === "aliases"
-          ? "Produit acheté des ingrédients — rattrapage"
-          : "Produits d'achat des recettes — recalcul",
+      message: "Produits d'achat des recettes — recalcul",
       correlationId: ctx.correlationId,
       userId: ctx.userId,
       moduleType: "DESIGN",
-      feature,
-      extra: { ...response, maxMinutes, maxDocs, force: bounds.force },
+      feature: PRODUCTS_FEATURE,
+      extra: { ...response, maxMinutes, maxDocs },
     });
 
     return response;

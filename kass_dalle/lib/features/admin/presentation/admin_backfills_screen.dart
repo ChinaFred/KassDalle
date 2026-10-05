@@ -265,49 +265,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runBackfillRecipePrivacy() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reprendre la confidentialité'),
-        content: const Text(
-          'Pose « privé » ou « partagé » sur chaque recette, d\'après le livre '
-          'qui la porte.\n\n'
-          'À lancer une fois, après la mise en service du champ. Les recettes '
-          'écrites avant ne le portent pas, et Firestore n\'assimile pas un '
-          'champ absent à « partagé » : sans cette passe, elles disparaîtraient '
-          'de la recherche et du planning de la famille.\n\n'
-          'Aucun appel d\'IA, aucun coût de modèle. Idempotent, avec reprise sur '
-          'point de contrôle : relancez tant que le résultat indique '
-          '« incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Reprise de la confidentialité en cours...',
-      feature: 'admin_backfill_recipe_privacy',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipePrivacy(),
-      format: (r) =>
-          'Recettes: examinées=${r['examinees']}, corrigées=${r['corrigees']}, '
-          'passées en privé=${r['passeesEnPrive']} '
-          '(${r['livresPrives']} livre(s) privé(s))'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
-  }
-
   /// Sème le référentiel des garnitures simples.
   ///
   /// Une écriture ponctuelle, donc ici et non dans l'écran du référentiel :
@@ -395,57 +352,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runBackfillShoppingAliases() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Produit acheté des ingrédients'),
-        content: const Text(
-          'Rattrape le passé : un ingrédient neuf reçoit désormais son '
-          'produit acheté tout seul, dès son import. Ce backfill traite ce '
-          'qui existait déjà avant ce changement — pour chaque ingrédient du '
-          'référentiel qui n\'a pas encore le champ, le modèle dit ce qu\'on '
-          'achète : « beurre fondu » s\'achète en beurre, « jaune d\'œuf » en '
-          'œufs. Un ingrédient qui est déjà le produit reçoit un champ vide '
-          'et n\'est pas redemandé.\n\n'
-          'Un appel de modèle par lot de quarante ingrédients, quatre cents '
-          'ingrédients par passage. Idempotent, avec reprise sur point de '
-          'contrôle : relancez tant que le résultat indique « incomplet ». '
-          'Ensuite, lancez « Recalculer les produits d\'achat » pour que les '
-          'recettes existantes s\'en servent. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Produit acheté des ingrédients en cours...',
-      feature: 'admin_backfill_shopping_aliases',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillShopping(mode: 'aliases'),
-      format: (r) =>
-          'Ingrédients : examinés=${r['examinees']}, '
-          'déjà renseignés=${r['dejaRenseignes']}, '
-          'produit posé=${r['renseignes']}, déjà le produit=${r['inchanges']}, '
-          'sans réponse=${r['sansReponse']}, échecs=${r['echouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
-          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
-  }
-
   Future<void> _runBackfillShoppingProducts() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -479,9 +385,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Recalcul des produits d\'achat en cours...',
       feature: 'admin_backfill_shopping_products',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillShopping(mode: 'products'),
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillShopping(),
       format: (r) =>
           'Recettes : examinées=${r['examinees']}, '
           'recalculées=${r['recalculees']}, identiques=${r['identiques']}, '
@@ -557,7 +461,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  // Trois opérations ont quitté cet écran, et le code derrière elles avec.
+  // Cinq opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
   // le déclencheur `syncUserClaims` n'existe. Ce déclencheur écrit désormais les
@@ -576,6 +480,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // écritures passent toutes par le même normalisateur : l'audit n'a plus rien
   // à constater. Si la règle change à nouveau, l'outil se retrouve dans
   // l'historique git, écrit pour cette occasion-là.
+  //
+  // « Reprendre la confidentialité » a posé `is_private` sur tout le fonds
+  // antérieur au champ. Passée au complet le 5 octobre 2026 — la politique IAM
+  // qui la rendait inappelable venait d'être corrigée le même jour. Toute
+  // recette écrite depuis porte le champ dès sa création.
+  //
+  // « Produit acheté des ingrédients » (mode `aliases` de la reprise de la
+  // liste de courses) a demandé au modèle le produit acheté de chaque
+  // ingrédient antérieur du référentiel qui n'en avait pas. Passée au complet.
+  // Un ingrédient neuf le reçoit désormais seul, à l'import ; `products` —
+  // le recalcul de `shopping_products` sur les recettes, lui, reste réutilisé
+  // à chaque changement de règle de regroupement.
   //
   // Reste ici la seule opération qui ait encore du travail à chaque exécution :
   // les référentiels reçoivent de nouveaux ingrédients à chaque recette.
@@ -672,17 +588,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(
-                      icon: Icons.lock_outline,
-                      title: 'Reprendre la confidentialité',
-                      subtitle:
-                          'Pose « privé » ou « partagé » sur chaque recette, d\'après '
-                          'son livre. À lancer une fois : les recettes antérieures ne '
-                          'portent pas le champ, et un champ absent les exclut des '
-                          'écrans de la famille.',
-                      onTap: _busy ? null : _runBackfillRecipePrivacy,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
                       icon: Icons.rice_bowl_outlined,
                       title: 'Semer les garnitures simples',
                       subtitle:
@@ -705,26 +610,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(
-                      icon: Icons.shopping_basket_outlined,
-                      title: 'Produit acheté des ingrédients',
-                      subtitle:
-                          'Rattrape le passé : un ingrédient neuf le reçoit '
-                          'déjà tout seul à l\'import. Demande au modèle, '
-                          'pour chaque ingrédient antérieur du référentiel, '
-                          'le produit qu\'on achète : beurre fondu → beurre, '
-                          'jaune d\'œuf → œuf. Se corrige aussi à la main '
-                          'dans Référentiels › Ingrédients.',
-                      onTap: _busy ? null : _runBackfillShoppingAliases,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
                       icon: Icons.shopping_cart_outlined,
                       title: 'Recalculer les produits d\'achat',
                       subtitle:
                           'Refait la liste de courses de toutes les recettes '
                           'avec la règle du jour et les produits achetés du '
-                          'référentiel. Aucun appel d\'IA. À lancer après '
-                          '« Produit acheté des ingrédients ».',
+                          'référentiel. Aucun appel d\'IA. À relancer après '
+                          'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
                     ),
                     const SizedBox(height: 8),
