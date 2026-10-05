@@ -12,7 +12,11 @@ const _statuses = <String>['known', 'unknown', 'pending_review', 'deprecated'];
 const _sources = <String>['builtin', 'fallback_auto', 'admin_validated'];
 
 class NutritionUnitsScreen extends ConsumerStatefulWidget {
-  const NutritionUnitsScreen({super.key});
+  /// Préremplit la recherche — utilisé par le dashboard de qualité des
+  /// données pour ouvrir l'écran directement sur l'unité concernée.
+  final String? initialSearch;
+
+  const NutritionUnitsScreen({super.key, this.initialSearch});
 
   @override
   ConsumerState<NutritionUnitsScreen> createState() =>
@@ -20,8 +24,10 @@ class NutritionUnitsScreen extends ConsumerStatefulWidget {
 }
 
 class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
-  final _searchCtrl = TextEditingController();
-  String _search = '';
+  late final _searchCtrl = TextEditingController(
+    text: widget.initialSearch ?? '',
+  );
+  late String _search = widget.initialSearch?.trim() ?? '';
 
   @override
   void dispose() {

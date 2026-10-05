@@ -5,6 +5,7 @@ import '../data/backfill_reports_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
+import '../domain/data_quality_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
@@ -89,6 +90,13 @@ final referentialKpisProvider = FutureProvider.autoDispose<Map<String, int>>((
 ) async {
   return ref.read(gcpBillingRepositoryProvider).getRecipeReferentialKpis();
 });
+
+/// Dashboard de qualité des données, chargé à la demande (bouton Actualiser).
+final dataQualityReportProvider = FutureProvider.autoDispose<DataQualityReport>(
+  (ref) async {
+    return ref.read(gcpBillingRepositoryProvider).getDataQualityReport();
+  },
+);
 
 final backfillReportsRepositoryProvider = Provider<BackfillReportsRepository>(
   (ref) => BackfillReportsRepository(),

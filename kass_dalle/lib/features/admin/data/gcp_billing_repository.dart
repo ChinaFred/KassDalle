@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
@@ -476,6 +477,18 @@ class GcpBillingRepository {
       'nutritionIngredientsPending':
           (data['nutritionIngredientsPending'] as num?)?.toInt() ?? 0,
     };
+  }
+
+  /// Dashboard de qualité des données : quatre anomalies détectées sur les
+  /// référentiels nutrition, en lecture seule. Le scan complet peut prendre
+  /// plusieurs dizaines de secondes sur un gros référentiel.
+  Future<DataQualityReport> getDataQualityReport() async {
+    final dynamic raw = await _callViaSdk(
+      'getDataQualityReportFn',
+      const {},
+      timeout: const Duration(minutes: 3),
+    );
+    return DataQualityReport.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
   /// Corrige en un coup les tarifs de la grille (`app_config/ai_pricing`)

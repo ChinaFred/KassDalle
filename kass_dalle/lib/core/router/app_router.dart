@@ -17,6 +17,7 @@ import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/admin/presentation/admin_backfills_screen.dart';
+import '../../features/admin/presentation/admin_data_quality_screen.dart';
 import '../../features/admin/presentation/monthly_costs_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
 import '../../features/admin/presentation/dead_letters_screen.dart';
@@ -77,6 +78,7 @@ class AppRoutes {
   static const adminNutritionIngredients = '/admin/nutrition-ingredients';
   static const adminNutritionUnits = '/admin/nutrition-units';
   static const adminNutritionPolicy = '/admin/nutrition-policy';
+  static const adminDataQuality = '/admin/data-quality';
   static const adminMealStaples = '/admin/meal-staples';
   static const adminAiRouting = '/admin/ai-routing';
   static const adminAiPricing = '/admin/ai-pricing';
@@ -356,15 +358,22 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: 'nutrition-ingredients',
-                builder: (context, state) => const NutritionIngredientsScreen(),
+                builder: (context, state) => NutritionIngredientsScreen(
+                  initialSearch: state.extra as String?,
+                ),
               ),
               GoRoute(
                 path: 'nutrition-units',
-                builder: (context, state) => const NutritionUnitsScreen(),
+                builder: (context, state) =>
+                    NutritionUnitsScreen(initialSearch: state.extra as String?),
               ),
               GoRoute(
                 path: 'nutrition-policy',
                 builder: (context, state) => const NutritionPolicyScreen(),
+              ),
+              GoRoute(
+                path: 'data-quality',
+                builder: (context, state) => const AdminDataQualityScreen(),
               ),
               GoRoute(
                 path: 'meal-staples',

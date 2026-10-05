@@ -397,6 +397,7 @@ ouvertes sur mobile : rien n'est réservé au grand écran.
 
 - **Rapports d'erreurs** : ce que le client Flutter a remonté — étape, type d'exception, message, pile tronquée, version de l'application, contexte.
 - **Dead Letter Queue** : jobs d'import abandonnés après trois tentatives, avec leur motif — relance ou purge.
+- **Qualité des données** : diagnostic en lecture seule des référentiels nutrition, quatre anomalies — ingrédients sans produit d'achat, nutrition incomplète ou échouée, sel implausible (plus de 100 g pour 100 g de produit), unités de mesure non confirmées. Un compteur exhaustif par catégorie, un échantillon cliquable qui ouvre l'écran du référentiel concerné, recherche préremplie. Aucune écriture : contrairement aux backfills, cet écran ne corrige rien.
 - **Journaux (Cloud Logging)** : explorateur filtré par sévérité, `correlationId`, `scanId`, `jobId`, `userId` ou texte libre. `DEBUG` est masqué par défaut. La lecture se fait à **trois niveaux**, chacun portant son coût, additionné depuis le niveau du dessous :
   1. **le scan** — photographier une page de livre déroule quatre traitements côté serveur (contrôle du fichier, import, détection d'illustrations page par page, nutrition et courses après écriture) ; ils tiennent sous un seul titre, avec le total de ce que ce scan a coûté ;
   2. **l'appel** — chaque appel de modèle, nommé par son poste et suivi de son montant ;

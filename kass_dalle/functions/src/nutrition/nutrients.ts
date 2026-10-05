@@ -26,7 +26,7 @@ export const NUTRIENT_ALIASES: Record<string, string> = {
   salt: "salt_g",
 };
 
-const SALT_TO_SODIUM_FACTOR = 393.4;
+export const SALT_TO_SODIUM_FACTOR = 393.4;
 const SODIUM_TO_SALT_FACTOR = 1 / SALT_TO_SODIUM_FACTOR;
 
 /**

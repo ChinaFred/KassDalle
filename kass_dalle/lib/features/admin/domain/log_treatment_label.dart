@@ -72,6 +72,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'backfill_referentiels': 'Backfill des référentiels',
   'backfill-enrich-referentials': 'Backfill des référentiels',
   'kpis_referentiels': 'Indicateurs des référentiels',
+  'data_quality_dashboard': 'Qualité des données',
   // Replis : ces traitements fabriquaient leur propre fil quand personne ne
   // leur en passait un. Ils en reçoivent un désormais, mais d'anciennes
   // entrées les portent encore.

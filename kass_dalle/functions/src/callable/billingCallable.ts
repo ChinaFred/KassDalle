@@ -205,7 +205,7 @@ async function bigQuery(): Promise<import("@google-cloud/bigquery").BigQuery> {
   return bigqueryClient;
 }
 
-async function ensureAdminWithAudit(
+export async function ensureAdminWithAudit(
   req: Parameters<typeof requireAdmin>[0],
   op: string,
 ): Promise<void> {

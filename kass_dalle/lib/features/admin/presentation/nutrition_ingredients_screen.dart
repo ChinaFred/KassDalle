@@ -8,7 +8,11 @@ import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 class NutritionIngredientsScreen extends ConsumerStatefulWidget {
-  const NutritionIngredientsScreen({super.key});
+  /// Préremplit la recherche — utilisé par le dashboard de qualité des
+  /// données pour ouvrir l'écran directement sur l'ingrédient concerné.
+  final String? initialSearch;
+
+  const NutritionIngredientsScreen({super.key, this.initialSearch});
 
   @override
   ConsumerState<NutritionIngredientsScreen> createState() =>
@@ -17,8 +21,10 @@ class NutritionIngredientsScreen extends ConsumerStatefulWidget {
 
 class _NutritionIngredientsScreenState
     extends ConsumerState<NutritionIngredientsScreen> {
-  final _searchCtrl = TextEditingController();
-  String _search = '';
+  late final _searchCtrl = TextEditingController(
+    text: widget.initialSearch ?? '',
+  );
+  late String _search = widget.initialSearch?.trim() ?? '';
 
   @override
   void dispose() {

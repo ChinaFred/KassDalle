@@ -86,6 +86,7 @@ export {
   backfillEnrichReferentialsFn,
   generateAiReconciliationMonthlyFn,
 } from "./callable/billingCallable";
+export { getDataQualityReportFn } from "./callable/dataQualityCallable";
 export {
   computeRecipeNutritionFn,
   normalizeRecipeReferentialsFn,

@@ -135,6 +135,15 @@ class AdminHubScreen extends ConsumerWidget {
             onTap: () => context.push(AppRoutes.deadLetters),
           ),
           _AdminTile(
+            icon: Icons.fact_check_outlined,
+            color: theme.colorScheme.secondary,
+            title: 'Qualité des données',
+            subtitle:
+                'Produit d\'achat manquant, nutrition incomplète, sel '
+                'implausible, unités non confirmées.',
+            onTap: () => context.push(AppRoutes.adminDataQuality),
+          ),
+          _AdminTile(
             icon: Icons.terminal,
             color: theme.colorScheme.secondary,
             // « Cloud Logging » est le nom du produit Google, pas celui de la
