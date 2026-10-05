@@ -14,6 +14,35 @@ anciennes sans accents.
 
 ---
 
+## 2026-10-05
+
+### v0.22.103 — technique
+
+#### Un backfill restait inappelable depuis sa création, faute de permission Cloud Run
+
+« Reprendre la confidentialité » échouait en pur réseau (« Failed to fetch ») dès le premier
+essai — jamais lancée avant, aucun point de reprise en base. Sa politique IAM Cloud Run
+n'accordait `run.invoker` à personne, alors que toute fonction `onCall` sœur l'accorde à
+`allUsers` (la vraie autorisation reste `requireAdmin`, à l'intérieur de la fonction) : la
+requête `OPTIONS` de préflight recevait un `403` en zéro seconde, avant même d'atteindre le
+code. Comme son code n'avait jamais changé depuis son premier déploiement, chaque
+`deploy.ps1` la passait en « Skipped — No changes detected » et ne reconciliait jamais cette
+politique.
+
+Vérifié par comparaison directe des politiques IAM Cloud Run (`backfillAiPricingFn` : `allUsers`
+→ `run.invoker` ; `backfillRecipePrivacyFn` : aucune liaison). Corrigé en forçant un
+redéploiement réel — un commentaire qui documente l'incident, pas une commande d'infrastructure
+à la main.
+
+Le même passage a mesuré l'arriéré réel de cinq backfills, contre leur dernier compte rendu
+affiché plutôt que leur présomption : 11 recettes sans `is_private`, 309 ingrédients sans
+`shopping_product`, 13 recettes sans rôle de repas, et « Reprendre le sel des ingrédients »
+jamais lancée une seule fois. Aucun n'est aussi définitivement terminé que la correction de la
+grille tarifaire — les référentiels qu'ils corrigent grossissent à chaque import, le travail ne
+se vide jamais pour de bon.
+
+- `callable/privacyBackfillCallable.ts` : commentaire daté, sans changement de comportement.
+
 ## 2026-09-28
 
 ### v0.22.102 — fonctionnel

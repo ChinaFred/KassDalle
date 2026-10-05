@@ -19,6 +19,16 @@
  * À usage unique, mais réentrante : une recette déjà correcte n'est pas
  * réécrite, et le curseur permet de reprendre où l'appel précédent s'est
  * arrêté — un backfill qui repart du début à chaque appel ne finit jamais.
+ *
+ * Restée invocable par personne jusqu'au 5 octobre 2026 : sa politique IAM
+ * Cloud Run n'accordait `run.invoker` à aucun compte, alors que toute
+ * fonction `onCall` sœur l'accorde à `allUsers` (l'autorisation réelle reste
+ * `requireAdmin`, à l'intérieur). Le premier appel échouait donc en pur
+ * réseau — « Failed to fetch » côté client, un `403` de zéro seconde sur la
+ * requête `OPTIONS`, avant même d'atteindre ce fichier. Comme son code n'avait
+ * jamais changé depuis sa création, chaque déploiement la sautait
+ * (« Skipped — No changes detected ») et ne reconciliait jamais cette
+ * politique. Ce commentaire est le changement qui force la reconciliation.
  */
 
 import { onCall } from "firebase-functions/v2/https";
