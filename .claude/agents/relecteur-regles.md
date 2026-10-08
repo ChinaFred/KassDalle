@@ -58,8 +58,10 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
     de `CLAUDE.md` (section « Documentation à tenir à jour ») : pour chaque catégorie
     touchée par le diff, chaque document listé est modifié dans le même diff, et ce qu'il
     dit correspond au code. Un élément retiré du code et encore décrit dans un document est
-    aussi une anomalie, sauf dans `CHANGELOG.md`, qui garde l'historique. Le bac à sable et
-    un libellé modifié sans changement de parcours n'appellent aucun document. Pour un diagramme Mermaid, vérifie les noms (fonctions, collections,
+    aussi une anomalie, sauf dans `CHANGELOG.md`, qui garde l'historique. Un libellé modifié
+    sans changement de parcours n'appelle aucun document. Le bac à sable n'entre ni dans
+    `FunctionalRequirements.md` ni dans les cas d'utilisation : seul le §13.3 de
+    `TechnicalRequirements.md` le décrit. Pour un diagramme Mermaid, vérifie les noms (fonctions, collections,
     classes) contre le code.
 11. **Changelog.** Si `version:` change dans `kass_dalle/pubspec.yaml`, le même diff ajoute
     en tête de `documentation/CHANGELOG.md` une entrée `### v<version> — fonctionnel` ou

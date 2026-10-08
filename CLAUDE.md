@@ -335,8 +335,9 @@ desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
 | Version | `CHANGELOG.md` |
 
 Un libellé modifié sans changement de parcours ne demande rien de plus. Le bac à sable
-(`features/sandbox/`, `functions/src/sandbox/`) n'entre pas dans le tableau : il n'est
-documenté nulle part (voir « Bac à sable »).
+(`features/sandbox/`, `functions/src/sandbox/`) n'entre ni dans `FunctionalRequirements.md`
+ni dans les cas d'utilisation (voir « Bac à sable ») ; seul le §13.3 de
+`TechnicalRequirements.md` le décrit.
 
 Un élément retiré du code sort aussi des documents, sauf du `CHANGELOG.md`, qui garde
 l'historique. Un diagramme faux coûte plus cher qu'un diagramme absent.

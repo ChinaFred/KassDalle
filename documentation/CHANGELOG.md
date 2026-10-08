@@ -33,7 +33,9 @@ n'avait aucune consigne sur la documentation. Résultat : `cas-d-utilisation.htm
 - `CLAUDE.md` : un tableau associe chaque catégorie de changement (écran, route, Cloud
   Function, flux, modèle Firestore, règles, prompt, logique dupliquée, déploiement, version) aux
   documents à mettre à jour dans le même commit. Un élément retiré du code sort aussi des
-  documents, sauf du changelog. Le bac à sable et un simple libellé en sont exclus.
+  documents, sauf du changelog. Un simple libellé n'appelle aucun document, et le bac à sable
+  reste hors de `FunctionalRequirements.md` et des cas d'utilisation. Pour une release
+  complète, `CLAUDE.md` et `product-owner-release` renvoient à ce tableau.
 - `relecteur-regles` : le contrôle 10 applique ce tableau et vérifie les noms des diagrammes
   Mermaid contre le code.
 - `developpement-tech-couts` : la documentation fait partie de son livrable.
