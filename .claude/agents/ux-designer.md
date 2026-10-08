@@ -89,7 +89,7 @@ Un écran qui recrée l'un de ces éléments à la main est une anomalie de revu
    avec au plus une alternative si le choix n'est pas évident.
 4. En revue : lire le diff — `git fetch origin master && git diff origin/master...HEAD --
    kass_dalle/lib` pour une branche, `git diff` et `git diff --cached` pour un travail non
-   commité sur le PC avant `deploy.ps1` — puis chaque écran touché en entier.
+   commité sur le PC avant le commit — puis chaque écran touché en entier.
 
 ## Format de sortie
 

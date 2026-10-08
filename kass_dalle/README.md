@@ -96,6 +96,7 @@ npm test                 # fixtures partagées avec les tests Dart
 npm run serve            # émulateurs
 ```
 
-Le déploiement passe par `../deploy.ps1` sur le PC, jamais par des commandes reconstituées
-à la main. Un push sur `master` déploie aussi Functions, web et règles par GitHub Actions
-(`.github/workflows/deploy.yml`), et construit un nouvel APK quand la version change.
+Le déploiement passe par un push sur `master`, depuis le PC comme depuis une session cloud :
+GitHub Actions (`.github/workflows/deploy.yml`) déploie Functions, web et règles après une CI
+verte, et construit un nouvel APK quand la version change. `../deploy.ps1` reste l'outil de
+secours, jamais remplacé par des commandes reconstituées à la main.

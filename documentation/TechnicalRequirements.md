@@ -2280,13 +2280,22 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ### Build et déploiement
 
-Toujours par le script racine `deploy.ps1` — jamais en reconstituant les commandes à la main :
-il construit, déploie, copie
-dans `Release/` et pousse le dépôt.
+Le chemin normal est un push sur `master`, depuis le PC comme depuis une session cloud :
+`.github/workflows/deploy.yml` déploie après une CI verte (voir « Déploiement automatique »).
+
+Le script racine `deploy.ps1` est l'outil de secours, pour le jour où GitHub Actions est
+indisponible. Jamais de commandes reconstituées à la main : il construit, déploie, copie dans
+`Release/` et pousse le dépôt.
 
 ```powershell
-./deploy.ps1              # web + APK + functions + hosting/firestore/storage + git push
+./deploy.ps1              # secours : web + APK + functions + hosting/firestore/storage + git push
 ```
+
+`deploy.ps1` lance la CLI Firebase avec `--non-interactive`. Sa sortie part dans un journal :
+une question de la CLI n'apparaîtrait pas à l'écran, et le script attendrait une réponse
+invisible. C'est arrivé le 8 octobre 2026 sur la suppression de `backfillAiPricingFn`. En mode
+non interactif, la CLI s'arrête avec son message. Une fonction retirée du code fait donc
+échouer `deploy.ps1` ; le workflow, lui, la supprime (`--force`).
 
 **Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
 passe, au lieu de publier un site sans binaire. L'application Android lit le manifeste posé à côté
@@ -2318,15 +2327,15 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 
 ### Déploiement automatique (GitHub Actions)
 
-Une session de travail sans PC — Claude Code dans le cloud — n'a ni PowerShell, ni la clé de
-signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
-`.github/workflows/deploy.yml` déploie à sa place.
+C'est le chemin de déploiement normal depuis la v0.23.1, sur le PC comme depuis une session
+cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master` et pousse.
+`.github/workflows/deploy.yml` déploie dans les deux cas.
 
 | Quoi | Comment |
 |---|---|
 | Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`), accepté sur `master` seulement |
 | Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
-| Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1` vient de tout déployer depuis le PC |
+| Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1`, l'outil de secours, vient de tout déployer depuis le PC |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
@@ -2377,8 +2386,9 @@ environ huit minutes. Juste avant le hosting, le manifeste en ligne est relu : s
 conservé. Ni `Release/mobile` ni Google Drive ne reçoivent cet APK : ils restent
 propres au PC.
 
-**Le PC et le workflow.** Deux déploiements simultanés publient chacun leur version, et le
-dernier arrivé l'emporte. Trois protections, et une consigne :
+**Le PC et le workflow.** Le cas ne se pose que si `deploy.ps1` sert de secours. Deux
+déploiements simultanés publient chacun leur version, et le dernier arrivé l'emporte. Trois
+protections, et une consigne :
 
 - `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`, et le vérifie de
   nouveau juste avant `firebase deploy`, après les builds web et APK qui durent plusieurs
@@ -2386,9 +2396,9 @@ dernier arrivé l'emporte. Trois protections, et une consigne :
 - `deploy.ps1` s'arrête en erreur si son `git push` échoue : la production porte alors un commit
   absent de `origin/master` ;
 - le workflow vérifie, au début de chaque job, que son commit est toujours la tête de `master` ;
-- **sur le PC, ne pas pousser soi-même avant `deploy.ps1`.** Un commit poussé à la main n'est pas
-  signé : sa CI déclencherait le workflow pendant que `deploy.ps1` tourne. On laisse
-  `deploy.ps1` commiter et pousser.
+- **pendant que `deploy.ps1` tourne, ne pas pousser à la main.** Un commit poussé à la main
+  n'est pas signé : sa CI déclencherait le workflow en parallèle. On laisse `deploy.ps1`
+  commiter et pousser.
 
 Il reste une fenêtre de quelques secondes entre la seconde vérification et la fin de
 `firebase deploy`. Le workflow recopie aussi l'APK en ligne juste avant son hosting : un

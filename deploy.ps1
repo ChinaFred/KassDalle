@@ -2,6 +2,11 @@
 .SYNOPSIS
     Déploie KassDalle : build web + APK Android, Firebase hosting, Release/, git push.
 
+    Outil de secours. Le chemin normal, sur le PC comme depuis une session
+    cloud, est un push sur master : après une CI verte,
+    .github/workflows/deploy.yml déploie tout. Ce script sert quand GitHub
+    Actions est indisponible, ou pour une copie locale dans Release/.
+
 .PARAMETER WebOnly
     RETIRÉ. Tout déploiement embarque désormais l'APK ; passer ce paramètre
     arrête le script au lieu de publier un site sans binaire.
@@ -85,10 +90,16 @@ function Invoke-FirebaseCli {
     # Ce qui decide du succes ne change pas : le code de sortie ET la ligne
     # « Deploy complete! », verifies par les appelants. Le bruit de stderr n'en
     # fait pas partie.
+    #
+    # --non-interactive : la sortie part dans un journal, donc une question de
+    # la CLI n'apparait pas a l'ecran. Le 8 octobre 2026, la CLI a demande s'il
+    # fallait supprimer backfillAiPricingFn, et le script a attendu une reponse
+    # que personne ne voyait. Sans mode interactif, la CLI s'arrete avec son
+    # message au lieu d'attendre.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & firebase @FirebaseArgs *> $LogFile
+        & firebase @FirebaseArgs --non-interactive *> $LogFile
         return $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previous
