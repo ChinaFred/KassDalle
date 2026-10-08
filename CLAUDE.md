@@ -333,7 +333,7 @@ Quatre agents spécialisés vivent dans `.claude/agents/` :
 | `business-analyst-culinaire` | cadrage fonctionnel, user stories, priorisation, KPIs |
 | `developpement-tech-couts` | implémentation, correction de bug, traçabilité des coûts Gemini |
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
-| `relecteur-regles` | relecture d'un diff contre les règles de ce fichier — lecture seule |
+| `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
 
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
 fusionnent jamais sur `master`.
@@ -362,10 +362,15 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    première ligne de code. Une correction de bug précise ou une demande sans ambiguïté
    passe directement à l'étape 2.
 2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
-   contrôles de la CI sur ce qui a changé : `flutter analyze` et `flutter test` côté Dart,
-   `npm run lint`, `npm run format:check` et `npm test` côté Functions.
-3. **Relire — obligatoire.** Tout commit qui touche `kass_dalle/`, `documentation/`,
-   `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push.
+   contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
+   --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
+   `npm run format:check`, `npm run build` et `npm test` côté Functions. Le hook de
+   formatage ne couvre que les fichiers écrits par l'outil d'édition, pas ceux produits par
+   un script ou un générateur.
+3. **Relire — obligatoire.** Toute modification qui touche `kass_dalle/`, `documentation/`,
+   `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push. Sur
+   le PC, la relecture porte sur le diff non commité, avant `deploy.ps1`, qui commite et
+   pousse lui-même.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.

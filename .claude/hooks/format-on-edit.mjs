@@ -28,18 +28,22 @@ if (typeof filePath !== "string" || filePath.length === 0) process.exit(0);
 const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 const rel = path.relative(root, path.resolve(filePath)).split(path.sep).join("/");
 
-function run(command, args, cwd) {
-  // shell: true pour trouver dart.bat et prettier.cmd sous Windows.
-  const result = spawnSync(command, args, { cwd, shell: true, encoding: "utf8" });
+// Une seule chaîne de commande, avec un chemin relatif au dossier de travail :
+// shell: true est nécessaire sous Windows (dart.bat, npx.cmd), et un chemin
+// relatif du dépôt ne contient ni « $ », ni « % », ni antislash de tête UNC
+// que le shell réinterpréterait. Les guillemets couvrent les espaces.
+function run(command, cwd) {
+  const result = spawnSync(command, { cwd, shell: true, encoding: "utf8" });
   if (result.error || result.status !== 0) {
-    const detail = result.error?.message ?? result.stderr?.trim() ?? `code ${result.status}`;
-    console.error(`format-on-edit : ${command} a échoué sur ${rel} — ${detail}`);
+    const detail = result.error?.message || result.stderr?.trim() || `code ${result.status}`;
+    console.error(`format-on-edit : « ${command} » a échoué sur ${rel} — ${detail}`);
   }
 }
 
 if (rel.startsWith("kass_dalle/") && rel.endsWith(".dart")) {
-  run("dart", ["format", JSON.stringify(path.resolve(filePath))], root);
+  run(`dart format "${rel}"`, root);
 } else if (rel.startsWith("kass_dalle/functions/src/") && rel.endsWith(".ts")) {
   const functionsDir = path.join(root, "kass_dalle", "functions");
-  run("npx", ["--no-install", "prettier", "--write", JSON.stringify(path.resolve(filePath))], functionsDir);
+  const fromFunctions = rel.slice("kass_dalle/functions/".length);
+  run(`npx --no-install prettier --write "${fromFunctions}"`, functionsDir);
 }

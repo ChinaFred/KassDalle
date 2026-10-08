@@ -1,6 +1,6 @@
 ---
 name: relecteur-regles
-description: Relecture d'un diff Kass'Dalle contre les règles absolues du projet — catch silencieux, poste d'IA à trois endroits, logique dupliquée Dart ↔ TypeScript, redimensionnement, bac à sable, cache web, SDK lourds, documentation. Lecture seule, ne modifie aucun fichier. À utiliser après une implémentation et avant le commit ou la PR.
+description: Relecture d'un diff Kass'Dalle contre les règles de CLAUDE.md — catch silencieux, poste d'IA à trois endroits, logique dupliquée Dart ↔ TypeScript, redimensionnement, bac à sable, cache web, SDK lourds, documentation, outillage (workflows, hooks, deploy.ps1). Lecture seule, ne modifie aucun fichier. Obligatoire avant chaque push (étape 3 de la « Chaîne de travail »).
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -58,6 +58,10 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
     s'accompagne de la mise à jour de `documentation/` (schéma Firestore, diagramme
     Mermaid) dans le même diff.
 11. **Artefacts de build.** Rien sous `build/`, `Release/`, `.dart_tool/`, `node_modules/`.
+12. **Outillage.** Pour `.github/workflows/`, `.github/scripts/`, `.claude/` et `deploy.ps1` :
+    chercher ce qui ferait un déploiement faux ou dangereux (déclencheur trop large, commit
+    déployé, option destructive), ce qui bloquerait une session (hook qui sort en code 2,
+    commande absente sous Windows), et tout écart entre la documentation et le script.
 
 ## Vérifications automatiques
 
