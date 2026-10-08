@@ -105,13 +105,16 @@ case "${1:-}" in
     # deux tentatives du workflow se sont arrêtées à l'étape qui suit les
     # Functions, l'une sans journal. Hypothèse non vérifiée : mémoire ou disque
     # du runner saturés. On arrête les démons, on attend leur sortie (30 s au
-    # plus), puis on publie la mémoire et le disque restants.
+    # plus), puis on publie la mémoire disponible et le disque libre.
     pkill -f GradleDaemon || echo "Aucun démon Gradle à arrêter."
     pkill -f KotlinCompileDaemon || echo "Aucun démon Kotlin à arrêter."
     for _ in $(seq 30); do
       pgrep -f 'GradleDaemon|KotlinCompileDaemon' >/dev/null || break
       sleep 1
     done
+    if pgrep -f 'GradleDaemon|KotlinCompileDaemon' >/dev/null; then
+      echo "::warning::Démons Gradle ou Kotlin encore actifs 30 s après leur arrêt."
+    fi
     ../.github/scripts/runner-resources.sh "après le build de l'APK"
     ;;
 

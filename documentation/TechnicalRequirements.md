@@ -2415,9 +2415,10 @@ seconde lecture, qui peut appeler le script deux fois). Un échec de la seconde 
 les Functions neuves avec le web précédent : relancer le workflow une fois la cause réglée.
 
 **Après le build de l'APK**, `build-apk.sh` arrête les démons Gradle et Kotlin et attend leur
-sortie. `.github/scripts/runner-resources.sh` publie ensuite la mémoire et le disque libres en
-annotation du run, et de nouveau au début de la seconde lecture. Une annotation reste visible
-même quand le journal du job est perdu. Le 8 octobre 2026, deux tentatives se sont arrêtées à
+sortie. `.github/scripts/runner-resources.sh` publie ensuite la mémoire disponible et le disque
+libre en annotation du run, puis de nouveau dans l'étape « Ressources du runner », juste avant la
+seconde lecture. Une annotation publiée par une étape terminée reste visible même si le journal
+du job est perdu ensuite. Ce script ne fait jamais échouer le workflow. Le 8 octobre 2026, deux tentatives se sont arrêtées à
 l'étape « Revérifier l'APK en ligne » : la première au bout de 4 secondes sans journal, la
 seconde bloquée 13 minutes. La cause n'est pas établie. Hypothèses : mémoire ou disque du
 runner saturés, ou téléchargement bloqué, que `--max-time` coupe désormais.

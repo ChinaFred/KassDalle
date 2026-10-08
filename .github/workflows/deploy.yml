@@ -176,6 +176,12 @@ jobs:
         # déploiement écraserait.
         run: ../.github/scripts/keep-online-apk.sh build/web
 
+      - name: Ressources du runner
+        # Étape à part : son annotation est publiée quand elle se termine, et
+        # reste visible si le runner meurt à l'étape suivante.
+        if: steps.apk.outputs.build == 'true'
+        run: ../.github/scripts/runner-resources.sh "avant la seconde lecture de l'APK"
+
       - name: Revérifier l'APK en ligne
         timeout-minutes: 15
         if: steps.apk.outputs.build == 'true'
@@ -186,7 +192,6 @@ jobs:
         # Un échec ici laisse les Functions neuves avec le web précédent :
         # relancer le workflow (« Re-run all jobs ») une fois la cause réglée.
         run: |
-          ../.github/scripts/runner-resources.sh "avant la seconde lecture de l'APK"
           ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-recheck"
           decision=$(mktemp)
           GITHUB_OUTPUT="$decision" ../.github/scripts/build-apk.sh decide "$RUNNER_TEMP/apk-recheck/apk_release.json"
