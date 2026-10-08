@@ -249,11 +249,9 @@ export const ROUTABLE_FEATURES: Array<{
   // ── Courses ───────────────────────────────────────────────────────────────
   { id: "shopping_list", label: "Consolidation d'une liste de courses", group: "Courses" },
   { id: "shopping_products_refresh", label: "Produits d'achat d'une recette", group: "Courses" },
-  {
-    id: "backfill_shopping_aliases",
-    label: "Produit acheté des ingrédients (backfill)",
-    group: "Courses",
-  },
+  // `backfill_shopping_aliases` a quitté cette liste avec le mode `aliases` de
+  // `backfillShoppingFn`, retiré le 5 octobre 2026. Il reste au catalogue
+  // comptable.
   {
     id: "shopping_product_alias_auto",
     label: "Produit acheté d'un ingrédient neuf (import)",
@@ -639,7 +637,13 @@ async function seedPresetsIfNeeded(policy: AiRoutingPolicy, uid: string | null):
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
   await requireAdmin(req, "routage_ia_lecture");
-  const policy = await getAiRoutingPolicy();
+  // Un poste retiré de `ROUTABLE_FEATURES` peut rester dans la politique
+  // enregistrée. L'écran renvoie la politique entière à l'enregistrement, et
+  // `setAiRoutingPolicyFn` la refuserait pour ce seul poste. Il est donc écarté
+  // ici, comme dans les configurations enregistrées.
+  const { policy } = readRoutingPolicy(await getAiRoutingPolicy(), ROUTING_CATALOG, {
+    onUnknown: "drop",
+  });
 
   // Les configurations ne sont pas le sujet de cet écran : leur panne ne doit
   // pas empêcher de régler le routage. Elle se dit, elle n'interrompt pas.
