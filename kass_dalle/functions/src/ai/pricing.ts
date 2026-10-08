@@ -151,32 +151,6 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   },
 };
 
-/**
- * Corrections vérifiées, appliquées une fois par `backfillAiPricingFn`.
- *
- * `PRICING_TABLE` ne sert qu'à semer le document au premier démarrage, et son
- * entrée Sonnet 5 reste volontairement à 3 $ / 15 $ pour éprouver le
- * MÉCANISME d'une promotion datée dans la fixture — voir le commentaire
- * au-dessus. Cette table-ci est l'inverse : chaque entrée est une valeur
- * MESURÉE, jamais un repli, écrite dans Firestore par un geste explicite
- * d'administrateur et jamais lue à la place de la grille en vigueur.
- *
- * Une correction reste ici après avoir été appliquée : le backfill compare la
- * grille en vigueur à cette table à chaque lancement, et une entrée déjà
- * corrigée ressort simplement « déjà correcte ». Elle ne se retire que le jour
- * où le tarif catalogue rejoint réellement cette valeur.
- */
-export const PRICING_CORRECTIONS: Record<string, AiModelPricing> = {
-  // Relu ligne à ligne dans `ai_usage` et comparé au rapport de coûts
-  // d'Anthropic du 26 septembre 2026 : Sonnet 5 revient à 1,91 $ / 9,05 $ par
-  // million de jetons comptés, contre un catalogue à 3 $ / 15 $ — un écart de
-  // 5 à 11 % dans le même sens que celui d'Opus 5, donc un retard de relevé,
-  // pas une promotion. La page tarifaire d'Anthropic confirme que le
-  // relèvement à 3 $ / 15 $ prévu le 1er septembre 2026 n'a pas eu lieu :
-  // Sonnet 5 vaut 2 $ / 10 $, sans date de fin.
-  "claude-sonnet-5": { inputPerMillion: 2.0, outputPerMillion: 10.0, imageOutputPerUnit: 0 },
-};
-
 /** Identifiant du document Firestore portant la grille en vigueur. */
 export const AI_PRICING_DOC_ID = "ai_pricing";
 
@@ -247,30 +221,6 @@ export function pricingEntryToMap(entry: AiModelPricing): Record<string, unknown
         }
       : null,
   };
-}
-
-/**
- * Une entrée de la grille en vigueur diffère-t-elle d'une correction vérifiée ?
- *
- * Compare tous les champs facturables, promotion comprise : une correction qui
- * ne fait que retirer une promotion expirée ne doit pas ressortir « déjà
- * correcte » alors que la promotion est encore là.
- */
-export function pricingNeedsCorrection(
-  current: AiModelPricing | null,
-  correction: AiModelPricing,
-): boolean {
-  if (!current) return true;
-  const promo = (p?: AiIntroductoryPricing): string =>
-    p ? `${p.inputPerMillion}/${p.outputPerMillion}/${p.untilIso}` : "";
-  return (
-    current.inputPerMillion !== correction.inputPerMillion ||
-    current.outputPerMillion !== correction.outputPerMillion ||
-    (current.imageOutputPerUnit ?? 0) !== (correction.imageOutputPerUnit ?? 0) ||
-    (current.analyzedImagePerUnit ?? 0) !== (correction.analyzedImagePerUnit ?? 0) ||
-    (current.freeUnitsPerMonth ?? 0) !== (correction.freeUnitsPerMonth ?? 0) ||
-    promo(current.introductory) !== promo(correction.introductory)
-  );
 }
 
 /**

@@ -26,24 +26,6 @@ service firebase.storage {
       return isAuthenticated() && request.auth.token.revoked != true;
     }
 
-    /// N'autorise que les jetons qui portent explicitement `editor` ou `admin`.
-    ///
-    /// La version précédente faisait l'inverse : elle ne bloquait que le jeton
-    /// disant explicitement « reader », et laissait donc écrire tout jeton sans
-    /// claim. C'était le temps de la migration, quand aucun jeton n'en portait
-    /// encore ; un amorçage en masse a depuis couvert tous les comptes, et le
-    /// sas d'entrée a créé un rôle — `pending` — à qui l'absence de claim
-    /// aurait suffi pour déposer des images dans les dossiers partagés.
-    ///
-    /// Contrepartie assumée : un jeton émis avant l'amorçage se voit refuser
-    /// l'écriture jusqu'à son renouvellement (une heure au plus, ou une
-    /// reconnexion). Un refus temporaire se voit et se corrige ; une porte
-    /// ouverte par défaut, non.
-    function canWriteSharedImages() {
-      return isActive()
-        && request.auth.token.role in ['editor', 'admin'];
-    }
-
     /// Administrateur, sur la foi du claim.
     ///
     /// Sert la seule lecture qui ne soit pas ouverte à la famille : les images
@@ -54,10 +36,16 @@ service firebase.storage {
       return isActive() && request.auth.token.role == 'admin';
     }
 
-    /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers,
-    /// et désormais pour leur lecture — un compte `pending` ne doit pas plus
-    /// lire une image partagée qu'il ne lit un livre ou une recette côté
-    /// Firestore.
+    /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers.
+    ///
+    /// Ne concerne que l'ÉCRITURE. Les lectures restent sur `isActive()` : la
+    /// lecture n'a pas le filet de secours que Firestore a (relire le document
+    /// quand le jeton ne porte pas encore le claim de rôle) — une règle Storage
+    /// ne peut évaluer que le jeton. Un essai d'aligner la lecture sur ce
+    /// même contrôle (2026-10-05) a coupé l'accès au fondateur lui-même, le
+    /// temps que son jeton porte le claim. Revenu en arrière : un gain de
+    /// confidentialité faible contre un compte en attente ne vaut pas le
+    /// risque de couper l'accès à un compte déjà approuvé.
     function isApprovedToken() {
       return isActive()
         && request.auth.token.role in ['reader', 'editor', 'admin'];
@@ -65,11 +53,6 @@ service firebase.storage {
 
     function isOwner(uid) {
       return isAuthenticated() && request.auth.uid == uid;
-    }
-
-    function isImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
-        && request.resource.contentType.matches('image/.*');
     }
 
     /// Le type MIME sans ses paramètres : le texte collé s'envoie en
@@ -108,7 +91,7 @@ service firebase.storage {
     // modération avant d'atterrir ici. Laisser le client y écrire en direct
     // rendrait la modération contournable en une ligne de code.
     match /covers/{allPaths=**} {
-      allow read: if isApprovedToken();
+      allow read: if isActive();
       allow write: if false;
     }
 
@@ -153,7 +136,7 @@ service firebase.storage {
 
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isApprovedToken();
+      allow read: if isActive();
       allow write: if false;
     }
 
@@ -174,7 +157,7 @@ service firebase.storage {
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isApprovedToken();
+      allow read: if isActive();
       allow write: if false;
     }
 
@@ -182,13 +165,13 @@ service firebase.storage {
     // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle ne
     // peut pas être une égalité d'uid. Il porte donc sur le rôle.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isApprovedToken();
+      allow read: if isActive();
       allow write: if false;
     }
 
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
-      allow read: if isApprovedToken();
+      allow read: if isActive();
       allow write: if false;
     }
   }

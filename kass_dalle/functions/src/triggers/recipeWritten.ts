@@ -8,8 +8,9 @@
  * trop, dont deux ne servaient qu'à constater qu'il n'y avait rien à faire.
  *
  * Les gardes communes (suppression, type de page, empreinte des ingrédients)
- * sont évaluées une fois ici, puis les deux traitements partent ensemble. Ils
- * restent indépendants : l'échec de l'un ne prive pas la recette de l'autre.
+ * sont évaluées une fois ici, puis les traitements partent ensemble. Ils
+ * restent indépendants : l'échec de l'un ne prive pas la recette des autres.
+ * Le rôle dans un repas échappe à la garde d'empreinte : voir plus bas.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -23,6 +24,7 @@ import {
 import { syncRecipePrivacy } from "./recipePrivacy";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
+import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -73,7 +75,21 @@ export const onRecipeWritten = onDocumentWritten(
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
     if (resolvePageType(data) !== "recipe") return;
 
-    // ── La garde, et il n'y en a plus d'autre ────────────────────────────────
+    // ── Rôle dans un repas : avant la garde d'entrées, jamais filtré ─────────
+    //
+    // Une création manuelle sans clic « Suggérer », une recette de l'Explorer
+    // IA ou une copie d'une recette non classée n'ont pas de `tags.meal_role`
+    // — et aucune de ces trois écritures ne touche les ENTRÉES que la garde
+    // ci-dessous protège. La classer ici, avant cette garde, évite qu'une
+    // recette reste sans rôle tant que personne n'a changé ses ingrédients.
+    await syncRecipeMealRole({
+      recipeId: after.id,
+      data,
+      correlationId: newCorrelationId(qualify("ecriture_recette", "role_repas")),
+      scanId,
+    });
+
+    // ── La garde des recalculs coûteux, et il n'y en a plus d'autre ──────────
     //
     // Ce déclencheur écrit dans la collection qu'il écoute : chacune de ses
     // écritures le réveille. Il sort donc immédiatement quand l'écriture qui

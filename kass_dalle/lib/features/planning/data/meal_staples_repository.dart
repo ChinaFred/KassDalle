@@ -70,33 +70,6 @@ class MealStaplesRepository {
     await _base.doc(id).delete();
   }
 
-  /// Sème les garnitures de base absentes, sans toucher à celles qui existent.
-  ///
-  /// Une valeur corrigée dans Firestore fait foi : la liste du code ne sert
-  /// qu'à créer ce qui manque, jamais à remettre une quantité en place.
-  Future<({int created, int skipped})> seedDefaults() async {
-    var created = 0;
-    var skipped = 0;
-    final now = FieldValue.serverTimestamp();
-    final batch = _db.batch();
-    for (final staple in kDefaultMealStaples) {
-      final ref = _base.doc(staple.id);
-      final snap = await ref.get();
-      if (snap.exists) {
-        skipped++;
-        continue;
-      }
-      batch.set(ref, {
-        ...staple.toFirestore(),
-        'created_at': now,
-        'updated_at': now,
-      });
-      created++;
-    }
-    if (created > 0) await batch.commit();
-    return (created: created, skipped: skipped);
-  }
-
   /// Les garnitures d'un compte, fusionnées, lues une fois.
   ///
   /// Pour un écran qui compose un cycle sans s'abonner : ce qu'il lit à

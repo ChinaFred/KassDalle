@@ -63,6 +63,7 @@ const kFeatureProcess = <String, String>{
   // compose un plat et son accompagnement. La reprise se lit donc à côté
   // des autres postes du planning, pas dans la rédaction.
   'backfill_recipe_roles': 'Planning et courses',
+  'inline_meal_role_classification': 'Planning et courses',
   'search': 'Recherche',
   'upload_security_scan': 'Sécurité',
   'image_moderation': 'Sécurité',
@@ -242,6 +243,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'accompagnement, entrée, dessert, snack —, ce qu\'elle apporte déjà '
         'et ses accompagnements classiques. Un appel par recette, lancé '
         'depuis Admin › Backfills.',
+  ),
+  'inline_meal_role_classification': FeatureInfo(
+    label: 'Rôle des recettes (à l\'écriture)',
+    description:
+        'Pose le rôle dans un repas sur toute recette écrite sans ce champ — '
+        'création manuelle sans clic « Suggérer », recette de l\'Explorer IA, '
+        'copie d\'une recette non classée. Un appel par recette concernée, '
+        'depuis le déclencheur Firestore `onRecipeWritten`.',
   ),
   'shopping_list': FeatureInfo(
     label: 'Consolidation liste de courses',

@@ -446,32 +446,6 @@ class GcpBillingRepository {
     return DataQualityReport.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
-  /// Corrige en un coup les tarifs de la grille (`app_config/ai_pricing`)
-  /// connus comme périmés — aujourd'hui, Sonnet 5 à 2 $ / 10 $ au lieu de
-  /// 3 $ / 15 $. Un modèle déjà au bon tarif n'est pas réécrit : relancer
-  /// après une première correction ne rend que des modèles « déjà corrects ».
-  ///
-  /// Aucun appel d'IA, un seul document. Retourne `{corriges, dejaCorrects}` ;
-  /// `details` porte, pour chaque modèle corrigé, le tarif avant et après.
-  Future<({int corriges, int dejaCorrects, List<Map<String, String>> details})>
-  backfillAiPricing() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillAiPricingFn',
-      const {},
-      timeout: const Duration(seconds: 30),
-    );
-    final data = Map<String, dynamic>.from(raw as Map);
-    final details = ((data['details'] as List?) ?? const [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .map((e) => e.map((k, v) => MapEntry(k, '$v')))
-        .toList();
-    return (
-      corriges: (data['corriges'] as num?)?.toInt() ?? 0,
-      dejaCorrects: (data['dejaCorrects'] as num?)?.toInt() ?? 0,
-      details: details,
-    );
-  }
-
   /// Relance la réconciliation des coûts IA pour [period] (`YYYY-MM`).
   ///
   /// Le rapport est aussi produit chaque mois par `scheduledAiReconciliation` :

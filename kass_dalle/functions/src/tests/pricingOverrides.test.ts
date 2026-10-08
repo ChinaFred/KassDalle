@@ -13,13 +13,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  PRICING_CORRECTIONS,
-  parsePricingEntry,
-  pricingEntryToMap,
-  pricingForModelIn,
-  pricingNeedsCorrection,
-} from "../ai/pricing";
+import { parsePricingEntry, pricingEntryToMap, pricingForModelIn } from "../ai/pricing";
 
 describe("lecture d'une entrée saisie", () => {
   test("une entrée complète est retenue", () => {
@@ -152,63 +146,5 @@ describe("résolution dans une grille recouverte", () => {
     const pricing = pricingForModelIn({}, "modele-jamais-vu");
     assert.ok(pricing.inputPerMillion > 0);
     assert.ok(pricing.outputPerMillion > 0);
-  });
-});
-
-describe("backfill de la grille tarifaire", () => {
-  test("un tarif périmé a besoin d'être corrigé", () => {
-    assert.equal(
-      pricingNeedsCorrection(
-        { inputPerMillion: 3, outputPerMillion: 15 },
-        { inputPerMillion: 2, outputPerMillion: 10 },
-      ),
-      true,
-    );
-  });
-
-  test("un tarif déjà correct n'est pas repris", () => {
-    assert.equal(
-      pricingNeedsCorrection(
-        { inputPerMillion: 2, outputPerMillion: 10, imageOutputPerUnit: 0 },
-        { inputPerMillion: 2, outputPerMillion: 10, imageOutputPerUnit: 0 },
-      ),
-      false,
-    );
-  });
-
-  test("un modèle absent de la grille a besoin d'être corrigé", () => {
-    assert.equal(pricingNeedsCorrection(null, { inputPerMillion: 2, outputPerMillion: 10 }), true);
-  });
-
-  // Une correction qui retire une promotion ne doit pas se confondre avec une
-  // correction qui ne change que les prix : les deux sont des changements.
-  test("une promotion encore active compte comme une correction à faire", () => {
-    assert.equal(
-      pricingNeedsCorrection(
-        {
-          inputPerMillion: 2,
-          outputPerMillion: 10,
-          introductory: {
-            inputPerMillion: 2,
-            outputPerMillion: 10,
-            untilIso: "2026-09-01T00:00:00Z",
-          },
-        },
-        { inputPerMillion: 2, outputPerMillion: 10 },
-      ),
-      true,
-    );
-  });
-
-  test("relancer après correction ne trouve plus rien à corriger", () => {
-    // Simule le second passage du backfill : la grille porte déjà les valeurs
-    // de PRICING_CORRECTIONS.
-    for (const [model, correction] of Object.entries(PRICING_CORRECTIONS)) {
-      assert.equal(
-        pricingNeedsCorrection(correction, correction),
-        false,
-        `${model} devrait ressortir déjà correct au second passage`,
-      );
-    }
   });
 });

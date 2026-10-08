@@ -222,6 +222,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Rôle des recettes dans un repas (backfill)",
     group: "Planning",
   },
+  {
+    id: "inline_meal_role_classification",
+    label: "Rôle des recettes dans un repas (à l'écriture)",
+    group: "Planning",
+  },
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
   {
     id: "storage_advice",

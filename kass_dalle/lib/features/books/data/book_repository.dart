@@ -422,19 +422,6 @@ class BookRepository {
     }
   }
 
-  /// Rattache les recettes sans livre, en résolvant d'abord le livre cible.
-  ///
-  /// Point d'entrée de l'opération manuelle : l'écran d'administration n'a pas
-  /// à savoir quel livre reçoit les orphelines.
-  Future<({int moved, String bookTitre})> attachOrphanRecipesToLibres(
-    String uid,
-    String displayName,
-  ) async {
-    final libres = await findOrCreateLibresBook(uid, displayName);
-    final moved = await migrateLibresRecipes(uid, libres.id, libres.titre);
-    return (moved: moved, bookTitre: libres.titre);
-  }
-
   /// Initialise les trois livres système pour [uid] et migre les recettes libres.
   /// À appeler au démarrage / ouverture de la bibliothèque.
   Future<void> ensureSystemBooks(String uid, String displayName) async {

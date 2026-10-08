@@ -5,10 +5,6 @@ import 'package:intl/intl.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import '../domain/recipe_roles_backfill_report.dart';
-import '../../auth/presentation/auth_providers.dart';
-import '../../books/presentation/book_providers.dart';
-import '../../planning/domain/meal_staple.dart';
-import '../../planning/presentation/meal_staples_providers.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -81,52 +77,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       });
       return null;
     }
-  }
-
-  /// Rattache les recettes sans livre au livre des recettes libres.
-  ///
-  /// L'opération tourne déjà toute seule à chaque ouverture de la
-  /// bibliothèque. Elle est ici parce qu'un traitement automatique et muet ne
-  /// se vérifie pas : on ne sait ni s'il a tourné, ni combien il a déplacé.
-  /// Lancée à la main, elle rend un compte.
-  Future<void> _runAttachOrphanRecipes() async {
-    final user = ref.read(appUserProvider).value;
-    if (user == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rattacher les recettes sans livre'),
-        content: const Text(
-          'Les recettes qui n\'ont aucun livre rejoignent « Mes recettes '
-          'libres ».\n\n'
-          'Ne concerne que vos propres recettes, et ne touche à aucune recette '
-          'déjà rangée dans un livre. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<({int moved, String bookTitre})>(
-      label: 'Rattachement des recettes sans livre...',
-      feature: 'admin_attach_orphan_recipes',
-      run: () => ref
-          .read(bookRepositoryProvider)
-          .attachOrphanRecipesToLibres(user.uid, user.displayName),
-      format: (r) => r.moved == 0
-          ? 'Aucune recette sans livre : tout est déjà rangé.'
-          : '${r.moved} recette(s) rattachée(s) à « ${r.bookTitre} ».',
-    );
   }
 
   Future<void> _runBackfillEnrichReferentials() async {
@@ -265,47 +215,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  /// Sème le référentiel des garnitures simples.
-  ///
-  /// Une écriture ponctuelle, donc ici et non dans l'écran du référentiel :
-  /// c'est là qu'on cherche ce genre de bouton, et là qu'on attend un compte.
-  /// Aucun appel d'IA. Ne remplace jamais une entrée existante.
-  Future<void> _runSeedMealStaples() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Semer les garnitures simples'),
-        content: Text(
-          'Crée les ${kDefaultMealStaples.length} garnitures de base qui '
-          'manquent — riz, pâtes, salade verte, yaourt… — avec la part par '
-          'personne. Celles qui existent déjà ne sont pas touchées : une '
-          'valeur corrigée dans Admin › Référentiels fait foi.\n\n'
-          'Aucun appel d\'IA, aucun coût de modèle. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Semer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<({int created, int skipped})>(
-      label: 'Semis des garnitures simples...',
-      feature: 'admin_backfill_seed_meal_staples',
-      run: () => ref.read(mealStaplesRepositoryProvider).seedDefaults(),
-      format: (r) => r.created == 0
-          ? 'Tout était déjà en place (${r.skipped} garnitures).'
-          : '${r.created} garniture(s) créée(s), ${r.skipped} déjà en place.',
-    );
-  }
-
   /// Classe les recettes par leur rôle dans un repas.
   ///
   /// Le planning ne compose un plat et son accompagnement que pour une
@@ -398,50 +307,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  /// Corrige la grille tarifaire aux valeurs vérifiées du code.
-  ///
-  /// Un seul document Firestore, aucun appel d'IA : pas de progression à
-  /// afficher, juste un avant/après. Réentrant — un tarif déjà corrigé ne
-  /// bouge plus au passage suivant.
-  Future<void> _runBackfillAiPricing() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Corriger les tarifs'),
-        content: const Text(
-          'Applique à la grille tarifaire (Admin › Moteur d\'IA) les valeurs '
-          'vérifiées dans le code — aujourd\'hui, Claude Sonnet 5 à 2 \$ / '
-          '10 \$ au lieu de 3 \$ / 15 \$.\n\n'
-          'Un modèle déjà au bon tarif n\'est pas touché. Aucun appel d\'IA. '
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Corriger'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<
-      ({int corriges, int dejaCorrects, List<Map<String, String>> details})
-    >(
-      label: 'Correction des tarifs en cours...',
-      feature: 'admin_backfill_ai_pricing',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillAiPricing(),
-      format: (r) => r.corriges == 0
-          ? 'Rien à corriger : ${r.dejaCorrects} tarif(s) déjà correct(s).'
-          : '${r.corriges} tarif(s) corrigé(s) : '
-                '${r.details.map((d) => '${d['model']} ${d['avant']} → ${d['apres']}').join(', ')}.',
-    );
-  }
-
   /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
   /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
   String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
@@ -461,7 +326,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  // Cinq opérations ont quitté cet écran, et le code derrière elles avec.
+  // Huit opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
   // le déclencheur `syncUserClaims` n'existe. Ce déclencheur écrit désormais les
@@ -492,6 +357,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // Un ingrédient neuf le reçoit désormais seul, à l'import ; `products` —
   // le recalcul de `shopping_products` sur les recettes, lui, reste réutilisé
   // à chaque changement de règle de regroupement.
+  //
+  // « Rattacher les recettes sans livre » ne faisait que rendre compte d'un
+  // traitement qui tourne déjà seul à chaque ouverture de la bibliothèque
+  // (`ensureSystemBooks` → `migrateLibresRecipes`, `book_repository.dart`).
+  // Ce traitement automatique reste en place ; seul le bouton de contrôle
+  // manuel a disparu.
+  //
+  // « Semer les garnitures simples » versait `kDefaultMealStaples` dans
+  // `meal_staples/*`. Le versement a eu lieu ; la constante n'avait plus
+  // d'autre lecteur, elle a quitté `meal_staple.dart` avec sa méthode de
+  // semis et son test dédié.
+  //
+  // « Corriger les tarifs » appliquait à Firestore une table de tarifs
+  // MESURÉS mais écrite en dur dans le code (`PRICING_CORRECTIONS`,
+  // `ai/pricing.ts`) — la correction déjà posée. Une dérive de tarif future
+  // se corrige directement depuis Admin › Moteur d'IA (`setAiPricingFn`),
+  // qui écrit le même document sans dupliquer aucun chiffre dans le code.
   //
   // Reste ici la seule opération qui ait encore du travail à chaque exécution :
   // les référentiels reçoivent de nouveaux ingrédients à chaque recette.
@@ -578,26 +460,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(
-                      icon: Icons.menu_book_outlined,
-                      title: 'Rattacher les recettes sans livre',
-                      subtitle:
-                          'Range dans « Mes recettes libres » les recettes qui n\'ont '
-                          'aucun livre. Tourne déjà à chaque ouverture de la '
-                          'bibliothèque ; ici, elle rend un compte.',
-                      onTap: _busy ? null : _runAttachOrphanRecipes,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.rice_bowl_outlined,
-                      title: 'Semer les garnitures simples',
-                      subtitle:
-                          'Crée les garnitures de base — riz, pâtes, salade verte, '
-                          'yaourt… — avec la part par personne. Ne touche pas à '
-                          'celles qui existent. Aucun appel d\'IA.',
-                      onTap: _busy ? null : _runSeedMealStaples,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
                       icon: Icons.restaurant_outlined,
                       title: 'Rôle des recettes dans un repas',
                       subtitle:
@@ -618,17 +480,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À relancer après '
                           'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.price_change_outlined,
-                      title: 'Corriger les tarifs',
-                      subtitle:
-                          'Applique à la grille tarifaire les valeurs '
-                          'vérifiées du code — Claude Sonnet 5 à 2 \$ / 10 \$ '
-                          'aujourd\'hui. Un tarif déjà correct n\'est pas '
-                          'touché. Aucun appel d\'IA.',
-                      onTap: _busy ? null : _runBackfillAiPricing,
                     ),
                   ],
                 ),
