@@ -45,9 +45,9 @@ import type { StoredIngredient } from "./recipeIngredients";
 
 /**
  * Poste de coût du produit acheté d'un ingrédient NEUF, résolu ici même — à
- * distinguer de `backfill_shopping_aliases`, qui rattrape le passé. Voir
- * « Un poste d'IA vit à trois endroits » : ce nom apparaît aussi dans
- * `ROUTABLE_FEATURES` et `kFeatureCatalog`/`kFeatureProcess`.
+ * distinguer de `backfill_shopping_aliases`, qui a rattrapé le passé (retiré le
+ * 5 octobre 2026). Voir « Un poste d'IA vit à trois endroits » : ce nom
+ * apparaît aussi dans `ROUTABLE_FEATURES` et `kFeatureCatalog`/`kFeatureProcess`.
  */
 const SHOPPING_ALIAS_AUTO_FEATURE = "shopping_product_alias_auto";
 
