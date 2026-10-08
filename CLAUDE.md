@@ -1,10 +1,7 @@
 # CLAUDE.md — Kass'Dalle
 
-**Source de vérité des instructions IA de ce dépôt.**
-
-Le fichier `.github/instructions/instructions-ia.instructions.md` en est le miroir compact destiné
-à GitHub Copilot. Toute évolution de règle se fait **ici d'abord**, puis est répercutée dans le
-miroir. En cas de contradiction entre les deux, ce fichier fait foi.
+**Source de vérité des instructions IA de ce dépôt.** Il n'en existe pas d'autre copie : les
+miroirs Copilot (`.github/agents/`, `.github/instructions/`) ont été retirés en v0.22.108.
 
 ## Ton
 
@@ -329,28 +326,62 @@ npm run logs
 
 ## Agents
 
-Quatre agents spécialisés vivent dans `.claude/agents/` (format Claude Code) et
-`.github/agents/` (format Copilot — miroir) :
+Quatre agents spécialisés vivent dans `.claude/agents/` :
 
 | Agent | Quand l'utiliser |
 |---|---|
 | `business-analyst-culinaire` | cadrage fonctionnel, user stories, priorisation, KPIs |
 | `developpement-tech-couts` | implémentation, correction de bug, traçabilité des coûts Gemini |
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
-| `relecteur-regles` | relecture d'un diff contre les règles absolues, avant commit ou PR — lecture seule |
+| `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
 
-Chaque travail demandé est déployé, en suivant la séquence de la section « Déploiement » :
-`deploy.ps1` sur le PC, fusion sur `master` depuis une session cloud. C'est la session
-principale qui déploie. Les trois agents spécialisés et le relecteur ne lancent jamais
-`deploy.ps1` et ne fusionnent jamais sur `master`.
+C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
+fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
 quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de
 coût aux trois endroits.
 
-Une session Claude Code cloud lance `.claude/hooks/session-start.sh` : il installe Flutter
-(même version que la CI) et les dépendances Functions, pour que les agents puissent
-rejouer `flutter analyze`, `flutter test`, `npm run lint` et `npm test`.
+Deux hooks, déclarés dans `.claude/settings.json` :
+
+- `session-start.sh` : dans une session cloud, installe Flutter (même version que la CI) et
+  les dépendances Functions, pour rejouer `flutter analyze`, `flutter test`, `npm run lint`
+  et `npm test` ;
+- `format-on-edit.mjs` : après chaque écriture d'un fichier, lance `dart format` sur un
+  `.dart` de `kass_dalle/`, ou Prettier sur un `.ts` de `functions/src/`. Un échec du
+  formateur ne bloque pas l'édition ; la CI reste le contrôle qui fait foi.
+
+## Chaîne de travail
+
+Une demande qui appelle du code suit ces étapes, dans cet ordre. Une question n'en suit
+aucune : elle reçoit une réponse (voir « Une question appelle une réponse »).
+
+1. **Cadrer, si le besoin est flou.** Une nouvelle fonctionnalité, ou une demande qui laisse
+   plusieurs lectures possibles, passe d'abord par `business-analyst-culinaire` : critères
+   d'acceptation, cas limites, impact sur les rôles. L'utilisateur les valide avant la
+   première ligne de code. Une correction de bug précise ou une demande sans ambiguïté
+   passe directement à l'étape 2.
+2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
+   contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
+   --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
+   `npm run format:check`, `npm run build` et `npm test` côté Functions. Le hook de
+   formatage ne couvre que les fichiers écrits par l'outil d'édition, pas ceux produits par
+   un script ou un générateur.
+3. **Relire — obligatoire.** Toute modification qui touche `kass_dalle/`, `documentation/`,
+   `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push. Sur
+   le PC, la relecture porte sur le diff non commité, avant `deploy.ps1`, qui commite et
+   pousse lui-même.
+   Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
+   change du code repasse en relecture.
+4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.
+5. **Ouvrir la PR et la suivre** jusqu'à une CI verte. Une CI rouge se corrige ; elle ne se
+   relance pas en espérant un autre résultat.
+6. **Déployer** : fusionner, suivre le workflow « Déploiement » jusqu'au bout, puis
+   annoncer la version en ligne. Un échec du workflow se diagnostique et se corrige comme
+   une CI rouge. Sur le PC, `deploy.ps1` remplace les étapes 5 et 6.
+
+`product-owner-release` intervient pour une release complète ou un arbitrage de périmètre,
+pas pour chaque travail.
 
 ## Intégration continue
 
