@@ -276,7 +276,8 @@ l'application lit elle-même (`package_info_plus`, `version.json` sur le web). S
 travail demandé, sur le PC :
 
 1. résumer le travail en français ;
-2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
+2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
+   `documentation/CHANGELOG.md` ;
 3. commiter sur `master` et pousser ;
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée (ex.
    `Déployé en v0.19.37`). Un workflow en échec se diagnostique et se corrige comme une CI
@@ -285,7 +286,8 @@ travail demandé, sur le PC :
 Depuis une session cloud :
 
 1. résumer le travail en français ;
-2. incrémenter `version:` dans `kass_dalle/pubspec.yaml`, dans la PR ;
+2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
+   `documentation/CHANGELOG.md`, dans la PR ;
 3. fusionner la PR une fois la CI verte ;
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée. Un
    workflow en échec se diagnostique et se corrige comme une CI rouge.
@@ -301,6 +303,12 @@ desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
 **Toute la documentation vit dans `documentation/`.** Rien à la racine, hormis `README.md` et
 `CLAUDE.md`. `documentation/README.md` en est le sommaire.
 
+- `documentation/CHANGELOG.md` — ce qui a changé d'une version à l'autre. **Chaque version
+  incrémentée y reçoit une entrée**, dans le commit qui change `version:` : un titre
+  `### v0.x.y — fonctionnel` (ce que voit l'utilisateur) ou `— technique` (architecture,
+  données, déploiement), sous la date du jour en `## AAAA-MM-JJ`, la plus récente en tête.
+  L'entrée dit ce qui change et pourquoi, en quelques phrases. Les deux specs ci-dessous
+  décrivent l'état actuel ; l'historique ne vit qu'ici.
 - `documentation/FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès,
   couverture mobile / web / desktop.
 - `documentation/TechnicalRequirements.md` — architecture, schéma Firestore complet (champs +
@@ -395,7 +403,9 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    conventions d'interface du projet.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
-4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.
+4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`, et ajouter l'entrée
+   de cette version en tête de `documentation/CHANGELOG.md`, dans le même commit (voir
+   « Documentation à tenir à jour »).
 5. **Ouvrir la PR et la suivre** jusqu'à une CI verte. Une CI rouge se corrige ; elle ne se
    relance pas en espérant un autre résultat. Sur le PC, pas de PR : commit et push sur
    `master`, puis suivre la CI.

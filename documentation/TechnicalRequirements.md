@@ -2405,23 +2405,30 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
-**L'APK en ligne est vérifié deux fois** (`.github/scripts/keep-online-apk.sh`) : avant les
-Functions, pour qu'une paire incohérente arrête tout avant le premier déploiement, puis juste
-avant le hosting. Sans nouvel APK, cette seconde lecture recopie la paire en ligne. Avec un
-nouvel APK, elle vérifie qu'aucun APK aussi récent ou plus récent n'est arrivé entre-temps, et
-le conserve s'il y en a un. Chaque téléchargement a un délai (`curl --max-time` : 300 s pour
+**L'APK en ligne est vérifié deux fois.** Avant les Functions, `.github/scripts/keep-online-apk.sh`
+télécharge la paire APK + manifeste, pour qu'une paire incohérente arrête tout avant le premier
+déploiement. Juste avant le hosting, sans nouvel APK, le même script recopie la paire en ligne
+(« Conserver l'APK en ligne »). Avec un nouvel APK, « Revérifier l'APK en ligne » ne télécharge
+que le manifeste et le compare par `build-apk.sh decide` : si un APK aussi récent ou plus
+récent est arrivé entre-temps, `keep-online-apk.sh` le recopie et il est conservé. Un manifeste
+absent ou illisible à ce moment ne bloque pas la publication du nouvel APK. Chaque téléchargement a un délai (`curl --max-time` : 300 s pour
 l'APK, 60 s pour le manifeste), et chaque étape aussi (`timeout-minutes` : 10, et 15 pour la
-seconde lecture, qui peut appeler le script deux fois). Un échec de la seconde lecture laisse
+seconde lecture). Un échec de la seconde lecture laisse
 les Functions neuves avec le web précédent : relancer le workflow une fois la cause réglée.
 
-**Après le build de l'APK**, `build-apk.sh` arrête les démons Gradle et Kotlin et attend leur
-sortie. `.github/scripts/runner-resources.sh` publie ensuite la mémoire disponible et le disque
-libre en annotation du run, puis de nouveau dans l'étape « Ressources du runner », juste avant la
-seconde lecture. Une annotation publiée par une étape terminée reste visible même si le journal
-du job est perdu ensuite. Ce script ne fait jamais échouer le workflow. Le 8 octobre 2026, deux tentatives se sont arrêtées à
-l'étape « Revérifier l'APK en ligne » : la première au bout de 4 secondes sans journal, la
-seconde bloquée 13 minutes. La cause n'est pas établie. Hypothèses : mémoire ou disque du
-runner saturés, ou téléchargement bloqué, que `--max-time` coupe désormais.
+**Le disque du runner est compté.** Le 8 octobre 2026, trois tentatives se sont arrêtées au
+début de « Revérifier l'APK en ligne », sans journal : le runner a planté sur `No space left on
+device`. SDK Flutter, caches Gradle, build de l'APK et build web remplissaient son disque. Trois
+mesures :
+
+- l'étape « Libérer de la place sur le disque », en tête du job, supprime des outils
+  préinstallés dont le déploiement ne se sert pas (.NET, GHC, Swift, Boost, CodeQL, images
+  Docker…). Le SDK Android reste : le build de l'APK l'utilise. Elle affiche l'espace libre
+  avant et après ;
+- `build-apk.sh` supprime `build/app` une fois l'APK copié dans `build/web`, et arrête les
+  démons Gradle et Kotlin ;
+- la seconde lecture ne télécharge que le manifeste. L'APK en ligne n'est téléchargé que s'il
+  faut le conserver.
 
 **Les secrets de signature** (même page que ci-dessous) viennent de `kass_dalle/android/key.properties`
 et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64,

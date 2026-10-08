@@ -1,6 +1,6 @@
 ---
 name: relecteur-regles
-description: Relecture d'un diff Kass'Dalle contre les règles de CLAUDE.md — catch silencieux, poste d'IA à trois endroits, logique dupliquée Dart ↔ TypeScript, redimensionnement, bac à sable, cache web, SDK lourds, documentation, outillage (workflows, hooks, deploy.ps1). Lecture seule, ne modifie aucun fichier. Obligatoire avant chaque push (étape 3 de la « Chaîne de travail »).
+description: Relecture d'un diff Kass'Dalle contre les règles de CLAUDE.md — catch silencieux, poste d'IA à trois endroits, logique dupliquée Dart ↔ TypeScript, redimensionnement, bac à sable, cache web, SDK lourds, documentation, changelog, outillage (workflows, hooks, deploy.ps1). Lecture seule, ne modifie aucun fichier. Obligatoire avant chaque push (étape 3 de la « Chaîne de travail »).
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -57,8 +57,12 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
 10. **Documentation.** Un modèle, une Cloud Function, une route ou un flux modifié
     s'accompagne de la mise à jour de `documentation/` (schéma Firestore, diagramme
     Mermaid) dans le même diff.
-11. **Artefacts de build.** Rien sous `build/`, `Release/`, `.dart_tool/`, `node_modules/`.
-12. **Outillage.** Pour `.github/workflows/`, `.github/scripts/`, `.claude/` et `deploy.ps1` :
+11. **Changelog.** Si `version:` change dans `kass_dalle/pubspec.yaml`, le même diff ajoute
+    en tête de `documentation/CHANGELOG.md` une entrée `### v<version> — fonctionnel` ou
+    `— technique`, sans le numéro de build. Une version sans entrée, ou une entrée qui ne
+    décrit pas le diff, est une anomalie.
+12. **Artefacts de build.** Rien sous `build/`, `Release/`, `.dart_tool/`, `node_modules/`.
+13. **Outillage.** Pour `.github/workflows/`, `.github/scripts/`, `.claude/` et `deploy.ps1` :
     chercher ce qui ferait un déploiement faux ou dangereux (déclencheur trop large, commit
     déployé, option destructive), ce qui bloquerait une session (hook qui sort en code 2,
     commande absente sous Windows), et tout écart entre la documentation et le script.
