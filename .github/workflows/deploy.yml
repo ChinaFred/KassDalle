@@ -30,29 +30,58 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Functions, web, règles
+  gate:
+    name: Commit à déployer
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # Trois conditions pour un déclenchement automatique :
+    # Conditions d'un déclenchement automatique :
     # - la CI est verte ;
     # - elle portait sur un push, pas sur une pull request ;
     # - le commit ne vient pas de deploy.ps1, qui vient de tout déployer depuis
-    #   le PC. Son message commence par « deploy: » par défaut.
+    #   le PC : il signe ses commits « Deploy-Source: deploy.ps1 », et son
+    #   message par défaut commence par « deploy: ».
+    # Un lancement manuel n'est accepté que sur master : le sélecteur de
+    # GitHub propose toutes les branches, et aucune autre n'a de CI validée.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
-       !startsWith(github.event.workflow_run.head_commit.message, 'deploy:'))
+       !startsWith(github.event.workflow_run.head_commit.message, 'deploy:') &&
+       !contains(github.event.workflow_run.head_commit.message, 'Deploy-Source: deploy.ps1'))
+    outputs:
+      sha: ${{ steps.tip.outputs.sha }}
+    steps:
+      - name: Le commit est la tête de master
+        id: tip
+        # Relancer une ancienne CI verte, ou un ancien déploiement, remettrait
+        # en ligne des Functions, un web et des règles périmés. Seule la tête
+        # de master se déploie ; un commit dépassé laisse la place au suivant,
+        # qui a sa propre CI.
+        env:
+          WANTED: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/$REPO/commits/master" --jq .sha)
+          if [ "$tip" != "$WANTED" ]; then
+            echo "::notice::$WANTED n'est plus la tête de master ($tip) : rien à déployer."
+            exit 0
+          fi
+          echo "sha=$WANTED" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Functions, web, règles
+    needs: gate
+    if: needs.gate.outputs.sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: kass_dalle
     steps:
       - uses: actions/checkout@v4
         with:
-          # Le commit que la CI a validé, pas la tête de master au moment où
-          # ce job démarre : un push arrivé entre-temps n'a pas encore de CI.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -75,8 +104,26 @@ jobs:
         # Mêmes options que deploy.ps1.
         run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
 
+      - name: Authentification Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Firebase CLI
+        run: npm install -g firebase-tools@15.32.1
+
+      - name: Déployer les Functions
+        # Budget de découverte du bundle, comme dans deploy.ps1.
+        # --force : en mode non interactif, la CLI refuse sinon de supprimer
+        # une fonction retirée du code. Il n'est passé qu'ici : sur firestore,
+        # il supprimerait les index absents de firestore.indexes.json.
+        env:
+          FUNCTIONS_DISCOVERY_TIMEOUT: '120'
+        run: ../.github/scripts/firebase-deploy.sh functions 2 --force
+
       - name: Conserver l'APK en ligne
-        # Le hosting remplace tout le contenu de build/web. Sans cette étape,
+        # Le déploiement du hosting remplace tout le contenu en ligne par
+        # build/web. Sans cette étape,
         # le lien de téléchargement passerait en 404 et le manifeste lu par
         # l'application Android disparaîtrait. On recopie la paire en ligne,
         # qui décrit le binaire posé à côté d'elle.
@@ -86,9 +133,14 @@ jobs:
         # donc le contenu : un manifeste JSON qui porte une version, un APK
         # qui commence par la signature ZIP « PK ».
         #
-        # Un manifeste sans APK, ou l'inverse, arrête le déploiement : publier
-        # l'un sans l'autre annoncerait une version que le téléchargement ne
-        # rend pas.
+        # Même règle que Publish-ApkPayload (deploy.ps1) : un APK sans
+        # manifeste se publie sans rien annoncer ; un manifeste sans APK
+        # arrête le déploiement, car il annoncerait une version que le
+        # téléchargement ne rend pas.
+        #
+        # L'étape se place juste avant le hosting : plus la copie est tardive,
+        # plus la fenêtre est courte où un deploy.ps1 lancé en parallèle
+        # publierait un APK neuf que ce déploiement écraserait.
         run: |
           site="https://kassdale-6d948.web.app"
           apk=build/web/app-release.apk
@@ -110,27 +162,16 @@ jobs:
               exit 1
             fi
             echo "APK en ligne conservé : v$version ($actual octets)."
-          elif ! $has_apk && ! $has_manifest; then
+          elif $has_apk; then
+            rm -f "$manifest"
+            echo "::warning::APK en ligne sans manifeste : publié sans rien annoncer aux téléphones."
+          elif ! $has_manifest; then
             rm -f "$apk" "$manifest"
             echo "::warning::Aucun APK en ligne : le site n'en proposera pas."
           else
-            echo "::error::APK présent : $has_apk, manifeste présent : $has_manifest. Impossible de conserver la paire, déploiement arrêté."
+            echo "::error::Manifeste en ligne sans APK : il annoncerait une version absente, déploiement arrêté."
             exit 1
           fi
-
-      - name: Authentification Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
-      - name: Firebase CLI
-        run: npm install -g firebase-tools@15.32.1
-
-      - name: Déployer les Functions
-        # Budget de découverte du bundle, comme dans deploy.ps1.
-        env:
-          FUNCTIONS_DISCOVERY_TIMEOUT: '120'
-        run: ../.github/scripts/firebase-deploy.sh functions 2
 
       - name: Déployer le web et les règles
         run: ../.github/scripts/firebase-deploy.sh hosting,firestore,storage

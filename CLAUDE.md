@@ -246,14 +246,16 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ## Déploiement
 
-Deux chemins, et deux seulement :
+Deux chemins :
 
 - **Sur le PC** : le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
   build/deploy à la main.
 - **Depuis une session cloud** : fusionner sur `master`. Après une CI verte,
   `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il ne construit
   pas l'APK — la clé de signature ne vit que sur le PC — et conserve celui qui est en ligne.
-  Détails : `TechnicalRequirements.md`, « Déploiement automatique ».
+  Le même workflow se lance à la main depuis l'onglet Actions, sur `master` seulement.
+  `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`. Détails :
+  `TechnicalRequirements.md`, « Déploiement automatique ».
 
 **Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré et le script s'arrête si on le lui
 passe. L'application Android lit le manifeste posé à côté de l'APK pour savoir si une mise à jour
@@ -337,8 +339,10 @@ Quatre agents spécialisés vivent dans `.claude/agents/` (format Claude Code) e
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
 | `relecteur-regles` | relecture d'un diff contre les règles absolues, avant commit ou PR — lecture seule |
 
-Un agent ne déploie que dans le cadre d'un travail demandé, en suivant la séquence de la section
-« Déploiement » : `deploy.ps1` sur le PC, fusion sur `master` depuis une session cloud.
+Chaque travail demandé est déployé, en suivant la séquence de la section « Déploiement » :
+`deploy.ps1` sur le PC, fusion sur `master` depuis une session cloud. C'est la session
+principale qui déploie. Les trois agents spécialisés et le relecteur ne lancent jamais
+`deploy.ps1` et ne fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
 quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de

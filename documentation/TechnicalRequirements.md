@@ -2288,7 +2288,7 @@ dans `Release/` et pousse le dépôt.
 ./deploy.ps1              # web + APK + functions + hosting/firestore/storage + git push
 ```
 
-**Tout déploiement embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
+**Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
 passe, au lieu de publier un site sans binaire. L'application Android lit le manifeste posé à côté
 de l'APK pour savoir si une mise à jour existe ; un déploiement web seul lui annonce une version
 que le téléchargement ne rend pas.
@@ -2324,24 +2324,46 @@ signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
 
 | Quoi | Comment |
 |---|---|
-| Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`) |
-| Ignoré | un commit dont le message commence par `deploy:` : c'est `deploy.ps1` qui pousse, et il vient de tout déployer depuis le PC |
+| Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`), accepté sur `master` seulement |
+| Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée : le job `gate` s'arrête sans rien faire |
+| Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1` vient de tout déployer depuis le PC |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | Non construit | l'APK : la clé de signature ne vit que sur le PC |
-| Vérification | `.github/scripts/firebase-deploy.sh` exige la ligne `Deploy complete`, comme `deploy.ps1`. Les Functions ont droit à deux tentatives |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 
-**L'APK en ligne est conservé.** Le hosting remplace tout `build/web` : le workflow télécharge
-d'abord `app-release.apk` et `apk_release.json` depuis le site et les replace dans `build/web`.
-Un fichier absent ne rend pas 404 — la réécriture `**` sert `index.html` avec un code 200 — donc
-le contenu est jugé : un manifeste JSON qui porte une `version`, un APK qui commence par `PK`,
-et une taille égale à `size_bytes`. Une paire incomplète ou incohérente arrête le déploiement.
+**Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
+`Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à deux
+tentatives complètes. `deploy.ps1` relance, lui, les seules fonctions nommées dans
+`Failed to update function …` ; le workflow les liste dans ses avertissements.
+
+**`--force` n'est passé qu'aux Functions.** En mode non interactif, la CLI refuse sinon de
+supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
+production au déploiement suivant. Il n'est pas passé à `firestore` : il y supprimerait tout
+index absent de `firestore.indexes.json`.
+
+**L'APK en ligne est conservé.** Le déploiement du hosting remplace tout le contenu en ligne par
+`build/web`. Juste avant lui, le workflow télécharge `app-release.apk` et `apk_release.json`
+depuis le site et les replace dans `build/web`. Un fichier absent ne rend pas 404 — la
+réécriture `**` sert `index.html` avec un code 200 — donc le contenu est jugé : un manifeste
+JSON qui porte une `version`, un APK qui commence par `PK`, une taille égale à `size_bytes`.
+Les cas suivent `Publish-ApkPayload` :
+
+| En ligne | Résultat |
+|---|---|
+| APK et manifeste cohérents | republiés tels quels |
+| APK seul | republié sans manifeste : aucune mise à jour annoncée |
+| Ni l'un ni l'autre | rien n'est publié |
+| Manifeste seul, ou taille différente | **déploiement arrêté** : il annoncerait une version que le téléchargement ne rend pas |
+
 Le manifeste continue de décrire le binaire posé à côté de lui : les téléphones ne voient pas de
 mise à jour tant qu'un nouvel APK n'est pas publié par `deploy.ps1`.
 
-`--force` est passé à la CLI : en mode non interactif, elle refuse sinon de supprimer une
-fonction retirée du code. Une fonction supprimée du dépôt disparaît donc de la production au
-déploiement suivant.
+**Le PC et le workflow.** `deploy.ps1` refuse de démarrer si le PC est en retard sur
+`origin/master` : il remettrait sinon en ligne des Functions et un web plus anciens que ceux
+du workflow. Il reste une fenêtre de quelques minutes : un `deploy.ps1` qui publie un nouvel APK
+pendant que le workflow tourne peut voir cet APK remplacé par l'ancien, quand le workflow
+publie son hosting. Ne pas lancer `deploy.ps1` pendant qu'un workflow « Déploiement » tourne ;
+en cas de doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
 **Le secret `FIREBASE_SERVICE_ACCOUNT`** (Settings › Secrets and variables › Actions du dépôt
 GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
@@ -2351,7 +2373,8 @@ GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`.
 - `Cloud Run Admin` (Functions de 2e génération) ;
 - `Service Account User`, sur le compte d'exécution des fonctions ;
 - `Artifact Registry Administrator` ;
-- `Secret Manager Viewer` (les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`) ;
+- `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`, et
+  la CLI accorde au compte d'exécution l'accès à ces secrets ;
 - `Cloud Scheduler Admin` (fonctions planifiées).
 
 Le premier déploiement dit s'il en manque un : le message d'erreur de la CLI nomme la
@@ -3172,7 +3195,7 @@ il échoue, et le filtre « Publiées » rend « Journal de modération illisibl
 collectionGroup: image_moderation — status ASC, created_at DESC
 ```
 
-Déclaré dans `firestore.indexes.json`, déployé par `deploy.ps1` avec les règles. Le même
+Déclaré dans `firestore.indexes.json`, déployé avec les règles par `deploy.ps1` ou par le workflow « Déploiement ». Le même
 index sert les quatre filtres d'état, avec ou sans fenêtre de temps. Le badge n'en a pas
 besoin : une égalité seule, sans tri, tient sur l'index automatique.
 

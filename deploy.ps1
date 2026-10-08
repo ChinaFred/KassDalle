@@ -43,6 +43,19 @@ $appDir   = Join-Path $root "kass_dalle"
 $releaseWeb   = Join-Path $root "Release\web"
 $releaseMobile = Join-Path $root "Release\mobile"
 
+# Le PC n'est pas en retard sur origin/master.
+#
+# Une fusion sur master depuis une session cloud est deployee par GitHub
+# Actions (.github/workflows/deploy.yml). Un PC qui n'a pas recupere ce commit
+# remettrait en ligne des Functions et un web plus anciens, et son git push
+# echouerait seulement apres coup, une fois la production revenue en arriere.
+git -C $root fetch --quiet origin master
+if ($LASTEXITCODE -ne 0) { throw "git fetch origin master a echoue : impossible de verifier que le PC est a jour." }
+git -C $root merge-base --is-ancestor origin/master HEAD
+if ($LASTEXITCODE -ne 0) {
+    throw "Le PC est en retard sur origin/master : une version plus recente a pu etre deployee par GitHub Actions. Faire git pull, puis relancer."
+}
+
 function Invoke-FirebaseCli {
     param(
         [Parameter(Mandatory = $true)][string[]]$FirebaseArgs,
@@ -399,7 +412,9 @@ if (-not $SkipGit) {
         # ne doit pas créer de commit vide ni faire échouer le script.
         if (git diff --cached --name-only) {
             $commitMsg = if ($Message) { $Message } else { "deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
-            git commit -m $commitMsg
+            # La signature dit au workflow de deploiement que ce commit vient
+            # d'etre deploye depuis le PC : il ne le redeploie pas.
+            git commit -m $commitMsg -m "Deploy-Source: deploy.ps1"
             git push
         } else {
             Write-Host "Aucune modification de source à commiter." -ForegroundColor DarkGray
