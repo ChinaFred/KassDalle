@@ -985,6 +985,24 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 jour où la politique en vigueur a été recopiée dans une première configuration.
 Elle empêche cette configuration de revenir après une suppression volontaire.
 
+Trois documents de plus ne décident rien : ce sont les **points de reprise** des
+backfills (§7.10). Chacun est écrit par le serveur seul, via `setBackfillCursor`
+(`callable/_backfillCursor.ts`).
+
+| Document | Écrit par |
+|---|---|
+| `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
+| `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
+| `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `operation` | `String` | le nom du backfill |
+| `last_doc_id` | `String?` | la dernière recette examinée ; `null` quand la collection a été parcourue en entier, et l'appel suivant repart du début |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+| `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
+| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn` et `backfillRecipeRolesFn` seulement. L'écran Admin › Backfills le relit à l'ouverture : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu |
+
 ---
 
 ### 3.13 bis Collection `ai_routing_presets` — les configurations de routage
@@ -2065,7 +2083,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler) et trois reprises manuelles. Aucune n'est
+Trois tâches planifiées (Cloud Scheduler) et cinq reprises manuelles. Aucune n'est
 déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlationId`.
 
 | Fonction | Cadence | Ce qu'elle fait |
@@ -2077,9 +2095,10 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
-| `backfillRecipePrivacyFn` | `admin` | recopie `is_private` du livre porteur sur ses recettes, même point de reprise |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
-| `backfillShoppingFn` | `admin` | une fonction, deux modes, un curseur chacun. `aliases` : demande au modèle, par lots de quarante, le produit acheté des ingrédients du référentiel sans `shopping_product` (poste `backfill_shopping_aliases`) — rattrape le passé, un ingrédient neuf le reçoit désormais à l'import ; `products` : recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas |
+| `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
+| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` et `suggested_sides` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillAiPricingFn` | `admin` | applique `PRICING_CORRECTIONS` (`ai/pricing.ts`) à `app_config/ai_pricing` : un modèle au bon tarif est compté « déjà correct », un modèle qui en dévie est corrigé. Aucun appel d'IA, un seul document, donc ni pagination ni point de reprise |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
