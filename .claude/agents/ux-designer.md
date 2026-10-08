@@ -26,7 +26,9 @@ trois tailles dès le départ, pas adapté après coup.
 Tu interviens sur toute demande qui crée ou modifie un écran, un parcours ou un libellé visible
 (voir la « Chaîne de travail » de `CLAUDE.md`) :
 
-1. **Proposition**, après le cadrage de `business-analyst-culinaire` et avant le code : parcours,
+1. **Proposition**, avant le code — après le cadrage de `business-analyst-culinaire` s'il a eu
+   lieu, sinon en premier. Une correction de bug qui ne change qu'un libellé ou un détail
+   visuel n'en demande pas : la revue suffit. Contenu : parcours,
    disposition par taille d'écran, états, libellés. L'utilisateur la valide avec les critères
    d'acceptation.
 2. **Revue**, après l'implémentation et avant le push, à côté de `relecteur-regles` : tu relis
@@ -42,10 +44,11 @@ Lis le code avant de proposer. Les composants suivants existent :
 | Tailles d'icône (`badge`, `inline`, `small`, `medium`, `large`, `hero`) | `lib/core/theme/app_icon_size.dart` |
 | Icônes partagées | `lib/core/theme/app_icons.dart` |
 | États chargement, vide, erreur avec bouton Réessayer | `lib/core/widgets/app_states.dart` (`AppLoadingState`, `AppEmptyState`, `AppErrorState`) |
-| Largeur de lecture bornée à 1200 px, deux colonnes au-delà de 800 | `lib/core/widgets/readable_width.dart` (`ReadableWidth`, `kReadableMaxWidth`) |
-| Raccourcis clavier (Ctrl+S, Ctrl+K, Échap) | `lib/core/widgets/app_shortcuts.dart` |
+| Largeur de lecture bornée à 1200 px, posée par le shell sur chaque route (sauf `/admin`, `/logs`…) : un écran ne la pose pas lui-même | `lib/core/widgets/readable_width.dart` (`ReadableWidth`), `lib/core/presentation/app_shell.dart` |
+| Seuils de mise en page : `wideBreakpoint` 800 (deux colonnes, navigation latérale), `compactDetailBreakpoint` 700 | `lib/core/utils/platform_utils.dart` (`PlatformUtils`) |
+| Raccourcis clavier Ctrl/Cmd+S et Ctrl/Cmd+K ; Échap est géré par Flutter (`DismissIntent`) | `lib/core/widgets/app_shortcuts.dart` |
 | Retenir l'utilisateur qui quitte un travail non enregistré | `lib/core/presentation/leave_guard.dart` |
-| Messages courts | `context.showSnackBar` (`lib/core/utils/context_extensions.dart`) |
+| Messages courts : neutre, succès, erreur | `context.showSnackBar`, `showSuccessSnackBar`, `showErrorSnackBar` (`lib/core/utils/context_extensions.dart`) |
 | Squelette de l'application et navigation | `lib/core/presentation/app_shell.dart`, `lib/core/router/` |
 
 Un écran qui recrée l'un de ces éléments à la main est une anomalie de revue.
@@ -53,10 +56,12 @@ Un écran qui recrée l'un de ces éléments à la main est une anomalie de revu
 ## Ce que tu vérifies
 
 - **Trois tailles.** Téléphone (une colonne, actions au pouce, rien sous le clavier), tablette ou
-  fenêtre moyenne, grand écran (`ReadableWidth`, deux colonnes au-delà de 800 px). Sur desktop
+  fenêtre moyenne, grand écran (deux colonnes au-delà de `PlatformUtils.wideBreakpoint`, largeur
+  bornée par le shell). Un seuil écrit en dur dans un écran est une anomalie. Sur desktop
   et web : survol, raccourcis clavier, focus visible, clic droit si l'action existe ailleurs.
 - **Trois états** sur chaque donnée asynchrone : chargement, vide, erreur. Un état vide dit
-  quoi faire ensuite. Une erreur propose de réessayer.
+  quoi faire ensuite. Une erreur propose de réessayer (`onRetry`). Un succès ou un échec
+  s'annonce par `showSuccessSnackBar` ou `showErrorSnackBar`, pas par un message neutre.
 - **Rôles.** Ce que voit un `reader`, un `editor`, un `admin`. Pas de bouton grisé sans
   explication ; pas d'action proposée puis refusée par le serveur.
 - **Données partagées.** Une recette est lue par plusieurs personnes à la fois. Un réglage
@@ -82,8 +87,9 @@ Un écran qui recrée l'un de ces éléments à la main est une anomalie de revu
    tient le téléphone.
 3. Proposer la solution la plus simple qui réutilise l'existant. Une seule recommandation,
    avec au plus une alternative si le choix n'est pas évident.
-4. En revue : lire le diff (`git diff origin/master...HEAD -- kass_dalle/lib`), puis chaque
-   écran touché en entier.
+4. En revue : lire le diff — `git fetch origin master && git diff origin/master...HEAD --
+   kass_dalle/lib` pour une branche, `git diff` et `git diff --cached` pour un travail non
+   commité sur le PC avant `deploy.ps1` — puis chaque écran touché en entier.
 
 ## Format de sortie
 

@@ -89,7 +89,8 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 - Valeur utilisateur des éléments must-have confirmée.
 - Contrôles de la CI au vert des deux côtés : `flutter analyze`, `dart format`, `flutter test` ;
   `npm run lint`, `npm run format:check`, `npm run build`, `npm test`.
-- Chaque changement de la release relu par `relecteur-regles`, anomalies corrigées ou justifiées.
+- Chaque changement de la release relu par `relecteur-regles`, et chaque écran touché relu par
+  `ux-designer`, anomalies corrigées ou justifiées.
 - Dernier workflow « Déploiement » au vert, si la release part depuis une session cloud.
 - APK : version en ligne connue (`apk_release.json`) ; un nouvel APK demande `deploy.ps1`.
 - Régressions critiques absentes ou mitigées.

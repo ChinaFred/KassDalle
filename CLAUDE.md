@@ -369,9 +369,11 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    première ligne de code. Une correction de bug précise ou une demande sans ambiguïté
    passe directement à l'étape 2.
 
-   Si la demande crée ou modifie un écran, un parcours ou un libellé visible,
-   `ux-designer` propose ensuite le parcours, la disposition par taille d'écran, les états
-   et les libellés. L'utilisateur valide cette proposition avec les critères d'acceptation.
+   Si la demande crée ou modifie un écran ou un parcours, `ux-designer` propose le parcours,
+   la disposition par taille d'écran, les états et les libellés — après le cadrage s'il a eu
+   lieu, sinon en premier. L'utilisateur valide cette proposition avant le code. Une
+   correction qui ne change qu'un libellé ou un détail visuel s'en passe : la revue de
+   l'étape 3 suffit.
 2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
    contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
    --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
