@@ -243,17 +243,21 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ## Déploiement
 
-Deux chemins :
+**Un seul chemin : un push sur `master`.** Sur le PC comme depuis une session cloud. Après
+une CI verte, `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il
+construit un nouvel APK signé quand la version de `pubspec.yaml` dépasse celle de l'APK en
+ligne, et conserve sinon celui qui est en ligne. La clé de signature est posée en secrets
+GitHub. Le même workflow se lance à la main depuis l'onglet Actions, sur `master` seulement.
+Détails : `TechnicalRequirements.md`, « Déploiement automatique ».
 
-- **Sur le PC** : le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
-  build/deploy à la main.
-- **Depuis une session cloud** : fusionner sur `master`. Après une CI verte,
-  `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il construit un
-  nouvel APK signé quand la version de `pubspec.yaml` dépasse celle de l'APK en ligne, et
-  conserve sinon celui qui est en ligne. La clé de signature est posée en secrets GitHub.
-  Le même workflow se lance à la main depuis l'onglet Actions, sur `master` seulement.
-  `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`. Détails :
-  `TechnicalRequirements.md`, « Déploiement automatique ».
+- **Sur le PC** : commiter sur `master` et pousser. Faire `git pull` avant de commencer un
+  travail : une fusion depuis une session cloud a pu avancer `master`.
+- **Depuis une session cloud** : fusionner la PR sur `master`.
+
+**`deploy.ps1` est un outil de secours**, pour le jour où GitHub Actions est indisponible.
+Ne jamais reconstituer ses commandes de build/deploy à la main. Il refuse de partir si le PC
+est en retard sur `origin/master`. Son commit porte la ligne `Deploy-Source: deploy.ps1`, et
+le workflow ne redéploie pas ce commit.
 
 **Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré et le script s'arrête si on le lui
 passe. L'application Android lit le manifeste posé à côté de l'APK pour savoir si une mise à jour
@@ -261,19 +265,22 @@ existe : publier le web seul lui annonce une version que le téléchargement ne 
 fenêtre de mise à jour revient à chaque lancement.
 
 ```powershell
-./deploy.ps1              # web + APK Android + functions + hosting/firestore/storage + Release/ + git push
+./deploy.ps1              # secours : web + APK Android + functions + hosting/firestore/storage + Release/ + git push
 ./deploy.ps1 -Message "…" # message de commit personnalisé
 ./deploy.ps1 -SkipGit
 ./deploy.ps1 -ResumeHostingOnly
 ```
 
-Le script **ne bump pas la version** : `version:` dans `pubspec.yaml` est la seule source, que
-l'application lit elle-même (`package_info_plus`, `version.json` sur le web). Séquence après un travail demandé, sur le PC :
+Rien **ne bump la version** : `version:` dans `pubspec.yaml` est la seule source, que
+l'application lit elle-même (`package_info_plus`, `version.json` sur le web). Séquence après un
+travail demandé, sur le PC :
 
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
-3. exécuter `./deploy.ps1` ;
-4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
+3. commiter sur `master` et pousser ;
+4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée (ex.
+   `Déployé en v0.19.37`). Un workflow en échec se diagnostique et se corrige comme une CI
+   rouge.
 
 Depuis une session cloud :
 
@@ -283,7 +290,7 @@ Depuis une session cloud :
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée. Un
    workflow en échec se diagnostique et se corrige comme une CI rouge.
 
-Un nouvel APK part par `deploy.ps1`, ou par le workflow dès que la version change.
+Un nouvel APK part par le workflow dès que la version change, ou par `deploy.ps1` en secours.
 
 Pour une release complète : mettre aussi à jour `documentation/FunctionalRequirements.md`,
 `documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le
@@ -338,7 +345,7 @@ Cinq agents spécialisés vivent dans `.claude/agents/` :
 | `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
 
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
-fusionnent jamais sur `master`.
+poussent ni ne fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
 quand la tâche le demande, sans contexte séparé.
@@ -383,18 +390,18 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    un script ou un générateur.
 3. **Relire — obligatoire.** Toute modification qui touche `kass_dalle/`, `documentation/`,
    `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push. Sur
-   le PC, la relecture porte sur le diff non commité, avant `deploy.ps1`, qui commite et
-   pousse lui-même.
+   le PC, la relecture porte sur le diff non commité, avant le commit.
    Si le diff touche un écran, `ux-designer` le relit aussi, contre sa proposition et les
    conventions d'interface du projet.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.
 5. **Ouvrir la PR et la suivre** jusqu'à une CI verte. Une CI rouge se corrige ; elle ne se
-   relance pas en espérant un autre résultat.
+   relance pas en espérant un autre résultat. Sur le PC, pas de PR : commit et push sur
+   `master`, puis suivre la CI.
 6. **Déployer** : fusionner, suivre le workflow « Déploiement » jusqu'au bout, puis
    annoncer la version en ligne. Un échec du workflow se diagnostique et se corrige comme
-   une CI rouge. Sur le PC, `deploy.ps1` remplace les étapes 5 et 6.
+   une CI rouge. Sur le PC, le push de l'étape 5 lance le même workflow.
 
 `product-owner-release` intervient pour une release complète ou un arbitrage de périmètre,
 pas pour chaque travail.
@@ -529,10 +536,10 @@ le livrable inclut le backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Git
 
-Faire un commit qui résume les ajouts, puis `git push`. Exception sur le PC, pour un travail
-qui part en production : ne pas pousser avant `deploy.ps1`, qui commite et pousse lui-même un
-commit signé. Un push à la main déclencherait le déploiement automatique pendant que
-`deploy.ps1` tourne.
+Faire un commit qui résume les ajouts, puis `git push`. Sur `master`, ce push déploie (voir
+« Déploiement »). Seule exception : quand `deploy.ps1` sert de secours, ne pas pousser à la
+main pendant qu'il tourne. Il commite et pousse lui-même, et un push à la main lancerait le
+workflow en parallèle.
 Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 
 **Aucun artefact de build ne doit être versionné.** `Release/` est intégralement ignoré

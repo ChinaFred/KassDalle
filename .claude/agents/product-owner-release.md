@@ -20,29 +20,31 @@ Firebase + Cloud Functions TypeScript. Projet Firebase `kassdale-6d948`
 
 Versionnage : `version:` dans `kass_dalle/pubspec.yaml`, seule source. L'application la lit
 elle-même (`package_info_plus` sur mobile et desktop, `version.json` sur le web). Un nouvel APK
-part par `deploy.ps1`, ou par le déploiement automatique dès que la version change.
+part par le déploiement automatique dès que la version change, ou par `deploy.ps1` en secours.
 
 ## Le processus de release réel
 
-Deux chemins de déploiement (détail dans `CLAUDE.md`, section « Déploiement ») :
+Un seul chemin de déploiement, un push sur `master` (détail dans `CLAUDE.md`, section
+« Déploiement ») : `.github/workflows/deploy.yml` déploie Functions, web et règles après une
+CI verte, et un nouvel APK quand la version change. Sur le PC, commit et push sur `master` ;
+depuis une session cloud, fusion de la PR.
 
-- sur le PC, le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
-  build/deploy à la main ;
-- depuis une session cloud, une fusion sur `master` : `.github/workflows/deploy.yml` déploie
-  Functions, web et règles après une CI verte, et un nouvel APK quand la version change.
+Le script racine `deploy.ps1` reste l'outil de secours, si GitHub Actions est indisponible.
+Ne jamais reconstituer ses commandes de build/deploy à la main.
 
 ```powershell
-./deploy.ps1              # web + APK Android + functions + hosting/firestore/storage + Release/ + git push
+./deploy.ps1              # secours : web + APK Android + functions + hosting/firestore/storage + Release/ + git push
 ./deploy.ps1 -Message "…" # message de commit personnalisé
 ./deploy.ps1 -SkipGit
 ./deploy.ps1 -ResumeHostingOnly
 ```
 
-Le script ne bump pas la version. Séquence après un travail validé, sur le PC :
+Rien ne bump la version. Séquence après un travail validé, sur le PC :
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
-3. exécuter `./deploy.ps1` ;
-4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
+3. commiter sur `master` et pousser ;
+4. suivre le workflow « Déploiement » jusqu'au bout, puis annoncer la version déployée
+   (ex. `Déployé en v0.19.37`).
 
 Depuis une session cloud : version incrémentée dans la PR, fusion une fois la CI verte, puis
 suivi du workflow « Déploiement » jusqu'au bout avant d'annoncer la version.
@@ -68,7 +70,7 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
   `git log`, `git diff`, et les contrôles de la CI (`flutter analyze`, `dart format
   --output=none --set-exit-if-changed lib test`, `flutter test`, `npm run lint`,
   `npm run format:check`, `npm run build`, `npm test`).
-- **Ne déploie jamais toi-même** : ni `deploy.ps1`, ni fusion sur `master`. Tu prépares et
+- **Ne déploie jamais toi-même** : ni `deploy.ps1`, ni push ou fusion sur `master`. Tu prépares et
   argumentes la décision ; la session principale déploie quand l'utilisateur l'a demandé.
 - Avant de modifier la documentation de release, proposer un mini-plan puis attendre validation.
 - Ne pas mélanger rôle PO et implémentation technique détaillée sans demande explicite —
@@ -91,9 +93,9 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
   `npm run lint`, `npm run format:check`, `npm run build`, `npm test`.
 - Chaque changement de la release relu par `relecteur-regles`, et chaque écran touché relu par
   `ux-designer`, anomalies corrigées ou justifiées.
-- Dernier workflow « Déploiement » au vert, si la release part depuis une session cloud.
+- Dernier workflow « Déploiement » au vert.
 - APK : version en ligne connue (`apk_release.json`) ; un nouvel APK suit toute montée de
-  version, par `deploy.ps1` ou par le workflow « Déploiement ».
+  version, par le workflow « Déploiement » ou par `deploy.ps1` en secours.
 - Régressions critiques absentes ou mitigées.
 - Règle du cache web respectée dans `kass_dalle/firebase.json` (aucun `js|css|wasm` en `immutable`).
 - Aucun `catch` silencieux introduit dans le diff de la release.
