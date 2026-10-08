@@ -2328,7 +2328,7 @@ signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
 | Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
 | Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1` vient de tout déployer depuis le PC |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
-| Non construit | l'APK : la clé de signature ne vit que sur le PC |
+| APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 
 **Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
@@ -2362,7 +2362,20 @@ Les cas suivent `Publish-ApkPayload` :
 | Manifeste seul, ou taille différente | **déploiement arrêté** : il annoncerait une version que le téléchargement ne rend pas |
 
 Le manifeste continue de décrire le binaire posé à côté de lui : les téléphones ne voient pas de
-mise à jour tant qu'un nouvel APK n'est pas publié par `deploy.ps1`.
+mise à jour tant qu'un nouvel APK n'est pas publié.
+
+**Un nouvel APK quand la version change.** `build-apk.sh decide` compare `version:` de
+`pubspec.yaml` (`x.y.z+n`) à `version` et `build_number` du manifeste en ligne. Il construit si
+le pubspec est plus récent, ou s'il n'y a pas de manifeste en ligne. Une version plus ancienne
+que celle en ligne — un `deploy.ps1` a publié plus récent — ne reconstruit rien. `build-apk.sh
+build` décode la clé dans `$RUNNER_TEMP`, écrit `android/key.properties`, lance
+`flutter build apk --release`, pose l'APK et son manifeste dans `build/web` (mêmes champs que
+`Write-ApkManifest`), puis supprime la clé et `key.properties`, réussite ou échec. Le build a
+lieu avant les Functions : un secret absent arrête tout avant le premier déploiement. Il ajoute
+environ huit minutes. Juste avant le hosting, le manifeste en ligne est relu : si un
+`deploy.ps1` a publié entre-temps un APK aussi récent ou plus récent, c'est lui qui est
+conservé. Ni `Release/mobile` ni Google Drive ne reçoivent cet APK : ils restent
+propres au PC.
 
 **Le PC et le workflow.** Deux déploiements simultanés publient chacun leur version, et le
 dernier arrivé l'emporte. Trois protections, et une consigne :
@@ -2384,7 +2397,16 @@ doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
 **L'APK en ligne est vérifié deux fois** (`.github/scripts/keep-online-apk.sh`) : avant les
 Functions, pour qu'une paire incohérente arrête tout avant le premier déploiement, puis juste
-avant le hosting, pour recopier la paire la plus récente.
+avant le hosting. Sans nouvel APK, cette seconde lecture recopie la paire en ligne. Avec un
+nouvel APK, elle vérifie qu'aucun APK aussi récent ou plus récent n'est arrivé entre-temps, et
+le conserve s'il y en a un.
+
+**Les secrets de signature** (même page que ci-dessous) viennent de `kass_dalle/android/key.properties`
+et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64,
+sur une ligne : `[Convert]::ToBase64String([IO.File]::ReadAllBytes("<chemin>.jks"))` en
+PowerShell ; pas `certutil -encode`, dont les lignes `-----BEGIN` font échouer le décodage),
+`ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. C'est la même clé que
+celle de `deploy.ps1` : un APK signé par une autre clé serait refusé comme mise à jour.
 
 **Le secret `FIREBASE_SERVICE_ACCOUNT`** (Settings › Secrets and variables › Actions du dépôt
 GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :

@@ -4,13 +4,14 @@ name: Déploiement
 # après chaque CI verte sur master. Une modification fusionnée depuis une
 # session cloud part ainsi en ligne comme depuis le PC.
 #
-# L'APK n'est PAS construit ici : la clé de signature ne vit que sur le PC.
-# Le site garde l'APK et le manifeste déjà en ligne (étape « Conserver
-# l'APK en ligne »). Un nouvel APK part toujours par deploy.ps1.
+# L'APK n'est construit que si la version de pubspec.yaml est plus récente
+# que celle de l'APK en ligne. Sinon le site garde l'APK et le manifeste déjà
+# en ligne (étape « Conserver l'APK en ligne »).
 #
-# Secret requis : FIREBASE_SERVICE_ACCOUNT, la clé JSON d'un compte de service
-# du projet kassdale-6d948. Rôles : voir documentation/TechnicalRequirements.md,
-# section « Déploiement automatique ».
+# Secrets requis : FIREBASE_SERVICE_ACCOUNT, la clé JSON d'un compte de service
+# du projet kassdale-6d948 ; ANDROID_KEYSTORE_BASE64, ANDROID_STORE_PASSWORD,
+# ANDROID_KEY_ALIAS et ANDROID_KEY_PASSWORD, la clé de signature du PC. Voir
+# documentation/TechnicalRequirements.md, section « Déploiement automatique ».
 
 on:
   workflow_run:
@@ -70,11 +71,11 @@ jobs:
           echo "sha=$WANTED" >> "$GITHUB_OUTPUT"
 
   deploy:
-    name: Functions, web, règles
+    name: Functions, web, APK, règles
     needs: gate
     if: needs.gate.outputs.sha != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: kass_dalle
@@ -125,6 +126,28 @@ jobs:
         # avec un web ancien. Le téléchargement est refait avant le hosting.
         run: ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-check"
 
+      - name: Faut-il un nouvel APK ?
+        id: apk
+        run: ../.github/scripts/build-apk.sh decide "$RUNNER_TEMP/apk-check/apk_release.json"
+
+      - uses: actions/setup-java@v4
+        if: steps.apk.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Construire l'APK
+        # Avant tout déploiement : un secret absent ou un build en échec arrête
+        # le workflow avant que les Functions ne partent. La clé et
+        # key.properties sont supprimés à la sortie du script.
+        if: steps.apk.outputs.build == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ../.github/scripts/build-apk.sh build
+
       - name: Authentification Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -143,15 +166,33 @@ jobs:
         run: ../.github/scripts/firebase-deploy.sh functions 2 --force
 
       - name: Conserver l'APK en ligne
+        if: steps.apk.outputs.build != 'true'
         # Juste avant le hosting : plus la copie est tardive, plus la fenêtre
         # est courte où un deploy.ps1 publierait un APK neuf que ce
         # déploiement écraserait.
         run: ../.github/scripts/keep-online-apk.sh build/web
 
+      - name: Revérifier l'APK en ligne
+        if: steps.apk.outputs.build == 'true'
+        # Le build de l'APK et les Functions durent plus de dix minutes. Un
+        # deploy.ps1 a pu publier entre-temps un APK plus récent que celui
+        # construit ici : il est alors conservé, au lieu d'être remplacé par
+        # une version plus ancienne.
+        run: |
+          ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-recheck"
+          decision=$(mktemp)
+          GITHUB_OUTPUT="$decision" ../.github/scripts/build-apk.sh decide "$RUNNER_TEMP/apk-recheck/apk_release.json"
+          if grep -q '^build=false$' "$decision"; then
+            echo "::warning::Un APK aussi récent ou plus récent est en ligne depuis le début du workflow : il est conservé."
+            ../.github/scripts/keep-online-apk.sh build/web
+          fi
+
       - name: Déployer le web et les règles
         run: ../.github/scripts/firebase-deploy.sh hosting,firestore,storage
 
       - name: Résumé
+        env:
+          APK_BUILT: ${{ steps.apk.outputs.build }}
         run: |
           version=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
           sha=$(git rev-parse --short HEAD)
@@ -159,7 +200,9 @@ jobs:
             echo "### Déployé : v$version ($sha)"
             echo
             echo "Functions, web, règles Firestore et Storage."
-            if [ -f build/web/apk_release.json ]; then
+            if [ "$APK_BUILT" = true ]; then
+              echo "Nouvel APK publié : v$(jq -r .version build/web/apk_release.json)."
+            elif [ -f build/web/apk_release.json ]; then
               echo "APK en ligne inchangé : v$(jq -r .version build/web/apk_release.json)."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
