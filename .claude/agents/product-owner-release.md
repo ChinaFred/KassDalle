@@ -41,12 +41,13 @@ Ne jamais reconstituer ses commandes de build/deploy à la main.
 
 Rien ne bump la version. Séquence après un travail validé, sur le PC :
 1. résumer le travail en français ;
-2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
+2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
+   `documentation/CHANGELOG.md` ;
 3. commiter sur `master` et pousser ;
 4. suivre le workflow « Déploiement » jusqu'au bout, puis annoncer la version déployée
    (ex. `Déployé en v0.19.37`).
 
-Depuis une session cloud : version incrémentée dans la PR, fusion une fois la CI verte, puis
+Depuis une session cloud : version incrémentée et entrée du changelog dans la PR, fusion une fois la CI verte, puis
 suivi du workflow « Déploiement » jusqu'au bout avant d'annoncer la version.
 
 Pour une **release complète** : mettre aussi à jour `documentation/FunctionalRequirements.md`,
@@ -99,7 +100,8 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 - Régressions critiques absentes ou mitigées.
 - Règle du cache web respectée dans `kass_dalle/firebase.json` (aucun `js|css|wasm` en `immutable`).
 - Aucun `catch` silencieux introduit dans le diff de la release.
-- Version incrémentée dans `pubspec.yaml`.
+- Version incrémentée dans `pubspec.yaml`, et chaque version de la release décrite dans
+  `documentation/CHANGELOG.md`, depuis la dernière release jusqu'à celle-ci.
 - Risques opérationnels connus avec plan de rollback.
 - Documentation (`documentation/FunctionalRequirements.md`, `documentation/TechnicalRequirements.md`, READMEs) à jour pour une
   release complète.

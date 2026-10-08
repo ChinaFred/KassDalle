@@ -12,9 +12,165 @@ l'architecture, au schéma de données ou au déploiement.
 **Rien n'a été réécrit.** Les sections ont été déplacées telles quelles, y compris les entrées
 anciennes sans accents.
 
+Depuis la v0.23.3, chaque version incrémentée reçoit son entrée dans le commit qui change
+`version:` (voir `CLAUDE.md`, « Documentation à tenir à jour »). Les entrées de la v0.22.104 à
+la v0.23.2 ont été écrites après coup, depuis l'historique git.
+
 ---
 
+## 2026-10-09
+
+### v0.23.3 — technique
+
+#### Le changelog redevient une étape de chaque version
+
+Aucune entrée n'avait été écrite de la v0.22.104 à la v0.23.2 : ni `CLAUDE.md`, ni les agents,
+ni les skills ne demandaient de tenir ce fichier. Les entrées de ces douze versions ont été
+rédigées après coup, depuis l'historique git.
+
+- `CLAUDE.md` : l'étape « Versionner » de la chaîne de travail et les deux séquences de
+  déploiement demandent l'entrée du changelog dans le même commit que la version. La section
+  « Documentation à tenir à jour » décrit son format.
+- `relecteur-regles` : nouveau contrôle 11. Une version incrémentée sans entrée est une
+  anomalie. Les contrôles « Artefacts de build » et « Outillage » deviennent 12 et 13.
+- `product-owner-release` : la checklist go/no-go vérifie que chaque version de la release a
+  son entrée.
+
+### v0.23.2 — technique
+
+#### Délais sur la lecture de l'APK en ligne, démons Gradle arrêtés
+
+Le workflow de la v0.23.1 s'est arrêté deux fois à « Revérifier l'APK en ligne », après le
+build de l'APK et le déploiement des Functions : la première tentative au bout de 4 s sans
+journal, la seconde bloquée 13 min, puis annulée. La cause n'est pas établie.
+
+- `build-apk.sh` arrête les démons Gradle et Kotlin après le build et attend leur sortie.
+- `runner-resources.sh` publie la mémoire disponible et le disque libre en annotation du run,
+  après le build et dans une étape à part avant la seconde lecture de l'APK.
+- `keep-online-apk.sh` : `curl --max-time`. Les étapes APK ont un `timeout-minutes`.
+
+La v0.23.1 n'a jamais été publiée sur le web ni en APK : la v0.23.2 lui succède directement.
+
+## 2026-10-08
+
+### v0.23.1 — technique
+
+#### Sur le PC aussi, on déploie par un push sur `master`
+
+Le workflow GitHub « Déploiement » devient le chemin normal, sur le PC comme depuis une session
+cloud. `deploy.ps1` reste l'outil de secours.
+
+- `deploy.ps1` lance la CLI Firebase avec `--non-interactive`. Sa sortie part dans un journal :
+  une question de la CLI, ici sur la suppression de `backfillAiPricingFn`, attendait une
+  réponse que personne ne voyait.
+- Le workflow ne saute plus que les commits signés `Deploy-Source: deploy.ps1`. Le filtre sur
+  le préfixe `deploy:` aurait sauté un commit poussé à la main avec ce préfixe.
+- Le rôle Cloud Tasks Admin, requis depuis la v0.22.109, manquait encore au compte de
+  service `github-deploy` : le premier déploiement de la v0.23.1 a échoué sur
+  `cloudtasks.queues.get` (403) pour la file de `recipeProcessor`. Le rôle a été posé le
+  8 octobre au soir, et la relance a déployé les Functions.
+
+### v0.23.0 — fonctionnel
+
+Version déployée depuis le PC par `deploy.ps1`.
+
+- **Rôle d'une recette dans un repas, à l'écriture.** Le déclencheur `onRecipeWritten` pose
+  `tags.meal_role` sur toute recette écrite sans ce champ : création manuelle sans clic
+  « Suggérer », recette de l'Explorer IA, copie d'une recette non classée. Nouveau poste de
+  coût `inline_meal_role_classification`, inscrit aux trois endroits.
+- **Backfills retirés** : correction de la grille tarifaire (`backfillAiPricingFn`),
+  rattachement des recettes sans livre, semis des garnitures simples. Le domaine
+  `meal_staple` et ses tests sont supprimés.
+- **Storage** : la lecture des images partagées revient à `isActive()`. L'essai du 5 octobre,
+  qui l'alignait sur le jeton approuvé, avait coupé l'accès au fondateur le temps que son
+  jeton porte le claim de rôle.
+- **CSP** (`firebase.json`, en rapport seul) : `https://www.google.com` autorisé en script et
+  en cadre.
+
+### v0.22.111 — technique
+
+#### APK signé construit par le workflow quand la version change
+
+Le workflow « Déploiement » construit un nouvel APK signé quand la version de `pubspec.yaml`
+dépasse celle de l'APK en ligne, et conserve sinon celui qui est en ligne. La clé de signature
+est posée en secrets GitHub (`ANDROID_*`). L'APK en ligne est vérifié avant les Functions, puis
+revérifié juste avant le hosting.
+
+### v0.22.110 — technique
+
+#### Agents : trois skills, et un agent `ux-designer`
+
+Skills `logique-dupliquee`, `backfill` et `experience-sandbox`, à côté de `nouveau-poste-ia`.
+Nouvel agent `ux-designer`, en lecture seule : proposition d'un parcours avant le code, revue
+des écrans après. Les agents d'origine suivent la chaîne de travail.
+
+### v0.22.109 — technique
+
+#### Relance ciblée des Functions en échec
+
+`firebase-deploy.sh` et `deploy.ps1` relancent les seules fonctions nommées en échec par la CLI
+(`--only functions:<nom>`). Une relance complète sautait `recipeProcessor` comme « inchangée »
+et annonçait un succès alors que sa file Cloud Tasks avait échoué.
+
+Le compte de service `github-deploy` a besoin du rôle Cloud Tasks Admin : la CLI lit et met à
+jour la file de `recipeProcessor` (`cloudtasks.queues.get`, `cloudtasks.queues.update`).
+
+### v0.22.108 — technique
+
+#### Chaîne de travail des agents, hook de formatage, miroirs Copilot retirés
+
+`CLAUDE.md` décrit la chaîne de travail : cadrage, implémentation, relecture obligatoire par
+`relecteur-regles`, version, PR, déploiement. Hook `format-on-edit.mjs` : `dart format` ou
+Prettier après chaque écriture. Les miroirs Copilot (`.github/agents/`, `.github/instructions/`) sont retirés :
+`CLAUDE.md` est la seule source des instructions.
+
+### v0.22.107 — technique
+
+#### Déploiement automatique par GitHub Actions
+
+`.github/workflows/deploy.yml` déploie les Functions, le web et les règles après une CI verte
+sur `master`. Il vérifie que le commit est encore la tête de `master`, et ne redéploie pas un
+commit de `deploy.ps1`. Compte de service `github-deploy`, clé en secret
+`FIREBASE_SERVICE_ACCOUNT`.
+
+Moteur d'IA, dans la même version : `backfill_shopping_aliases` quitte `ROUTABLE_FEATURES`, et
+`withoutRetiredFeatures` retire de la politique affichée les seuls postes absents de
+`ROUTABLE_FEATURES`. Sans ce filtre, `setAiRoutingPolicyFn` refusait d'enregistrer une
+politique qui contenait encore un poste retiré.
+
+Premiers éléments du réseau d'agents, dans la même version : hook `session-start.sh` (Flutter
+et dépendances dans une session cloud), agent `relecteur-regles` et skill `nouveau-poste-ia`.
+
 ## 2026-10-05
+
+### v0.22.106 — technique
+
+Version déployée depuis le PC par `deploy.ps1`. CSP (en rapport seul) : `'wasm-unsafe-eval'` en
+script, `https://*.googleapis.com` en image, `https://*.cloudfunctions.net` en connexion.
+
+### v0.22.105 — technique
+
+Version déployée depuis le PC par `deploy.ps1`.
+
+- **Règles Firestore** : un membre approuvé ne crée une annotation qu'à son propre `uid`, et un
+  groupe qu'avec lui-même pour seul membre et propriétaire. Le document `usage` n'accepte que
+  `storage_bytes`, `updated_at` et le compteur de scans du mois courant ou précédent.
+- **Règles Storage** : la lecture des images partagées exige un jeton approuvé (revenu en
+  arrière en v0.23.0).
+- **En-têtes web** : `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, et une
+  CSP en rapport seul.
+- **Backfills retirés** : confidentialité des recettes (`backfillRecipePrivacyFn`) et mode
+  « produit acheté des ingrédients » du backfill des courses.
+- `sharp` passe de 0.33 à 0.35.
+
+### v0.22.104 — fonctionnel
+
+#### Qualité des données (Admin › Monitoring)
+
+Diagnostic en lecture seule des référentiels nutrition : produit d'achat manquant, nutrition
+incomplète ou en échec, sel invraisemblable (plus de 100 g pour 100 g), unités de mesure non
+confirmées. Compteurs exhaustifs, et un échantillon cliquable qui ouvre l'écran du référentiel
+concerné, recherche préremplie.
 
 ### v0.22.103 — technique
 
