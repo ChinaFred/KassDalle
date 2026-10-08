@@ -635,15 +635,32 @@ async function seedPresetsIfNeeded(policy: AiRoutingPolicy, uid: string | null):
   await policyDoc.set({ presets_seeded_at: FieldValue.serverTimestamp() }, { merge: true });
 }
 
+/**
+ * Retire de la politique enregistrée les postes sortis de `ROUTABLE_FEATURES`.
+ *
+ * Un poste retiré peut rester dans `app_config/ai_routing_policy`. L'écran
+ * renvoie la politique entière à l'enregistrement, et `setAiRoutingPolicyFn`
+ * la refuserait pour ce seul poste. Seuls les postes inconnus sont écartés :
+ * un modèle par poste sorti de la liste de l'écran reste affiché, pour que son
+ * remplacement soit un choix et non un effacement à l'enregistrement.
+ */
+function withoutRetiredFeatures(policy: AiRoutingPolicy): AiRoutingPolicy {
+  const known = <T>(table: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(
+      Object.entries(table).filter(([feature]) => ROUTING_CATALOG.featureProviders.has(feature)),
+    );
+  return {
+    ...policy,
+    features: known(policy.features),
+    anthropicModels: known(policy.anthropicModels),
+    anthropicEfforts: known(policy.anthropicEfforts),
+    thinkingBudgets: known(policy.thinkingBudgets),
+  };
+}
+
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
   await requireAdmin(req, "routage_ia_lecture");
-  // Un poste retiré de `ROUTABLE_FEATURES` peut rester dans la politique
-  // enregistrée. L'écran renvoie la politique entière à l'enregistrement, et
-  // `setAiRoutingPolicyFn` la refuserait pour ce seul poste. Il est donc écarté
-  // ici, comme dans les configurations enregistrées.
-  const { policy } = readRoutingPolicy(await getAiRoutingPolicy(), ROUTING_CATALOG, {
-    onUnknown: "drop",
-  });
+  const policy = withoutRetiredFeatures(await getAiRoutingPolicy());
 
   // Les configurations ne sont pas le sujet de cet écran : leur panne ne doit
   // pas empêcher de régler le routage. Elle se dit, elle n'interrompt pas.

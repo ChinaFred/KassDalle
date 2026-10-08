@@ -1039,6 +1039,12 @@ un poste inconnu refuse la politique entière — et `drop` pour la relecture d'
 configuration. Sans ce partage, une configuration s'enregistrerait valide et se
 chargerait invalide.
 
+La politique en vigueur suit une troisième voie. `getAiRoutingPolicyFn` en retire
+les postes sortis de `ROUTABLE_FEATURES` (`withoutRetiredFeatures`), et rien d'autre.
+Sans ce filtre, l'écran renverrait le poste retiré à l'enregistrement, et `reject`
+refuserait la politique entière. Un modèle par poste sorti de la liste de l'écran
+reste affiché : son remplacement doit être un choix, pas un effacement.
+
 **Une seule fonction déployée**, `aiRoutingPresetsFn`, aiguillée sur un champ
 `action` : `save`, `update`, `rename`, `delete`. Le bundle porte déjà cinquante
 fonctions et le budget de découverte du déploiement est de dix secondes. La
