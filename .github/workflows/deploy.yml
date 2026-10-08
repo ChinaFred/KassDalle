@@ -97,6 +97,22 @@ jobs:
             exit 1
           fi
 
+      - name: Libérer de la place sur le disque
+        # Le 8 octobre 2026, trois tentatives se sont arrêtées sur « No space
+        # left on device » : SDK Flutter, caches Gradle, build de l'APK et
+        # build web remplissent le disque du runner. On retire des outils
+        # préinstallés dont le déploiement ne se sert pas. Le SDK Android
+        # (/usr/local/lib/android) reste : le build de l'APK l'utilise.
+        working-directory: .
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL /usr/local/julia* \
+            /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft
+          sudo docker image prune --all --force > /dev/null \
+            || echo "::warning::Images Docker non supprimées."
+          df -h /
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -176,12 +192,6 @@ jobs:
         # déploiement écraserait.
         run: ../.github/scripts/keep-online-apk.sh build/web
 
-      - name: Ressources du runner
-        # Étape à part : son annotation est publiée quand elle se termine, et
-        # reste visible si le runner meurt à l'étape suivante.
-        if: steps.apk.outputs.build == 'true'
-        run: ../.github/scripts/runner-resources.sh "avant la seconde lecture de l'APK"
-
       - name: Revérifier l'APK en ligne
         timeout-minutes: 15
         if: steps.apk.outputs.build == 'true'
@@ -192,9 +202,16 @@ jobs:
         # Un échec ici laisse les Functions neuves avec le web précédent :
         # relancer le workflow (« Re-run all jobs ») une fois la cause réglée.
         run: |
-          ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-recheck"
+          # Le manifeste suffit à comparer les versions : l'APK en ligne n'est
+          # téléchargé que s'il faut le conserver. Un manifeste absent rend
+          # index.html (réécriture « ** ») : il est alors écarté.
+          manifest="$RUNNER_TEMP/apk-recheck.json"
+          curl -sS --fail --max-time 60 -o "$manifest" https://kassdale-6d948.web.app/apk_release.json
+          if ! jq -e '.version | strings' "$manifest" > /dev/null 2>&1; then
+            rm -f "$manifest"
+          fi
           decision=$(mktemp)
-          GITHUB_OUTPUT="$decision" ../.github/scripts/build-apk.sh decide "$RUNNER_TEMP/apk-recheck/apk_release.json"
+          GITHUB_OUTPUT="$decision" ../.github/scripts/build-apk.sh decide "$manifest"
           if grep -q '^build=false$' "$decision"; then
             echo "::warning::Un APK aussi récent ou plus récent est en ligne depuis le début du workflow : il est conservé."
             ../.github/scripts/keep-online-apk.sh build/web

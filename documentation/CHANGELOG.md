@@ -22,6 +22,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ### v0.23.3 — technique
 
+#### Le déploiement libère de la place sur le disque du runner
+
+Les trois échecs du workflow à « Revérifier l'APK en ligne » (v0.23.1 et v0.23.2) avaient une
+cause commune : le runner a planté sur `No space left on device`. SDK Flutter, caches Gradle,
+build de l'APK et build web remplissaient son disque.
+
+- Nouvelle étape « Libérer de la place sur le disque », en tête du job : suppression d'outils
+  préinstallés inutiles au déploiement (.NET, GHC, Swift, Boost, CodeQL, images Docker…).
+- `build-apk.sh` supprime `build/app` une fois l'APK copié dans `build/web`.
+- La seconde lecture ne télécharge que le manifeste, plus l'APK.
+- `runner-resources.sh` est retiré : ses annotations ne sont publiées qu'à la fin du job, et
+  un runner qui plante ne les envoie pas.
+
 #### Le changelog redevient une étape de chaque version
 
 Aucune entrée n'avait été écrite de la v0.22.104 à la v0.23.2 : ni `CLAUDE.md`, ni les agents,
