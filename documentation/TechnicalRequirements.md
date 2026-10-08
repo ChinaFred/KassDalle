@@ -2372,7 +2372,9 @@ build` décode la clé dans `$RUNNER_TEMP`, écrit `android/key.properties`, lan
 `flutter build apk --release`, pose l'APK et son manifeste dans `build/web` (mêmes champs que
 `Write-ApkManifest`), puis supprime la clé et `key.properties`, réussite ou échec. Le build a
 lieu avant les Functions : un secret absent arrête tout avant le premier déploiement. Il ajoute
-environ huit minutes. Ni `Release/mobile` ni Google Drive ne reçoivent cet APK : ils restent
+environ huit minutes. Juste avant le hosting, le manifeste en ligne est relu : si un
+`deploy.ps1` a publié entre-temps un APK aussi récent ou plus récent, c'est lui qui est
+conservé. Ni `Release/mobile` ni Google Drive ne reçoivent cet APK : ils restent
 propres au PC.
 
 **Le PC et le workflow.** Deux déploiements simultanés publient chacun leur version, et le
@@ -2395,10 +2397,14 @@ doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
 **L'APK en ligne est vérifié deux fois** (`.github/scripts/keep-online-apk.sh`) : avant les
 Functions, pour qu'une paire incohérente arrête tout avant le premier déploiement, puis juste
-avant le hosting, pour recopier la paire la plus récente.
+avant le hosting. Sans nouvel APK, cette seconde lecture recopie la paire en ligne. Avec un
+nouvel APK, elle vérifie qu'aucun APK aussi récent ou plus récent n'est arrivé entre-temps, et
+le conserve s'il y en a un.
 
 **Les secrets de signature** (même page que ci-dessous) viennent de `kass_dalle/android/key.properties`
-et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64),
+et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64,
+sur une ligne : `[Convert]::ToBase64String([IO.File]::ReadAllBytes("<chemin>.jks"))` en
+PowerShell ; pas `certutil -encode`, dont les lignes `-----BEGIN` font échouer le décodage),
 `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. C'est la même clé que
 celle de `deploy.ps1` : un APK signé par une autre clé serait refusé comme mise à jour.
 

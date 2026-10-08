@@ -172,6 +172,21 @@ jobs:
         # déploiement écraserait.
         run: ../.github/scripts/keep-online-apk.sh build/web
 
+      - name: Revérifier l'APK en ligne
+        if: steps.apk.outputs.build == 'true'
+        # Le build de l'APK et les Functions durent plus de dix minutes. Un
+        # deploy.ps1 a pu publier entre-temps un APK plus récent que celui
+        # construit ici : il est alors conservé, au lieu d'être remplacé par
+        # une version plus ancienne.
+        run: |
+          ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-recheck"
+          decision=$(mktemp)
+          GITHUB_OUTPUT="$decision" ../.github/scripts/build-apk.sh decide "$RUNNER_TEMP/apk-recheck/apk_release.json"
+          if grep -q '^build=false$' "$decision"; then
+            echo "::warning::Un APK aussi récent ou plus récent est en ligne depuis le début du workflow : il est conservé."
+            ../.github/scripts/keep-online-apk.sh build/web
+          fi
+
       - name: Déployer le web et les règles
         run: ../.github/scripts/firebase-deploy.sh hosting,firestore,storage
 
