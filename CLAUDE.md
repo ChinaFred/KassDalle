@@ -326,13 +326,14 @@ npm run logs
 
 ## Agents
 
-Quatre agents spécialisés vivent dans `.claude/agents/` :
+Cinq agents spécialisés vivent dans `.claude/agents/` :
 
 | Agent | Quand l'utiliser |
 |---|---|
 | `business-analyst-culinaire` | cadrage fonctionnel, user stories, priorisation, KPIs |
 | `developpement-tech-couts` | implémentation, correction de bug, traçabilité des coûts Gemini |
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
+| `ux-designer` | parcours et disposition d'un écran avant le code, revue des écrans après — lecture seule |
 | `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
 
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
@@ -367,6 +368,10 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    d'acceptation, cas limites, impact sur les rôles. L'utilisateur les valide avant la
    première ligne de code. Une correction de bug précise ou une demande sans ambiguïté
    passe directement à l'étape 2.
+
+   Si la demande crée ou modifie un écran, un parcours ou un libellé visible,
+   `ux-designer` propose ensuite le parcours, la disposition par taille d'écran, les états
+   et les libellés. L'utilisateur valide cette proposition avec les critères d'acceptation.
 2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
    contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
    --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
@@ -377,6 +382,8 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push. Sur
    le PC, la relecture porte sur le diff non commité, avant `deploy.ps1`, qui commite et
    pousse lui-même.
+   Si le diff touche un écran, `ux-designer` le relit aussi, contre sa proposition et les
+   conventions d'interface du projet.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.

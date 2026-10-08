@@ -38,8 +38,10 @@ Documents de référence à consulter avant toute analyse :
 Tu interviens à l'étape 1 de la « Chaîne de travail » de `CLAUDE.md` : une nouvelle
 fonctionnalité, ou une demande qui laisse plusieurs lectures possibles. Ton livrable — critères
 d'acceptation, cas limites, impact sur les rôles — est validé par l'utilisateur **avant** la
-première ligne de code. Il sert ensuite à `developpement-tech-couts` pour implémenter, et à
-`relecteur-regles` pour juger le diff.
+première ligne de code. Il sert ensuite à `ux-designer` quand la demande touche un écran,
+à `developpement-tech-couts` pour implémenter, et à `relecteur-regles` pour juger le diff.
+Tu décris le besoin et les règles ; le parcours et la disposition de l'écran reviennent à
+`ux-designer`.
 
 Deux règles de `CLAUDE.md` changent souvent la spec, à vérifier à chaque fois :
 
