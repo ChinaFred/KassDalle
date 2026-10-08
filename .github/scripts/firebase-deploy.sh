@@ -52,7 +52,11 @@ for attempt in $(seq 1 "$attempts"); do
     # Liste écrite par la CLI : une ligne « <tab>nom(région) » par fonction.
     failed=$(sed -n '/Functions deploy had errors with the following functions:/,/^[^[:space:]]/p' "$log" \
       | grep -E $'^\t[A-Za-z0-9_-]+\\(' | sed -E $'s/^\t([A-Za-z0-9_-]+)\\(.*/\\1/' | sort -u)
-    echo "::warning::firebase deploy $current : des Functions ont échoué : ${failed//$'\n'/, }"
+    if [ -n "$failed" ]; then
+      echo "::warning::firebase deploy $current : des Functions ont échoué : ${failed//$'\n'/, }"
+    else
+      echo "::warning::firebase deploy $current : des Functions ont échoué, sans nom dans la liste de la CLI. Relance complète."
+    fi
     grep -E "lacks IAM permission|HTTP Error: 403|Permission denied" "$log" | sed 's/^/::warning::/' || true
     if [ -n "$failed" ]; then
       current=$(printf 'functions:%s,' $failed)

@@ -2338,6 +2338,9 @@ Une relance complète ne suffit pas : la CLI saute toute fonction dont le code n
 (« Skipped (No changes detected) »). Au premier déploiement automatique, le code de
 `recipeProcessor` était parti mais sa file Cloud Tasks avait échoué ; une relance complète
 l'a sautée et a annoncé un succès. Une fonction nommée par `--only` n'est jamais sautée.
+`deploy.ps1` suit la même règle depuis la v0.22.109 : il lisait auparavant les seules lignes
+`Failed to update function …`, que l'échec d'une file Cloud Tasks n'écrit pas (`Failed to upsert
+task queue function …`), et commençait par une relance complète.
 
 **`--force` n'est passé qu'aux Functions.** En mode non interactif, la CLI refuse sinon de
 supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la

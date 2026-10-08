@@ -152,59 +152,74 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     # dit. Sans cette ligne, l'appel est traité comme un échec — quitte à
     # relancer pour rien, ce qui coûte une minute là où le silence coûtait une
     # version.
+    # « Functions deploy had errors » compte aussi comme un echec : la CLI peut
+    # rendre 0 et ecrire « Deploy complete! » apres l'echec d'une fonction.
+    #
+    # La relance vise les fonctions en echec, lues dans la liste que la CLI
+    # ecrit apres « Functions deploy had errors with the following functions: »
+    # (une ligne « <tab>nom(region) » par fonction). Une relance complete
+    # sauterait une fonction dont le code n'a pas change (« Skipped (No changes
+    # detected) ») : le 8 octobre 2026, le code de recipeProcessor etait parti
+    # mais sa file Cloud Tasks avait echoue, et une relance complete l'a sautee
+    # en annoncant un succes. Une fonction nommee par --only functions:<nom>
+    # n'est jamais sautee. Meme regle dans .github/scripts/firebase-deploy.sh.
+    function Test-FunctionsDeployOk([int]$ExitCode, [string]$Log) {
+        $completed = (Select-String -Path $Log -Pattern "Deploy complete" -Quiet) -eq $true
+        $hadErrors = (Select-String -Path $Log -Pattern "Functions deploy had errors" -Quiet) -eq $true
+        return ($ExitCode -eq 0 -and $completed -and -not $hadErrors)
+    }
+
+    function Get-FailedFunctions([string]$Log) {
+        $failed = @()
+        $inList = $false
+        foreach ($line in Get-Content $Log) {
+            if ($line -match "Functions deploy had errors with the following functions:") { $inList = $true; continue }
+            if (-not $inList) { continue }
+            if ($line -match "^\s+([A-Za-z0-9_-]+)\(") { $failed += $Matches[1]; continue }
+            if ($line -match "^\S") { $inList = $false }
+        }
+        return @($failed | Sort-Object -Unique)
+    }
+
     $firstLog = Join-Path $env:TEMP ("kassdalle-functions-first-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
         $firstExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions") -LogFile $firstLog
         Get-Content $firstLog | Write-Output
-        $firstCompleted = (Select-String -Path $firstLog -Pattern "Deploy complete" -Quiet) -eq $true
-        if ($firstExitCode -eq 0 -and $firstCompleted) { return }
-
-        if ($firstExitCode -eq 0 -and -not $firstCompleted) {
-            Write-Host "La CLI a rendu 0 SANS déployer (pas de « Deploy complete »). Relance." -ForegroundColor Yellow
-        }
+        if (Test-FunctionsDeployOk $firstExitCode $firstLog) { return }
+        $failedFunctions = Get-FailedFunctions $firstLog
     } finally {
         Remove-Item $firstLog -Force -ErrorAction SilentlyContinue
     }
 
-    # Échec réel — relancer en capturant la sortie pour identifier les fonctions en erreur
-    Write-Host "Première tentative échouée (exit $LASTEXITCODE), relance avec capture..." -ForegroundColor Yellow
-    $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
-    try {
-        $retryExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions") -LogFile $logFile
-        Get-Content $logFile | Write-Output
-        $retryCompleted = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
-        if ($retryExitCode -eq 0 -and $retryCompleted) { return }
-        if ($retryExitCode -eq 0 -and -not $retryCompleted) {
-            throw "firebase deploy functions a rendu 0 sans rien deployer, deux fois de suite"
-        }
-
-        $failedFunctions = @(
-            Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |
-                ForEach-Object { $_.Matches } |
-                ForEach-Object { $_.Groups[1].Value } |
-                Sort-Object -Unique
-        )
-
-        if (@($failedFunctions).Count -eq 0) {
-            throw "firebase deploy functions a échoué sans fonction identifiable à relancer"
-        }
-
-        Write-Host "Relance ciblée des fonctions en échec : $($failedFunctions -join ', ')" -ForegroundColor Yellow
-        foreach ($fn in $failedFunctions) {
-            Write-Host " - Retry functions:$fn" -ForegroundColor DarkYellow
-            $fnLog = Join-Path $env:TEMP ("kassdalle-functions-{0}-{1}.log" -f $fn, ([guid]::NewGuid().ToString("N")))
-            try {
-                $fnExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions:$fn") -LogFile $fnLog
-                Get-Content $fnLog | Write-Output
-                if ($fnExitCode -ne 0) {
-                    throw "Relance ciblée échouée pour la fonction $fn"
-                }
-            } finally {
-                Remove-Item $fnLog -Force -ErrorAction SilentlyContinue
+    if (@($failedFunctions).Count -eq 0) {
+        # Aucune fonction nommee : echec avant tout deploiement (decouverte,
+        # API, droits). Une relance complete est alors la seule possible.
+        Write-Host "Premiere tentative echouee sans fonction nommee (exit $firstExitCode). Relance complete." -ForegroundColor Yellow
+        $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
+        try {
+            $retryExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", "functions") -LogFile $logFile
+            Get-Content $logFile | Write-Output
+            if (Test-FunctionsDeployOk $retryExitCode $logFile) { return }
+            $failedFunctions = Get-FailedFunctions $logFile
+            if (@($failedFunctions).Count -eq 0) {
+                throw "firebase deploy functions a echoue deux fois sans fonction identifiable a relancer (exit $retryExitCode)"
             }
+        } finally {
+            Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $targets = ($failedFunctions | ForEach-Object { "functions:$_" }) -join ","
+    Write-Host "Relance ciblee des fonctions en echec : $($failedFunctions -join ', ')" -ForegroundColor Yellow
+    $fnLog = Join-Path $env:TEMP ("kassdalle-functions-retry-{0}.log" -f ([guid]::NewGuid().ToString("N")))
+    try {
+        $fnExitCode = Invoke-FirebaseCli -FirebaseArgs @("deploy", "--only", $targets) -LogFile $fnLog
+        Get-Content $fnLog | Write-Output
+        if (-not (Test-FunctionsDeployOk $fnExitCode $fnLog)) {
+            throw "Relance ciblee echouee pour : $($failedFunctions -join ', ') (exit $fnExitCode)"
         }
     } finally {
-        Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $fnLog -Force -ErrorAction SilentlyContinue
     }
 }
 
