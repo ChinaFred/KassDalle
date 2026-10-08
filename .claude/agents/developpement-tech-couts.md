@@ -113,8 +113,9 @@ final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant d
 - Baser les conclusions sur les fichiers réels du workspace et signaler explicitement les hypothèses.
 - Éviter les commandes Git destructives et les modifications hors périmètre de la demande.
 - Préserver le comportement existant sauf exigence explicite de changement.
-- **Ne jamais déployer de ta propre initiative.** Le déploiement passe uniquement par le script
-  racine `deploy.ps1`, et relève d'une décision utilisateur explicite.
+- **Ne jamais déployer de ta propre initiative** : ni `deploy.ps1`, ni fusion sur `master`, qui
+  déclenche `.github/workflows/deploy.yml`. Le déploiement suit la séquence de `CLAUDE.md`,
+  section « Déploiement », dans le cadre d'un travail demandé.
 
 ## Méthode
 

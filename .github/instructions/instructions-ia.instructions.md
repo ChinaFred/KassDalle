@@ -174,11 +174,14 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 ## Déploiement et release
 
-* Toujours utiliser le script racine `deploy.ps1` (ne pas régénérer les commandes de build/deploy
-  à la main).
-* Déployer : `./deploy.ps1`. Tout déploiement embarque l APK ; `-WebOnly` a été retiré et le script s arrête si on le lui passe.
+* Sur le PC : toujours utiliser le script racine `deploy.ps1` (ne pas régénérer les commandes de
+  build/deploy à la main).
+* Depuis une session cloud : fusionner sur `master` ; `.github/workflows/deploy.yml` déploie
+  Functions, web et règles après une CI verte, sans construire l APK (il garde celui en ligne).
+* Déployer depuis le PC : `./deploy.ps1`. Tout déploiement par `deploy.ps1` embarque l APK ; `-WebOnly` a été retiré et le script s arrête si on le lui passe.
 * Après un travail demandé : résumer en français, incrémenter `version:` dans
-  `kass_dalle/pubspec.yaml`, exécuter `./deploy.ps1`, puis annoncer la version déployée
+  `kass_dalle/pubspec.yaml`, exécuter `./deploy.ps1` (ou, depuis une session cloud, fusionner la
+  PR une fois la CI verte et attendre la fin du workflow « Déploiement »), puis annoncer la version déployée
   (ex. `Déployé en v0.19.37`).
 * Release complète : mettre à jour `documentation/FunctionalRequirements.md`,
   `documentation/TechnicalRequirements.md`,
@@ -258,7 +261,8 @@ backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Git
 
-* Faire un commit qui résume les derniers ajouts puis `git push`.
+* Faire un commit qui résume les derniers ajouts puis `git push`. Sur le PC, pour un travail qui
+  part en production, ne pas pousser avant `deploy.ps1` : il commite et pousse lui-même.
 * Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 * **Aucun artefact de build ne doit être versionné** : `build/`, `Release/`, `.dart_tool/`,
   `node_modules/` sont ignorés.
@@ -269,7 +273,9 @@ Quatre agents spécialisés, définis dans `.claude/agents/` (Claude Code) et `.
 (Copilot) : `business-analyst-culinaire`, `developpement-tech-couts`, `product-owner-release`,
 `relecteur-regles` (relecture d'un diff, lecture seule).
 Procédures répétées : skills dans `.claude/skills/` (`nouveau-poste-ia`).
-Aucun agent ne déclenche `deploy.ps1` de sa propre initiative.
+Chaque travail demandé est déployé : `deploy.ps1` sur le PC, fusion sur `master` depuis une
+session cloud. Seule la session principale déploie ; les agents spécialisés ne lancent jamais
+`deploy.ps1` et ne fusionnent jamais sur `master`.
 
 ## Commandes longues
 

@@ -2288,7 +2288,7 @@ dans `Release/` et pousse le dépôt.
 ./deploy.ps1              # web + APK + functions + hosting/firestore/storage + git push
 ```
 
-**Tout déploiement embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
+**Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré : le script s'arrête si on le lui
 passe, au lieu de publier un site sans binaire. L'application Android lit le manifeste posé à côté
 de l'APK pour savoir si une mise à jour existe ; un déploiement web seul lui annonce une version
 que le téléchargement ne rend pas.
@@ -2315,6 +2315,85 @@ s'exécute avant chaque déploiement : elle restaure la paire APK + manifeste de
 n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manifeste à un
 binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
 course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
+
+### Déploiement automatique (GitHub Actions)
+
+Une session de travail sans PC — Claude Code dans le cloud — n'a ni PowerShell, ni la clé de
+signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
+`.github/workflows/deploy.yml` déploie à sa place.
+
+| Quoi | Comment |
+|---|---|
+| Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`), accepté sur `master` seulement |
+| Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
+| Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1` vient de tout déployer depuis le PC |
+| Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
+| Non construit | l'APK : la clé de signature ne vit que sur le PC |
+| Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
+
+**Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
+`Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à deux
+tentatives complètes. `deploy.ps1` relance, lui, les seules fonctions nommées dans
+`Failed to update function …` ; le workflow les liste dans ses avertissements.
+
+**`--force` n'est passé qu'aux Functions.** En mode non interactif, la CLI refuse sinon de
+supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
+production au déploiement suivant. Il n'est pas passé à `firestore` : il y supprimerait tout
+index absent de `firestore.indexes.json`.
+
+**L'APK en ligne est conservé.** Le déploiement du hosting remplace tout le contenu en ligne par
+`build/web`. Le workflow télécharge `app-release.apk` et `apk_release.json`
+depuis le site et les replace dans `build/web`. Un fichier absent ne rend pas 404 — la
+réécriture `**` sert `index.html` avec un code 200 — donc le contenu est jugé : un manifeste
+JSON qui porte une `version`, un APK qui commence par `PK`, une taille égale à `size_bytes`.
+Les cas suivent `Publish-ApkPayload` :
+
+| En ligne | Résultat |
+|---|---|
+| APK et manifeste cohérents | republiés tels quels |
+| APK seul | republié sans manifeste : aucune mise à jour annoncée |
+| Ni l'un ni l'autre | rien n'est publié |
+| Manifeste seul, ou taille différente | **déploiement arrêté** : il annoncerait une version que le téléchargement ne rend pas |
+
+Le manifeste continue de décrire le binaire posé à côté de lui : les téléphones ne voient pas de
+mise à jour tant qu'un nouvel APK n'est pas publié par `deploy.ps1`.
+
+**Le PC et le workflow.** Deux déploiements simultanés publient chacun leur version, et le
+dernier arrivé l'emporte. Trois protections, et une consigne :
+
+- `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`, et le vérifie de
+  nouveau juste avant `firebase deploy`, après les builds web et APK qui durent plusieurs
+  minutes ;
+- `deploy.ps1` s'arrête en erreur si son `git push` échoue : la production porte alors un commit
+  absent de `origin/master` ;
+- le workflow vérifie, au début de chaque job, que son commit est toujours la tête de `master` ;
+- **sur le PC, ne pas pousser soi-même avant `deploy.ps1`.** Un commit poussé à la main n'est pas
+  signé : sa CI déclencherait le workflow pendant que `deploy.ps1` tourne. On laisse
+  `deploy.ps1` commiter et pousser.
+
+Il reste une fenêtre de quelques secondes entre la seconde vérification et la fin de
+`firebase deploy`. Le workflow recopie aussi l'APK en ligne juste avant son hosting : un
+`deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
+doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
+
+**L'APK en ligne est vérifié deux fois** (`.github/scripts/keep-online-apk.sh`) : avant les
+Functions, pour qu'une paire incohérente arrête tout avant le premier déploiement, puis juste
+avant le hosting, pour recopier la paire la plus récente.
+
+**Le secret `FIREBASE_SERVICE_ACCOUNT`** (Settings › Secrets and variables › Actions du dépôt
+GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
+
+- `Firebase Admin` ;
+- `Cloud Functions Admin` ;
+- `Cloud Run Admin` (Functions de 2e génération) ;
+- `Service Account User`, sur le compte d'exécution des fonctions ;
+- `Artifact Registry Administrator` ;
+- `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`, et
+  la CLI accorde au compte d'exécution l'accès à ces secrets ;
+- `Cloud Scheduler Admin` (fonctions planifiées).
+
+Le premier déploiement dit s'il en manque un : le message d'erreur de la CLI nomme la
+permission refusée.
 
 ---
 
@@ -3131,7 +3210,7 @@ il échoue, et le filtre « Publiées » rend « Journal de modération illisibl
 collectionGroup: image_moderation — status ASC, created_at DESC
 ```
 
-Déclaré dans `firestore.indexes.json`, déployé par `deploy.ps1` avec les règles. Le même
+Déclaré dans `firestore.indexes.json`, déployé avec les règles par `deploy.ps1` ou par le workflow « Déploiement ». Le même
 index sert les quatre filtres d'état, avec ou sans fenêtre de temps. Le badge n'en a pas
 besoin : une égalité seule, sans tri, tient sur l'index automatique.
 

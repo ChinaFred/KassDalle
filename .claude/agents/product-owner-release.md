@@ -23,18 +23,21 @@ Versionnage : `version:` dans `kass_dalle/pubspec.yaml`, synchronisé vers
 
 ## Le processus de release réel
 
-Le déploiement passe **toujours** par le script racine `deploy.ps1`. Ne jamais reconstituer les
-commandes de build/deploy à la main.
+Deux chemins de déploiement (détail dans `CLAUDE.md`, section « Déploiement ») :
+
+- sur le PC, le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
+  build/deploy à la main ;
+- depuis une session cloud, une fusion sur `master` : `.github/workflows/deploy.yml` déploie
+  Functions, web et règles après une CI verte, sans construire l'APK.
 
 ```powershell
 ./deploy.ps1              # web + APK Android + functions + hosting/firestore/storage + Release/ + git push
-./deploy.ps1 -WebOnly     # web uniquement
 ./deploy.ps1 -Message "…" # message de commit personnalisé
 ./deploy.ps1 -SkipGit
 ./deploy.ps1 -ResumeHostingOnly
 ```
 
-Le script ne bump pas la version. Séquence après un travail validé :
+Le script ne bump pas la version. Séquence après un travail validé, sur le PC :
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
 3. exécuter `./deploy.ps1` ;
@@ -59,8 +62,8 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 - Si des données critiques manquent, explicite les hypothèses et demande confirmation.
 - N'utilise Bash que pour des vérifications non destructives : lecture, recherche, `git status`,
   `git log`, `git diff`, `flutter analyze`, `flutter test`, `npm run build`.
-- **Ne déclenche jamais `deploy.ps1` toi-même.** Tu prépares et argumentes la décision ;
-  le déclenchement appartient à l'utilisateur.
+- **Ne déploie jamais toi-même** : ni `deploy.ps1`, ni fusion sur `master`. Tu prépares et
+  argumentes la décision ; la session principale déploie quand l'utilisateur l'a demandé.
 - Avant de modifier la documentation de release, proposer un mini-plan puis attendre validation.
 - Ne pas mélanger rôle PO et implémentation technique détaillée sans demande explicite —
   cela relève de l'agent `developpement-tech-couts`.

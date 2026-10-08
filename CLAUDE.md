@@ -246,10 +246,18 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ## Déploiement
 
-Toujours passer par le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
-build/deploy à la main.
+Deux chemins :
 
-**Tout déploiement embarque l'APK.** `-WebOnly` a été retiré et le script s'arrête si on le lui
+- **Sur le PC** : le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
+  build/deploy à la main.
+- **Depuis une session cloud** : fusionner sur `master`. Après une CI verte,
+  `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il ne construit
+  pas l'APK — la clé de signature ne vit que sur le PC — et conserve celui qui est en ligne.
+  Le même workflow se lance à la main depuis l'onglet Actions, sur `master` seulement.
+  `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`. Détails :
+  `TechnicalRequirements.md`, « Déploiement automatique ».
+
+**Tout déploiement par `deploy.ps1` embarque l'APK.** `-WebOnly` a été retiré et le script s'arrête si on le lui
 passe. L'application Android lit le manifeste posé à côté de l'APK pour savoir si une mise à jour
 existe : publier le web seul lui annonce une version que le téléchargement ne rend pas, et la
 fenêtre de mise à jour revient à chaque lancement.
@@ -262,12 +270,22 @@ fenêtre de mise à jour revient à chaque lancement.
 ```
 
 Le script synchronise `lib/core/app_version.dart` depuis `pubspec.yaml`, mais **ne bump pas la
-version**. Séquence après un travail demandé :
+version**. Séquence après un travail demandé, sur le PC :
 
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
 3. exécuter `./deploy.ps1` ;
 4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
+
+Depuis une session cloud :
+
+1. résumer le travail en français ;
+2. incrémenter `version:` dans `kass_dalle/pubspec.yaml`, dans la PR ;
+3. fusionner la PR une fois la CI verte ;
+4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée. Un
+   workflow en échec se diagnostique et se corrige comme une CI rouge.
+
+Un nouvel APK ne part que par `deploy.ps1`.
 
 Pour une release complète : mettre aussi à jour `documentation/FunctionalRequirements.md`,
 `documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le
@@ -321,7 +339,10 @@ Quatre agents spécialisés vivent dans `.claude/agents/` (format Claude Code) e
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
 | `relecteur-regles` | relecture d'un diff contre les règles absolues, avant commit ou PR — lecture seule |
 
-Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision utilisateur explicite.
+Chaque travail demandé est déployé, en suivant la séquence de la section « Déploiement » :
+`deploy.ps1` sur le PC, fusion sur `master` depuis une session cloud. C'est la session
+principale qui déploie. Les trois agents spécialisés et le relecteur ne lancent jamais
+`deploy.ps1` et ne fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
 quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de
@@ -339,6 +360,9 @@ rejouer `flutter analyze`, `flutter test`, `npm run lint` et `npm test`.
 |---|---|
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
+
+`.github/workflows/deploy.yml` part après une CI verte sur un push sur `master` : voir
+« Déploiement ».
 
 ## Logique dupliquée Dart ↔ TypeScript
 
@@ -458,7 +482,10 @@ le livrable inclut le backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Git
 
-Faire un commit qui résume les ajouts, puis `git push`.
+Faire un commit qui résume les ajouts, puis `git push`. Exception sur le PC, pour un travail
+qui part en production : ne pas pousser avant `deploy.ps1`, qui commite et pousse lui-même un
+commit signé. Un push à la main déclencherait le déploiement automatique pendant que
+`deploy.ps1` tourne.
 Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 
 **Aucun artefact de build ne doit être versionné.** `Release/` est intégralement ignoré
