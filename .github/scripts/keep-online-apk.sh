@@ -24,8 +24,10 @@ site="https://kassdale-6d948.web.app"
 apk="$dir/app-release.apk"
 manifest="$dir/apk_release.json"
 mkdir -p "$dir"
-curl -sS --fail -o "$apk" "$site/app-release.apk"
-curl -sS --fail -o "$manifest" "$site/apk_release.json"
+# --max-time : un téléchargement bloqué fait échouer l'étape en cinq minutes au
+# lieu d'occuper le job jusqu'à sa limite.
+curl -sS --fail --max-time 300 -o "$apk" "$site/app-release.apk"
+curl -sS --fail --max-time 60 -o "$manifest" "$site/apk_release.json"
 
 has_manifest=false
 if jq -e '.version | strings' "$manifest" >/dev/null 2>&1; then has_manifest=true; fi

@@ -99,6 +99,20 @@ case "${1:-}" in
       '{version: $version, build_number: $build_number, file: $file, size_bytes: $size_bytes, built_at: $built_at}' \
       > build/web/apk_release.json
     echo "APK v$raw construit et posé dans build/web avec son manifeste."
+
+    # Les démons Gradle et Kotlin restent en mémoire après le build :
+    # android/gradle.properties donne 4 Go de tas à Gradle. Le 8 octobre 2026,
+    # deux tentatives du workflow se sont arrêtées à l'étape qui suit les
+    # Functions, l'une sans journal. Hypothèse non vérifiée : mémoire ou disque
+    # du runner saturés. On arrête les démons, on attend leur sortie (30 s au
+    # plus), puis on publie la mémoire et le disque restants.
+    pkill -f GradleDaemon || echo "Aucun démon Gradle à arrêter."
+    pkill -f KotlinCompileDaemon || echo "Aucun démon Kotlin à arrêter."
+    for _ in $(seq 30); do
+      pgrep -f 'GradleDaemon|KotlinCompileDaemon' >/dev/null || break
+      sleep 1
+    done
+    ../.github/scripts/runner-resources.sh "après le build de l'APK"
     ;;
 
   *)
