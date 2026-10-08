@@ -79,6 +79,21 @@ jobs:
       run:
         working-directory: kass_dalle
     steps:
+      - name: Le commit est toujours la tête de master
+        # Refait ici : « Re-run failed jobs » ne rejoue pas le job gate et
+        # réutilise son ancien résultat.
+        env:
+          WANTED: ${{ needs.gate.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          tip=$(gh api "repos/$REPO/commits/master" --jq .sha)
+          if [ "$tip" != "$WANTED" ]; then
+            echo "::error::$WANTED n'est plus la tête de master ($tip) : déploiement refusé."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -104,6 +119,12 @@ jobs:
         # Mêmes options que deploy.ps1.
         run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
 
+      - name: Vérifier l'APK en ligne
+        # Avant tout déploiement : une paire incohérente arrêterait sinon le
+        # workflow après les Functions, et laisserait des Functions neuves
+        # avec un web ancien. Le téléchargement est refait avant le hosting.
+        run: ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-check"
+
       - name: Authentification Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -122,56 +143,10 @@ jobs:
         run: ../.github/scripts/firebase-deploy.sh functions 2 --force
 
       - name: Conserver l'APK en ligne
-        # Le déploiement du hosting remplace tout le contenu en ligne par
-        # build/web. Sans cette étape,
-        # le lien de téléchargement passerait en 404 et le manifeste lu par
-        # l'application Android disparaîtrait. On recopie la paire en ligne,
-        # qui décrit le binaire posé à côté d'elle.
-        #
-        # Un fichier absent ne rend pas 404 : la réécriture « ** » de
-        # firebase.json sert index.html à sa place, avec un code 200. On juge
-        # donc le contenu : un manifeste JSON qui porte une version, un APK
-        # qui commence par la signature ZIP « PK ».
-        #
-        # Même règle que Publish-ApkPayload (deploy.ps1) : un APK sans
-        # manifeste se publie sans rien annoncer ; un manifeste sans APK
-        # arrête le déploiement, car il annoncerait une version que le
-        # téléchargement ne rend pas.
-        #
-        # L'étape se place juste avant le hosting : plus la copie est tardive,
-        # plus la fenêtre est courte où un deploy.ps1 lancé en parallèle
-        # publierait un APK neuf que ce déploiement écraserait.
-        run: |
-          site="https://kassdale-6d948.web.app"
-          apk=build/web/app-release.apk
-          manifest=build/web/apk_release.json
-          curl -sS --fail -o "$apk" "$site/app-release.apk"
-          curl -sS --fail -o "$manifest" "$site/apk_release.json"
-
-          has_manifest=false
-          if jq -e '.version | strings' "$manifest" >/dev/null 2>&1; then has_manifest=true; fi
-          has_apk=false
-          if [ "$(head -c 2 "$apk")" = "PK" ]; then has_apk=true; fi
-
-          if $has_apk && $has_manifest; then
-            version=$(jq -r .version "$manifest")
-            size=$(jq -r .size_bytes "$manifest")
-            actual=$(stat -c %s "$apk")
-            if [ "$size" != "$actual" ]; then
-              echo "::error::APK en ligne de $actual octets, manifeste annonçant $size : paire incohérente, déploiement arrêté."
-              exit 1
-            fi
-            echo "APK en ligne conservé : v$version ($actual octets)."
-          elif $has_apk; then
-            rm -f "$manifest"
-            echo "::warning::APK en ligne sans manifeste : publié sans rien annoncer aux téléphones."
-          elif ! $has_manifest; then
-            rm -f "$apk" "$manifest"
-            echo "::warning::Aucun APK en ligne : le site n'en proposera pas."
-          else
-            echo "::error::Manifeste en ligne sans APK : il annoncerait une version absente, déploiement arrêté."
-            exit 1
-          fi
+        # Juste avant le hosting : plus la copie est tardive, plus la fenêtre
+        # est courte où un deploy.ps1 publierait un APK neuf que ce
+        # déploiement écraserait.
+        run: ../.github/scripts/keep-online-apk.sh build/web
 
       - name: Déployer le web et les règles
         run: ../.github/scripts/firebase-deploy.sh hosting,firestore,storage

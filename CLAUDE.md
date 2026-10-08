@@ -482,7 +482,10 @@ le livrable inclut le backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Git
 
-Faire un commit qui résume les ajouts, puis `git push`.
+Faire un commit qui résume les ajouts, puis `git push`. Exception sur le PC, pour un travail
+qui part en production : ne pas pousser avant `deploy.ps1`, qui commite et pousse lui-même un
+commit signé. Un push à la main déclencherait le déploiement automatique pendant que
+`deploy.ps1` tourne.
 Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 
 **Aucun artefact de build ne doit être versionné.** `Release/` est intégralement ignoré

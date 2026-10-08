@@ -261,7 +261,8 @@ backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Git
 
-* Faire un commit qui résume les derniers ajouts puis `git push`.
+* Faire un commit qui résume les derniers ajouts puis `git push`. Sur le PC, pour un travail qui
+  part en production, ne pas pousser avant `deploy.ps1` : il commite et pousse lui-même.
 * Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 * **Aucun artefact de build ne doit être versionné** : `build/`, `Release/`, `.dart_tool/`,
   `node_modules/` sont ignorés.
