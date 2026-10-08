@@ -248,8 +248,9 @@ Deux chemins :
 - **Sur le PC** : le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
   build/deploy à la main.
 - **Depuis une session cloud** : fusionner sur `master`. Après une CI verte,
-  `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il ne construit
-  pas l'APK — la clé de signature ne vit que sur le PC — et conserve celui qui est en ligne.
+  `.github/workflows/deploy.yml` déploie les Functions, le web et les règles. Il construit un
+  nouvel APK signé quand la version de `pubspec.yaml` dépasse celle de l'APK en ligne, et
+  conserve sinon celui qui est en ligne. La clé de signature est posée en secrets GitHub.
   Le même workflow se lance à la main depuis l'onglet Actions, sur `master` seulement.
   `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`. Détails :
   `TechnicalRequirements.md`, « Déploiement automatique ».
@@ -282,7 +283,7 @@ Depuis une session cloud :
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée. Un
    workflow en échec se diagnostique et se corrige comme une CI rouge.
 
-Un nouvel APK ne part que par `deploy.ps1`.
+Un nouvel APK part par `deploy.ps1`, ou par le workflow dès que la version change.
 
 Pour une release complète : mettre aussi à jour `documentation/FunctionalRequirements.md`,
 `documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le

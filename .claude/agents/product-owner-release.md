@@ -20,7 +20,7 @@ Firebase + Cloud Functions TypeScript. Projet Firebase `kassdale-6d948`
 
 Versionnage : `version:` dans `kass_dalle/pubspec.yaml`, seule source. L'application la lit
 elle-même (`package_info_plus` sur mobile et desktop, `version.json` sur le web). Un nouvel APK
-ne part que par `deploy.ps1` : le déploiement automatique conserve l'APK en ligne.
+part par `deploy.ps1`, ou par le déploiement automatique dès que la version change.
 
 ## Le processus de release réel
 
@@ -29,7 +29,7 @@ Deux chemins de déploiement (détail dans `CLAUDE.md`, section « Déploiement 
 - sur le PC, le script racine `deploy.ps1`. Ne jamais reconstituer les commandes de
   build/deploy à la main ;
 - depuis une session cloud, une fusion sur `master` : `.github/workflows/deploy.yml` déploie
-  Functions, web et règles après une CI verte, sans construire l'APK.
+  Functions, web et règles après une CI verte, et un nouvel APK quand la version change.
 
 ```powershell
 ./deploy.ps1              # web + APK Android + functions + hosting/firestore/storage + Release/ + git push
@@ -92,7 +92,8 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 - Chaque changement de la release relu par `relecteur-regles`, et chaque écran touché relu par
   `ux-designer`, anomalies corrigées ou justifiées.
 - Dernier workflow « Déploiement » au vert, si la release part depuis une session cloud.
-- APK : version en ligne connue (`apk_release.json`) ; un nouvel APK demande `deploy.ps1`.
+- APK : version en ligne connue (`apk_release.json`) ; un nouvel APK suit toute montée de
+  version, par `deploy.ps1` ou par le workflow « Déploiement ».
 - Régressions critiques absentes ou mitigées.
 - Règle du cache web respectée dans `kass_dalle/firebase.json` (aucun `js|css|wasm` en `immutable`).
 - Aucun `catch` silencieux introduit dans le diff de la release.

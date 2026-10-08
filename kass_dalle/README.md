@@ -98,4 +98,4 @@ npm run serve            # émulateurs
 
 Le déploiement passe par `../deploy.ps1` sur le PC, jamais par des commandes reconstituées
 à la main. Un push sur `master` déploie aussi Functions, web et règles par GitHub Actions
-(`.github/workflows/deploy.yml`), sans reconstruire l'APK.
+(`.github/workflows/deploy.yml`), et construit un nouvel APK quand la version change.
