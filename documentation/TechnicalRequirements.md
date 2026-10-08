@@ -2281,7 +2281,7 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 ### Build et déploiement
 
 Toujours par le script racine `deploy.ps1` — jamais en reconstituant les commandes à la main :
-il synchronise `lib/core/app_version.dart` depuis `pubspec.yaml`, construit, déploie, copie
+il construit, déploie, copie
 dans `Release/` et pousse le dépôt.
 
 ```powershell
@@ -2628,7 +2628,7 @@ features ajoutent un `services/` pour la logique qui ne tient dans aucune des tr
 lib/
 ├── main.dart
 ├── firebase_options.dart          # Généré par FlutterFire CLI
-├── app_version.dart               # Synchronisé depuis pubspec.yaml par deploy.ps1
+├── app_version.dart               # Lit la version : package_info_plus, version.json sur le web
 ├── core/
 │   ├── config/                    # Constantes d'environnement
 │   ├── presentation/              # Coquille d'application, navigation

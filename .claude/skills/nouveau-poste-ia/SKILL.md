@@ -1,6 +1,6 @@
 ---
 name: nouveau-poste-ia
-description: Inscrire un nouveau poste de coût IA (Gemini ou Claude) dans Kass'Dalle — imputation `ctx.feature`, routage `ROUTABLE_FEATURES`, catalogue comptable `kFeatureCatalog` et `kFeatureProcess`, dans le même commit. À utiliser dès qu'un appel `callModel` / `askJson` reçoit une nouvelle valeur de `feature`, qu'une variante `_batch` apparaît, ou qu'une expérience du bac à sable appelle un modèle.
+description: Inscrire ou retirer un poste de coût IA (Gemini ou Claude) dans Kass'Dalle — imputation `ctx.feature`, routage `ROUTABLE_FEATURES`, catalogue comptable `kFeatureCatalog` et `kFeatureProcess`, dans le même commit. À utiliser dès qu'un appel `callModel` / `askJson` reçoit une nouvelle valeur de `feature`, qu'une variante `_batch` apparaît, qu'une expérience du bac à sable appelle un modèle, ou qu'un appel de modèle disparaît du code.
 ---
 
 # Nouveau poste d'IA
@@ -76,3 +76,10 @@ Un poste dont l'appel disparaît :
 - **quitte** `ROUTABLE_FEATURES` : son sélecteur ne commanderait plus rien ;
 - **reste** dans `kFeatureCatalog` et `kFeatureProcess` : les mois déjà
   comptabilisés doivent continuer à le nommer.
+- **peut rester** dans la politique enregistrée (`app_config/ai_routing_policy`) :
+  `getAiRoutingPolicyFn` l'en retire à l'affichage (`withoutRetiredFeatures`), sans quoi
+  l'écran le renverrait et `setAiRoutingPolicyFn` refuserait toute la politique. Rien à faire,
+  sauf vérifier que ce filtre est toujours là.
+
+Ajouter un commentaire à l'endroit où il était dans `ROUTABLE_FEATURES` : quand et avec quoi
+il est parti. Mettre à jour la documentation qui le cite (`TechnicalRequirements.md`).

@@ -18,8 +18,9 @@ Application Flutter unique (`kass_dalle/`) servant Android, iOS, Web et Windows 
 Firebase + Cloud Functions TypeScript. Projet Firebase `kassdale-6d948`
 (https://kassdale-6d948.web.app). Rôles : `admin`, `editor`, `reader`.
 
-Versionnage : `version:` dans `kass_dalle/pubspec.yaml`, synchronisé vers
-`lib/core/app_version.dart` par le script de déploiement.
+Versionnage : `version:` dans `kass_dalle/pubspec.yaml`, seule source. L'application la lit
+elle-même (`package_info_plus` sur mobile et desktop, `version.json` sur le web). Un nouvel APK
+ne part que par `deploy.ps1` : le déploiement automatique conserve l'APK en ligne.
 
 ## Le processus de release réel
 
@@ -43,6 +44,9 @@ Le script ne bump pas la version. Séquence après un travail validé, sur le PC
 3. exécuter `./deploy.ps1` ;
 4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
 
+Depuis une session cloud : version incrémentée dans la PR, fusion une fois la CI verte, puis
+suivi du workflow « Déploiement » jusqu'au bout avant d'annoncer la version.
+
 Pour une **release complète** : mettre aussi à jour `documentation/FunctionalRequirements.md`,
 `documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le desktop
 (`flutter build windows --release`), puis copier dans `Release/desktop`.
@@ -61,7 +65,9 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
   (`git log`, `git status`, diff, docs).
 - Si des données critiques manquent, explicite les hypothèses et demande confirmation.
 - N'utilise Bash que pour des vérifications non destructives : lecture, recherche, `git status`,
-  `git log`, `git diff`, `flutter analyze`, `flutter test`, `npm run build`.
+  `git log`, `git diff`, et les contrôles de la CI (`flutter analyze`, `dart format
+  --output=none --set-exit-if-changed lib test`, `flutter test`, `npm run lint`,
+  `npm run format:check`, `npm run build`, `npm test`).
 - **Ne déploie jamais toi-même** : ni `deploy.ps1`, ni fusion sur `master`. Tu prépares et
   argumentes la décision ; la session principale déploie quand l'utilisateur l'a demandé.
 - Avant de modifier la documentation de release, proposer un mini-plan puis attendre validation.
@@ -81,7 +87,12 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 ## Checklist Go / No-Go
 
 - Valeur utilisateur des éléments must-have confirmée.
-- `flutter analyze` sans erreur, `flutter test` au vert, `npm run build` (Functions) au vert.
+- Contrôles de la CI au vert des deux côtés : `flutter analyze`, `dart format`, `flutter test` ;
+  `npm run lint`, `npm run format:check`, `npm run build`, `npm test`.
+- Chaque changement de la release relu par `relecteur-regles`, et chaque écran touché relu par
+  `ux-designer`, anomalies corrigées ou justifiées.
+- Dernier workflow « Déploiement » au vert, si la release part depuis une session cloud.
+- APK : version en ligne connue (`apk_release.json`) ; un nouvel APK demande `deploy.ps1`.
 - Régressions critiques absentes ou mitigées.
 - Règle du cache web respectée dans `kass_dalle/firebase.json` (aucun `js|css|wasm` en `immutable`).
 - Aucun `catch` silencieux introduit dans le diff de la release.

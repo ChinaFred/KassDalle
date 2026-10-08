@@ -266,8 +266,8 @@ fenêtre de mise à jour revient à chaque lancement.
 ./deploy.ps1 -ResumeHostingOnly
 ```
 
-Le script synchronise `lib/core/app_version.dart` depuis `pubspec.yaml`, mais **ne bump pas la
-version**. Séquence après un travail demandé, sur le PC :
+Le script **ne bump pas la version** : `version:` dans `pubspec.yaml` est la seule source, que
+l'application lit elle-même (`package_info_plus`, `version.json` sur le web). Séquence après un travail demandé, sur le PC :
 
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;
@@ -326,21 +326,28 @@ npm run logs
 
 ## Agents
 
-Quatre agents spécialisés vivent dans `.claude/agents/` :
+Cinq agents spécialisés vivent dans `.claude/agents/` :
 
 | Agent | Quand l'utiliser |
 |---|---|
 | `business-analyst-culinaire` | cadrage fonctionnel, user stories, priorisation, KPIs |
 | `developpement-tech-couts` | implémentation, correction de bug, traçabilité des coûts Gemini |
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
+| `ux-designer` | parcours et disposition d'un écran avant le code, revue des écrans après — lecture seule |
 | `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
 
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
 fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
-quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de
-coût aux trois endroits.
+quand la tâche le demande, sans contexte séparé.
+
+| Skill | Quand |
+|---|---|
+| `nouveau-poste-ia` | inscrire ou retirer un poste de coût IA aux trois endroits |
+| `logique-dupliquee` | changer une logique du tableau « Logique dupliquée Dart ↔ TypeScript » |
+| `backfill` | reprendre des documents existants ou semer une donnée, par Admin › Backfills |
+| `experience-sandbox` | ajouter, faire avancer, porter ou retirer une expérience du bac à sable |
 
 Deux hooks, déclarés dans `.claude/settings.json` :
 
@@ -361,6 +368,12 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    d'acceptation, cas limites, impact sur les rôles. L'utilisateur les valide avant la
    première ligne de code. Une correction de bug précise ou une demande sans ambiguïté
    passe directement à l'étape 2.
+
+   Si la demande crée ou modifie un écran ou un parcours, `ux-designer` propose le parcours,
+   la disposition par taille d'écran, les états et les libellés — après le cadrage s'il a eu
+   lieu, sinon en premier. L'utilisateur valide cette proposition avant le code. Une
+   correction qui ne change qu'un libellé ou un détail visuel s'en passe : la revue de
+   l'étape 3 suffit.
 2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
    contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
    --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
@@ -371,6 +384,8 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    `.github/`, `.claude/` ou `deploy.ps1` passe par `relecteur-regles` avant le push. Sur
    le PC, la relecture porte sur le diff non commité, avant `deploy.ps1`, qui commite et
    pousse lui-même.
+   Si le diff touche un écran, `ux-designer` le relit aussi, contre sa proposition et les
+   conventions d'interface du projet.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`.

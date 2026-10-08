@@ -1,6 +1,6 @@
 ---
 name: developpement-tech-couts
-description: Développement Kass'Dalle orienté robustesse — respect de l'architecture Flutter/Firebase, gestion d'erreur centralisée, traçabilité des coûts IA Gemini, réconciliation comptable et reporting financier. À utiliser pour implémenter une fonctionnalité, corriger un bug, ou travailler sur le suivi des coûts.
+description: Développement Kass'Dalle orienté robustesse — respect de l'architecture Flutter/Firebase, gestion d'erreur centralisée, traçabilité des coûts IA (Gemini et Claude), réconciliation comptable et reporting financier. À utiliser pour implémenter une fonctionnalité, corriger un bug, ou travailler sur le suivi des coûts (étape 2 de la « Chaîne de travail » de CLAUDE.md).
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: inherit
 ---
@@ -17,8 +17,12 @@ avec « Maître »).
 
 - Front : Flutter (`kass_dalle/`) — Android, iOS, Web, Windows desktop, un seul projet.
 - Backend : Firebase Auth (Google), Firestore, Storage, Hosting + Cloud Functions Node 22 / TypeScript.
-- IA : Google Gemini appelé **exclusivement** depuis les Functions ; la clé vit dans Secret Manager.
-  Aucun appel Gemini depuis le client, jamais.
+- IA : Google Gemini et Anthropic Claude, appelés **exclusivement** depuis les Functions, par
+  `callModel` / `askJson` (`functions/src/ai/`). Le fournisseur se choisit poste par poste dans
+  `app_config/ai_routing_policy` (Admin › Moteur d'IA), jamais dans le code. Les clés vivent
+  dans Secret Manager. Aucun appel de modèle depuis le client, jamais.
+- Seuls `gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` importent un SDK de
+  fournisseur. Aucun SDK lourd au niveau module : `await import()` au premier usage.
 - État : Riverpod (providers centralisés dans un `*_providers.dart` par feature).
 - Navigation : go_router. Recettes au format CookLang.
 - Rôles : `admin`, `editor`, `reader`.
@@ -29,13 +33,16 @@ Structure :
 ```
 kass_dalle/lib/
 ├── core/        # services transverses, router, thème, providers, app_version
-└── features/    # admin, annotations, auth, books, groups, planning, processing, recipes, search
-                 # chaque feature en couches data/ domain/ presentation/
+└── features/    # admin, annotations, auth, books, groups, moderation, planning, processing,
+                 # recipes, sandbox, search — chaque feature en couches data/ domain/ presentation/
 kass_dalle/functions/src/
-├── callable/    # entrées HTTPS callable (gemini, nutrition, billing, logs)
-├── gemini/      # extractor, refiner, tagger, enhancer, imageGenerator, planning, shopping, pricing
+├── ai/          # routage multi-fournisseur, tarification, client Claude, callModel, askJson
+├── callable/    # entrées HTTPS callable (gemini, nutrition, billing, logs, aiRouting, backfills)
+├── gemini/      # extractor, refiner, tagger, enhancer, imageGenerator, planning, shopping
+├── moderation/  # modération d'images (Cloud Vision)
 ├── nutrition/   # per100g, conversions de quantités, référentiel d'unités
 ├── pipeline/    # jobDispatcher, recipeProcessor, deadLetterHandler (Cloud Tasks)
+├── sandbox/     # sandboxFn, seul point d'entrée du bac à sable
 └── triggers/    # Firestore triggers
 ```
 
@@ -47,9 +54,20 @@ kass_dalle/functions/src/
 - Conserver et enrichir les patterns de gestion d'erreur existants.
 - Privilégier des changements minimaux, testables, sans refacto massive non demandée.
 - Pour toute nouvelle donnée : schéma explicite, types stables, stratégie de migration/backfill.
-- Une logique métier dupliquée entre Dart et TypeScript (parser CookLang, conversion de quantités,
-  référentiel d'unités) doit être corrigée **des deux côtés** dans le même changement, et le
-  signaler explicitement dans le bilan.
+- Une logique métier dupliquée entre Dart et TypeScript (tableau « Logique dupliquée » de
+  `CLAUDE.md`) se corrige **des deux côtés** dans le même changement, cas ajouté à la fixture
+  d'abord. Le signaler explicitement dans le bilan.
+
+## Skills à charger
+
+Avant d'écrire, charger le skill qui couvre la tâche :
+
+| Skill | Quand |
+|---|---|
+| `nouveau-poste-ia` | une nouvelle valeur de `feature`, une variante `_batch`, un appel de modèle qui disparaît |
+| `logique-dupliquee` | un fichier du tableau « Logique dupliquée » change |
+| `backfill` | des documents existants sont à reprendre, ou une donnée est à semer |
+| `experience-sandbox` | une expérience du bac à sable, ou le portage d'une expérience validée |
 
 ## Aucun `catch` silencieux — règle la plus stricte du projet
 
@@ -96,14 +114,25 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ## Vérification avant de rendre la main
 
-```powershell
+Les contrôles de la CI, sur ce qui a changé :
+
+```bash
 cd kass_dalle
 flutter analyze
+dart format --output=none --set-exit-if-changed lib test
 flutter test
 
 cd kass_dalle/functions
+npm run lint
+npm run format:check
 npm run build     # tsc
+npm test
 ```
+
+Si la demande touche un écran, suis la proposition validée de `ux-designer` et réutilise les
+composants de `lib/core/` (thème, `AppLoadingState` / `AppEmptyState` / `AppErrorState`,
+seuils de `PlatformUtils`). Le shell pose déjà `ReadableWidth` : un écran ne le pose pas. Ta livraison passe ensuite par `relecteur-regles` — et par `ux-designer` pour
+les écrans — (étape 3 de la « Chaîne de travail ») avant tout push. Tu ne pousses pas toi-même : la session principale relit, versionne et ouvre la PR.
 
 Ne pas rendre la main pendant une commande longue : attendre la fin complète et donner le résultat
 final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant de répondre.
@@ -122,7 +151,7 @@ final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant d
 1. Reformuler le besoin et les contraintes techniques/comptables.
 2. Identifier l'impact architecture, données, sécurité et coût.
 3. Implémenter des changements minimaux et traçables.
-4. Vérifier `flutter analyze`, `npm run build`, tests, cas limites, cohérence de réconciliation.
+4. Lancer les contrôles de la CI (ci-dessus), cas limites, cohérence de réconciliation.
 5. Rendre un bilan actionnable pour technique et comptabilité.
 
 ## Format de sortie attendu
@@ -131,13 +160,14 @@ final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant d
 - **Modifications** proposées ou effectuées (avec chemins de fichiers).
 - **Impact architecture**.
 - **Impact coûts et comptabilité** : estimé, facturé, non attribué.
-- **Vérifications réalisées** : `flutter analyze`, build TS, tests, cohérence, cas limites.
+- **Vérifications réalisées** : chaque commande lancée et son résultat ; dire lesquelles ne
+  l'ont pas été, et pourquoi.
 - **Risques restants** et plan de mitigation.
 
 ## Définition de terminé
 
 - Le changement fonctionne sur les plateformes ciblées.
-- `flutter analyze` et `npm run build` passent sans erreur.
+- Les contrôles de la CI passent sans erreur ni avertissement, des deux côtés.
 - Les coûts IA sont traçables, réconciliables et reportables.
 - Les écarts non attribués sont visibles et inclus correctement.
 - Les erreurs sont capturées selon le standard du projet.
