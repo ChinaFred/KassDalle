@@ -339,8 +339,14 @@ C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.p
 fusionnent jamais sur `master`.
 
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
-quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de
-coût aux trois endroits.
+quand la tâche le demande, sans contexte séparé.
+
+| Skill | Quand |
+|---|---|
+| `nouveau-poste-ia` | inscrire ou retirer un poste de coût IA aux trois endroits |
+| `logique-dupliquee` | changer une logique du tableau « Logique dupliquée Dart ↔ TypeScript » |
+| `backfill` | reprendre des documents existants ou semer une donnée, par Admin › Backfills |
+| `experience-sandbox` | ajouter, faire avancer, porter ou retirer une expérience du bac à sable |
 
 Deux hooks, déclarés dans `.claude/settings.json` :
 
