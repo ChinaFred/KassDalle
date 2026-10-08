@@ -2332,9 +2332,12 @@ signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 
 **Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
-`Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à deux
-tentatives complètes. `deploy.ps1` relance, lui, les seules fonctions nommées dans
-`Failed to update function …` ; le workflow les liste dans ses avertissements.
+`Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à une
+relance, qui vise les seules fonctions en échec (`--only functions:<nom>`), comme `deploy.ps1`.
+Une relance complète ne suffit pas : la CLI saute toute fonction dont le code n'a pas changé
+(« Skipped (No changes detected) »). Au premier déploiement automatique, le code de
+`recipeProcessor` était parti mais sa file Cloud Tasks avait échoué ; une relance complète
+l'a sautée et a annoncé un succès. Une fonction nommée par `--only` n'est jamais sautée.
 
 **`--force` n'est passé qu'aux Functions.** En mode non interactif, la CLI refuse sinon de
 supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
@@ -2390,10 +2393,16 @@ GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`.
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`, et
   la CLI accorde au compte d'exécution l'accès à ces secrets ;
-- `Cloud Scheduler Admin` (fonctions planifiées).
+- `Cloud Scheduler Admin` (fonctions planifiées) ;
+- `Cloud Tasks Admin` : `recipeProcessor` est une fonction de file Cloud Tasks, et la CLI lit et
+  met à jour sa file (`cloudtasks.queues.get`, `cloudtasks.queues.update`).
 
-Le premier déploiement dit s'il en manque un : le message d'erreur de la CLI nomme la
-permission refusée.
+Le projet doit aussi avoir l'API `cloudbilling.googleapis.com` activée : la CLI la vérifie avant
+de déployer les Functions, et le compte de service n'a pas le droit d'activer une API. Activée
+le 8 octobre 2026.
+
+Un déploiement dit s'il manque un rôle : le message d'erreur de la CLI nomme la permission
+refusée, et le workflow le reprend dans ses avertissements.
 
 ---
 
