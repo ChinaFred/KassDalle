@@ -2335,7 +2335,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 |---|---|
 | Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`), accepté sur `master` seulement |
 | Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
-| Ignoré | un commit signé `Deploy-Source: deploy.ps1`, ou dont le message commence par `deploy:` : `deploy.ps1`, l'outil de secours, vient de tout déployer depuis le PC |
+| Ignoré | un commit signé `Deploy-Source: deploy.ps1` : `deploy.ps1`, l'outil de secours, vient de tout déployer depuis le PC. Un message qui commence par `deploy:` sans cette ligne est déployé |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |

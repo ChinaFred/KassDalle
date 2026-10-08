@@ -1,8 +1,9 @@
 name: Déploiement
 
 # Déploie les Cloud Functions, le web, et les règles Firestore et Storage
-# après chaque CI verte sur master. Une modification fusionnée depuis une
-# session cloud part ainsi en ligne comme depuis le PC.
+# après chaque CI verte sur master. C'est le chemin de déploiement normal, sur
+# le PC (commit et push sur master) comme depuis une session cloud (fusion de
+# la PR). deploy.ps1 reste l'outil de secours.
 #
 # L'APK n'est construit que si la version de pubspec.yaml est plus récente
 # que celle de l'APK en ligne. Sinon le site garde l'APK et le manifeste déjà
@@ -38,8 +39,10 @@ jobs:
     # - la CI est verte ;
     # - elle portait sur un push, pas sur une pull request ;
     # - le commit ne vient pas de deploy.ps1, qui vient de tout déployer depuis
-    #   le PC : il signe ses commits « Deploy-Source: deploy.ps1 », et son
-    #   message par défaut commence par « deploy: ».
+    #   le PC : il signe tous ses commits « Deploy-Source: deploy.ps1 ».
+    #   Le message seul ne compte pas : un commit poussé à la main peut
+    #   commencer par « deploy: », comme le message par défaut du script, et
+    #   doit être déployé.
     # Un lancement manuel n'est accepté que sur master : le sélecteur de
     # GitHub propose toutes les branches, et aucune autre n'a de CI validée.
     if: >-
@@ -47,7 +50,6 @@ jobs:
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
-       !startsWith(github.event.workflow_run.head_commit.message, 'deploy:') &&
        !contains(github.event.workflow_run.head_commit.message, 'Deploy-Source: deploy.ps1'))
     outputs:
       sha: ${{ steps.tip.outputs.sha }}
