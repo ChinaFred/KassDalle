@@ -2409,7 +2409,19 @@ doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 Functions, pour qu'une paire incohérente arrête tout avant le premier déploiement, puis juste
 avant le hosting. Sans nouvel APK, cette seconde lecture recopie la paire en ligne. Avec un
 nouvel APK, elle vérifie qu'aucun APK aussi récent ou plus récent n'est arrivé entre-temps, et
-le conserve s'il y en a un.
+le conserve s'il y en a un. Chaque téléchargement a un délai (`curl --max-time` : 300 s pour
+l'APK, 60 s pour le manifeste), et chaque étape aussi (`timeout-minutes` : 10, et 15 pour la
+seconde lecture, qui peut appeler le script deux fois). Un échec de la seconde lecture laisse
+les Functions neuves avec le web précédent : relancer le workflow une fois la cause réglée.
+
+**Après le build de l'APK**, `build-apk.sh` arrête les démons Gradle et Kotlin et attend leur
+sortie. `.github/scripts/runner-resources.sh` publie ensuite la mémoire disponible et le disque
+libre en annotation du run, puis de nouveau dans l'étape « Ressources du runner », juste avant la
+seconde lecture. Une annotation publiée par une étape terminée reste visible même si le journal
+du job est perdu ensuite. Ce script ne fait jamais échouer le workflow. Le 8 octobre 2026, deux tentatives se sont arrêtées à
+l'étape « Revérifier l'APK en ligne » : la première au bout de 4 secondes sans journal, la
+seconde bloquée 13 minutes. La cause n'est pas établie. Hypothèses : mémoire ou disque du
+runner saturés, ou téléchargement bloqué, que `--max-time` coupe désormais.
 
 **Les secrets de signature** (même page que ci-dessous) viennent de `kass_dalle/android/key.properties`
 et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64,

@@ -123,6 +123,7 @@ jobs:
         run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
 
       - name: Vérifier l'APK en ligne
+        timeout-minutes: 10
         # Avant tout déploiement : une paire incohérente arrêterait sinon le
         # workflow après les Functions, et laisserait des Functions neuves
         # avec un web ancien. Le téléchargement est refait avant le hosting.
@@ -168,18 +169,28 @@ jobs:
         run: ../.github/scripts/firebase-deploy.sh functions 2 --force
 
       - name: Conserver l'APK en ligne
+        timeout-minutes: 10
         if: steps.apk.outputs.build != 'true'
         # Juste avant le hosting : plus la copie est tardive, plus la fenêtre
         # est courte où un deploy.ps1 publierait un APK neuf que ce
         # déploiement écraserait.
         run: ../.github/scripts/keep-online-apk.sh build/web
 
+      - name: Ressources du runner
+        # Étape à part : son annotation est publiée quand elle se termine, et
+        # reste visible si le runner meurt à l'étape suivante.
+        if: steps.apk.outputs.build == 'true'
+        run: ../.github/scripts/runner-resources.sh "avant la seconde lecture de l'APK"
+
       - name: Revérifier l'APK en ligne
+        timeout-minutes: 15
         if: steps.apk.outputs.build == 'true'
         # Le build de l'APK et les Functions durent plus de dix minutes. Un
         # deploy.ps1 a pu publier entre-temps un APK plus récent que celui
         # construit ici : il est alors conservé, au lieu d'être remplacé par
         # une version plus ancienne.
+        # Un échec ici laisse les Functions neuves avec le web précédent :
+        # relancer le workflow (« Re-run all jobs ») une fois la cause réglée.
         run: |
           ../.github/scripts/keep-online-apk.sh "$RUNNER_TEMP/apk-recheck"
           decision=$(mktemp)
