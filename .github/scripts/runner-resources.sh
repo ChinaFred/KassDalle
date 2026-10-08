@@ -10,13 +10,13 @@
 # mesure impossible devient un avertissement. Le script sort toujours en 0.
 #
 # Usage : runner-resources.sh <moment>
-set -u
+moment="${1:-?}"
 
 mem=$(free -m | awk '/^Mem:/ {print $7 " Mo disponibles sur " $2}') || mem=""
 disk=$(df -h / | awk 'NR == 2 {print $4 " libres sur " $2}') || disk=""
 if [ -z "$mem" ] || [ -z "$disk" ]; then
-  echo "::warning::Runner, $1 : mesure de la mémoire ou du disque impossible."
+  echo "::warning::Runner, $moment : mesure de la mémoire ou du disque impossible."
 else
-  echo "::notice::Runner, $1 : mémoire $mem ; disque $disk."
+  echo "::notice::Runner, $moment : mémoire $mem ; disque $disk."
 fi
 exit 0
