@@ -294,7 +294,7 @@ Document principal d'une recette.
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
 | `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre et même longueur que `image_urls`** — voir « L'alignement des vignettes » ci-dessous. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
 | `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
-| `is_private` | `bool` | Confidentialité **recopiée du livre porteur**, écrite par le serveur seul (`onRecipeWritten`, `onBookWritten`, `backfillRecipePrivacyFn`). Une recette sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
+| `is_private` | `bool` | Confidentialité **recopiée du livre porteur**, écrite par le serveur seul (`onRecipeWritten`, `onBookWritten`). Les recettes antérieures au champ l'ont reçu d'un backfill, `backfillRecipePrivacyFn`, passé au complet puis retiré le 5 octobre 2026. Une recette sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
 | `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
 | `ingredients_index` | `List<String>` | Noms des ingrédients en minuscules, sans doublon — index de recherche. Dérivé de `ingredients`, jamais du CookLang brut (cf. « Écrivain unique » ci-dessous) |
 | `created_by` | `String` | UID du créateur |
@@ -881,7 +881,7 @@ donne, pas à la recette.
 | `usual_portion_g` | `num?` | Grammes qu'une recette pour quatre personnes emploie d'ordinaire de cet ingrédient quand elle **n'écrit ni nombre ni unité** (« roquette », « parmesan pour râper dessus »). Estimée par l'IA (poste `estimate_usual_portions`, `aiEnrichment.ts`), une seule fois dans la vie de l'ingrédient, jamais redemandée tant qu'elle est renseignée — une correction à la main est donc conservée. Bornée à 500 g. Lue par `resolveWeighingInput` (TypeScript et Dart, fixture `unit_to_grams.json`, section `usual_portion`) : elle ne sert que sur une ligne nue, après la pincée d'un assaisonnement et après toute unité écrite. Reprise pour le passé par la reprise de la nutrition (*Admin › Backfills*), qui repasse par `syncRecipeNutrition` |
 | `usual_portion_source` · `usual_portion_at` | `String?` · `Timestamp?` | `ai_estimated` ; date de l'estimation |
 | `usual_portion_attempt_at` | `Timestamp?` | Dernière tentative sans réponse exploitable : la question n'est reposée qu'après vingt-quatre heures |
-| `shopping_product` | `String?` | Le produit qu'on achète, sur la liste de courses : « beurre » pour `beurre_fondu`, « œuf » pour `jaune_d_oeuf`. **Absent** : jamais examiné. **Vide** : le nom est déjà le produit. Posé automatiquement à l'import pour un ingrédient neuf (`recipeNutritionAutoSync.ts`, poste `shopping_product_alias_auto`), rattrapé pour le passé par le backfill « Produit acheté des ingrédients » (`backfillShoppingFn`, mode `aliases`, poste `backfill_shopping_aliases`), corrigé à la main depuis *Admin › Référentiels › Ingrédients* — la seule écriture du référentiel ouverte au client, à un administrateur, sur ce champ et sa source. Les deux passes automatiques partagent la même résolution (`shoppingAliases.ts`) : quand le produit proposé par le modèle correspond à un ingrédient déjà connu du référentiel, son orthographe exacte est reprise plutôt qu'une variante inventée — « beurre fondu » ne crée pas un second « Beurre » qui ne fusionnerait pas avec l'existant. Lu par `onRecipeWritten` quand il compose `shopping_products` |
+| `shopping_product` | `String?` | Le produit qu'on achète, sur la liste de courses : « beurre » pour `beurre_fondu`, « œuf » pour `jaune_d_oeuf`. **Absent** : jamais examiné. **Vide** : le nom est déjà le produit. Posé automatiquement à l'import pour un ingrédient neuf (`recipeNutritionAutoSync.ts`, poste `shopping_product_alias_auto`), rattrapé pour le passé par le backfill « Produit acheté des ingrédients » (mode `aliases` de `backfillShoppingFn`, poste `backfill_shopping_aliases`), passé au complet puis retiré le 5 octobre 2026, corrigé à la main depuis *Admin › Référentiels › Ingrédients* — la seule écriture du référentiel ouverte au client, à un administrateur, sur ce champ et sa source. Les deux passes automatiques partagent la même résolution (`shoppingAliases.ts`) : quand le produit proposé par le modèle correspond à un ingrédient déjà connu du référentiel, son orthographe exacte est reprise plutôt qu'une variante inventée — « beurre fondu » ne crée pas un second « Beurre » qui ne fusionnerait pas avec l'existant. Lu par `onRecipeWritten` quand il compose `shopping_products` |
 | `shopping_product_source` | `String?` | `ai_estimated` \| `admin` |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
@@ -985,23 +985,26 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 jour où la politique en vigueur a été recopiée dans une première configuration.
 Elle empêche cette configuration de revenir après une suppression volontaire.
 
-Trois documents de plus ne décident rien : ce sont les **points de reprise** des
-backfills (§7.10). Chacun est écrit par le serveur seul, via `setBackfillCursor`
-(`callable/_backfillCursor.ts`).
+Cinq documents de plus ne décident rien : ce sont les **points de reprise** des
+backfills (§7.10). Le serveur les écrit via `setBackfillCursor`
+(`callable/_backfillCursor.ts`). Aucun code client ne les écrit, mais les règles
+Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 
 | Document | Écrit par |
 |---|---|
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
+| `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
+| `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
 | Champ | Type | Contenu |
 |---|---|---|
 | `operation` | `String` | le nom du backfill |
-| `last_doc_id` | `String?` | la dernière recette examinée ; `null` quand la collection a été parcourue en entier, et l'appel suivant repart du début |
+| `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn` et `backfillRecipeRolesFn` seulement. L'écran Admin › Backfills le relit à l'ouverture : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu |
+| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn` et `backfillRecipeRolesFn` seulement. L'écran Admin › Backfills relit à l'ouverture celui du rôle des recettes (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran |
 
 ---
 
@@ -2097,7 +2100,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
-| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` et `suggested_sides` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillAiPricingFn` | `admin` | applique `PRICING_CORRECTIONS` (`ai/pricing.ts`) à `app_config/ai_pricing` : un modèle au bon tarif est compté « déjà correct », un modèle qui en dévie est corrigé. Aucun appel d'IA, un seul document, donc ni pagination ni point de reprise |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
