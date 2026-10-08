@@ -294,8 +294,8 @@ Depuis une session cloud :
 
 Un nouvel APK part par le workflow dès que la version change, ou par `deploy.ps1` en secours.
 
-Pour une release complète : mettre aussi à jour `documentation/FunctionalRequirements.md`,
-`documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le
+Pour une release complète : vérifier que les documents du tableau « Chaque changement met à jour
+ses documents » sont à jour, mettre à jour `README.md` (racine et `kass_dalle/README.md`), builder le
 desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
 
 ## Documentation à tenir à jour
@@ -319,9 +319,33 @@ desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
   `<pre class="mermaid">`), rendus nativement par les Artifacts claude.ai et via le CDN Mermaid
   quand le fichier est ouvert localement.
 
-Quand un modèle de domaine, une Cloud Function, une route ou un flux change, mettre à jour le
-diagramme correspondant dans le même commit — un diagramme faux coûte plus cher qu'un diagramme
-absent.
+**Chaque changement met à jour ses documents, dans le même commit.** Le tableau dit lesquels :
+
+| Ce qui change | Documents à mettre à jour |
+|---|---|
+| Écran, parcours, droit d'un rôle | `FunctionalRequirements.md`, `cas-d-utilisation.html` |
+| Route go_router | carte de navigation de `TechnicalRequirements.md` (§13.1) |
+| Cloud Function (ajout, retrait, déclencheur, signature) | `TechnicalRequirements.md`, tableau des fonctions de `architecture.html` |
+| Flux entre client, Functions et services (import, planning, courses, nutrition, modération…) | `TechnicalRequirements.md`, `diagrammes-de-sequence.html`, et pour l'import la section « Le pipeline d'import » de `architecture.html` |
+| Modèle de domaine, collection ou champ Firestore | schéma Firestore de `TechnicalRequirements.md` (§3), `diagramme-de-classes.html`, tableau des collections de `architecture.html` |
+| Règles Firestore ou Storage | `TechnicalRequirements.md` (§4) |
+| Prompt, poste d'IA, routage | `TechnicalRequirements.md` |
+| Logique dupliquée Dart ↔ TypeScript | le tableau de ce fichier, section « Logique dupliquée » de `architecture.html` |
+| Déploiement, CI, outillage | `TechnicalRequirements.md`, `architecture.html` |
+| Version | `CHANGELOG.md` |
+
+Un libellé modifié sans changement de parcours ne demande rien de plus. Le bac à sable
+(`features/sandbox/`, `functions/src/sandbox/`) n'entre pas dans le tableau : il n'est
+documenté nulle part (voir « Bac à sable »).
+
+Un élément retiré du code sort aussi des documents, sauf du `CHANGELOG.md`, qui garde
+l'historique. Un diagramme faux coûte plus cher qu'un diagramme absent.
+
+Le code et sa documentation partent ensemble, et `relecteur-regles` vérifie le tableau
+(contrôle 10). Quand le cadrage a eu lieu, `business-analyst-culinaire` met à jour
+`FunctionalRequirements.md` et les cas d'utilisation avec son livrable de cadrage ;
+`developpement-tech-couts` écrit les autres documents avec le code. Sans cadrage (correction
+de bug, demande sans ambiguïté), `developpement-tech-couts` les écrit tous.
 
 ## Commandes utiles
 

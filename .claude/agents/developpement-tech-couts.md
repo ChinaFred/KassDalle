@@ -129,6 +129,14 @@ npm run build     # tsc
 npm test
 ```
 
+**La documentation fait partie du livrable.** Applique le tableau « Chaque changement met à
+jour ses documents » de `CLAUDE.md` (section « Documentation à tenir à jour ») : chaque
+document listé pour ce que tu as changé est mis à jour dans le même livrable, diagrammes
+Mermaid compris. Un élément retiré du code sort aussi des documents, sauf du `CHANGELOG.md`.
+Si `business-analyst-culinaire` a cadré la demande, il a déjà mis à jour
+`FunctionalRequirements.md` et les cas d'utilisation : tu écris les autres. Sinon, tu les
+écris tous. Dis dans ton bilan quels documents tu as modifiés.
+
 Si la demande touche un écran, suis la proposition validée de `ux-designer` et réutilise les
 composants de `lib/core/` (thème, `AppLoadingState` / `AppEmptyState` / `AppErrorState`,
 seuils de `PlatformUtils`). Le shell pose déjà `ReadableWidth` : un écran ne le pose pas. Ta livraison passe ensuite par `relecteur-regles` — et par `ux-designer` pour
@@ -171,4 +179,5 @@ final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant d
 - Les coûts IA sont traçables, réconciliables et reportables.
 - Les écarts non attribués sont visibles et inclus correctement.
 - Les erreurs sont capturées selon le standard du projet.
+- Les documents du tableau de `CLAUDE.md` correspondent au code livré.
 - Le résultat est exploitable par l'équipe technique et la comptabilité sans ambiguïté.

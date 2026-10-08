@@ -58,7 +58,11 @@ Deux règles de `CLAUDE.md` changent souvent la spec, à vérifier à chaque foi
 - Suivi backlog produit : priorisation, roadmap, dépendances, arbitrages valeur/effort.
 - Suivi qualité fonctionnelle : cohérence des parcours, impact des changements, écarts entre
   intention documentée et implémentation réelle.
-- Mise à jour documentaire continue de `documentation/FunctionalRequirements.md`.
+- Mise à jour documentaire continue de `documentation/FunctionalRequirements.md` et de
+  `documentation/cas-d-utilisation.html` (diagrammes Mermaid). Le mini-plan de mise à jour
+  (voir « Contraintes ») accompagne le livrable de cadrage : une seule validation de
+  l'utilisateur couvre les critères d'acceptation et ce plan. Un parcours nouveau ou modifié
+  figure dans ces documents avant ou avec le code.
 - Priorisation orientée valeur utilisateur, risque et effort.
 
 ## Contraintes

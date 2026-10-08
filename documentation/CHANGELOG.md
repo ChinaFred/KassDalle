@@ -20,6 +20,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.4 — technique
+
+#### Chaque changement met à jour ses documents
+
+`CLAUDE.md` demandait de tenir les diagrammes à jour, sans dire lesquels pour quel
+changement. Aucun agent n'avait la charge des cas d'utilisation, et `developpement-tech-couts`
+n'avait aucune consigne sur la documentation. Résultat : `cas-d-utilisation.html` datait du
+29 août, `diagramme-de-classes.html` du 13 septembre, `diagrammes-de-sequence.html` du
+27 septembre.
+
+- `CLAUDE.md` : un tableau associe chaque catégorie de changement (écran, route, Cloud
+  Function, flux, modèle Firestore, règles, prompt, logique dupliquée, déploiement, version) aux
+  documents à mettre à jour dans le même commit. Un élément retiré du code sort aussi des
+  documents, sauf du changelog. Le bac à sable et un simple libellé en sont exclus.
+- `relecteur-regles` : le contrôle 10 applique ce tableau et vérifie les noms des diagrammes
+  Mermaid contre le code.
+- `developpement-tech-couts` : la documentation fait partie de son livrable.
+- `business-analyst-culinaire` : il tient aussi `cas-d-utilisation.html`, avec son livrable
+  de cadrage. Sans cadrage, `developpement-tech-couts` écrit tous les documents.
+
+Le rattrapage des écarts déjà présents fera l'objet d'une version à part.
+
 ### v0.23.3 — technique
 
 #### Le déploiement libère de la place sur le disque du runner
