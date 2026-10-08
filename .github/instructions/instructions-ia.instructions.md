@@ -265,8 +265,10 @@ backfill qui la crée, et la réponse dit lequel lancer.
 
 ## Agents
 
-Trois agents spécialisés, définis dans `.claude/agents/` (Claude Code) et `.github/agents/`
-(Copilot) : `business-analyst-culinaire`, `developpement-tech-couts`, `product-owner-release`.
+Quatre agents spécialisés, définis dans `.claude/agents/` (Claude Code) et `.github/agents/`
+(Copilot) : `business-analyst-culinaire`, `developpement-tech-couts`, `product-owner-release`,
+`relecteur-regles` (relecture d'un diff, lecture seule).
+Procédures répétées : skills dans `.claude/skills/` (`nouveau-poste-ia`).
 Aucun agent ne déclenche `deploy.ps1` de sa propre initiative.
 
 ## Commandes longues

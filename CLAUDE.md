@@ -311,7 +311,7 @@ npm run logs
 
 ## Agents
 
-Trois agents spécialisés vivent dans `.claude/agents/` (format Claude Code) et
+Quatre agents spécialisés vivent dans `.claude/agents/` (format Claude Code) et
 `.github/agents/` (format Copilot — miroir) :
 
 | Agent | Quand l'utiliser |
@@ -319,8 +319,17 @@ Trois agents spécialisés vivent dans `.claude/agents/` (format Claude Code) et
 | `business-analyst-culinaire` | cadrage fonctionnel, user stories, priorisation, KPIs |
 | `developpement-tech-couts` | implémentation, correction de bug, traçabilité des coûts Gemini |
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
+| `relecteur-regles` | relecture d'un diff contre les règles absolues, avant commit ou PR — lecture seule |
 
 Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision utilisateur explicite.
+
+Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
+quand la tâche le demande, sans contexte séparé. `nouveau-poste-ia` inscrit un poste de
+coût aux trois endroits.
+
+Une session Claude Code cloud lance `.claude/hooks/session-start.sh` : il installe Flutter
+(même version que la CI) et les dépendances Functions, pour que les agents puissent
+rejouer `flutter analyze`, `flutter test`, `npm run lint` et `npm test`.
 
 ## Intégration continue
 
