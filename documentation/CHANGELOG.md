@@ -33,8 +33,8 @@ rédigées après coup, depuis l'historique git.
   « Documentation à tenir à jour » décrit son format.
 - `relecteur-regles` : nouveau contrôle 11. Une version incrémentée sans entrée est une
   anomalie. Les contrôles « Artefacts de build » et « Outillage » deviennent 12 et 13.
-- `product-owner-release` : la checklist go/no-go vérifie que chaque version de la release a
-  son entrée.
+- `product-owner-release` : ses deux séquences de déploiement demandent l'entrée du
+  changelog, et la checklist go/no-go vérifie que chaque version de la release a la sienne.
 
 ### v0.23.2 — technique
 
