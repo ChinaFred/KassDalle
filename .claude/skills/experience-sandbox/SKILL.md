@@ -14,7 +14,7 @@ Dire, et faire valider, si le code finira **sur l'appareil** (Dart) ou **dans le
 (TypeScript). N'employer que des bibliothèques disponibles là-bas. Exemple à ne pas refaire :
 le paquet Dart `image` a imposé que l'extraction d'illustrations reste côté client.
 
-## 1. Ajouter une expérience — quatre fichiers, aucun autre
+## 1. Ajouter une expérience — tout sous `sandbox/`
 
 Le bac à sable ne modifie jamais le code de l'application. Il peut l'importer et l'appeler.
 Pour changer un comportement existant, **copier** le code sous `features/sandbox/` et modifier
@@ -33,6 +33,9 @@ la copie.
 Ni route, ni tuile de menu, ni export dans `index.ts` : les quatre points d'accrochage
 (`app_router.dart`, `admin_hub_screen.dart`, l'export de `sandboxFn`, la règle de `CLAUDE.md`)
 existent déjà et ne se touchent pas.
+
+Seule exception hors de `sandbox/` : l'inscription d'un poste de coût (section 2), qui touche
+`aiRoutingCallable.ts` et `feature_catalog.dart`, comme le prévoit `CLAUDE.md`.
 
 ## 2. Un appel de modèle coûte de l'argent réel
 

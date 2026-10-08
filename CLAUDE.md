@@ -266,8 +266,8 @@ fenêtre de mise à jour revient à chaque lancement.
 ./deploy.ps1 -ResumeHostingOnly
 ```
 
-Le script synchronise `lib/core/app_version.dart` depuis `pubspec.yaml`, mais **ne bump pas la
-version**. Séquence après un travail demandé, sur le PC :
+Le script **ne bump pas la version** : `version:` dans `pubspec.yaml` est la seule source, que
+l'application lit elle-même (`package_info_plus`, `version.json` sur le web). Séquence après un travail demandé, sur le PC :
 
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` ;

@@ -11,9 +11,12 @@ concerné, et jamais depuis la machine de développement : rien ne s'écrit dans
 production hors de l'application.
 
 Exemples à recopier : `functions/src/callable/recipeRolesBackfillCallable.ts` (avec appel de
-modèle, curseur, compte rendu relu par l'écran) et `shoppingBackfillCallable.ts` (sans modèle).
+modèle, curseur, compte rendu relu par l'écran) et `shoppingBackfillCallable.ts` (sans modèle ;
+il déclare pourtant les deux secrets, inutiles sans appel de modèle : ne pas les recopier).
 
 ## 1. Le callable — `kass_dalle/functions/src/callable/<nom>BackfillCallable.ts`
+
+La fonction exportée s'appelle `backfill<Nom>Fn` (`backfillRecipeRolesFn`, `backfillShoppingFn`).
 
 - `onCall` avec `region: REGION`, `timeoutSeconds: 540`, `maxInstances: MAX_CALLABLE_INSTANCES`,
   les `cors` de la production, et `secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY]` s'il appelle
@@ -29,20 +32,21 @@ modèle, curseur, compte rendu relu par l'écran) et `shoppingBackfillCallable.t
   parcourue en entier. Lire les arguments avec `parseBoolean`, jamais `=== true`.
 - **Compte rendu chiffré** rendu par la fonction : examinés, traités, déjà à jour, échoués,
   restants, et les drapeaux `stoppedByDeadline` / `stoppedByBudget` / `stoppedByErrors` /
-  `completed`. Le passer aussi en `lastReport` à `setBackfillCursor` si l'écran doit le relire
-  à l'ouverture.
+  `completed`. Pour que l'écran le relise à l'ouverture, le passer en `lastReport` à
+  `setBackfillCursor`, qui l'écrit à côté du curseur, puis le lire côté client par
+  `lib/features/admin/data/backfill_reports_repository.dart`.
 - **Document par document.** Une erreur sur un document est journalisée avec `logError` (id du
   document, contexte) et le traitement continue. Aucun `catch` silencieux.
 - `logInfo` final avec le compte rendu, sous le `correlationId` de l'appel.
 - S'il appelle un modèle : un poste de coût propre (`backfill_<nom>`), inscrit aux trois
   endroits — charger le skill `nouveau-poste-ia`.
 
-Exporter la fonction dans `functions/src/index.ts`, à côté des autres `backfill…Fn`.
+Exporter `backfill<Nom>Fn` dans `functions/src/index.ts`, à côté des autres.
 
 ## 2. Le client
 
 - **Repository** : une méthode dans `lib/features/admin/data/gcp_billing_repository.dart`, qui
-  appelle `_callViaSdk('<nom>BackfillFn', payload, timeout: const Duration(minutes: 9))` et
+  appelle `_callViaSdk('backfill<Nom>Fn', payload, timeout: const Duration(minutes: 9))` et
   rend le compte rendu typé (un modèle sous `features/admin/domain/` s'il est relu).
 - **Écran** : un bouton dans `admin_backfills_screen.dart`, une méthode `_runBackfill…` qui :
   - ouvre une boîte de confirmation qui dit ce que fait l'opération, son coût (appels de

@@ -26,7 +26,8 @@ le fichier TypeScript. Les suites qui la rejouent :
 | Fixture | Test Dart (`kass_dalle/test/`) | Test TypeScript (`functions/src/tests/`) |
 |---|---|---|
 | `cooklang_parsing.json` | `cooklang_parser_test.dart` | `sharedFixtures.test.ts` |
-| `quantity_parsing.json`, `unit_to_grams.json` | `nutrition_quantity_converter_test.dart` | `sharedFixtures.test.ts`, `usualPortion.test.ts` |
+| `quantity_parsing.json` | `nutrition_quantity_converter_test.dart` | `sharedFixtures.test.ts` |
+| `unit_to_grams.json` | `nutrition_quantity_converter_test.dart` | `sharedFixtures.test.ts`, `usualPortion.test.ts` (section `usual_portion`) |
 | `ingredient_names.json` | `ingredient_name_test.dart` | `sharedFixtures.test.ts` |
 | `ai_pricing.json` | `ai_pricing_test.dart` | `sharedFixtures.test.ts` |
 | `page_homography.json` | `page_homography_test.dart` | `sharedFixtures.test.ts` |

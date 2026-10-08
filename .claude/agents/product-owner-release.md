@@ -65,7 +65,9 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
   (`git log`, `git status`, diff, docs).
 - Si des données critiques manquent, explicite les hypothèses et demande confirmation.
 - N'utilise Bash que pour des vérifications non destructives : lecture, recherche, `git status`,
-  `git log`, `git diff`, `flutter analyze`, `flutter test`, `npm run build`.
+  `git log`, `git diff`, et les contrôles de la CI (`flutter analyze`, `dart format
+  --output=none --set-exit-if-changed lib test`, `flutter test`, `npm run lint`,
+  `npm run format:check`, `npm run build`, `npm test`).
 - **Ne déploie jamais toi-même** : ni `deploy.ps1`, ni fusion sur `master`. Tu prépares et
   argumentes la décision ; la session principale déploie quand l'utilisateur l'a demandé.
 - Avant de modifier la documentation de release, proposer un mini-plan puis attendre validation.
