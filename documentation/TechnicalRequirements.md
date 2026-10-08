@@ -2316,6 +2316,47 @@ n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manif
 binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
 course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
 
+### Déploiement automatique (GitHub Actions)
+
+Une session de travail sans PC — Claude Code dans le cloud — n'a ni PowerShell, ni la clé de
+signature de l'APK, ni les droits Firebase. Elle fusionne sa PR sur `master`, et
+`.github/workflows/deploy.yml` déploie à sa place.
+
+| Quoi | Comment |
+|---|---|
+| Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`) |
+| Ignoré | un commit dont le message commence par `deploy:` : c'est `deploy.ps1` qui pousse, et il vient de tout déployer depuis le PC |
+| Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
+| Non construit | l'APK : la clé de signature ne vit que sur le PC |
+| Vérification | `.github/scripts/firebase-deploy.sh` exige la ligne `Deploy complete`, comme `deploy.ps1`. Les Functions ont droit à deux tentatives |
+| Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
+
+**L'APK en ligne est conservé.** Le hosting remplace tout `build/web` : le workflow télécharge
+d'abord `app-release.apk` et `apk_release.json` depuis le site et les replace dans `build/web`.
+Un fichier absent ne rend pas 404 — la réécriture `**` sert `index.html` avec un code 200 — donc
+le contenu est jugé : un manifeste JSON qui porte une `version`, un APK qui commence par `PK`,
+et une taille égale à `size_bytes`. Une paire incomplète ou incohérente arrête le déploiement.
+Le manifeste continue de décrire le binaire posé à côté de lui : les téléphones ne voient pas de
+mise à jour tant qu'un nouvel APK n'est pas publié par `deploy.ps1`.
+
+`--force` est passé à la CLI : en mode non interactif, elle refuse sinon de supprimer une
+fonction retirée du code. Une fonction supprimée du dépôt disparaît donc de la production au
+déploiement suivant.
+
+**Le secret `FIREBASE_SERVICE_ACCOUNT`** (Settings › Secrets and variables › Actions du dépôt
+GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
+
+- `Firebase Admin` ;
+- `Cloud Functions Admin` ;
+- `Cloud Run Admin` (Functions de 2e génération) ;
+- `Service Account User`, sur le compte d'exécution des fonctions ;
+- `Artifact Registry Administrator` ;
+- `Secret Manager Viewer` (les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`) ;
+- `Cloud Scheduler Admin` (fonctions planifiées).
+
+Le premier déploiement dit s'il en manque un : le message d'erreur de la CLI nomme la
+permission refusée.
+
 ---
 
 ## 11 bis. Cadrer un document dans une photo

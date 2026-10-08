@@ -1,0 +1,149 @@
+name: Déploiement
+
+# Déploie les Cloud Functions, le web, et les règles Firestore et Storage
+# après chaque CI verte sur master. Une modification fusionnée depuis une
+# session cloud part ainsi en ligne comme depuis le PC.
+#
+# L'APK n'est PAS construit ici : la clé de signature ne vit que sur le PC.
+# Le site garde l'APK et le manifeste déjà en ligne (étape « Conserver
+# l'APK en ligne »). Un nouvel APK part toujours par deploy.ps1.
+#
+# Secret requis : FIREBASE_SERVICE_ACCOUNT, la clé JSON d'un compte de service
+# du projet kassdale-6d948. Rôles : voir documentation/TechnicalRequirements.md,
+# section « Déploiement automatique ».
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+# Un déploiement à la fois, et jamais interrompu : un déploiement des
+# Functions coupé en route laisse une partie des fonctions à l'ancienne
+# version.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Functions, web, règles
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Trois conditions pour un déclenchement automatique :
+    # - la CI est verte ;
+    # - elle portait sur un push, pas sur une pull request ;
+    # - le commit ne vient pas de deploy.ps1, qui vient de tout déployer depuis
+    #   le PC. Son message commence par « deploy: » par défaut.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       !startsWith(github.event.workflow_run.head_commit.message, 'deploy:'))
+    defaults:
+      run:
+        working-directory: kass_dalle
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Le commit que la CI a validé, pas la tête de master au moment où
+          # ce job démarre : un push arrivé entre-temps n'a pas encore de CI.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kass_dalle/functions/package-lock.json
+
+      - name: Dépendances
+        run: |
+          flutter pub get
+          npm ci --prefix functions
+
+      - name: Build web
+        # Mêmes options que deploy.ps1.
+        run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
+
+      - name: Conserver l'APK en ligne
+        # Le hosting remplace tout le contenu de build/web. Sans cette étape,
+        # le lien de téléchargement passerait en 404 et le manifeste lu par
+        # l'application Android disparaîtrait. On recopie la paire en ligne,
+        # qui décrit le binaire posé à côté d'elle.
+        #
+        # Un fichier absent ne rend pas 404 : la réécriture « ** » de
+        # firebase.json sert index.html à sa place, avec un code 200. On juge
+        # donc le contenu : un manifeste JSON qui porte une version, un APK
+        # qui commence par la signature ZIP « PK ».
+        #
+        # Un manifeste sans APK, ou l'inverse, arrête le déploiement : publier
+        # l'un sans l'autre annoncerait une version que le téléchargement ne
+        # rend pas.
+        run: |
+          site="https://kassdale-6d948.web.app"
+          apk=build/web/app-release.apk
+          manifest=build/web/apk_release.json
+          curl -sS --fail -o "$apk" "$site/app-release.apk"
+          curl -sS --fail -o "$manifest" "$site/apk_release.json"
+
+          has_manifest=false
+          if jq -e '.version | strings' "$manifest" >/dev/null 2>&1; then has_manifest=true; fi
+          has_apk=false
+          if [ "$(head -c 2 "$apk")" = "PK" ]; then has_apk=true; fi
+
+          if $has_apk && $has_manifest; then
+            version=$(jq -r .version "$manifest")
+            size=$(jq -r .size_bytes "$manifest")
+            actual=$(stat -c %s "$apk")
+            if [ "$size" != "$actual" ]; then
+              echo "::error::APK en ligne de $actual octets, manifeste annonçant $size : paire incohérente, déploiement arrêté."
+              exit 1
+            fi
+            echo "APK en ligne conservé : v$version ($actual octets)."
+          elif ! $has_apk && ! $has_manifest; then
+            rm -f "$apk" "$manifest"
+            echo "::warning::Aucun APK en ligne : le site n'en proposera pas."
+          else
+            echo "::error::APK présent : $has_apk, manifeste présent : $has_manifest. Impossible de conserver la paire, déploiement arrêté."
+            exit 1
+          fi
+
+      - name: Authentification Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Firebase CLI
+        run: npm install -g firebase-tools@15.32.1
+
+      - name: Déployer les Functions
+        # Budget de découverte du bundle, comme dans deploy.ps1.
+        env:
+          FUNCTIONS_DISCOVERY_TIMEOUT: '120'
+        run: ../.github/scripts/firebase-deploy.sh functions 2
+
+      - name: Déployer le web et les règles
+        run: ../.github/scripts/firebase-deploy.sh hosting,firestore,storage
+
+      - name: Résumé
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
+          sha=$(git rev-parse --short HEAD)
+          {
+            echo "### Déployé : v$version ($sha)"
+            echo
+            echo "Functions, web, règles Firestore et Storage."
+            if [ -f build/web/apk_release.json ]; then
+              echo "APK en ligne inchangé : v$(jq -r .version build/web/apk_release.json)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

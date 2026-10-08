@@ -174,8 +174,10 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 ## Déploiement et release
 
-* Toujours utiliser le script racine `deploy.ps1` (ne pas régénérer les commandes de build/deploy
-  à la main).
+* Sur le PC : toujours utiliser le script racine `deploy.ps1` (ne pas régénérer les commandes de
+  build/deploy à la main).
+* Depuis une session cloud : fusionner sur `master` ; `.github/workflows/deploy.yml` déploie
+  Functions, web et règles après une CI verte, sans construire l APK (il garde celui en ligne).
 * Déployer : `./deploy.ps1`. Tout déploiement embarque l APK ; `-WebOnly` a été retiré et le script s arrête si on le lui passe.
 * Après un travail demandé : résumer en français, incrémenter `version:` dans
   `kass_dalle/pubspec.yaml`, exécuter `./deploy.ps1`, puis annoncer la version déployée
@@ -269,7 +271,8 @@ Quatre agents spécialisés, définis dans `.claude/agents/` (Claude Code) et `.
 (Copilot) : `business-analyst-culinaire`, `developpement-tech-couts`, `product-owner-release`,
 `relecteur-regles` (relecture d'un diff, lecture seule).
 Procédures répétées : skills dans `.claude/skills/` (`nouveau-poste-ia`).
-Aucun agent ne déclenche `deploy.ps1` de sa propre initiative.
+Un agent ne déploie que dans le cadre d un travail demandé : `deploy.ps1` sur le PC, fusion sur
+`master` depuis une session cloud.
 
 ## Commandes longues
 

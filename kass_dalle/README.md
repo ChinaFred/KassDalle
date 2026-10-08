@@ -96,5 +96,6 @@ npm test                 # fixtures partagées avec les tests Dart
 npm run serve            # émulateurs
 ```
 
-Le déploiement passe **toujours** par `../deploy.ps1`, jamais par des commandes reconstituées
-à la main.
+Le déploiement passe par `../deploy.ps1` sur le PC, jamais par des commandes reconstituées
+à la main. Un push sur `master` déploie aussi Functions, web et règles par GitHub Actions
+(`.github/workflows/deploy.yml`), sans reconstruire l'APK.
