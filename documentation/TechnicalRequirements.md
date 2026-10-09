@@ -1476,6 +1476,37 @@ avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo s
 `quarantine/{uid}/livres/`), ou son type MIME n'est pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
 `storagePath` et `mimeType` : sans eux, les quatre causes sont indiscernables.
 
+### Tests des règles
+
+`kass_dalle/rules-tests/` est un paquet Node à part, séparé de `functions/` pour que le
+`npm test` des Functions n'exige pas Java. Il dépend de `@firebase/rules-unit-testing`, de
+`firebase` et de `firebase-tools` épinglé à la version de `deploy.yml` (15.32.1).
+
+```bash
+cd kass_dalle/rules-tests
+npm ci
+npm test   # firebase emulators:exec --only firestore,storage --project demo-kassdalle "node --test …"
+```
+
+- Les règles chargées sont celles du dépôt : `kass_dalle/firestore.rules` et
+  `kass_dalle/storage.rules`, lues par `firebase.json`. Le projet `demo-kassdalle` empêche tout
+  appel vers `kassdale-6d948`.
+- Java 21 au moins : firebase-tools 15 refuse de lancer les émulateurs avant cette version.
+- `test/helpers.mjs` décrit les comptes de test : `admin`, `editor`, `reader`, `pending`,
+  révoqué (jeton à jour, ou jeton périmé avec `is_revoked` posé sur le document), compte sans
+  claim de rôle, fondateur, et anonyme. Chaque compte a un jeton (`role`, `revoked`, `email`,
+  comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore.
+- `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
+  rôle : création de compte, rôle et fondateur, livres, recettes, annotations, champs
+  propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels ; côté
+  Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
+
+**Convention `todo`.** Une faille relevée et encore ouverte a son test, écrit avec l'attendu
+corrigé et marqué `{ todo: "faille ouverte, audit 2026-10-09" }` (constante `OPEN_FLAW`). Sous
+`node:test`, un `todo` qui échoue ne fait pas échouer la suite. La correction de la faille
+retire l'option dans le même commit : le test devient bloquant. Une règle corrigée sans test
+est une anomalie de relecture.
+
 ---
 
 ## 5. Authentification Google Sign-In
@@ -2337,14 +2368,18 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 
 `.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
-précédente (`cancel-in-progress`). Deux jobs, sur `ubuntu-latest` :
+précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Trois jobs, sur
+`ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
+| Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
 
-Le déploiement automatique ne part qu'après une CI verte sur un push sur `master`.
+Le déploiement automatique ne part qu'après une CI verte sur un push sur `master` : `deploy.yml`
+exige la conclusion `success` du workflow entier, donc un seul job en échec, celui des règles
+compris, bloque la mise en production.
 
 #### Les fixtures partagées
 

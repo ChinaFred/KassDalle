@@ -368,6 +368,10 @@ npm run format    # prettier (largeur 100, voir prettier.config.mjs)
 npm test          # node --test sur les fixtures partagées avec Dart
 npm run serve     # émulateurs functions + firestore + storage + auth
 npm run logs
+
+cd kass_dalle/rules-tests   # tests des règles Firestore et Storage (Java 21 requis)
+npm ci
+npm test          # émulateurs firestore + storage, projet demo-kassdalle, node --test
 ```
 
 ## Agents
@@ -424,7 +428,8 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
 2. **Implémenter.** Charger le skill qui couvre la tâche s'il en existe un. Lancer les
    contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
    --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
-   `npm run format:check`, `npm run build` et `npm test` côté Functions. Le hook de
+   `npm run format:check`, `npm run build` et `npm test` côté Functions ; `npm test` dans
+   `kass_dalle/rules-tests/` quand `firestore.rules` ou `storage.rules` change. Le hook de
    formatage ne couvre que les fichiers écrits par l'outil d'édition, pas ceux produits par
    un script ou un générateur.
 3. **Relire — obligatoire.** Toute modification qui touche `kass_dalle/`, `documentation/`,
@@ -435,8 +440,9 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    Si le diff touche `firestore.rules`, `storage.rules`, une Cloud Function (callable, déclencheur, tâche
    planifiée, file Cloud Tasks), l'authentification ou les rôles, un écran qui masque une
    action selon le rôle, `firebase.json`, `.github/` ou `deploy.ps1`, `securite` le relit aussi. Une règle Firestore ou
-   Storage corrigée s'accompagne d'un test de règles, dès que la suite de tests de règles
-   existe ; d'ici là, `securite` décrit le cas de test attendu dans son rapport.
+   Storage corrigée s'accompagne d'un test dans `kass_dalle/rules-tests/`. Une faille
+   encore ouverte y a déjà son test, marqué `todo` : la correction retire le `todo`, et le
+   test devient bloquant.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`, et ajouter l'entrée
@@ -460,6 +466,7 @@ pas pour chaque travail.
 |---|---|
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
+| Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |
 
 `.github/workflows/deploy.yml` part après une CI verte sur un push sur `master` : voir
 « Déploiement ».
