@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.11 — technique
+
+#### Bornes larges sur les entrées envoyées aux modèles, et relevé de leur taille
+
+Les callables recopiaient dans le prompt ce que le client envoyait, sans limite de taille :
+un texte de plusieurs millions de caractères partait tel quel chez Gemini ou Anthropic et
+se facturait au jeton. Un utilitaire unique, `callable/_inputBounds.ts`, borne désormais
+chaque champ client de seize callables avant tout appel de modèle et toute réservation de
+budget : 200 000 caractères pour un texte collé, 100 000 pour une recette, 5 000 pour une
+consigne ou une requête, 500 éléments par liste (5 000 pour la bibliothèque de recettes
+envoyée à la recherche et au planning), 8 Mo décodés pour une couverture, 20 Mo pour une page.
+Au-delà, la callable répond `invalid-argument` avec le champ et la limite ; rien n'est
+tronqué.
+
+Ces seize callables et `suggestMealIdeasFn`, qui gardait déjà ses propres bornes,
+journalisent à chaque appel la taille de chaque champ, sans son contenu, sous le message
+« Taille des entrées IA » (`INFO`, ou `WARNING` pour un refus). Ce relevé servira à
+resserrer les bornes poste par poste. Une image base64 mal formée est désormais refusée :
+`Buffer.from` ignorait les caractères invalides et envoyait au modèle une image tronquée.
+
+La relecture sécurité a relevé deux champs recopiés dans un prompt sans contrôle :
+`currentPortions` (affinage) et `batchCookingDay` (planning). Ils exigent désormais un
+nombre, de 0 à 1 000 pour le premier, un entier de 1 à 7 pour le second. La cause est
+corrigée aussi : l'affinage, la recherche, le planning et la conception de recette
+transmettaient au générateur l'objet du client entier. Ils transmettent maintenant un objet
+construit à partir des seuls champs validés (`callable/_aiInputReaders.ts`), et un champ
+ajouté par le client n'atteint plus aucun prompt.
+Détail : `TechnicalRequirements.md`, section 7.8 bis.
+
 ### v0.23.10 — technique
 
 #### Trois failles moyennes de l'audit de sécurité corrigées

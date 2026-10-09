@@ -1981,6 +1981,9 @@ Le tableau complet — ce qui se rejoue, ce qui ne se rejoue pas, et ce qui est 
 malgré l'échec — vit au chapitre 7, section 7.11. Il y est écrit une seule fois : dupliqué
 ici, il divergeait à la première correction.
 
+Les entrées envoyées par le client sont bornées avant tout appel de modèle : bornes,
+refus et relevé des tailles en section 7.8 bis.
+
 Un point appartient en propre à l'intégration des moteurs :
 
 - un poste routé vers un moteur dont la clé manque est **servi par Gemini**, et le repli
@@ -2340,6 +2343,82 @@ document : une révocation ne s'attend pas.
 
 Chaque garde retourne un `AuthContext` porteur du `userId` et d'un `correlationId` frais
 dont la racine est le `feature` passé en argument.
+
+### 7.8 bis Bornes des entrées envoyées aux modèles
+
+Depuis la v0.23.11, chaque callable qui envoie une entrée du client à un modèle la lit par
+`readAiInputs` (`callable/_inputBounds.ts`), juste après la garde d'accès et **avant** tout
+appel de modèle et toute réservation de budget. Les entrées produites par le serveur
+(pipeline d'import, déclencheurs) et le bac à sable (`sandboxFn`, réservé à `admin`) ne
+passent pas par là.
+
+Les bornes sont **larges** : aucun texte réel ne les atteint, seuls les envois de plusieurs
+centaines de milliers de jetons sont refusés. Au-delà, la callable lève
+`invalid-argument` avec un message qui nomme le champ et la limite, par exemple
+« Texte trop long : « text » dépasse la limite de 200 000 caractères (250 123 reçus). ».
+Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recette amputée. Seul
+`suggestMealIdeasFn` garde ses règles antérieures (consigne refusée au-delà de
+600 caractères, titres et préférences tronqués à dessein).
+
+| Borne (constante) | Valeur | Unité |
+|---|---|---|
+| `PASTED_TEXT_MAX_CHARS` | 200 000 | caractères |
+| `RECIPE_TEXT_MAX_CHARS` | 100 000 | caractères |
+| `SHORT_TEXT_MAX_CHARS` | 5 000 | caractères |
+| `LIST_MAX_ITEMS` | 500 | éléments |
+| `CORPUS_MAX_ITEMS` | 5 000 | éléments (bibliothèque de recettes entière) |
+| `STRUCTURED_ITEM_MAX_CHARS` | 20 000 | caractères JSON d'un élément de liste ou d'un petit objet |
+| `STRUCTURED_OBJECT_MAX_CHARS` | 100 000 | caractères JSON d'un objet |
+| `COVER_IMAGE_MAX_BYTES` | 8 Mo | octets décodés |
+| `PAGE_IMAGE_MAX_BYTES` | 20 Mo | octets décodés |
+
+| Callable | Relevé (`feature`) | Champ → borne |
+|---|---|---|
+| `extractRecipeFromTextFn` | `text_extraction` | `text` → 200 000 car., requis |
+| `polishCooklangFn` | `polish_cooklang` | `cooklang` → 100 000 car., requis |
+| `polishMarkdownFn` | `polish_markdown` | `markdown` → 100 000 car., requis ; `instruction` → 5 000 car. |
+| `refineRecipeFn` | `refine` | `instruction` → 5 000 car., requis ; `currentCooklang` → 100 000 car., requis ; `currentTitre` → 5 000 car. ; `currentIngredients` → 500 éléments de 20 000 car. ; `currentTags` → 100 000 car. JSON ; `currentPortions` → nombre de 0 à 1 000 |
+| `generateRecipeFn` | `generate` | `query` → 5 000 car., requis ; `preferenceInsight` → 100 000 car. ; `libraryContext` → 500 éléments de 20 000 car. ; `variantLabel`, `variantInstruction` → 5 000 car. ; `siblingVariantLabels`, `avoidTitles` → 500 éléments de 5 000 car. |
+| `searchRecipesFn` | `search` | `query` → 5 000 car., requis ; `recipes`, `ratedRecipes` → 5 000 éléments de 20 000 car. |
+| `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
+| `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
+| `suggestMealPlanFn` | `planning` | `slotDates` → 500 éléments de 5 000 car., requis ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `batchCookingDay` → entier de 1 à 7 |
+| `generateRecipeConceptFn` | `planning_concept` | `slotDate` → 5 000 car., requis ; `globalConstraints` → 5 000 car. ; `dayConstraint`, `requestedDish` → 20 000 car. JSON ; `alreadyPlanned` → 500 éléments de 5 000 car. |
+| `suggestMealIdeasFn` | `planning_meal_ideas` | règles propres au poste (voir ci-dessus) ; tailles relevées avant troncature : `prompt`, `previousTitles`, `globalConstraints` |
+| `consolidateShoppingListFn` | `shopping_list` | `ingredients` → 500 éléments de 20 000 car., requis et non vide |
+| `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
+| `generateWebSearchQueryFn` | `web_search_query` | `userQuery` → 5 000 car., requis |
+| `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
+| `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
+| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. |
+
+**Liste blanche.** `refineRecipeFn`, `searchRecipesFn`, `suggestMealPlanFn` et
+`generateRecipeConceptFn` passent au générateur un objet construit par
+`callable/_aiInputReaders.ts` (`readRefineInput`, `readSearchInput`, `readPlanningInput`,
+`readConceptInput`) à partir des **seuls champs validés** ci-dessus. Un champ que le client
+ajoute n'atteint aucun prompt. Les éléments de liste et les objets imbriqués (résumé de
+recette, contrainte du jour) passent tels quels, bornés par la taille de leur JSON. Un
+nombre recopié dans un prompt est borné comme un texte (`requireBoundedNumber`) : un type
+autre qu'un nombre fini, ou une valeur hors bornes, lève `invalid-argument`.
+
+Les callables dont le modèle ne reçoit que des données relues en base —
+`suggestStorageAdviceFn`, `generatePlatingImageFn`, `computeRecipeNutritionFn`,
+`enhanceIllustrationFn` — n'ont aucun champ à borner : le client n'envoie qu'un
+identifiant ou une URL Storage déjà contrôlée.
+
+**Journalisation.** Chaque appel écrit une entrée de message fixe **« Taille des entrées
+IA »**, jamais le contenu :
+
+- accepté : `INFO`, label `feature`, `extra: { feature, sizes: { <champ>: <taille> } }` ;
+- refusé pour dépassement : `WARNING`, même forme, plus
+  `refused: { field, size, max, unit }` (`unit` : `chars`, `items` ou `bytes`) ;
+- champ absent ou mal typé : `invalid-argument` sans entrée de journal, comme avant.
+
+Un texte est mesuré en caractères, une image en octets décodés, un objet en caractères de
+son JSON, un nombre en caractères de son écriture décimale. Une liste est relevée deux fois : `sizes.<champ>` en éléments et
+`sizes.<champ>_chars` en caractères JSON cumulés, qui disent combien de jetons elle coûte.
+Ce relevé sert à resserrer les bornes poste par poste. Filtre Cloud Logging :
+`jsonPayload.message="Taille des entrées IA"`.
 
 ### 7.9 Reprendre — la politique du pipeline d'import
 
