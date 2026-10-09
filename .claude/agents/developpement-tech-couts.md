@@ -139,8 +139,9 @@ Si `business-analyst-culinaire` a cadré la demande, il a déjà mis à jour
 
 Si la demande touche un écran, suis la proposition validée de `ux-designer` et réutilise les
 composants de `lib/core/` (thème, `AppLoadingState` / `AppEmptyState` / `AppErrorState`,
-seuils de `PlatformUtils`). Le shell pose déjà `ReadableWidth` : un écran ne le pose pas. Ta livraison passe ensuite par `relecteur-regles` — et par `ux-designer` pour
-les écrans — (étape 3 de la « Chaîne de travail ») avant tout push. Tu ne pousses pas toi-même : la session principale relit, versionne et ouvre la PR.
+seuils de `PlatformUtils`). Le shell pose déjà `ReadableWidth` : un écran ne le pose pas. Ta livraison passe ensuite par `relecteur-regles` — par `ux-designer` pour
+les écrans, et par `securite` pour les règles, les Cloud Functions, les rôles,
+`firebase.json` et `.github/` — (étape 3 de la « Chaîne de travail ») avant tout push. Tu ne pousses pas toi-même : la session principale relit, versionne et ouvre la PR.
 
 Ne pas rendre la main pendant une commande longue : attendre la fin complète et donner le résultat
 final dans la même réponse. En cas d'échec, diagnostiquer et corriger avant de répondre.

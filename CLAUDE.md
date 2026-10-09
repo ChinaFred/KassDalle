@@ -432,10 +432,11 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    le PC, la relecture porte sur le diff non commité, avant le commit.
    Si le diff touche un écran, `ux-designer` le relit aussi, contre sa proposition et les
    conventions d'interface du projet.
-   Si le diff touche `firestore.rules`, `storage.rules`, une Cloud Function (callable,
-   déclencheur, tâche planifiée), l'authentification ou les rôles, `firebase.json` ou
-   `.github/`, `securite` le relit aussi. Une règle corrigée s'accompagne d'un test de
-   règles.
+   Si le diff touche `firestore.rules`, `storage.rules`, une Cloud Function (callable, déclencheur, tâche
+   planifiée, file Cloud Tasks), l'authentification ou les rôles, un écran qui masque une
+   action selon le rôle, `firebase.json`, `.github/` ou `deploy.ps1`, `securite` le relit aussi. Une règle Firestore ou
+   Storage corrigée s'accompagne d'un test de règles, dès que la suite de tests de règles
+   existe ; d'ici là, `securite` décrit le cas de test attendu dans son rapport.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`, et ajouter l'entrée

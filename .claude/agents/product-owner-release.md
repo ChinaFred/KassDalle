@@ -93,8 +93,9 @@ Pour une **release complète** : vérifier que les documents du tableau « Chaqu
 - Valeur utilisateur des éléments must-have confirmée.
 - Contrôles de la CI au vert des deux côtés : `flutter analyze`, `dart format`, `flutter test` ;
   `npm run lint`, `npm run format:check`, `npm run build`, `npm test`.
-- Chaque changement de la release relu par `relecteur-regles`, et chaque écran touché relu par
-  `ux-designer`, anomalies corrigées ou justifiées.
+- Chaque changement de la release relu par `relecteur-regles`, chaque écran touché relu par
+  `ux-designer`, et chaque changement sensible (règles, Cloud Functions, rôles, workflows) relu
+  par `securite`, anomalies corrigées ou justifiées.
 - Dernier workflow « Déploiement » au vert.
 - APK : version en ligne connue (`apk_release.json`) ; un nouvel APK suit toute montée de
   version, par le workflow « Déploiement » ou par `deploy.ps1` en secours.
