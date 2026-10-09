@@ -152,8 +152,11 @@
           <tr><td>Créer, modifier, valider ses propres recettes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer et modifier des livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier les recettes d'autrui</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Écrire une image partagée dans Storage</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Faire <b>produire</b> une image par l'IA (illustration, dressage)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Reprendre un job échoué, lire les logs, voir les coûts</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -182,7 +185,8 @@
     <h2>Cuisiner</h2>
     <p class="sec-note">
       Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
-      la noter. Tout le monde y a accès.
+      la noter, composer les repas de la semaine et faire les courses. Tout compte nommé y a
+      accès.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -211,12 +215,21 @@ flowchart LR
     a16(["Régler mes préférences"])
     a17(["Gérer mon compte et mon nom affiché"])
     a18(["Suivre l'avancement de mes imports"])
+    a19(["Demander des idées de repas à l'IA"])
+    a20(["Choisir l'accompagnement, l'entrée et le dessert d'un créneau"])
+    a21(["Reprendre une semaine passée"])
+    a22(["Replanifier un repas à une autre date"])
+    a23(["Exporter vers Google Calendar"])
+    a24(["Ajuster mes garnitures"])
+    i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
-    i2(["Consolider les ingrédients"])
+    i2(["Regrouper les lignes par produit acheté"])
     i3(["Classer les résultats"])
     i4(["Proposer un planning"])
     i5(["Composer le dressage de ce plat"])
     i6(["Calculer la fenêtre de conservation"])
+    i7(["Proposer trois idées de repas"])
+    i8(["Rédiger la recette de l'idée retenue"])
   end
 
   LEC --- a1
@@ -234,34 +247,57 @@ flowchart LR
   LEC --- a16
   LEC --- a17
   LEC --- a18
+  LEC --- a22
+  LEC --- a23
+  LEC --- a24
   a2 --- a4
   a2 --- a5
+  a9 --- a5
   a9 --- a14
-  a3 -.->|"inclut"| i1
-  a4 -.->|"inclut"| i1
+  a9 --- a19
+  a12 --- a20
+  a12 --- a21
+  a12 --- a23
+  a3 -.->|"inclut"| i0
+  a4 -.->|"inclut"| i0
+  a4 -.->|"bouton Recalculer"| i1
   a5 -.->|"inclut"| i2
   a8 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
   a12 -.->|"inclut"| i4
   a11 -.->|"inclut"| i5
   a14 -.->|"inclut"| i6
+  a19 -.->|"inclut"| i7
+  a19 -.->|"idée retenue"| i8
   i1 --- GEM
-  i2 --- GEM
   i3 --- GEM
   i4 --- GEM
   i5 --- GEM
   i6 --- GEM
+  i7 --- GEM
+  i8 --- GEM
 </pre>
       </div>
       <figcaption>
-        Les six cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours. Aucun
-        ne nomme un fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
+        Sept cas de droite consomment des jetons d'IA dans ce parcours. Aucun ne nomme un
+        fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
         Firestore, et le plafond du compte est vérifié <b>avant</b> l'appel.
+        <b>Ajuster les portions n'appelle aucun modèle</b> : les valeurs par portion valent les
+        totaux de la recette divisés par le nombre de parts choisi, calculés à l'affichage. Rien
+        n'est écrit dans la recette partagée.
+        <b>La liste de courses n'appelle aucun modèle</b> : l'appareil regroupe les lignes par
+        produit acheté. Le produit d'achat de chaque ingrédient est posé par le serveur à
+        l'écriture de la recette, un appel pour un ingrédient neuf seulement.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.
-        <b>Le recalcul nutritionnel est aussi déclenché automatiquement</b> par un trigger
-        Firestore dès que les ingrédients d'une recette changent — l'utilisateur ne le demande
-        explicitement que pour un autre nombre de portions.
+        <b>Le recalcul nutritionnel est déclenché par un trigger</b> Firestore dès que les
+        ingrédients d'une recette changent ; le bouton « Recalculer » de l'onglet Nutrition est
+        le seul appel explicite.
+        <b>Les idées de repas</b> coûtent un appel par consigne ou relance, puis un appel par idée
+        retenue : sa recette est rédigée et rangée validée dans « Mes créations Kass'Dalle ».
+        <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
+        appel d'IA. Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
+        change rien pour les autres membres.
       </figcaption>
     </figure>
   </section>
@@ -270,8 +306,9 @@ flowchart LR
     <h2>Constituer la bibliothèque</h2>
     <p class="sec-note">
       Quatre portes d'entrée pour une recette : le scan d'une page, la saisie manuelle, la
-      génération par l'IA, la copie d'une recette d'un proche. Toutes convergent vers le même
-      brouillon, puis vers la même validation.
+      génération par l'IA, la copie d'une recette d'un proche. L'import d'un livre entier répète
+      le scan d'une page, tranche par tranche. Toutes convergent vers le même brouillon, puis vers
+      la même validation.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -279,12 +316,17 @@ flowchart LR
 flowchart LR
   EDI(("Éditeur"))
   LEC(("Lecteur"))
+  ADM(("Administrateur"))
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
   CT(("Cloud Tasks"))
 
   subgraph app["Kass'Dalle"]
     direction TB
     b1(["Importer une page de livre"])
+    b15(["Importer un livre entier&lt;br/&gt;PDF, EPUB ou Word"])
+    b16(["Valider, relancer ou supprimer en lot"])
+    b17(["Choisir le rôle de la recette dans un repas"])
+    b18(["Retoucher une illustration par l'IA"])
     b2(["Créer une recette à la main"])
     b3(["Faire générer une recette"])
     b4(["Copier la recette d'un proche"])
@@ -300,9 +342,25 @@ flowchart LR
     c1(["Contrôler le fichier téléversé"])
     c2(["Dérouler le pipeline d'import"])
     c3(["Normaliser unités et ingrédients"])
+    c4(["Lire le fichier, estimer le coût&lt;br/&gt;et fixer le plafond de l'import"])
+    c5(["Classer le rôle dans un repas"])
   end
 
   EDI --- b1
+  EDI --- b15
+  LEC --- b16
+  LEC --- b17
+  ADM --- b18
+  b15 -.->|"inclut"| c1
+  b15 -.->|"inclut"| c4
+  b15 -.->|"une tranche = un import"| c2
+  b16 -.->|"relancer relève le plafond"| c4
+  b2 -.->|"à l'écriture, si aucun rôle"| c5
+  b3 -.->|"à l'écriture, si aucun rôle"| c5
+  b4 -.->|"à l'écriture, si aucun rôle"| c5
+  b17 -.->|"Non classé : reclassé"| c5
+  c5 --- GEM
+  b18 --- GEM
   EDI --- b9
   EDI --- b10
   EDI --- b11
@@ -336,7 +394,19 @@ flowchart LR
         <code>reader</code> crée, raffine et valide <b>ses</b> recettes — les règles Firestore
         autorisent création et mise à jour par le créateur, quel que soit son rôle. Ce que
         <code>editor</code> ouvre en plus, c'est le fonds commun : les livres, les recettes
-        d'autrui, le scan d'une page, et tout ce qui <b>produit</b> une image.
+        d'autrui, l'import d'une page ou d'un livre entier, et tout ce qui <b>produit</b> une
+        image. La retouche d'une illustration par l'IA est réservée à l'<code>admin</code>
+        (<code>enhanceIllustrationFn</code> exige ce rôle), sur ses propres brouillons.
+        <b>Un livre entier part avec un plafond de dépense</b>, fixé avant le départ : le fichier
+        est lu et le coût estimé sans appel facturé, puis l'éditeur saisit le montant. Quand le
+        plafond est atteint, les imports restants passent en erreur ; les relancer en lot relève
+        le plafond d'un palier.
+        <b>Le rôle dans un repas</b> se pose sans geste de l'utilisateur : la passe 2 de l'import
+        le donne, et le serveur classe à l'écriture toute recette qui n'en a pas. Choisir
+        « Non classé » dans le panneau de métadonnées le retire ; le serveur le redemande au
+        modèle à l'enregistrement.
+        <b>Un lot ne valide pas ce que personne n'a relu</b> : un brouillon avec une réserve de
+        fidélité, ou vide, reste de côté.
         <span class="expect">
           <b>Le groupe familial a quitté ce diagramme</b> : le créer, le rejoindre et le quitter
           sont ouverts au <code>reader</code>, qui peut aussi en être le propriétaire. Il figure
@@ -392,6 +462,9 @@ flowchart LR
     d20(["Relancer une image restée sans verdict"])
     d21(["Reconstruire l'agrégat mensuel des coûts"])
     d22(["Lire les KPI des référentiels"])
+    d23(["Enregistrer ou charger une configuration de routage"])
+    d24(["Diagnostiquer la qualité des données"])
+    d25(["Tenir le référentiel des garnitures simples"])
   end
 
   ADM --- d0
@@ -417,6 +490,11 @@ flowchart LR
   ADM --- d20
   ADM --- d21
   ADM --- d22
+  ADM --- d23
+  ADM --- d24
+  ADM --- d25
+  d23 -.->|"charger remplit le formulaire, rien n'est écrit"| d16
+  d24 -.->|"lecture seule, ouvre l'écran à corriger"| d11
   d0 -.->|"est"| d1
   d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
   d2 -.->|"déclenche"| e1
@@ -434,6 +512,13 @@ flowchart LR
         valide toute l'architecture du référentiel — et la même règle vaut pour le moteur d'IA, les
         tarifs, les plafonds, l'attestation et les seuils de modération : ce sont des
         <b>décisions</b>, elles vivent dans Firestore, pas dans un déploiement.
+        <b>Une configuration de routage</b> est un réglage du moteur d'IA enregistré sous un nom,
+        dans l'écran Moteur d'IA. La charger affiche l'écart et remplit le formulaire ; le routage
+        ne change qu'à l'enregistrement.
+        <b>La qualité des données</b> compte quatre anomalies des référentiels nutrition et
+        n'écrit rien : chaque échantillon ouvre l'écran du référentiel, où la correction se fait.
+        <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
+        dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
         <span class="expect warn">
           <b>Le bac à sable ne figure pas ici, et c'est voulu.</b>
           <span class="path">/admin/sandbox</span> existe et n'est ouvert qu'aux administrateurs,
@@ -461,7 +546,7 @@ flowchart LR
           <tr>
             <td>Redirection go_router (<code>resolveRedirect</code>)</td>
             <td><code>appUserProvider</code>, document Firestore</td>
-            <td>Login obligatoire, comptes révoqués renvoyés, comptes <code>pending</code> menés à la salle d'attente, <code>/admin</code> réservé</td>
+            <td>Login obligatoire, avec l'adresse demandée gardée dans <code>/login?next=…</code> et rouverte après la connexion (route interne seulement, ni <code>/login</code> ni <code>/pending</code>), comptes révoqués renvoyés, comptes <code>pending</code> menés à la salle d'attente, <code>/admin</code> réservé</td>
           </tr>
           <tr>
             <td>Firestore Security Rules</td>
@@ -471,7 +556,7 @@ flowchart LR
           <tr>
             <td>Storage Security Rules</td>
             <td><code>request.auth.token.role</code> et <code>.revoked</code></td>
-            <td>Téléversements (rôle explicite exigé) et lecture des images</td>
+            <td>Dépôt dans la quarantaine de son propre compte (rôle explicite exigé) et lecture des images. Les dossiers publiés sont fermés en écriture aux clients : le serveur y promeut le fichier contrôlé et modéré</td>
           </tr>
           <tr>
             <td><code>requireAuth</code> / <code>requireEditor</code> / <code>requireAdmin</code></td>
