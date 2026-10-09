@@ -1,9 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/recipe_portion_scaler.dart';
 import 'cooklang_preview_helpers.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 /// Rendu d'une étape de préparation.
 ///
@@ -231,7 +231,7 @@ Widget cooklangBuildImageWidget(
             label: 'Illustration de la recette',
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: CachedNetworkImage(
+              child: AppNetworkImage(
                 imageUrl: url,
                 width: imageWidth,
                 fit: BoxFit.cover,
@@ -275,7 +275,7 @@ Widget cooklangBuildFloatRow(
 
       final imageWidget = ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
+        child: AppNetworkImage(
           imageUrl: url,
           width: imageWidth,
           fit: BoxFit.cover,

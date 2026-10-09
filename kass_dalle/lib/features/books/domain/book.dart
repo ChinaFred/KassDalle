@@ -9,6 +9,21 @@ class Book {
   static const tagLibres = '__libres';
   static const tagSecretes = '__secretes';
 
+  /// Préfixe des tags internes : il est réservé aux livres système.
+  static const reservedTagPrefix = '__';
+
+  /// Le message d'erreur du champ « Tags » d'un formulaire de livre, ou null.
+  ///
+  /// Un tag interne tapé à la main ferait d'un livre ordinaire un livre
+  /// système, que plus personne ne peut supprimer : le formulaire le refuse
+  /// plutôt que de le retirer sans le dire.
+  static String? reservedTagError(String? text) {
+    final tags = (text ?? '').split(',').map((e) => e.trim());
+    return tags.any((t) => t.startsWith(reservedTagPrefix))
+        ? 'Les tags qui commencent par « __ » sont réservés'
+        : null;
+  }
+
   final String id;
   final String titre;
   final String? sousTitre;

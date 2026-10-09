@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +16,7 @@ import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
 import 'recipe_text_zoom.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 /// AppBar de la page de détail d'une recette.
 class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -278,7 +278,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               onTap: () => onCoverZoom(coverUrl),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: CachedNetworkImage(
+                child: AppNetworkImage(
                   imageUrl: coverUrl,
                   width: 32,
                   height: 44,
@@ -300,7 +300,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: freeRecipeCoverUrl.isNotEmpty
-                        ? CachedNetworkImage(
+                        ? AppNetworkImage(
                             imageUrl: freeRecipeCoverUrl,
                             width: 32,
                             height: 44,

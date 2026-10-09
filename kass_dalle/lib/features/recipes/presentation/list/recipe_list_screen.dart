@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +15,7 @@ import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 enum _BookMenuAction { edit, exportPdf, delete }
 
@@ -177,12 +177,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      widget.bookCoverUrl!,
+                    child: AppNetworkImage(
+                      imageUrl: widget.bookCoverUrl!,
                       width: 32,
                       height: 44,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      errorWidget: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -483,7 +483,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 6,
-                child: CachedNetworkImage(
+                child: AppNetworkImage(
                   imageUrl: coverUrl,
                   fit: BoxFit.contain,
                   placeholder: (_, _) => const Center(

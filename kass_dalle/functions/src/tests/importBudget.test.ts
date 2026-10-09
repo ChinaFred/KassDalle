@@ -16,10 +16,12 @@ import {
   EMPTY_SCAN_SPEND,
   ForeignScanError,
   IMPORT_BUDGET_MARGIN,
-  MAX_IMPORT_BUDGET_PER_WINDOW_USD,
+  MAX_IMPORT_BUDGET_PER_WINDOW_EUR,
+  MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD,
   effectiveImportLimitUsd,
   formatBudgetAmount,
   importBudgetDenial,
+  maxImportBudgetPerWindowUsd,
   maxImportBudgetUsd,
   parseBudgetLimit,
   raisedImportLimit,
@@ -28,6 +30,7 @@ import {
   scanOwnerConflict,
   setImportCeiling,
   suggestImportBudgetUsd,
+  usableRate,
   type ScanSpend,
 } from "../ai/importBudget";
 
@@ -140,19 +143,23 @@ describe("raisedImportLimit", () => {
 
 describe("suggestImportBudgetUsd", () => {
   test("avec une estimation, elle plus la moitié, arrondie au dollar supérieur", () => {
-    const suggested = suggestImportBudgetUsd({ windows: 77, estimatedCostUsd: 20 });
+    const suggested = suggestImportBudgetUsd({ windows: 77, estimatedCostUsd: 20, usdToEur: 0.8 });
     assert.equal(suggested, Math.ceil(20 * IMPORT_BUDGET_MARGIN));
     assert.equal(suggested, 30);
   });
 
   test("sans estimation, une décision par tranche plutôt qu'aucune limite", () => {
-    const suggested = suggestImportBudgetUsd({ windows: 77, estimatedCostUsd: null });
+    const suggested = suggestImportBudgetUsd({
+      windows: 77,
+      estimatedCostUsd: null,
+      usdToEur: 0.8,
+    });
     assert.equal(suggested, Math.ceil(77 * DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD));
   });
 
   test("ne propose jamais moins d'un dollar", () => {
-    assert.equal(suggestImportBudgetUsd({ windows: 1, estimatedCostUsd: 0.02 }), 1);
-    assert.equal(suggestImportBudgetUsd({ windows: 0, estimatedCostUsd: null }), 1);
+    assert.equal(suggestImportBudgetUsd({ windows: 1, estimatedCostUsd: 0.02, usdToEur: 0.8 }), 1);
+    assert.equal(suggestImportBudgetUsd({ windows: 0, estimatedCostUsd: null, usdToEur: 0.8 }), 1);
   });
 });
 
@@ -167,30 +174,75 @@ describe("formatBudgetAmount", () => {
   });
 });
 
-describe("effectiveImportLimitUsd — le client ne peut que réduire", () => {
-  test("le maximum serveur vaut le plafond par tranche fois le nombre de tranches", () => {
-    assert.equal(maxImportBudgetUsd(10), 10 * MAX_IMPORT_BUDGET_PER_WINDOW_USD);
-    assert.equal(maxImportBudgetUsd(0), 1);
-    assert.equal(maxImportBudgetUsd(NaN), 1);
+describe("maxImportBudgetUsd — 4 € par tranche, convertis au taux de la facture", () => {
+  test("le maximum est fixé en euros", () => {
+    assert.equal(MAX_IMPORT_BUDGET_PER_WINDOW_EUR, 4);
   });
 
+  test("avec un taux, 4 € se convertissent en dollars", () => {
+    // 0,8 € par dollar : 4 € valent 5 $.
+    assert.equal(maxImportBudgetPerWindowUsd(0.8), 5);
+    assert.equal(maxImportBudgetUsd(10, 0.8), 50);
+  });
+
+  test("arrondi au centime inférieur : le maximum en euros n'est jamais dépassé", () => {
+    // 4 / 0,88 = 4,5454… $ par tranche ; 10 tranches = 45,45 $ = 39,996 €.
+    const max = maxImportBudgetUsd(10, 0.88);
+    assert.equal(max, 45.45);
+    assert.ok(max * 0.88 <= 10 * MAX_IMPORT_BUDGET_PER_WINDOW_EUR);
+  });
+
+  test("sans taux, aucun taux inventé : 4 s'applique en dollars", () => {
+    assert.equal(maxImportBudgetPerWindowUsd(null), 4);
+    assert.equal(maxImportBudgetUsd(10, null), 40);
+  });
+
+  test("un taux inutilisable ou hors bornes compte comme absent", () => {
+    for (const rate of [0, -1, NaN, Infinity, 1e-6, 0.05, 11, 1e6]) {
+      assert.equal(usableRate(rate), null, String(rate));
+      assert.equal(maxImportBudgetPerWindowUsd(rate), 4, String(rate));
+    }
+  });
+
+  test("un taux aberrant ne fait jamais exploser le maximum", () => {
+    assert.ok(maxImportBudgetPerWindowUsd(1e-6) <= MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD);
+    // 0,1 est plausible mais donnerait 40 $ : la borne dure s'applique.
+    assert.equal(maxImportBudgetPerWindowUsd(0.1), MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD);
+    assert.equal(maxImportBudgetUsd(10, 0.1), 10 * MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD);
+  });
+
+  test("un dollar au moins pour un fichier sans tranche", () => {
+    assert.equal(maxImportBudgetUsd(0, 0.8), 1);
+    assert.equal(maxImportBudgetUsd(NaN, null), 1);
+  });
+});
+
+describe("effectiveImportLimitUsd — le client ne peut que réduire", () => {
   test("un plafond client plus bas est gardé", () => {
-    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 5, windows: 10 }), 5);
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 5, windows: 10, usdToEur: 0.8 }), 5);
   });
 
   test("un plafond client démesuré est ramené au maximum", () => {
-    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 1e9, windows: 10 }), 20);
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 1e9, windows: 10, usdToEur: 0.8 }), 50);
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 1e9, windows: 10, usdToEur: null }), 40);
   });
 
   test("un job sans plafond reçoit le maximum", () => {
-    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: null, windows: 3 }), 6);
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: null, windows: 3, usdToEur: 0.8 }), 15);
   });
 
-  test("le plafond proposé reste sous le maximum", () => {
-    for (const windows of [1, 3, 40, 120]) {
-      const suggested = suggestImportBudgetUsd({ windows, estimatedCostUsd: null });
-      assert.ok(suggested <= maxImportBudgetUsd(windows));
+  test("le plafond proposé reste sous le maximum, avec ou sans taux", () => {
+    for (const usdToEur of [0.8, 0.95, null]) {
+      for (const windows of [1, 3, 40, 120]) {
+        const suggested = suggestImportBudgetUsd({ windows, estimatedCostUsd: null, usdToEur });
+        assert.ok(suggested <= maxImportBudgetUsd(windows, usdToEur));
+      }
     }
+  });
+
+  test("une estimation au-dessus du maximum propose le maximum", () => {
+    // 10 tranches mesurées à 10 $ : 150 $ proposés, ramenés au maximum de 50 $.
+    assert.equal(suggestImportBudgetUsd({ windows: 10, estimatedCostUsd: 100, usdToEur: 0.8 }), 50);
   });
 });
 

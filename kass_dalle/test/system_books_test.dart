@@ -168,4 +168,21 @@ void main() {
       expect(ordinary.isSystemBook, isFalse);
     });
   });
+  test('le formulaire refuse un tag réservé, accepte les autres', () {
+    for (final text in [
+      '__libres',
+      'Pâtisserie, __kassdale_ia',
+      ' __secretes ',
+      '__x',
+    ]) {
+      expect(Book.reservedTagError(text), isNotNull, reason: text);
+    }
+    for (final text in [null, '', 'Pâtisserie, Terroir belge', 'a__b', '_x']) {
+      expect(Book.reservedTagError(text), isNull, reason: '$text');
+    }
+    // Les trois tags système portent bien le préfixe réservé.
+    for (final tag in [Book.tagKassdalle, Book.tagLibres, Book.tagSecretes]) {
+      expect(tag.startsWith(Book.reservedTagPrefix), isTrue);
+    }
+  });
 }

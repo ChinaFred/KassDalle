@@ -1,7 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/utils/ingredient_display.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 // Le formatage des minuteurs a quitté la couche présentation pour que l'export
 // PDF s'en serve aussi. Réexporté ici : les appelants n'ont pas à le savoir.
@@ -145,27 +145,34 @@ class CooklangIllustrationThumb extends StatelessWidget {
             onTap: onTap,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: CachedNetworkImage(
+              child: AppNetworkImage(
                 imageUrl: url,
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                placeholder: (_, _) => Container(
+                placeholder: (context, _) => Container(
                   width: 48,
                   height: 48,
-                  color: Colors.grey.shade200,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Icon(
                     Icons.image_outlined,
                     size: AppIconSize.small,
                   ),
                 ),
-                errorWidget: (_, _, _) => Container(
+                errorWidget: (context, _, _) => Container(
                   width: 48,
                   height: 48,
-                  color: Colors.grey.shade200,
-                  child: const Icon(
-                    Icons.broken_image_outlined,
-                    size: AppIconSize.small,
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      size: AppIconSize.small,
+                    ),
                   ),
                 ),
               ),

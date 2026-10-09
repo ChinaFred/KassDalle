@@ -5,6 +5,7 @@ import '../domain/recipe.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../../core/services/gemini_service.dart';
+import '../../../core/utils/app_image_url.dart';
 
 /// Résultat d'une extraction d'illustrations depuis un scan.
 class IllustrationExtractionResult {
@@ -51,6 +52,7 @@ class DraftReviewService {
     final lower = (sourceFileName ?? sourceUrl).toLowerCase();
     final mimeType = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
 
+    await _requireAppImage(sourceUrl, 'extractAndUploadIllustrations');
     final storageRef = FirebaseStorage.instance.refFromURL(sourceUrl);
     final bytes = await storageRef.getData(30 * 1024 * 1024);
     if (bytes == null) {
@@ -216,10 +218,31 @@ class DraftReviewService {
   }
 
   /// Télécharge les octets d'une image depuis son URL Storage.
+  ///
+  /// Lève [ForeignImageUrl] sans rien télécharger quand l'URL ne désigne pas
+  /// le stockage de l'application (`isAppImageUrl`) : `refFromURL` accepte
+  /// n'importe quel bucket.
   static Future<Uint8List?> downloadImageBytes(
     String url, {
     int maxBytes = 20 * 1024 * 1024,
-  }) => FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
+  }) async {
+    await _requireAppImage(url, 'downloadImageBytes');
+    return FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
+  }
+
+  /// Refuse une URL hors du stockage de l'application, et le trace : une
+  /// donnée qui pointe ailleurs est une anomalie à retrouver dans les rapports.
+  static Future<void> _requireAppImage(String url, String action) async {
+    if (isAppImageUrl(url)) return;
+    final refusal = ForeignImageUrl(url);
+    await _errorReportService.reportError(
+      feature: 'draftReviewService.foreignImageUrl',
+      error: refusal,
+      stackTrace: StackTrace.current,
+      context: {'action': action, 'url': url},
+    );
+    throw refusal;
+  }
 
   /// Publie une illustration ajoutée à la main et retourne son URL.
   ///

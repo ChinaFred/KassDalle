@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/plating_advice.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/utils/app_image_url.dart';
 
 /// Briques d'affichage du conseil de dressage.
 ///
@@ -211,25 +212,29 @@ class PlatingImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
+    final viewable = isAppImageUrl(url);
     return Semantics(
-      button: true,
-      label: 'Agrandir le visuel de montage',
+      button: viewable,
+      label: viewable ? 'Agrandir le visuel de montage' : 'Visuel indisponible',
       child: InkWell(
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (context) => Dialog(
-            clipBehavior: Clip.antiAlias,
-            child: InteractiveViewer(
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
-            ),
-          ),
-        ),
+        onTap: !viewable
+            ? null
+            : () => showDialog<void>(
+                context: context,
+                builder: (context) => Dialog(
+                  clipBehavior: Clip.antiAlias,
+                  child: InteractiveViewer(
+                    child: AppNetworkImage(imageUrl: url, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
         borderRadius: BorderRadius.circular(8),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: AspectRatio(
             aspectRatio: 1,
-            child: CachedNetworkImage(
+            child: AppNetworkImage(
               imageUrl: url,
               fit: BoxFit.cover,
               placeholder: (context, _) =>

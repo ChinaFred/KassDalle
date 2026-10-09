@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +15,8 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/utils/app_image_url.dart';
 
 final _prefetchedReaderItemIds = <String>{};
 
@@ -598,7 +599,7 @@ class _PageTextContent extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(
+          child: AppNetworkImage(
             imageUrl: uri.toString(),
             fit: BoxFit.cover,
             errorWidget: (_, _, _) => Container(
@@ -621,36 +622,39 @@ class _SidebarImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
     return GestureDetector(
-      onTap: () => showDialog<void>(
-        context: context,
-        builder: (_) => Dialog.fullscreen(
-          backgroundColor: Colors.black,
-          child: Stack(
-            children: [
-              Center(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 6,
-                  child: CachedNetworkImage(imageUrl: url),
+      onTap: !isAppImageUrl(url)
+          ? null
+          : () => showDialog<void>(
+              context: context,
+              builder: (_) => Dialog.fullscreen(
+                backgroundColor: Colors.black,
+                child: Stack(
+                  children: [
+                    Center(
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 6,
+                        child: AppNetworkImage(imageUrl: url),
+                      ),
+                    ),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        tooltip: 'Fermer',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Positioned(
-                top: 16,
-                right: 16,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  tooltip: 'Fermer',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
+        child: AppNetworkImage(
           imageUrl: url,
           width: double.infinity,
           fit: BoxFit.cover,
@@ -681,10 +685,11 @@ class _ImageThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _showFullscreen(context),
+      // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
+      onTap: isAppImageUrl(url) ? () => _showFullscreen(context) : null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
+        child: AppNetworkImage(
           imageUrl: url,
           width: 120,
           height: 90,
@@ -719,7 +724,7 @@ class _ImageThumbnail extends StatelessWidget {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 6,
-                child: CachedNetworkImage(imageUrl: url),
+                child: AppNetworkImage(imageUrl: url),
               ),
             ),
             Positioned(

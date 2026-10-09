@@ -2332,7 +2332,7 @@ sequenceDiagram
   AN->>ST: download du livre promu
   AN->>AN: openBookFile — pages ou texte, tranches
   AN->>AN: coût par tranche des derniers livres importés (ai_usage),<br/>sinon moyenne des 15 dernières pages scannées
-  AN-->>SC: pages, tranches, coût estimé ou « indisponible », plafond proposé
+  AN-->>SC: pages, tranches, coût estimé ou « indisponible »,<br/>plafond proposé et plafond maximal
 
   alt l'utilisateur annule
     SC->>AN: discard — supprime le fichier
@@ -2342,7 +2342,7 @@ sequenceDiagram
     Note over J: jobDispatcher remplace le scan_id du client<br/>par un identifiant tiré côté serveur
     J-->>P: dispatch Cloud Tasks
     P->>B: runBookImport
-    B->>B: effectiveImportLimitUsd — 2 $ par tranche au plus,<br/>ce maximum si le client n'a pas fixé de plafond
+    B->>B: effectiveImportLimitUsd — 4 € par tranche au plus, convertis<br/>au taux de la facture (4 $ sans taux), ce maximum<br/>si le client n'a pas fixé de plafond
     B->>SS: pose le plafond (limit_usd, step_usd, user_id) —<br/>refusé si le scan appartient à un autre compte
 
     opt aucun livre cible

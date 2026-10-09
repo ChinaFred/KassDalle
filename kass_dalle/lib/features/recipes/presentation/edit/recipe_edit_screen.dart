@@ -27,6 +27,7 @@ import '../../../../core/widgets/app_shortcuts.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../auth/presentation/not_owner_scaffold.dart';
+import '../../../../core/utils/app_image_url.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -168,6 +169,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           );
         }
       }
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) context.showErrorSnackBar(e.message);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'recipeEditScreen.doExtractIllustrations',
@@ -197,6 +201,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         _enhancerMode = EnhancerMode.studio;
         _aiProcessing = false;
       });
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) {
+        setState(() => _aiProcessing = false);
+        context.showErrorSnackBar(e.message);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'recipeEditScreen.startExtractFromOriginal',
@@ -232,6 +242,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         _enhancerMode = mode;
         _aiProcessing = false;
       });
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) {
+        setState(() => _aiProcessing = false);
+        context.showErrorSnackBar(e.message);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'recipeEditScreen.onEnhanceExistingIllustration',

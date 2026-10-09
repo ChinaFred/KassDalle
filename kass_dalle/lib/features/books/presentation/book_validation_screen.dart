@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 class BookValidationScreen extends ConsumerWidget {
   const BookValidationScreen({super.key});
@@ -134,7 +134,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                 width: 80,
                 height: 110,
                 child: hasCover
-                    ? CachedNetworkImage(
+                    ? AppNetworkImage(
                         imageUrl: book.urlCouverture!,
                         fit: BoxFit.cover,
                         filterQuality: FilterQuality.high,

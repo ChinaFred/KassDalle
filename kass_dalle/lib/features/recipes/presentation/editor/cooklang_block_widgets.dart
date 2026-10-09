@@ -3,6 +3,7 @@ import 'cooklang_block_model.dart';
 import 'cooklang_chip_widgets.dart';
 import 'cooklang_editor_colors.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 class CooklangInlineEditRow extends StatelessWidget {
   final TextEditingController controller;
@@ -598,12 +599,12 @@ class CooklangImageBlock extends StatelessWidget {
                 // Miniature
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                  child: Image.network(
-                    url,
+                  child: AppNetworkImage(
+                    imageUrl: url,
                     width: 64,
                     height: 48,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
+                    errorWidget: (_, _, _) => Container(
                       width: 64,
                       height: 48,
                       color: kCooklangImageColor.withValues(alpha: 0.1),

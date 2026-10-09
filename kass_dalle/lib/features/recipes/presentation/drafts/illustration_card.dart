@@ -1,6 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 /// Vignette d'illustration d'un brouillon, avec ses actions.
 ///
@@ -45,7 +45,7 @@ class IllustrationCard extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
+            child: AppNetworkImage(
               // Utilise la vignette WebP 400px pour la grille (chargement plus rapide),
               // fallback sur l'URL pleine résolution pour les anciens enregistrements.
               imageUrl: thumbnailUrl ?? url,

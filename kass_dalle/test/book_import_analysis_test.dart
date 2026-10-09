@@ -199,5 +199,71 @@ void main() {
       expect(formatBudgetInput(12.5), '12,50');
       expect(parseBudgetInput(formatBudgetInput(12.5)), 12.5);
     });
+
+    test('lit le maximum du serveur, absent d\'une ancienne réponse', () {
+      final analysis = BookImportAnalysis.fromMap({
+        'kind': 'pdf',
+        'sizeBytes': 1024,
+        'windows': 10,
+        'maxBudgetUsd': 45.45,
+      });
+      expect(analysis.maxBudgetUsd, closeTo(45.45, 1e-9));
+      final old = BookImportAnalysis.fromMap({'kind': 'pdf', 'windows': 10});
+      expect(old.maxBudgetUsd, isNull);
+    });
+
+    test('un plafond au-dessus du maximum est refusé, le maximum passe', () {
+      expect(budgetExceedsMax(45.45, 45.45), isFalse);
+      expect(budgetExceedsMax(45.454, 45.45), isFalse);
+      expect(budgetExceedsMax(45.46, 45.45), isTrue);
+      expect(budgetExceedsMax(1000, 45.45), isTrue);
+      expect(budgetExceedsMax(10, 45.45), isFalse);
+    });
+
+    test('sans maximum connu, la saisie n\'est pas bornée', () {
+      expect(budgetExceedsMax(1000, null), isFalse);
+      expect(budgetExceedsMax(1000, 0), isFalse);
+    });
+  });
+  group('BudgetCurrency — saisie du plafond', () {
+    BookImportAnalysis analysis({double? rate}) => BookImportAnalysis.fromMap({
+      'kind': 'pdf',
+      'windows': 10,
+      'maxBudgetUsd': 45.45,
+      'maxBudgetPerWindowUsd': 4 / 0.88,
+      'budgetUsdToEur': rate,
+    });
+
+    test('en euros avec un taux, converti en dollars pour le serveur', () {
+      final c = BudgetCurrency.of(analysis(rate: 0.88));
+      expect(c.isEuro, isTrue);
+      expect(c.symbol, '€');
+      expect(c.toUsd(8.8), closeTo(10, 1e-9));
+      // Le maximum affiché ne dépasse jamais celui du serveur.
+      expect(c.maxFromUsd(45.45), 39.99);
+      expect(c.maxFromUsd(4 / 0.88), 4.0);
+      expect(c.toUsd(c.maxFromUsd(45.45)) <= 45.45, isTrue);
+    });
+
+    test('en dollars sans taux', () {
+      final c = BudgetCurrency.of(analysis());
+      expect(c.isEuro, isFalse);
+      expect(c.symbol, '\$');
+      expect(c.toUsd(12), 12);
+      expect(c.maxFromUsd(45.45), 45.45);
+    });
+
+    test('le plafond proposé est arrondi à l\'unité, sous le maximum', () {
+      final c = BudgetCurrency.of(analysis(rate: 0.88));
+      expect(c.suggestionFromUsd(10, 45.45), 9);
+      expect(c.suggestionFromUsd(100, 45.45), 39.99);
+      expect(c.suggestionFromUsd(10, null), 9);
+    });
+
+    test('lit le maximum par tranche et le taux du plafond', () {
+      final a = analysis(rate: 0.88);
+      expect(a.maxBudgetPerWindowUsd, closeTo(4 / 0.88, 1e-9));
+      expect(a.budgetUsdToEur, 0.88);
+    });
   });
 }

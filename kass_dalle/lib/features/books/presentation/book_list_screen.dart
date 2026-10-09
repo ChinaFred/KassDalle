@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +13,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
@@ -429,7 +429,7 @@ class _BookGridCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(
                         children: [
-                          // Image de couverture. `CachedNetworkImage` n'expose
+                          // Image de couverture. `AppNetworkImage` n'expose
                           // pas de semanticLabel : c'est le Semantics qui
                           // donne à la vignette un nom pour TalkBack, sans
                           // quoi la grille n'est qu'une suite d'images muettes.
@@ -439,7 +439,7 @@ class _BookGridCard extends StatelessWidget {
                             child: Container(
                               color: theme.colorScheme.surfaceContainerHighest,
                               child: hasCover
-                                  ? CachedNetworkImage(
+                                  ? AppNetworkImage(
                                       imageUrl: book.urlCouverture!,
                                       fit: BoxFit.cover,
                                       width: double.infinity,

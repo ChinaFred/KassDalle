@@ -35,6 +35,7 @@ import 'recipe_text_zoom.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -918,7 +919,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 6,
-                child: CachedNetworkImage(
+                child: AppNetworkImage(
                   imageUrl: coverUrl,
                   fit: BoxFit.contain,
                   placeholder: (_, _) => const Center(
