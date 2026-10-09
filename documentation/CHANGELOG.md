@@ -20,6 +20,25 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.6 — technique
+
+#### Un agent de sécurité dans la chaîne de travail
+
+La faille de l'import par un lecteur (corrigée en v0.23.5) existait depuis des semaines. Un
+audit de documentation l'a trouvée ; aucun agent de relecture ne cherchait les failles.
+
+- Nouvel agent `securite`, en lecture seule. Il relit un diff qui touche les règles Firestore
+  ou Storage, une Cloud Function, l'authentification et les rôles, `firebase.json` ou
+  `.github/`. Il cherche les droits par rôle, le coût abusif d'IA, les données privées, les
+  entrées non fiables et les secrets, avec pour chaque constat un chemin réaliste.
+- `CLAUDE.md` : l'étape 3 de la chaîne de travail l'appelle pour ces diffs, ainsi que pour
+  `deploy.ps1` et les écrans qui masquent une action selon le rôle. Une règle Firestore ou
+  Storage corrigée s'accompagnera d'un test de règles quand la suite existera ; d'ici là,
+  l'agent décrit le cas de test attendu.
+- `developpement-tech-couts` et `product-owner-release` citent cette relecture.
+- `CLAUDE.md`, « Une question appelle une réponse » : la réponse se termine par le constat,
+  une proposition au besoin, et l'attente d'un « oui » explicite avant toute écriture.
+
 ### v0.23.5 — fonctionnel
 
 #### L'import est réservé aux éditeurs

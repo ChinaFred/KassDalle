@@ -73,6 +73,11 @@ appartient à celui qui pose la question.** Quand la réponse appelle un
 changement, on le décrit — ce qu'on toucherait, ce que ça casse, ce que ça
 coûte — et on attend le feu vert.
 
+La réponse à une question se termine donc ainsi : le constat, puis, au besoin, une
+proposition d'implémentation, puis l'attente d'un « oui » explicite. Ni commit, ni
+fichier modifié, ni agent lancé pour écrire avant ce « oui ». Lire le code pour répondre
+reste permis.
+
 Un doute sur la nature de la demande se traite comme une question.
 
 ## Le projet
@@ -367,7 +372,7 @@ npm run logs
 
 ## Agents
 
-Cinq agents spécialisés vivent dans `.claude/agents/` :
+Six agents spécialisés vivent dans `.claude/agents/` :
 
 | Agent | Quand l'utiliser |
 |---|---|
@@ -376,6 +381,7 @@ Cinq agents spécialisés vivent dans `.claude/agents/` :
 | `product-owner-release` | scope de release, décision go/no-go, plan de livraison |
 | `ux-designer` | parcours et disposition d'un écran avant le code, revue des écrans après — lecture seule |
 | `relecteur-regles` | relecture d'un diff contre les règles de ce fichier, avant le push — lecture seule |
+| `securite` | droits par rôle, coût abusif d'IA, données privées, entrées non fiables, secrets — relecture d'un diff sensible avant le push, ou audit complet — lecture seule |
 
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
 poussent ni ne fusionnent jamais sur `master`.
@@ -426,6 +432,11 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    le PC, la relecture porte sur le diff non commité, avant le commit.
    Si le diff touche un écran, `ux-designer` le relit aussi, contre sa proposition et les
    conventions d'interface du projet.
+   Si le diff touche `firestore.rules`, `storage.rules`, une Cloud Function (callable, déclencheur, tâche
+   planifiée, file Cloud Tasks), l'authentification ou les rôles, un écran qui masque une
+   action selon le rôle, `firebase.json`, `.github/` ou `deploy.ps1`, `securite` le relit aussi. Une règle Firestore ou
+   Storage corrigée s'accompagne d'un test de règles, dès que la suite de tests de règles
+   existe ; d'ici là, `securite` décrit le cas de test attendu dans son rapport.
    Corriger chaque anomalie, ou dire pourquoi elle n'en est pas une. Une correction qui
    change du code repasse en relecture.
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`, et ajouter l'entrée
