@@ -10,6 +10,7 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import {
+  FOUNDER_EMAIL,
   OPEN_FLAW,
   PERSONAS,
   as,
@@ -267,8 +268,59 @@ describe("users — fondateur", () => {
     await assertSucceeds(db("founder").doc("users/founder").update({ role: "admin" }));
   });
 
-  it("un administrateur ne change pas l'adresse du fondateur", OPEN_FLAW, async () => {
+  it("un administrateur ne change pas l'adresse du fondateur", async () => {
     await assertFails(db("admin").doc("users/founder").update({ email: "x@example.com" }));
+  });
+
+  it("un administrateur ne retire pas l'adresse du fondateur", async () => {
+    const { default: firebase } = await import("firebase/compat/app");
+    await import("firebase/compat/firestore");
+    await assertFails(
+      db("admin").doc("users/founder").update({ email: firebase.firestore.FieldValue.delete() }),
+    );
+  });
+
+  it("changer l'adresse puis le rôle du fondateur échoue dès la première écriture", async () => {
+    await assertFails(
+      db("admin").doc("users/founder").update({ email: "x@example.com", role: "reader" }),
+    );
+    await assertFails(db("admin").doc("users/founder").update({ role: "reader" }));
+  });
+});
+
+describe("users — adresse immuable", () => {
+  it("un administrateur ne change pas l'adresse d'un autre compte", async () => {
+    await assertFails(db("admin").doc(`users/${READER}`).update({ email: "x@example.com" }));
+  });
+
+  it("un administrateur ne change pas sa propre adresse", async () => {
+    await assertFails(
+      db("admin").doc(`users/${PERSONAS.admin.uid}`).update({ email: "x@example.com" }),
+    );
+  });
+
+  it("le fondateur ne change pas son adresse", async () => {
+    await assertFails(db("founder").doc("users/founder").update({ email: "x@example.com" }));
+  });
+
+  it("un administrateur modifie un champ neutre d'un autre compte", async () => {
+    await assertSucceeds(
+      db("admin").doc(`users/${READER}`).update({ preferred_name: "Lou" }),
+    );
+  });
+
+  it("une réécriture qui garde la même adresse reste permise", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ email: PERSONAS.reader.doc.email, display_name: "Lou" }),
+    );
+  });
+
+  it("un compte ancien sans adresse reste nommable, sans qu'on lui en ajoute une", async () => {
+    await seedDocs(env, { "users/legacy": { role: "pending", is_revoked: false } });
+    await assertSucceeds(db("admin").doc("users/legacy").update({ role: "reader" }));
+    await assertFails(db("admin").doc("users/legacy").update({ email: FOUNDER_EMAIL }));
   });
 });
 

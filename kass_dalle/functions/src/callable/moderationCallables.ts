@@ -15,6 +15,7 @@ import { getStorage } from "firebase-admin/storage";
 import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
 import { logError, logInfo, logWarn } from "../logging";
+import { isWellFormedObjectPath } from "../utils/storagePath";
 import { recordUsage } from "../ai/usage";
 import {
   MODERATION_FEATURE,
@@ -82,7 +83,17 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
   return raw.items.map((entry) => {
     const item = (entry ?? {}) as Record<string, unknown>;
     const quarantinePath = typeof item.quarantinePath === "string" ? item.quarantinePath : "";
-    if (!quarantinePath.startsWith(`quarantine/${uid}/`)) {
+    if (
+      !quarantinePath.startsWith(`quarantine/${uid}/`) ||
+      !isWellFormedObjectPath(quarantinePath)
+    ) {
+      // Trace de la tentative ; `writeLog` absorbe et journalise ses propres
+      // échecs, la promesse ne peut pas rejeter.
+      void logWarn({
+        message: "moderateAndPromoteImagesFn : chemin de quarantaine refusé",
+        userId: uid,
+        extra: { quarantinePath: quarantinePath.slice(0, 300) },
+      });
       throw new HttpsError("permission-denied", "Chemin de quarantaine invalide.");
     }
     if (!isTargetKind(item.targetKind)) {

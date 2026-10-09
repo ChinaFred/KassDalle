@@ -42,6 +42,7 @@ import { getAuth } from "firebase-admin/auth";
 import { COLL_AI_DAILY_SPEND, COLL_APP_CONFIG } from "../config";
 import { logError, logWarn } from "../logging";
 import { FOUNDER_EMAIL } from "../triggers/founderRole";
+import { isInteractiveCall } from "./callOrigin";
 
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
 
@@ -180,8 +181,12 @@ export function dailySpendDocId(userId: string, day: string): string {
 
 /** Ce que le plafond décide. `null` quand l'appel peut passer. */
 export interface BudgetDenial {
-  /** `import` : le plafond fixé pour un livre entier, voir `importBudget.ts`. */
-  reason: "cost" | "calls" | "import";
+  /**
+   * `import` : le plafond fixé pour un livre entier, voir `importBudget.ts`.
+   * `concurrency` : trop d'appels du même compte en cours au même instant —
+   * seul refus qui se rejoue, une fois les appels en cours terminés.
+   */
+  reason: "cost" | "calls" | "import" | "concurrency";
   message: string;
 }
 
@@ -375,9 +380,10 @@ export async function readDailySpend(userId: string, at = new Date()): Promise<D
  * Ajoute un appel à la dépense du jour.
  *
  * Appelé depuis `recordUsage`, donc **après** l'appel : le coût exact n'est
- * connu qu'une fois la réponse reçue. C'est aussi pourquoi le plafond se
- * vérifie sur le déjà-dépensé — un appel peut donc dépasser légèrement la
- * limite, jamais la doubler.
+ * connu qu'une fois la réponse reçue. Les appels en cours, eux, sont déjà
+ * comptés par leur réservation (`reserveDailyBudget`), retirée à la fin de
+ * l'appel : une rafale ne lit plus un compteur que personne n'a encore
+ * incrémenté.
  */
 export async function addToDailySpend(args: {
   userId: string;
@@ -470,4 +476,349 @@ export async function assertWithinDailyBudget(
   });
 
   throw new BudgetExceededError(denial);
+}
+
+// ── Réservation avant l'appel ───────────────────────────────────────────────
+//
+// Le plafond lisait la dépense **avant** l'appel et l'enregistrait **après**.
+// Entre les deux, rien : vingt appels lancés au même instant lisaient tous le
+// même compteur, tous passaient, et la journée se refermait vingt appels trop
+// tard (audit sécurité, faille 8).
+//
+// Chaque appel réserve désormais sa place, dans une transaction sur le
+// document du jour (`ai_daily_spend/{uid}_{jour}`, champ `reservations`) :
+//
+//  - il compte pour **un appel** tant qu'il est en cours — le plafond d'appels
+//    devient exact, même sous rafale ;
+//  - il compte pour une **dépense estimée** : le coût moyen d'un appel chiffré
+//    de ce compte aujourd'hui. Une moyenne mesurée, jamais un prix écrit dans
+//    le code — sans appel chiffré dans la journée, ou sans grille, l'estimation
+//    vaut zéro, et seuls le plafond d'appels et la limite de concurrence
+//    tiennent ;
+//  - appel déclenché par un utilisateur (callable, `callOrigin.ts`) : il occupe
+//    une des `MAX_CONCURRENT_AI_CALLS_PER_USER` places du compte. Un appel du
+//    serveur — pipeline, déclencheur, tâche planifiée — n'est pas limité en
+//    simultanéité : un import de livre lance cinq tranches à la fois, plus la
+//    nutrition de chaque recette, toutes au nom du même compte.
+//
+// La réservation est retirée à la fin de l'appel, réussi ou non, après que
+// `recordUsage` a ajouté le coût réel. Une réservation que personne n'a
+// retirée — instance arrêtée en plein appel — expire au bout de
+// `RESERVATION_TTL_MS` et cesse de compter.
+
+/**
+ * Appels simultanés admis par compte pour les appels déclenchés par un
+ * utilisateur (callables), multipliés comme les plafonds (cent fois pour le
+ * fondateur et le compte système). Les appels du serveur n'y sont pas soumis.
+ *
+ * Une décision, pas une mesure — comme les plafonds par défaut. Dix laisse
+ * largement de quoi travailler à une personne devant l'écran, et arrête une
+ * rafale de requêtes lancées par un script.
+ */
+export const MAX_CONCURRENT_AI_CALLS_PER_USER = 10;
+
+/**
+ * Durée au-delà de laquelle une réservation oubliée cesse de compter.
+ *
+ * Quinze minutes : plus que le délai maximal d'une fonction du projet (neuf
+ * minutes pour le pipeline), donc jamais un appel encore en cours.
+ */
+export const RESERVATION_TTL_MS = 15 * 60_000;
+
+/** Attente maximale d'une place libre avant de refuser pour concurrence. */
+export const CONCURRENCY_WAIT_MS = 20_000;
+const CONCURRENCY_POLL_MS = 500;
+
+/** Une réservation en cours, telle que stockée sous `reservations.{id}`. */
+export interface SpendReservation {
+  /** Horodatage de la réservation, en millisecondes. */
+  atMs: number;
+  /** Dépense estimée, en dollars. */
+  usd: number;
+}
+
+/** Lit la carte `reservations` d'un document de dépense. Une entrée illisible est ignorée. */
+export function parseReservations(value: unknown): Record<string, SpendReservation> {
+  const out: Record<string, SpendReservation> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const atMs = Number(r.at_ms);
+    const usd = Number(r.usd);
+    if (!Number.isFinite(atMs)) continue;
+    out[id] = { atMs, usd: Number.isFinite(usd) && usd > 0 ? usd : 0 };
+  }
+  return out;
+}
+
+/**
+ * Dépense estimée d'un appel : le coût moyen d'un appel chiffré du compte
+ * aujourd'hui, ou zéro sans appel chiffré. Aucune constante de prix.
+ */
+export function estimatedCallCostUsd(spend: DailySpend): number {
+  const priced = spend.calls - spend.unpricedCalls;
+  if (!(priced > 0) || !(spend.costUsd > 0)) return 0;
+  return spend.costUsd / priced;
+}
+
+export interface ReservationDecision {
+  /** Refus de plafond (coût ou appels) : définitif pour la journée. */
+  denial: BudgetDenial | null;
+  /** Toutes les places du compte sont prises : attendre, puis réessayer. */
+  concurrencyFull: boolean;
+  /** Réservations expirées, à retirer du document. */
+  stale: string[];
+  /** Dépense estimée à réserver pour cet appel, en dollars. */
+  estimateUsd: number;
+  /** Appels en cours encore valides. */
+  inFlight: number;
+}
+
+/**
+ * Décision pure de réservation — testée seule.
+ *
+ * Les appels en cours comptent comme dépensés : un appel chacun, et leur
+ * dépense estimée. Le plafond de coût et le plafond d'appels se décident ainsi
+ * sur `dépensé + en cours`, et non plus sur le seul dépensé.
+ */
+export function reservationDecision(args: {
+  spend: DailySpend;
+  reservations: Record<string, SpendReservation>;
+  policy: AiBudgetPolicy;
+  usdToEur: number | null;
+  multiplier?: number;
+  nowMs: number;
+  maxConcurrent?: number;
+  /**
+   * Appel déclenché par un utilisateur (callable). La limite de simultanéité
+   * ne vaut que pour lui : un appel du serveur (pipeline, déclencheur, tâche
+   * planifiée) réserve sa place, compte dans les plafonds, mais n'attend pas
+   * et n'est jamais refusé pour `concurrency`.
+   */
+  interactive: boolean;
+}): ReservationDecision {
+  const multiplier = args.multiplier && args.multiplier > 0 ? args.multiplier : 1;
+  const stale: string[] = [];
+  let inFlight = 0;
+  let reservedUsd = 0;
+  for (const [id, r] of Object.entries(args.reservations)) {
+    if (args.nowMs - r.atMs > RESERVATION_TTL_MS) {
+      stale.push(id);
+      continue;
+    }
+    inFlight += 1;
+    reservedUsd += r.usd;
+  }
+
+  const estimateUsd = estimatedCallCostUsd(args.spend);
+  const denial = budgetDenial({
+    spend: {
+      costUsd: args.spend.costUsd + reservedUsd,
+      calls: args.spend.calls + inFlight,
+      unpricedCalls: args.spend.unpricedCalls,
+    },
+    policy: args.policy,
+    usdToEur: args.usdToEur,
+    multiplier,
+  });
+
+  const maxConcurrent = (args.maxConcurrent ?? MAX_CONCURRENT_AI_CALLS_PER_USER) * multiplier;
+  const concurrencyFull =
+    args.interactive &&
+    denial == null &&
+    args.policy.enabled &&
+    maxConcurrent > 0 &&
+    inFlight >= maxConcurrent;
+
+  return { denial, concurrencyFull, stale, estimateUsd, inFlight };
+}
+
+/** La réservation d'un appel, à rendre par `releaseDailyBudget`. `null` : aucune réservation. */
+export interface BudgetReservation {
+  userId: string;
+  docId: string;
+  id: string;
+}
+
+const CONCURRENCY_DENIAL: BudgetDenial = {
+  reason: "concurrency",
+  message:
+    "Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant, " +
+    "une fois les traitements en cours terminés.",
+};
+
+let reservationSeq = 0;
+
+function newReservationId(nowMs: number): string {
+  reservationSeq = (reservationSeq + 1) % 1_000_000;
+  return `r${nowMs.toString(36)}_${process.pid.toString(36)}_${reservationSeq.toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Réserve une place dans le plafond du jour, ou lève `BudgetExceededError`.
+ *
+ * Remplace `assertWithinDailyBudget` sur les chemins qui appellent un modèle :
+ * même décision, prise dans une transaction qui inscrit l'appel avant qu'il
+ * parte. Appel d'utilisateur et toutes ses places prises : attente jusqu'à
+ * `CONCURRENCY_WAIT_MS`, puis refus `concurrency`. Un appel du serveur n'attend
+ * jamais. Plafonds coupés (`enabled: false`) : aucune
+ * réservation, `null`.
+ */
+export async function reserveDailyBudget(
+  userId: string | null | undefined,
+  feature: string,
+): Promise<BudgetReservation | null> {
+  const uid = budgetUserId(userId);
+  const [policy, usdToEur, multiplier] = await Promise.all([
+    getAiBudgetPolicy(),
+    getUsdToEurRate(),
+    budgetMultiplierFor(uid),
+  ]);
+  if (!policy.enabled) return null;
+
+  if (usdToEur == null && policy.dailyCostEurPerUser > 0) {
+    await logWarn({
+      message: "Plafond en euros inapplicable : aucun taux de change relevé",
+      userId: uid,
+      feature,
+      extra: { limitCalls: policy.dailyCallsPerUser * multiplier },
+    });
+  }
+
+  // Lu une fois, avant la boucle : le marqueur suit la requête (`callOrigin.ts`).
+  const interactive = isInteractiveCall();
+  const db = getFirestore();
+  const startedAt = Date.now();
+  for (;;) {
+    const nowMs = Date.now();
+    const day = spendDay(new Date(nowMs));
+    const docId = dailySpendDocId(uid, day);
+    const ref = db.collection(COLL_AI_DAILY_SPEND).doc(docId);
+    const id = newReservationId(nowMs);
+
+    const outcome = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.data() ?? {};
+      const spend: DailySpend = {
+        costUsd: readPositive(data.cost_usd, 0),
+        calls: readPositive(data.calls, 0),
+        unpricedCalls: readPositive(data.unpriced_calls, 0),
+      };
+      const decision = reservationDecision({
+        spend,
+        reservations: parseReservations(data.reservations),
+        policy,
+        usdToEur,
+        multiplier,
+        nowMs,
+        interactive,
+      });
+      const changes: Record<string, unknown> = {};
+      for (const staleId of decision.stale) changes[staleId] = FieldValue.delete();
+      if (!decision.denial && !decision.concurrencyFull) {
+        changes[id] = { at_ms: nowMs, usd: decision.estimateUsd, feature };
+      }
+      if (Object.keys(changes).length > 0) {
+        // Carte imbriquée et `merge` : seules ces entrées changent, et le
+        // document du jour se crée s'il n'existe pas encore.
+        tx.set(
+          ref,
+          { uid, day, reservations: changes, updated_at: FieldValue.serverTimestamp() },
+          { merge: true },
+        );
+      }
+      return { decision, spend };
+    });
+
+    const { decision, spend } = outcome;
+    if (decision.stale.length > 0) {
+      await logWarn({
+        message: `Réservations de plafond expirées retirées (${decision.stale.length})`,
+        userId: uid,
+        feature,
+        extra: { stale: decision.stale.length },
+      });
+    }
+
+    if (decision.denial) {
+      await logWarn({
+        message: `Plafond de dépense atteint (${decision.denial.reason}) — appel refusé`,
+        userId: uid,
+        feature,
+        extra: {
+          spentUsd: spend.costUsd,
+          spentEur: usdToEur != null ? spend.costUsd * usdToEur : null,
+          calls: spend.calls,
+          inFlight: decision.inFlight,
+          unpricedCalls: spend.unpricedCalls,
+          limitEur: policy.dailyCostEurPerUser * multiplier,
+          limitCalls: policy.dailyCallsPerUser * multiplier,
+          multiplier,
+        },
+      });
+      throw new BudgetExceededError(decision.denial);
+    }
+
+    if (!decision.concurrencyFull) return { userId: uid, docId, id };
+
+    if (Date.now() - startedAt >= CONCURRENCY_WAIT_MS) {
+      await logWarn({
+        message: "Trop d'appels d'IA simultanés pour ce compte — appel refusé",
+        userId: uid,
+        feature,
+        extra: {
+          inFlight: decision.inFlight,
+          maxConcurrent: MAX_CONCURRENT_AI_CALLS_PER_USER * multiplier,
+          waitedMs: Date.now() - startedAt,
+        },
+      });
+      throw new BudgetExceededError(CONCURRENCY_DENIAL);
+    }
+    await sleep(CONCURRENCY_POLL_MS);
+  }
+}
+
+/**
+ * Retire une réservation. Best-effort : un échec n'annule pas un appel déjà
+ * facturé, mais laisse une place occupée jusqu'à l'expiration
+ * (`RESERVATION_TTL_MS`) — il est journalisé.
+ */
+export async function releaseDailyBudget(
+  reservation: BudgetReservation | null,
+  feature: string,
+): Promise<void> {
+  if (!reservation) return;
+  try {
+    await getFirestore()
+      .collection(COLL_AI_DAILY_SPEND)
+      .doc(reservation.docId)
+      .update({ [`reservations.${reservation.id}`]: FieldValue.delete() });
+  } catch (err) {
+    await logError({
+      message: "Réservation de plafond non retirée : la place reste occupée jusqu'à son expiration",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: reservation.userId,
+      feature,
+      extra: { docId: reservation.docId, reservationId: reservation.id },
+    });
+  }
+}
+
+/** Réserve, exécute `fn`, puis retire la réservation — réussite ou échec. */
+export async function withDailyBudget<T>(
+  userId: string | null | undefined,
+  feature: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const reservation = await reserveDailyBudget(userId, feature);
+  try {
+    return await fn();
+  } finally {
+    await releaseDailyBudget(reservation, feature);
+  }
 }

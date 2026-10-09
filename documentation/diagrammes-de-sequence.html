@@ -255,6 +255,12 @@ sequenceDiagram
       Note over P,DL: aucune nouvelle tentative : le livre resterait celui d'un autre
     end
   end
+  P->>P: resolveJobSourcePath — file_url et pages sous scans/{created_by}/ ?
+  alt rejected/, quarantaine, scans d'un autre, URL externe ou segment ..
+    P->>DL: failure_reason = forbidden_source_path, dès la 1re tentative
+    P->>J: status error, error_message
+    Note over P,DL: aucun téléchargement, aucun appel de modèle
+  end
   P->>ST: download du fichier et des pages
 
   P->>G: PASSE 1 — transcribePage
@@ -1824,8 +1830,10 @@ sequenceDiagram
       Le refus arrive <b>avant</b> l'appel, au point de passage unique de tout ce qui coûte en
       texte. Placé dans les gardes HTTPS, il aurait laissé passer tout ce que Cloud Tasks
       déclenche.
-      <span class="path">ai/router.ts (callModel) → ai/budget.ts (assertWithinDailyBudget) →
-      scheduled/aiBudgetAlertSchedule.ts</span>
+      Depuis la v0.23.10, chaque appel <b>réserve</b> sa place avant de partir : une rafale
+      d'appels simultanés ne lit plus un compteur que personne n'a encore incrémenté.
+      <span class="path">ai/router.ts (callModel) → ai/budget.ts (reserveDailyBudget,
+      releaseDailyBudget) → scheduled/aiBudgetAlertSchedule.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1834,24 +1842,33 @@ sequenceDiagram
   autonumber
   participant AP as Appelant (callable ou pipeline)
   participant CM as callModel
-  participant BU as assertWithinDailyBudget
+  participant BU as reserveDailyBudget
   participant PO as app_config/ai_budget_policy
   participant SP as dépense du jour
   participant M as Moteur d'IA
   participant SC as scheduledAiBudgetAlert
 
   AP->>CM: parts, ctx { userId, feature }
-  CM->>BU: vérifie AVANT tout appel de fournisseur
+  CM->>BU: réserve AVANT tout appel de fournisseur
   BU->>PO: plafonds — euros par jour, appels par jour
-  BU->>SP: cumul du jour pour ce compte
   BU->>BU: multiplicateur x100 pour le fondateur
+  BU->>SP: transaction — dépensé + réservations en cours<br/>(expirées après 15 min : retirées)
 
-  alt sous les deux plafonds
-    BU-->>CM: passe
+  BU->>BU: origine — callable (marqueur de la garde) ou serveur
+
+  alt sous les deux plafonds, et serveur ou moins de 10 appels en cours
+    BU->>SP: reservations.{id} = 1 appel, coût moyen du jour
+    BU-->>CM: place réservée
     CM->>M: appel
     M-->>CM: réponse
-    CM->>SP: recordUsage — jetons, coût, moteur, modèle
-  else plafond atteint
+    CM->>SP: recordUsage — jetons, coût réel, moteur, modèle
+    CM->>SP: releaseDailyBudget — retire la réservation (finally, échec compris)
+  else callable, et 10 appels déjà en cours
+    BU->>BU: attend une place, 20 s au plus
+    BU-->>CM: BudgetExceededError (concurrency) si aucune ne se libère
+    CM-->>AP: resource-exhausted
+    Note over AP,CM: pipeline, déclencheurs, tâches planifiées :<br/>jamais limités en simultanéité
+  else plafond atteint (dépensé + en cours)
     BU-->>CM: BudgetExceededError
     CM-->>AP: resource-exhausted, nommant le plafond
     Note over AP,CM: dans le pipeline : dead letter immédiate,<br/>sans réessayer — trois tentatives heurteraient le même mur
@@ -1871,6 +1888,14 @@ sequenceDiagram
         <b>Deux limites, et la seconde n'est pas un doublon.</b> Le plafond en euros ne vaut rien
         pendant une panne de grille tarifaire, quand plus aucun appel n'est chiffré. Le plafond en
         nombre d'appels, lui, tient sans prix.
+        <span class="expect">
+          <b>La réservation n'invente aucun prix.</b> Un appel en cours compte pour un appel, et
+          pour le coût moyen d'un appel chiffré du compte dans la journée — zéro sans appel
+          chiffré ou sans grille. Le plafond d'appels est exact sous rafale ; le plafond en
+          euros peut être dépassé de l'écart entre coût réel et moyenne, sur les appels en cours.
+          Seuls les appels déclenchés par un utilisateur sont limités à dix en même temps : un
+          import de livre et ses calculs de nutrition ne le sont pas.
+        </span>
         <span class="expect">
           <b>Un appel qui atteint le fournisseur puis échoue est enregistré sans jetons.</b> Le
           fournisseur facture ; ne rien écrire ferait disparaître du suivi une dépense réelle, et
@@ -1965,6 +1990,9 @@ sequenceDiagram
   else livre cible d'un autre membre (assertJobTargetBook)
     P->>DL: failure_reason = foreign_book
     Note over P,DL: pas de réessai — on ne range une recette<br/>que dans ses propres livres, l'admin partout
+  else fichier source hors de scans/{created_by}/ (resolveJobSourcePath)
+    P->>DL: failure_reason = forbidden_source_path
+    Note over P,DL: pas de réessai — le chemin posé par le client ne changera pas
   else erreur réessayable
     P-->>CT: throw — Cloud Tasks reprend
     Note over CT: backoff 10 s → 300 s, 4 doublements, 3 tentatives

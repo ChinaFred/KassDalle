@@ -239,7 +239,8 @@ stateDiagram-v2
   [*] --> queued : le client crée le job
   queued --> import : recipeProcessor démarre
   import --> dead_letters : livre cible d'un autre — foreign_book, dès la 1re tentative
-  import --> gemini_call : fichiers téléchargés depuis Storage
+  import --> dead_letters : fichier hors de scans/{created_by}/ — forbidden_source_path, dès la 1re tentative
+  import --> gemini_call : fichiers téléchargés depuis scans/{created_by}/
   gemini_call --> parse : page classifiée puis extraite
   parse --> design : CookLang analysé
   design --> save : illustrations extraites et enregistrées
@@ -441,7 +442,7 @@ stateDiagram-v2
           <tr><td><code>nutrition_units</code></td><td>Référentiel d'unités et poids observés</td><td>Triggers + admin</td></tr>
           <tr><td><code>token_usage</code> · <code>ai_usage</code></td><td>Consommation par utilisateur et par appel, tous moteurs — écrites par <code>recordUsage</code> et par lui seul</td><td>Cloud Functions</td></tr>
           <tr><td><code>ai_usage_monthly</code></td><td>Agrégat mensuel par poste, moteur, modèle et utilisateur — dont la ventilation <code>by_user.{uid}.by_feature</code>, qui répond à « qui dépense, et à quoi » — un document par mois, ce que lit l'écran des coûts</td><td>Cloud Functions</td></tr>
-          <tr><td><code>ai_daily_spend</code></td><td>Dépense d'IA du jour, par compte (<code>{uid}_{AAAA-MM-JJ}</code>) — ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier</td><td>Cloud Functions</td></tr>
+          <tr><td><code>ai_daily_spend</code></td><td>Dépense d'IA du jour, par compte (<code>{uid}_{AAAA-MM-JJ}</code>) — ce que le plafond relit avant chaque appel, et les appels en cours (<code>reservations</code>), réservés par transaction avant l'appel et retirés à sa fin. Un document par jour : aucune remise à zéro à planifier</td><td>Cloud Functions</td></tr>
           <tr><td><code>scan_spend</code></td><td>Dépense d'IA par scan (<code>{scanId}</code>) et plafond d'un import de livre — relu avant le premier appel de chaque tranche, relevé par une relance</td><td>Cloud Functions</td></tr>
           <tr><td><code>ai_reconciliation_monthly</code></td><td>Rapprochement mensuel coûts estimés / facturés</td><td>Fonction admin</td></tr>
           <tr><td><code>error_reports</code></td><td>Erreurs remontées par le client</td><td>Client</td></tr>

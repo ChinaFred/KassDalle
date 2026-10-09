@@ -482,8 +482,10 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   // panne et que plus rien n'a de prix.
   //
   // Un appel sans uid compte pour le compte système : c'est sur lui que
-  // `assertWithinDailyBudget` le plafonne, et un plafond qui ne lit aucune
-  // dépense ne borne rien.
+  // `reserveDailyBudget` le plafonne, et un plafond qui ne lit aucune
+  // dépense ne borne rien. La réservation de l'appel est retirée ensuite par
+  // `releaseDailyBudget` : entre les deux, l'appel compte deux fois, ce qui
+  // rend le plafond plus strict, jamais plus large.
   try {
     await addToDailySpend({ userId: effectiveUserId, costUsd, at: now });
   } catch (err) {

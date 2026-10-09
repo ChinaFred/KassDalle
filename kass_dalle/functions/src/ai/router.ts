@@ -23,7 +23,7 @@ import {
   callAnthropic,
 } from "./anthropic";
 import { recordUsage } from "./usage";
-import { assertWithinDailyBudget } from "./budget";
+import { withDailyBudget } from "./budget";
 // `recordUsage` est aussi le nom d'un drapeau de `callModel` : l'import garde
 // le nom de la fonction, l'option se lit toujours `args.recordUsage`.
 import {
@@ -395,7 +395,19 @@ async function callProvider(args: {
  * pour l'utilisateur. Il ne se déclenche que sur un échec technique — une
  * réponse déclinée par les classificateurs n'est pas retentée ailleurs.
  */
-export async function callModel(args: {
+export async function callModel(args: CallModelArgs): Promise<ModelCallResult> {
+  // Le plafond se décide ici, avant le moindre appel de fournisseur : c'est le
+  // point de passage unique de tout ce qui coûte en texte, qu'il vienne d'une
+  // callable ou du pipeline asynchrone. Placé dans les gardes HTTPS, il aurait
+  // laissé passer tout ce que Cloud Tasks déclenche.
+  //
+  // L'appel réserve sa place avant de partir et la rend à la fin — repli
+  // compris : sans réservation, une rafale lisait un compteur que personne
+  // n'avait encore incrémenté, et passait tout entière.
+  return withDailyBudget(args.ctx.userId, args.ctx.feature, () => callModelWithinBudget(args));
+}
+
+interface CallModelArgs {
   parts: ModelPart[];
   ctx: ModelCallContext;
   outputSchema?: ModelOutputSchema;
@@ -403,13 +415,9 @@ export async function callModel(args: {
   /** Comptabilise la consommation (défaut : true). */
   recordUsage?: boolean;
   usageMeta?: { entityType?: string; entityId?: string; costBucket?: string };
-}): Promise<ModelCallResult> {
-  // Le plafond se vérifie ici, avant le moindre appel de fournisseur : c'est le
-  // point de passage unique de tout ce qui coûte en texte, qu'il vienne d'une
-  // callable ou du pipeline asynchrone. Placé dans les gardes HTTPS, il aurait
-  // laissé passer tout ce que Cloud Tasks déclenche.
-  await assertWithinDailyBudget(args.ctx.userId, args.ctx.feature);
+}
 
+async function callModelWithinBudget(args: CallModelArgs): Promise<ModelCallResult> {
   const policy = await getAiRoutingPolicy();
   const anthropicAvailable = anthropicApiKey() != null;
   let primary = resolveProvider(policy, args.ctx.feature, anthropicAvailable);

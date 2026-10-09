@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
 import { logError, logInfo } from "../logging";
 import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
-import { assertWithinDailyBudget } from "../ai/budget";
+import { releaseDailyBudget, reserveDailyBudget } from "../ai/budget";
 import { GEMINI_IMAGE_MODEL } from "../config";
 
 export interface GenerateCulinaryImageInput {
@@ -189,11 +189,24 @@ async function runImageModel(
   baseImage: { bytes: Buffer; mimeType: string } | null = null,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
   // Point de passage unique des trois postes qui produisent une image — les
-  // plus chers du catalogue, 0,0336 $ l'unité. Le plafond s'y applique comme
-  // au texte ; l'image ne passe pas par `callModel`, elle serait sinon la
-  // seule dépense non bornée.
-  await assertWithinDailyBudget(ctx.userId, ctx.feature);
+  // plus chers du catalogue. Le plafond s'y applique comme au texte, par
+  // réservation avant l'appel ; l'image ne passe pas par `callModel`, elle
+  // serait sinon la seule dépense non bornée.
+  const reservation = await reserveDailyBudget(ctx.userId, ctx.feature);
+  try {
+    return await runImageModelReserved(apiKey, prompt, recipeTitle, ctx, baseImage);
+  } finally {
+    await releaseDailyBudget(reservation, ctx.feature);
+  }
+}
 
+async function runImageModelReserved(
+  apiKey: string,
+  prompt: string,
+  recipeTitle: string,
+  ctx: GenerateImageContext,
+  baseImage: { bytes: Buffer; mimeType: string } | null,
+): Promise<{ bytes: Buffer; mimeType: string }> {
   const model = createGenerativeModel(apiKey, GEMINI_IMAGE_MODEL);
   const startedAt = Date.now();
 
