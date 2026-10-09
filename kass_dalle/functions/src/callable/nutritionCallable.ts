@@ -23,6 +23,12 @@ import {
 import { requireAdmin, requireAuth } from "./_auth";
 import { assertCanModifyRecipe } from "./_recipeAccess";
 import {
+  LIST_MAX_ITEMS,
+  RECIPE_TEXT_MAX_CHARS,
+  STRUCTURED_ITEM_MAX_CHARS,
+  readAiInputs,
+} from "./_inputBounds";
+import {
   DEFAULT_NUTRITION_POLICY,
   getNutritionSourcePolicy,
   NUTRITION_POLICY_DOC_ID,
@@ -241,12 +247,31 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
   },
   async (req) => {
     const ctx = await requireAuth(req, "normalisation_referentiels");
+    const data = (req.data ?? {}) as Record<string, unknown>;
+    // Plusieurs postes d'IA partent de cette normalisation (unités, poids,
+    // per100g…) : le relevé porte le nom de l'entrée, pas celui d'un poste.
+    const { cooklang, ingredients } = await readAiInputs(
+      { ...ctx, feature: "normalisation_referentiels" },
+      (inputs) => ({
+        cooklang:
+          typeof data.cooklang === "string"
+            ? (inputs.text(data.cooklang, { field: "cooklang", max: RECIPE_TEXT_MAX_CHARS }) ?? "")
+            : "",
+        ingredients: Array.isArray(data.ingredients)
+          ? inputs.list<Record<string, unknown>>(data.ingredients, {
+              field: "ingredients",
+              maxItems: LIST_MAX_ITEMS,
+              maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
+            })
+          : undefined,
+      }),
+    );
 
     return normalizeRecipeReferentialsCore({
       aiEnabled: true,
-      recipeId: typeof req.data?.recipeId === "string" ? req.data.recipeId : undefined,
-      cooklang: typeof req.data?.cooklang === "string" ? req.data.cooklang : "",
-      ingredients: Array.isArray(req.data?.ingredients) ? req.data?.ingredients : undefined,
+      recipeId: typeof data.recipeId === "string" ? data.recipeId : undefined,
+      cooklang,
+      ingredients,
       userId: req.auth?.uid ?? undefined,
       // Sans ce fil, les enrichissements déclenchés par une SAUVEGARDE
       // fabriquaient chacun le leur : une même normalisation se lisait en

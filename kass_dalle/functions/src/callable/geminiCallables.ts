@@ -23,27 +23,28 @@ import {
 } from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { assertCanModifyRecipe } from "./_recipeAccess";
+import {
+  readConceptInput,
+  readPlanningInput,
+  readRefineInput,
+  readSearchInput,
+} from "./_aiInputReaders";
+import {
+  COVER_IMAGE_MAX_BYTES,
+  LIST_MAX_ITEMS,
+  PAGE_IMAGE_MAX_BYTES,
+  PASTED_TEXT_MAX_CHARS,
+  RECIPE_TEXT_MAX_CHARS,
+  SHORT_TEXT_MAX_CHARS,
+  STRUCTURED_ITEM_MAX_CHARS,
+  InputBoundExceededError,
+  readAiInputs,
+} from "./_inputBounds";
 import { extractRecipeFromText } from "../gemini/extractor";
-import {
-  polishCooklang,
-  polishMarkdown,
-  refineRecipe,
-  generateRecipe,
-  type RefineInput,
-} from "../gemini/refiner";
+import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
-import {
-  searchRecipes,
-  extractBookCover,
-  generateWebSearchQuery,
-  type SearchRecipesInput,
-} from "../gemini/search";
-import {
-  suggestMealPlan,
-  generateRecipeConcept,
-  type PlanningInput,
-  type RecipeConceptInput,
-} from "../gemini/planning";
+import { searchRecipes, extractBookCover, generateWebSearchQuery } from "../gemini/search";
+import { suggestMealPlan, generateRecipeConcept } from "../gemini/planning";
 import {
   MEAL_IDEAS_MAX_PREVIOUS,
   MEAL_IDEAS_MAX_PROMPT_CHARS,
@@ -131,10 +132,6 @@ function toHttpsError(err: unknown): HttpsError {
   return new HttpsError("internal", err instanceof Error ? err.message : String(err));
 }
 
-function bytesFromBase64(b64: string): Buffer {
-  return Buffer.from(b64, "base64");
-}
-
 async function logUploadScanUsage(args: {
   uid: string;
   correlationId: string;
@@ -198,10 +195,10 @@ const extractionCallableOpts = { ...callableOpts, timeoutSeconds: 540 };
 
 export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req) => {
   const ctx = await requireAuth(req, "text_extraction");
-  const { text } = (req.data ?? {}) as { text?: string };
-  if (!text || typeof text !== "string") {
-    throw new HttpsError("invalid-argument", "Le champ 'text' est requis.");
-  }
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const text = await readAiInputs({ ...ctx, feature: "text_extraction" }, (inputs) =>
+    inputs.text(data.text, { field: "text", max: PASTED_TEXT_MAX_CHARS, required: true }),
+  );
   try {
     const extraction = await extractRecipeFromText(text, {
       ...ctx,
@@ -245,8 +242,10 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
 
 export const polishCooklangFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "polish_cooklang");
-  const { cooklang } = (req.data ?? {}) as { cooklang?: string };
-  if (!cooklang) throw new HttpsError("invalid-argument", "Le champ 'cooklang' est requis.");
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const cooklang = await readAiInputs({ ...ctx, feature: "polish_cooklang" }, (inputs) =>
+    inputs.text(data.cooklang, { field: "cooklang", max: RECIPE_TEXT_MAX_CHARS, required: true }),
+  );
   try {
     // Avant / après, sous le même correlationId : le polissage est demandé à la
     // main, mais rien ne disait ce qu'il changeait. Une retouche qu'on ne peut
@@ -281,8 +280,21 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
 
 export const polishMarkdownFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "polish_markdown");
-  const { markdown, instruction } = (req.data ?? {}) as { markdown?: string; instruction?: string };
-  if (!markdown) throw new HttpsError("invalid-argument", "Le champ 'markdown' est requis.");
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const { markdown, instruction } = await readAiInputs(
+    { ...ctx, feature: "polish_markdown" },
+    (inputs) => ({
+      markdown: inputs.text(data.markdown, {
+        field: "markdown",
+        max: RECIPE_TEXT_MAX_CHARS,
+        required: true,
+      }),
+      instruction: inputs.text(data.instruction, {
+        field: "instruction",
+        max: SHORT_TEXT_MAX_CHARS,
+      }),
+    }),
+  );
   try {
     const polished = await polishMarkdown(GEMINI_API_KEY.value(), markdown, instruction ?? null, {
       ...ctx,
@@ -297,10 +309,11 @@ export const polishMarkdownFn = onCall(callableOpts, async (req) => {
 
 export const refineRecipeFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "refine");
-  const input = req.data as RefineInput | undefined;
-  if (!input?.instruction || !input?.currentCooklang) {
-    throw new HttpsError("invalid-argument", "instruction et currentCooklang sont requis.");
-  }
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  // Liste blanche : seuls les champs validés atteignent le générateur.
+  const input = await readAiInputs({ ...ctx, feature: "refine" }, (inputs) =>
+    readRefineInput(data, inputs),
+  );
   try {
     await logAiText({
       stage: "refine.avant",
@@ -339,6 +352,7 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
   // question « pourquoi trois ? » n'avait aucune réponse lisible.
   const askedVariant = (req.data as { variantLabel?: unknown } | undefined)?.variantLabel;
   const ctx = await requireAuth(req, qualify("generation_recette", askedVariant));
+  const data = (req.data ?? {}) as Record<string, unknown>;
   const {
     query,
     preferenceInsight,
@@ -347,16 +361,36 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
     variantInstruction,
     siblingVariantLabels,
     avoidTitles,
-  } = (req.data ?? {}) as {
-    query?: string;
-    preferenceInsight?: string | null;
-    libraryContext?: Array<Record<string, string>>;
-    variantLabel?: string;
-    variantInstruction?: string;
-    siblingVariantLabels?: string[];
-    avoidTitles?: string[];
-  };
-  if (!query) throw new HttpsError("invalid-argument", "query est requis.");
+  } = await readAiInputs({ ...ctx, feature: "generate" }, (inputs) => ({
+    query: inputs.text(data.query, { field: "query", max: SHORT_TEXT_MAX_CHARS, required: true }),
+    preferenceInsight: inputs.text(data.preferenceInsight, {
+      field: "preferenceInsight",
+      max: RECIPE_TEXT_MAX_CHARS,
+    }),
+    libraryContext: inputs.list<Record<string, string>>(data.libraryContext, {
+      field: "libraryContext",
+      maxItems: LIST_MAX_ITEMS,
+      maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
+    }),
+    variantLabel: inputs.text(data.variantLabel, {
+      field: "variantLabel",
+      max: SHORT_TEXT_MAX_CHARS,
+    }),
+    variantInstruction: inputs.text(data.variantInstruction, {
+      field: "variantInstruction",
+      max: SHORT_TEXT_MAX_CHARS,
+    }),
+    siblingVariantLabels: inputs.list<string>(data.siblingVariantLabels, {
+      field: "siblingVariantLabels",
+      maxItems: LIST_MAX_ITEMS,
+      maxItemChars: SHORT_TEXT_MAX_CHARS,
+    }),
+    avoidTitles: inputs.list<string>(data.avoidTitles, {
+      field: "avoidTitles",
+      maxItems: LIST_MAX_ITEMS,
+      maxItemChars: SHORT_TEXT_MAX_CHARS,
+    }),
+  }));
   try {
     const data = await generateRecipe(
       GEMINI_API_KEY.value(),
@@ -379,8 +413,11 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
 
 export const searchRecipesFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "search");
-  const input = req.data as SearchRecipesInput | undefined;
-  if (!input?.query) throw new HttpsError("invalid-argument", "query est requis.");
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  // Liste blanche : seuls les champs validés atteignent le générateur.
+  const input = await readAiInputs({ ...ctx, feature: "search" }, (inputs) =>
+    readSearchInput(data, inputs),
+  );
   try {
     const data = await searchRecipes(GEMINI_API_KEY.value(), input, {
       ...ctx,
@@ -395,24 +432,25 @@ export const searchRecipesFn = onCall(callableOpts, async (req) => {
 
 export const extractBookCoverFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "book_cover");
-  const { bytesBase64, mimeType } = (req.data ?? {}) as {
-    bytesBase64?: string;
-    mimeType?: string;
-  };
-  if (!bytesBase64 || !mimeType) {
-    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-  }
+  const raw = (req.data ?? {}) as Record<string, unknown>;
+  const { bytes, mimeType } = await readAiInputs({ ...ctx, feature: "book_cover" }, (inputs) => ({
+    bytes: inputs.base64(raw.bytesBase64, {
+      field: "bytesBase64",
+      maxBytes: COVER_IMAGE_MAX_BYTES,
+      required: true,
+    }),
+    mimeType: inputs.text(raw.mimeType, {
+      field: "mimeType",
+      max: SHORT_TEXT_MAX_CHARS,
+      required: true,
+    }),
+  }));
   try {
-    const data = await extractBookCover(
-      GEMINI_API_KEY.value(),
-      bytesFromBase64(bytesBase64),
-      mimeType,
-      {
-        ...ctx,
-        feature: "book_cover",
-        moduleType: "IMPORT",
-      },
-    );
+    const data = await extractBookCover(GEMINI_API_KEY.value(), bytes, mimeType, {
+      ...ctx,
+      feature: "book_cover",
+      moduleType: "IMPORT",
+    });
     return data;
   } catch (e) {
     throw toHttpsError(e);
@@ -421,8 +459,11 @@ export const extractBookCoverFn = onCall(callableOpts, async (req) => {
 
 export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "planning");
-  const input = req.data as PlanningInput | undefined;
-  if (!input?.slotDates) throw new HttpsError("invalid-argument", "slotDates est requis.");
+  const raw = (req.data ?? {}) as Record<string, unknown>;
+  // Liste blanche : seuls les champs validés atteignent le générateur.
+  const input = await readAiInputs({ ...ctx, feature: "planning" }, (inputs) =>
+    readPlanningInput(raw, inputs),
+  );
   try {
     const data = await suggestMealPlan(GEMINI_API_KEY.value(), input, {
       ...ctx,
@@ -439,8 +480,16 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
 
 export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "shopping_list");
-  const { ingredients } = (req.data ?? {}) as { ingredients?: ShoppingIngredientInput[] };
-  if (!Array.isArray(ingredients) || ingredients.length === 0) {
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const ingredients = await readAiInputs({ ...ctx, feature: "shopping_list" }, (inputs) =>
+    inputs.list<ShoppingIngredientInput>(data.ingredients, {
+      field: "ingredients",
+      maxItems: LIST_MAX_ITEMS,
+      maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
+      required: true,
+    }),
+  );
+  if (ingredients.length === 0) {
     throw new HttpsError("invalid-argument", "ingredients est requis.");
   }
   try {
@@ -461,8 +510,11 @@ export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
  */
 export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "planning_concept");
-  const input = req.data as RecipeConceptInput | undefined;
-  if (!input?.slotDate) throw new HttpsError("invalid-argument", "slotDate est requis.");
+  const raw = (req.data ?? {}) as Record<string, unknown>;
+  // Liste blanche : seuls les champs validés atteignent le générateur.
+  const input = await readAiInputs({ ...ctx, feature: "planning_concept" }, (inputs) =>
+    readConceptInput(raw, inputs),
+  );
   try {
     const data = await generateRecipeConcept(GEMINI_API_KEY.value(), input, {
       ...ctx,
@@ -485,21 +537,45 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
 export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "planning_meal_ideas");
   const raw = (req.data ?? {}) as Partial<MealIdeasInput>;
-  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
-  if (!prompt) throw new HttpsError("invalid-argument", "prompt est requis.");
-  if (prompt.length > MEAL_IDEAS_MAX_PROMPT_CHARS) {
-    throw new HttpsError(
-      "invalid-argument",
-      `prompt dépasse ${MEAL_IDEAS_MAX_PROMPT_CHARS} caractères.`,
-    );
-  }
-  const previousTitles = (Array.isArray(raw.previousTitles) ? raw.previousTitles : [])
-    .filter((t): t is string => typeof t === "string")
-    .map((t) => t.trim().slice(0, 120))
-    .filter((t) => t.length > 0)
-    .slice(0, MEAL_IDEAS_MAX_PREVIOUS);
-  const globalConstraints =
-    typeof raw.globalConstraints === "string" ? raw.globalConstraints.trim().slice(0, 2_000) : "";
+  // Ce poste bornait déjà ses entrées avant ce module : la consigne est
+  // refusée au-delà de MEAL_IDEAS_MAX_PROMPT_CHARS, les titres et les
+  // préférences sont tronqués à dessein. Ces règles restent ; le relevé
+  // mesure les tailles reçues, avant troncature.
+  const { prompt, previousTitles, globalConstraints } = await readAiInputs(
+    { ...ctx, feature: "planning_meal_ideas" },
+    (inputs) => {
+      const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
+      if (typeof raw.prompt === "string") inputs.measure("prompt", raw.prompt.length);
+      if (Array.isArray(raw.previousTitles)) {
+        inputs.measure("previousTitles", raw.previousTitles.length);
+      }
+      if (typeof raw.globalConstraints === "string") {
+        inputs.measure("globalConstraints", raw.globalConstraints.length);
+      }
+      if (!prompt) throw new HttpsError("invalid-argument", "prompt est requis.");
+      if (prompt.length > MEAL_IDEAS_MAX_PROMPT_CHARS) {
+        throw new InputBoundExceededError(
+          "prompt",
+          prompt.length,
+          MEAL_IDEAS_MAX_PROMPT_CHARS,
+          "chars",
+          `prompt dépasse ${MEAL_IDEAS_MAX_PROMPT_CHARS} caractères.`,
+        );
+      }
+      return {
+        prompt,
+        previousTitles: (Array.isArray(raw.previousTitles) ? raw.previousTitles : [])
+          .filter((t): t is string => typeof t === "string")
+          .map((t) => t.trim().slice(0, 120))
+          .filter((t) => t.length > 0)
+          .slice(0, MEAL_IDEAS_MAX_PREVIOUS),
+        globalConstraints:
+          typeof raw.globalConstraints === "string"
+            ? raw.globalConstraints.trim().slice(0, 2_000)
+            : "",
+      };
+    },
+  );
   try {
     const ideas = await suggestMealIdeas(
       { prompt, globalConstraints, previousTitles },
@@ -516,8 +592,14 @@ export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
  */
 export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "suggest_tags");
-  const { titre, cooklang } = (req.data ?? {}) as Partial<SuggestTagsInput>;
-  if (!titre) throw new HttpsError("invalid-argument", "titre est requis.");
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const { titre, cooklang }: Partial<SuggestTagsInput> = await readAiInputs(
+    { ...ctx, feature: "suggest_tags" },
+    (inputs) => ({
+      titre: inputs.text(data.titre, { field: "titre", max: SHORT_TEXT_MAX_CHARS, required: true }),
+      cooklang: inputs.text(data.cooklang, { field: "cooklang", max: RECIPE_TEXT_MAX_CHARS }),
+    }),
+  );
   try {
     const data = await suggestRecipeTags(
       GEMINI_API_KEY.value(),
@@ -532,8 +614,10 @@ export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
 
 export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "web_search_query");
-  const { userQuery } = (req.data ?? {}) as { userQuery?: string };
-  if (!userQuery) throw new HttpsError("invalid-argument", "userQuery est requis.");
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const userQuery = await readAiInputs({ ...ctx, feature: "web_search_query" }, (inputs) =>
+    inputs.text(data.userQuery, { field: "userQuery", max: SHORT_TEXT_MAX_CHARS, required: true }),
+  );
   try {
     const query = await generateWebSearchQuery(GEMINI_API_KEY.value(), userQuery, {
       ...ctx,
@@ -867,20 +951,29 @@ export const detectAndCropIllustrationsFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
     const ctx = await requireAuth(req, "detect_illustrations");
-    const { bytesBase64, mimeType } = (req.data ?? {}) as {
-      bytesBase64?: string;
-      mimeType?: string;
-    };
-    if (!bytesBase64 || !mimeType) {
-      throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-    }
+    const raw = (req.data ?? {}) as Record<string, unknown>;
+    const { pageBytes, mimeType } = await readAiInputs(
+      { ...ctx, feature: "detect_illustrations" },
+      (inputs) => ({
+        pageBytes: inputs.base64(raw.bytesBase64, {
+          field: "bytesBase64",
+          maxBytes: PAGE_IMAGE_MAX_BYTES,
+          required: true,
+        }),
+        mimeType: inputs.text(raw.mimeType, {
+          field: "mimeType",
+          max: SHORT_TEXT_MAX_CHARS,
+          required: true,
+        }),
+      }),
+    );
     try {
       // Redressée d'abord, comme dans le pipeline d'import : le modèle rend
       // ses coordonnées dans le repère AFFICHÉ, Sharp découpe le repère
       // STOCKÉ. Sur une photo de téléphone, les deux sont tournés de
       // quatre-vingt-dix degrés — c'est ce qui rendait « un bout de bureau »
       // au lieu du plat.
-      const bytes = await uprightImage(bytesFromBase64(bytesBase64));
+      const bytes = await uprightImage(pageBytes);
       const boxes = await detectIllustrationRegions(GEMINI_API_KEY.value(), bytes, mimeType, {
         ...ctx,
         feature: "detect_illustrations",
@@ -1007,16 +1100,27 @@ export const generateRecipeIllustrationFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
     const ctx = await requireEditor(req, "generate_recipe_illustration");
-    const { recipeTitle, recipeContext, userInstruction, style } = (req.data ?? {}) as {
-      recipeTitle?: string;
-      recipeContext?: string;
-      userInstruction?: string;
-      style?: string;
-    };
-
-    if (!recipeTitle || !recipeContext) {
-      throw new HttpsError("invalid-argument", "recipeTitle et recipeContext sont requis.");
-    }
+    const raw = (req.data ?? {}) as Record<string, unknown>;
+    const { recipeTitle, recipeContext, userInstruction, style } = await readAiInputs(
+      { ...ctx, feature: "generate_recipe_illustration" },
+      (inputs) => ({
+        recipeTitle: inputs.text(raw.recipeTitle, {
+          field: "recipeTitle",
+          max: SHORT_TEXT_MAX_CHARS,
+          required: true,
+        }),
+        recipeContext: inputs.text(raw.recipeContext, {
+          field: "recipeContext",
+          max: RECIPE_TEXT_MAX_CHARS,
+          required: true,
+        }),
+        userInstruction: inputs.text(raw.userInstruction, {
+          field: "userInstruction",
+          max: SHORT_TEXT_MAX_CHARS,
+        }),
+        style: inputs.text(raw.style, { field: "style", max: SHORT_TEXT_MAX_CHARS }),
+      }),
+    );
 
     try {
       const generated = await generateCulinaryImage(
@@ -1097,13 +1201,15 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "plating_coach");
-  const { recipeId, userInstruction } = (req.data ?? {}) as {
-    recipeId?: string;
-    userInstruction?: string;
-  };
+  const raw = (req.data ?? {}) as Record<string, unknown>;
+  const recipeId = typeof raw.recipeId === "string" ? raw.recipeId : undefined;
   if (!recipeId) {
     throw new HttpsError("invalid-argument", "recipeId est requis.");
   }
+  // Seule la consigne vient du client ; la recette est relue en base.
+  const userInstruction = await readAiInputs({ ...ctx, feature: "plating_coach" }, (inputs) =>
+    inputs.text(raw.userInstruction, { field: "userInstruction", max: SHORT_TEXT_MAX_CHARS }),
+  );
 
   try {
     const ref = getFirestore().collection(COLL_RECIPES).doc(recipeId);
