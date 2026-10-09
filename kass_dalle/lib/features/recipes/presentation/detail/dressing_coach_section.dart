@@ -5,9 +5,11 @@ import '../../../../core/widgets/app_states.dart';
 import '../../../../core/widgets/error_message.dart';
 import '../../../admin/data/ai_pricing.dart';
 import '../../../admin/presentation/ai_pricing_section.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../../domain/plating_advice.dart';
 import '../../domain/plating_text.dart';
 import '../../domain/recipe.dart';
+import '../../domain/recipe_advice_access.dart';
 import '../recipe_providers.dart';
 import 'dressing_coach_widgets.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -24,7 +26,11 @@ import '../../../../core/theme/app_icon_size.dart';
 class DressingCoachSection extends ConsumerStatefulWidget {
   final Recipe recipe;
 
-  /// Autorise la génération de visuels et l'écriture dans la recette.
+  /// Créateur de la recette ou administrateur : autorise la demande d'un
+  /// conseil, la génération de visuels et l'écriture dans la recette. Le
+  /// conseil et ses visuels s'écrivent sur la recette partagée, et
+  /// `suggestPlatingFn` / `generatePlatingImageFn` refusent les autres. Un
+  /// conseil enregistré reste affiché à tous.
   final bool canEdit;
 
   const DressingCoachSection({
@@ -384,11 +390,13 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
 
     if (advice == null) {
       return stored.render(
-        data: (_) => _EmptyState(
-          controller: _instructionCtrl,
-          onGenerate: _generate,
-          error: _actionError,
-        ),
+        data: (_) => !widget.canEdit
+            ? const Text(kPlatingAdviceReservedMessage)
+            : _EmptyState(
+                controller: _instructionCtrl,
+                onGenerate: _generate,
+                error: _actionError,
+              ),
         onRetry: () => ref.invalidate(platingAdviceProvider(_recipeId)),
         loadingLabel: 'Lecture du dressage…',
         compactError: true,
@@ -398,6 +406,12 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     return _AdviceView(
       advice: advice,
       canEdit: widget.canEdit,
+      // Le visuel d'étape exige en plus le rôle éditeur
+      // (`generatePlatingImageFn` appelle `requireEditor`) : un lecteur
+      // créateur de sa recette garde le conseil, pas les visuels.
+      canGenerateImages:
+          widget.canEdit &&
+          (ref.watch(appUserProvider).value?.canEdit ?? false),
       generatingImageIndex: _generatingImageIndex,
       error: _actionError,
       onGenerateImage: (index) => _generateUpTo(advice, index),
@@ -411,7 +425,7 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     );
   }
 
-  /// Regénérer sans pouvoir changer la consigne produirait deux fois le même
+  /// Régénérer sans pouvoir changer la consigne produirait deux fois le même
   /// conseil, au même prix.
   Future<void> _askInstructionThenGenerate(PlatingAdvice advice) async {
     _instructionCtrl.text = advice.userInstruction ?? '';
@@ -446,7 +460,7 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Regénérer'),
+            child: const Text('Régénérer'),
           ),
         ],
       ),
@@ -535,6 +549,10 @@ class _EmptyState extends StatelessWidget {
 class _AdviceView extends StatelessWidget {
   final PlatingAdvice advice;
   final bool canEdit;
+
+  /// Créateur ou admin, et rôle éditeur : seul cas où un visuel d'étape peut
+  /// être produit.
+  final bool canGenerateImages;
   final int? generatingImageIndex;
   final Object? error;
   final void Function(int index) onGenerateImage;
@@ -551,6 +569,7 @@ class _AdviceView extends StatelessWidget {
   const _AdviceView({
     required this.advice,
     required this.canEdit,
+    required this.canGenerateImages,
     required this.generatingImageIndex,
     required this.error,
     required this.onGenerateImage,
@@ -583,12 +602,24 @@ class _AdviceView extends StatelessWidget {
             step: advice.etapes[i],
             generating: generatingImageIndex == i,
             busy: generatingImageIndex != null,
-            onGenerateImage: canEdit && advice.etapes[i].imageUrl == null
+            onGenerateImage:
+                canGenerateImages && advice.etapes[i].imageUrl == null
                 ? () => onGenerateImage(i)
                 : null,
-            onRedoImage: canEdit && i == advice.lastIllustratedIndex
+            onRedoImage: canGenerateImages && i == advice.lastIllustratedIndex
                 ? () => onRedoImage(i)
                 : null,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (canEdit &&
+            !canGenerateImages &&
+            advice.etapes.any((step) => step.imageUrl == null)) ...[
+          Text(
+            kPlatingImagesEditorOnlyMessage,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
         ],
@@ -619,11 +650,12 @@ class _AdviceView extends StatelessWidget {
             // L'ordre suit le cycle de travail : refaire le conseil, remettre
             // les visuels à zéro, puis porter le résultat dans la recette — et
             // le retrait en dernier, parce qu'il défait tout le reste.
-            OutlinedButton.icon(
-              onPressed: busy ? null : onRegenerate,
-              icon: const Icon(Icons.refresh, size: AppIconSize.small),
-              label: const Text('Regénérer'),
-            ),
+            if (canEdit)
+              OutlinedButton.icon(
+                onPressed: busy ? null : onRegenerate,
+                icon: const Icon(Icons.refresh, size: AppIconSize.small),
+                label: const Text('Régénérer'),
+              ),
             if (canEdit && onResetImages != null)
               OutlinedButton.icon(
                 onPressed: busy ? null : onResetImages,

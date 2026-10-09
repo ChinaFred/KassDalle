@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../domain/nutrition_contributions.dart';
+import '../../domain/recipe_advice_access.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../../../../core/widgets/app_states.dart';
@@ -352,7 +353,12 @@ class _MissingBadge extends StatelessWidget {
 class NutritionDetailsSection extends ConsumerStatefulWidget {
   final Recipe recipe;
   final int? selectedPortions;
-  final Future<void> Function() onRecompute;
+
+  /// Relance le calcul. Null quand l'utilisateur n'est ni le créateur de la
+  /// recette ni un administrateur : le calcul s'écrit sur la recette, et
+  /// `computeRecipeNutritionFn` refuse les autres. La nutrition enregistrée
+  /// reste affichée à tous.
+  final Future<void> Function()? onRecompute;
 
   const NutritionDetailsSection({
     super.key,
@@ -382,11 +388,14 @@ class _NutritionDetailsSectionState
     // Conditionne les consignes de correction : elles pointent vers /admin,
     // que le routeur ferme à tous les autres rôles.
     final isAdmin = ref.watch(isAdminProvider);
+    final onRecompute = widget.onRecompute;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (snapshot == null)
+        if (snapshot == null && onRecompute == null)
+          const Text(kNutritionReservedMessage)
+        else if (snapshot == null)
           Row(
             children: [
               const Expanded(
@@ -394,7 +403,7 @@ class _NutritionDetailsSectionState
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: () => widget.onRecompute(),
+                onPressed: onRecompute,
                 icon: const Icon(Icons.calculate_outlined),
                 label: const Text('Calculer'),
               ),
@@ -734,15 +743,17 @@ class _NutritionDetailsSectionState
                       ],
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => widget.onRecompute(),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Recalculer'),
+                  if (onRecompute != null) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: onRecompute,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Recalculer'),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               );
             },

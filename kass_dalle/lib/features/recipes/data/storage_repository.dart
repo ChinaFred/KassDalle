@@ -29,11 +29,25 @@ class StorageRepository {
 
   /// Conseil déjà stocké, ou null si la recette n'en a jamais reçu.
   Future<StorageAdvice?> read(String recipeId) async {
+    return (await _readStored(recipeId)).advice;
+  }
+
+  /// Le conseil stocké et le créateur de la recette, en une seule lecture.
+  Future<({bool exists, StorageAdvice? advice, String createdBy})> _readStored(
+    String recipeId,
+  ) async {
     try {
       final snap = await _col.doc(recipeId).get();
-      final raw = snap.data()?['storage_advice'];
-      if (raw is! Map) return null;
-      return StorageAdvice.fromMap(Map<String, dynamic>.from(raw));
+      final data = snap.data();
+      final raw = data?['storage_advice'];
+      final createdBy = data?['created_by'];
+      return (
+        exists: snap.exists,
+        advice: raw is Map
+            ? StorageAdvice.fromMap(Map<String, dynamic>.from(raw))
+            : null,
+        createdBy: createdBy is String ? createdBy : '',
+      );
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
         feature: 'storage_advice_read',
@@ -61,14 +75,29 @@ class StorageRepository {
     }
   }
 
-  /// Le conseil de la recette, produit s'il manque.
+  /// Le conseil de la recette, produit s'il manque et si l'appelant en a le
+  /// droit.
   ///
   /// Un conseil déjà produit ne se repaie pas : il décrit le plat, pas un
   /// repas, et sert donc à toutes ses planifications comme à toutes ses
   /// lectures. Il n'est écrit qu'à un seul endroit, le champ `storage_advice`
   /// de la recette, et lu là où la question se pose.
-  Future<StorageAdvice> ensure({required String recipeId}) async {
-    return await read(recipeId) ?? await generate(recipeId: recipeId);
+  ///
+  /// [canGenerate] reçoit le `created_by` de la recette : seuls son créateur
+  /// et un administrateur produisent un conseil (`suggestStorageAdviceFn`
+  /// refuse les autres). Quand le conseil manque et que l'appelant ne peut
+  /// pas le produire, rend [StorageAdviceReserved] : l'écran le dit, sans
+  /// appel refusé. Une recette absente rend [StorageAdviceRecipeMissing].
+  Future<StorageAdviceLookup> ensure({
+    required String recipeId,
+    required bool Function(String createdBy) canGenerate,
+  }) async {
+    final stored = await _readStored(recipeId);
+    if (!stored.exists) return const StorageAdviceRecipeMissing();
+    final advice = stored.advice;
+    if (advice != null) return StorageAdviceAvailable(advice);
+    if (!canGenerate(stored.createdBy)) return const StorageAdviceReserved();
+    return StorageAdviceAvailable(await generate(recipeId: recipeId));
   }
 
   /// Retire du texte la section de conservation héritée, si elle s'y trouve.

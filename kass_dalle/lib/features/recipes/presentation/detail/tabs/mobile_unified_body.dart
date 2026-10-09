@@ -99,11 +99,14 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
             child: NutritionDetailsSection(
               recipe: recipe,
               selectedPortions: selectedPortions,
-              onRecompute: () async {
-                await ref
-                    .read(recipeRepositoryProvider)
-                    .recomputeNutrition(recipeId: widget.recipeId);
-              },
+              // Le calcul s'écrit sur la recette : créateur ou administrateur.
+              onRecompute: widget.canEdit
+                  ? () async {
+                      await ref
+                          .read(recipeRepositoryProvider)
+                          .recomputeNutrition(recipeId: widget.recipeId);
+                    }
+                  : null,
             ),
           ),
           const SizedBox(height: 12),

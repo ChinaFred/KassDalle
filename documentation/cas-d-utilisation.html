@@ -160,7 +160,10 @@
           <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>) — réservé à l'éditeur et à l'admin, imposé par les règles Firestore ; un lecteur qui ouvre <span class="path">/scan</span> voit que l'import lui est fermé</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
-          <tr><td>Faire <b>produire</b> une image par l'IA (illustration, dressage)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur la recette d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -268,13 +271,13 @@ flowchart LR
   a12 --- a23
   a3 -.->|"inclut"| i0
   a4 -.->|"inclut"| i0
-  a4 -.->|"bouton Recalculer"| i1
+  a4 -.->|"Recalculer, sa recette"| i1
   a5 -.->|"inclut"| i2
   a8 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
   a12 -.->|"inclut"| i4
-  a11 -.->|"inclut"| i5
-  a14 -.->|"inclut"| i6
+  a11 -.->|"sa recette"| i5
+  a14 -.->|"si absent, sa recette"| i6
   a19 -.->|"inclut"| i7
   a19 -.->|"idée retenue"| i8
   i1 --- GEM
@@ -301,6 +304,10 @@ flowchart LR
         <b>Le recalcul nutritionnel est déclenché par un trigger</b> Firestore dès que les
         ingrédients d'une recette changent ; le bouton « Recalculer » de l'onglet Nutrition est
         le seul appel explicite.
+        <b>Dressage, conservation et « Recalculer » ne se demandent que sur sa recette</b>
+        (ou par un administrateur) : leur résultat s'enregistre sur la recette partagée. Sur la
+        recette d'un autre membre, le lecteur lit ce qui est enregistré ; quand rien ne l'est,
+        l'écran le dit, sans bouton.
         <b>Les idées de repas</b> coûtent un appel par consigne ou relance, puis un appel par idée
         retenue : sa recette est rédigée et rangée validée dans « Mes créations Kass'Dalle ».
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans

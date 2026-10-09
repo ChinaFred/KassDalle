@@ -27,6 +27,7 @@ import 'recipe_picker_sheet.dart';
 import 'replay_week_sheet.dart';
 import 'side_picker_sheet.dart';
 import 'meal_staples_providers.dart';
+import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
@@ -111,6 +112,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   bool _constraintsLocked = false;
   // Conseils de conservation déjà connus, par identifiant de recette.
   final Map<String, StorageAdvice> _storageAdviceByRecipe = {};
+
+  /// Recettes sans conseil de conservation que l'utilisateur ne peut pas
+  /// faire produire (ni créateur ni administrateur). Retenues au premier
+  /// essai : le créneau affiche alors une phrase au lieu du bouton.
+  final Set<String> _storageReservedRecipeIds = {};
   final Set<int> _storageLoadingSlots = {};
 
   TimeOfDay get _defaultTime => TimeOfDay(
@@ -979,7 +985,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
     for (final id in recipeIds) {
       try {
-        await ref.read(storageRepositoryProvider).ensure(recipeId: id);
+        // Un plat dont l'utilisateur n'est ni le créateur ni l'administrateur
+        // n'est pas conseillé ici : le serveur le refuserait. Son créateur le
+        // fera, ou le conseil existe déjà et reste lu.
+        final canGenerate = await ref.read(canWriteRecipeAdviceProvider.future);
+        await ref
+            .read(storageRepositoryProvider)
+            .ensure(recipeId: id, canGenerate: canGenerate);
       } catch (e, stackTrace) {
         reportUnexpectedError(
           feature: 'batchPlanningScreen.ensureStorageAdvice',
@@ -1425,7 +1437,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     });
   }
 
-  /// Produit le conseil de conservation d'un créneau.
+  /// Produit le conseil de conservation d'un créneau, ou relit celui qui
+  /// existe. Seuls le créateur de la recette et un administrateur en
+  /// produisent un : les autres reçoivent une explication.
   ///
   /// Le conseil appartient au plat, pas au repas : une fois produit, tous les
   /// créneaux portant cette recette l'affichent sans repayer d'appel. Il vit
@@ -1439,12 +1453,20 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
     setState(() => _storageLoadingSlots.add(slotIndex));
     try {
-      final advice = await ref
+      final canGenerate = await ref.read(canWriteRecipeAdviceProvider.future);
+      final lookup = await ref
           .read(storageRepositoryProvider)
-          .ensure(recipeId: recipe.id);
+          .ensure(recipeId: recipe.id, canGenerate: canGenerate);
       if (!mounted) return;
-      setState(() => _storageAdviceByRecipe[recipe.id] = advice);
-      context.showSuccessSnackBar('Conservation de « ${recipe.titre} » ✓');
+      switch (lookup) {
+        case StorageAdviceAvailable(:final advice):
+          setState(() => _storageAdviceByRecipe[recipe.id] = advice);
+          context.showSuccessSnackBar('Conservation de « ${recipe.titre} » ✓');
+        case StorageAdviceReserved():
+          setState(() => _storageReservedRecipeIds.add(recipe.id));
+        case StorageAdviceRecipeMissing():
+          _showError(kRecipeNotFoundMessage);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.generateStorageAdvice',
@@ -2054,6 +2076,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         isGeneratedByAI: _slotIsGenerated[index] ?? false,
                         storageAdvice: _storageAdviceFor(index),
                         storageLoading: _storageLoadingSlots.contains(index),
+                        storageReserved: _storageReservedRecipeIds.contains(
+                          _slots[index]?.id,
+                        ),
                         // Offert dès qu'une recette est posée : la conservation
                         // se demande aussi pour un plat qu'on décide de garder
                         // après coup, et l'exiger d'un créneau « réchauffage »

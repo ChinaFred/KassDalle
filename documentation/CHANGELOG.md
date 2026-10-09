@@ -20,6 +20,36 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.9 — fonctionnel
+
+#### Conseils et calculs IA réservés au créateur de la recette
+
+Faille 5 de l'audit de sécurité du 2026-10-09. Le conseil de dressage, le conseil de
+conservation, le visuel d'une étape de dressage et le recalcul de nutrition s'enregistrent sur
+la recette partagée, par le serveur. N'importe quel compte pouvait les déclencher sur la
+recette d'un autre membre : l'appel était facturé, le résultat précédent écrasé, et
+l'instruction libre d'un tiers stockée dans le conseil de dressage.
+
+- **Serveur.** `suggestPlatingFn`, `suggestStorageAdviceFn`, `generatePlatingImageFn` et
+  `computeRecipeNutritionFn` refusent en `permission-denied` tout compte qui n'est ni le
+  créateur de la recette ni un administrateur, avant tout appel de modèle
+  (`assertCanModifyRecipe`, décision pure `recipeWriteDenial` testée). Ce contrôle remplace
+  `assertCanReadRecipe` (v0.23.8), retiré : écrire implique lire. Une recette absente répond
+  `not-found`. Les déclencheurs automatiques (`onRecipeWritten`, rattrapage nutrition) ne
+  changent pas.
+- **Écrans.** Les boutons « Demander un dressage sur mesure », « Régénérer » et
+  « Calculer » / « Recalculer » n'apparaissent plus qu'au créateur et à un administrateur.
+  Les conseils et la nutrition enregistrés restent affichés à tous. Sans rien d'enregistré,
+  une ligne de texte dit qui peut le demander. Les visuels d'étape exigent en plus le rôle
+  éditeur : un lecteur créateur de sa recette ne voit plus de bouton de visuel que le serveur
+  refusait, et une ligne le lui dit. Le libellé « Regénérer » devient « Régénérer ».
+- **Conservation.** Le conseil n'est plus demandé automatiquement (bandeau de préparation,
+  planning, batch) pour la recette d'un autre membre ; il est relu s'il existe. Sinon :
+  « Pas encore de conseil de réchauffage pour ce plat : son créateur peut le demander. ». Le
+  batch retient la recette après le premier refus et remplace le bouton du créneau par ce
+  texte. Le droit attend le chargement du profil, pour ne pas refuser le créateur lui-même.
+  Une recette supprimée affiche « Recette introuvable. ».
+
 ### v0.23.8 — technique
 
 #### Confidentialité, propriété et modération imposées par le serveur

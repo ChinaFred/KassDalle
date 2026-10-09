@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/services/error_reporting.dart';
+import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/meal_prep_context.dart';
@@ -41,6 +42,10 @@ class _MealPrepBannerState extends ConsumerState<MealPrepBanner> {
   bool _failed = false;
   bool _expanded = false;
 
+  /// Pourquoi aucun conseil n'est affiché, quand ce n'est pas une panne :
+  /// conseil réservé au créateur, ou recette introuvable.
+  String? _notice;
+
   @override
   void initState() {
     super.initState();
@@ -52,19 +57,33 @@ class _MealPrepBannerState extends ConsumerState<MealPrepBanner> {
   /// Déclenché sans geste de l'utilisateur : il a ouvert une recette qu'il doit
   /// cuisiner plusieurs jours à l'avance, la question de la conservation est
   /// déjà posée. L'appel n'a lieu qu'une fois par recette — le conseil est
-  /// ensuite stocké sur elle et relu.
+  /// ensuite stocké sur elle et relu. Il n'a lieu que pour le créateur de la
+  /// recette ou un administrateur ; les autres lisent le conseil stocké.
   Future<void> _loadAdvice() async {
     if (_loading) return;
     setState(() {
       _loading = true;
       _failed = false;
+      _notice = null;
     });
     try {
-      final advice = await ref
+      // Le droit attend le profil : décidé avant son chargement, il
+      // annonçait « réservé » au créateur lui-même.
+      final canGenerate = await ref.read(canWriteRecipeAdviceProvider.future);
+      final lookup = await ref
           .read(storageRepositoryProvider)
-          .ensure(recipeId: widget.recipeId);
+          .ensure(recipeId: widget.recipeId, canGenerate: canGenerate);
       if (!mounted) return;
-      setState(() => _advice = advice);
+      setState(() {
+        switch (lookup) {
+          case StorageAdviceAvailable(:final advice):
+            _advice = advice;
+          case StorageAdviceReserved():
+            _notice = kStorageAdviceReservedMessage;
+          case StorageAdviceRecipeMissing():
+            _notice = kRecipeNotFoundMessage;
+        }
+      });
     } catch (error, stackTrace) {
       reportUnexpectedError(
         feature: 'mealPrepBanner.loadAdvice',
@@ -184,7 +203,14 @@ class _MealPrepBannerState extends ConsumerState<MealPrepBanner> {
     }
 
     final advice = _advice;
-    if (advice == null) return const SizedBox.shrink();
+    if (advice == null) {
+      final notice = _notice;
+      if (notice == null) return const SizedBox.shrink();
+      return Text(
+        notice,
+        style: theme.textTheme.bodySmall?.copyWith(color: onContainer),
+      );
+    }
 
     final resume = advice.resume.trim();
     return Column(

@@ -321,11 +321,12 @@ Document principal d'une recette.
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
-| `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`. Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
+| `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`, à la demande du créateur de la recette ou d'un administrateur (§4, `assertCanModifyRecipe`). Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
 
 #### Détail du champ `nutrition` (Map imbriqué)
 
-Écrit par `computeRecipeNutritionFn` et par `onRecipeWritten`. **Tout ce qu'il contient décrit
+Écrit par `onRecipeWritten` pour toutes les recettes, et par `computeRecipeNutritionFn` à la
+demande du créateur de la recette ou d'un administrateur (§4). **Tout ce qu'il contient décrit
 la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_portions` parts.
 
 | Clé | Type | Rôle |
@@ -615,6 +616,25 @@ est présente parce qu'une autre fonction, elle, la déclare. C'est exactement c
 qui est arrivé à `geminiCallables.ts` : tous ses postes (extraction, refine,
 génération, recherche, tags, planning, courses, dressage) ignoraient la bascule
 vers Claude. `callModel` émet désormais un `WARNING` dans ce cas.
+
+**Seuls le créateur de la recette et un administrateur demandent un conseil.** Le conseil, son
+instruction libre et ses visuels s'écrivent sur la recette partagée : `suggestPlatingFn` et
+`generatePlatingImageFn` refusent les autres comptes avant l'appel de modèle (§4). Le client ne
+leur montre ni « Demander un dressage sur mesure », ni « Régénérer », ni les boutons de visuel ;
+sans conseil enregistré, l'onglet affiche une ligne de texte (`kPlatingAdviceReservedMessage`).
+Le visuel d'étape exige en plus le rôle éditeur : pour le créateur qui n'est que lecteur, les
+boutons de visuel sont masqués et une ligne le dit (`kPlatingImagesEditorOnlyMessage`) ; il
+garde « Régénérer », « Intégrer » et « Retirer ».
+
+Même règle pour le conseil de conservation. `StorageRepository.ensure` rend un
+`StorageAdviceLookup` : `StorageAdviceAvailable` (conseil relu, ou produit si
+`canWriteRecipeAdviceProvider` l'autorise), `StorageAdviceReserved` (aucun conseil, pas le
+droit d'en demander) ou `StorageAdviceRecipeMissing` (« Recette introuvable. »). Le droit est un
+`FutureProvider` qui attend le profil : décidé avant son chargement, il refusait le créateur
+lui-même. Le bandeau de préparation et le planning affichent `kStorageAdviceReservedMessage` ;
+le batch retient la recette refusée (`_storageReservedRecipeIds`) et remplace le bouton du
+créneau par ce texte. Le bouton « Calculer » / « Recalculer » de la nutrition suit la même
+règle (`kNutritionReservedMessage`).
 
 **Le conseil n'est pas une modification de la recette** : `suggestPlatingFn`
 n'écrit pas `updated_at`, sans quoi demander un dressage remonterait la recette
@@ -1450,12 +1470,25 @@ Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `sync
 **Un `book_id` contenant « / » est refusé** par `bookCheck` ; côté serveur,
 `expectedPrivacy` le traite comme un livre introuvable et le signale par `logError`.
 
-**Les callables lisent les recettes avec la même confidentialité.** `suggestPlatingFn`,
-`suggestStorageAdviceFn`, `generatePlatingImageFn` et `computeRecipeNutritionFn` lisent la
-recette par l'Admin SDK, hors règles. `assertCanReadRecipe` (`callable/_recipeAccess.ts`) les
-fait refuser en `permission-denied` une recette privée d'un autre — sauf à un administrateur —
-avant tout appel de modèle. Qui peut écrire un conseil sur une recette partagée reste une
-décision à venir (faille 5 de l'audit).
+**Les callables qui écrivent sur une recette suivent `allow update`.** `suggestPlatingFn`,
+`suggestStorageAdviceFn`, `generatePlatingImageFn` et `computeRecipeNutritionFn` lisent et
+écrivent la recette par l'Admin SDK, hors règles. `assertCanModifyRecipe`
+(`callable/_recipeAccess.ts`, décision pure `recipeWriteDenial` testée) les fait refuser en
+`permission-denied` à tout compte qui n'est ni le créateur (`created_by` non vide, égal à
+l'appelant) ni un administrateur (relu par `isAdminAccount`), avant tout appel de modèle.
+Une recette absente répond `not-found`. Ce contrôle couvre aussi la confidentialité : le
+créateur et l'administrateur lisent une recette privée. `generatePlatingImageFn` exige en plus
+le rôle éditeur. Conséquence : l'instruction libre `plating_advice.user_instruction` n'est plus
+celle d'un tiers, seuls le créateur et l'administrateur l'écrivent. Les déclencheurs
+(`onRecipeWritten`, rattrapage nutrition) ne passent pas par ces callables et calculent pour
+toutes les recettes.
+
+Les autres écritures déclenchées par un utilisateur sur une recette passent par le client et
+donc par les règles : affinage, étiquettes, rôle de repas, illustration ajoutée, intégration du
+dressage au texte. Les callables correspondantes (`refineRecipeFn`, `suggestRecipeTagsFn`,
+`generateRecipeIllustrationFn`, `normalizeRecipeReferentialsFn`…) rendent un résultat sans
+écrire sur la recette. `enhanceIllustrationFn`, qui remplace une URL dans `image_urls`, est
+réservée aux administrateurs.
 
 Les déclencheurs d'une recette imputent la dépense d'IA à son `created_by`. Les règles le
 figent ; côté serveur, une recette sans propriétaire s'impute à `system_recipe_without_owner`

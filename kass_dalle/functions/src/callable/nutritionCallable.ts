@@ -21,7 +21,7 @@ import {
   MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
-import { assertCanReadRecipe } from "./_recipeAccess";
+import { assertCanModifyRecipe } from "./_recipeAccess";
 import {
   DEFAULT_NUTRITION_POLICY,
   getNutritionSourcePolicy,
@@ -196,10 +196,16 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     if (!recipeId || typeof recipeId !== "string") {
       throw new HttpsError("invalid-argument", "recipeId est requis.");
     }
-    // Même confidentialité que les règles : le calcul rend la nutrition de la
-    // recette à l'appelant, et peut appeler un modèle sur ses ingrédients.
+    // Le calcul s'écrit sur la recette et peut appeler un modèle sur ses
+    // ingrédients : créateur ou administrateur, comme `allow update` dans les
+    // règles. Les autres lisent la nutrition stockée. Les déclencheurs
+    // (`onRecipeWritten`, rattrapage) ne passent pas par ici et continuent de
+    // calculer pour toutes les recettes.
     const recipeSnap = await getFirestore().collection(COLL_RECIPES).doc(recipeId).get();
-    await assertCanReadRecipe(recipeSnap.data(), ctx.userId);
+    if (!recipeSnap.exists) {
+      throw new HttpsError("not-found", "Recette introuvable.");
+    }
+    await assertCanModifyRecipe(recipeSnap.data(), ctx.userId);
     try {
       // `selectedPortions` n'est plus transmis : le calcul se fait aux
       // portions de la recette. Un lecteur ne dicte pas ce qui est écrit sur

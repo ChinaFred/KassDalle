@@ -15,12 +15,17 @@ class NutritionTab extends ConsumerWidget {
   final int? basePortions;
   final int? selectedPortions;
 
+  /// Créateur de la recette ou administrateur : seul à pouvoir relancer le
+  /// calcul, qui s'écrit sur la recette.
+  final bool canRecompute;
+
   const NutritionTab({
     super.key,
     required this.recipeId,
     required this.recipe,
     required this.basePortions,
     required this.selectedPortions,
+    required this.canRecompute,
   });
 
   @override
@@ -30,11 +35,13 @@ class NutritionTab extends ConsumerWidget {
       child: NutritionDetailsSection(
         recipe: recipe,
         selectedPortions: selectedPortions,
-        onRecompute: () async {
-          await ref
-              .read(recipeRepositoryProvider)
-              .recomputeNutrition(recipeId: recipeId);
-        },
+        onRecompute: canRecompute
+            ? () async {
+                await ref
+                    .read(recipeRepositoryProvider)
+                    .recomputeNutrition(recipeId: recipeId);
+              }
+            : null,
       ),
     );
   }
