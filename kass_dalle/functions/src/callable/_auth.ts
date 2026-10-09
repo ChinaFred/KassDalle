@@ -30,6 +30,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { COLL_USERS } from "../config";
 import { logWarn, newCorrelationId } from "../logging";
 import { appCheckVerdict, getAppCheckPolicy } from "../security/appCheckPolicy";
+import { markInteractiveCall } from "../ai/callOrigin";
 
 export interface AuthContext {
   userId: string;
@@ -92,6 +93,10 @@ function baseContext(req: CallableRequest<unknown>, feature: string): AuthContex
   if (!uid) {
     throw new HttpsError("unauthenticated", "Authentification requise.");
   }
+  // Appel déclenché par un utilisateur : la limite d'appels d'IA simultanés
+  // s'applique à la suite de cette requête (`ai/callOrigin.ts`). Synchrone,
+  // avant le premier `await` de la garde, pour valoir dans le traitement appelant.
+  markInteractiveCall();
   return { userId: uid, correlationId: newCorrelationId(feature) };
 }
 

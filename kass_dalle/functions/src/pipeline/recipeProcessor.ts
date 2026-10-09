@@ -54,6 +54,12 @@ import {
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
 import { BookFileError } from "../books/bookFile";
 import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
+import {
+  StoragePathRefusedError,
+  promotedScanPrefix,
+  resolveAllowedStoragePath,
+  storageEmulatorActive,
+} from "../utils/storagePath";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
@@ -230,15 +236,23 @@ export const recipeProcessor = onTaskDispatched(
 
       // ── IMPORT ────────────────────────────────────────────────────────────
       const fileUrl = job.file_url as string;
-      const additionalFileUrls = (job.additional_file_urls as string[] | undefined) ?? [];
+      const rawAdditional: unknown = job.additional_file_urls ?? [];
+      const additionalFileUrls = Array.isArray(rawAdditional) ? (rawAdditional as string[]) : [];
       const mimeType = (job.mime_type as string | undefined) ?? "image/jpeg";
+
+      // Le fichier source vient du client : seul le dossier promu du
+      // propriétaire du job est lisible. Vérifié avant tout téléchargement et
+      // tout appel de modèle — un refus part en dead letter sans retry.
+      const sourceOwner = (job.created_by as string | undefined) ?? userId;
+      const primaryPath = resolveJobSourcePath(fileUrl, sourceOwner);
+      const additionalPaths = additionalFileUrls.map((u) => resolveJobSourcePath(u, sourceOwner));
 
       if (stepIndex(currentStep) <= stepIndex("import")) {
         await jobRef.update({ current_step: "import", updated_at: Timestamp.now() });
       }
-      const primaryBytes = await downloadFromStorage(fileUrl);
+      const primaryBytes = await downloadFromStorage(primaryPath);
       const additionalBytes = await Promise.all(
-        additionalFileUrls.map((u) => downloadFromStorage(u)),
+        additionalPaths.map((path) => downloadFromStorage(path)),
       );
 
       logInfo({
@@ -666,7 +680,9 @@ export const recipeProcessor = onTaskDispatched(
       // qui précède l'appel d'IA. Le job part directement en dead letter, d'où
       // un administrateur le relancera demain — ou après avoir relevé le
       // plafond.
-      const isBudget = err instanceof BudgetExceededError;
+      // Seule exception : trop d'appels simultanés (`concurrency`) se libère
+      // en quelques secondes, et se réessaie comme une panne passagère.
+      const isBudget = err instanceof BudgetExceededError && err.reason !== "concurrency";
       // Un livre illisible — PDF chiffré, EPUB sans texte — le reste à chaque
       // tentative, et chacune retélécharge le fichier en entier.
       const isUnreadableBook = err instanceof BookFileError;
@@ -675,6 +691,8 @@ export const recipeProcessor = onTaskDispatched(
       const isTruncatedTagging = err instanceof TaggingTruncatedError;
       // Le livre d'un autre le restera à chaque tentative.
       const isForeignBook = err instanceof TargetBookNotOwned;
+      // Un fichier source hors du dossier du propriétaire le restera.
+      const isForbiddenSource = err instanceof StoragePathRefusedError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -698,18 +716,28 @@ export const recipeProcessor = onTaskDispatched(
         moduleType: "IMPORT",
         executionTimeMs: Date.now() - start,
         ...ctx,
-        extra: { attempt, isQuota, isBudget, isUnreadableBook, isTruncatedTagging, isForeignBook },
+        extra: {
+          attempt,
+          isQuota,
+          isBudget,
+          isUnreadableBook,
+          isTruncatedTagging,
+          isForeignBook,
+          isForbiddenSource,
+        },
       });
 
       // Dernière tentative — ou plafond atteint, fichier illisible, balisage
-      // coupé, livre cible d'un autre (`foreign_book`) : ces quatre cas se
+      // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
+      // dossier du propriétaire (`forbidden_source_path`) : ces cinq cas se
       // rejouent à l'identique, il est inutile de les réessayer.
       if (
         attempt + 1 >= MAX_RETRY_ATTEMPTS ||
         isBudget ||
         isUnreadableBook ||
         isTruncatedTagging ||
-        isForeignBook
+        isForeignBook ||
+        isForbiddenSource
       ) {
         await moveToDeadLetter({
           jobId,
@@ -723,9 +751,11 @@ export const recipeProcessor = onTaskDispatched(
                 ? "tagging_truncated"
                 : isForeignBook
                   ? "foreign_book"
-                  : isQuota
-                    ? "quota_exceeded"
-                    : "pipeline_error",
+                  : isForbiddenSource
+                    ? "forbidden_source_path"
+                    : isQuota
+                      ? "quota_exceeded"
+                      : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",
@@ -748,27 +778,27 @@ export const recipeProcessor = onTaskDispatched(
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Télécharge un fichier depuis Firebase Storage à partir d'une URL gs:// ou https://.
- * Pour les URLs https firebasestorage on extrait le path et on utilise l'Admin SDK.
+ * Chemin d'objet d'un fichier source de job, ou `StoragePathRefusedError`.
+ *
+ * Seul `scans/{propriétaire}/…` est admis : c'est là que
+ * `scanAndPromoteUploadFn` promeut une page ou un livre contrôlé, et là que
+ * l'import d'un livre découpe ses tranches. Un chemin vers `rejected/`, vers la
+ * quarantaine ou vers les scans d'un autre compte est refusé.
  */
-async function downloadFromStorage(url: string): Promise<Buffer> {
-  const path = extractStoragePath(url);
-  const [bytes] = await getStorage().bucket().file(path).download();
-  return bytes;
+function resolveJobSourcePath(reference: unknown, ownerUid: string): string {
+  if (typeof reference !== "string" || !ownerUid) {
+    throw new StoragePathRefusedError("", "Fichier source absent ou propriétaire du job inconnu.");
+  }
+  return resolveAllowedStoragePath(reference, [promotedScanPrefix(ownerUid)], {
+    bucketName: getStorage().bucket().name,
+    allowEmulator: storageEmulatorActive(),
+  });
 }
 
-function extractStoragePath(url: string): string {
-  if (url.startsWith("gs://")) {
-    // gs://bucket/path/to/file
-    const withoutScheme = url.substring(5);
-    const slash = withoutScheme.indexOf("/");
-    return withoutScheme.substring(slash + 1);
-  }
-  // https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<encodedPath>?alt=media&token=...
-  const match = url.match(/\/o\/([^?]+)/);
-  if (match) return decodeURIComponent(match[1]);
-  // Fallback : on suppose que c'est déjà un path.
-  return url;
+/** Télécharge un objet du bucket par défaut — chemin déjà vérifié. */
+async function downloadFromStorage(path: string): Promise<Buffer> {
+  const [bytes] = await getStorage().bucket().file(path).download();
+  return bytes;
 }
 
 /**

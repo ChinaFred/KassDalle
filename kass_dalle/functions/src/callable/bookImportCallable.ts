@@ -25,7 +25,8 @@ import {
 } from "../books/bookFile";
 import { referenceCostPerScan, referenceCostPerWindow } from "../books/importEstimate";
 import { suggestImportBudgetUsd } from "../ai/importBudget";
-import { logError, logInfo } from "../logging";
+import { logError, logInfo, logWarn } from "../logging";
+import { isWellFormedObjectPath } from "../utils/storagePath";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -58,9 +59,17 @@ export const analyzeBookFileFn = onCall(
     const quarantinePrefix = `quarantine/${ctx.userId}/${BOOK_UPLOAD_FOLDER}/`;
     const allowed =
       typeof storagePath === "string" &&
+      isWellFormedObjectPath(storagePath) &&
       (storagePath.startsWith(promotedPrefix) ||
         (discard === true && storagePath.startsWith(quarantinePrefix)));
     if (typeof storagePath !== "string" || !allowed) {
+      await logWarn({
+        message: "analyzeBookFileFn : chemin de livre refusé",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { storagePath: String(storagePath ?? "").slice(0, 300), discard: discard === true },
+      });
       throw new HttpsError("permission-denied", "Chemin de livre invalide.");
     }
     const file = getStorage().bucket().file(storagePath);

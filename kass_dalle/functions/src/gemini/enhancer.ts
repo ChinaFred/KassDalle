@@ -13,10 +13,12 @@
 import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
-import { logInfo, logError } from "../logging";
+import { logInfo, logError, logWarn } from "../logging";
 import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
 import { GEMINI_IMAGE_MODEL } from "../config";
+import { resolveAllowedStoragePath, storageEmulatorActive } from "../utils/storagePath";
+import { withDailyBudget } from "../ai/budget";
 
 const ENHANCE_PROMPT =
   "Tu es un retoucheur photo culinaire. Sur cette photo de plat ou de page de recette, fais en une seule passe :\n" +
@@ -33,8 +35,25 @@ export interface EnhanceContext {
   feature: string;
 }
 
-/** Appelle Gemini Image et retourne les bytes JPEG retouchés. */
+/**
+ * Appelle Gemini Image et retourne les bytes JPEG retouchés.
+ *
+ * Sous plafond, comme les autres postes d'image : l'appel réserve sa place
+ * avant de partir (`withDailyBudget`). Il en était exempté, seul poste d'image
+ * à l'être.
+ */
 export async function enhanceCulinaryImage(
+  apiKey: string,
+  imageBytes: Buffer,
+  mimeType: string,
+  ctx: EnhanceContext,
+): Promise<{ bytes: Buffer; mimeType: string }> {
+  return withDailyBudget(ctx.userId, ctx.feature, () =>
+    enhanceWithinBudget(apiKey, imageBytes, mimeType, ctx),
+  );
+}
+
+async function enhanceWithinBudget(
   apiKey: string,
   imageBytes: Buffer,
   mimeType: string,
@@ -120,22 +139,41 @@ export async function enhanceCulinaryImage(
 
 // ── Helpers Storage ──────────────────────────────────────────────────────────
 
-/** Télécharge depuis une URL Firebase Storage (https ou gs://) vers un Buffer. */
-export async function downloadStorageBytes(url: string): Promise<Buffer> {
-  const path = extractStoragePath(url);
-  const [bytes] = await getStorage().bucket().file(path).download();
-  return bytes;
-}
-
-function extractStoragePath(url: string): string {
-  if (url.startsWith("gs://")) {
-    const withoutScheme = url.substring(5);
-    const slash = withoutScheme.indexOf("/");
-    return withoutScheme.substring(slash + 1);
+/**
+ * Télécharge depuis une référence Firebase Storage (chemin, `gs://` ou URL de
+ * téléchargement) vers un Buffer.
+ *
+ * La référence vient d'un client ou d'un champ qu'il peut écrire : seuls les
+ * dossiers `allowedPrefixes` sont lisibles. Sinon `StoragePathRefusedError`,
+ * avant tout téléchargement.
+ */
+export async function downloadStorageBytes(
+  reference: string,
+  allowedPrefixes: readonly string[],
+  ctx: { userId?: string; correlationId?: string; feature?: string } = {},
+): Promise<Buffer> {
+  const bucket = getStorage().bucket();
+  let path: string;
+  try {
+    path = resolveAllowedStoragePath(reference, allowedPrefixes, {
+      bucketName: bucket.name,
+      allowEmulator: storageEmulatorActive(),
+    });
+  } catch (err) {
+    // Une tentative de lecture hors des dossiers admis (`rejected/…`, la
+    // quarantaine d'un autre) laisse une trace, avec le compte qui l'a faite.
+    await logWarn({
+      message: "Lecture Storage refusée : chemin hors des dossiers admis",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      feature: ctx.feature,
+      extra: { reference: reference.slice(0, 300), allowedPrefixes },
+    });
+    throw err;
   }
-  const match = url.match(/\/o\/([^?]+)/);
-  if (match) return decodeURIComponent(match[1]);
-  return url;
+  const [bytes] = await bucket.file(path).download();
+  return bytes;
 }
 
 /** Upload l'image améliorée sous illustrations/{uid}/{ts}_enhanced.jpg. */

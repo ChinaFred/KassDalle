@@ -20,6 +20,45 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.10 — technique
+
+#### Trois failles moyennes de l'audit de sécurité corrigées
+
+**Faille 6 — lecture d'un fichier arbitraire du bucket.** Le serveur téléchargeait le chemin
+Storage posé par le client (`file_url` et `additional_file_urls` d'un job d'import, URL d'une
+illustration à améliorer, visuel de dressage précédent stocké sur la recette). Un éditeur
+pouvait lui faire lire `rejected/…` ou la quarantaine d'un autre compte, puis l'envoyer au
+modèle. Le nouveau module `utils/storagePath.ts` extrait le chemin (chemin nu, `gs://`, URL
+`firebasestorage.googleapis.com` du bucket par défaut), refuse les segments `..`, et n'admet
+que les dossiers du flux : `scans/{created_by}/` pour le pipeline d'import, `illustrations/`
+et `recipes/` pour une image publiée. Un job refusé part en dead letter dès la première
+tentative avec `failure_reason: forbidden_source_path` ; une callable répond
+`permission-denied` et laisse un `WARNING` avec le compte et le chemin. Les trois contrôles de
+préfixe existants (`scanAndPromoteUploadFn`, `analyzeBookFileFn`,
+`moderateAndPromoteImagesFn`) refusent aussi un chemin mal formé.
+
+Deux effets visibles. Un ancien job en échec dont le fichier n'est pas sous `scans/{uid}/` ne
+peut plus être relancé : il repart en dead letter avec `forbidden_source_path`. Une ancienne
+image rangée hors de `illustrations/` et `recipes/` ne peut plus être améliorée, ni servir de
+base au visuel de dressage suivant.
+
+**Faille 7 — protection du fondateur contournable.** Un administrateur pouvait changer
+l'adresse du document du fondateur, puis son rôle ou le supprimer. `email` est désormais
+immuable dans `users/{uid}` pour tous les comptes, administrateur compris. Le test de règles
+correspondant devient bloquant, huit tests s'ajoutent.
+
+**Faille 8 — plafond journalier dépassé par rafale.** Le plafond lisait la dépense avant
+l'appel et l'enregistrait après : des appels simultanés passaient tous. Chaque appel réserve
+maintenant sa place dans `ai_daily_spend` par transaction : il compte pour un appel et pour le
+coût moyen d'un appel chiffré du jour, sans prix écrit dans le code. La réservation est retirée
+à la fin de l'appel et expire après quinze minutes. Les appels lancés par un utilisateur
+(callables) sont limités à dix en cours par compte (×100 pour le fondateur) ; au-delà, attente
+de vingt secondes puis refus `concurrency`. Le pipeline d'import, les déclencheurs et les tâches
+planifiées réservent leur place mais ne sont jamais limités en simultanéité : un import de
+livre légitime ne peut pas échouer pour cette raison. L'origine de l'appel est posée par les
+gardes des callables (`ai/callOrigin.ts`). L'amélioration d'illustration, jusque-là hors
+plafond, y entre.
+
 ### v0.23.9 — fonctionnel
 
 #### Conseils et calculs IA réservés au créateur de la recette

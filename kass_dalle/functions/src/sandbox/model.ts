@@ -26,7 +26,7 @@
 
 import { GEMINI_API_KEY } from "../config";
 import { anthropicApiKey, callAnthropic } from "../ai/anthropic";
-import { assertWithinDailyBudget } from "../ai/budget";
+import { withDailyBudget } from "../ai/budget";
 import {
   callModel,
   getAiRoutingPolicy,
@@ -103,18 +103,20 @@ export async function askModel(args: {
   // Le plafond se vérifie ici parce qu'on court-circuite `callModel`, qui le
   // porte d'habitude. Sans cette ligne, le bac à sable serait le seul chemin
   // par lequel une dépense échappe au plafond du compte.
-  await assertWithinDailyBudget(args.ctx.userId, args.ctx.feature);
-
-  // Le bac à sable court-circuite `callModel`, qui pose d'habitude cet
-  // identifiant : sans lui, l'appel s'enregistrerait sans lien avec ses lignes
-  // de journal, et l'écran l'afficherait sans montant.
-  const callId = newCallId();
-  const result =
-    args.choice.provider === "anthropic"
-      ? await callChosenAnthropic(args.parts, args.ctx, callId, args.choice.model, args.maxTokens)
-      : await callChosenGemini(args.parts, args.ctx, callId, args.choice.model);
-
-  await recordModelUsage(result, args.ctx);
+  // Réservation avant l'appel, rendue à la fin, comme dans `callModel`.
+  const choice = args.choice;
+  const result = await withDailyBudget(args.ctx.userId, args.ctx.feature, async () => {
+    // Le bac à sable court-circuite `callModel`, qui pose d'habitude cet
+    // identifiant : sans lui, l'appel s'enregistrerait sans lien avec ses lignes
+    // de journal, et l'écran l'afficherait sans montant.
+    const callId = newCallId();
+    const called =
+      choice.provider === "anthropic"
+        ? await callChosenAnthropic(args.parts, args.ctx, callId, choice.model, args.maxTokens)
+        : await callChosenGemini(args.parts, args.ctx, callId, choice.model);
+    await recordModelUsage(called, args.ctx);
+    return called;
+  });
   // Le choix explicite ne passe pas par `callModel` : aucun repli n'a pu se
   // produire, il n'y a donc rien à signaler.
   return { result, requested: null };

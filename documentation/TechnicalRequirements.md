@@ -664,6 +664,14 @@ d'autre. Sans cette reprise, chaque étape produisait une assiette indépendante
 — autre cadrage, autres formes, autre lumière — et la série de visuels cessait
 de raconter un montage.
 
+L'image de départ n'est relue que si son URL désigne un dossier publié
+(`illustrations/` ou `recipes/`, `PUBLISHED_IMAGE_PREFIXES` dans
+`utils/storagePath.ts`) : le créateur peut écrire `plating_advice` par les
+règles, et une URL vers `rejected/` ou vers la quarantaine d'un autre compte
+faisait lire ce fichier par le serveur (v0.23.10). Refus en `permission-denied`
+avant tout téléchargement. Même contrôle sur `enhanceIllustrationFn`, qui
+n'améliore qu'une illustration déjà publiée.
+
 **La chaîne impose l'ordre à l'interface.** Trois règles en découlent, portées
 par le domaine (`plating_advice.dart`) et non par l'écran :
 `missingImageIndexesUpTo(i)` liste les étapes à produire pour que la `i`-ème
@@ -987,14 +995,15 @@ supprimée plutôt que stockée. La lecture fusionnée vit dans `mergeStaples`
 
 ### 3.11 Comptabilité de l'IA
 
-Cinq collections, écrites par `recordUsage` et par lui seul.
+Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `reservations` de
+`ai_daily_spend`, écrite par `reserveDailyBudget` et `releaseDailyBudget`.
 
 | Collection | Contenu |
 |---|---|
 | `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
-| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
+| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
 | `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd` et `step_usd` depuis `budget_limit_usd`, jamais à la baisse. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
@@ -1252,8 +1261,14 @@ service cloud.firestore {
         return request.resource.data.diff(resource.data).affectedKeys()
                  .hasAny(['role', 'is_revoked']);
       }
+      // L'adresse ne change plus après la création, administrateur compris
+      // (v0.23.10) : c'est elle qui désigne le fondateur dans targetIsFounder.
+      function touchesEmail() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['email']);
+      }
       function targetIsFounder() {
-        return resource.data.email.lower() == founderEmail();
+        return resource.data.get('email', '').lower() == founderEmail();
       }
 
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
@@ -1266,10 +1281,10 @@ service cloud.firestore {
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer.
-      allow update: if (isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
-                      || (isAuthenticated() && request.auth.uid == uid
-                          && !touchesAuthority()
-                          && request.resource.data.email == resource.data.email);
+      allow update: if !touchesEmail()
+                      && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
+                          || (isAuthenticated() && request.auth.uid == uid
+                              && !touchesAuthority()));
 
       allow delete: if isAdmin() && !targetIsFounder();
 
@@ -1689,16 +1704,23 @@ lit que par son créateur et l'administrateur ; chacun ne modifie que ses propre
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
 brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
 
-**Comptes au 2026-10-09 (v0.23.8)** : 269 tests, 255 actifs et 14 `todo`.
+**Comptes au 2026-10-09 (v0.23.10)** : 277 tests, 264 actifs et 13 `todo`.
 
-- Firestore : 201 tests, 187 actifs et 14 `todo`.
+- Firestore : 209 tests, 196 actifs et 13 `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
 
-Les 14 `todo` sont des failles de l'audit hors du périmètre de la v0.23.8 : adresse du
-fondateur, lecture des comptes et des jobs d'autrui par un éditeur, tag d'un livre système,
-`owner_id` d'un groupe et `uid` d'un repas planifié modifiables, écritures de `planned_meals`,
-`planning_config` et `error_reports` par un compte en attente ou révoqué, valeurs négatives
-dans `app_config/usage`.
+La v0.23.10 rend bloquant le test « un administrateur ne change pas l'adresse du fondateur » et
+ajoute huit tests sur l'adresse immuable : retrait de l'adresse du fondateur, changement
+d'adresse puis de rôle en une écriture, adresse d'un autre compte, propre adresse d'un
+administrateur et du fondateur, champ neutre d'un autre compte modifiable par un
+administrateur, réécriture à l'identique permise, compte ancien sans adresse toujours
+nommable.
+
+Les 13 `todo` sont des failles de l'audit hors du périmètre des v0.23.8 à v0.23.10 : lecture
+des comptes et des jobs d'autrui par un éditeur, tag d'un livre système, `owner_id` d'un groupe
+et `uid` d'un repas planifié modifiables, écritures de `planned_meals`, `planning_config` et
+`error_reports` par un compte en attente ou révoqué, valeurs négatives dans
+`app_config/usage`.
 
 ---
 
@@ -1770,6 +1792,17 @@ Client                          Règles Firestore              Serveur
 Toute autre promotion est une **nomination** : un administrateur écrit `role` sur le document d'un
 autre. Les règles réservent ce champ aux administrateurs, et le document du fondateur à lui seul.
 
+**L'adresse d'un compte est immuable (v0.23.10).** Les règles reconnaissent le document du
+fondateur à son champ `email` (`targetIsFounder`). Ce champ n'était figé que pour le titulaire :
+un administrateur pouvait remplacer l'adresse du fondateur, puis changer son rôle ou supprimer
+son document. `touchesEmail()` refuse désormais toute mise à jour qui modifie, ajoute ou retire
+`email`, pour tous les comptes et administrateur compris. L'adresse posée à la création, égale à
+celle du jeton, fait donc foi jusqu'à la suppression du document, que les règles refusent pour
+le fondateur. Aucun parcours client n'écrit `email` après la création : `_upsertUser`
+(`auth_repository.dart`) ne met à jour que `last_seen_at`, `photo_url` et `display_name`. Le
+serveur (Admin SDK) reste libre. Côté serveur, le multiplicateur du fondateur ne lit pas ce
+champ : `founderUid()` le résout depuis Auth.
+
 ---
 
 ## 6. Intégration des moteurs d'IA
@@ -1784,18 +1817,63 @@ d'équivalent chez Claude, et la **modération**, qui lit la même politique san
 `callModel` — c'est le seul poste facturé à l'unité plutôt qu'au jeton.
 
 ```
-ctx.feature ──▶ callModel ──┬─▶ app_config/ai_routing_policy   (quel moteur ?)
-                            ├─▶ assertWithinDailyBudget        (le compte peut-il ?)
+ctx.feature ──▶ callModel ──┬─▶ reserveDailyBudget             (le compte peut-il ? place réservée)
+                            ├─▶ app_config/ai_routing_policy   (quel moteur ?)
                             ├─▶ Gemini | Claude
-                            └─▶ recordUsage                    (appel, moteur, modèle, coût)
+                            ├─▶ recordUsage                    (appel, moteur, modèle, coût réel)
+                            └─▶ releaseDailyBudget             (réservation retirée, succès ou échec)
 ```
+
+**Réservation avant l'appel (v0.23.10).** Le plafond lisait la dépense avant l'appel et
+l'enregistrait après : vingt appels lancés au même instant lisaient le même compteur et
+passaient tous. Chaque appel réserve désormais sa place par une transaction sur
+`ai_daily_spend/{uid}_{jour}` (`reserveDailyBudget`, `ai/budget.ts`), champ `reservations` :
+
+- un appel en cours compte pour **un appel** : le plafond d'appels est exact sous rafale ;
+- il compte pour une **dépense estimée** : le coût moyen d'un appel chiffré de ce compte dans
+  la journée (`estimatedCallCostUsd`). Aucun prix n'est écrit dans le code. Sans appel chiffré
+  dans la journée, ou sans grille tarifaire, l'estimation vaut zéro : le plafond d'appels et la
+  limite de concurrence tiennent seuls ;
+- **appel déclenché par un utilisateur** (callable) : il occupe l'une des
+  `MAX_CONCURRENT_AI_CALLS_PER_USER` = 10 places du compte (×100 pour le fondateur et
+  `system_unattributed`). Places toutes prises : attente jusqu'à 20 s, puis
+  `BudgetExceededError` de motif `concurrency`, rendu en `resource-exhausted` ;
+- **appel du serveur** (pipeline Cloud Tasks, déclencheur Firestore, tâche planifiée) : il
+  réserve sa place et compte dans les deux plafonds, mais n'attend jamais et n'est jamais
+  refusé pour `concurrency`. Un import de livre lance cinq tranches à la fois, plus la
+  nutrition de chaque recette écrite, toutes imputées au même compte : les limiter ferait
+  échouer un import légitime. Ses réservations occupent toutefois les places du compte : un
+  appel lancé à la main pendant un import peut attendre.
+
+L'origine se lit dans `ai/callOrigin.ts`. `baseContext` (`callable/_auth.ts`), première
+instruction synchrone de chaque garde (`requireAuth`, `requireEditor`, `requireAdmin`), pose un
+marqueur dans un `AsyncLocalStorage` (`markInteractiveCall`). Le marqueur suit la requête
+jusqu'à l'appel de modèle, y compris à travers les fonctions qui reconstruisent leur contexte
+d'appel, et n'existe pas dans un déclencheur ni dans une tâche Cloud Tasks. Un champ du contexte
+d'appel aurait été perdu par ces reconstructions. Une callable qui n'emploie aucune garde
+n'est pas limitée en simultanéité.
+
+La décision de plafond se prend sur `dépensé + en cours`. `recordUsage` ajoute ensuite le coût
+réel, et la réservation est retirée en `finally`, réussite ou échec (`releaseDailyBudget`). Une
+réservation qu'aucune fin n'a retirée (instance arrêtée) cesse de compter après
+`RESERVATION_TTL_MS` = 15 min, et la transaction suivante la supprime. Les plafonds coupés
+(`enabled: false`) ne réservent rien. Le dépassement possible se borne à l'écart entre le coût
+réel et l'estimation, sur au plus dix appels simultanés d'utilisateur, plus les appels du
+serveur en cours.
+
+Mêmes réservations pour les trois chemins qui n'empruntent pas `callModel` : la production
+d'image (`runImageModel`), l'amélioration d'illustration (`enhanceCulinaryImage`, jusque-là
+hors plafond) et le bac à sable (`askModel` sur un modèle choisi). `assertWithinDailyBudget`
+reste la vérification en lecture seule du rattrapage nutrition nocturne, avant d'engager une
+recette. La limite de concurrence est une constante du code, comme le multiplicateur du
+fondateur : elle ne se règle pas depuis Admin.
 
 **Aucun appel hors plafond.** Un uid vide laissait auparavant l'appel passer sans contrôle.
 Trois comptes portent désormais ce qui n'est pas imputé à une personne :
 
 | Compte | Qui y tombe | Plafond |
 |---|---|---|
-| `system_unattributed` | un appel de modèle passé **sans aucun uid** (`assertWithinDailyBudget` → `budgetUserId`) ; `recordUsage` y ajoute la dépense du jour | ×100, comme le fondateur |
+| `system_unattributed` | un appel de modèle passé **sans aucun uid** (`reserveDailyBudget` → `budgetUserId`) ; `recordUsage` y ajoute la dépense du jour | ×100, comme le fondateur |
 | `system_recipe_without_owner` | une recette au `created_by` vide : déclencheurs nutrition, rôle de repas, produits de courses, **et le rattrapage nutrition nocturne**, qui impute chaque recette à son `created_by` (`recipeBudgetUserId`) | ×1, partagé par toutes les recettes orphelines |
 | `system` (littéral) | l'enrichissement des référentiels sans uid transmis (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`) | ×1 — un compte ordinaire pour le plafond |
 
@@ -2286,19 +2364,30 @@ réenfilait le job. `dispatchDeadlineSeconds: 540`.
 Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
 (`attempt_count`).
 
-**Quand la reprise n'a pas lieu.** Quatre échecs envoient le job **directement** en dead
+**Quand la reprise n'a pas lieu.** Cinq échecs envoient le job **directement** en dead
 letter, sans réessayer, parce qu'une nouvelle tentative échouerait à l'identique : un plafond
 de dépense atteint (`budget_exceeded`), un livre illisible (`book_file_unreadable`), un
-balisage coupé à tous les efforts (`tagging_truncated`), et un livre cible qui n'appartient
-pas au créateur du job (`foreign_book`, contrôlé avant tout téléchargement et tout appel de
-modèle).
+balisage coupé à tous les efforts (`tagging_truncated`), un livre cible qui n'appartient
+pas au créateur du job (`foreign_book`), et un fichier source hors du dossier du créateur du
+job (`forbidden_source_path`). Ces deux derniers sont contrôlés avant tout téléchargement et
+tout appel de modèle. Le refus `concurrency` du plafond ne concerne pas le pipeline : il ne
+vise que les appels déclenchés par un utilisateur (§6).
 
-**La sortie.** À la dernière tentative — ou immédiatement dans les quatre cas ci-dessus —
+**Le fichier source.** `file_url` et `additional_file_urls` sont posés par le client. Avant
+de télécharger, `resolveJobSourcePath` (`pipeline/recipeProcessor.ts`, qui s'appuie sur `resolveAllowedStoragePath` de `utils/storagePath.ts`) extrait le chemin d'objet de
+la référence (chemin nu, `gs://` du bucket par défaut, ou URL `firebasestorage.googleapis.com`
+de ce bucket ; l'URL `http://localhost` de l'émulateur seulement quand il tourne), refuse tout
+segment vide, `.` ou `..`, et n'admet que `scans/{created_by}/…` — là où
+`scanAndPromoteUploadFn` promeut une page ou un livre, et où `runBookImport` découpe ses
+tranches. `rejected/…`, la quarantaine, les scans d'un autre compte et toute URL externe sont
+refusés (`StoragePathRefusedError`).
+
+**La sortie.** À la dernière tentative — ou immédiatement dans les cinq cas ci-dessus —
 `moveToDeadLetter(...)` écrit `dead_letters/{jobId}` avec :
 
 | Champ | Valeurs |
 |---|---|
-| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `pipeline_error` |
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `pipeline_error` |
 | `last_error` | le message de l'exception |
 | `retry_count` | le nombre de tentatives consommées |
 | `file_path` | le fichier téléversé, pour pouvoir rejouer |
@@ -2372,6 +2461,10 @@ code, et une réimplémentation doit la reproduire :
 | Timeout / erreur réseau | Retry Cloud Tasks, backoff 10 s → 300 s, trois tentatives, puis dead letter |
 | Plafond de dépense atteint | Refus **avant** l'appel, dead letter immédiate |
 | Livre cible d'un autre membre (import) | `assertJobTargetBook` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: foreign_book` |
+| Fichier source hors de `scans/{created_by}/` (import) | `resolveJobSourcePath` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: forbidden_source_path` |
+| Image à relire hors des dossiers publiés (amélioration d'illustration, visuel de dressage précédent) | `downloadStorageBytes` n'admet que `illustrations/` et `recipes/` : `permission-denied` avant tout téléchargement |
+| Trop d'appels d'IA simultanés pour un compte, depuis une callable | Attente jusqu'à 20 s, puis `BudgetExceededError` de motif `concurrency`, rendu en `resource-exhausted`. Le pipeline, les déclencheurs et les tâches planifiées ne sont pas limités en simultanéité |
+| Chemin Storage refusé par une callable | `logWarn` avec le compte et le chemin, puis `permission-denied` : une tentative de lecture de `rejected/…` laisse une trace |
 | Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
 | Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant**, compté dans `total_unpriced_calls`. Jamais de prix de repli |
 | Appel abouti puis échoué côté client | L'usage est enregistré **sans jetons** : le fournisseur facture, l'appel ne doit pas devenir invisible |

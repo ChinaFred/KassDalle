@@ -124,11 +124,25 @@ service cloud.firestore {
                  .hasAny(['role', 'is_revoked']);
       }
 
+      /// L'adresse d'un compte ne change plus après sa création — pour
+      /// personne, administrateur compris. Seul le serveur (Admin SDK, hors
+      /// règles) peut la réécrire.
+      ///
+      /// Elle était figée pour le titulaire seul : un administrateur pouvait
+      /// remplacer l'adresse du fondateur, puis, le document ne le désignant
+      /// plus, changer son rôle ou le supprimer (audit sécurité, faille 7).
+      /// Testé par `affectedKeys()` : un document ancien sans `email` reste
+      /// modifiable, tant que la mise à jour n'en ajoute pas.
+      function touchesEmail() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['email']);
+      }
+
       /// Le document désigne-t-il le compte fondateur ? Son adresse est
       /// verrouillée à la création (égale à celle du jeton) et ne peut plus
-      /// changer ensuite : elle fait donc foi ici.
+      /// changer ensuite (`touchesEmail`) : elle fait donc foi ici.
       function targetIsFounder() {
-        return resource.data.email.lower() == founderEmail();
+        return resource.data.get('email', '').lower() == founderEmail();
       }
 
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
@@ -141,10 +155,10 @@ service cloud.firestore {
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer. Sans cette réserve, un administrateur adoubé pouvait
       // mettre dehors celui qui l'avait nommé.
-      allow update: if (isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
-                      || (isAuthenticated() && request.auth.uid == uid
-                          && !touchesAuthority()
-                          && request.resource.data.email == resource.data.email);
+      allow update: if !touchesEmail()
+                      && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
+                          || (isAuthenticated() && request.auth.uid == uid
+                              && !touchesAuthority()));
 
       allow delete: if isAdmin() && !targetIsFounder();
 

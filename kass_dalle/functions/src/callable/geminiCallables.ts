@@ -73,9 +73,14 @@ import { recordUsage } from "../ai/usage";
 import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload, scanUploadHead, streamContainsEicar } from "../utils/uploadSecurity";
+import {
+  PUBLISHED_IMAGE_PREFIXES,
+  StoragePathRefusedError,
+  isWellFormedObjectPath,
+} from "../utils/storagePath";
 import { BOOK_UPLOAD_FOLDER } from "../books/bookFile";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
-import { logAiText, logError, logInfo, qualify } from "../logging";
+import { logAiText, logError, logInfo, logWarn, qualify } from "../logging";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +119,11 @@ function toHttpsError(err: unknown): HttpsError {
   }
   if (err instanceof GeminiQuotaExceededError) {
     return new HttpsError("resource-exhausted", err.message);
+  }
+  // Fichier hors des dossiers admis : un défaut de droits, refusé avant
+  // tout téléchargement et tout appel de modèle.
+  if (err instanceof StoragePathRefusedError) {
+    return new HttpsError("permission-denied", err.message);
   }
   if (err instanceof GeminiError) {
     return new HttpsError("internal", err.message);
@@ -636,7 +646,15 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
   }
 
   const expectedPrefix = `quarantine/${ctx.userId}/`;
-  if (!storagePath.startsWith(expectedPrefix)) {
+  // Chemin bien formé (aucun segment `..`) : le chemin promu s'en déduit, et
+  // `scans/{uid}/` est le seul dossier que le pipeline acceptera de lire.
+  if (!storagePath.startsWith(expectedPrefix) || !isWellFormedObjectPath(storagePath)) {
+    await logWarn({
+      message: "scanAndPromoteUploadFn : chemin de quarantaine refusé",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      extra: { storagePath: storagePath.slice(0, 300) },
+    });
     throw new HttpsError("permission-denied", "Chemin de quarantaine invalide.");
   }
 
@@ -915,7 +933,13 @@ export const enhanceIllustrationFn = onCall(
       throw new HttpsError("invalid-argument", "recipeId et illustrationUrl sont requis.");
     }
     try {
-      const originalBytes = await downloadStorageBytes(illustrationUrl);
+      // Une illustration publiée, et seulement elle : sans ce contrôle, l'URL
+      // d'une image refusée (`rejected/…`) ou en quarantaine ressortait
+      // améliorée et publiée sur la recette, hors modération.
+      const originalBytes = await downloadStorageBytes(illustrationUrl, PUBLISHED_IMAGE_PREFIXES, {
+        ...ctx,
+        feature: "enhance_illustration",
+      });
 
       // ── Gate qualité : Sharp seul si l'image est déjà correcte ────────────
       // Évite un appel Gemini (~0.1$ par image) quand la photo ne nécessite que
@@ -1308,7 +1332,15 @@ export const generatePlatingImageFn = onCall(
         .filter((url): url is string => typeof url === "string" && url.length > 0)
         .pop();
       const baseImage = baseUrl
-        ? { bytes: await downloadStorageBytes(baseUrl), mimeType: "image/jpeg" }
+        ? {
+            // `plating_advice` s'écrit aussi depuis le client : l'URL n'est
+            // relue que si elle désigne une image publiée.
+            bytes: await downloadStorageBytes(baseUrl, PUBLISHED_IMAGE_PREFIXES, {
+              ...ctx,
+              feature: "plating_image",
+            }),
+            mimeType: "image/jpeg",
+          }
         : null;
 
       const generated = await generatePlatingStepImage(
