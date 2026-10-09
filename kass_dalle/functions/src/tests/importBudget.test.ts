@@ -7,17 +7,26 @@
  */
 
 import { test, describe } from "node:test";
+import type { Firestore } from "firebase-admin/firestore";
 import assert from "node:assert/strict";
 
+import { dispatchScanId } from "../pipeline/jobDispatcher";
 import {
   DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD,
   EMPTY_SCAN_SPEND,
+  ForeignScanError,
   IMPORT_BUDGET_MARGIN,
+  MAX_IMPORT_BUDGET_PER_WINDOW_USD,
+  effectiveImportLimitUsd,
   formatBudgetAmount,
   importBudgetDenial,
+  maxImportBudgetUsd,
   parseBudgetLimit,
   raisedImportLimit,
+  raiseImportCeiling,
   readScanSpend,
+  scanOwnerConflict,
+  setImportCeiling,
   suggestImportBudgetUsd,
   type ScanSpend,
 } from "../ai/importBudget";
@@ -155,5 +164,114 @@ describe("formatBudgetAmount", () => {
   test("dollars sans taux, ou avec un taux inutilisable", () => {
     assert.equal(formatBudgetAmount(10, null), "10,00 $");
     assert.equal(formatBudgetAmount(10, 0), "10,00 $");
+  });
+});
+
+describe("effectiveImportLimitUsd — le client ne peut que réduire", () => {
+  test("le maximum serveur vaut le plafond par tranche fois le nombre de tranches", () => {
+    assert.equal(maxImportBudgetUsd(10), 10 * MAX_IMPORT_BUDGET_PER_WINDOW_USD);
+    assert.equal(maxImportBudgetUsd(0), 1);
+    assert.equal(maxImportBudgetUsd(NaN), 1);
+  });
+
+  test("un plafond client plus bas est gardé", () => {
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 5, windows: 10 }), 5);
+  });
+
+  test("un plafond client démesuré est ramené au maximum", () => {
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: 1e9, windows: 10 }), 20);
+  });
+
+  test("un job sans plafond reçoit le maximum", () => {
+    assert.equal(effectiveImportLimitUsd({ clientLimitUsd: null, windows: 3 }), 6);
+  });
+
+  test("le plafond proposé reste sous le maximum", () => {
+    for (const windows of [1, 3, 40, 120]) {
+      const suggested = suggestImportBudgetUsd({ windows, estimatedCostUsd: null });
+      assert.ok(suggested <= maxImportBudgetUsd(windows));
+    }
+  });
+});
+
+/** Une base réduite à un document : ce que lisent et écrivent les transactions du plafond. */
+function fakeDb(initial: Record<string, unknown> | undefined) {
+  const state: { data: Record<string, unknown> | undefined; writes: number } = {
+    data: initial,
+    writes: 0,
+  };
+  const ref = {};
+  const tx = {
+    get: async () => ({ data: () => state.data }),
+    set: (_ref: unknown, value: Record<string, unknown>) => {
+      state.writes++;
+      state.data = { ...(state.data ?? {}), ...value };
+    },
+    update: (_ref: unknown, value: Record<string, unknown>) => {
+      state.writes++;
+      state.data = { ...(state.data ?? {}), ...value };
+    },
+  };
+  const db = {
+    collection: () => ({ doc: () => ref }),
+    runTransaction: async <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx),
+  } as unknown as Firestore;
+  return { db, state };
+}
+
+describe("plafond d'import — le scan d'un autre compte", () => {
+  test("scanOwnerConflict : seul un user_id posé et différent est un conflit", () => {
+    assert.equal(scanOwnerConflict("A", "B"), true);
+    assert.equal(scanOwnerConflict("A", "A"), false);
+    assert.equal(scanOwnerConflict(undefined, "B"), false);
+    assert.equal(scanOwnerConflict("", "B"), false);
+  });
+
+  test("setImportCeiling sur le scan d'un autre compte est refusé, sans écriture", async () => {
+    const { db, state } = fakeDb({ user_id: "A", limit_usd: 5, step_usd: 5, cost_usd: 1 });
+    await assert.rejects(
+      setImportCeiling({ scanId: "s1", userId: "B", limitUsd: 1000, db }),
+      ForeignScanError,
+    );
+    assert.equal(state.writes, 0);
+    assert.equal(state.data?.limit_usd, 5);
+  });
+
+  test("setImportCeiling sur son propre scan, ou un scan neuf, pose le plafond", async () => {
+    const own = fakeDb({ user_id: "A", limit_usd: 5, step_usd: 5 });
+    await setImportCeiling({ scanId: "s1", userId: "A", limitUsd: 8, db: own.db });
+    assert.equal(own.state.data?.limit_usd, 8);
+    const fresh = fakeDb(undefined);
+    await setImportCeiling({ scanId: "s2", userId: "B", limitUsd: 3, db: fresh.db });
+    assert.equal(fresh.state.data?.user_id, "B");
+    assert.equal(fresh.state.data?.limit_usd, 3);
+  });
+
+  test("raiseImportCeiling sur le scan d'un autre compte est refusé", async () => {
+    const { db, state } = fakeDb({ user_id: "A", limit_usd: 5, step_usd: 5, cost_usd: 6 });
+    await assert.rejects(raiseImportCeiling({ scanId: "s1", userId: "B", db }), ForeignScanError);
+    assert.equal(state.writes, 0);
+  });
+
+  test("dispatchScanId : un import de livre reçoit toujours un identifiant serveur", () => {
+    const generate = () => "serveur";
+    assert.equal(
+      dispatchScanId({
+        clientScanId: "client",
+        jobType: "bookDocumentScan",
+        existingOwner: null,
+        userId: "B",
+        generate,
+      }),
+      "serveur",
+    );
+  });
+
+  test("dispatchScanId : un autre job garde son scan_id, sauf s'il est à un autre compte", () => {
+    const generate = () => "serveur";
+    const base = { clientScanId: "client", jobType: "recipeScan", userId: "B", generate };
+    assert.equal(dispatchScanId({ ...base, existingOwner: undefined }), "client");
+    assert.equal(dispatchScanId({ ...base, existingOwner: "B" }), "client");
+    assert.equal(dispatchScanId({ ...base, existingOwner: "A" }), "serveur");
   });
 });

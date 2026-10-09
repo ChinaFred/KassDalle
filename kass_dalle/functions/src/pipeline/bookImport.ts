@@ -24,7 +24,7 @@ import {
   type BookMetadata,
 } from "../books/bookFile";
 import { BudgetExceededError } from "../ai/budget";
-import { parseBudgetLimit, setImportCeiling } from "../ai/importBudget";
+import { effectiveImportLimitUsd, parseBudgetLimit, setImportCeiling } from "../ai/importBudget";
 import { extractBookCover } from "../gemini/search";
 import type { BookWindowInfo } from "../gemini/promptsExtraction";
 import { logError, logInfo } from "../logging";
@@ -170,15 +170,20 @@ export async function runBookImport(args: {
 
   // Le plafond que l'utilisateur a fixé sur l'écran de confirmation, posé avant
   // que la première tranche existe : chacune le relit avant son premier appel
-  // d'IA. Un job créé sans plafond — un client d'avant ce champ — n'en a pas.
-  const budgetLimitUsd = parseBudgetLimit(job.budget_limit_usd);
-  if (budgetLimitUsd != null && ctx.scanId) {
+  // d'IA. La valeur vient du client : elle ne fait que réduire le maximum que
+  // fixe le serveur, et un job sans plafond reçoit ce maximum.
+  const clientLimitUsd = parseBudgetLimit(job.budget_limit_usd);
+  const budgetLimitUsd = effectiveImportLimitUsd({
+    clientLimitUsd,
+    windows: opened.windows,
+  });
+  if (ctx.scanId) {
     await setImportCeiling({ scanId: ctx.scanId, userId, limitUsd: budgetLimitUsd });
     await logInfo({
       message: `Plafond de l'import posé : ${budgetLimitUsd} $`,
       moduleType: "IMPORT",
       ...ctx,
-      extra: { budgetLimitUsd },
+      extra: { budgetLimitUsd, clientLimitUsd, capped: budgetLimitUsd !== clientLimitUsd },
     });
   }
 

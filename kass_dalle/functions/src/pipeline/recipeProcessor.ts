@@ -60,6 +60,7 @@ import {
   resolveAllowedStoragePath,
   storageEmulatorActive,
 } from "../utils/storagePath";
+import { ZipLimitError } from "../utils/boundedZip";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
@@ -693,6 +694,9 @@ export const recipeProcessor = onTaskDispatched(
       const isForeignBook = err instanceof TargetBookNotOwned;
       // Un fichier source hors du dossier du propriétaire le restera.
       const isForbiddenSource = err instanceof StoragePathRefusedError;
+      // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
+      // chaque tentative la retéléchargerait pour la refuser au même endroit.
+      const isZipLimit = err instanceof ZipLimitError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -724,20 +728,23 @@ export const recipeProcessor = onTaskDispatched(
           isTruncatedTagging,
           isForeignBook,
           isForbiddenSource,
+          isZipLimit,
         },
       });
 
       // Dernière tentative — ou plafond atteint, fichier illisible, balisage
       // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
-      // dossier du propriétaire (`forbidden_source_path`) : ces cinq cas se
-      // rejouent à l'identique, il est inutile de les réessayer.
+      // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
+      // bornes de lecture (`archive_limit_exceeded`) : ces six cas se rejouent
+      // à l'identique, il est inutile de les réessayer.
       if (
         attempt + 1 >= MAX_RETRY_ATTEMPTS ||
         isBudget ||
         isUnreadableBook ||
         isTruncatedTagging ||
         isForeignBook ||
-        isForbiddenSource
+        isForbiddenSource ||
+        isZipLimit
       ) {
         await moveToDeadLetter({
           jobId,
@@ -753,9 +760,11 @@ export const recipeProcessor = onTaskDispatched(
                   ? "foreign_book"
                   : isForbiddenSource
                     ? "forbidden_source_path"
-                    : isQuota
-                      ? "quota_exceeded"
-                      : "pipeline_error",
+                    : isZipLimit
+                      ? "archive_limit_exceeded"
+                      : isQuota
+                        ? "quota_exceeded"
+                        : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",

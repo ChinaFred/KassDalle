@@ -9,6 +9,8 @@
 
 import { after, before, beforeEach, describe, it } from "node:test";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
+import firebase from "firebase/compat/app";
+import "firebase/compat/firestore";
 import {
   FOUNDER_EMAIL,
   OPEN_FLAW,
@@ -21,6 +23,12 @@ import {
 } from "./helpers.mjs";
 
 let env;
+
+// Transformations du SDK compat, celui que rend `ctx.firestore()`.
+const { FieldValue } = firebase.firestore;
+const increment = (n) => FieldValue.increment(n);
+const deleteField = () => FieldValue.delete();
+const serverTimestamp = () => FieldValue.serverTimestamp();
 
 const db = (name) => as(env, name).firestore();
 
@@ -333,6 +341,10 @@ describe("users — lecture", () => {
     await assertFails(db("reader").doc(`users/${OTHER}`).get());
   });
 
+  // Reste ouvert (v0.23.12) : la file de travail, la relecture d'un brouillon,
+  // le détail d'une recette et la recherche de membres d'un groupe lisent
+  // `users/{uid}` d'autrui pour afficher un nom. Fermer la lecture casserait
+  // ces écrans tant que le nom n'est pas servi par un autre chemin.
   it("un éditeur ne lit pas le document d'un autre", OPEN_FLAW, async () => {
     await assertFails(db("editor").doc(`users/${OTHER}`).get());
   });
@@ -429,12 +441,32 @@ describe("books", () => {
 
   // Le livre système appartient à l'éditeur : même son propriétaire ne
   // retire pas le tag qui le protège de la suppression.
-  it("le propriétaire ne retire pas le tag d'un livre système", OPEN_FLAW, async () => {
+  it("le propriétaire ne retire pas le tag d'un livre système", async () => {
     await assertFails(db("editor").doc("books/system").update({ tags: [] }));
   });
 
-  it("un administrateur ne retire pas le tag d'un livre système", OPEN_FLAW, async () => {
+  it("un administrateur ne retire pas le tag d'un livre système", async () => {
     await assertFails(db("admin").doc("books/system").update({ tags: [] }));
+  });
+
+  it("le tag d'un livre système ne se perd pas en supprimant le champ", async () => {
+    await assertFails(db("editor").doc("books/system").update({ tags: deleteField() }));
+  });
+
+  it("le propriétaire renomme un livre système", async () => {
+    await assertSucceeds(db("editor").doc("books/system").update({ title: "Mes libres" }));
+  });
+
+  it("un livre système garde son tag et en reçoit un autre", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("books/system")
+        .update({ tags: ["__libres", "dessert"] }),
+    );
+  });
+
+  it("un livre ordinaire change ses tags librement", async () => {
+    await assertSucceeds(db("editor").doc("books/public").update({ tags: ["été"] }));
   });
 });
 
@@ -912,11 +944,27 @@ describe("champs propriétaire", () => {
     await assertFails(db("reader").doc("recipe_ratings/r1").update({ user_id: OTHER }));
   });
 
-  it("groupe : owner_id figé en mise à jour", OPEN_FLAW, async () => {
+  it("groupe : owner_id figé en mise à jour", async () => {
     await assertFails(db("reader").doc("groups/g1").update({ owner_id: OTHER }));
   });
 
-  it("repas planifié : uid figé en mise à jour", OPEN_FLAW, async () => {
+  it("groupe : son propriétaire ajoute un membre", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, OTHER] }),
+    );
+  });
+
+  it("groupe : un administrateur ne change pas non plus owner_id", async () => {
+    await assertFails(db("admin").doc("groups/g1").update({ owner_id: OTHER }));
+  });
+
+  it("repas planifié : son titulaire le modifie", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
+  });
+
+  it("repas planifié : uid figé en mise à jour", async () => {
     await assertFails(db("reader").doc("planned_meals/m1").update({ uid: OTHER }));
   });
 });
@@ -932,27 +980,70 @@ describe("données personnelles — pending et révoqué", () => {
     await assertSucceeds(db("reader").doc("error_reports/new").set({ user_id: READER }));
   });
 
-  it("un compte en attente ne planifie pas de repas", OPEN_FLAW, async () => {
+  it("un lecteur planifie un repas et écrit planning_config", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/new").set({ uid: READER }));
+    await assertSucceeds(db("reader").doc(`planning_config/${READER}`).set({ days: 7 }));
+  });
+
+  it("un compte en attente écrit son rapport d'erreur", async () => {
+    await assertSucceeds(
+      db("pending").doc("error_reports/new").set({ user_id: PERSONAS.pending.uid }),
+    );
+  });
+
+  it("un compte neuf, sans document, écrit son rapport d'erreur", async () => {
+    await assertSucceeds(
+      env
+        .authenticatedContext("newcomer", { email: "new@example.com" })
+        .firestore()
+        .doc("error_reports/new")
+        .set({ user_id: "newcomer" }),
+    );
+  });
+
+  it("un compte révoqué à l'instant n'écrit pas de rapport d'erreur", async () => {
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("error_reports/new")
+        .set({ user_id: PERSONAS.revokedStaleToken.uid }),
+    );
+  });
+
+  it("un compte révoqué ne modifie pas son repas planifié", async () => {
+    await seedDocs(env, {
+      "planned_meals/m-revoked": { uid: PERSONAS.revoked.uid, date: "2026-10-09" },
+    });
+    await assertFails(
+      db("revoked").doc("planned_meals/m-revoked").update({ date: "2026-10-10" }),
+    );
+  });
+
+  it("un compte en attente relit sa configuration de planning", async () => {
+    await seedDocs(env, { [`planning_config/${PERSONAS.pending.uid}`]: { days: 7 } });
+    await assertSucceeds(db("pending").doc(`planning_config/${PERSONAS.pending.uid}`).get());
+  });
+
+  it("un compte en attente ne planifie pas de repas", async () => {
     await assertFails(db("pending").doc("planned_meals/new").set({ uid: PERSONAS.pending.uid }));
   });
 
-  it("un compte révoqué ne planifie pas de repas", OPEN_FLAW, async () => {
+  it("un compte révoqué ne planifie pas de repas", async () => {
     await assertFails(db("revoked").doc("planned_meals/new").set({ uid: PERSONAS.revoked.uid }));
   });
 
-  it("un compte en attente n'écrit pas planning_config", OPEN_FLAW, async () => {
+  it("un compte en attente n'écrit pas planning_config", async () => {
     await assertFails(
       db("pending").doc(`planning_config/${PERSONAS.pending.uid}`).set({ days: 7 }),
     );
   });
 
-  it("un compte révoqué n'écrit pas planning_config", OPEN_FLAW, async () => {
+  it("un compte révoqué n'écrit pas planning_config", async () => {
     await assertFails(
       db("revoked").doc(`planning_config/${PERSONAS.revoked.uid}`).set({ days: 7 }),
     );
   });
 
-  it("un compte révoqué n'écrit pas de rapport d'erreur", OPEN_FLAW, async () => {
+  it("un compte révoqué n'écrit pas de rapport d'erreur", async () => {
     await assertFails(
       db("revoked").doc("error_reports/new").set({ user_id: PERSONAS.revoked.uid }),
     );
@@ -999,16 +1090,44 @@ describe("app_config", () => {
     await assertSucceeds(db("admin").doc("app_config/nutrition_policy").set({ mode: "open" }));
   });
 
-  it("usage : storage_bytes reste un entier positif", OPEN_FLAW, async () => {
+  it("usage : storage_bytes reste un entier positif", async () => {
     await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: -1 }));
   });
 
-  it("usage : le compteur de scans du mois reste positif", OPEN_FLAW, async () => {
+  it("usage : le compteur de scans du mois reste positif", async () => {
     await assertFails(
       db("reader")
         .doc("app_config/usage")
         .update({ [currentScansKey()]: -1 }),
     );
+  });
+
+  it("usage : storage_bytes ne recule pas", async () => {
+    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: 0 }));
+  });
+
+  it("usage : storage_bytes reste un entier", async () => {
+    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: "20" }));
+    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: 20.5 }));
+  });
+
+  it("usage : un incrément du client passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("app_config/usage")
+        .set(
+          {
+            [currentScansKey()]: increment(1),
+            storage_bytes: increment(2048),
+            updated_at: serverTimestamp(),
+          },
+          { merge: true },
+        ),
+    );
+  });
+
+  it("usage : un administrateur remet un compteur à zéro", async () => {
+    await assertSucceeds(db("admin").doc("app_config/usage").update({ storage_bytes: 0 }));
   });
 });
 
@@ -1126,8 +1245,22 @@ describe("processing_jobs", () => {
     await assertFails(db("reader").doc("processing_jobs/job-editor").get());
   });
 
-  it("un éditeur ne lit pas le job d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne lit pas le job d'un autre", async () => {
     await assertFails(db("editor").doc("processing_jobs/job-reader").get());
+  });
+
+  it("un éditeur liste ses jobs, comme la file de travail", async () => {
+    await assertSucceeds(
+      db("editor").collection("processing_jobs").where("created_by", "==", EDITOR).get(),
+    );
+  });
+
+  it("un éditeur ne liste pas tous les jobs", async () => {
+    await assertFails(db("editor").collection("processing_jobs").get());
+  });
+
+  it("un administrateur lit tous les jobs", async () => {
+    await assertSucceeds(db("admin").collection("processing_jobs").get());
   });
 
   it("seul un administrateur supprime un job", async () => {

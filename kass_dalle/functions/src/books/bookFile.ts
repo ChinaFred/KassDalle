@@ -14,7 +14,7 @@
  */
 
 import { posix } from "node:path";
-import JSZip from "jszip";
+import { BoundedZip } from "../utils/boundedZip";
 import type { PDFDocument } from "pdf-lib";
 
 import { logError } from "../logging";
@@ -351,7 +351,8 @@ export interface EpubContent {
   /** Chemin, dans l'archive, de l'image de couverture. */
   coverPath: string | null;
   paragraphs: string[];
-  archive: JSZip;
+  /** Archive ouverte en lecture bornée : chaque entrée lue compte contre les bornes. */
+  archive: BoundedZip;
 }
 
 /** Résout un lien de l'OPF relativement à son dossier, comme le fait un lecteur. */
@@ -369,29 +370,39 @@ function resolveInArchive(opfPath: string, href: string): string {
  * de chaque page XHTML est déplié par du code, pas par un modèle.
  */
 export async function readEpub(bytes: Buffer): Promise<EpubContent> {
-  let archive: JSZip;
+  // Lecture bornée (nombre d'entrées, taille dépliée) : un EPUB est une
+  // archive envoyée par l'utilisateur. Une borne franchie, à l'ouverture comme
+  // à la lecture d'une page, devient une `BookFileError` : jamais réessayée.
+  let archive: BoundedZip;
   try {
-    archive = await JSZip.loadAsync(bytes);
+    archive = await BoundedZip.open(bytes);
   } catch (err) {
     throw new BookFileError(
       `Ce fichier EPUB n'a pas pu être ouvert : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+  const read = async (path: string): Promise<string | null> => {
+    try {
+      return await archive.text(path);
+    } catch (err) {
+      throw new BookFileError(
+        `Ce fichier EPUB n'a pas pu être lu : ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
 
-  const container = archive.file("META-INF/container.xml");
-  if (!container) {
+  const containerXml = await read("META-INF/container.xml");
+  if (containerXml == null) {
     throw new BookFileError("Ce fichier n'est pas un EPUB valide : META-INF/container.xml manque.");
   }
-  const containerXml = await container.async("string");
   const rootfile = containerXml.match(/<rootfile\b[^>]*>/i)?.[0] ?? "";
   const opfPath = attribute(rootfile, "full-path");
-  const opfEntry = opfPath ? archive.file(opfPath) : null;
-  if (!opfPath || !opfEntry) {
+  const opf = opfPath ? await read(opfPath) : null;
+  if (!opfPath || opf == null) {
     throw new BookFileError(
       "Ce fichier n'est pas un EPUB valide : le fichier OPF est introuvable.",
     );
   }
-  const opf = await opfEntry.async("string");
 
   const manifest = new Map<string, ManifestItem>();
   for (const match of opf.matchAll(/<item\b[^>]*>/gi)) {
@@ -433,9 +444,9 @@ export async function readEpub(bytes: Buffer): Promise<EpubContent> {
   for (const idref of spine) {
     const item = manifest.get(idref);
     if (!item || !/x?html/.test(item.mediaType)) continue;
-    const entry = archive.file(resolveInArchive(opfPath, item.href));
-    if (!entry) continue;
-    paragraphs.push(...htmlToParagraphs(await entry.async("string")));
+    const html = await read(resolveInArchive(opfPath, item.href));
+    if (html == null) continue;
+    paragraphs.push(...htmlToParagraphs(html));
   }
 
   const creators = allElementTexts(opf, "dc:creator");
@@ -653,9 +664,21 @@ export async function pdfFirstPageImage(source: PdfSource): Promise<Buffer | nul
 /** L'image de couverture d'un EPUB, ramenée à un JPEG. */
 export async function epubCoverImage(epub: EpubContent): Promise<Buffer | null> {
   if (!epub.coverPath) return null;
-  const entry = epub.archive.file(epub.coverPath);
-  if (!entry) return null;
-  return toCoverJpeg(await entry.async("uint8array"), "EPUB");
+  let cover: Buffer | null;
+  try {
+    cover = await epub.archive.bytes(epub.coverPath);
+  } catch (err) {
+    // Couverture au-delà des bornes de lecture : le livre s'importe sans elle.
+    await logError({
+      message: "Couverture EPUB écartée : lecture de l'archive refusée",
+      moduleType: "IMPORT",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { coverPath: epub.coverPath },
+    });
+    return null;
+  }
+  if (cover == null) return null;
+  return toCoverJpeg(cover, "EPUB");
 }
 
 // ── Livre ouvert ────────────────────────────────────────────────────────────

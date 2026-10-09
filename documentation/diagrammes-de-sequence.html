@@ -1583,20 +1583,29 @@ sequenceDiagram
   FS-->>R: appUserProvider se met à jour
   R->>R: plus pending et sur /pending → /
   N->>CF: appel
-  CF->>CF: requireAuth — claim présent, aucune lecture Firestore
+  CF->>FS: requireAuth relit users/{uid} — rôle, révocation, existence
+  FS-->>CF: role reader, non révoqué
   CF-->>N: résultat
 
-  A->>FS: révoque
-  FS->>SY: claims { revoked: true }
+  A->>FS: révoque, remet en attente ou supprime le compte
+  FS->>SY: onDocumentWritten
+  SY->>AU: setCustomUserClaims { role, revoked } (effacés si supprimé)
+  SY->>AU: revokeRefreshTokens — la session ne se renouvelle plus
   R->>R: user.isRevoked → /login?revoked=true
+  N->>CF: appel avec un jeton encore valide
+  CF->>FS: requireAuth relit users/{uid}
+  CF-->>N: permission-denied — sans attendre l'expiration du jeton
 </pre>
       </div>
       <figcaption>
-        <b><code>requireAuth</code> tranche sur le jeton quand celui-ci porte le rôle, et lit le
-        document sinon.</b> Sans cette seconde voie, un compte tout juste nommé passerait au
-        travers du sas pendant la minute qui précède le renouvellement de son jeton.
-        <code>requireAdmin</code> et <code>requireEditor</code> lisent <b>toujours</b> le
-        document : une révocation ne s'attend pas.
+        <b><code>requireAuth</code> lit le document <code>users/{uid}</code> à chaque appel, et
+        ce document fait foi</b> (<code>mergeAccount</code>, v0.23.12) : rôle du document, celui
+        du jeton en repli seulement ; révoqué si le jeton ou le document le dit ; document absent
+        ou rôle <code>pending</code> : refusé. Un jeton émis avant une révocation reste valable
+        une heure au plus, et ne passe plus pendant ce temps. <code>requireAdmin</code> et
+        <code>requireEditor</code> lisent aussi le document. Quand un compte perd l'accès —
+        révoqué, rôle sorti de reader/editor/admin, document supprimé —,
+        <code>syncUserClaims</code> appelle <code>revokeRefreshTokens</code>.
         <span class="expect">
           <b>Un compte <code>pending</code> est envoyé en salle d'attente, pas au login.</b> Il est
           authentifié : le renvoyer vers <code>/login</code> le ferait rebondir vers l'accueil, où
@@ -2330,9 +2339,11 @@ sequenceDiagram
   else « Lancer l'import »
     U->>SC: fixe le plafond de l'import (dollars)
     S->>J: createJob bookDocumentScan — budget_limit_usd
+    Note over J: jobDispatcher remplace le scan_id du client<br/>par un identifiant tiré côté serveur
     J-->>P: dispatch Cloud Tasks
     P->>B: runBookImport
-    B->>SS: pose le plafond (limit_usd, step_usd)
+    B->>B: effectiveImportLimitUsd — 2 $ par tranche au plus,<br/>ce maximum si le client n'a pas fixé de plafond
+    B->>SS: pose le plafond (limit_usd, step_usd, user_id) —<br/>refusé si le scan appartient à un autre compte
 
     opt aucun livre cible
       alt PDF

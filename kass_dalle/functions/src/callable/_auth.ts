@@ -20,9 +20,9 @@
  *     claim de rôle — cas d'un jeton émis avant l'amorçage. Une lecture
  *     Firestore vaut infiniment moins qu'un appel d'IA laissé passer.
  *
- * La révocation, elle, est toujours relue sur le document pour les rôles
- * privilégiés : ils lisent déjà le document, et couper l'accès à un
- * administrateur ne doit pas attendre le renouvellement de son jeton.
+ * La révocation, elle, est toujours relue sur le document, pour tous les
+ * rôles : couper l'accès à un compte ne doit pas attendre le renouvellement
+ * de son jeton.
  */
 
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
@@ -81,6 +81,23 @@ export function accessDenial(
     : { code: "permission-denied", message: PENDING_MESSAGE };
 }
 
+/**
+ * Le compte retenu par `requireAuth`.
+ *
+ * Le document est relu à chaque appel : il fait foi pour le rôle, le jeton ne
+ * sert que de repli quand le document n'en porte pas. Révoqué si l'une des
+ * deux sources le dit — le jeton peut confirmer une révocation, jamais
+ * l'infirmer. Document absent (`fromDoc` nul) : aucun rôle, donc refusé ; un
+ * compte supprimé par un administrateur ne garde pas l'accès par son jeton.
+ */
+export function mergeAccount(fromToken: AccountState, fromDoc: AccountState | null): AccountState {
+  if (fromDoc == null) return { role: null, revoked: fromToken.revoked };
+  return {
+    role: fromDoc.role ?? fromToken.role,
+    revoked: fromToken.revoked || fromDoc.revoked,
+  };
+}
+
 /** Le rôle et l'état portés par le jeton, `role: null` si le claim manque. */
 export function accountFromToken(req: CallableRequest<unknown>): AccountState {
   const token = req.auth?.token as Record<string, unknown> | undefined;
@@ -98,6 +115,15 @@ function baseContext(req: CallableRequest<unknown>, feature: string): AuthContex
   // avant le premier `await` de la garde, pour valoir dans le traitement appelant.
   markInteractiveCall();
   return { userId: uid, correlationId: newCorrelationId(feature) };
+}
+
+/** Le compte lu sur son document, ou `null` si le document n'existe pas. */
+async function accountDocument(uid: string): Promise<AccountState | null> {
+  const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
+  if (!snap.exists) return null;
+  const data = snap.data();
+  const role = typeof data?.role === "string" && data.role.trim() ? data.role.trim() : null;
+  return { role, revoked: data?.is_revoked === true };
 }
 
 async function accountFromFirestore(uid: string): Promise<AccountState> {
@@ -190,11 +216,13 @@ export async function requireAuth(
   await assertAppCheck(req, ctx, feature);
   const fromToken = accountFromToken(req);
 
-  // Un jeton qui porte son rôle tranche seul : pas de lecture Firestore sur le
-  // chemin normal. Sans claim, on va lire le document plutôt que de laisser
-  // passer — c'est le seul moyen de tenir le sas d'entrée dès la première
-  // minute d'un compte, avant que son jeton ne soit renouvelé.
-  const account = fromToken.role !== null ? fromToken : await accountFromFirestore(ctx.userId);
+  // Le document est relu à chaque appel, et il fait foi : rôle, révocation,
+  // existence. Un jeton émis avant une révocation, une rétrogradation en
+  // `pending` ou une suppression du compte reste valable jusqu'à une heure, et
+  // laissait déclencher des appels d'IA pendant ce temps (audit sécurité,
+  // « Faible »). Le rôle du jeton ne sert que si le document n'en porte pas.
+  // Une lecture Firestore par appel coûte moins qu'un appel d'IA laissé passer.
+  const account = mergeAccount(fromToken, await accountDocument(ctx.userId));
 
   const denial = accessDenial(account, "approved");
   if (denial) deny(denial);
