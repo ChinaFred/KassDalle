@@ -1,13 +1,45 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/recipe.dart';
+import '../domain/recipe_viewer.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../../core/services/gemini_service.dart';
+
+/// Confidentialité qu'une recette doit porter dans le livre [bookId] : celle
+/// du livre, `false` pour un livre introuvable — la même réponse que
+/// `expectedPrivacy` côté serveur. `null` sans livre : la recette garde alors
+/// la confidentialité qu'elle porte (une page détachée d'un livre privé reste
+/// privée), comme `privacyWithoutBook` côté serveur.
+///
+/// Les règles Firestore exigent la confidentialité du livre à toute écriture
+/// qui pose ou change le livre d'une recette : une recette créée ou déplacée
+/// dans un livre privé avec `is_private: false` restait lisible par la
+/// famille jusqu'au passage du déclencheur `onRecipeWritten`.
+Future<bool?> privacyOfBook(FirebaseFirestore firestore, String? bookId) async {
+  if (bookId == null || bookId.isEmpty) return null;
+  final snap = await firestore.collection('books').doc(bookId).get();
+  return snap.data()?['is_private'] == true;
+}
+
+/// Le livre d'une recette change-t-il ? `null` et chaîne vide valent « sans
+/// livre ».
+bool bookChanges(String? before, String? after) =>
+    (before ?? '') != (after ?? '');
+
+/// [data] avec la confidentialité du livre, ou inchangée sans livre
+/// ([bookPrivacy] nul) : une recette libre privée ne redevient pas publique à
+/// l'enregistrement.
+Map<String, dynamic> withBookPrivacy(
+  Map<String, dynamic> data,
+  bool? bookPrivacy,
+) => bookPrivacy == null ? data : {...data, 'is_private': bookPrivacy};
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
@@ -46,6 +78,24 @@ class RecipeRepository {
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');
+
+  /// Confidentialité à écrire pour [recipeId] rangée dans [newBookId], ou
+  /// `null` pour garder la valeur courante.
+  ///
+  /// Le livre n'est lu que si la recette en change. L'auteur d'une page
+  /// rangée dans le livre privé d'un autre ne peut pas lire ce livre :
+  /// relire le livre à chaque enregistrement l'empêchait d'enregistrer sa
+  /// page. Les règles, elles, ne contrôlent la confidentialité qu'à un
+  /// changement de livre ou de `is_private`.
+  Future<bool?> _privacyIfBookChanges(
+    String recipeId,
+    String? newBookId,
+  ) async {
+    final current = await _col.doc(recipeId).get();
+    final before = current.data()?['book_id'] as String?;
+    if (!bookChanges(before, newBookId)) return null;
+    return privacyOfBook(_firestore, newBookId);
+  }
 
   Future<
     ({
@@ -139,89 +189,211 @@ class RecipeRepository {
         });
   }
 
-  /// Combien de recettes ce livre porte, tous statuts confondus.
+  // ── Requêtes prouvables par les règles ────────────────────────────────────
+  //
+  // Firestore refuse une requête entière si ses règles ne peuvent pas prouver,
+  // sur les seuls filtres, que chaque résultat est lisible. Pour un autre
+  // qu'un administrateur, une requête par livre ou par statut se scinde donc
+  // en deux : les recettes partagées (`is_private == false`) et les siennes
+  // (`created_by == uid`). Un lecteur ne relit pas les brouillons des autres :
+  // pour lui, une requête de brouillons ne porte que sur les siens.
+
+  List<Query<Map<String, dynamic>>> _visibleQueries(
+    Query<Map<String, dynamic>> base,
+    RecipeViewer viewer, {
+    bool drafts = false,
+  }) {
+    if (viewer.isAdmin) return [base];
+    final mine = base.where('created_by', isEqualTo: viewer.uid);
+    if (drafts && !viewer.canEdit) return [mine];
+    return [base.where('is_private', isEqualTo: false), mine];
+  }
+
+  List<Recipe> _toRecipes(QuerySnapshot<Map<String, dynamic>> snap) =>
+      snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
+
+  /// Fusionne les flux de [queries], sans doublon (une recette partagée qui
+  /// m'appartient sort des deux requêtes). Rien n'est émis tant que chaque
+  /// requête n'a pas rendu son premier résultat : une liste partielle se
+  /// lirait comme un livre incomplet.
+  ///
+  /// Une requête refusée remonte à l'écran par le flux, et au rapport
+  /// d'erreurs : un refus ici signale une requête que les règles ne prouvent
+  /// plus, et il ne doit pas se lire seulement comme un livre vide.
+  Stream<List<Recipe>> _watchVisible(
+    List<Query<Map<String, dynamic>>> queries, {
+    required String action,
+    required Map<String, Object?> context,
+  }) {
+    final latest = List<Map<String, Recipe>?>.filled(queries.length, null);
+    final subs = <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    late final StreamController<List<Recipe>> ctrl;
+    ctrl = StreamController<List<Recipe>>(
+      onListen: () {
+        for (var i = 0; i < queries.length; i++) {
+          subs.add(
+            queries[i].snapshots().listen(
+              (snap) {
+                latest[i] = {for (final r in _toRecipes(snap)) r.id: r};
+                if (latest.every((m) => m != null)) {
+                  ctrl.add({for (final m in latest) ...m!}.values.toList());
+                }
+              },
+              onError: (Object e, StackTrace st) {
+                unawaited(
+                  _errorReportService.reportError(
+                    feature: 'recipe_visible_query',
+                    error: e,
+                    stackTrace: st,
+                    context: {'action': action, 'query_index': i, ...context},
+                  ),
+                );
+                ctrl.addError(e, st);
+              },
+            ),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final sub in subs) {
+          await sub.cancel();
+        }
+      },
+    );
+    return ctrl.stream;
+  }
+
+  /// Lecture ponctuelle de [queries], fusionnée sans doublon.
+  Future<List<Recipe>> _getVisible(
+    List<Query<Map<String, dynamic>>> queries, {
+    required String action,
+    required Map<String, Object?> context,
+  }) async {
+    try {
+      final snaps = await Future.wait(queries.map((q) => q.get()));
+      return {
+        for (final snap in snaps)
+          for (final r in _toRecipes(snap)) r.id: r,
+      }.values.toList();
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'recipe_visible_query',
+          error: e,
+          stackTrace: st,
+          context: {'action': action, ...context},
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  /// Combien de recettes de ce livre le lecteur voit, tous statuts confondus.
   ///
   /// Sert à annoncer ce qu'un basculement de confidentialité va emporter. Une
   /// agrégation plutôt qu'un `get()` : on veut un nombre, pas les documents,
   /// et lire cent recettes pour en compter cent est facturé cent fois.
-  Future<int> countInBook(String bookId) async {
-    final snap = await _col.where('book_id', isEqualTo: bookId).count().get();
-    return snap.count ?? 0;
+  ///
+  /// Hors administrateur, deux comptes disjoints : les recettes partagées, et
+  /// mes recettes privées. Une recette privée d'un autre rangée dans mon livre
+  /// n'est pas comptée — je ne peux pas la lire.
+  Future<int> countInBook(String bookId, RecipeViewer viewer) async {
+    final base = _col.where('book_id', isEqualTo: bookId);
+    if (viewer.isAdmin) {
+      final snap = await base.count().get();
+      return snap.count ?? 0;
+    }
+    final counts = await Future.wait([
+      base.where('is_private', isEqualTo: false).count().get(),
+      base
+          .where('created_by', isEqualTo: viewer.uid)
+          .where('is_private', isEqualTo: true)
+          .count()
+          .get(),
+    ]);
+    return counts.fold<int>(0, (total, c) => total + (c.count ?? 0));
   }
 
-  Stream<List<Recipe>> watchByBook(String bookId) {
-    return _col
+  /// Combien de pages de ce livre, ajoutées par d'autres membres, le lecteur
+  /// ne pourra ni supprimer ni détacher — annoncé avant de supprimer le livre.
+  ///
+  /// Zéro pour un administrateur, qui agit sur toutes. Sinon, les pages
+  /// partagées moins les siennes ; les pages privées d'un autre rangées dans
+  /// le livre ne sont pas lisibles, donc pas comptées.
+  Future<int> countOthersInBook(String bookId, RecipeViewer viewer) async {
+    if (viewer.isAdmin) return 0;
+    final shared = _col
         .where('book_id', isEqualTo: bookId)
-        .where('review_status', isEqualTo: ReviewStatus.validated.name)
-        .snapshots()
-        .map((s) {
-          final list = s.docs
-              .map((d) => Recipe.fromFirestore(d.id, d.data()))
-              .toList();
-          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          return list;
-        });
+        .where('is_private', isEqualTo: false);
+    final counts = await Future.wait([
+      shared.count().get(),
+      shared.where('created_by', isEqualTo: viewer.uid).count().get(),
+    ]);
+    return (counts[0].count ?? 0) - (counts[1].count ?? 0);
+  }
+
+  Query<Map<String, dynamic>> _validatedOfBook(String bookId) => _col
+      .where('book_id', isEqualTo: bookId)
+      .where('review_status', isEqualTo: ReviewStatus.validated.name);
+
+  static int _byPage(Recipe a, Recipe b) {
+    final pa = a.pageNumber;
+    final pb = b.pageNumber;
+    if (pa == null && pb == null) return a.titre.compareTo(b.titre);
+    if (pa == null) return 1;
+    if (pb == null) return -1;
+    return pa.compareTo(pb);
+  }
+
+  Stream<List<Recipe>> watchByBook(String bookId, RecipeViewer viewer) {
+    return _watchVisible(
+      _visibleQueries(_validatedOfBook(bookId), viewer),
+      action: 'watch_by_book',
+      context: {'book_id': bookId},
+    ).map((list) {
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    });
   }
 
   /// Toutes les pages validées d'un livre (recettes + pages non-recettes),
   /// triées par numéro de page (null en dernier), puis par titre.
-  Stream<List<Recipe>> watchAllPagesByBook(String bookId) {
-    return _col
-        .where('book_id', isEqualTo: bookId)
-        .where('review_status', isEqualTo: ReviewStatus.validated.name)
-        .snapshots()
-        .map((s) {
-          final list = s.docs
-              .map((d) => Recipe.fromFirestore(d.id, d.data()))
-              .toList();
-          list.sort((a, b) {
-            final pa = a.pageNumber;
-            final pb = b.pageNumber;
-            if (pa == null && pb == null) return a.titre.compareTo(b.titre);
-            if (pa == null) return 1;
-            if (pb == null) return -1;
-            return pa.compareTo(pb);
-          });
-          return list;
-        });
+  Stream<List<Recipe>> watchAllPagesByBook(String bookId, RecipeViewer viewer) {
+    return _watchVisible(
+      _visibleQueries(_validatedOfBook(bookId), viewer),
+      action: 'watch_all_pages_by_book',
+      context: {'book_id': bookId},
+    ).map((list) => list..sort(_byPage));
   }
 
   /// Toutes les pages validées d'un livre en lecture ponctuelle.
   ///
   /// Utilisé notamment pour les exports PDF complets.
-  Future<List<Recipe>> getAllValidatedPagesByBook(String bookId) async {
-    final snap = await _col
-        .where('book_id', isEqualTo: bookId)
-        .where('review_status', isEqualTo: ReviewStatus.validated.name)
-        .get();
-
-    final list = snap.docs
-        .map((d) => Recipe.fromFirestore(d.id, d.data()))
-        .toList();
-    list.sort((a, b) {
-      final pa = a.pageNumber;
-      final pb = b.pageNumber;
-      if (pa == null && pb == null) return a.titre.compareTo(b.titre);
-      if (pa == null) return 1;
-      if (pb == null) return -1;
-      return pa.compareTo(pb);
-    });
-    return list;
+  Future<List<Recipe>> getAllValidatedPagesByBook(
+    String bookId,
+    RecipeViewer viewer,
+  ) async {
+    final list = await _getVisible(
+      _visibleQueries(_validatedOfBook(bookId), viewer),
+      action: 'get_all_validated_pages_by_book',
+      context: {'book_id': bookId},
+    );
+    return list..sort(_byPage);
   }
 
-  /// Brouillons rattachés à un livre donné.
-  Stream<List<Recipe>> watchDraftsByBook(String bookId) {
-    return _col
+  /// Brouillons rattachés à un livre donné : ceux que le lecteur peut relire.
+  Stream<List<Recipe>> watchDraftsByBook(String bookId, RecipeViewer viewer) {
+    final base = _col
         .where('book_id', isEqualTo: bookId)
         .where(
           'review_status',
           whereIn: [ReviewStatus.draft.name, ReviewStatus.inReview.name],
-        )
-        .snapshots()
-        .map(
-          (s) =>
-              s.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList(),
         );
+    return _watchVisible(
+      _visibleQueries(base, viewer, drafts: true),
+      action: 'watch_drafts_by_book',
+      context: {'book_id': bookId},
+    );
   }
 
   /// Brouillons sans livre (recettes libres) de l'utilisateur.
@@ -258,17 +430,19 @@ class RecipeRepository {
 
   /// Recettes libres validées de plusieurs utilisateurs (membres d'un groupe).
   ///
-  /// Le statut se filtre côté client pour éviter un index de plus ; la
-  /// confidentialité, non. Elle part dans la requête parce qu'elle ne relève
-  /// pas de l'affichage : ces recettes ne nous appartiennent pas, et la règle
-  /// serveur refusera bientôt de les rendre. Un filtre client sur un document
-  /// déjà reçu ne protège rien — il cache.
+  /// Confidentialité et statut partent dans la requête : la règle Firestore
+  /// ne laisse lire à un lecteur que les recettes partagées ET validées des
+  /// autres, et refuserait la requête entière sans ces deux filtres. Des
+  /// filtres d'égalité seuls ne demandent pas d'index composite. Le livre
+  /// absent se filtre côté client : « champ absent » ne s'exprime pas en
+  /// requête.
   Stream<List<Recipe>> watchUnattachedByOwners(List<String> ownerIds) {
     if (ownerIds.isEmpty) return Stream.value([]);
     final limited = ownerIds.take(30).toList();
     return _col
         .where('created_by', whereIn: limited)
         .where('is_private', isEqualTo: false)
+        .where('review_status', isEqualTo: ReviewStatus.validated.name)
         .snapshots()
         .map((s) {
           final list = s.docs
@@ -414,7 +588,12 @@ class RecipeRepository {
       renamedUnits: normalized.renamedUnits,
       renamedIngredients: normalized.renamedIngredients,
     );
-    final ref = await _col.add(toSave.toFirestore());
+    final ref = await _col.add(
+      withBookPrivacy(
+        toSave.toFirestore(),
+        await privacyOfBook(_firestore, toSave.bookId),
+      ),
+    );
     return ref.id;
   }
 
@@ -520,7 +699,14 @@ class RecipeRepository {
       renamedUnits: normalized.renamedUnits,
       renamedIngredients: normalized.renamedIngredients,
     );
-    await _col.doc(recipe.id).update(toSave.toFirestore());
+    await _col
+        .doc(recipe.id)
+        .update(
+          withBookPrivacy(
+            toSave.toFirestore(),
+            await _privacyIfBookChanges(recipe.id, toSave.bookId),
+          ),
+        );
   }
 
   // ── Portions persistées (par utilisateur et recette) ─────────────────────
@@ -631,6 +817,8 @@ class RecipeRepository {
       'portions': portions,
       'book_id': bookId,
       'book_titre': bookTitre,
+      // Sans livre, la confidentialité actuelle est gardée (pas d'écriture).
+      'is_private': ?await _privacyIfBookChanges(recipeId, bookId),
       'page_number': ?pageNumberOverride,
       // La réserve de fidélité est LEVÉE, pas seulement masquée.
       //
@@ -791,9 +979,26 @@ class RecipeRepository {
     });
   }
 
-  /// Détache toutes les recettes (validées et brouillons) d'un livre.
-  Future<void> detachAllRecipesFromBook(String bookId) async {
-    final snapshot = await _col.where('book_id', isEqualTo: bookId).get();
+  /// Recettes d'un livre que [viewer] peut modifier : toutes pour un
+  /// administrateur, les siennes sinon — la règle Firestore refuse la
+  /// modification de la recette d'un autre, et un lot refusé l'est en entier.
+  Query<Map<String, dynamic>> _modifiableOfBook(
+    String bookId,
+    RecipeViewer viewer,
+  ) {
+    final base = _col.where('book_id', isEqualTo: bookId);
+    return viewer.isAdmin
+        ? base
+        : base.where('created_by', isEqualTo: viewer.uid);
+  }
+
+  /// Détache d'un livre toutes les recettes (validées et brouillons) que
+  /// [viewer] peut modifier. Celles des autres gardent leur rattachement.
+  Future<void> detachAllRecipesFromBook(
+    String bookId,
+    RecipeViewer viewer,
+  ) async {
+    final snapshot = await _modifiableOfBook(bookId, viewer).get();
     if (snapshot.docs.isEmpty) return;
 
     final batch = _firestore.batch();
@@ -808,9 +1013,13 @@ class RecipeRepository {
     await batch.commit();
   }
 
-  /// Supprime toutes les recettes (validées et brouillons) d'un livre.
-  Future<void> deleteAllRecipesOfBook(String bookId) async {
-    final snapshot = await _col.where('book_id', isEqualTo: bookId).get();
+  /// Supprime toutes les recettes (validées et brouillons) d'un livre que
+  /// [viewer] peut supprimer. Celles des autres restent.
+  Future<void> deleteAllRecipesOfBook(
+    String bookId,
+    RecipeViewer viewer,
+  ) async {
+    final snapshot = await _modifiableOfBook(bookId, viewer).get();
     if (snapshot.docs.isEmpty) return;
 
     final batch = _firestore.batch();

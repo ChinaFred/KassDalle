@@ -49,20 +49,30 @@ class BookRepository {
   }
 
   /// Livres validés des utilisateurs listés (membres d'un groupe).
-  /// Filtrage review_status côté client pour éviter les index composites.
+  ///
+  /// La confidentialité part dans la requête : la règle Firestore ne laisse
+  /// lire le livre d'un autre que s'il porte `is_private == false`, et refuse
+  /// la requête entière si ce filtre manque. Le statut reste filtré côté
+  /// client.
   Stream<List<Book>> watchValidatedBooksByOwners(List<String> ownerIds) {
     if (ownerIds.isEmpty) return Stream.value([]);
     final limited = ownerIds.take(30).toList();
-    return _col.where('created_by', whereIn: limited).snapshots().map((s) {
-      final list = s.docs
-          .map((d) => Book.fromFirestore(d.id, d.data()))
-          .where(
-            (b) => b.reviewStatus == BookReviewStatus.validated && !b.isPrivate,
-          )
-          .toList();
-      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return list;
-    });
+    return _col
+        .where('created_by', whereIn: limited)
+        .where('is_private', isEqualTo: false)
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Book.fromFirestore(d.id, d.data()))
+              .where(
+                (b) =>
+                    b.reviewStatus == BookReviewStatus.validated &&
+                    !b.isPrivate,
+              )
+              .toList();
+          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
   }
 
   /// Brouillons livre de l'utilisateur connecté.
@@ -174,8 +184,9 @@ class BookRepository {
           : 'image/jpeg';
       // Origine « asset » : c'est notre propre image, livrée avec
       // l'application. Elle emprunte le même chemin — c'est ce qui permet de
-      // fermer `covers/` en écriture — mais n'est pas analysée : la faire
-      // passer au contrôle remplirait la file à chaque création de livre.
+      // fermer `covers/` en écriture — et le serveur la dispense d'analyse
+      // après avoir reconnu son empreinte (`moderation/origin.ts`). Une image
+      // de `assets/` modifiée doit voir son empreinte mise à jour là-bas.
       final url = await _moderation.publish(
         PendingImage(
           bytes: bytes,
@@ -392,18 +403,27 @@ class BookRepository {
             .get(),
       ]);
 
+      // Une recette libre privée — page détachée d'un livre privé — n'est pas
+      // rangée dans « Mes recettes libres » : elle y deviendrait partagée si
+      // ce livre l'est. Elle reste libre, et privée.
       final docs = {
         for (final snap in results)
-          for (final doc in snap.docs) doc.id: doc.reference,
+          for (final doc in snap.docs)
+            if (doc.data()['is_private'] != true) doc.id: doc.reference,
       };
       if (docs.isEmpty) return 0;
 
+      // « Mes recettes libres » peut avoir été rendu privé : la recette prend
+      // la confidentialité du livre, comme l'exigent les règles Firestore.
+      final libresSnap = await _col.doc(libresBookId).get();
+      final isPrivate = libresSnap.data()?['is_private'] == true;
       final batch = _firestore.batch();
       final now = Timestamp.now();
       for (final ref in docs.values) {
         batch.update(ref, {
           'book_id': libresBookId,
           'book_titre': libresTitre,
+          'is_private': isPrivate,
           'updated_at': now,
         });
       }

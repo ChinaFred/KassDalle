@@ -17,6 +17,7 @@
 
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import { recipeBudgetUserId } from "../ai/budget";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
@@ -57,7 +58,10 @@ export async function syncRecipeMealRole(args: {
   >;
   if (asString(tags.meal_role).length > 0) return;
 
-  const userId = (data.created_by as string | undefined) ?? undefined;
+  // Jamais vide : une recette sans propriétaire s'impute au compte des
+  // recettes orphelines, plafonné comme un autre (`ai/budget.ts`). Un uid vide
+  // faisait passer l'appel hors de tout plafond.
+  const userId = recipeBudgetUserId(data.created_by);
   const titre = asString(data.titre);
   const cooklang = asString(data.draft_cooklang) || asString(data.raw_cooklang);
 

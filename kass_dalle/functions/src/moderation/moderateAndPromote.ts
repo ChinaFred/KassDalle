@@ -15,7 +15,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
-import { logError, logInfo } from "../logging";
+import { logError, logInfo, logWarn } from "../logging";
 import { recordUsage } from "../ai/usage";
 import { scanUpload } from "../utils/uploadSecurity";
 import { decideModeration, type ModerationDecision } from "./decision";
@@ -25,7 +25,10 @@ import {
   analyseImage,
   getModerationConfig,
 } from "./engine";
+import { resolveImageOrigin, sha256Hex, type ImageOrigin } from "./origin";
 import {
+  assertTargetOwnership,
+  pinnedGeneration,
   quarantineToRejected,
   promoteImage,
   targetPathFor,
@@ -35,16 +38,16 @@ import {
 const COLLECTION = "image_moderation";
 
 /**
- * Origine d'une image.
+ * Origine d'une image (`./origin.ts`).
  *
  * Seules les images soumises par une personne sont analysées. Une image
- * produite par l'IA sort d'un moteur qui applique déjà ses garde-fous, et un
- * asset livré avec l'application est le nôtre : les analyser doublerait le coût
- * pour rien. Elles passent par le même chemin — c'est ce qui permet de fermer
- * les dossiers publiés en écriture — et le journal dit pourquoi elles sont
- * passées.
+ * produite par l'IA côté serveur sort d'un moteur qui applique déjà ses
+ * garde-fous, et un asset livré avec l'application est le nôtre : les analyser
+ * doublerait le coût pour rien. L'origine déclarée par un client n'est jamais
+ * crue telle quelle : `asset` se vérifie sur l'empreinte du fichier, `ai` ne
+ * vient que du serveur.
  */
-export type ImageOrigin = "user" | "ai" | "asset";
+export type { ImageOrigin };
 
 export interface ModerationItem {
   quarantinePath: string;
@@ -98,9 +101,22 @@ export async function moderateAndPromote(args: {
   items: ModerationItem[];
   userId: string;
   correlationId: string;
+  /** Rôle administrateur de l'appelant, consulté seulement hors propriété. */
+  isAdmin: (uid: string) => Promise<boolean>;
 }): Promise<{ results: ItemOutcome[] }> {
   const { items, userId, correlationId } = args;
   const feature = items.length > 1 ? MODERATION_FEATURE_BATCH : MODERATION_FEATURE;
+
+  // Propriété d'abord, pour tout le lot : aucune analyse facturée, aucune
+  // image publiée, si une seule destination appartient à un autre.
+  for (const item of items) {
+    await assertTargetOwnership({
+      kind: item.targetKind,
+      ownerId: item.ownerId,
+      callerUid: userId,
+      isAdmin: args.isAdmin,
+    });
+  }
 
   const config = await getModerationConfig();
   const db = getFirestore();
@@ -119,7 +135,12 @@ export async function moderateAndPromote(args: {
       throw new QuarantineFileMissing(item.quarantinePath);
     }
     const [meta] = await file.getMetadata();
-    const [bytes] = await file.download();
+    // La version analysée est celle qu'on promouvra : téléchargement, copie
+    // et refus portent tous sur cette génération (`pinnedGeneration`).
+    const generation = pinnedGeneration(meta.generation);
+    const [bytes] = await bucket
+      .file(item.quarantinePath, generation != null ? { generation } : undefined)
+      .download();
 
     // Le format d'abord : inutile d'envoyer un exécutable renommé à un moteur
     // d'analyse d'images. Ce refus-là n'est pas une décision de modération, il
@@ -140,15 +161,28 @@ export async function moderateAndPromote(args: {
       );
     }
 
+    // L'origine retenue, pas celle déclarée : un `asset` dont l'empreinte
+    // n'est pas celle d'une image livrée redevient une image d'utilisateur.
+    const { origin, downgraded } = resolveImageOrigin(item.origin, sha256Hex(bytes));
+    if (downgraded) {
+      await logWarn({
+        message: "Image déclarée « asset » sans empreinte connue — analysée comme une autre",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        extra: { quarantinePath: item.quarantinePath, targetKind: item.targetKind },
+      });
+    }
+
     let decision: ModerationDecision;
     let signals: Record<string, unknown> = {};
     let provider = config.provider;
 
-    if (item.origin !== "user") {
+    if (origin !== "user") {
       // Ni analysée, ni facturée — mais journalisée, et à son motif propre.
       decision = {
         status: "approved",
-        reason: item.origin === "ai" ? "ai_generated" : "bundled_asset",
+        reason: origin === "ai" ? "ai_generated" : "bundled_asset",
         culinaryMatches: [],
       };
     } else if (!config.enabled) {
@@ -203,6 +237,7 @@ export async function moderateAndPromote(args: {
         contentType: item.contentType,
         moderationId: docRef.id,
         correlationId,
+        sourceGeneration: generation,
       });
       publishedUrl = promoted.downloadUrl;
     } else if (decision.status === "rejected") {
@@ -212,6 +247,7 @@ export async function moderateAndPromote(args: {
         quarantinePath: item.quarantinePath,
         moderationId: docRef.id,
         correlationId,
+        sourceGeneration: generation,
       });
     }
 
@@ -219,6 +255,9 @@ export async function moderateAndPromote(args: {
       status: decision.status,
       uid: userId,
       quarantine_path: item.quarantinePath,
+      // La version analysée : une décision d'administrateur promeut celle-ci,
+      // pas un fichier réécrit depuis dans la quarantaine.
+      quarantine_generation: generation != null ? String(generation) : null,
       target_path: targetPath,
       target_kind: item.targetKind,
       owner_id: item.ownerId,
@@ -226,7 +265,7 @@ export async function moderateAndPromote(args: {
       size_bytes: bytes.length,
       signals,
       culinary_matches: decision.culinaryMatches,
-      engine: item.origin !== "user" ? "none" : config.enabled ? provider : "none",
+      engine: origin !== "user" ? "none" : config.enabled ? provider : "none",
       engine_version: engineModel,
       decision_reason: decision.reason,
       correlation_id: correlationId,

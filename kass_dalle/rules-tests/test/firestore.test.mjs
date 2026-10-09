@@ -59,6 +59,12 @@ beforeEach(async () => {
       tags: [],
     },
     "books/system": { title: "Recettes libres", created_by: EDITOR, tags: ["__libres"] },
+    "books/public-reader": {
+      title: "Mon livre partagé",
+      created_by: READER,
+      is_private: false,
+      tags: [],
+    },
     "recipes/validated": {
       title: "Tarte",
       created_by: OTHER,
@@ -78,11 +84,52 @@ beforeEach(async () => {
       is_private: true,
     },
     "recipes/editor-own": { title: "Gratin", created_by: EDITOR, review_status: "validated" },
-    "recipes/draft-other": { title: "Brouillon", created_by: OTHER, review_status: "draft" },
+    "recipes/draft-other": {
+      title: "Brouillon",
+      created_by: OTHER,
+      review_status: "draft",
+      is_private: false,
+    },
+    "recipes/in-reader-private-book": {
+      title: "Ma soupe secrète",
+      book_id: "private-reader",
+      created_by: READER,
+      review_status: "validated",
+      is_private: true,
+    },
+    "recipes/reader-in-other-book": {
+      title: "Ma page chez un autre",
+      book_id: "public-other",
+      created_by: READER,
+      review_status: "validated",
+      is_private: false,
+    },
+    "recipes/legacy-no-flag": { title: "Ancienne", created_by: OTHER, review_status: "validated" },
     "recipes/draft-reader": { title: "Mon brouillon", created_by: READER, review_status: "draft" },
+    "recipes/in-public-book": {
+      title: "Soupe",
+      book_id: "public-other",
+      created_by: OTHER,
+      review_status: "validated",
+      is_private: false,
+    },
+    "recipes/in-private-book": {
+      title: "Soupe secrète",
+      book_id: "private-other",
+      created_by: OTHER,
+      review_status: "validated",
+      is_private: true,
+    },
     "recipes/validated-private-other/annotations/a1": { uid: OTHER, text: "note privée" },
     "recipes/validated/annotations/mine": { uid: READER, text: "ma note" },
     "recipe_ratings/r1": { user_id: READER, recipe_id: "validated", rating: 4 },
+    "recipe_ratings/r-other": { user_id: OTHER, recipe_id: "validated", rating: 3 },
+    "recipe_ratings/r-other-private": {
+      user_id: OTHER,
+      recipe_id: "validated-private-other",
+      rating: 5,
+    },
+    "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
     "groups/g1": { owner_id: READER, member_ids: [READER] },
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
@@ -280,7 +327,7 @@ describe("books", () => {
     await assertSucceeds(db("editor").doc("books/public").delete());
   });
 
-  it("un lecteur ne lit pas le livre privé d'un autre", OPEN_FLAW, async () => {
+  it("un lecteur ne lit pas le livre privé d'un autre", async () => {
     await assertFails(db("reader").doc("books/private-other").get());
   });
 
@@ -296,16 +343,36 @@ describe("books", () => {
     await assertSucceeds(db("editor").doc("books/public").update({ title: "y" }));
   });
 
-  it("un éditeur ne lit pas le livre privé d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne lit pas le livre privé d'un autre", async () => {
     await assertFails(db("editor").doc("books/private-other").get());
   });
 
-  it("un éditeur ne modifie pas le livre d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne modifie pas le livre d'un autre", async () => {
     await assertFails(db("editor").doc("books/public-other").update({ title: "y" }));
   });
 
-  it("un éditeur ne supprime pas le livre d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne supprime pas le livre d'un autre", async () => {
     await assertFails(db("editor").doc("books/public-other").delete());
+  });
+
+  it("un éditeur ne crée pas de livre au nom d'un autre", async () => {
+    await assertFails(db("editor").doc("books/new").set({ title: "x", created_by: OTHER }));
+  });
+
+  it("un éditeur ne change pas created_by de son livre", async () => {
+    await assertFails(db("editor").doc("books/public").update({ created_by: OTHER }));
+  });
+
+  it("un administrateur modifie le livre privé d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("books/private-other").update({ title: "y" }));
+  });
+
+  it("un administrateur supprime le livre d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("books/public-other").delete());
+  });
+
+  it("un administrateur ne change pas created_by d'un livre", async () => {
+    await assertFails(db("admin").doc("books/public-other").update({ created_by: EDITOR }));
   });
 
   // Le livre système appartient à l'éditeur : même son propriétaire ne
@@ -334,10 +401,10 @@ describe("recipes — lecture", () => {
     await assertSucceeds(db("reader").doc("recipes/draft-reader").get());
   });
 
-  // Droit conservé tant que l'utilisateur n'a pas tranché la relecture des
-  // brouillons par un éditeur : seule la confidentialité (is_private) est
-  // décidée — créateur seul, plus l'administrateur.
-  it("un éditeur lit le brouillon d'un autre", async () => {
+  // Droit conservé : un éditeur relit le brouillon PARTAGÉ d'un autre. La
+  // confidentialité (is_private) l'emporte — créateur seul, plus
+  // l'administrateur — et l'éditeur ne modifie pas ce brouillon.
+  it("un éditeur lit le brouillon partagé d'un autre", async () => {
     await assertSucceeds(db("editor").doc("recipes/draft-other").get());
   });
 
@@ -355,12 +422,23 @@ describe("recipes — lecture", () => {
     await assertSucceeds(db("admin").doc("recipes/validated-private-other").get());
   });
 
-  it("un lecteur ne lit pas la recette privée validée d'un autre", OPEN_FLAW, async () => {
+  it("un lecteur ne lit pas la recette privée validée d'un autre", async () => {
     await assertFails(db("reader").doc("recipes/validated-private-other").get());
   });
 
-  it("un éditeur ne lit pas la recette privée d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne lit pas la recette privée d'un autre", async () => {
     await assertFails(db("editor").doc("recipes/validated-private-other").get());
+  });
+
+  // Un document sans `is_private` n'est pas prouvé partagé : seul son
+  // créateur (ou un administrateur) le lit.
+  it("une recette sans is_private n'est lue que par son créateur", async () => {
+    await assertFails(db("reader").doc("recipes/legacy-no-flag").get());
+    await assertSucceeds(db("otherReader").doc("recipes/legacy-no-flag").get());
+  });
+
+  it("un lecteur ne lit pas une recette d'un livre privé d'autrui", async () => {
+    await assertFails(db("reader").doc("recipes/in-private-book").get());
   });
 });
 
@@ -401,7 +479,7 @@ describe("recipes — écriture", () => {
     await assertFails(db("reader").doc("recipes/validated").delete());
   });
 
-  it("un éditeur ne crée pas de recette au nom d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne crée pas de recette au nom d'un autre", async () => {
     await assertFails(
       db("editor")
         .doc("recipes/new")
@@ -409,11 +487,11 @@ describe("recipes — écriture", () => {
     );
   });
 
-  it("un lecteur ne vide pas created_by de sa recette", OPEN_FLAW, async () => {
+  it("un lecteur ne vide pas created_by de sa recette", async () => {
     await assertFails(db("reader").doc("recipes/draft-reader").update({ created_by: "" }));
   });
 
-  it("un lecteur ne donne pas sa recette à un autre (created_by)", OPEN_FLAW, async () => {
+  it("un lecteur ne donne pas sa recette à un autre (created_by)", async () => {
     await assertFails(db("reader").doc("recipes/draft-reader").update({ created_by: OTHER }));
   });
 
@@ -425,16 +503,219 @@ describe("recipes — écriture", () => {
     await assertSucceeds(db("admin").doc("recipes/validated").delete());
   });
 
-  it("un éditeur ne modifie pas la recette d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne modifie pas la recette d'un autre", async () => {
     await assertFails(db("editor").doc("recipes/validated").update({ title: "y" }));
   });
 
-  it("un éditeur ne supprime pas la recette d'un autre", OPEN_FLAW, async () => {
+  it("un éditeur ne supprime pas la recette d'un autre", async () => {
     await assertFails(db("editor").doc("recipes/validated").delete());
   });
 
-  it("un éditeur ne change pas created_by de sa propre recette", OPEN_FLAW, async () => {
+  it("un éditeur ne change pas created_by de sa propre recette", async () => {
     await assertFails(db("editor").doc("recipes/editor-own").update({ created_by: OTHER }));
+  });
+
+  it("un éditeur modifie sa propre recette", async () => {
+    await assertSucceeds(db("editor").doc("recipes/editor-own").update({ title: "y" }));
+  });
+
+  it("un administrateur modifie la recette privée d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated-private-other").update({ title: "y" }));
+  });
+
+  it("un administrateur supprime la recette privée d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated-private-other").delete());
+  });
+
+  it("un administrateur ne change pas created_by d'une recette", async () => {
+    await assertFails(db("admin").doc("recipes/validated").update({ created_by: EDITOR }));
+  });
+
+  it("un administrateur ne crée pas de recette au nom d'un autre", async () => {
+    await assertFails(
+      db("admin").doc("recipes/new").set({ title: "x", created_by: OTHER, review_status: "draft" }),
+    );
+  });
+});
+
+// Une recette prend la confidentialité de son livre, à toute écriture qui pose
+// ou change son livre ou sa confidentialité.
+describe("recipes — confidentialité suivant le livre", () => {
+  const draft = (extra) => ({ title: "x", created_by: READER, review_status: "draft", ...extra });
+
+  it("création dans son livre privé avec is_private:false : refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "private-reader", is_private: false })),
+    );
+  });
+
+  it("création dans son livre privé sans is_private : refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "private-reader" })),
+    );
+  });
+
+  it("création dans son livre privé avec is_private:true : acceptée", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "private-reader", is_private: true })),
+    );
+  });
+
+  it("création dans son livre partagé avec is_private:false : acceptée", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "public-reader", is_private: false })),
+    );
+  });
+
+  it("création dans un livre partagé avec is_private:true : refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "public-reader", is_private: true })),
+    );
+  });
+
+  it("une recette de livre privé ne passe pas à is_private:false", async () => {
+    await assertFails(
+      db("reader").doc("recipes/in-reader-private-book").update({ is_private: false }),
+    );
+  });
+
+  it("déplacée dans un livre privé sans changer is_private : refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ book_id: "private-reader", is_private: false }),
+    );
+  });
+
+  it("déplacée dans un livre privé avec is_private:true : accepté", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ book_id: "private-reader", is_private: true }),
+    );
+  });
+
+  it("une écriture qui ne touche ni livre ni confidentialité n'est pas contrôlée", async () => {
+    await assertSucceeds(db("reader").doc("recipes/in-reader-private-book").update({ title: "y" }));
+  });
+
+  it("book_id contenant « / » : refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "private-reader/x", is_private: false })),
+    );
+  });
+
+  // Le livre doit exister (option A, v0.23.8).
+  it("création avec un book_id inexistant : refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "aucun-livre", is_private: false })),
+    );
+  });
+
+  it("création sans livre avec is_private:true : acceptée", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ is_private: true })),
+    );
+  });
+
+  it("recette sans livre passée à is_private:true : acceptée", async () => {
+    await assertSucceeds(db("reader").doc("recipes/draft-reader").update({ is_private: true }));
+  });
+
+  // Une page détachée d'un livre privé reste privée (v0.23.8).
+  it("détacher d'un livre privé en gardant is_private:true : accepté", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/in-reader-private-book")
+        .update({ book_id: null, book_titre: null, is_private: true }),
+    );
+  });
+
+  it("détacher du livre (book_id null) : accepté", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/in-reader-private-book").update({ book_id: null }),
+    );
+  });
+});
+
+// Décision de l'utilisateur (option A) : on ne range une recette que dans ses
+// propres livres ; l'administrateur partout. Une page déjà rangée chez un
+// autre y reste.
+describe("recipes — ranger dans ses propres livres", () => {
+  const draft = (extra) => ({ title: "x", created_by: READER, review_status: "draft", ...extra });
+
+  it("book_id qui n'est ni nul ni une chaîne : refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: 42 })),
+    );
+  });
+
+  it("un lecteur ne crée pas de recette dans le livre d'un autre", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/new")
+        .set(draft({ book_id: "public-other", is_private: false })),
+    );
+  });
+
+  it("un lecteur ne déplace pas sa recette vers le livre d'un autre", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ book_id: "public-other", is_private: false }),
+    );
+  });
+
+  it("un éditeur ne range pas sa recette dans le livre d'un autre", async () => {
+    await assertFails(
+      db("editor").doc("recipes/editor-own").update({ book_id: "public-other", is_private: false }),
+    );
+  });
+
+  it("un administrateur crée une recette dans le livre d'un autre", async () => {
+    await assertSucceeds(
+      db("admin").doc("recipes/new").set({
+        title: "x",
+        created_by: PERSONAS.admin.uid,
+        review_status: "draft",
+        book_id: "public-other",
+        is_private: false,
+      }),
+    );
+  });
+
+  it("un administrateur déplace une recette vers le livre d'un autre", async () => {
+    await assertSucceeds(
+      db("admin").doc("recipes/validated").update({ book_id: "public-other", is_private: false }),
+    );
+  });
+
+  it("une page déjà rangée chez un autre se modifie sans changer de livre", async () => {
+    await assertSucceeds(db("reader").doc("recipes/reader-in-other-book").update({ title: "y" }));
+  });
+
+  it("une page déjà rangée chez un autre se détache", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/reader-in-other-book").update({ book_id: null }),
+    );
   });
 });
 
@@ -455,13 +736,89 @@ describe("recipes — annotations", () => {
     await assertFails(db("pending").doc("recipes/validated/annotations/mine").get());
   });
 
-  it("un lecteur ne lit pas l'annotation d'une recette privée d'autrui", OPEN_FLAW, async () => {
+  it("un lecteur ne lit pas l'annotation d'une recette privée d'autrui", async () => {
     await assertFails(db("reader").doc("recipes/validated-private-other/annotations/a1").get());
   });
 
-  it("un lecteur ne transfère pas son annotation (uid figé)", OPEN_FLAW, async () => {
+  it("un lecteur ne transfère pas son annotation (uid figé)", async () => {
     await assertFails(
       db("reader").doc("recipes/validated/annotations/mine").update({ uid: OTHER }),
+    );
+  });
+
+  it("un lecteur lit l'annotation d'un autre sur une recette visible", async () => {
+    await assertSucceeds(db("reader").doc("recipes/validated/annotations/other").get());
+  });
+
+  it("un lecteur n'annote pas la recette privée d'autrui", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/validated-private-other/annotations/new")
+        .set({ uid: READER, text: "ok" }),
+    );
+  });
+
+  it("un lecteur annote sa propre recette privée", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/validated-private-reader/annotations/new")
+        .set({ uid: READER, text: "ok" }),
+    );
+  });
+
+  it("un lecteur modifie le texte de son annotation", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/validated/annotations/mine").update({ text: "corrigé" }),
+    );
+  });
+
+  it("un lecteur ne modifie pas l'annotation d'un autre", async () => {
+    await assertFails(
+      db("reader").doc("recipes/validated/annotations/other").update({ text: "x" }),
+    );
+  });
+
+  it("un administrateur supprime l'annotation d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated/annotations/other").delete());
+  });
+
+  it("un administrateur lit l'annotation d'une recette privée d'autrui", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated-private-other/annotations/a1").get());
+  });
+});
+
+describe("recipe_ratings — confidentialité", () => {
+  it("un lecteur lit la note d'un autre sur une recette visible", async () => {
+    await assertSucceeds(db("reader").doc("recipe_ratings/r-other").get());
+  });
+
+  it("un lecteur ne lit pas la note d'un autre sur une recette privée", async () => {
+    await assertFails(db("reader").doc("recipe_ratings/r-other-private").get());
+  });
+
+  it("un lecteur ne note pas la recette privée d'autrui", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/new")
+        .set({ user_id: READER, recipe_id: "validated-private-other", rating: 2 }),
+    );
+  });
+
+  it("un lecteur note une recette visible", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipe_ratings/new")
+        .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
+    );
+  });
+
+  it("un lecteur met à jour sa note", async () => {
+    await assertSucceeds(db("reader").doc("recipe_ratings/r1").update({ rating: 5 }));
+  });
+
+  it("note : recipe_id figé en mise à jour", async () => {
+    await assertFails(
+      db("reader").doc("recipe_ratings/r1").update({ recipe_id: "validated-private-reader" }),
     );
   });
 });
@@ -499,7 +856,7 @@ describe("champs propriétaire", () => {
     await assertFails(db("otherReader").doc("planned_meals/m1").get());
   });
 
-  it("note : user_id figé en mise à jour", OPEN_FLAW, async () => {
+  it("note : user_id figé en mise à jour", async () => {
     await assertFails(db("reader").doc("recipe_ratings/r1").update({ user_id: OTHER }));
   });
 
@@ -757,4 +1114,169 @@ describe("référentiels", () => {
       await assertSucceeds(db("admin").doc(`${col}/x`).set({ name: "x" }));
     });
   }
+});
+
+// ── requêtes du client ───────────────────────────────────────────────────
+//
+// Firestore refuse une requête entière dès que les règles ne peuvent pas
+// prouver que CHAQUE résultat possible est lisible : une règle n'est pas un
+// filtre. Ces tests rejouent la forme des requêtes du client
+// (recipe_repository.dart, book_repository.dart, planning_providers.dart,
+// annotation_repository.dart, recipe_rating_repository.dart) : une requête
+// qui perd son filtre `is_private` ou `created_by` échoue ici avant de
+// vider un écran en production.
+
+describe("requêtes du client", () => {
+  const recipes = (who) => db(who).collection("recipes");
+
+  it("livre partagé : pages validées non privées (lecteur)", async () => {
+    await assertSucceeds(
+      recipes("reader")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("livre : mes pages validées (lecteur)", async () => {
+    await assertSucceeds(
+      recipes("reader")
+        .where("book_id", "==", "private-reader")
+        .where("review_status", "==", "validated")
+        .where("created_by", "==", READER)
+        .get(),
+    );
+  });
+
+  it("livre : sans filtre de confidentialité, refusé au lecteur et à l'éditeur", async () => {
+    for (const who of ["reader", "editor"]) {
+      await assertFails(
+        recipes(who)
+          .where("book_id", "==", "public-other")
+          .where("review_status", "==", "validated")
+          .get(),
+      );
+    }
+  });
+
+  it("livre vide sans filtre : refusé quand même (preuve par les filtres)", async () => {
+    await assertFails(
+      recipes("reader")
+        .where("book_id", "==", "aucun")
+        .where("review_status", "==", "validated")
+        .get(),
+    );
+  });
+
+  it("livre : sans filtre, permis à l'administrateur", async () => {
+    await assertSucceeds(
+      recipes("admin")
+        .where("book_id", "==", "private-other")
+        .where("review_status", "==", "validated")
+        .get(),
+    );
+  });
+
+  it("brouillons partagés d'un livre : éditeur avec is_private == false", async () => {
+    await assertSucceeds(
+      recipes("editor")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "in", ["draft", "inReview"])
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("brouillons partagés d'un livre : refusés au lecteur", async () => {
+    await assertFails(
+      recipes("reader")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "in", ["draft", "inReview"])
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("mes brouillons d'un livre (lecteur)", async () => {
+    await assertSucceeds(
+      recipes("reader")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "in", ["draft", "inReview"])
+        .where("created_by", "==", READER)
+        .get(),
+    );
+  });
+
+  // Le client compte par `count()` ; l'émulateur rejoue la même preuve sur
+  // un `get()` aux mêmes filtres.
+  it("comptage d'un livre : partagées + mes privées (éditeur)", async () => {
+    await assertSucceeds(
+      recipes("editor").where("book_id", "==", "public").where("is_private", "==", false).get(),
+    );
+    await assertSucceeds(
+      recipes("editor")
+        .where("book_id", "==", "public")
+        .where("created_by", "==", EDITOR)
+        .where("is_private", "==", true)
+        .get(),
+    );
+  });
+
+  it("recherche : mes recettes (created_by in [moi])", async () => {
+    await assertSucceeds(recipes("reader").where("created_by", "in", [READER]).get());
+  });
+
+  it("recherche et planning : recettes validées partagées de la famille", async () => {
+    await assertSucceeds(
+      recipes("reader")
+        .where("created_by", "in", [OTHER, EDITOR])
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("recettes de la famille sans filtre de confidentialité : refusé", async () => {
+    await assertFails(
+      recipes("reader")
+        .where("created_by", "in", [OTHER])
+        .where("review_status", "==", "validated")
+        .get(),
+    );
+  });
+
+  it("livres de la famille : is_private == false", async () => {
+    await assertSucceeds(
+      db("reader")
+        .collection("books")
+        .where("created_by", "in", [OTHER, EDITOR])
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("tous les livres sans filtre : refusé au lecteur", async () => {
+    await assertFails(db("reader").collection("books").get());
+  });
+
+  it("livres de la famille sans filtre de confidentialité : refusé", async () => {
+    await assertFails(db("reader").collection("books").where("created_by", "in", [OTHER]).get());
+  });
+
+  it("annotations d'une recette visible, triées", async () => {
+    await assertSucceeds(
+      db("reader").collection("recipes/validated/annotations").orderBy("created_at", "desc").get(),
+    );
+  });
+
+  it("annotations d'une recette privée d'autrui : refusé", async () => {
+    await assertFails(db("reader").collection("recipes/validated-private-other/annotations").get());
+  });
+
+  it("mes notes (user_id == moi)", async () => {
+    await assertSucceeds(
+      db("reader").collection("recipe_ratings").where("user_id", "==", READER).get(),
+    );
+  });
 });

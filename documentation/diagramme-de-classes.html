@@ -290,9 +290,11 @@ classDiagram
         <code>meal_roles.json</code> vérifie que les deux listes sont égales. <code>contains</code>
         et <code>suggestedSides</code> n'existent qu'avec un rôle.
         <br><br>
-        <code>isPrivate</code> est recopié du livre porteur par le serveur
-        (<code>onBookWritten</code>, <code>onRecipeWritten</code>). Le client le relit et le
-        réécrit tel quel, sans jamais le décider. <code>fidelityLevel</code> vaut
+        <code>isPrivate</code> est la confidentialité du livre porteur. Le client la calcule
+        depuis le livre à chaque écriture qui pose ou change le livre
+        (<code>privacyOfBook</code>, exigé par les règles), et le serveur l'aligne
+        (<code>onBookWritten</code>, <code>onRecipeWritten</code>). Une recette sans livre garde
+        la sienne. <code>fidelityLevel</code> vaut
         <code>null</code> quand le balisage concorde avec la page, <code>avertissement</code> pour
         un écart mineur, <code>rupture</code> quand le balisage a été écarté
         (<code>fidelityRejected</code>).

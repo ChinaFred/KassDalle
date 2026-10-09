@@ -12,6 +12,7 @@
  */
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
+import { recipeBudgetUserId } from "../ai/budget";
 import { deriveShoppingProducts, type ShoppingInput } from "../nutrition/shoppingDerivation";
 import { loadShoppingProductAliases } from "../nutrition/shoppingAliases";
 import { logError, logInfo } from "../logging";
@@ -89,7 +90,8 @@ export async function refreshShoppingProducts(args: {
     return;
   }
 
-  const userId = (data.created_by as string | undefined) ?? "";
+  // Même imputation que les autres déclencheurs de la recette (`ai/budget.ts`).
+  const userId = recipeBudgetUserId(data.created_by);
 
   logInfo({
     message: "refreshShoppingProducts: recalcul produits",

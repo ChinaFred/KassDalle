@@ -11,6 +11,7 @@ import '../domain/plating_advice.dart';
 import '../domain/storage_advice.dart';
 import '../domain/recipe.dart';
 import '../domain/recipe_rating.dart';
+import '../domain/recipe_viewer.dart';
 import '../../auth/presentation/auth_providers.dart';
 
 final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
@@ -83,6 +84,14 @@ class RecipePortionOverrideRef {
   const RecipePortionOverrideRef({required this.uid, required this.recipeId});
 }
 
+/// Celui qui lit, pour construire des requêtes que les règles Firestore
+/// peuvent prouver (voir [RecipeViewer]). `null` tant que le compte n'est pas
+/// chargé.
+final recipeViewerProvider = Provider<RecipeViewer?>((ref) {
+  final user = ref.watch(appUserProvider).value;
+  return user == null ? null : RecipeViewer.of(user);
+});
+
 /// Brouillons de l'utilisateur connecté (draft + inReview).
 final draftsProvider = StreamProvider<List<Recipe>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
@@ -95,7 +104,9 @@ final recipesByBookProvider = StreamProvider.family<List<Recipe>, String>((
   ref,
   bookId,
 ) {
-  return ref.watch(recipeRepositoryProvider).watchByBook(bookId);
+  final viewer = ref.watch(recipeViewerProvider);
+  if (viewer == null) return const Stream.empty();
+  return ref.watch(recipeRepositoryProvider).watchByBook(bookId, viewer);
 });
 
 /// Toutes les pages validées d'un livre (recettes + pages non-recettes),
@@ -104,7 +115,11 @@ final allPagesByBookProvider = StreamProvider.family<List<Recipe>, String>((
   ref,
   bookId,
 ) {
-  return ref.watch(recipeRepositoryProvider).watchAllPagesByBook(bookId);
+  final viewer = ref.watch(recipeViewerProvider);
+  if (viewer == null) return const Stream.empty();
+  return ref
+      .watch(recipeRepositoryProvider)
+      .watchAllPagesByBook(bookId, viewer);
 });
 
 /// Recettes libres validées de l'utilisateur connecté.
@@ -120,8 +135,9 @@ final libresRecipesProvider = StreamProvider.family<List<Recipe>, String>((
   ref,
   bookId,
 ) {
-  final uid = ref.watch(appUserProvider).value?.uid;
-  if (uid == null) return const Stream.empty();
+  final viewer = ref.watch(recipeViewerProvider);
+  if (viewer == null) return const Stream.empty();
+  final uid = viewer.uid;
   final repo = ref.watch(recipeRepositoryProvider);
 
   final ctrl = StreamController<List<Recipe>>();
@@ -134,7 +150,7 @@ final libresRecipesProvider = StreamProvider.family<List<Recipe>, String>((
     ctrl.add(merged);
   }
 
-  final sub1 = repo.watchByBook(bookId).listen((r) {
+  final sub1 = repo.watchByBook(bookId, viewer).listen((r) {
     byBook = r;
     push();
   }, onError: ctrl.addError);
@@ -164,7 +180,13 @@ final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
 });
 
 /// Brouillons des membres du groupe familial (hors utilisateur courant).
+///
+/// Un lecteur ne relit pas les brouillons des autres (`firestore.rules`) :
+/// pour lui la requête serait refusée en entier, la liste est vide.
 final groupMemberDraftsProvider = StreamProvider<List<Recipe>>((ref) {
+  if (!(ref.watch(recipeViewerProvider)?.canEdit ?? false)) {
+    return Stream.value(const <Recipe>[]);
+  }
   final memberIds = ref.watch(groupMemberIdsProvider).value;
   if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
   return ref
@@ -202,10 +224,18 @@ final draftsByBookCountProvider = StreamProvider.family<int, String>((
   ref,
   bookId,
 ) {
+  final viewer = ref.watch(recipeViewerProvider);
+  if (viewer == null) return const Stream.empty();
+  // Seuls les brouillons que le lecteur peut valider : un éditeur relit les
+  // brouillons partagés des autres, mais ne les valide pas.
   return ref
       .watch(recipeRepositoryProvider)
-      .watchDraftsByBook(bookId)
-      .map((list) => list.length);
+      .watchDraftsByBook(bookId, viewer)
+      .map(
+        (list) => list
+            .where((r) => viewer.isAdmin || r.createdBy == viewer.uid)
+            .length,
+      );
 });
 
 /// Brouillons sans livre de l'utilisateur (pour le badge dans recettes libres).

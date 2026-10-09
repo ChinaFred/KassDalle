@@ -414,6 +414,29 @@ class GcpBillingRepository {
     return out;
   }
 
+  /// Pose `is_private` sur les livres qui ne le portent pas (`false`, ou
+  /// `true` pour « Mes Recettes Secrètes »). Sans appel de modèle, réentrante,
+  /// avec reprise sur point de contrôle. Compteurs tels quels, drapeaux en 1/0.
+  Future<Map<String, int>> backfillBookPrivacy({
+    double maxMinutes = 8,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final dynamic raw = await _callViaSdk('backfillBookPrivacyFn', {
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    }, timeout: const Duration(minutes: 9));
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      for (final entry in data.entries)
+        if (entry.value is num)
+          entry.key: (entry.value as num).toInt()
+        else if (entry.value is bool)
+          entry.key: (entry.value as bool) ? 1 : 0,
+    };
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

@@ -603,9 +603,14 @@ class QueueDraftTile extends StatelessWidget {
   final bool isSelected;
   final bool isSelecting;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
-  final VoidCallback onValidate;
-  final VoidCallback onDelete;
+
+  /// `null` pour le brouillon d'un autre membre : il ne se sélectionne pas,
+  /// ne se valide pas et ne se supprime pas — seuls son créateur et un
+  /// administrateur le peuvent. La ligne ouvre alors la relecture, où
+  /// « Copier comme mon brouillon » existe.
+  final VoidCallback? onLongPress;
+  final VoidCallback? onValidate;
+  final VoidCallback? onDelete;
 
   const QueueDraftTile({
     super.key,
@@ -621,13 +626,22 @@ class QueueDraftTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selectable = onLongPress != null;
+    final hasSource =
+        recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
+    // Sans action ni document, pas de menu : un menu vide s'ouvrait sur rien.
+    final hasMenu = onValidate != null || onDelete != null || hasSource;
 
     return ListTile(
+      // En mode sélection, le brouillon d'un autre est grisé et ne réagit
+      // pas : il ne se sélectionne pas, et naviguer ferait perdre la
+      // sélection en cours.
+      enabled: !(isSelecting && !selectable),
       selected: isSelected,
       selectedTileColor: theme.colorScheme.primaryContainer.withValues(
         alpha: 0.3,
       ),
-      leading: isSelecting
+      leading: isSelecting && selectable
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(
               backgroundColor: theme.colorScheme.primaryContainer,
@@ -685,76 +699,84 @@ class QueueDraftTile extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                PopupMenuButton<_DraftMenuAction>(
-                  tooltip: 'Actions',
-                  onSelected: (action) async {
-                    if (action == _DraftMenuAction.validate) onValidate();
-                    if (action == _DraftMenuAction.delete) onDelete();
-                    if (action == _DraftMenuAction.viewSource) {
-                      final url = recipe.sourceFileUrl;
-                      if (url != null && url.isNotEmpty) {
-                        await launchUrl(
-                          Uri.parse(url),
-                          mode: LaunchMode.platformDefault,
-                        );
+                if (!hasMenu)
+                  const SizedBox(width: kMinInteractiveDimension)
+                else
+                  PopupMenuButton<_DraftMenuAction>(
+                    tooltip: 'Actions',
+                    onSelected: (action) async {
+                      if (action == _DraftMenuAction.validate) {
+                        onValidate?.call();
                       }
-                    }
-                    if (action == _DraftMenuAction.downloadSource) {
-                      final url = recipe.sourceFileUrl;
-                      if (url != null && url.isNotEmpty) {
-                        if (kIsWeb) {
-                          final filename = filenameFromStorageUrl(
-                            url,
-                            fallback: recipe.sourceFileName ?? 'document',
+                      if (action == _DraftMenuAction.delete) {
+                        onDelete?.call();
+                      }
+                      if (action == _DraftMenuAction.viewSource) {
+                        final url = recipe.sourceFileUrl;
+                        if (url != null && url.isNotEmpty) {
+                          await launchUrl(
+                            Uri.parse(url),
+                            mode: LaunchMode.platformDefault,
                           );
-                          final ok = await triggerWebDownload(url, filename);
-                          if (ok) return;
                         }
-                        await launchUrl(
-                          Uri.parse(url),
-                          mode: LaunchMode.externalApplication,
-                        );
                       }
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: _DraftMenuAction.validate,
-                      child: ListTile(
-                        leading: Icon(Icons.check_circle_outline),
-                        title: Text('Valider'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    if (recipe.sourceFileUrl != null &&
-                        recipe.sourceFileUrl!.isNotEmpty) ...[
-                      const PopupMenuItem(
-                        value: _DraftMenuAction.viewSource,
-                        child: ListTile(
-                          leading: Icon(Icons.visibility_outlined),
-                          title: Text('Voir le document'),
-                          contentPadding: EdgeInsets.zero,
+                      if (action == _DraftMenuAction.downloadSource) {
+                        final url = recipe.sourceFileUrl;
+                        if (url != null && url.isNotEmpty) {
+                          if (kIsWeb) {
+                            final filename = filenameFromStorageUrl(
+                              url,
+                              fallback: recipe.sourceFileName ?? 'document',
+                            );
+                            final ok = await triggerWebDownload(url, filename);
+                            if (ok) return;
+                          }
+                          await launchUrl(
+                            Uri.parse(url),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (onValidate != null)
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.validate,
+                          child: ListTile(
+                            leading: Icon(Icons.check_circle_outline),
+                            title: Text('Valider'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: _DraftMenuAction.downloadSource,
-                        child: ListTile(
-                          leading: Icon(Icons.download_outlined),
-                          title: Text('Télécharger'),
-                          contentPadding: EdgeInsets.zero,
+                      if (hasSource) ...[
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.viewSource,
+                          child: ListTile(
+                            leading: Icon(Icons.visibility_outlined),
+                            title: Text('Voir le document'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.downloadSource,
+                          child: ListTile(
+                            leading: Icon(Icons.download_outlined),
+                            title: Text('Télécharger'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                      if (onDelete != null)
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.delete,
+                          child: ListTile(
+                            leading: Icon(Icons.delete_outline),
+                            title: Text('Supprimer'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
                     ],
-                    const PopupMenuItem(
-                      value: _DraftMenuAction.delete,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Supprimer'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
               ],
             ),
       onTap: onTap,

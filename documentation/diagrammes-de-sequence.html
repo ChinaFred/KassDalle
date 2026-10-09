@@ -208,6 +208,8 @@ sequenceDiagram
   participant LOG as Cloud Logging
   participant G as Gemini
   participant R as recipes
+  participant BK as books
+  participant DL as dead_letters
 
   alt mobile — Android ou iOS
     U->>S: caméra
@@ -245,6 +247,14 @@ sequenceDiagram
   Q->>P: dispatch OIDC, 5 en parallèle, 2 par seconde
 
   P->>J: status processing, current_step import
+  opt le job vise un livre (book_id)
+    P->>BK: assertJobTargetBook — lit books/book_id
+    alt livre d'un autre, inexistant ou invalide, importateur non admin
+      P->>DL: failure_reason = foreign_book, dès la 1re tentative
+      P->>J: status error, error_message
+      Note over P,DL: aucune nouvelle tentative : le livre resterait celui d'un autre
+    end
+  end
   P->>ST: download du fichier et des pages
 
   P->>G: PASSE 1 — transcribePage
@@ -1033,7 +1043,7 @@ sequenceDiagram
       Le seul chemin par lequel une image devient visible. Les six dossiers publiés sont fermés
       en écriture côté Storage : un repository qui téléverserait en direct n'obtiendrait pas une
       image non modérée, il obtiendrait un refus.
-      <span class="path">image_moderation_service.dart, moderationCallables.ts, moderation/vision.ts, moderation/decision.ts</span>
+      <span class="path">image_moderation_service.dart, moderationCallables.ts, moderation/promote.ts, moderation/origin.ts, moderation/vision.ts, moderation/decision.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1044,6 +1054,7 @@ sequenceDiagram
   participant SV as ImageModerationService
   participant ST as Storage
   participant CF as moderateAndPromoteImagesFn
+  participant DOC as books ou recipes
   participant VI as Cloud Vision
   participant DE as decideModeration
   participant FS as image_moderation
@@ -1051,9 +1062,20 @@ sequenceDiagram
 
   U->>SV: publish(PendingImage)
   SV->>ST: upload dans quarantine/uid
-  SV->>CF: appel callable, chemin et cible
-  CF->>FS: crée le document, statut en attente
-  CF->>VI: SafeSearch et labels
+  SV->>CF: appel callable, chemin, cible et origine déclarée
+  opt couverture de livre ou illustration de recette
+    CF->>DOC: lit created_by du document visé
+    alt ni créateur ni administrateur
+      CF-->>SV: permission-denied, aucune analyse facturée
+    end
+  end
+  CF->>ST: lit la génération du fichier, télécharge cette version, empreinte SHA-256
+  alt origine « asset » et empreinte d'une couverture livrée
+    Note over CF: approuvée sans analyse, motif bundled_asset
+  else toute autre image, « ai » déclaré par le client compris
+    CF->>FS: crée le document, statut en attente
+    CF->>VI: SafeSearch et labels
+  end
   alt le moteur répond
     VI-->>CF: signaux neutres, paliers et labels
     CF->>DE: décision pure, seuils lus dans app_config
@@ -1064,7 +1086,7 @@ sequenceDiagram
     CF-->>SV: l'image attend, l'écran le dit
   end
   alt approuvée
-    CF->>ST: promotion vers le dossier publié
+    CF->>ST: promotion de la génération analysée vers le dossier publié
     CF->>FS: verdict, URL publiée, moteur et version
     CF-->>SV: URL de téléchargement
     SV-->>U: l'image apparaît, quelques secondes plus tard
@@ -1100,6 +1122,11 @@ sequenceDiagram
         alors plus rien pour les cas qui la méritaient. Le contenu sexuel explicite, lui, ne
         bénéficie d'aucun contexte, et le suggestif ne refuse jamais seul : un débardeur sur une
         photo de barbecue déclencherait un motif sexuel pour une scène qui n'en est pas une.
+        <b>L'origine déclarée n'est jamais crue</b> (v0.23.8) : « ai » venant d'un client est
+        analysé, « asset » ne passe sans analyse que sur l'empreinte d'une couverture livrée.
+        Une couverture ou une illustration ne se publie que sur le livre ou la recette de
+        l'appelant, sauf pour un administrateur. La version publiée est la génération Storage
+        analysée : un fichier réécrit en quarantaine après l'analyse fait échouer la copie.
       </figcaption>
     </figure>
     <span class="expect">
@@ -1928,6 +1955,9 @@ sequenceDiagram
   alt plafond de dépense atteint
     P->>DL: failure_reason = budget_exceeded
     Note over P,DL: pas de réessai — les deux tentatives restantes<br/>referaient tout le travail qui précède l'appel
+  else livre cible d'un autre membre (assertJobTargetBook)
+    P->>DL: failure_reason = foreign_book
+    Note over P,DL: pas de réessai — on ne range une recette<br/>que dans ses propres livres, l'admin partout
   else erreur réessayable
     P-->>CT: throw — Cloud Tasks reprend
     Note over CT: backoff 10 s → 300 s, 4 doublements, 3 tentatives
@@ -2541,7 +2571,11 @@ sequenceDiagram
   BR->>BK: update is_private
 
   BK-->>OB: onDocumentWritten books/bookId
-  alt suppression, ou is_private inchangé
+  alt suppression du livre
+    OB->>FS: recettes where book_id == bookId (pages des autres membres)
+    OB->>FS: book_id et book_titre à null, is_private à true si le livre était privé
+    OB->>OB: logInfo, nombre de recettes détachées (book_deletion_detach)
+  else is_private inchangé
     OB-->>BK: sortie
   else is_private a basculé
     OB->>FS: recettes where book_id == bookId
@@ -2559,14 +2593,18 @@ sequenceDiagram
         (titre, couverture, tags) : chaque autre écriture sort sans requête sur
         <code>recipes</code>.
         <span class="expect">
-          <b>La suppression d'un livre ne touche pas ses recettes.</b> Une recette orpheline n'est
-          pas privée (<code>expectedPrivacy</code>) : la marquer privée la retirerait de la
-          bibliothèque de son auteur.
+          <b>La suppression d'un livre détache les recettes qui y restent.</b> Son créateur ne
+          supprime ni ne détache que les siennes ; les pages des autres membres deviennent des
+          recettes libres de leurs auteurs, privées si le livre l'était. Une recette sans livre
+          garde sa confidentialité (<code>privacyWithoutBook</code>), et
+          <code>migrateLibresRecipes</code> ne range pas une recette libre privée dans « Mes
+          recettes libres ». Le détachement réveille <code>onRecipeWritten</code>, qui peut
+          demander le rôle de repas d'une recette qui n'en a pas.
         </span>
         <span class="expect warn">
           <b>Un échec de propagation est journalisé, pas relancé.</b> <code>logError</code> trace
-          le livre et la valeur visée. Le backfill de confidentialité d'Admin › Backfills
-          réaligne les recettes restées en retard.
+          le livre et la valeur visée. Aucune reprise automatique : la recette suivante écrite
+          dans le livre se réaligne par <code>syncRecipePrivacy</code>.
         </span>
       </figcaption>
     </figure>

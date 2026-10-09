@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kass_dalle/features/recipes/data/recipe_repository.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
+import 'package:kass_dalle/features/recipes/domain/recipe_viewer.dart';
 
 import '../support/test_backend.dart';
 
@@ -11,6 +13,10 @@ import '../support/test_backend.dart';
 /// erreur — ils font juste disparaître des recettes de l'écran.
 void main() {
   late TestBackend backend;
+
+  const lecteur = RecipeViewer(uid: 'uid-test');
+  const editeur = RecipeViewer(uid: 'uid-test', canEdit: true);
+  const admin = RecipeViewer(uid: 'uid-admin', isAdmin: true, canEdit: true);
 
   setUp(() => backend = TestBackend());
 
@@ -75,10 +81,147 @@ void main() {
       );
       await backend.seedRecipe(testRecipe(id: 'autre-livre', bookId: 'book-2'));
 
-      final pages = await backend.recipes.watchByBook('book-1').first;
+      final pages = await backend.recipes.watchByBook('book-1', lecteur).first;
 
       expect(pages.map((r) => r.id), ['validee']);
     });
+
+    // Firestore refuse une requête que ses règles ne prouvent pas : hors
+    // administrateur, la lecture d'un livre se scinde entre recettes
+    // partagées et recettes du lecteur, fusionnées sans doublon.
+    test(
+      'lecteur : les partagées et ses privées, pas les privées des autres',
+      () async {
+        await backend.seedRecipe(
+          testRecipe(id: 'partagee', bookId: 'book-1', createdBy: 'uid-autre'),
+        );
+        await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
+        await backend.seedRecipe(
+          testRecipe(id: 'ma-privee', bookId: 'book-1', isPrivate: true),
+        );
+        await backend.seedRecipe(
+          testRecipe(
+            id: 'privee-autre',
+            bookId: 'book-1',
+            createdBy: 'uid-autre',
+            isPrivate: true,
+          ),
+        );
+
+        final pages = await backend.recipes
+            .watchByBook('book-1', lecteur)
+            .first;
+
+        expect(
+          pages.map((r) => r.id),
+          unorderedEquals(['partagee', 'a-moi', 'ma-privee']),
+        );
+      },
+    );
+
+    test('administrateur : tout le livre', () async {
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'privee-autre',
+          bookId: 'book-1',
+          createdBy: 'uid-autre',
+          isPrivate: true,
+        ),
+      );
+      await backend.seedRecipe(testRecipe(id: 'partagee', bookId: 'book-1'));
+
+      final pages = await backend.recipes.watchByBook('book-1', admin).first;
+
+      expect(
+        pages.map((r) => r.id),
+        unorderedEquals(['privee-autre', 'partagee']),
+      );
+    });
+  });
+
+  group('watchDraftsByBook', () {
+    Future<void> seedDrafts() async {
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'brouillon-autre',
+          bookId: 'book-1',
+          createdBy: 'uid-autre',
+          reviewStatus: ReviewStatus.draft,
+        ),
+      );
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'mon-brouillon',
+          bookId: 'book-1',
+          reviewStatus: ReviewStatus.draft,
+        ),
+      );
+    }
+
+    test('un lecteur ne voit que ses brouillons', () async {
+      await seedDrafts();
+
+      final drafts = await backend.recipes
+          .watchDraftsByBook('book-1', lecteur)
+          .first;
+
+      expect(drafts.map((r) => r.id), ['mon-brouillon']);
+    });
+
+    test('un éditeur relit aussi les brouillons partagés des autres', () async {
+      await seedDrafts();
+
+      final drafts = await backend.recipes
+          .watchDraftsByBook('book-1', editeur)
+          .first;
+
+      expect(
+        drafts.map((r) => r.id),
+        unorderedEquals(['brouillon-autre', 'mon-brouillon']),
+      );
+    });
+  });
+
+  group('countInBook', () {
+    test('lecteur : partagées et ses privées, sans double compte', () async {
+      await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
+      await backend.seedRecipe(
+        testRecipe(id: 'partagee', bookId: 'book-1', createdBy: 'uid-autre'),
+      );
+      await backend.seedRecipe(
+        testRecipe(id: 'ma-privee', bookId: 'book-1', isPrivate: true),
+      );
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'privee-autre',
+          bookId: 'book-1',
+          createdBy: 'uid-autre',
+          isPrivate: true,
+        ),
+      );
+
+      expect(await backend.recipes.countInBook('book-1', lecteur), 3);
+      expect(await backend.recipes.countInBook('book-1', admin), 4);
+    });
+  });
+
+  group('deleteAllRecipesOfBook', () {
+    test(
+      'ne supprime que les recettes du lecteur, tout pour un admin',
+      () async {
+        await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
+        await backend.seedRecipe(
+          testRecipe(id: 'autre', bookId: 'book-1', createdBy: 'uid-autre'),
+        );
+
+        await backend.recipes.deleteAllRecipesOfBook('book-1', editeur);
+        expect(await backend.recipes.getById('a-moi'), isNull);
+        expect(await backend.recipes.getById('autre'), isNotNull);
+
+        await backend.recipes.deleteAllRecipesOfBook('book-1', admin);
+        expect(await backend.recipes.getById('autre'), isNull);
+      },
+    );
   });
 
   group('watchAllPagesByBook', () {
@@ -93,7 +236,9 @@ void main() {
         testRecipe(id: 'sans-numero', bookId: 'book-1', titre: 'Zeste'),
       );
 
-      final pages = await backend.recipes.watchAllPagesByBook('book-1').first;
+      final pages = await backend.recipes
+          .watchAllPagesByBook('book-1', lecteur)
+          .first;
 
       expect(pages.map((r) => r.id), ['p2', 'p10', 'sans-numero']);
     });
@@ -260,6 +405,59 @@ void main() {
       final recipe = await backend.recipes.getById('photos');
 
       expect(recipe!.thumbnailUrls, ['https://x/ta.jpg']);
+    });
+  });
+
+  // Une recette prend la confidentialité de son livre à l'écriture : les
+  // règles Firestore refusent une recette `is_private: false` dans un livre
+  // privé (v0.23.8).
+  group('confidentialité suivant le livre', () {
+    // createRecipe, updateRecipe, validateDraft, la migration des recettes
+    // libres et le planning écrivent tous `is_private` par cette fonction.
+    test('privacyOfBook : la confidentialité du livre porteur', () async {
+      await backend.seedBook(testBook(id: 'secret', isPrivate: true));
+      await backend.seedBook(testBook(id: 'commun'));
+
+      expect(await privacyOfBook(backend.firestore, 'secret'), isTrue);
+      expect(await privacyOfBook(backend.firestore, 'commun'), isFalse);
+    });
+
+    test(
+      'privacyOfBook : livre introuvable partagé, sans livre rien',
+      () async {
+        expect(await privacyOfBook(backend.firestore, 'inconnu'), isFalse);
+        expect(await privacyOfBook(backend.firestore, null), isNull);
+        expect(await privacyOfBook(backend.firestore, ''), isNull);
+      },
+    );
+
+    // updateRecipe, createRecipe et la copie écrivent par withBookPrivacy :
+    // une recette libre privée (page détachée d'un livre privé) le reste.
+    // Le livre n'est relu qu'à un changement : l'auteur d'une page rangée
+    // dans le livre privé d'un autre ne peut pas le lire.
+    test('bookChanges : nul et vide valent « sans livre »', () {
+      expect(bookChanges(null, ''), isFalse);
+      expect(bookChanges('b1', 'b1'), isFalse);
+      expect(bookChanges('b1', 'b2'), isTrue);
+      expect(bookChanges(null, 'b1'), isTrue);
+    });
+
+    test('sans livre, la confidentialité écrite est celle de la recette', () {
+      final data = testRecipe(id: 'libre').toFirestore()..['is_private'] = true;
+      expect(withBookPrivacy(data, null)['is_private'], isTrue);
+      expect(withBookPrivacy(data, false)['is_private'], isFalse);
+    });
+  });
+
+  group('countOthersInBook', () {
+    test('compte les pages partagées des autres, zéro pour un admin', () async {
+      await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
+      await backend.seedRecipe(
+        testRecipe(id: 'autre', bookId: 'book-1', createdBy: 'uid-autre'),
+      );
+
+      expect(await backend.recipes.countOthersInBook('book-1', editeur), 1);
+      expect(await backend.recipes.countOthersInBook('book-1', admin), 0);
     });
   });
 }

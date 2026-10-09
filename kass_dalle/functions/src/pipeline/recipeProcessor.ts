@@ -53,6 +53,7 @@ import {
 } from "../nutrition/referentialNormalization";
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
 import { BookFileError } from "../books/bookFile";
+import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
@@ -222,6 +223,10 @@ export const recipeProcessor = onTaskDispatched(
         attempt_count: attempt + 1,
         correlation_id: correlationId,
       });
+
+      // Le livre cible doit appartenir à l'importateur (ou l'importateur être
+      // administrateur) : l'écriture qui suit se fait hors règles.
+      await assertJobTargetBook(job.book_id, (job.created_by as string | undefined) ?? userId);
 
       // ── IMPORT ────────────────────────────────────────────────────────────
       const fileUrl = job.file_url as string;
@@ -668,6 +673,8 @@ export const recipeProcessor = onTaskDispatched(
       // Un balisage coupé au plafond à tous les efforts essayés se rejouerait à
       // l'identique : les deux appels ont déjà eu lieu.
       const isTruncatedTagging = err instanceof TaggingTruncatedError;
+      // Le livre d'un autre le restera à chaque tentative.
+      const isForeignBook = err instanceof TargetBookNotOwned;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -691,13 +698,19 @@ export const recipeProcessor = onTaskDispatched(
         moduleType: "IMPORT",
         executionTimeMs: Date.now() - start,
         ...ctx,
-        extra: { attempt, isQuota, isBudget, isUnreadableBook, isTruncatedTagging },
+        extra: { attempt, isQuota, isBudget, isUnreadableBook, isTruncatedTagging, isForeignBook },
       });
 
       // Dernière tentative — ou plafond atteint, fichier illisible, balisage
-      // coupé : ces trois cas se rejouent à l'identique, il est inutile de les
-      // réessayer.
-      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget || isUnreadableBook || isTruncatedTagging) {
+      // coupé, livre cible d'un autre (`foreign_book`) : ces quatre cas se
+      // rejouent à l'identique, il est inutile de les réessayer.
+      if (
+        attempt + 1 >= MAX_RETRY_ATTEMPTS ||
+        isBudget ||
+        isUnreadableBook ||
+        isTruncatedTagging ||
+        isForeignBook
+      ) {
         await moveToDeadLetter({
           jobId,
           userId,
@@ -708,9 +721,11 @@ export const recipeProcessor = onTaskDispatched(
               ? "book_file_unreadable"
               : isTruncatedTagging
                 ? "tagging_truncated"
-                : isQuota
-                  ? "quota_exceeded"
-                  : "pipeline_error",
+                : isForeignBook
+                  ? "foreign_book"
+                  : isQuota
+                    ? "quota_exceeded"
+                    : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",

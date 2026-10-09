@@ -10,17 +10,17 @@
  * écritures ferait une requête sur `recipes` à chaque fois, pour constater
  * qu'il n'y a rien à faire.
  *
- * Il ne fait rien à la suppression d'un livre : ses recettes deviennent
- * orphelines, et une recette orpheline n'est pas privée (voir
- * `expectedPrivacy`). Les marquer ici les ferait disparaître de la
- * bibliothèque de leur propre auteur.
+ * À la suppression d'un livre, il détache les recettes qui y restent — les
+ * pages ajoutées par d'autres membres, que le créateur du livre n'a pas le
+ * droit de toucher (`detachRecipesOfDeletedBook`). Elles deviennent des
+ * recettes libres de leurs auteurs, privées si le livre l'était.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 
 import { REGION } from "../config";
 import { logError, logInfo, newCorrelationId, qualify } from "../logging";
-import { propagateBookPrivacy } from "./recipePrivacy";
+import { detachRecipesOfDeletedBook, propagateBookPrivacy } from "./recipePrivacy";
 
 /** Confidentialité portée par un instantané de livre, absente valant publique. */
 function privacyOf(data: Record<string, unknown> | undefined): boolean {
@@ -31,7 +31,34 @@ export const onBookWritten = onDocumentWritten(
   { document: "books/{bookId}", region: REGION },
   async (event) => {
     const after = event.data?.after;
-    if (!after?.exists) return; // suppression — voir l'en-tête
+    if (!after?.exists) {
+      if (!event.data?.before?.exists) return;
+      const bookId = event.params.bookId;
+      const correlationId = newCorrelationId(qualify("ecriture_livre", "suppression"));
+      try {
+        const wasPrivate = privacyOf(
+          event.data.before.data() as Record<string, unknown> | undefined,
+        );
+        const detached = await detachRecipesOfDeletedBook(bookId, wasPrivate);
+        if (detached > 0) {
+          await logInfo({
+            message: "Livre supprimé : ses recettes restantes deviennent des recettes libres",
+            correlationId,
+            feature: "book_deletion_detach",
+            extra: { bookId, recettesDetachees: detached },
+          });
+        }
+      } catch (error) {
+        await logError({
+          message: "onBookWritten : détachement des recettes d'un livre supprimé impossible",
+          errorDescription: error instanceof Error ? error.message : String(error),
+          moduleType: "DESIGN",
+          correlationId,
+          extra: { bookId },
+        });
+      }
+      return;
+    }
 
     const before = privacyOf(event.data?.before?.data() as Record<string, unknown> | undefined);
     const now = privacyOf(after.data() as Record<string, unknown>);

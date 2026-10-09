@@ -14,12 +14,19 @@ import {
   DEFAULT_AI_BUDGET_POLICY,
   EMPTY_DAILY_SPEND,
   FOUNDER_DAILY_BUDGET_MULTIPLIER,
+  ORPHAN_RECIPE_USER_ID,
+  SYSTEM_DAILY_BUDGET_MULTIPLIER,
+  UNATTRIBUTED,
   budgetDenial,
+  budgetMultiplierFor,
+  budgetUserId,
   dailySpendDocId,
+  recipeBudgetUserId,
   spendDay,
   type AiBudgetPolicy,
   type DailySpend,
 } from "../ai/budget";
+import { UNATTRIBUTED as USAGE_UNATTRIBUTED } from "../ai/usage";
 import { shouldAlert } from "../scheduled/aiBudgetAlertSchedule";
 import {
   aggregateDaySpends,
@@ -408,5 +415,35 @@ describe("dayBounds avec des bornes horaires", () => {
     const b = dayBounds("2026-09-06");
     assert.equal(b.from, null);
     assert.equal(b.to, null);
+  });
+});
+
+// Un uid vide passait hors de tout plafond : un lecteur vidait `created_by` de
+// sa recette, et les déclencheurs nutrition tournaient sans limite.
+describe("compte de plafond — jamais vide", () => {
+  test("un appel sans uid s'impute au compte système", () => {
+    assert.equal(budgetUserId(undefined), UNATTRIBUTED);
+    assert.equal(budgetUserId(null), UNATTRIBUTED);
+    assert.equal(budgetUserId("   "), UNATTRIBUTED);
+    assert.equal(budgetUserId(" u1 "), "u1");
+  });
+
+  test("le compte système porte la même clé que la ligne d'usage", () => {
+    assert.equal(UNATTRIBUTED, USAGE_UNATTRIBUTED);
+  });
+
+  test("une recette sans propriétaire s'impute au compte des orphelines", () => {
+    assert.equal(recipeBudgetUserId(undefined), ORPHAN_RECIPE_USER_ID);
+    assert.equal(recipeBudgetUserId(""), ORPHAN_RECIPE_USER_ID);
+    assert.equal(recipeBudgetUserId(42), ORPHAN_RECIPE_USER_ID);
+    assert.equal(recipeBudgetUserId("u1"), "u1");
+    assert.notEqual(ORPHAN_RECIPE_USER_ID, UNATTRIBUTED);
+  });
+
+  // Sans réseau : le multiplicateur du compte système se décide avant la
+  // résolution du fondateur, qui passe par Auth.
+  test("le compte système est plafonné, au multiplicateur du fondateur", async () => {
+    assert.equal(await budgetMultiplierFor(UNATTRIBUTED), SYSTEM_DAILY_BUDGET_MULTIPLIER);
+    assert.equal(SYSTEM_DAILY_BUDGET_MULTIPLIER, FOUNDER_DAILY_BUDGET_MULTIPLIER);
   });
 });

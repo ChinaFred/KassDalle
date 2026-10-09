@@ -144,4 +144,40 @@ void main() {
       },
     );
   });
+
+  // Miroir des règles `recipes` et `books` de `firestore.rules` (v0.23.8) :
+  // on ne modifie que son propre contenu, éditeur compris ; l'administrateur
+  // agit comme le créateur.
+  group('propriété du contenu', () {
+    AppUser user(String role, {bool isRevoked = false}) =>
+        AppUser.fromFirestore(
+          userDoc(uid: 'moi', role: role, isRevoked: isRevoked),
+        );
+
+    test('un éditeur ne modifie ni la recette ni le livre d\'un autre', () {
+      expect(user('editor').canModifyRecipe('autre'), isFalse);
+      expect(user('editor').canModifyBook('autre'), isFalse);
+      expect(user('editor').canModifyRecipe('moi'), isTrue);
+      expect(user('editor').canModifyBook('moi'), isTrue);
+    });
+
+    test('un lecteur modifie sa recette, pas un livre', () {
+      expect(user('reader').canModifyRecipe('moi'), isTrue);
+      expect(user('reader').canModifyBook('moi'), isFalse);
+    });
+
+    test('un administrateur modifie le contenu de tous', () {
+      expect(user('admin').canModifyRecipe('autre'), isTrue);
+      expect(user('admin').canModifyBook('autre'), isTrue);
+    });
+
+    test('un created_by vide n\'appartient à personne', () {
+      expect(user('editor').canModifyRecipe(''), isFalse);
+    });
+
+    test('révoqué ou en attente : rien', () {
+      expect(user('editor', isRevoked: true).canModifyRecipe('moi'), isFalse);
+      expect(user('pending').canModifyRecipe('moi'), isFalse);
+    });
+  });
 }

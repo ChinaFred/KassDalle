@@ -294,7 +294,7 @@ Document principal d'une recette.
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
 | `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre et même longueur que `image_urls`** — voir « L'alignement des vignettes » ci-dessous. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
 | `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
-| `is_private` | `bool` | Confidentialité **recopiée du livre porteur**, écrite par le serveur seul (`onRecipeWritten`, `onBookWritten`). Les recettes antérieures au champ l'ont reçu d'un backfill, `backfillRecipePrivacyFn`, passé au complet puis retiré le 5 octobre 2026. Une recette sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
+| `is_private` | `bool` | Confidentialité **du livre porteur**. Écrite par le client depuis le livre à chaque écriture qui pose ou change le livre (`privacyOfBook`, exigé par la règle `bookCheck` ; sans livre, rien n'est réécrit), et alignée par le serveur (`onRecipeWritten` → `syncRecipePrivacy`, `onBookWritten`). Les recettes antérieures au champ l'ont reçu d'un backfill, `backfillRecipePrivacyFn`, passé au complet puis retiré le 5 octobre 2026. Une recette sans livre **garde** sa valeur (`privacyWithoutBook`) : une page détachée d'un livre privé reste privée ; une recette neuve sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
 | `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
 | `ingredients_index` | `List<String>` | Noms des ingrédients en minuscules, sans doublon — index de recherche. Dérivé de `ingredients`, jamais du CookLang brut (cf. « Écrivain unique » ci-dessous) |
 | `created_by` | `String` | UID du créateur |
@@ -1007,7 +1007,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 jour où la politique en vigueur a été recopiée dans une première configuration.
 Elle empêche cette configuration de revenir après une suppression volontaire.
 
-Cinq documents de plus ne décident rien : ce sont les **points de reprise** des
+Six documents de plus ne décident rien : ce sont les **points de reprise** des
 backfills (§7.10). Le serveur les écrit via `setBackfillCursor`
 (`callable/_backfillCursor.ts`). Aucun code client ne les écrit, mais les règles
 Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
@@ -1017,6 +1017,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
+| `book_privacy_backfill_checkpoint` | `backfillBookPrivacyFn` |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1267,6 +1268,33 @@ service cloud.firestore {
       }
     }
 
+    // ── Confidentialité et propriété (v0.23.8) ───────────────────────────
+    // Privé = créateur seul, plus l'administrateur. On ne modifie que ses
+    // propres livres et recettes, éditeur compris ; l'administrateur agit
+    // comme le créateur. `created_by` = l'appelant à la création, figé ensuite.
+    //
+    // Un document n'est partagé que s'il porte `is_private == false` : pas de
+    // `get('is_private', false)`, car dans une requête la valeur par défaut
+    // n'est pas prouvée par les filtres et une liste sans filtre passait.
+    function isSharedDoc(data) { return data.is_private == false; }
+    function isCreator(data) {
+      return isAuthenticated() && data.created_by == request.auth.uid;
+    }
+    function keepsCreator() {
+      return request.resource.data.get('created_by', null)
+        == resource.data.get('created_by', null);
+    }
+    // Un brouillon partagé reste lisible par un éditeur (relecture).
+    function canReadRecipe(data) {
+      return isApproved() && (
+        (isSharedDoc(data) && (data.review_status == 'validated' || isEditor()))
+        || isCreator(data)
+        || isAdmin());
+    }
+    function recipeDoc(recipeId) {
+      return get(/databases/$(database)/documents/recipes/$(recipeId)).data;
+    }
+
     // Collection books
     match /books/{bookId} {
       // Les trois livres système se reconnaissent à leur tag interne. Ils se
@@ -1278,25 +1306,55 @@ service cloud.firestore {
           && data.tags.hasAny(['__libres', '__kassdale_ia', '__secretes']);
       }
 
-      allow read: if isApproved();
-      allow create, update: if isEditor();
-      allow delete: if isEditor() && !isSystemBook(resource.data);
+      allow read: if isApproved()
+        && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator();
+      allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
+        && !isSystemBook(resource.data);
     }
 
     // Collection recipes
     match /recipes/{recipeId} {
-      allow read: if isApproved() &&
-        (resource.data.review_status == 'validated'
-          || isEditor()
-          || isOwner(resource.data.created_by));
-      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
-      allow update: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
-      allow delete: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
+      // Le livre d'une recette, contrôlé à toute écriture qui pose ou change
+      // `book_id` (propriété + confidentialité) ou qui change `is_private`
+      // (confidentialité seule). Un seul `get()` du livre par écriture.
+      // Sans livre : rien à vérifier. Livre inexistant ou `book_id` avec
+      // « / » : refusé.
+      function bookAccepts(book, checkOwner) {
+        return book != null
+          && (!checkOwner || isAdmin() || book.data.get('created_by', null) == request.auth.uid)
+          && request.resource.data.get('is_private', false) == book.data.get('is_private', false);
+      }
+      function bookCheck(checkOwner) {
+        let bookId = request.resource.data.get('book_id', null);
+        return !(bookId is string) || bookId == ''
+          || (!bookId.matches('.*/.*')
+              && exists(/databases/$(database)/documents/books/$(bookId))
+              && bookAccepts(get(/databases/$(database)/documents/books/$(bookId)), checkOwner));
+      }
+      function changes(field) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+      }
 
+      allow read: if canReadRecipe(resource.data);
+      allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
+        && bookCheck(true);
+      allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && ((changes('book_id') && bookCheck(true))
+            || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
+      allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
+
+      // Tout compte nommé qui voit la recette lit et pose des annotations ;
+      // l'auteur (et l'admin) les modifie ou les supprime, `uid` figé.
       match /annotations/{annotationId} {
-        allow read: if isApproved();
-        allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
+        allow read: if isApproved()
+          && (isOwner(resource.data.uid) || canReadRecipe(recipeDoc(recipeId)));
+        allow create: if isApproved() && request.resource.data.uid == request.auth.uid
+          && canReadRecipe(recipeDoc(recipeId));
+        allow update: if isApproved() && (isOwner(resource.data.uid) || isAdmin())
+          && request.resource.data.uid == resource.data.uid;
+        allow delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
     }
 
@@ -1319,7 +1377,7 @@ service cloud.firestore {
 |---|---|---|
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
-| `recipe_ratings` | `isApproved()` | l'auteur de la note, ou admin |
+| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire ; modification et suppression par l'auteur ou un admin, `user_id` et `recipe_id` figés |
 | `groups` | membres du groupe | le propriétaire, ou admin |
 | `processing_jobs` | éditeur ou propriétaire du job | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
@@ -1335,6 +1393,74 @@ service cloud.firestore {
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
+
+**Une règle n'est pas un filtre.** Firestore refuse une requête entière dès que ses filtres ne
+suffisent pas à prouver que chaque résultat possible est lisible. Les requêtes du client sur
+`recipes` et `books` portent donc `is_private == false` (contenu partagé) ou
+`created_by == uid` (le sien) ; hors administrateur, `RecipeRepository` scinde une requête par
+livre ou par statut en ces deux requêtes et fusionne les résultats sans doublon
+(`RecipeViewer`, `_visibleQueries`). Un lecteur ne relit que ses propres brouillons. Une requête
+par identifiants (`FieldPath.documentId whereIn`, planning) est évaluée document par document :
+une recette devenue privée fait refuser le lot, que `PlanningRepository.getRecipesByIds` relit
+alors recette par recette en écartant celles qui sont refusées. Un document sans `is_private`
+n'est lisible que par son créateur et l'administrateur. Toute écriture pose le champ depuis sa
+création. Pour le fonds antérieur : la reprise « Reprendre la confidentialité » l'a posé sur
+les recettes ; les livres ne l'ont qu'après `backfillBookPrivacyFn` (Admin › Backfills, à
+lancer une fois après la v0.23.8).
+
+**Une recette prend la confidentialité de son livre à l'écriture.** Une recette créée ou
+déplacée dans un livre privé avec `is_private: false` restait lisible par la famille jusqu'au
+passage de `syncRecipePrivacy`. La règle `bookCheck` l'interdit ; le client écrit
+`is_private` depuis le livre (`privacyOfBook`, `withBookPrivacy`, `recipe_repository.dart`) à
+la création, à la mise à jour, à la validation d'un brouillon, au rattachement aux recettes
+libres et à l'enregistrement d'une recette du planning. Sans livre, il n'écrit rien de nouveau :
+la recette garde sa confidentialité, et une recette libre privée ne redevient pas publique à
+l'enregistrement.
+
+**On ne range une recette que dans ses propres livres** (décision de l'utilisateur, option A,
+v0.23.8) ; l'administrateur partout. À la création, et à toute mise à jour qui change
+`book_id`, `bookCheck(true)` exige que le livre existe et que son `created_by` soit l'appelant.
+Les pages d'autrui déjà rangées dans un livre y restent, sans migration : une mise à jour qui
+ne change pas `book_id` n'est pas contrôlée sur la propriété. Les livres système (« Mes
+recettes libres », « Mes créations Kass'Dalle », « Mes Recettes Secrètes ») appartiennent à
+leur utilisateur. Le sélecteur de livre ne propose que les livres de l'utilisateur, tous les
+livres pour un administrateur (`targetBooksProvider`). Le pipeline d'import écrit par l'Admin
+SDK, hors règles, dans le `book_id` posé sur le job : `assertJobTargetBook`
+(`pipeline/targetBook.ts`) le vérifie au début de `recipeProcessor` — livre de l'importateur, ou
+importateur administrateur — et un refus part en dead letter dès la première tentative, avec
+`failure_reason: foreign_book`. Le sélecteur d'un administrateur masque les livres système des
+autres membres, tous titrés pareil ; le nom du propriétaire n'est pas ajouté au titre, qui
+s'écrit dans `book_titre`. Une page rangée dans le livre d'un autre garde ce livre en tête du
+sélecteur (`booksWithOrigin`). Un lien `/scan?bookId=` vers un livre hors de cette liste
+n'est pas verrouillé : le choix est effacé. Le client ne relit le livre d'une recette qu'à un
+changement de livre (`bookChanges`) : l'auteur d'une page rangée dans le livre privé d'un
+autre ne peut pas lire ce livre. `book_id` doit être nul ou une chaîne. Le serveur (Admin SDK) écrit hors des règles, et
+`onBookWritten` continue de propager un basculement de livre.
+
+**Un livre supprimé ne laisse pas de `book_id` orphelin.** Son créateur ne supprime ni ne
+détache que ses propres recettes ; à la suppression, `onBookWritten` détache les autres
+(`detachRecipesOfDeletedBook`), qui deviennent des recettes libres de leurs auteurs. Celles
+d'un livre privé reçoivent `is_private: true` avec le détachement, et `syncRecipePrivacy`
+garde la confidentialité d'une recette sans livre : une page détachée d'un livre privé — par
+le serveur ou par le bouton « Détacher » du client — ne devient pas lisible par la famille.
+`migrateLibresRecipes` ne range pas une recette libre privée dans « Mes recettes libres ».
+Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `syncRecipeMealRole`
+(un appel de modèle) sur une recette encore sans rôle de repas.
+
+**Un `book_id` contenant « / » est refusé** par `bookCheck` ; côté serveur,
+`expectedPrivacy` le traite comme un livre introuvable et le signale par `logError`.
+
+**Les callables lisent les recettes avec la même confidentialité.** `suggestPlatingFn`,
+`suggestStorageAdviceFn`, `generatePlatingImageFn` et `computeRecipeNutritionFn` lisent la
+recette par l'Admin SDK, hors règles. `assertCanReadRecipe` (`callable/_recipeAccess.ts`) les
+fait refuser en `permission-denied` une recette privée d'un autre — sauf à un administrateur —
+avant tout appel de modèle. Qui peut écrire un conseil sur une recette partagée reste une
+décision à venir (faille 5 de l'audit).
+
+Les déclencheurs d'une recette imputent la dépense d'IA à son `created_by`. Les règles le
+figent ; côté serveur, une recette sans propriétaire s'impute à `system_recipe_without_owner`
+(plafond commun), et un appel sans uid au compte `system_unattributed`, plafonné au
+multiplicateur du fondateur (voir §6, « Principe »).
 
 ### Firebase Storage Rules
 
@@ -1352,9 +1478,12 @@ service firebase.storage {
     function isAuthenticated() { return request.auth != null; }
 
     // Un jeton sans claim de révocation est traité comme actif : la migration
-    // ne doit verrouiller personne dehors.
+    // ne doit verrouiller personne dehors. La présence se teste avant la
+    // valeur : comparer une clé absente lève une erreur, et l'erreur refusait
+    // l'accès (écart corrigé en v0.23.8).
     function isActive() {
-      return isAuthenticated() && request.auth.token.revoked != true;
+      return isAuthenticated()
+        && (!('revoked' in request.auth.token) || request.auth.token.revoked != true);
     }
 
     // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
@@ -1398,7 +1527,8 @@ service firebase.storage {
     // rendrait la modération contournable en une ligne de code.
 
     match /covers/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
 
@@ -1434,8 +1564,13 @@ service firebase.storage {
            ];
     }
 
+    // Lire un fichier dont on a l'adresse : tout compte actif. LISTER le
+    // dossier : son propriétaire ou un admin (v0.23.8). Le client ne liste
+    // aucun dossier publié ; `covers/`, `illustrations/{uid}` et `users/{uid}`
+    // ne se listent que par un admin.
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isActive() && (isOwner(uid) || isAdmin());
       allow write: if false;              // Admin SDK uniquement
     }
 
@@ -1449,17 +1584,21 @@ service firebase.storage {
     }
 
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
 
+    // Lister le dossier d'une recette, qui peut être privée : admin seul.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isAdmin();
       allow write: if false;
     }
 
     match /users/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
   }
@@ -1497,9 +1636,14 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   claim de rôle, fondateur, et anonyme. Chaque compte a un jeton (`role`, `revoked`, `email`,
   comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore.
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
-  rôle : création de compte, rôle et fondateur, livres, recettes, annotations, champs
+  rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
   propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels ; côté
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
+- Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
+  `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
+  `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
+  production : une requête qui perd son filtre `is_private` ou `created_by` y échoue, même sur
+  une collection vide.
 
 **Convention `todo`.** Une faille relevée et encore ouverte a son test, écrit avec l'attendu
 corrigé et marqué `{ todo: "faille ouverte, audit 2026-10-09" }` (constante `OPEN_FLAW`). Sous
@@ -1507,25 +1651,21 @@ corrigé et marqué `{ todo: "faille ouverte, audit 2026-10-09" }` (constante `O
 retire l'option dans le même commit : le test devient bloquant. Une règle corrigée sans test
 est une anomalie de relecture.
 
-L'attendu corrigé suit la décision de propriété : une recette ou un livre privé ne se lit que
-par son créateur et l'administrateur ; chacun ne modifie que ses propres recettes et livres ;
-l'administrateur peut tout. Un éditeur lit encore les brouillons d'autrui : ce droit reste
-actif tant qu'il n'est pas tranché.
+La décision de propriété est en vigueur depuis la v0.23.8 : une recette ou un livre privé ne se
+lit que par son créateur et l'administrateur ; chacun ne modifie que ses propres recettes et
+livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
+brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
 
-**Comptes au 2026-10-09** : 192 tests, 161 actifs et 31 `todo`.
+**Comptes au 2026-10-09 (v0.23.8)** : 269 tests, 255 actifs et 14 `todo`.
 
-- Firestore : 135 tests, 106 actifs et 29 `todo`.
-- Storage : 57 tests, 55 actifs et 2 `todo`.
+- Firestore : 201 tests, 187 actifs et 14 `todo`.
+- Storage : 68 tests, 68 actifs, aucun `todo`.
 
-Les `todo` se répartissent ainsi :
-
-- 30 failles de l'audit ;
-- 1 écart constaté contre l'émulateur. `isActive()` (`storage.rules`) refuse la lecture à un
-  jeton qui ne porte aucun claim. `request.auth.token.revoked != true` lève une erreur quand
-  la clé `revoked` est absente, et cette erreur vaut refus. Le commentaire de la règle dit
-  l'inverse (« traité comme actif »). Un jeton `{ revoked: false }` sans rôle lit. Le test
-  « un compte sans claim de rôle lit une image publiée » reste `todo` jusqu'à ce que la règle
-  teste la présence de la clé (`'revoked' in request.auth.token`).
+Les 14 `todo` sont des failles de l'audit hors du périmètre de la v0.23.8 : adresse du
+fondateur, lecture des comptes et des jobs d'autrui par un éditeur, tag d'un livre système,
+`owner_id` d'un groupe et `uid` d'un repas planifié modifiables, écritures de `planned_meals`,
+`planning_config` et `error_reports` par un compte en attente ou révoqué, valeurs négatives
+dans `app_config/usage`.
 
 ---
 
@@ -1616,6 +1756,18 @@ ctx.feature ──▶ callModel ──┬─▶ app_config/ai_routing_policy   (
                             ├─▶ Gemini | Claude
                             └─▶ recordUsage                    (appel, moteur, modèle, coût)
 ```
+
+**Aucun appel hors plafond.** Un uid vide laissait auparavant l'appel passer sans contrôle.
+Trois comptes portent désormais ce qui n'est pas imputé à une personne :
+
+| Compte | Qui y tombe | Plafond |
+|---|---|---|
+| `system_unattributed` | un appel de modèle passé **sans aucun uid** (`assertWithinDailyBudget` → `budgetUserId`) ; `recordUsage` y ajoute la dépense du jour | ×100, comme le fondateur |
+| `system_recipe_without_owner` | une recette au `created_by` vide : déclencheurs nutrition, rôle de repas, produits de courses, **et le rattrapage nutrition nocturne**, qui impute chaque recette à son `created_by` (`recipeBudgetUserId`) | ×1, partagé par toutes les recettes orphelines |
+| `system` (littéral) | l'enrichissement des référentiels sans uid transmis (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`) | ×1 — un compte ordinaire pour le plafond |
+
+Ces comptes apparaissent sous ces clés dans `ai_usage`, `ai_daily_spend` et l'écran des
+plafonds.
 
 Un poste routé vers Claude mais servi par Gemini faute de clé montée émet un `WARNING` :
 c'est le silence de ce cas qui avait rendu une panne indéchiffrable. **Toute fonction qui
@@ -2101,16 +2253,19 @@ réenfilait le job. `dispatchDeadlineSeconds: 540`.
 Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
 (`attempt_count`).
 
-**Quand la reprise n'a pas lieu.** Un plafond de dépense atteint envoie le job
-**directement** en dead letter, sans réessayer : les trois tentatives referaient tout le
-travail qui précède l'appel pour heurter le même mur.
+**Quand la reprise n'a pas lieu.** Quatre échecs envoient le job **directement** en dead
+letter, sans réessayer, parce qu'une nouvelle tentative échouerait à l'identique : un plafond
+de dépense atteint (`budget_exceeded`), un livre illisible (`book_file_unreadable`), un
+balisage coupé à tous les efforts (`tagging_truncated`), et un livre cible qui n'appartient
+pas au créateur du job (`foreign_book`, contrôlé avant tout téléchargement et tout appel de
+modèle).
 
-**La sortie.** À la dernière tentative — ou immédiatement sur plafond —
+**La sortie.** À la dernière tentative — ou immédiatement dans les quatre cas ci-dessus —
 `moveToDeadLetter(...)` écrit `dead_letters/{jobId}` avec :
 
 | Champ | Valeurs |
 |---|---|
-| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `pipeline_error` |
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `pipeline_error` |
 | `last_error` | le message de l'exception |
 | `retry_count` | le nombre de tentatives consommées |
 | `file_path` | le fichier téléversé, pour pouvoir rejouer |
@@ -2166,6 +2321,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
+| `backfillBookPrivacyFn` | `admin` | pose `is_private` sur les livres qui ne le portent pas : `false`, ou `true` pour « Mes Recettes Secrètes » (tag `__secretes`). Un livre déjà renseigné n'est pas touché. Sans appel de modèle, 2 000 livres par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/book_privacy_backfill_checkpoint`. À lancer une fois après la v0.23.8 : les règles ne laissent lire le livre d'un autre que s'il porte `is_private == false` |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
@@ -2182,6 +2338,7 @@ code, et une réimplémentation doit la reproduire :
 | Aucune recette sur la page | Aucun brouillon créé ; le job se termine proprement plutôt que d'écrire une recette vide |
 | Timeout / erreur réseau | Retry Cloud Tasks, backoff 10 s → 300 s, trois tentatives, puis dead letter |
 | Plafond de dépense atteint | Refus **avant** l'appel, dead letter immédiate |
+| Livre cible d'un autre membre (import) | `assertJobTargetBook` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: foreign_book` |
 | Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
 | Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant**, compté dans `total_unpriced_calls`. Jamais de prix de repli |
 | Appel abouti puis échoué côté client | L'usage est enregistré **sans jetons** : le fournisseur facture, l'appel ne doit pas devenir invisible |
@@ -3013,10 +3170,38 @@ Le client écrit dans `quarantine/{uid}/` (`image_moderation_service.dart`), app
 `moderateAndPromoteImagesFn` avec la **destination voulue**, et reçoit soit l'URL publiée,
 soit un état d'attente. Seul le serveur écrit dans ces quatre dossiers, par l'Admin SDK.
 
-Une image tirée d'un asset du bundle (`origin: "asset"`) ou produite par l'IA
-(`origin: "ai"`) passe par la même promotion sans analyse : le verdict est `approved`, motif
-`bundled_asset` ou `ai_generated`. Sans cette exception, chaque création de livre remplirait
-la file de modération.
+**L'origine déclarée par le client n'est jamais crue** (`moderation/origin.ts`, v0.23.8). Le
+callable lisait `origin: "ai" | "asset"` dans la requête et approuvait l'image sans analyse :
+n'importe quel compte publiait l'image de son choix. Désormais :
+
+- `ai` n'est retenu que s'il est posé par le code serveur ; venant d'un client, il devient
+  `user` et l'image est analysée ;
+- `asset` n'est retenu que si l'empreinte SHA-256 du fichier est celle d'une couverture livrée
+  avec l'application (`BUNDLED_ASSET_SHA256` : `mycreations.png`, `opensource.png`,
+  `Secret.png`). Sinon l'image est analysée, et un `WARNING` le journalise. Le test
+  `moderationOrigin` relit `kass_dalle/assets/` et échoue si une image change sans son
+  empreinte.
+
+Une image retenue `asset` ou `ai` passe par la même promotion sans analyse : verdict
+`approved`, motif `bundled_asset` ou `ai_generated`. Sans cette exception, chaque création de
+livre système remplirait la file de modération.
+
+**La version analysée est celle qu'on publie.** L'envoyeur pouvait réécrire son fichier de
+quarantaine entre l'analyse et la promotion, et `copy()` relisait la nouvelle version. La
+génération Storage lue avant le téléchargement est épinglée (`pinnedGeneration`,
+`moderation/promote.ts`) : téléchargement, promotion et conservation d'un refus portent sur
+cette génération, et la copie échoue si elle a été remplacée. Le document `image_moderation`
+la garde (`quarantine_generation`) pour une décision d'administrateur ou une relance. Un
+document antérieur, sans ce champ, n'est approuvé par un administrateur que si le fichier n'a
+pas été mis à jour après la création du document (`legacyFileMayHaveChanged`) ; sinon l'image
+repasse en attente et `failed-precondition` demande de relancer l'analyse.
+
+**Propriété de la destination.** `book_cover` et `recipe_illustration` visent le document d'un
+autre (`ownerId`). `ownerId` doit être un identifiant de document : un « / », `.`, `..` ou
+`__…__` est refusé en `invalid-argument` (`isValidDocumentId`). Avant toute analyse, `assertTargetOwnership` (`moderation/promote.ts`) lit
+`books/{ownerId}` ou `recipes/{ownerId}` : seul son `created_by` ou un administrateur
+(`isAdminAccount`, lu sur le document) publie. Document absent ou `ownerId` manquant : refus.
+Un refus porte sur le lot entier, renvoyé en `permission-denied`, sans analyse facturée.
 
 ### 3. Firestore — `image_moderation/{moderationId}`
 
@@ -3025,6 +3210,7 @@ la file de modération.
 | `status` | `string` | `approved` / `rejected` / `manual_review` / `pending` |
 | `uid` | `string` | qui a envoyé |
 | `quarantine_path` | `string` | où le fichier attend |
+| `quarantine_generation` | `string?` | génération Storage du fichier analysé (v0.23.8). La promotion et la conservation d'un refus copient cette génération, et échouent si le fichier a été réécrit depuis. Absent sur les documents antérieurs |
 | `target_path` | `string` | où il ira s'il est approuvé |
 | `target_kind` | `string` | `book_cover` / `recipe_illustration` / `draft_illustration` / `free_recipe_cover` |
 | `owner_id` | `string?` | `bookId` ou `recipeId` selon `target_kind` |
@@ -3162,8 +3348,11 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 - **`moderateAndPromoteImagesFn`** (callable, `requireAuth`) — `{ items: [{ quarantinePath,
   targetKind, ownerId?, contentType?, origin? }] }`, de 1 à 25 images par appel. Chaque
   `quarantinePath` doit commencer par `quarantine/{uid de l'appelant}/`, sinon
-  `permission-denied`. Pour chaque image : téléchargement, `scanUpload()` (le format
-  d'abord : inutile d'envoyer un exécutable renommé à un moteur d'analyse), puis
+  `permission-denied`. `origin` n'est transmis que s'il vaut `asset`, à vérifier sur
+  l'empreinte ; `ai` est ignoré. Avant tout : contrôle de propriété de `book_cover` et
+  `recipe_illustration` (créateur ou admin, sinon `permission-denied` pour le lot). Pour
+  chaque image : téléchargement, `scanUpload()` (le format d'abord : inutile d'envoyer un
+  exécutable renommé à un moteur d'analyse), origine retenue (`resolveImageOrigin`), puis
   `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
   Rend `{ results: [{ moderationId, status, reason, url }] }`, dans l'ordre des `items`.
 - **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.

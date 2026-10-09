@@ -7,8 +7,10 @@
  * écrivaient jusque-là en direct.
  */
 
+import { getFirestore } from "firebase-admin/firestore";
 import { getDownloadURL, getStorage } from "firebase-admin/storage";
 
+import { COLL_BOOKS, COLL_RECIPES } from "../config";
 import { logError } from "../logging";
 
 /** Destination possible d'une image modérée. */
@@ -21,6 +23,59 @@ export const MODERATION_TARGET_KINDS: readonly ModerationTargetKind[] = [
   "draft_illustration",
   "free_recipe_cover",
 ];
+
+/**
+ * Identifiant de document Firestore utilisable comme `ownerId`.
+ *
+ * `ownerId` part dans un chemin Firestore (`books/{ownerId}`) et dans un
+ * chemin Storage (`covers/{ownerId}/cover.jpg`). Un « / » y ouvrirait un
+ * autre chemin que celui du document vérifié ; `.` et `..` ne sont pas des
+ * identifiants Firestore, ni `__…__`, réservé.
+ */
+export function isValidDocumentId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 1500 &&
+    !value.includes("/") &&
+    value !== "." &&
+    value !== ".." &&
+    !/^__.*__$/.test(value)
+  );
+}
+
+/**
+ * Le fichier de quarantaine tel qu'il a été analysé, et pas un autre.
+ *
+ * Entre l'analyse et la promotion, l'envoyeur peut réécrire son fichier de
+ * quarantaine : `copy()` relirait alors la nouvelle version, publiée sans
+ * avoir été regardée. Épingler la génération lue avant le téléchargement fait
+ * copier exactement les octets analysés — et échouer la copie si cette
+ * version a été remplacée. Pure et exportée pour être testée.
+ */
+export function pinnedGeneration(value: unknown): string | number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === "string" && /^[0-9]+$/.test(value)) return value;
+  return undefined;
+}
+
+/**
+ * Document antérieur à l'épinglage (sans `quarantine_generation`) : le fichier
+ * a-t-il pu changer depuis l'analyse ?
+ *
+ * Vrai si sa date de mise à jour Storage est postérieure à la création du
+ * document de modération, ou si l'une des deux est illisible — sans preuve, on
+ * ne publie pas. Pure et exportée pour être testée.
+ */
+export function legacyFileMayHaveChanged(
+  fileUpdated: unknown,
+  docCreatedAtMs: number | null,
+): boolean {
+  if (docCreatedAtMs == null || !Number.isFinite(docCreatedAtMs)) return true;
+  const updatedMs = typeof fileUpdated === "string" ? Date.parse(fileUpdated) : Number.NaN;
+  if (!Number.isFinite(updatedMs)) return true;
+  return updatedMs > docCreatedAtMs;
+}
 
 export function isTargetKind(value: unknown): value is ModerationTargetKind {
   return (
@@ -69,6 +124,93 @@ export function targetPathFor(args: {
   }
 }
 
+/**
+ * Collection du document qu'une destination illustre, ou `null` pour les deux
+ * destinations personnelles (rangées sous l'uid de l'appelant).
+ */
+export function ownedTargetCollection(kind: ModerationTargetKind): string | null {
+  switch (kind) {
+    case "book_cover":
+      return COLL_BOOKS;
+    case "recipe_illustration":
+      return COLL_RECIPES;
+    case "draft_illustration":
+    case "free_recipe_cover":
+      return null;
+  }
+}
+
+/**
+ * Refus de publier vers le livre ou la recette d'autrui, ou `null` si permis.
+ *
+ * Pure et exportée pour être testée. `docCreatedBy` vaut `undefined` quand le
+ * document n'existe pas. La règle est celle de Firestore : on ne modifie que
+ * ses propres livres et recettes — éditeur compris —, l'administrateur agit
+ * comme le créateur. Sans ce contrôle, n'importe quel compte remplaçait la
+ * couverture d'un livre d'autrui en passant son identifiant.
+ */
+export function targetOwnershipDenial(args: {
+  kind: ModerationTargetKind;
+  ownerId: string | null;
+  callerUid: string;
+  docExists: boolean;
+  docCreatedBy: unknown;
+  callerIsAdmin: boolean;
+}): string | null {
+  if (ownedTargetCollection(args.kind) == null) return null;
+  if (!args.ownerId) return `${args.kind} exige l'identifiant du document illustré.`;
+  if (!args.docExists) return "Document illustré introuvable.";
+  if (args.callerIsAdmin) return null;
+  const createdBy = typeof args.docCreatedBy === "string" ? args.docCreatedBy : "";
+  if (createdBy.length > 0 && createdBy === args.callerUid) return null;
+  return "Seuls le créateur et un administrateur changent l'image de ce document.";
+}
+
+/** Publication refusée : le livre ou la recette visés appartiennent à un autre. */
+export class TargetNotOwned extends Error {
+  constructor(
+    readonly kind: ModerationTargetKind,
+    readonly ownerId: string | null,
+    readonly detail: string,
+  ) {
+    super(detail);
+    this.name = "TargetNotOwned";
+  }
+}
+
+/**
+ * Vérifie, avant toute analyse facturée, que l'appelant peut illustrer le
+ * document visé. Lève [TargetNotOwned] sinon.
+ *
+ * `isAdmin` n'est consulté que si l'appelant n'est pas le créateur : le chemin
+ * normal coûte une lecture, celle du document illustré.
+ */
+export async function assertTargetOwnership(args: {
+  kind: ModerationTargetKind;
+  ownerId: string | null;
+  callerUid: string;
+  isAdmin: (uid: string) => Promise<boolean>;
+}): Promise<void> {
+  const collection = ownedTargetCollection(args.kind);
+  if (collection == null) return;
+  const snap = args.ownerId
+    ? await getFirestore().collection(collection).doc(args.ownerId).get()
+    : null;
+  const docExists = snap?.exists === true;
+  const docCreatedBy = snap?.data()?.created_by;
+  const isOwner = typeof docCreatedBy === "string" && docCreatedBy === args.callerUid;
+  const callerIsAdmin = docExists && !isOwner ? await args.isAdmin(args.callerUid) : false;
+  const denial = targetOwnershipDenial({
+    kind: args.kind,
+    ownerId: args.ownerId,
+    callerUid: args.callerUid,
+    docExists,
+    docCreatedBy,
+    callerIsAdmin,
+  });
+  if (denial) throw new TargetNotOwned(args.kind, args.ownerId, denial);
+}
+
 export interface PromotedImage {
   storagePath: string;
   downloadUrl: string;
@@ -87,10 +229,13 @@ export async function promoteImage(args: {
   contentType: string;
   moderationId: string;
   correlationId: string;
+  /** Génération analysée (voir [pinnedGeneration]). Absente : documents antérieurs. */
+  sourceGeneration?: unknown;
 }): Promise<PromotedImage> {
   const { quarantinePath, targetPath, contentType, moderationId, correlationId } = args;
   const bucket = getStorage().bucket();
-  const source = bucket.file(quarantinePath);
+  const generation = pinnedGeneration(args.sourceGeneration);
+  const source = bucket.file(quarantinePath, generation != null ? { generation } : undefined);
 
   const [promoted] = await source.copy(bucket.file(targetPath));
   await promoted.setMetadata({
@@ -145,9 +290,12 @@ export async function quarantineToRejected(args: {
   quarantinePath: string;
   moderationId: string;
   correlationId: string;
+  /** Génération jugée : c'est elle qu'on conserve, pas une version réécrite depuis. */
+  sourceGeneration?: unknown;
 }): Promise<string | null> {
   const bucket = getStorage().bucket();
-  const source = bucket.file(args.quarantinePath);
+  const generation = pinnedGeneration(args.sourceGeneration);
+  const source = bucket.file(args.quarantinePath, generation != null ? { generation } : undefined);
   const rejectedPath = rejectedPathFor(args.quarantinePath);
 
   try {

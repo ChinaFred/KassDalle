@@ -31,9 +31,8 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { ANTHROPIC_API_KEY, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { BudgetExceededError, assertWithinDailyBudget } from "../ai/budget";
+import { BudgetExceededError, assertWithinDailyBudget, recipeBudgetUserId } from "../ai/budget";
 import { readTimestampMillis } from "../nutrition/aiEnrichment";
-import { asNonEmptyString } from "../callable/_backfillCursor";
 import { resolvePageType } from "../triggers/recipeWritten";
 import { syncRecipeNutrition } from "../triggers/recipeNutritionAutoSync";
 
@@ -232,7 +231,8 @@ export async function runNutritionCatchUp(
       // plafond, la chaîne échouerait recette après recette et chacune
       // repartirait marquée « encore incomplète », ce qui est faux — elle n'a
       // pas été tentée, elle a été refusée.
-      const userId = asNonEmptyString(data.created_by);
+      // Même compte que celui que `syncRecipeNutrition` imputera.
+      const userId = recipeBudgetUserId(data.created_by);
       try {
         await assertWithinDailyBudget(userId, BUDGET_FEATURE);
       } catch (err) {

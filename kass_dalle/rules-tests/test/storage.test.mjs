@@ -6,13 +6,9 @@
 
 import { after, before, beforeEach, describe, it } from "node:test";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { OPEN_FLAW, PERSONAS, as, createEnv } from "./helpers.mjs";
+import { PERSONAS, as, createEnv } from "./helpers.mjs";
 
 let env;
-
-const NO_CLAIM_GAP = {
-  todo: "écart constaté 2026-10-09 : isActive() refuse un jeton sans claim revoked",
-};
 
 const storage = (name) => as(env, name).storage();
 
@@ -75,25 +71,52 @@ describe("dossiers publiés", () => {
     });
   }
 
+  // Lire un fichier dont on a l'adresse reste ouvert ; lister le dossier
+  // d'un autre ne l'est pas.
+  it("un lecteur ne liste pas le dossier scans/ d'un autre", async () => {
+    await assertFails(storage("reader").ref(`scans/${OTHER}`).listAll());
+  });
+
+  it("un lecteur liste son propre dossier scans/", async () => {
+    await assertSucceeds(storage("reader").ref(`scans/${READER}`).listAll());
+  });
+
+  it("un administrateur liste le dossier scans/ d'un autre", async () => {
+    await assertSucceeds(storage("admin").ref(`scans/${OTHER}`).listAll());
+  });
+
+  for (const dir of ["covers", `illustrations/${OTHER}`, `users/${OTHER}`]) {
+    it(`un lecteur ne liste pas ${dir}`, async () => {
+      await assertFails(storage("reader").ref(dir).listAll());
+    });
+
+    it(`un administrateur liste ${dir}`, async () => {
+      await assertSucceeds(storage("admin").ref(dir).listAll());
+    });
+  }
+
+  it("un lecteur ne liste pas le dossier d'une recette", async () => {
+    await assertFails(storage("reader").ref(`recipes/${OTHER}`).listAll());
+  });
+
+  it("un administrateur liste le dossier d'une recette", async () => {
+    await assertSucceeds(storage("admin").ref(`recipes/${OTHER}`).listAll());
+  });
+
   it("un administrateur ne supprime pas une image publiée", async () => {
     await assertFails(storage("admin").ref(`covers/${OTHER}/image.jpg`).delete());
   });
 
-  it("un compte en attente ne liste pas un dossier publié", OPEN_FLAW, async () => {
+  it("un compte en attente ne liste pas un dossier publié", async () => {
     await assertFails(storage("pending").ref("covers").listAll());
   });
 
   // La lecture reste sur isActive() (storage.rules, « isApprovedToken ») :
   // l'aligner sur le rôle a coupé l'accès au fondateur le 2026-10-05, le temps
-  // que son jeton porte le claim. Ce test garde ce retour arrière.
-  //
-  // Écart constaté le 2026-10-09 contre l'émulateur : un jeton sans AUCUN
-  // claim est refusé. `request.auth.token.revoked != true` lève une erreur
-  // sur une clé absente, et l'erreur vaut refus — le commentaire de
-  // isActive() (« traité comme actif ») ne se vérifie pas. Un jeton
-  // `{ revoked: false }` sans rôle, lui, lit. Marqué `todo` jusqu'à la
-  // correction de isActive() (test de présence `'revoked' in request.auth.token`).
-  it("un compte sans claim de rôle lit une image publiée", NO_CLAIM_GAP, async () => {
+  // que son jeton porte le claim. Ce test garde ce retour arrière, sur un
+  // jeton sans AUCUN claim : isActive() teste la présence de `revoked` avant
+  // de le comparer, une clé absente vaut « actif ».
+  it("un compte sans claim de rôle lit une image publiée", async () => {
     await assertSucceeds(storage("readerNoClaim").ref(`covers/${OTHER}/image.jpg`).getMetadata());
   });
 

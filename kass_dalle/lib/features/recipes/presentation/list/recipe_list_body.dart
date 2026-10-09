@@ -22,6 +22,11 @@ class RecipeListBookBody extends StatefulWidget {
   final bool showUnattached;
   final AsyncValue<List<Recipe>> recipesAsync;
   final bool canEdit;
+
+  /// Recette par recette : le lecteur peut-il la modifier ? Une recette d'un
+  /// autre membre rangée dans le livre ne se modifie, ne se supprime ni ne se
+  /// sélectionne que par son créateur ou un administrateur.
+  final bool Function(Recipe) canModifyRecipe;
   final bool selectionMode;
   final Set<String> selectedIds;
   final void Function(String) onItemSelect;
@@ -39,6 +44,7 @@ class RecipeListBookBody extends StatefulWidget {
     this.showUnattached = false,
     required this.recipesAsync,
     required this.canEdit,
+    required this.canModifyRecipe,
     required this.selectionMode,
     required this.selectedIds,
     required this.onItemSelect,
@@ -288,6 +294,13 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
 
   List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
     final theme = Theme.of(context);
+    bool editable(Recipe r) => canEdit && widget.canModifyRecipe(r);
+    // En mode sélection, la page d'un autre est grisée et ne réagit pas : elle
+    // ne se sélectionne pas, et l'ouvrir ferait perdre la sélection.
+    Widget lockedInSelection(Recipe r, Widget child) =>
+        widget.selectionMode && !editable(r)
+        ? IgnorePointer(child: Opacity(opacity: 0.38, child: child))
+        : child;
 
     if (recipes.isEmpty) {
       final emptyText = _searchQuery.trim().isEmpty
@@ -328,33 +341,38 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
           sliver: SliverList.separated(
             itemCount: sorted.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) => sorted[i].pageType != PageType.recipe
-                ? BookPageTile(
-                    recipe: sorted[i],
-                    bookId: widget.bookId,
-                    bookTitre: widget.bookTitre,
-                    bookCoverUrl: widget.bookCoverUrl,
-                    showUnattached: widget.showUnattached,
-                    selectionMode: canEdit && widget.selectionMode,
-                    isSelected: widget.selectedIds.contains(sorted[i].id),
-                    onSelect: canEdit
-                        ? () => widget.onItemSelect(sorted[i].id)
-                        : null,
-                  )
-                : RecipeCard(
-                    recipe: sorted[i],
-                    inBookContext: true,
-                    bookId: widget.bookId,
-                    bookTitre: widget.bookTitre,
-                    bookCoverUrl: widget.bookCoverUrl,
-                    showUnattached: widget.showUnattached,
-                    canEdit: canEdit,
-                    selectionMode: canEdit && widget.selectionMode,
-                    isSelected: widget.selectedIds.contains(sorted[i].id),
-                    onSelect: canEdit
-                        ? () => widget.onItemSelect(sorted[i].id)
-                        : null,
-                  ),
+            itemBuilder: (ctx, i) => lockedInSelection(
+              sorted[i],
+              sorted[i].pageType != PageType.recipe
+                  ? BookPageTile(
+                      recipe: sorted[i],
+                      bookId: widget.bookId,
+                      bookTitre: widget.bookTitre,
+                      bookCoverUrl: widget.bookCoverUrl,
+                      showUnattached: widget.showUnattached,
+                      selectionMode:
+                          editable(sorted[i]) && widget.selectionMode,
+                      isSelected: widget.selectedIds.contains(sorted[i].id),
+                      onSelect: editable(sorted[i])
+                          ? () => widget.onItemSelect(sorted[i].id)
+                          : null,
+                    )
+                  : RecipeCard(
+                      recipe: sorted[i],
+                      inBookContext: true,
+                      bookId: widget.bookId,
+                      bookTitre: widget.bookTitre,
+                      bookCoverUrl: widget.bookCoverUrl,
+                      showUnattached: widget.showUnattached,
+                      canEdit: editable(sorted[i]),
+                      selectionMode:
+                          editable(sorted[i]) && widget.selectionMode,
+                      isSelected: widget.selectedIds.contains(sorted[i].id),
+                      onSelect: editable(sorted[i])
+                          ? () => widget.onItemSelect(sorted[i].id)
+                          : null,
+                    ),
+            ),
           ),
         ),
       ];
@@ -406,33 +424,42 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
           sliver: SliverList.separated(
             itemCount: groupRecipes.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) => groupRecipes[i].pageType != PageType.recipe
-                ? BookPageTile(
-                    recipe: groupRecipes[i],
-                    bookId: widget.bookId,
-                    bookTitre: widget.bookTitre,
-                    bookCoverUrl: widget.bookCoverUrl,
-                    showUnattached: widget.showUnattached,
-                    selectionMode: canEdit && widget.selectionMode,
-                    isSelected: widget.selectedIds.contains(groupRecipes[i].id),
-                    onSelect: canEdit
-                        ? () => widget.onItemSelect(groupRecipes[i].id)
-                        : null,
-                  )
-                : RecipeCard(
-                    recipe: groupRecipes[i],
-                    inBookContext: true,
-                    bookId: widget.bookId,
-                    bookTitre: widget.bookTitre,
-                    bookCoverUrl: widget.bookCoverUrl,
-                    showUnattached: widget.showUnattached,
-                    canEdit: canEdit,
-                    selectionMode: canEdit && widget.selectionMode,
-                    isSelected: widget.selectedIds.contains(groupRecipes[i].id),
-                    onSelect: canEdit
-                        ? () => widget.onItemSelect(groupRecipes[i].id)
-                        : null,
-                  ),
+            itemBuilder: (ctx, i) => lockedInSelection(
+              groupRecipes[i],
+              groupRecipes[i].pageType != PageType.recipe
+                  ? BookPageTile(
+                      recipe: groupRecipes[i],
+                      bookId: widget.bookId,
+                      bookTitre: widget.bookTitre,
+                      bookCoverUrl: widget.bookCoverUrl,
+                      showUnattached: widget.showUnattached,
+                      selectionMode:
+                          editable(groupRecipes[i]) && widget.selectionMode,
+                      isSelected: widget.selectedIds.contains(
+                        groupRecipes[i].id,
+                      ),
+                      onSelect: editable(groupRecipes[i])
+                          ? () => widget.onItemSelect(groupRecipes[i].id)
+                          : null,
+                    )
+                  : RecipeCard(
+                      recipe: groupRecipes[i],
+                      inBookContext: true,
+                      bookId: widget.bookId,
+                      bookTitre: widget.bookTitre,
+                      bookCoverUrl: widget.bookCoverUrl,
+                      showUnattached: widget.showUnattached,
+                      canEdit: editable(groupRecipes[i]),
+                      selectionMode:
+                          editable(groupRecipes[i]) && widget.selectionMode,
+                      isSelected: widget.selectedIds.contains(
+                        groupRecipes[i].id,
+                      ),
+                      onSelect: editable(groupRecipes[i])
+                          ? () => widget.onItemSelect(groupRecipes[i].id)
+                          : null,
+                    ),
+            ),
           ),
         ),
       );

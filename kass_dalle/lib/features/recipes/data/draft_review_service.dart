@@ -196,10 +196,10 @@ class DraftReviewService {
 
   /// Publie une illustration retouchée par l'IA et retourne son URL.
   ///
-  /// Origine « ia » : elle sort d'un moteur qui applique déjà ses garde-fous et
-  /// n'est donc pas analysée. Elle emprunte tout de même le chemin de la
-  /// quarantaine, faute de quoi `illustrations/` ne pourrait pas être fermé en
-  /// écriture — et la modération serait contournable par cette porte.
+  /// Origine déclarée « ia ». Le serveur ne la croit pas venant d'un client :
+  /// l'image est analysée comme une autre (v0.23.8). Elle emprunte le chemin
+  /// de la quarantaine, faute de quoi `illustrations/` ne pourrait pas être
+  /// fermé en écriture — et la modération serait contournable par cette porte.
   static Future<String> uploadEnhancedIllustration(
     String uid,
     Uint8List bytes,

@@ -22,6 +22,7 @@ import {
   REGION,
 } from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
+import { assertCanReadRecipe } from "./_recipeAccess";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
   polishCooklang,
@@ -1084,6 +1085,8 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
       throw new HttpsError("not-found", "Recette introuvable.");
     }
     const data = snap.data() ?? {};
+    // Même confidentialité que les règles, avant tout appel de modèle.
+    await assertCanReadRecipe(data, ctx.userId);
     const cooklang = (data.raw_cooklang as string | undefined) ?? "";
     if (!cooklang.trim()) {
       throw new HttpsError("failed-precondition", "Cette recette n'a pas de contenu à dresser.");
@@ -1179,6 +1182,8 @@ export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
       throw new HttpsError("not-found", "Recette introuvable.");
     }
     const data = snap.data() ?? {};
+    // Même confidentialité que les règles, avant tout appel de modèle.
+    await assertCanReadRecipe(data, ctx.userId);
     const cooklang = (data.raw_cooklang as string | undefined) ?? "";
     if (!cooklang.trim()) {
       throw new HttpsError("failed-precondition", "Cette recette n'a pas de contenu à conserver.");
@@ -1265,6 +1270,8 @@ export const generatePlatingImageFn = onCall(
     try {
       const ref = getFirestore().collection(COLL_RECIPES).doc(recipeId);
       const snap = await ref.get();
+      // Même confidentialité que les règles, avant tout appel de modèle.
+      await assertCanReadRecipe(snap.data(), ctx.userId);
       const advice = readStoredAdvice(snap.data());
       if (!advice) {
         throw new HttpsError(

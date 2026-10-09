@@ -107,8 +107,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
       setState(() => _selected.addAll(items.map((i) => i.key)));
 
   /// Coche toute la section, ou la décoche si elle l'est déjà entièrement.
-  void _toggleSection(_Section section) => setState(() {
-    final keys = section.items.map((i) => i.key).toList();
+  /// Seules les lignes sélectionnables comptent : [items] est déjà filtré.
+  void _toggleSection(Iterable<_QueueItem> items) => setState(() {
+    final keys = items.map((i) => i.key).toList();
     if (keys.every(_selected.contains)) {
       _selected.removeAll(keys);
     } else {
@@ -488,6 +489,16 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final allJobs = allJobsAsync?.value ?? [];
     final allDrafts = allDraftsAsync?.value ?? [];
 
+    // Un brouillon ne se valide, ne se supprime et ne se sélectionne que par
+    // son créateur ou un administrateur (`firestore.rules`). Celui d'un autre
+    // membre s'affiche, et sa ligne ouvre la relecture.
+    final me = ref.watch(appUserProvider).value;
+    bool canAct(_QueueItem item) => switch (item) {
+      _DraftItem(:final recipe) =>
+        me?.canModifyRecipe(recipe.createdBy) ?? false,
+      _JobItem() => true,
+    };
+
     // Forcer le mode "me" si non-admin tente allUsers
     if (_filterMode == WorkQueueFilter.allUsers && !isAdmin) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -519,7 +530,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     // repliée) ne compte pas et n'est jamais traitée.
     final visibleItems = [
       for (final s in sections)
-        if (!isCollapsed(s)) ...s.items,
+        if (!isCollapsed(s)) ...s.items.where(canAct),
     ];
     final selectedItems = visibleItems
         .where((i) => _selected.contains(i.key))
@@ -582,7 +593,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               ),
               if (isAdmin && _filterMode == WorkQueueFilter.allUsers)
                 WorkQueueAdminUidFilter(allJobs: allJobs, allDrafts: allDrafts),
-              if (allItems.isNotEmpty)
+              if (allItems.any(canAct))
                 IconButton(
                   icon: const Icon(Icons.checklist),
                   tooltip: 'Sélectionner',
@@ -683,7 +694,8 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     for (final section in sections) {
       final collapsed = isCollapsed(section);
       if (showSectionHeaders) {
-        final checked = section.items
+        final actionable = section.items.where(canAct).toList();
+        final checked = actionable
             .where((i) => _selected.contains(i.key))
             .length;
         listItems.add(
@@ -694,10 +706,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
             onToggle: () => _toggleCollapse(section),
             selection: checked == 0
                 ? false
-                : (checked == section.items.length ? true : null),
-            onToggleSelection:
-                selecting && !collapsed && section.items.isNotEmpty
-                ? () => _toggleSection(section)
+                : (checked == actionable.length ? true : null),
+            onToggleSelection: selecting && !collapsed && actionable.isNotEmpty
+                ? () => _toggleSection(actionable)
                 : null,
           ),
         );
@@ -726,17 +737,20 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 ),
               );
             case _DraftItem(:final recipe):
+              final mine = canAct(item);
               listItems.add(
                 QueueDraftTile(
                   recipe: recipe,
-                  isSelected: _selected.contains(item.key),
+                  isSelected: mine && _selected.contains(item.key),
                   isSelecting: selecting,
-                  onTap: () => selecting
+                  onTap: () => selecting && mine
                       ? _toggleSelect(item.key)
                       : context.go('/drafts/${recipe.id}'),
-                  onLongPress: () => _toggleSelect(item.key),
-                  onValidate: () => _validateDrafts([recipe], confirm: false),
-                  onDelete: () => _deleteItems([item]),
+                  onLongPress: mine ? () => _toggleSelect(item.key) : null,
+                  onValidate: mine
+                      ? () => _validateDrafts([recipe], confirm: false)
+                      : null,
+                  onDelete: mine ? () => _deleteItems([item]) : null,
                 ),
               );
           }

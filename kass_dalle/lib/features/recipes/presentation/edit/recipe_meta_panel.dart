@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/meal_role.dart';
 import '../../domain/recipe.dart';
+import '../../../books/domain/book.dart';
 import '../../../books/presentation/book_picker_field.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -78,7 +79,52 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   ConsumerState<RecipeMetaPanel> createState() => _RecipeMetaPanelState();
 }
 
+/// Livres proposés, avec en tête le livre d'origine de [recipe] quand il
+/// n'en fait pas partie — une page rangée dans le livre d'un autre membre.
+///
+/// Sans lui, le champ affichait un livre vide, et revenir au livre d'origine
+/// après un autre choix était impossible. Pure et exportée pour être testée.
+List<Book> booksWithOrigin(List<Book> books, Recipe? recipe) {
+  final originId = recipe?.bookId ?? '';
+  if (originId.isEmpty || books.any((b) => b.id == originId)) return books;
+  final now = DateTime.now();
+  return [
+    Book(
+      id: originId,
+      titre: recipe?.bookTitre ?? 'Livre d\'un autre membre',
+      auteur: '',
+      langue: 'fr',
+      tags: const [],
+      createdBy: '',
+      createdAt: now,
+      updatedAt: now,
+    ),
+    ...books,
+  ];
+}
+
+/// Aide affichée quand la recette est dans le livre d'un autre membre.
+const kForeignBookHelper =
+    'Livre d\'un autre membre. Choisir un de vos livres y déplace la recette.';
+
 class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
+  // La liste passée au sélecteur doit rester la même instance d'un rendu à
+  // l'autre : `BookPickerField` remet son filtre à zéro dès qu'il en reçoit
+  // une autre.
+  List<Book>? _booksSource;
+  String? _originId;
+  List<Book>? _booksShown;
+
+  List<Book> _booksFor(List<Book> books) {
+    final originId = widget.recipe?.bookId;
+    if (!identical(books, _booksSource) || originId != _originId) {
+      _booksSource = books;
+      _originId = originId;
+      _booksShown = booksWithOrigin(books, widget.recipe);
+    }
+    return _booksShown!;
+  }
+
   final _cuisineCtrl = TextEditingController();
 
   @override
@@ -115,7 +161,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final booksAsync = ref.watch(myBooksOrderedProvider);
+    final booksAsync = ref.watch(targetBooksProvider);
     final theme = Theme.of(context);
     final isRecipe = (widget.pageType ?? PageType.recipe) == PageType.recipe;
     final showTags =
@@ -158,10 +204,13 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             // deux endroits pour une même idée, et un livre qui restait vide
             // à côté de ses propres recettes.
             data: (books) => BookPickerField(
-              books: books,
+              books: _booksFor(books),
               selectedBookId: widget.selectedBookId,
               helperText:
-                  'À défaut de choix, la recette rejoint « Mes recettes libres »',
+                  (widget.selectedBookId ?? '').isNotEmpty &&
+                      !books.any((b) => b.id == widget.selectedBookId)
+                  ? kForeignBookHelper
+                  : 'À défaut de choix, la recette rejoint « Mes recettes libres »',
               enabled: !widget.saving,
               onChanged: widget.onBookChanged,
             ),
