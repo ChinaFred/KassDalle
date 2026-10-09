@@ -148,7 +148,7 @@
       <li><a href="#raffiner">Raffinement d'un brouillon par IA</a></li>
       <li><a href="#valider">Sauvegarde en recette</a></li>
       <li><a href="#modifier">Modification d'une recette</a></li>
-      <li><a href="#nutrition">Recalcul nutritionnel automatique</a></li>
+      <li><a href="#nutrition">Écriture d'une recette : confidentialité, rôle, courses, nutrition</a></li>
       <li><a href="#recherche">Recherche de recettes</a></li>
       <li><a href="#generer">Génération d'une recette par IA</a></li>
       <li><a href="#dressage">Conseil de dressage et visuels de montage</a></li>
@@ -167,6 +167,12 @@
       <li><a href="#texte-colle">Import d'un texte collé</a></li>
       <li><a href="#annoter">Annoter et noter une recette</a></li>
       <li><a href="#livre-entier">Import d'un livre entier (PDF, EPUB)</a></li>
+      <li><a href="#rattrapage">Rattrapage nutritionnel planifié</a></li>
+      <li><a href="#connexion-next">Connexion depuis un lien</a></li>
+      <li><a href="#qualite">Qualité des données</a></li>
+      <li><a href="#livre-prive">Confidentialité d'un livre</a></li>
+      <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
+      <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
     </ol>
   </nav>
 
@@ -630,12 +636,13 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="nutrition"><span class="n">06</span>Recalcul nutritionnel automatique</h2>
+    <h2 id="nutrition"><span class="n">06</span>Écriture d'une recette : confidentialité, rôle, courses, nutrition</h2>
     <p class="sec-note">
-      Aucun écran ne demande ce calcul : il se déclenche seul, à chaque écriture d'une recette.
-      La difficulté n'est pas de le lancer, c'est de l'empêcher de se relancer lui-même
-      indéfiniment.
-      <span class="path">functions/src/triggers/recipeNutritionAutoSync.ts</span>
+      Aucun écran ne demande ces traitements : un seul déclencheur part à chaque écriture d'une
+      recette. Il recopie la confidentialité du livre, classe le rôle dans un repas, puis lance
+      les courses et la nutrition quand une de ses entrées a changé.
+      <span class="path">triggers/recipeWritten.ts → recipePrivacy.ts, recipeMealRoleAutoSync.ts,
+      recipeShoppingProducts.ts, recipeNutritionAutoSync.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -644,98 +651,121 @@ sequenceDiagram
   autonumber
   participant FS as recipes
   participant TR as onRecipeWritten
+  participant BK as books
+  participant M as Modèle (Gemini ou Claude)
+  participant SH as refreshShoppingProducts
+  participant NS as syncRecipeNutrition
   participant NU as nutrition_units
   participant NI as nutrition_ingredients
-  participant G as Gemini
   participant RN as computeAndPersistRecipeNutrition
 
   FS-->>TR: onWrite recipes/id
-
-  alt page_type différent de recipe
+  opt suppression
     TR-->>FS: sortie immédiate
-  else inchangé, nutrition présente, aucun ingrédient sans valeur
-    TR-->>FS: sortie immédiate
-  else inchangé mais 3 tentatives déjà consommées
-    TR-->>FS: sortie immédiate
-  else recalcul ou rattrapage nécessaire
-    TR->>TR: resolveIngredientUnitFields par ingrédient
-    loop pour chaque unité rencontrée
-      TR->>NU: upsertNutritionUnitReference
-      NU-->>TR: créée, mise à jour, ou inconnue
-    end
-    opt unités encore sans poids
-      TR->>G: enrichUnknownUnitsWithAI — ici, et nulle part ailleurs
-      G-->>TR: poids ou volume par unité
-      TR->>NU: grams_per_unit
-    end
-    TR->>FS: merge nutrition_validation et compteur de tentatives
-    loop pour chaque ingrédient canonique
-      TR->>NI: create sinon merge des alias et du compteur
-    end
-    TR->>G: estimatePer100gForTargets, lots de 20, tous les ingrédients
-    G-->>TR: valeurs estimées par identifiant
-    opt ingrédients non couverts par le lot
-      TR->>G: relance individuelle insistante
-      G-->>TR: estimation ou échec tracé
-    end
-    TR->>NI: per100g, quality_status estimated_ai
-    TR->>NI: quality_status estimation_failed pour les muets
-    TR->>RN: computeAndPersistRecipeNutrition
-    RN->>NI: lit le référentiel
-    opt looksFried sur le texte et les ingrédients
-      RN->>G: estimate_fry_absorption
-      G-->>RN: indices des ingrédients frits, pourcentage absorbé
-      RN->>RN: huile absorbée, plafonnée au bain déclaré
-    end
-    RN->>FS: écrit nutrition, totaux, par portion, pour 100 g, qualité, huile absorbée
-    FS-->>TR: onWrite de nouveau
-    TR-->>FS: rien à rattraper ou quota de tentatives atteint, sortie
   end
+
+  opt is_private absent, ou livre porteur ou is_private modifié
+    TR->>BK: lit is_private du livre porteur
+    TR->>FS: is_private recopié du livre, s'il diffère
+  end
+
+  opt page_type différent de recipe (champ, sinon métadonnée CookLang)
+    TR-->>FS: sortie
+  end
+
+  opt tags.meal_role absent
+    TR->>M: suggestMealRole (inline_meal_role_classification)
+    M-->>TR: rôle, contains, suggested_sides, ou aucun rôle
+    TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at
+  end
+
+  alt mise à jour sans changement d'entrée (ingrédients, portions, page_type, raw_cooklang)
+    TR-->>FS: sortie, aucun recalcul
+  else création, ou une entrée a changé
+    par l'échec de l'un ne prive pas la recette de l'autre
+      TR->>SH: refreshShoppingProducts
+      opt ingrédients modifiés, ou shopping_products absent
+        SH->>NI: lit le produit acheté de chaque ingrédient
+        SH->>SH: deriveShoppingProducts, aucun appel de modèle
+        SH->>FS: shopping_products
+      end
+    and
+      TR->>NS: syncRecipeNutrition
+      loop pour chaque unité rencontrée
+        NS->>NU: upsertNutritionUnitReference
+      end
+      opt unités encore sans poids
+        NS->>M: enrichUnknownUnitsWithAI (enrich_unit_weights)
+        NS->>NU: grams_per_unit
+      end
+      NS->>FS: nutrition_validation, nutrition_catch_up_attempts remis à 0
+      loop pour chaque ingrédient canonique
+        NS->>NI: create sinon merge des alias et du compteur
+      end
+      opt ingrédients créés par cette écriture
+        NS->>M: produit acheté (shopping_product_alias_auto)
+        NS->>NI: shopping_product
+      end
+      opt ingrédients sans per100g, hors échec de moins de 24 h
+        NS->>M: estimatePer100gForTargets, lots de 20 (inline_ingredient_per100g_enrichment)
+        NS->>NI: per100g, ou quality_status estimation_failed
+      end
+      opt lignes sans quantité
+        NS->>M: portion usuelle (estimate_usual_portions)
+      end
+      NS->>RN: computeAndPersistRecipeNutrition
+      RN->>NI: lit le référentiel
+      opt looksFried sur le texte et les ingrédients
+        RN->>M: estimate_fry_absorption
+      end
+      RN->>FS: nutrition — totaux, par portion, pour 100 g, qualité, huile absorbée
+    end
+  end
+
+  FS-->>TR: onWrite de nouveau, pour chaque écriture ci-dessus
+  TR-->>FS: rôle présent, entrées inchangées, sortie à la garde
 </pre>
       </div>
       <figcaption>
-        <b>La dernière paire de flèches est le coupe-circuit.</b> Le trigger écrit dans la
-        collection qu'il écoute ; c'est la comparaison d'empreinte
-        <code>nom | quantité | unité</code> entre l'avant et l'après qui arrête la récursion au
-        second tour. Le rattrapage y ajoute un compteur borné : un ingrédient qui échoue
-        toujours obtiendrait sinon une relance à chaque écriture, indéfiniment.
+        <b>La garde porte sur les entrées, pas sur le résultat.</b>
+        <code>recipeTriggerInputsFingerprint</code> compare avant et après sur quatre champs :
+        les ingrédients (<code>nom | quantité | unité</code>), <code>portions</code>,
+        <code>page_type</code> et <code>raw_cooklang</code>. Les écritures du déclencheur
+        (<code>is_private</code>, <code>tags</code>, <code>shopping_products</code>,
+        <code>nutrition</code>) ne touchent aucun de ces champs : le réveil qu'elles provoquent
+        sort à la garde. Il n'y a pas de compteur de tentatives dans ce chemin.
       </figcaption>
       <figcaption>
-        <b>Ce déclencheur est le seul à enrichir poids d'unités et <code>per100g</code>.</b>
-        La normalisation posait les deux mêmes questions au modèle. À l'import, elle ne les
-        posait pas <i>avant</i> ce déclencheur mais <b>en même temps</b> : l'écriture de la
-        recette le réveille, puis la normalisation part en parallèle, et les deux trouvent le
-        référentiel également vide. Chaque unité et chaque ingrédient inconnu étaient donc payés
-        deux fois, et le journal montrait la passe en double sans qu'on sache laquelle avait
-        servi. Ce chemin-ci l'emporte parce qu'il part sur <b>toutes</b> les écritures de
-        recette, et qu'il a besoin de ces valeurs dans la foulée pour calculer.
+        <b>Confidentialité et rôle passent avant la garde.</b> <code>book_id</code> n'est pas une
+        entrée de la garde : l'y ajouter relancerait nutrition et courses à chaque rangement d'une
+        recette dans un autre livre. Le rôle se pose sur une recette créée à la main, générée par
+        l'IA ou copiée, qui n'a pas de <code>tags.meal_role</code>. Un modèle qui ne sait pas
+        classer n'écrit rien, et la prochaine écriture retente.
       </figcaption>
     </figure>
     <span class="expect">
       Ce déclencheur <b>n'écrit jamais le champ <code>ingredients</code></b>. Ce champ appartient
-      à la normalisation, et à elle seule. La résolution d'unité qu'il effectue est un
-      intermédiaire de calcul : la reposer sur la recette effaçait la <code>category</code> que la
-      sauvegarde venait d'y écrire.
+      à la normalisation. La résolution d'unité qu'il effectue est un intermédiaire de calcul :
+      la reposer sur la recette effaçait la <code>category</code> que la sauvegarde venait d'y
+      écrire.
     </span>
     <span class="expect">
-      <b>Plus de plafond d'ingrédients.</b> L'enrichissement s'arrêtait autrefois au douzième
-      ingrédient — un appel Gemini par ingrédient coûtait trop cher en temps. Un lot couvre
-      désormais vingt ingrédients par appel : une recette entière tient dans un ou deux appels,
-      et plus aucun ingrédient ne repart muet parce qu'il était treizième dans la liste.
+      <b>Un lot couvre vingt ingrédients par appel</b>, sans plafond par recette. Un ingrédient
+      resté sans valeur est marqué <code>estimation_failed</code> et n'est pas redemandé avant
+      24 h. Un échec global écrit un instantané d'échec sur la recette
+      (<code>persistFailedNutritionSnapshot</code>) : l'écran affiche l'échec au lieu d'une
+      nutrition absente.
     </span>
     <span class="expect warn">
-      <b>Une estimation vaut mieux qu'une absence.</b> Un ingrédient sans valeur pour 100 g
-      disparaît du total sans rien dire. Le prompt exige donc une estimation dans tous les cas,
-      moyenne comprise pour un nom qui hésite (« bacon ou pancetta ») ; ce qui reste sans
-      valeur après relance est marqué <code>estimation_failed</code> et signalé à l'écran.
+      <b>Un calcul en échec n'est pas repris par l'écriture suivante.</b> La garde ne relance que
+      sur une entrée modifiée. La reprise passe par le rattrapage planifié (séquence 25).
     </span>
     <span class="expect">
       <b>Le bloc <code>opt</code> de friture est gardé par un test gratuit.</b>
       <code>looksFried()</code> cherche des mots entiers dans <code>raw_cooklang</code> et dans les
-      noms d'ingrédients : sans signe de friture, aucune recette ne paie l'appel. Le verdict obtenu
-      est ensuite conservé dans le snapshot avec sa signature (<code>fry_verdict</code>,
+      noms d'ingrédients. Le verdict est conservé avec sa signature (<code>fry_verdict</code>,
       <code>fry_signature</code>) et n'est redemandé que si la liste d'ingrédients ou le texte
-      changent — le recalcul en boucle du trigger ne rappelle donc pas le moteur.
+      changent.
     </span>
   </section>
 
@@ -824,6 +854,7 @@ sequenceDiagram
   participant BR as BookRepository
   participant RR as RecipeRepository
   participant FS as recipes
+  participant TR as onRecipeWritten
 
   U->>SN: explore avec la source IA
 
@@ -862,6 +893,11 @@ sequenceDiagram
     RR->>FS: add
     FS-->>SN: identifiant
     SN-->>U: recette ajoutée à la bibliothèque
+    FS-->>TR: onWrite recipes/id
+    Note over CF,TR: generateRecipeFn ne demande pas le rôle dans un repas
+    TR->>G: suggestMealRole (inline_meal_role_classification)
+    G-->>TR: rôle, contains, suggested_sides
+    TR->>FS: tags.meal_role, puis courses et nutrition (séquence 06)
   end
 </pre>
       </div>
@@ -875,6 +911,12 @@ sequenceDiagram
       Une recette générée est enregistrée directement en <code>validated</code>, sans passer par
       la file de brouillons : l'utilisateur l'a déjà relue à l'écran. Elle atterrit dans le livre
       système <b>Mes créations Kass'Dalle</b>, créé au premier besoin.
+    </span>
+    <span class="expect">
+      <b>Le rôle dans un repas est posé après l'enregistrement.</b> Le prompt de
+      <code>generateRecipeFn</code> ne demande pas <code>tags.meal_role</code>. C'est
+      <code>onRecipeWritten</code> qui le classe, à la création, pour que le planning puisse
+      composer un plat et son accompagnement avec cette recette.
     </span>
   </section>
 
@@ -1609,10 +1651,12 @@ sequenceDiagram
   <section>
     <h2 id="courses"><span class="n">15</span>Liste de courses</h2>
     <p class="sec-note">
-      Construite depuis les repas <b>à venir</b> : une liste qui reprend les courses de repas déjà
-      mangés ne sert à rien. Les ingrédients deviennent des produits d'achat, rangés par rayon.
-      <span class="path">planning_screen.dart → shopping_list_sheet.dart →
-      gemini/shopping.ts (consolidateShoppingList) → GoogleTasksService</span>
+      Construite depuis les repas <b>à venir</b> de la période lue. Elle additionne les produits
+      d'achat que le serveur a calculés à l'écriture de chaque recette (séquence 06). Aucun appel
+      de modèle : le regroupement se fait sur l'appareil.
+      <span class="path">planning_screen.dart (_showIngredientsList) → planning_widgets.dart
+      (planningAggregateProducts) → core/utils/shopping_products.dart →
+      shopping_list_sheet.dart → GoogleTasksService</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1621,33 +1665,58 @@ sequenceDiagram
   autonumber
   actor U as Lecteur
   participant P as PlanningScreen
+  participant PR as PlanningRepository
+  participant FS as recipes
   participant S as ShoppingListSheet
-  participant M as Moteur d'IA
+  participant SP as SharedPreferences
   participant GT as Google Tasks
 
   U->>P: Liste de courses
-  P->>S: les repas à venir de la semaine lue (tous avec « Tout »), recettes incluses
-  Note over S: brouillons et recettes des membres du groupe compris,<br/>pas seulement les recettes validées de l'utilisateur
-  S->>M: consolidateShoppingList — les lignes d'ingrédients
-  M-->>S: produits d'achat fusionnés, rangés par rayon
+  P->>P: mealsToShop — repas à venir de la semaine lue, tous avec « Tout »
+  P->>PR: getRecipesByIds — plats et accompagnements avec recette
+  PR->>FS: lecture par identifiant
+  FS-->>P: recettes, brouillons et recettes des membres du groupe compris
+  P->>P: planningScaleRecipeForMeal par repas, aux parts du repas
+  P->>P: garnitures sans recette, quantité multipliée par les parts
+  P->>P: planningAggregateProducts — shopping_products de chaque recette,<br/>ingrédients bruts si absents, mergeShoppingProducts
+  Note over P: même produit et unités convertibles, quantités additionnées.<br/>Aucun appel de modèle
+  P->>S: produits, provenance de chaque ligne
+  S->>S: rayon de chaque ligne (IngredientCategorizer)
+  S->>SP: lit la liste du jour
+  opt une liste existe déjà pour aujourd'hui
+    S-->>U: Remplacer ou Enrichir ?
+    U-->>S: choix
+  end
+  S->>SP: écrit la liste du jour
   S-->>U: rayons dépliables, articles cochables
 
   U->>S: coche ce qu'il a déjà
-  Note over U,S: l'état coché vit dans la feuille, pas dans la recette
+  S->>SP: état coché, sur l'appareil
 
-  U->>S: Envoyer vers Google Tasks
-  S->>S: écarte les articles cochés
-  S->>GT: un rayon = une tâche, un article = une sous-tâche
-  GT-->>U: la liste apparaît dans l'application Tasks
+  alt Envoyer vers Google Tasks
+    S->>S: écarte les articles cochés
+    S->>GT: un rayon = une tâche, un article = une sous-tâche
+    GT-->>U: la liste apparaît dans l'application Tasks
+  else Google Keep
+    S->>S: copie la liste dans le presse-papier, rayon par rayon
+    S-->>U: ouvre Keep, à coller dans une note
+  end
 </pre>
       </div>
       <figcaption>
-        <b>Seuls les articles non cochés partent.</b> Envoyer ce qu'on vient de rayer produirait
-        une liste à re-rayer dans le magasin.
+        <b>Les produits d'achat sont calculés à l'écriture de la recette, pas à l'affichage.</b>
+        <code>onRecipeWritten</code> écrit <code>shopping_products</code> par
+        <code>deriveShoppingProducts</code> ; le client additionne ensuite ces produits entre
+        recettes par <code>mergeShoppingProducts</code>. Les deux suivent la fixture
+        <code>shopping_products.json</code>.
         <span class="expect">
-          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle se recalcule depuis
-          les repas à venir et ne modifie aucun document partagé — même règle que le
-          redimensionnement : ce qui appartient à une personne vit sous cette personne.
+          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit dans les
+          préférences locales de l'appareil, une liste par compte et par jour, et ne modifie aucun
+          document partagé.
+        </span>
+        <span class="expect">
+          <b>Seuls les articles non cochés partent vers Tasks.</b> Une recette introuvable est
+          nommée dans un message : ses ingrédients ne sont pas comptés.
         </span>
       </figcaption>
     </figure>
@@ -2250,6 +2319,429 @@ sequenceDiagram
         <span class="expect warn">
           <b>Le plafond quotidien d'IA peut couper l'import au milieu.</b> Les tranches restantes
           passent en erreur, sans nouvelle tentative, et se relancent depuis la file des traitements.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="rattrapage"><span class="n">25</span>Rattrapage nutritionnel planifié</h2>
+    <p class="sec-note">
+      <code>onRecipeWritten</code> calcule une fois par changement d'entrée. Une nutrition en
+      échec ou incomplète est reprise par une passe à part, tous les jours à 5 h, ou à la demande
+      depuis Admin › Backfills.
+      <span class="path">scheduled/nutritionCatchUpSchedule.ts (scheduledNutritionCatchUp,
+      runNutritionCatchUp) → callable/nutritionBackfillCallable.ts (backfillNutritionFn) →
+      triggers/recipeNutritionAutoSync.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant SCH as Cloud Scheduler
+  participant CU as scheduledNutritionCatchUp
+  participant BF as backfillNutritionFn
+  participant RUN as runNutritionCatchUp
+  participant FS as recipes
+  participant BU as assertWithinDailyBudget
+  participant NS as syncRecipeNutrition
+  participant TR as onRecipeWritten
+
+  alt tous les jours à 5 h, heure de Paris
+    SCH->>CU: déclenche
+    CU->>RUN: 20 recettes au plus, arrêt à 8 min
+  else Admin › Backfills
+    A->>BF: backfillNutritionFn (requireAdmin)
+    BF->>RUN: forced, 40 recettes par défaut, reprise au curseur
+  end
+
+  loop pages de 200 recettes, par identifiant
+    RUN->>FS: lit la page
+    loop chaque recette
+      RUN->>RUN: needsNutritionCatchUp
+      Note over RUN: reprise si nutrition absente, en échec,<br/>ou avec des ingrédients manquants.<br/>Écartée si écrite il y a moins de 30 min.<br/>Hors forced, écartée aussi si calculée il y a moins de 20 h<br/>ou après 5 tentatives
+      opt à reprendre, sous le plafond de recettes et l'échéance
+        RUN->>BU: plafond de dépense du créateur (rattrapage_nutrition)
+        alt plafond atteint
+          BU-->>RUN: BudgetExceededError, arrêt du passage
+        else sous le plafond
+          RUN->>NS: syncRecipeNutrition, cause rattrapage-planifie ou backfill-demande
+          NS->>FS: nutrition_validation, nutrition
+          RUN->>FS: relit la nutrition
+          RUN->>FS: nutrition_catch_up_attempts à 0 si complète, sinon plus 1
+        end
+      end
+    end
+  end
+
+  FS-->>TR: onWrite pour chaque recette reprise
+  TR-->>FS: entrées inchangées, sortie à la garde
+  RUN-->>CU: complétées, encore incomplètes, laissées pour demain
+  RUN-->>BF: même compte rendu, curseur du passage suivant
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux bornes de patience, une borne de prudence.</b> L'âge de l'instantané (20 h) et le
+        plafond de tentatives (<code>MAX_CATCH_UP_ATTEMPTS</code>, 5) ne s'appliquent qu'au passage
+        planifié. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
+        second calcul pendant que le déclencheur travaille encore.
+        <span class="expect">
+          <b>Le compteur repart de zéro sur une entrée modifiée.</b>
+          <code>syncRecipeNutrition</code> écrit <code>nutrition_catch_up_attempts: 0</code> à
+          chaque recalcul : une liste d'ingrédients modifiée a droit à ses propres tentatives.
+        </span>
+        <span class="expect warn">
+          <b>Le plafond de dépense se consulte avant l'appel.</b> Une recette refusée par le
+          plafond n'est pas comptée comme une tentative : elle est laissée au passage suivant.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="connexion-next"><span class="n">26</span>Connexion depuis un lien</h2>
+    <p class="sec-note">
+      Un lien reçu hors de l'application — l'événement Google Calendar d'un repas — rouvre la
+      page demandée une fois la session ouverte. Le routeur garde l'adresse dans
+      <code>?next=</code>.
+      <span class="path">app_router.dart (resolveRedirect, loginLocationFor,
+      nextLocationAfterLogin) → login_screen.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant B as Navigateur
+  participant R as resolveRedirect
+  participant L as LoginScreen
+  participant AU as Firebase Auth
+  participant AP as appUserProvider
+
+  U->>B: ouvre un lien /recipes/id?portions=4
+  B->>R: adresse demandée, aucune session
+  R->>R: loginLocationFor
+  R-->>B: /login?next=/recipes/id?portions=4
+  Note over R: l'accueil nu ne porte pas de next :<br/>c'est déjà la destination par défaut
+  U->>L: Se connecter avec Google
+  L->>AU: signInWithGoogle
+  AU-->>AP: session ouverte, users/uid chargé
+  AP-->>R: refreshListenable, redirection réévaluée
+
+  alt compte révoqué
+    R-->>B: /login?revoked=true
+  else compte pending
+    R-->>B: /pending, l'adresse demandée n'est pas conservée
+  else compte nommé, sur /login
+    R->>R: nextLocationAfterLogin
+    alt next commence par un seul /, et ne vise ni /login ni /pending
+      R-->>B: l'adresse demandée
+    else next absent, externe (// ou schéma), ou /login, /pending
+      R-->>B: accueil
+    end
+  end
+  opt adresse /admin sans rôle admin
+    R-->>B: accueil
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Seule une adresse interne est suivie.</b> Un <code>next</code> qui commence par
+        <code>//</code> ou par un schéma ferait de la page de connexion un renvoi vers un autre
+        site. <code>/login</code> et <code>/pending</code> sont refusés : ils feraient boucler la
+        redirection.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="qualite"><span class="n">27</span>Qualité des données</h2>
+    <p class="sec-note">
+      Un diagnostic en lecture seule des référentiels nutrition. L'écran ne corrige rien : chaque
+      exemple ouvre l'écran du référentiel où la correction se fait.
+      <span class="path">admin_data_quality_screen.dart → billing_providers.dart
+      (dataQualityReportProvider) → gcp_billing_repository.dart →
+      callable/dataQualityCallable.ts (getDataQualityReportFn)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant Q as AdminDataQualityScreen
+  participant GR as GcpBillingRepository
+  participant DQ as getDataQualityReportFn
+  participant NI as nutrition_ingredients
+  participant NU as nutrition_units
+
+  A->>Q: Admin › Monitoring › Qualité des données
+  Q->>GR: getDataQualityReport, délai client de 3 min
+  GR->>DQ: callable
+  DQ->>DQ: ensureAdminWithAudit (data_quality_dashboard)
+  loop pages de 500, jusqu'à 480 s
+    DQ->>NI: lit la page
+    DQ->>DQ: produit d'achat manquant, nutrition vide ou estimation_failed,<br/>plus de 100 g de sel pour 100 g
+  end
+  loop pages de 500, dans le temps restant
+    DQ->>NU: lit la page
+    DQ->>DQ: unités dont le statut n'est pas known, triées par nombre de vues
+  end
+  DQ-->>GR: quatre comptes, 200 exemples au plus par catégorie, scanComplete
+  GR-->>Q: DataQualityReport
+  opt scanComplete faux
+    Q-->>A: bannière, les comptes sont des minimums
+  end
+  Q-->>A: quatre cartes, compte et exemples
+  A->>Q: touche un exemple
+  Q->>Q: ouvre l'écran ingrédients ou unités sur cet identifiant
+  A->>Q: Relancer le scan
+  Q->>GR: invalide le provider, nouvel appel
+</pre>
+      </div>
+      <figcaption>
+        <b>Aucune écriture, aucun appel de modèle.</b> Le scan lit les deux référentiels en entier
+        et s'arrête à 480 s, avant le délai de 540 s de la fonction. Le total d'une catégorie
+        n'est jamais tronqué : seuls les exemples le sont, à 200.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="livre-prive"><span class="n">28</span>Confidentialité d'un livre</h2>
+    <p class="sec-note">
+      Rendre un livre privé rend privées ses recettes. Le serveur recopie <code>is_private</code>
+      du livre sur chaque recette : la recherche et le planning familiaux filtrent sur ce champ.
+      <span class="path">book_form_screen.dart (_confirmPrivacyChange) → BookRepository.updateBook →
+      triggers/bookWritten.ts (onBookWritten) → triggers/recipePrivacy.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Propriétaire du livre
+  participant BF as BookFormScreen
+  participant RR as RecipeRepository
+  participant BR as BookRepository
+  participant BK as books
+  participant OB as onBookWritten
+  participant FS as recipes
+  participant TR as onRecipeWritten
+
+  U->>BF: coche ou décoche Livre privé, Enregistrer
+  BF->>RR: countInBook
+  RR-->>BF: nombre de recettes, ou inconnu en cas d'échec
+  BF-->>U: Rendre ce livre privé ? ou Repartager ce livre ?<br/>avec le nombre de recettes touchées
+  U-->>BF: confirme
+  BF->>BR: updateBook
+  BR->>BK: update is_private
+
+  BK-->>OB: onDocumentWritten books/bookId
+  alt suppression, ou is_private inchangé
+    OB-->>BK: sortie
+  else is_private a basculé
+    OB->>FS: recettes where book_id == bookId
+    OB->>FS: is_private du livre, par lots de 400, sur les recettes qui diffèrent
+    OB->>OB: logInfo, nombre de recettes touchées (book_privacy_propagation)
+  end
+
+  FS-->>TR: onWrite pour chaque recette touchée
+  TR->>BK: syncRecipePrivacy relit le livre
+  Note over TR: valeur déjà alignée, aucune écriture.<br/>Entrées inchangées, sortie à la garde
+</pre>
+      </div>
+      <figcaption>
+        <b>Le déclencheur ne réagit qu'à <code>is_private</code>.</b> Un livre se réécrit souvent
+        (titre, couverture, tags) : chaque autre écriture sort sans requête sur
+        <code>recipes</code>.
+        <span class="expect">
+          <b>La suppression d'un livre ne touche pas ses recettes.</b> Une recette orpheline n'est
+          pas privée (<code>expectedPrivacy</code>) : la marquer privée la retirerait de la
+          bibliothèque de son auteur.
+        </span>
+        <span class="expect warn">
+          <b>Un échec de propagation est journalisé, pas relancé.</b> <code>logError</code> trace
+          le livre et la valeur visée. Le backfill de confidentialité d'Admin › Backfills
+          réaligne les recettes restées en retard.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="planning-repas"><span class="n">29</span>Un repas du planning : idées IA, Google Calendar, replanifier</h2>
+    <p class="sec-note">
+      Trois actions sur un repas déjà planifié. Les idées passent par deux callables. L'export
+      vers Google Calendar et le report de date se font sur l'appareil, sans Functions.
+      <span class="path">planning_screen.dart → recipe_picker_sheet.dart → meal_ideas_sheet.dart →
+      planning_ai_service.dart → suggestMealIdeasFn, generateRecipeConceptFn ·
+      calendar_service.dart · PlanningRepository.rescheduleMeal</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant P as PlanningScreen
+  participant RP as RecipePickerSheet
+  participant MI as MealIdeasSheet
+  participant AI as PlanningAiService
+  participant SI as suggestMealIdeasFn
+  participant GC as generateRecipeConceptFn
+  participant M as Modèle (Gemini ou Claude)
+  participant PR as PlanningRepository
+  participant FS as Firestore
+  participant CAL as Google Calendar
+
+  rect rgba(127,127,127,0.08)
+  Note over U,M: idées IA
+  U->>P: changer la recette d'un repas
+  P->>RP: sélecteur de recettes
+  U->>RP: Générer avec l'IA — la recherche sert de première consigne
+  RP->>MI: showMealIdeasSheet
+  U->>MI: consigne
+  MI->>AI: suggestMealIdeas — consigne, contraintes globales, titres déjà proposés
+  AI->>SI: callable
+  SI->>M: planning_meal_ideas
+  M-->>SI: trois idées au plus
+  SI-->>MI: titre, description, temps
+  opt Proposer trois autres idées
+    MI->>AI: même consigne, avec tous les titres déjà proposés
+  end
+  U->>MI: retient une idée
+  MI->>AI: generateRecipeConcept — requestedDish, contraintes du jour
+  AI->>GC: callable
+  GC->>M: planning_concept
+  M-->>GC: titre, CookLang, justification
+  AI->>AI: ingrédients, tags, parts extraits du CookLang
+  P->>PR: saveGenerated, statut validated
+  PR->>FS: recipes, livre Mes créations Kass'Dalle
+  Note over FS: onRecipeWritten classe le rôle,<br/>puis courses et nutrition (séquence 06)
+  MI-->>RP: recette enregistrée
+  P->>PR: updateMealRecipe
+  PR->>FS: planned_meals
+  end
+
+  rect rgba(127,127,127,0.08)
+  Note over U,CAL: export vers Google Calendar
+  alt un repas
+    U->>P: Ajouter au calendrier
+    P->>CAL: createEvent — agenda et durée des préférences,<br/>rappel au temps de préparation, lien de la fiche
+  else tous les repas à venir
+    U->>P: Exporter tout
+    P->>CAL: getToken, une seule fois
+    loop chaque repas à partir d'aujourd'hui
+      P->>CAL: createEvent avec ce jeton
+    end
+  end
+  CAL-->>U: événements dans l'agenda
+  end
+
+  rect rgba(127,127,127,0.08)
+  Note over U,FS: replanifier
+  U->>P: Replanifier
+  P-->>U: sélecteur de date, jusqu'à 730 jours
+  U-->>P: nouvelle date
+  P->>PR: rescheduleMeal
+  PR->>FS: planned_at à la nouvelle date, même heure,<br/>prep_date décalé du même nombre de jours
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Une idée retenue devient une recette validée.</b> La personne a choisi ce plat : la
+        recette est enregistrée en <code>validated</code> dans <b>Mes créations Kass'Dalle</b>, et
+        le repas pointe sur elle. Les deux appels de modèle sont imputés à
+        <code>planning_meal_ideas</code> et <code>planning_concept</code>.
+        <span class="expect">
+          <b>L'événement Calendar porte un lien vers la fiche.</b> Ce lien ouvre le client web avec
+          les parts du repas ; sans session, la connexion le rouvre ensuite (séquence 26).
+        </span>
+        <span class="expect">
+          <b>Replanifier décale aussi le jour de préparation.</b> Sans ce décalage, la
+          conservation calculée entre préparation et repas deviendrait fausse.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="deploiement"><span class="n">30</span>Déploiement par GitHub Actions</h2>
+    <p class="sec-note">
+      Un push sur <code>master</code> lance la CI. Une CI verte lance le workflow « Déploiement »,
+      qui met en ligne Functions, web et règles, et construit un APK quand la version a changé.
+      <code>deploy.ps1</code> reste l'outil de secours.
+      <span class="path">.github/workflows/ci.yml → .github/workflows/deploy.yml →
+      .github/scripts/build-apk.sh, keep-online-apk.sh, firebase-deploy.sh</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor D as Développeur
+  participant GH as GitHub master
+  participant CI as CI
+  participant G as Déploiement — gate
+  participant J as Déploiement — deploy
+  participant H as Hosting en ligne
+  participant FB as Firebase
+
+  D->>GH: push sur master, ou fusion d'une PR
+  GH->>CI: on push
+  par
+    CI->>CI: Flutter — pub get, analyze, format, pubspec.lock, test, build web
+  and
+    CI->>CI: Functions — npm ci, lint, format:check, build, test
+  end
+  CI-->>G: workflow_run completed
+
+  alt CI en échec, CI de PR, ou commit signé Deploy-Source: deploy.ps1
+    G-->>D: rien à déployer
+  else CI verte sur un push
+    G->>GH: le commit est-il la tête de master ?
+    alt commit dépassé
+      G-->>D: notice, le commit suivant a sa propre CI
+    else tête de master
+      G->>J: sha
+      J->>GH: revérifie la tête de master
+      J->>J: flutter build web --release
+      J->>H: lit apk_release.json
+      J->>J: build-apk.sh decide — version de pubspec.yaml contre version en ligne
+      opt version plus récente
+        J->>J: construit et signe l'APK (secrets ANDROID_*)
+      end
+      J->>FB: firebase-deploy.sh functions, 2 tentatives, --force
+      alt pas de nouvel APK
+        J->>H: keep-online-apk.sh, recopie l'APK et le manifeste en ligne
+      else nouvel APK
+        J->>H: relit le manifeste en ligne
+        Note over J,H: un APK aussi récent publié entre-temps<br/>par deploy.ps1 est conservé
+      end
+      J->>FB: firebase-deploy.sh hosting, firestore, storage
+      J-->>D: résumé — version déployée, APK publié ou inchangé
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Seule la tête de <code>master</code> se déploie.</b> Le job <code>gate</code> le vérifie,
+        et le job <code>deploy</code> le revérifie : « Re-run failed jobs » ne rejoue pas
+        <code>gate</code>. Un déploiement à la fois, jamais interrompu (groupe
+        <code>deploy-production</code>).
+        <span class="expect">
+          <b>Un code de sortie 0 ne suffit pas.</b> <code>firebase-deploy.sh</code> exige aussi
+          « Deploy complete » et l'absence de « Functions deploy had errors ». La seconde tentative
+          ne vise que les fonctions en échec.
+        </span>
+        <span class="expect warn">
+          <b>Un lancement manuel n'est accepté que sur <code>master</code>.</b> Un échec après les
+          Functions laisse les Functions neuves avec le web précédent : relancer le workflow une
+          fois la cause corrigée.
         </span>
       </figcaption>
     </figure>
