@@ -405,7 +405,7 @@ Deux hooks, déclarés dans `.claude/settings.json` :
 - `session-start.sh` : dans une session cloud, installe Flutter (même version que la CI),
   les dépendances Functions et celles de `kass_dalle/rules-tests/`, pour rejouer
   `flutter analyze`, `flutter test`, `npm run lint` et `npm test`. Les tests des règles
-  exigent en plus Java 21 : le hook avertit s'il manque, sans échouer ;
+  exigent en plus Java 21 : le hook avertit s'il manque ou s'il est plus ancien, sans échouer ;
 - `format-on-edit.mjs` : après chaque écriture d'un fichier, lance `dart format` sur un
   `.dart` de `kass_dalle/`, ou Prettier sur un `.ts` de `functions/src/`. Un échec du
   formateur ne bloque pas l'édition ; la CI reste le contrôle qui fait foi.

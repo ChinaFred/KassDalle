@@ -35,7 +35,11 @@ flutter --disable-analytics >/dev/null 2>&1 || true
 # Tests des règles : leurs dépendances s'installent toujours ; les émulateurs,
 # eux, exigent Java 21 (firebase-tools 15). Son absence n'empêche pas la
 # session de démarrer : seul `npm test` dans rules-tests échouera.
-(cd "$PROJECT/rules-tests" && npm ci --no-audit --no-fund)
-if ! command -v java >/dev/null 2>&1; then
+(cd "$PROJECT/rules-tests" && npm ci --no-audit --no-fund) \
+  || echo "session-start : npm ci a échoué dans kass_dalle/rules-tests ; les tests des règles ne tourneront pas." >&2
+java_major=$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n 1)
+if [ -z "$java_major" ]; then
   echo "session-start : Java absent, les tests des règles (kass_dalle/rules-tests) ne pourront pas lancer les émulateurs." >&2
+elif [ "$java_major" -lt 21 ]; then
+  echo "session-start : Java $java_major trouvé, les émulateurs des tests des règles exigent Java 21." >&2
 fi
