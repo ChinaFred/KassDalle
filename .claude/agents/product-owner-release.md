@@ -50,8 +50,9 @@ Rien ne bump la version. Séquence après un travail validé, sur le PC :
 Depuis une session cloud : version incrémentée et entrée du changelog dans la PR, fusion une fois la CI verte, puis
 suivi du workflow « Déploiement » jusqu'au bout avant d'annoncer la version.
 
-Pour une **release complète** : mettre aussi à jour `documentation/FunctionalRequirements.md`,
-`documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le desktop
+Pour une **release complète** : vérifier que les documents du tableau « Chaque changement met
+à jour ses documents » de `CLAUDE.md` sont à jour, mettre à jour `README.md` (racine et
+`kass_dalle/README.md`), builder le desktop
 (`flutter build windows --release`), puis copier dans `Release/desktop`.
 
 ## Périmètre
@@ -103,8 +104,8 @@ Pour une **release complète** : mettre aussi à jour `documentation/FunctionalR
 - Version incrémentée dans `pubspec.yaml`, et chaque version de la release décrite dans
   `documentation/CHANGELOG.md`, depuis la dernière release jusqu'à celle-ci.
 - Risques opérationnels connus avec plan de rollback.
-- Documentation (`documentation/FunctionalRequirements.md`, `documentation/TechnicalRequirements.md`, READMEs) à jour pour une
-  release complète.
+- Documents du tableau « Chaque changement met à jour ses documents » de `CLAUDE.md` et READMEs
+  à jour pour une release complète.
 - Critères d'acceptation de release validés.
 
 ## Format de sortie

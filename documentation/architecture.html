@@ -170,8 +170,8 @@ flowchart TB
   CALL["HTTPS callable&lt;br/&gt;gemini · nutrition · billing · logs"]
   DISP["jobDispatcher&lt;br/&gt;entrée en queued"]
   CT["Cloud Tasks&lt;br/&gt;recipe-processing-queue"]
-  WRK["recipeProcessor&lt;br/&gt;worker 540s · 1 GiB"]
-  TRG["onRecipeWritten&lt;br/&gt;nutrition + courses"]
+  WRK["recipeProcessor&lt;br/&gt;worker 540s · 2 GiB"]
+  TRG["onRecipeWritten&lt;br/&gt;confidentialité · rôle · nutrition · courses"]
   DLQ[("dead_letters")]
   SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY · ANTHROPIC_API_KEY"]
   ROUTER["ai/router&lt;br/&gt;politique par poste · repli"]
@@ -327,7 +327,9 @@ stateDiagram-v2
   <section>
     <h2>La surface Cloud Functions</h2>
     <p class="sec-note">
-      Cinquante-quatre fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
+      Cinquante-huit fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
+      L'une d'elles, <code>sandboxFn</code>, sert le bac à sable : elle est réservée aux
+      administrateurs et ne fait partie d'aucune release.
       La garde d'accès est explicite dans chacune : <code>requireAuth</code>, <code>requireEditor</code>
       ou <code>requireAdmin</code>, depuis <code>callable/_auth.ts</code>.
       Trois entrées existent dans le code sans être déployées, faute d'appelant —
@@ -355,8 +357,9 @@ stateDiagram-v2
           <tr><td><code>suggestStorageAdviceFn</code></td><td>Callable</td><td>Conseil de conservation d'un plat cuisiné — réfrigérateur, congélateur, durées</td><td>auth</td></tr>
           <tr><td><code>analyzeBookFileFn</code></td><td>Callable</td><td>Lecture d'un livre entier avant son import — pages ou texte, nombre de tranches, coût estimé d'après les livres déjà importés, plafond de dépense proposé ; ne dépense rien. Avec <code>discard</code>, supprime le fichier abandonné</td><td>editor / admin</td></tr>
           <tr><td><code>detectAndCropIllustrationsFn</code></td><td>Callable</td><td>Détection, redressement et découpe des illustrations d'une page — un appel de modèle, les découpes reviennent prêtes à téléverser</td><td>auth</td></tr>
-          <tr><td><code>enhanceIllustrationFn</code> · <code>generateRecipeIllustrationFn</code></td><td>Callable</td><td>Retouche et génération d'images</td><td>auth</td></tr>
-          <tr><td><code>suggestPlatingFn</code></td><td>Callable</td><td>Conseil de dressage propre à une recette, écrit dans <code>plating_advice</code></td><td>auth</td></tr>
+          <tr><td><code>enhanceIllustrationFn</code></td><td>Callable</td><td>Retouche d'une illustration</td><td>admin</td></tr>
+          <tr><td><code>generateRecipeIllustrationFn</code></td><td>Callable</td><td>Génération de l'illustration d'une recette</td><td>editor / admin</td></tr>
+          <tr><td><code>suggestPlatingFn</code></td><td>Callable</td><td>Conseil de dressage propre à une recette, écrit dans le champ <code>plating_advice</code> de la recette</td><td>auth</td></tr>
           <tr><td><code>generatePlatingImageFn</code></td><td>Callable</td><td>Visuel d'une étape de montage (0,0336 $ l'image)</td><td>editor / admin</td></tr>
           <tr><td><code>generateWebSearchQueryFn</code></td><td>Callable</td><td>Reformulation d'une requête pour le web</td><td>auth</td></tr>
           <tr><td><code>scanAndPromoteUploadFn</code></td><td>Callable</td><td>Contrôle de sécurité puis promotion hors quarantaine</td><td>auth</td></tr>
@@ -376,15 +379,18 @@ stateDiagram-v2
           <tr><td><code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Relance manuelle de la réconciliation d'un mois — onglet <em>Réconciliation</em> de l'écran des coûts</td><td>admin</td></tr>
           <tr><td><code>scheduledAiReconciliation</code></td><td>Cloud Scheduler</td><td>Réconciliation automatique du mois écoulé, le 4 de chaque mois à 6 h (Europe/Paris)</td><td>—</td></tr>
           <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
+          <tr><td><code>getDataQualityReportFn</code></td><td>Callable</td><td>Qualité des référentiels nutrition, en lecture seule — Admin › Monitoring. Quatre contrôles : ingrédient sans produit d'achat, nutrition incomplète, sel impossible (plus de 100 g pour 100 g), unité non confirmée. Le total de chaque contrôle est complet ; les exemples s'arrêtent à 200</td><td>admin</td></tr>
           <tr><td><code>backfillNutritionFn</code></td><td>Callable</td><td>Recalcule la nutrition des recettes, avec un point de reprise (<code>app_config/nutrition_catch_up_checkpoint</code>) — Admin › Backfills</td><td>admin</td></tr>
+          <tr><td><code>scheduledNutritionCatchUp</code></td><td>Cloud Scheduler</td><td>Chaque jour à 5 h (Europe/Paris) : reprend la nutrition des recettes dont le calcul a échoué, vingt recettes au plus par passage. Même passe que <code>backfillNutritionFn</code>, plafond de dépense consulté sous le poste <code>rattrapage_nutrition</code></td><td>—</td></tr>
           <tr><td><code>backfillShoppingFn</code></td><td>Callable</td><td>Recalcule <code>shopping_products</code> sur toutes les recettes, sans appel de modèle. Point de reprise et compte rendu dans <code>app_config/shopping_products_backfill_checkpoint</code> — Admin › Backfills</td><td>admin</td></tr>
           <tr><td><code>backfillRecipeRolesFn</code></td><td>Callable</td><td>Pose le rôle dans un repas (<code>tags.meal_role</code>, <code>contains</code>, <code>suggested_sides</code>) sur les recettes antérieures, un appel de modèle par recette (poste <code>backfill_recipe_roles</code>). Point de reprise et compte rendu dans <code>app_config/recipe_roles_backfill_checkpoint</code> — Admin › Backfills</td><td>admin</td></tr>
-          <tr><td><code>backfillAiPricingFn</code></td><td>Callable</td><td>Applique les tarifs mesurés (<code>PRICING_CORRECTIONS</code>) à la grille <code>app_config/ai_pricing</code>, sans appel d'IA — Admin › Backfills</td><td>admin</td></tr>
-          <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code> : recalcule la nutrition et les produits d'achat quand les ingrédients changent</td><td>—</td></tr>
+          <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code>, quatre traitements dans cet ordre : aligne <code>is_private</code> sur le livre porteur ; pose <code>tags.meal_role</code> quand il manque ; puis, si une entrée de calcul a changé, recalcule la nutrition et les produits d'achat</td><td>—</td></tr>
+          <tr><td><code>onBookWritten</code></td><td>Trigger onWrite</td><td>Sur <code>books/</code>, ne réagit qu'au changement de <code>is_private</code> : un livre passé en privé rend privées ses recettes, un livre repassé en partagé les rend à la bibliothèque familiale. Rien à la suppression d'un livre</td><td>—</td></tr>
           <tr><td><code>syncUserClaims</code></td><td>Trigger</td><td>Propage le rôle dans le jeton d'authentification</td><td>admin</td></tr>
           <tr><td><code>enforceFounderRole</code></td><td>Trigger onWrite</td><td>Amorce et rétablit le rôle <code>admin</code> du compte fondateur, d'après l'adresse de son compte <b>Auth</b> — jamais d'après le champ <code>email</code> du document, qu'un client a pu écrire</td><td>—</td></tr>
-                    <tr><td><code>getAiBudgetFn</code> · <code>setAiBudgetFn</code></td><td>Callable</td><td>Plafonds de dépense (<code>app_config/ai_budget_policy</code>, en euros), dépense d’un jour par compte (<code>ai_daily_spend</code>, jour choisi par le paramètre <code>day</code>, aujourd’hui par défaut) et dépense par compte <b>et par poste</b> sur la période demandée (<code>ai_usage_monthly.by_user</code>)</td><td>admin</td></tr>
+          <tr><td><code>getAiBudgetFn</code> · <code>setAiBudgetFn</code></td><td>Callable</td><td>Plafonds de dépense (<code>app_config/ai_budget_policy</code>, en euros), dépense d’un jour par compte (<code>ai_daily_spend</code>, jour choisi par le paramètre <code>day</code>, aujourd’hui par défaut) et dépense par compte <b>et par poste</b> sur la période demandée (<code>ai_usage_monthly.by_user</code>)</td><td>admin</td></tr>
           <tr><td><code>scheduledAiBudgetAlert</code></td><td>Cloud Scheduler</td><td>Chaque jour à 7 h : compare le cumul du mois au seuil d'alerte, et n'alerte qu'une fois par mois</td><td>—</td></tr>
+          <tr><td><code>sandboxFn</code></td><td>Callable</td><td>Bac à sable, hors release. Point d'entrée unique des expériences, aiguillé sur le champ <code>experiment</code> ; rien n'y est enregistré. Décrit au §13.3 de <span class="path">TechnicalRequirements.md</span></td><td>admin</td></tr>
           <tr><td><code>getAppCheckPolicyFn</code> · <code>setAppCheckPolicyFn</code></td><td>Callable</td><td>Mode d'attestation App Check — <code>off</code>, <code>monitor</code>, <code>enforce</code> — lu et écrit dans <code>app_config/app_check_policy</code>. La lecture rapporte si l'appel était lui-même attesté ; l'écriture refuse <code>enforce</code> demandé depuis un client non attesté</td><td>admin</td></tr>
         </tbody>
       </table>
@@ -413,7 +419,7 @@ stateDiagram-v2
           <tr><th>Collection</th><th>Contenu</th><th>Écrite par</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>recipes</code></td><td>Recettes et pages de livre, brouillons compris</td><td>Client + <code>recipeProcessor</code> + triggers</td></tr>
+          <tr><td><code>recipes</code></td><td>Recettes et pages de livre, brouillons compris. Le conseil de dressage y vit en champ (<code>plating_advice</code>), avec les visuels d'étapes déjà produits</td><td>Client + <code>recipeProcessor</code> + triggers</td></tr>
           <tr><td><code>books</code></td><td>Livres de cuisine, y compris les livres système</td><td>Client + <code>recipeProcessor</code></td></tr>
           <tr><td><code>processing_jobs</code></td><td>Travaux d'import en cours et terminés</td><td>Client puis pipeline</td></tr>
           <tr><td><code>dead_letters</code></td><td>Jobs abandonnés après trois tentatives</td><td><code>recipeProcessor</code></td></tr>
@@ -425,7 +431,6 @@ stateDiagram-v2
           <tr><td><code>planning_config</code></td><td>Préférences de planning par compte : cycle, jour de départ, heure, fenêtre de variété, contraintes en langage naturel, calendrier Google cible</td><td>Client</td></tr>
           <tr><td><code>meal_staples</code></td><td>Garnitures simples — riz, pâtes, salade, yaourt — avec la part par personne. Référentiel partagé ; les retouches de chacun vivent sous <code>users/{uid}/preferences/meal_staples</code></td><td>Admin ; retouches par le client</td></tr>
           <tr><td><code>ai_routing_presets</code></td><td>Configurations de routage enregistrées : les sept réglages de l'écran <em>Moteur d'IA</em> sous un nom. Ne commandent rien tant qu'elles ne sont pas chargées puis enregistrées</td><td>Cloud Functions</td></tr>
-          <tr><td><code>plating_advice</code></td><td>Conseil de dressage propre à une recette, et les visuels d'étapes déjà produits</td><td>Cloud Functions</td></tr>
           <tr><td><code>image_moderation</code></td><td>Un document par image jugée : signaux du moteur, verdict, motif, décision humaine éventuelle. Écrit par le serveur seul — une décision de modération que le client peut écrire n'est pas une décision</td><td>Cloud Functions</td></tr>
           <tr><td><code>nutrition_ingredients</code></td><td>Référentiel d'ingrédients et valeurs pour 100 g</td><td>Triggers + admin</td></tr>
           <tr><td><code>nutrition_units</code></td><td>Référentiel d'unités et poids observés</td><td>Triggers + admin</td></tr>
@@ -438,19 +443,92 @@ stateDiagram-v2
           <tr><td><code>app_config</code></td><td>Réglages globaux, un document par décision : routage <code>ai_routing_policy</code>, grille <code>ai_pricing</code>, plafonds <code>ai_budget_policy</code>, attestation <code>app_check_policy</code>, modération <code>image_moderation</code>, sources nutrition. Aucun de ces réglages ne demande de déploiement</td><td>Admin</td></tr>
           <tr><td><code>users/{uid}/nutrition_portion_overrides</code></td><td>Nombre de portions choisi par recette</td><td>Client</td></tr>
           <tr><td><code>users/{uid}/preferences/book_order</code></td><td>Rangement de la bibliothèque au glisser-déposer</td><td>Client</td></tr>
+          <tr><td><code>users/{uid}/preferences/recipe_search_scope</code></td><td>Périmètre choisi dans « Où chercher des recettes ? » du planning</td><td>Client</td></tr>
+          <tr><td><code>users/{uid}/preferences/meal_staples</code></td><td>Retouches de l'utilisateur sur les garnitures simples, et ses garnitures propres : une carte <code>entries</code> indexée par identifiant</td><td>Client</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
+  <section>
+    <h2>Le déploiement</h2>
+    <p class="sec-note">
+      Un seul chemin : un push sur <code>master</code>. La CI valide le commit, puis le workflow
+      « Déploiement » le met en ligne. <code>deploy.ps1</code> ne sert qu'en secours, quand GitHub
+      Actions est indisponible. Détails : <span class="path">TechnicalRequirements.md</span>,
+      « Déploiement automatique ».
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart TB
+  PUSH["push sur master&lt;br/&gt;(PC, ou fusion d'une PR)"]
+  CI["ci.yml&lt;br/&gt;Flutter + Functions"]
+  GATE["gate&lt;br/&gt;le commit est la tête de master&lt;br/&gt;et n'est pas signé deploy.ps1"]
+  DISK["libération du disque"]
+  WEB["build web"]
+  APKQ{"version de pubspec.yaml&lt;br/&gt;supérieure à l'APK en ligne ?"}
+  APK["construction et signature&lt;br/&gt;du nouvel APK"]
+  KEEP["APK en ligne conservé"]
+  RECHECK["revérification de l'APK en ligne"]
+  HOST["hosting + règles Firestore + règles Storage"]
+  PS1["deploy.ps1&lt;br/&gt;secours, depuis le PC"]
+
+  PUSH --> CI
+  CI -->|"verte"| GATE
+  GATE --> DISK
+  DISK --> WEB
+  WEB --> APKQ
+  APKQ -->|"oui"| APK
+  APKQ -->|"non"| KEEP
+  APK --> FN1["déploiement des Functions"]
+  KEEP --> FN2["déploiement des Functions"]
+  FN1 --> RECHECK
+  FN2 --> KEEP2["APK en ligne recopié&lt;br/&gt;dans le build web"]
+  RECHECK --> HOST
+  KEEP2 --> HOST
+  PS1 -.->|"GitHub Actions indisponible"| HOST
+</pre>
+      </div>
+      <figcaption>
+        Le workflow <code>deploy.yml</code> part après une CI verte sur un push sur
+        <code>master</code>, ou à la main depuis l'onglet Actions, sur <code>master</code> seulement.
+        Un seul déploiement tourne à la fois. Un commit signé <code>Deploy-Source: deploy.ps1</code>
+        n'est pas redéployé : le script de secours vient de tout mettre en ligne depuis le PC.
+      </figcaption>
+    </figure>
+  </section>
+
   <section class="callout">
     <h2>La logique dupliquée Dart ↔ TypeScript</h2>
     <p>
-      Quatre logiques métier existent en double — parseur CookLang, parsing de quantité, conversion
-      d'unités en grammes, identité d'un ingrédient —, plus deux résidus : l'arithmétique de la
-      grille tarifaire et deux seuils d'hygiène du planning. Le client en a besoin pour afficher sans
-      aller-retour, le backend pour calculer.
+      Onze fixtures. Cinq logiques métier existent en double — parseur CookLang, parsing de
+      quantité, conversion d'unités en grammes, identité d'un ingrédient, regroupement des lignes de
+      courses. Quatre autres fixtures ne verrouillent qu'un résidu : l'arithmétique de la grille
+      tarifaire, deux seuils d'hygiène du planning, la géométrie du redressement d'une page et le
+      vocabulaire des rôles dans un repas. Le client en a besoin pour afficher sans aller-retour, le
+      backend pour calculer.
     </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Fixture</th><th>Logique</th><th>Dart</th><th>TypeScript</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cooklang_parsing.json</code></td><td>Parseur, index de recherche, type de page, durée, alias du temps de repos</td><td><code>core/services/cooklang_parser.dart</code></td><td><code>cooklang/parser.ts</code></td></tr>
+          <tr><td><code>quantity_parsing.json</code></td><td>Parsing de quantité</td><td><code>core/utils/nutrition_quantity_converter.dart</code></td><td><code>nutrition/quantityConversion.ts</code></td></tr>
+          <tr><td><code>unit_to_grams.json</code></td><td>Conversion en grammes, quantité absente</td><td><code>core/utils/nutrition_quantity_converter.dart</code></td><td><code>nutrition/quantityConversion.ts</code></td></tr>
+          <tr><td><code>ingredient_names.json</code></td><td>Identité d'un ingrédient</td><td><code>core/utils/ingredient_name.dart</code></td><td><code>nutrition/ingredientName.ts</code></td></tr>
+          <tr><td><code>shopping_products.json</code></td><td>Regroupement des lignes de courses : famille d'unité, conversions exactes, total, identité d'un produit</td><td><code>core/utils/shopping_products.dart</code></td><td><code>nutrition/shoppingDerivation.ts</code></td></tr>
+          <tr><td><code>ai_pricing.json</code></td><td>Résolution d'un modèle et coût d'un appel — aucun prix</td><td><code>features/admin/data/ai_pricing.dart</code></td><td><code>ai/pricing.ts</code></td></tr>
+          <tr><td><code>meal_storage_rules.json</code></td><td>Seuils d'hygiène, constantes seules</td><td><code>features/planning/domain/meal_storage_rules.dart</code></td><td><code>gemini/storageAdvice.ts</code></td></tr>
+          <tr><td><code>page_homography.json</code></td><td>Redressement d'une page : taille de sortie et homographie</td><td><code>core/presentation/image_enhancer_processing.dart</code></td><td><code>gemini/perspective.ts</code></td></tr>
+          <tr><td><code>meal_roles.json</code></td><td>Vocabulaire des rôles dans un repas, valeurs seules</td><td><code>features/recipes/domain/meal_role.dart</code></td><td><code>gemini/mealRole.ts</code></td></tr>
+          <tr><td><code>planning_slot_rules.json</code></td><td>Règles de créneau du planning — serveur seul</td><td>—</td><td><code>gemini/planning.ts</code></td></tr>
+          <tr><td><code>image_moderation_rules.json</code></td><td>Verdict d'une image, paliers Vision — serveur seul</td><td>—</td><td><code>moderation/decision.ts</code>, <code>moderation/vision.ts</code></td></tr>
+        </tbody>
+      </table>
+    </div>
     <p>
       Deux fixtures sont <strong>serveur seul</strong> : les règles de créneau du planning et le
       verdict de modération d'une image. Elles disent l'inverse d'une duplication — la logique n'a

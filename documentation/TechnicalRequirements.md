@@ -173,7 +173,8 @@ Côté Cloud Functions (Node 22, TypeScript) :
 | File d'import | `@google-cloud/tasks` ^5.5.2 |
 | Coûts d'infrastructure | `@google-cloud/bigquery` ^7.9.4 |
 | Explorateur de logs | `@google-cloud/logging` ^11.2.0 |
-| Images et archives | `sharp` ^0.33.5, `jszip` ^3.10.1 |
+| Images et archives | `sharp` ^0.35.5, `jszip` ^3.10.1 |
+| Découpage des livres PDF | `pdf-lib` ^1.17.1, chargé à la demande |
 
 ---
 
@@ -198,7 +199,6 @@ firestore/
 ├── nutrition_ingredients/{ingredientId}/
 ├── nutrition_units/{unitId}/
 ├── meal_staples/{stapleId}/                       ← garnitures simples, référentiel partagé
-├── plating_advice/{recipeId}/
 ├── image_moderation/{moderationId}/
 ├── ai_usage/{id}/                                 ← une ligne par appel
 ├── ai_usage_monthly/{AAAA-MM}/
@@ -402,14 +402,9 @@ pris effet : la page tarifaire d'Anthropic confirme que Sonnet 5 vaut toujours
 qu'aucun écran ne le signale — un tarif faux ne casse rien, il fait seulement
 mentir le reporting.
 
-La correction vit dans `PRICING_CORRECTIONS` (`ai/pricing.ts`) : une table
-distincte de la grille d'amorçage, faite de valeurs MESURÉES et non d'un repli.
-`backfillAiPricingFn` (Admin → Backfills → « Corriger les tarifs ») l'applique
-à `app_config/ai_pricing` — un modèle déjà au bon tarif n'est pas réécrit, et
-relancer après une première correction ne rend que des modèles « déjà
-corrects ». Une correction de tarif est un cas comme un autre de la règle
-« une écriture ponctuelle passe par Admin › Backfills » : elle ne dépend plus
-de la mémoire de qui corrige, et elle se rejoue sans risque.
+Un tarif se corrige depuis **Admin › Comptabilité › Grille tarifaire** (`/admin/ai-pricing`), qui
+écrit `app_config/ai_pricing` par `setAiPricingFn`, réservée à l'admin. Aucun tarif
+corrigé n'est écrit dans le code : `app_config/ai_pricing` est la seule source.
 
 Chaque entrée de la table peut donc porter un bloc `introductory`
 (`inputPerMillion`, `outputPerMillion`, `untilIso` — **borne exclue**), et
@@ -727,7 +722,7 @@ documents déjà écrits, sans migration. Cas de test dans
 | `prep_time` | `int?` | Durée en minutes |
 | `cook_time` | `int?` | Durée en minutes |
 | `rest_time` | `int?` | Temps de repos en minutes — marinade, réfrigération, levée |
-| `meal_role` | `String?` | **Rôle dans un repas** : `plat` \| `accompagnement` \| `entree` \| `dessert` \| `snack`. Reconnu une fois par le modèle — passe 2 de l'import, suggestion de tags, backfill « Rôle des recettes » — et lu par le programme pour composer un repas. Absent = pas encore classée. Modifiable par l'utilisateur dans la liste « Rôle dans un repas » du panneau de métadonnées (relecture d'un import, correction, création) ; « Non classé » retire les trois champs (`clearMealRole` dans `validateDraft`, carte entière dans `updateRecipe`). Les valeurs et la lecture de la réponse vivent dans `functions/src/gemini/mealRole.ts` ; `lib/features/recipes/domain/meal_role.dart` les reprend pour la liste et l'affichage, `test-fixtures/meal_roles.json` verrouille l'égalité |
+| `meal_role` | `String?` | **Rôle dans un repas** : `plat` \| `accompagnement` \| `entree` \| `dessert` \| `snack`. Reconnu une fois par le modèle — passe 2 de l'import, suggestion de tags, `onRecipeWritten` à toute écriture d'une recette sans rôle, backfill « Rôle des recettes » — et lu par le programme pour composer un repas. Absent = pas encore classée. Modifiable par l'utilisateur dans la liste « Rôle dans un repas » du panneau de métadonnées (relecture d'un import, correction, création) ; « Non classé » retire les trois champs (`clearMealRole` dans `validateDraft`, carte entière dans `updateRecipe`). Les valeurs et la lecture de la réponse vivent dans `functions/src/gemini/mealRole.ts` ; `lib/features/recipes/domain/meal_role.dart` les reprend pour la liste et l'affichage, `test-fixtures/meal_roles.json` verrouille l'égalité |
 | `contains` | `List<String>` | Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`. Un plat à qui il manque l'un des deux derniers appelle un accompagnement (`needsSide`) |
 | `suggested_sides` | `List<String>` | Accompagnements classiques d'un plat, noms courts, quatre au plus ; vide pour les autres rôles. Le programme y choisit au moment du planning, jamais le modèle |
 | `roles_tagged_at` | `Timestamp?` | Quand le backfill a posé le rôle |
@@ -737,6 +732,16 @@ les trois champs que si le rôle est connu, et `validateDraft` écrit `tags` cha
 (`tags.themes`, `tags.cuisines`, …) au lieu de remplacer la carte : un brouillon validé depuis
 le formulaire, qui ne connaît pas le rôle, ne l'efface pas. Le pipeline d'import écrit
 `meal_role: null` quand la passe 2 n'a pas su ; le backfill repasse sur ces recettes.
+
+**Le rôle se pose aussi à l'écriture.** Trois chemins créent une recette sans rôle : une
+création manuelle sans clic « Suggérer », une recette de l'Explorer IA (`generateRecipeFn` ne
+demande pas ce champ), une copie d'une recette non classée (`copyRecipeAsDraft`).
+`onRecipeWritten` appelle `syncRecipeMealRole` (`triggers/recipeMealRoleAutoSync.ts`) sur
+toute écriture d'une recette (`page_type` recette) dont `tags.meal_role` est vide, **avant** la
+garde des entrées : la classification n'attend pas un changement d'ingrédients. Un appel de
+modèle, poste `inline_meal_role_classification`, qui écrit `tags.meal_role`, `contains`,
+`suggested_sides` et `roles_tagged_at`. Si le modèle ne rend aucun rôle, rien n'est écrit et
+la prochaine écriture retente ; une erreur passe par `logError`.
 
 ---
 
@@ -761,6 +766,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees. **Écrit dès la création de chaque brouillon**, pas à la fin du job : la normalisation des référentiels qui suit dure jusqu'à 7 min, et la file de travail masque un job dès qu'il a produit un brouillon (sauf `error` / `rejected`). |
 | `created_book_id` | `String?` | ID du brouillon livre cree |
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
+| `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
 | `current_step` | `String?` | Étape courante du traitement IA |
 | `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites |
@@ -895,6 +901,23 @@ de volume ni de comptage, où il n'aurait aucun sens.
 > Le référentiel dépasse le millier de documents : toute lecture plafonnée coupe la fin de
 > l'alphabet, et ressemble alors à un défaut d'enrichissement.
 
+**Le diagnostic de qualité — `getDataQualityReportFn`** (`callable/dataQualityCallable.ts`).
+Callable réservée à l'admin (`ensureAdminWithAudit`, opération `data_quality_dashboard`),
+appelée par *Admin › Qualité des données* (`/admin/data-quality`). **Lecture seule** : elle
+n'écrit rien, contrairement à un backfill. Deux passages paginés par 500 documents :
+
+| Passage | Contrôle | Condition |
+|---|---|---|
+| `nutrition_ingredients` | produit d'achat manquant | `shopping_product` absent (jamais examiné) |
+| `nutrition_ingredients` | nutrition incomplète | `per100g` vide, ou `quality_status == estimation_failed` |
+| `nutrition_ingredients` | sel implausible | plus de 100 g de sel pour 100 g, sel lu ou dérivé du sodium |
+| `nutrition_units` | unité non confirmée | `status != known`, triées par `seen_count` décroissant |
+
+Chaque contrôle rend un `count` exhaustif et au plus 200 exemples (`truncatedExamples` dit si
+l'échantillon est coupé). Le parcours s'arrête à 480 s (délai de la fonction : 540 s) ;
+`scanComplete: false` signale alors un rapport partiel. Modèle client :
+`features/admin/domain/data_quality_report.dart`.
+
 ---
 
 ### 3.10 bis Garnitures simples — `meal_staples`, `users/{uid}/preferences/meal_staples`
@@ -921,10 +944,9 @@ n'est pas saisi.
 | `source` | `String` | `builtin` (semée) \| `admin` (créée depuis l'écran) |
 | `created_at` · `updated_at` | `Timestamp` | Traçabilité |
 
-La **liste de base** (`kDefaultMealStaples`, 25 entrées) se sème depuis *Admin › Backfills*
-(« Semer les garnitures simples ») et **ne remplace jamais** une entrée existante : une valeur corrigée dans Firestore fait foi, la liste du code
-ne sert qu'à créer ce qui manque — même règle que la grille tarifaire. Une part de pâtes y
-vaut 125 g secs, une part de riz 70 g crus.
+Le référentiel vit dans Firestore seul : aucune liste de garnitures n'existe dans le code.
+Les entrées `source: builtin` viennent du semis initial ; une garniture s'ajoute ou se corrige
+depuis l'écran d'administration.
 
 **Les retouches de chacun**, `users/{uid}/preferences/meal_staples` — un seul document,
 lu et écrit par son propriétaire depuis *Préférences › Mes garnitures*. Rien de personnel
@@ -938,8 +960,8 @@ n'écrit dans le référentiel partagé.
 Chaque entrée est remplacée **en entier** à l'écriture (`SetOptions(mergeFields:
 [entries.{id}])`) : une retouche est un tout, pas une fusion — sinon effacer une quantité
 retouchée laisserait l'ancienne valeur en place. Une entrée qui ne dit plus rien est
-supprimée plutôt que stockée. La lecture fusionnée (`mergeStaples`) est testée par
-`test/meal_staples_test.dart`.
+supprimée plutôt que stockée. La lecture fusionnée vit dans `mergeStaples`
+(`meal_staple.dart`) ; aucun test ne la couvre.
 
 ---
 
@@ -1065,8 +1087,6 @@ pourquoi.
 
 ### 3.14 Le reste
 
-- `plating_advice/{recipeId}` : conseil de dressage propre à une recette, et les visuels
-  d'étapes déjà produits.
 - `image_moderation/{moderationId}` : décrit en tête de ce document, section *Spécification
   technique — Modération des images*.
 - `users/{uid}/nutrition_portion_overrides/{recipeId}` : le nombre de portions choisi par
@@ -1275,7 +1295,7 @@ service cloud.firestore {
 
       match /annotations/{annotationId} {
         allow read: if isApproved();
-        allow create: if isApproved();
+        allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
         allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
     }
@@ -1304,8 +1324,9 @@ service cloud.firestore {
 | `processing_jobs` | éditeur ou propriétaire du job | création par le propriétaire ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation |
 | `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur ; modification et purge par l'admin |
-| `app_config` | admin — plus la politique nutrition, ouverte à tout compte nommé | admin |
-| `nutrition_ingredients` | `isApproved()` | **serveur seul** |
+| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`) |
+| `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
+| `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
 | `meal_staples` | `isApproved()` | admin — les retouches de chacun vivent sous `users/{uid}/preferences/meal_staples`, jamais ici |
 | `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
@@ -1336,11 +1357,6 @@ service firebase.storage {
       return isAuthenticated() && request.auth.token.revoked != true;
     }
 
-    // Écriture dans les dossiers partagés : éditeurs et administrateurs.
-    function canWriteSharedImages() {
-      return isActive() && request.auth.token.role in ['editor', 'admin'];
-    }
-
     // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
     // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
     // pour un gain nul (les URL ne se devinent pas).
@@ -1349,11 +1365,6 @@ service firebase.storage {
     }
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
-
-    function isImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
-        && request.resource.contentType.matches('image/.*');
-    }
 
     // Le type MIME sans ses paramètres : le texte collé s'envoie en
     // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
@@ -1455,10 +1466,8 @@ service firebase.storage {
 }
 ```
 
-> `canWriteSharedImages()` subsiste dans le fichier de règles alors qu'aucun chemin ne
-> l'appelle plus : les six dossiers publiés sont désormais fermés en écriture. Elle décrit
-> l'autorisation qu'il faudrait si l'un d'eux rouvrait — ce qui n'arrivera pas sans une
-> décision explicite sur la modération.
+> Les six dossiers publiés (`covers/`, `scans/`, `rejected/`, `illustrations/`, `recipes/`,
+> `users/`) sont fermés en écriture : seul le serveur y dépose, par l'Admin SDK.
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
@@ -2092,7 +2101,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler) et cinq reprises manuelles. Aucune n'est
+Trois tâches planifiées (Cloud Scheduler) et quatre reprises manuelles. Aucune n'est
 déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlationId`.
 
 | Fonction | Cadence | Ce qu'elle fait |
@@ -2107,7 +2116,6 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
-| `backfillAiPricingFn` | `admin` | applique `PRICING_CORRECTIONS` (`ai/pricing.ts`) à `app_config/ai_pricing` : un modèle au bon tarif est compté « déjà correct », un modèle qui en dévie est corrigé. Aucun appel d'IA, un seul document, donc ni pagination ni point de reprise |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
@@ -2293,7 +2301,7 @@ indisponible. Jamais de commandes reconstituées à la main : il construit, dép
 
 `deploy.ps1` lance la CLI Firebase avec `--non-interactive`. Sa sortie part dans un journal :
 une question de la CLI n'apparaîtrait pas à l'écran, et le script attendrait une réponse
-invisible. C'est arrivé le 8 octobre 2026 sur la suppression de `backfillAiPricingFn`. En mode
+invisible, par exemple la confirmation de suppression d'une fonction retirée du code. En mode
 non interactif, la CLI s'arrête avec son message. Une fonction retirée du code fait donc
 échouer `deploy.ps1` ; le workflow, lui, la supprime (`--force`).
 
@@ -2324,6 +2332,39 @@ s'exécute avant chaque déploiement : elle restaure la paire APK + manifeste de
 n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manifeste à un
 binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
 course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
+
+### Intégration continue (`ci.yml`)
+
+`.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
+main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
+précédente (`cancel-in-progress`). Deux jobs, sur `ubuntu-latest` :
+
+| Job | Étapes, dans l'ordre |
+|---|---|
+| Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
+| Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
+
+Le déploiement automatique ne part qu'après une CI verte sur un push sur `master`.
+
+#### Les fixtures partagées
+
+`kass_dalle/test-fixtures/*.json` sont rejouées par `flutter test` (`test/*_test.dart`) et par
+`npm test` (`functions/src/tests/`). Une logique « serveur seul » n'est rejouée que côté
+Functions.
+
+| Fixture | Logique | Dart | TypeScript |
+|---|---|---|---|
+| `cooklang_parsing.json` | parseur CookLang, index, type de page, durées | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
+| `quantity_parsing.json` | parsing d'une quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
+| `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
+| `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
+| `ai_pricing.json` | résolution d'un modèle, coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
+| `planning_slot_rules.json` | règles de créneau du planning — serveur seul | — | `gemini/planning.ts` |
+| `meal_storage_rules.json` | seuils d'hygiène (constantes) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
+| `image_moderation_rules.json` | verdict d'une image, paliers Vision — serveur seul | — | `moderation/decision.ts`, `moderation/vision.ts` |
+| `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
+| `meal_roles.json` | vocabulaire des rôles dans un repas | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
+| `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 
 ### Déploiement automatique (GitHub Actions)
 
@@ -2679,9 +2720,9 @@ features ajoutent un `services/` pour la logique qui ne tient dans aucune des tr
 lib/
 ├── main.dart
 ├── firebase_options.dart          # Généré par FlutterFire CLI
-├── app_version.dart               # Lit la version : package_info_plus, version.json sur le web
 ├── core/
-│   ├── config/                    # Constantes d'environnement
+│   ├── app_version.dart           # Lit la version : package_info_plus, version.json sur le web
+│   ├── app_links.dart             # Adresse web publique d'une route (/#/recipes/{id})
 │   ├── presentation/              # Coquille d'application, navigation
 │   ├── router/                    # go_router
 │   ├── services/                  # App Check, export PDF, parseur CookLang,
@@ -2708,11 +2749,12 @@ Côté Functions :
 
 ```
 functions/src/
-├── index.ts       # les 53 exports déployés — rien d'autre n'est joignable
+├── index.ts       # les 58 exports déployés — rien d'autre n'est joignable
 ├── config.ts      # région, file d'attente, plafonds de reprise, nom du journal
 ├── logging.ts     # le journal structuré — cf. chapitre 7
 ├── ai/            # types neutres, routeur, client Claude, tarification, budget, usage
 ├── billing/       # coûts GCP (BigQuery), réconciliation mensuelle
+├── books/         # import d'un livre entier : ouverture, découpage en tranches, estimation
 ├── callable/      # entrées HTTPS callable + gardes (_auth.ts)
 ├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
 ├── gemini/        # client Gemini, transcription, balisage, fidélité, prompts par poste
@@ -2721,16 +2763,16 @@ functions/src/
 ├── nutrition/     # per100g, conversions, référentiels, huile de friture
 ├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
 ├── sandbox/       # une seule fonction déployée, sandboxFn, qui aiguille
-├── scheduled/     # réconciliation mensuelle, alerte de budget
+├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, syncUserClaims, enforceFounderRole
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 
 ---
 
-### 13.1 Carte de navigation — les 42 routes
+### 13.1 Carte de navigation — les 44 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -2740,14 +2782,17 @@ l'authentification.
 
 | Route | Écran | Qui y accède |
 |---|---|---|
-| `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif |
+| `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif, `?next=` porte l'adresse à rouvrir après la connexion (13.2) |
 | `/pending` | `PendingApprovalScreen` | compte authentifié mais pas encore nommé |
 
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
 la garde de la callable, **jamais par le routeur** : hors `/admin`, il laisse passer tout
-compte nommé. Un `reader` qui ouvre `/scan` voit l'écran ; c'est le téléversement que les
-règles Storage refusent.
+compte nommé. Un `reader` qui ouvre `/scan` voit l'écran. L'import est réservé à l'éditeur
+et à l'admin, mais aucune règle ne l'impose encore : `storage.rules` accepte un `reader` en
+`quarantine/{uid}/` (il y dépose les images de ses propres recettes), `firestore.rules` le
+laisse créer son `processing_job`, et `scanAndPromoteUploadFn` n'exige que `requireAuth`. Une
+correction du code est prévue.
 
 | Route | Écran | Droit effectif |
 |---|---|---|
@@ -2793,7 +2838,8 @@ règles Storage refusent.
 | `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
-| `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples, et son semis |
+| `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
+| `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer une reprise |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
@@ -2806,13 +2852,19 @@ pour être testable. C'est le miroir client du sas d'entrée de `firestore.rules
 
 1. `isLoading` → `null`. On ne redirige pas pendant le chargement, sinon chaque démarrage
    passe par `/login`.
-2. `user == null` → `/login`.
+2. `user == null` → `/login?next=<adresse demandée>` (`loginLocationFor`), ou `/login` nu
+   si l'adresse demandée est l'accueil sans paramètre. Déjà sur `/login` → `null`. Un lien
+   ouvert hors de l'application — l'événement Google Calendar d'un repas — rouvre ainsi la
+   recette après la connexion.
 3. `user.isRevoked` → `/login?revoked=true`. Le paramètre existe pour que l'écran dise
    *pourquoi*.
 4. `user.isPending` → `/pending`. Il est authentifié : le renvoyer vers `/login` le ferait
    rebondir vers l'accueil, où les règles lui refuseraient tout sans jamais le lui dire.
 5. Nommé entre-temps et encore sur `/pending` → `/`.
-6. Connecté et sur `/login` → `/`.
+6. Connecté et sur `/login` → la valeur de `?next=` si `nextLocationAfterLogin` l'accepte,
+   sinon `/`. Le filtre n'accepte qu'une route interne : elle commence par `/` mais pas par
+   `//`, et son chemin n'est ni `/login` ni `/pending`. Un `next` vers un autre site ou vers
+   ces deux routes est ignoré.
 7. `location.startsWith('/admin')` et pas admin → `/`.
 8. `/processing` → `/drafts`.
 
@@ -2890,27 +2942,23 @@ journalisation et coût.
 - **`scans/{uid}/`** est déjà en `allow write: if false` : la promotion serveur est un
   schéma qui existe et qui marche. La modération le généralise, elle ne l'invente pas.
 
-### 2. Les quatre écritures directes à faire passer par la quarantaine
+### 2. Les quatre destinations publiées
 
-| Chemin publié | Écrit aujourd'hui par | Règle actuelle |
+| Chemin publié | `targetKind` | Règle Storage |
 |---|---|---|
-| `covers/{bookId}/cover.jpg` | `book_repository.dart:160` | `canWriteSharedImages()` |
-| `recipes/{recipeId}/…` | `recipe_repository.uploadRecipePhoto():610` | `canWriteSharedImages()` |
-| `illustrations/{uid}/…` | `recipe_repository.uploadIllustration():595`, `draft_review_service.dart:207,229` | `isOwner(uid)` |
-| `users/{uid}/free_recipe_cover_*.jpg` | `auth_repository.dart:212` | `isOwner(uid)` |
+| `covers/{bookId}/…` | `book_cover` | `allow write: if false` |
+| `recipes/{recipeId}/…` | `recipe_illustration` | `allow write: if false` |
+| `illustrations/{uid}/…` | `draft_illustration` | `allow write: if false` |
+| `users/{uid}/…` | `free_recipe_cover` | `allow write: if false` |
 
-`book_repository._uploadAssetCover():176` écrit aussi dans `covers/`, mais depuis un asset
-du bundle : c'est notre propre image, elle n'a rien à faire dans une file de modération.
-La promotion serveur doit donc accepter une origine « asset » qui court-circuite l'analyse
-— sans quoi chaque création de livre remplira la file.
+Le client écrit dans `quarantine/{uid}/` (`image_moderation_service.dart`), appelle
+`moderateAndPromoteImagesFn` avec la **destination voulue**, et reçoit soit l'URL publiée,
+soit un état d'attente. Seul le serveur écrit dans ces quatre dossiers, par l'Admin SDK.
 
-**Cible** : ces quatre chemins passent en `allow write: if false`, comme `scans/`. Le
-client écrit dans `quarantine/{uid}/`, appelle la fonction de promotion avec la
-**destination voulue**, et reçoit soit l'URL publiée, soit un état d'attente.
-
-C'est le lot le plus coûteux et le seul qui touche du code partout. Il est aussi le seul
-qui ait une valeur propre : livré seul, sans aucune analyse, il ferme les portes et ne
-change rien pour l'utilisateur.
+Une image tirée d'un asset du bundle (`origin: "asset"`) ou produite par l'IA
+(`origin: "ai"`) passe par la même promotion sans analyse : le verdict est `approved`, motif
+`bundled_asset` ou `ai_generated`. Sans cette exception, chaque création de livre remplirait
+la file de modération.
 
 ### 3. Firestore — `image_moderation/{moderationId}`
 
@@ -2955,17 +3003,14 @@ functions/src/moderation/
 └── moderateAndPromote.ts # le chemin complet : quarantaine → verdict → promotion
 ```
 
-**`moderateAndPromote.ts` est le seul module qui décide si une image devient visible.**
-Il vivait dans le callable, où seul un client pouvait l'emprunter — le pipeline
-d'import, lui, écrivait ses découpes en direct avec l'Admin SDK, donc hors
-quarantaine et hors verdict. L'extraire est ce qui permet aux deux appelants de
-prendre le même chemin. Un second chemin de publication serait, tôt ou tard, un
-chemin sans verdict.
+**`moderateAndPromote.ts` décide si une image envoyée par une personne devient
+visible.** Son seul appelant est `moderateAndPromoteImagesFn`. Les découpes
+d'illustrations du pipeline d'import ne passent pas par lui : `illustrations/store.ts`
+les écrit directement sous `illustrations/{uid}/` (voir §7).
 
 Deux refus y sont des **erreurs typées** et non des verdicts : `ImageFormatRejected`
-et `QuarantineFileMissing`. Le callable les rend au client en `HttpsError` ; le
-pipeline écarte la découpe et poursuit l'import. C'est la raison pour laquelle le
-cœur ne lève pas de `HttpsError` lui-même — il ne sait pas qui l'appelle.
+et `QuarantineFileMissing`. Le callable les rend au client en `HttpsError`
+(`failed-precondition`, `not-found`).
 
 - **`ModerationSignals`** — forme neutre, imposée à tout moteur :
   `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
@@ -3056,33 +3101,33 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 
 ### 7. Cloud Functions
 
-- **`moderateAndPromoteImageFn`** (callable) — `{ quarantinePath, targetKind, ownerId }`.
-  Vérifie que le chemin appartient à l'appelant, télécharge, `scanUpload()` (le format
+- **`moderateAndPromoteImagesFn`** (callable, `requireAuth`) — `{ items: [{ quarantinePath,
+  targetKind, ownerId?, contentType?, origin? }] }`, de 1 à 25 images par appel. Chaque
+  `quarantinePath` doit commencer par `quarantine/{uid de l'appelant}/`, sinon
+  `permission-denied`. Pour chaque image : téléchargement, `scanUpload()` (le format
   d'abord : inutile d'envoyer un exécutable renommé à un moteur d'analyse), puis
   `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
-  Rend `{ status, url?, reason }`.
+  Rend `{ results: [{ moderationId, status, reason, url }] }`, dans l'ordre des `items`.
 - **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.
   Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
 - **`retryPendingModerationFn`** (callable, `isAdmin`) — relance les `pending` restés en
   panne de moteur. Un état qui ne se relance pas est une fuite.
-- **Le poste `_batch`** — un scan promeut douze illustrations d'un coup. Le groupage est un
-  poste à part entière (`image_moderation_batch`), comme ailleurs dans le projet : c'est le
-  seul moyen de vérifier que le groupage fait son office.
-- **`recipeProcessor`** (Cloud Tasks) emprunte le même cœur pour les illustrations qu'il
-  découpe dans un scan. Trois filtres **locaux** (`gemini/illustrationQuality.ts`) écartent
-  d'abord ce qui n'est manifestement pas une photographie — moins de 120 px de côté ou
-  moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans
-  couleur. Les deux conditions du dernier sont exigées ensemble : une photographie en noir
-  et blanc a une chroma nulle, mais jamais une luminance moyenne de papier.
-- **La vignette WebP n'est pas remodérée** : c'est la même image, réduite, et le verdict
-  vient d'être rendu sur son contenu. La repasser au moteur doublerait la facture pour la
-  même réponse.
-- **Une page qui rend plusieurs recettes est modérée une fois, puis copiée.** Chaque recette
-  au-delà de la première reçoit sa propre copie Storage (`copyPublishedImages`), pour qu'elle
-  en soit réellement propriétaire — deux recettes désignant le même objet est une panne qui
-  n'attend que la première suppression réelle du fichier. La copie est faite côté serveur et
-  conserve les métadonnées de la décision ; un échec de copie retombe sur l'adresse partagée,
-  journalisé.
+- **Le poste `_batch`** — un appel de plus d'une image est imputé à
+  `image_moderation_batch`, un appel d'une seule image à `image_moderation`. Distinguer les
+  deux postes est le seul moyen de vérifier que le groupage fait son office.
+- **Les découpes d'illustrations d'un import ne sont pas modérées.** `recipeProcessor`
+  appelle `extractAndStorePageIllustrations` (`illustrations/store.ts`), qui écrit chaque
+  découpe directement sous `illustrations/{uid}/` par l'Admin SDK, sans quarantaine, sans
+  `scanUpload()` et sans Cloud Vision. Le fichier source a déjà passé `scanAndPromoteUploadFn`
+  à l'envoi, et la découpe est un JPEG encodé par Sharp dans la même fonction. Les images
+  produites par l'IA (`generateRecipeIllustrationFn`, `generatePlatingImageFn`) écrivent au
+  même endroit, de la même façon.
+- **Les filtres locaux de l'atelier manuel.** `detectAndCropIllustrationsFn` passe chaque
+  découpe à `assessCrop` (`gemini/illustrationQuality.ts`), qui écarte ce qui n'est pas une
+  photographie : moins de 120 px de côté ou moins de 1,5 % de la page, rapport de forme
+  au-delà de 4:1, ou presque blanc **et** sans couleur. Les deux conditions du dernier sont
+  exigées ensemble : une photographie en noir et blanc a une chroma nulle, mais jamais une
+  luminance moyenne de papier.
 - **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
   la suppression best-effort du fichier de quarantaine.
 
@@ -3111,8 +3156,7 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 ou `null` si la copie a échoué. Le document dit alors la vérité sur ce qui est
 réellement consultable ; il ne promet pas une image qui n'existe pas.
 
-`storage.rules` ouvre `rejected/` en lecture au seul `isAdmin()` — un nouvel
-helper, distinct de `canWriteSharedImages()` : ce dossier contient précisément ce
+`storage.rules` ouvre `rejected/` en lecture au seul `isAdmin()` : ce dossier contient ce
 qu'on a jugé impubliable, et un jeton sans claim n'y a pas accès.
 
 **La lecture de `quarantine/` est ouverte au même `isAdmin()`**, en plus du
@@ -3285,7 +3329,7 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 | Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
 | Sexuel explicite → refusée quel que soit le contexte | même fixture |
 | Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/moderationDecision.test.ts`, sur la fixture `image_moderation_rules.json` |
-| Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
+| Moteur en panne → `pending`, jamais publié | aucun test automatisé de `moderateAndPromote` |
 | Coût d'un appel Vision, quota mensuel déduit | `ai_pricing.json` + `test/ai_pricing_test.dart` |
 | Poste présent aux trois endroits | `test/feature_catalog_test.dart` |
 | Toute clé de motif servie a un libellé | `test/moderation_labels_test.dart` |

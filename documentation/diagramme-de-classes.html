@@ -166,10 +166,15 @@ classDiagram
     +String? sourceRecipeId
     +RecipeOrigin? origin
     +String? importVersion
+    +bool isPrivate
+    +String? fidelityLevel
+    +List~FidelityFinding~ fidelityFindings
+    +IllustrationReport? illustrationReport
     +String createdBy
     +DateTime createdAt
     +DateTime updatedAt
     +DateTime? aiProcessedAt
+    +bool fidelityRejected
     +fromFirestore(id, data) Recipe$
     +toFirestore() Map
     +copyWith() Recipe
@@ -246,6 +251,15 @@ classDiagram
     other
   }
 
+  class MealRole {
+    &lt;&lt;enumeration&gt;&gt;
+    plat
+    accompagnement
+    entree
+    dessert
+    snack
+  }
+
   Recipe "1" *-- "0..*" RecipeIngredient : ingredients
   Recipe "1" *-- "0..*" RecipeShoppingProduct : shoppingProducts
   Recipe "1" *-- "1" RecipeTags : tags
@@ -254,6 +268,7 @@ classDiagram
   RecipeNutritionSnapshot "1" o-- "0..1" RecipeAbsorbedOil : absorbedOil
   Recipe ..&gt; ReviewStatus
   Recipe ..&gt; PageType
+  RecipeTags ..&gt; MealRole : mealRole
 </pre>
       </div>
       <figcaption>
@@ -267,6 +282,20 @@ classDiagram
         l'huile que la friture fait passer du bain à l'assiette, calculée côté serveur et présente
         pour les seules recettes frites. Son <code>contribution</code> emploie les mêmes clés de
         nutriment que <code>totals</code>, où elle est déjà comptée.
+        <br><br>
+        <code>MealRole</code> n'est pas une <code>enum</code> Dart : c'est la liste de chaînes
+        <code>kMealRoles</code> de <span class="path">lib/features/recipes/domain/meal_role.dart</span>,
+        stockée dans <code>tags.meal_role</code>. Le serveur décide des valeurs
+        (<code>MEAL_ROLES</code>, <code>functions/src/gemini/mealRole.ts</code>) ; la fixture
+        <code>meal_roles.json</code> vérifie que les deux listes sont égales. <code>contains</code>
+        et <code>suggestedSides</code> n'existent qu'avec un rôle.
+        <br><br>
+        <code>isPrivate</code> est recopié du livre porteur par le serveur
+        (<code>onBookWritten</code>, <code>onRecipeWritten</code>). Le client le relit et le
+        réécrit tel quel, sans jamais le décider. <code>fidelityLevel</code> vaut
+        <code>null</code> quand le balisage concorde avec la page, <code>avertissement</code> pour
+        un écart mineur, <code>rupture</code> quand le balisage a été écarté
+        (<code>fidelityRejected</code>).
       </figcaption>
     </figure>
 
@@ -403,8 +432,10 @@ classDiagram
     +int? basePortions
     +int? targetPortions
     +DateTime? prepDate
+    +String? justification
     +List~String~ dismissedRecipeIds
     +List~MealComponent~ components
+    +DateTime createdAt
   }
 
   class ModerationEntry {
@@ -548,7 +579,7 @@ classDiagram
         champ vide. Deux fenêtres vides et un motif absent, c'est un conseil qui n'a rien dit.
         <span class="expect">
           <b>Le dressage n'est calculé qu'à la demande</b>, puis reste attaché à la recette dans
-          <code>plating_advice/{recipeId}</code> : un appel par recette, pas un par ouverture
+          son champ <code>plating_advice</code> : un appel par recette, pas un par ouverture
           d'onglet. Les visuels d'étapes s'y ajoutent au fur et à mesure, dans
           <code>PlatingStep.imageUrl</code>.
         </span>
@@ -799,6 +830,54 @@ classDiagram
     +bool hidden
   }
 
+  class MealIdea {
+    +String titre
+    +String description
+    +int? prepMinutes
+    +int? cookMinutes
+    +toFreeRecipe() Recipe
+    +String timesLabel
+  }
+
+  class RecipeSearchScope {
+    +Set~RecipeSource~ sources
+    +Set~String~ bookIds
+    +matchesBook(recipe) bool
+    +fromMap(data) RecipeSearchScope$
+    +toMap() Map
+  }
+
+  class RecipeSource {
+    &lt;&lt;enumeration&gt;&gt;
+    myRecipes
+    myDrafts
+    familyRecipes
+    aiCreation
+  }
+
+  class RecipePickerFilter {
+    +Set~String~ dishTypes
+    +Set~String~ cuisines
+    +bool isEmpty
+    +int count
+    +matches(recipe) bool
+  }
+
+  class SideCandidate {
+    +MealStaple? staple
+    +Recipe? recipe
+    +bool isRecipe
+    +String id
+    +String name
+    +provides(need) bool
+  }
+
+  class SideNeed {
+    &lt;&lt;enumeration&gt;&gt;
+    feculent
+    legume
+  }
+
   class PlannedMeal
   class RecipeDetailScreen
 
@@ -808,8 +887,15 @@ classDiagram
   MealComponent ..> MealStaple : garniture figée au choix
   MealComponent ..> Recipe : recette d'accompagnement
   SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
+  SideCandidate ..> SideChoice : chooseSide retient un candidat
+  SideCandidate ..> MealStaple : garniture
+  SideCandidate ..> Recipe : recette d'accompagnement
+  SideCandidate ..> SideNeed : provides
+  SideChoice --> SideNeed : besoin couvert
+  RecipeSearchScope --> RecipeSource : sources
+  MealIdea ..> Recipe : retenue, rédigée en recette validée
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
-  DayConstraint --> MealFormat : plat seul par défaut ; entrée, dessert, léger
+  DayConstraint --> MealFormat : plat seul par défaut, sinon entrée, dessert ou léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
   PlannedMeal "1..*" --o "1" ReplayableWeek : par semaine de planning
@@ -836,6 +922,24 @@ classDiagram
         <code>meal_storage_rules.json</code>. La décision réfrigérateur / congélateur, elle,
         n'existe que côté client — le serveur ne l'affiche jamais, l'écrire en double
         n'apporterait qu'une divergence possible.
+        <span class="expect">
+          <b><code>RecipeSearchScope</code> est une préférence de lecteur</b>, stockée sous
+          <code>users/{uid}/preferences/recipe_search_scope</code> (champs <code>sources</code>
+          et <code>book_ids</code>). Un livre absent de <code>bookIds</code> est écarté ; une
+          recette sans livre ne l'est jamais. <code>RecipePickerFilter</code> filtre le
+          sélecteur par types de plat et cuisines ; il n'est pas stocké.
+        </span>
+        <span class="expect">
+          <b><code>MealIdea</code> n'est pas une recette.</b> Rendue par
+          <code>suggestMealIdeasFn</code>, elle porte un nom, une phrase et deux durées. Retenue
+          depuis le planning, elle est rédigée par <code>generateRecipeConceptFn</code> et
+          enregistrée comme recette validée dans « Mes créations Kass'Dalle », puis placée dans
+          le créneau. Le repas libre sans recette n'existe que si l'écran ne fournit pas cette
+          étape de rédaction.
+          <code>SideCandidate</code> et <code>SideNeed</code> servent au choix de
+          l'accompagnement : <code>sideNeedsFor</code> ne rend un besoin que pour une recette
+          de rôle <code>plat</code>, d'après <code>tags.contains</code>.
+        </span>
       </figcaption>
     </figure>
   </section>
@@ -930,9 +1034,9 @@ classDiagram
   <section>
     <h2>Exploiter</h2>
     <p class="sec-note">
-      Quatre modèles ne servent qu'à l'administration. Ils ne décrivent pas la cuisine mais
+      Ces modèles ne servent qu'à l'administration. Ils ne décrivent pas la cuisine mais
       l'application elle-même : ce qui a échoué, ce qui s'est passé, ce qu'on a décidé, ce que ça
-      a coûté.
+      a coûté, l'état des référentiels.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1025,7 +1129,51 @@ classDiagram
     +String generatedSource
   }
 
+  class DataQualityReport {
+    +bool scanComplete
+    +DataQualityCheck missingShoppingProduct
+    +DataQualityCheck incompleteNutrition
+    +DataQualityCheck implausibleSalt
+    +DataQualityCheck unconfirmedUnits
+    +fromMap(map) DataQualityReport$
+  }
+
+  class DataQualityCheck {
+    +int count
+    +List~DataQualityExample~ examples
+    +bool truncatedExamples
+  }
+
+  class DataQualityExample {
+    +String id
+    +String label
+    +String detail
+  }
+
+  class AiRoutingDiff {
+    +List~String~ lines
+    +bool isEmpty
+    +between(current, next, features) AiRoutingDiff$
+  }
+
+  class RecipeRolesBackfillReport {
+    +DateTime? finishedAt
+    +int examinees
+    +int classees
+    +int dejaClassees
+    +int horsRecette
+    +int sansRole
+    +int echouees
+    +int? restantes
+    +bool completed
+    +bool stoppedByBudget
+    +bool stoppedByErrors
+    +bool stoppedByDeadline
+    +fromMap(map, finishedAt) RecipeRolesBackfillReport$
+  }
+
   class ProcessingJob
+  class AiRoutingPolicy
 
   DeadLetter --> ProcessingJob : relaunchedIntoJobId
   LogEntry ..> DeadLetter : même correlationId
@@ -1033,6 +1181,9 @@ classDiagram
   CallItem "1" --&gt; "0..1" AiCall : le montant, lu dans ai_usage
   CallItem "1" --&gt; "0..*" LogEntry : niveau 3
   ScanGroup --&gt; AiCostTotal : somme de ses appels
+  DataQualityReport "1" *-- "4" DataQualityCheck : un par contrôle
+  DataQualityCheck "1" *-- "0..200" DataQualityExample : examples
+  AiRoutingDiff ..&gt; AiRoutingPolicy : compare la politique en place et celle à charger
 </pre>
       </div>
       <figcaption>
@@ -1054,6 +1205,20 @@ classDiagram
           même appel, et aucun moyen de dire lequel est juste. <code>costUsd</code> à
           <code>null</code> — grille en panne au moment de l'appel — est compté dans
           <code>AiCostTotal.unpricedCalls</code>, jamais additionné comme zéro.
+        </span>
+        <span class="expect">
+          <b><code>DataQualityReport</code></b> est la réponse de
+          <code>getDataQualityReportFn</code> (Admin › Monitoring), en lecture seule.
+          <code>scanComplete</code> à faux signale un parcours interrompu par le délai du
+          serveur : les comptes sont alors des minimums. <code>count</code> est toujours complet ;
+          les exemples s'arrêtent à 200, et <code>truncatedExamples</code> le signale.
+        </span>
+        <span class="expect">
+          <b><code>AiRoutingDiff</code></b> liste en clair ce que changerait le chargement d'une
+          configuration de routage enregistrée, avant de l'appliquer.
+          <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
+          <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
+          <code>last_report</code> de <code>app_config/recipe_roles_backfill_checkpoint</code>.
         </span>
       </figcaption>
     </figure>
@@ -1218,6 +1383,11 @@ classDiagram
           <tr><td><code>imageUrls</code></td><td><code>image_urls</code></td><td>Pas <code>illustration_urls</code> — piège classique côté backend</td></tr>
           <tr><td><code>thumbnailUrls</code></td><td><code>thumbnail_urls</code></td><td>Vignettes WebP 400 px générées par le serveur, même ordre</td></tr>
           <tr><td><code>tags.dishTypes</code></td><td><code>tags.dish_types</code></td><td>Valeurs normalisées, liste fermée <code>kDishTypes</code></td></tr>
+          <tr><td><code>tags.mealRole</code></td><td><code>tags.meal_role</code></td><td>Valeur de <code>kMealRoles</code>. Écrit avec <code>tags.contains</code> et <code>tags.suggested_sides</code>, et seulement s'il est connu : une écriture sans rôle n'efface pas celui qu'a posé l'import ou le backfill</td></tr>
+          <tr><td><code>isPrivate</code></td><td><code>is_private</code></td><td>Recopié du livre par le serveur ; le client le relit et le réécrit tel quel. Absent vaut <code>false</code></td></tr>
+          <tr><td><code>fidelityLevel</code> · <code>fidelityFindings</code></td><td><code>fidelity_level</code> · <code>fidelity_findings</code></td><td>Écrits par le pipeline d'import, effacés à la validation du brouillon</td></tr>
+          <tr><td><code>illustrationReport</code></td><td><code>illustration_report</code></td><td>Écrit par le pipeline d'import ; lu par le client, jamais réécrit</td></tr>
+          <tr><td>—</td><td><code>scan_id</code></td><td>Écrit par le pipeline sur une recette importée, pour rattacher la nutrition et les courses de <code>onRecipeWritten</code> au scan et à son coût. Absent d'une recette écrite à la main ; jamais relu par le modèle Dart</td></tr>
           <tr><td><code>pageType</code></td><td><code>page_type</code></td><td><code>ingredientNote</code> est stocké <code>ingredient_note</code> ; les deux formes sont relues</td></tr>
           <tr><td><code>ingredientsIndex</code></td><td><code>ingredients_index</code></td><td>Noms en minuscules, dédupliqués — dérivés de <code>ingredients</code> par <code>buildIngredientsIndex</code>, écrivain unique</td></tr>
           <tr><td><code>shoppingProducts</code></td><td><code>shopping_products</code></td><td>Écrit uniquement si non vide</td></tr>

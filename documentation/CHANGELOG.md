@@ -20,6 +20,52 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.4 — technique
+
+#### Chaque changement met à jour ses documents
+
+`CLAUDE.md` demandait de tenir les diagrammes à jour, sans dire lesquels pour quel
+changement. Aucun agent n'avait la charge des cas d'utilisation, et `developpement-tech-couts`
+n'avait aucune consigne sur la documentation. Résultat : `cas-d-utilisation.html` datait du
+29 août, `diagramme-de-classes.html` du 13 septembre, `diagrammes-de-sequence.html` du
+27 septembre.
+
+- `CLAUDE.md` : un tableau associe chaque catégorie de changement (écran, route, Cloud
+  Function, flux, modèle Firestore, règles, prompt, logique dupliquée, déploiement, version) aux
+  documents à mettre à jour dans le même commit. Un élément retiré du code sort aussi des
+  documents, sauf du changelog. Un simple libellé n'appelle aucun document, et le bac à sable
+  reste hors de `FunctionalRequirements.md` et des cas d'utilisation. Pour une release
+  complète, `CLAUDE.md` et `product-owner-release` renvoient à ce tableau.
+- `relecteur-regles` : le contrôle 10 applique ce tableau et vérifie les noms des diagrammes
+  Mermaid contre le code.
+- `developpement-tech-couts` : la documentation fait partie de son livrable.
+- `business-analyst-culinaire` : il tient aussi `cas-d-utilisation.html`, avec son livrable
+  de cadrage. Sans cadrage, `developpement-tech-couts` écrit tous les documents.
+
+#### Rattrapage : 70 écarts corrigés entre le code et la documentation
+
+Un audit a comparé le code aux six documents et relevé 71 écarts : 22 faux, 40 manquants,
+9 obsolètes. 70 sont corrigés. Le dernier attend la PR de code qui réservera l'import aux
+éditeurs et aux admins : `TechnicalRequirements.md` (§13.1) et `cas-d-utilisation.html`
+décrivent cette décision et disent que les règles permettent encore l'import à un lecteur.
+Le dépôt en quarantaine reste ouvert au lecteur, qui y dépose les images de ses recettes.
+
+- `TechnicalRequirements.md` : diagnostic de qualité des données, 44 routes, redirection
+  `?next=`, règles Firestore et Storage alignées sur les fichiers, `plating_advice` décrit
+  comme un champ, modération et découpes d'illustrations, arbres des sources, CI, fixtures.
+- `FunctionalRequirements.md` : rôle de repas posé à l'écriture, Admin › Backfills, accueil
+  Admin, « Replanifier », retour après connexion, import d'un livre entier.
+- `cas-d-utilisation.html` : 15 cas ajoutés (qualité des données, garnitures, livre entier,
+  planning…). La liste de courses et l'ajustement des portions n'appellent plus l'IA dans
+  les diagrammes, comme dans le code.
+- `architecture.html` : 58 fonctions, section « Le déploiement », gardes et mémoire corrigées,
+  tableau de la logique dupliquée.
+- `diagramme-de-classes.html` : classes du planning, de la qualité des données et des rôles de
+  repas ; le diagramme « Planifier » ne s'affichait pas, à cause d'un « ; » dans une étiquette.
+- `diagrammes-de-sequence.html` : séquences 06 et 15 réécrites, six séquences ajoutées (25 à
+  30). Deux diagrammes qui ne s'affichaient pas sont réparés. Les 31 blocs Mermaid passent le
+  parseur.
+
 ### v0.23.3 — technique
 
 #### Le déploiement libère de la place sur le disque du runner

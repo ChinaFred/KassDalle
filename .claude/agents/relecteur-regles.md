@@ -54,9 +54,15 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
    `moderation/vision.ts` importent un SDK de fournisseur.
 9. **Écriture ponctuelle.** Une opération qui écrit une fois sur un ensemble de
    documents vit dans `admin_backfills_screen.dart`, pas dans un autre écran.
-10. **Documentation.** Un modèle, une Cloud Function, une route ou un flux modifié
-    s'accompagne de la mise à jour de `documentation/` (schéma Firestore, diagramme
-    Mermaid) dans le même diff.
+10. **Documentation.** Applique le tableau « Chaque changement met à jour ses documents »
+    de `CLAUDE.md` (section « Documentation à tenir à jour ») : pour chaque catégorie
+    touchée par le diff, chaque document listé est modifié dans le même diff, et ce qu'il
+    dit correspond au code. Un élément retiré du code et encore décrit dans un document est
+    aussi une anomalie, sauf dans `CHANGELOG.md`, qui garde l'historique. Un libellé modifié
+    sans changement de parcours n'appelle aucun document. Le bac à sable n'entre ni dans
+    `FunctionalRequirements.md` ni dans les cas d'utilisation : seul le §13.3 de
+    `TechnicalRequirements.md` le décrit. Pour un diagramme Mermaid, vérifie les noms (fonctions, collections,
+    classes) contre le code.
 11. **Changelog.** Si `version:` change dans `kass_dalle/pubspec.yaml`, le même diff ajoute
     en tête de `documentation/CHANGELOG.md` une entrée `### v<version> — fonctionnel` ou
     `— technique`, sans le numéro de build. Une version sans entrée, ou une entrée qui ne
