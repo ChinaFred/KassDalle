@@ -797,12 +797,12 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
 | `current_step` | `String?` | Étape courante du traitement IA |
-| `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites |
+| `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites. **À la création, la valeur du client n'est pas crue telle quelle** (v0.23.12, `dispatchScanId`) : un `bookDocumentScan` reçoit toujours un identifiant tiré par le serveur, et un autre job reçoit un identifiant neuf si `scan_spend/{scan_id}` appartient déjà à un autre compte (`user_id`). Sans cela, un éditeur qui reprenait le `scan_id` d'un import d'autrui relevait son plafond et y imputait ses dépenses. Le client ne peut plus changer ce champ ensuite (règles) |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
-| `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche. Absent d'un job créé par un client d'avant ce champ : l'import n'a alors pas de plafond propre. |
+| `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_USD` (2 $) par tranche. La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
 | `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
@@ -1004,7 +1004,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd` et `step_usd` depuis `budget_limit_usd`, jamais à la baisse. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -1183,7 +1183,10 @@ donc pas « l'une ou l'autre » mais « laquelle pour quoi » :
 **Écart assumé et connu :** sur Storage, une révocation ne prend effet qu'au
 renouvellement du jeton (une heure au plus) ; sur Firestore elle est immédiate.
 Storage ne peut pas faire mieux sans réintroduire la lecture inter-services qui
-avait cassé l'import.
+avait cassé l'import. Depuis la v0.23.12, `syncUserClaims` appelle en plus
+`revokeRefreshTokens` quand un compte perd l'accès — passage à révoqué, rôle qui sort de
+reader/editor/admin, document supprimé d'un compte nommé ou révoqué : la session ne se
+renouvelle plus, et le jeton en cours n'est pas prolongé au-delà de son heure.
 
 La présence d'un claim se teste par `'clé' in request.auth.token` plutôt que par
 comparaison à `null` : c'est la seule forme dont la sémantique est garantie sur
@@ -1336,15 +1339,28 @@ service cloud.firestore {
       // renomment, mais ne se suppriment pas : ce sont les destinations par
       // défaut des recettes sans livre et des créations de l'IA. Les perdre
       // laisserait la règle « toute recette a un livre » sans issue.
+      function systemTags() {
+        return ['__libres', '__kassdale_ia', '__secretes'];
+      }
+
       function isSystemBook(data) {
-        return data.tags is list
-          && data.tags.hasAny(['__libres', '__kassdale_ia', '__secretes']);
+        return data.tags is list && data.tags.hasAny(systemTags());
+      }
+
+      // Une mise à jour garde chaque tag système que le livre portait :
+      // sans cela, retirer le tag puis supprimer le livre contournait la garde.
+      function keepsSystemTags() {
+        return !isSystemBook(resource.data)
+          || (request.resource.data.get('tags', null) is list
+              && request.resource.data.tags.toSet().hasAll(
+                   resource.data.tags.toSet().intersection(systemTags().toSet())));
       }
 
       allow read: if isApproved()
         && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
-      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator();
+      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && keepsSystemTags();
       allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
         && !isSystemBook(resource.data);
     }
@@ -1413,11 +1429,11 @@ service cloud.firestore {
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire ; modification et suppression par l'auteur ou un admin, `user_id` et `recipe_id` figés |
-| `groups` | membres du groupe | le propriétaire, ou admin |
-| `processing_jobs` | éditeur ou propriétaire du job | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
-| `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
-| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur ; modification et purge par l'admin |
-| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`) |
+| `groups` | membres du groupe | création à son nom, soi seul membre ; modification et suppression par le propriétaire ou un admin, `owner_id` figé |
+| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
+| `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
+| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
+| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -1704,10 +1720,20 @@ lit que par son créateur et l'administrateur ; chacun ne modifie que ses propre
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
 brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
 
-**Comptes au 2026-10-09 (v0.23.10)** : 277 tests, 264 actifs et 13 `todo`.
+**Comptes au 2026-10-09 (v0.23.12)** : 297 tests, 296 actifs et 1 `todo`.
 
-- Firestore : 209 tests, 196 actifs et 13 `todo`.
+- Firestore : 229 tests, 228 actifs et 1 `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
+
+La v0.23.12 rend bloquants 12 des 13 `todo` et ajoute 20 tests qui vérifient que le cas
+légitime reste accepté : renommer un livre système et lui ajouter un tag, changer les tags
+d'un livre ordinaire, retirer le champ `tags` (refusé) ; ajouter un membre à son groupe,
+`owner_id` figé pour l'administrateur aussi, modifier son repas ; un lecteur planifie et écrit
+`planning_config`, un compte en attente et un compte neuf écrivent un rapport d'erreur, un
+compte révoqué à l'instant n'en écrit pas, un compte révoqué ne modifie pas son repas, un compte
+en attente relit sa configuration ; `storage_bytes` qui recule ou n'est pas entier, incrément du
+client par `FieldValue.increment`, remise à zéro par un administrateur ; un éditeur liste ses
+jobs mais pas tous, un administrateur les lit tous.
 
 La v0.23.10 rend bloquant le test « un administrateur ne change pas l'adresse du fondateur » et
 ajoute huit tests sur l'adresse immuable : retrait de l'adresse du fondateur, changement
@@ -1716,11 +1742,12 @@ administrateur et du fondateur, champ neutre d'un autre compte modifiable par un
 administrateur, réécriture à l'identique permise, compte ancien sans adresse toujours
 nommable.
 
-Les 13 `todo` sont des failles de l'audit hors du périmètre des v0.23.8 à v0.23.10 : lecture
-des comptes et des jobs d'autrui par un éditeur, tag d'un livre système, `owner_id` d'un groupe
-et `uid` d'un repas planifié modifiables, écritures de `planned_meals`, `planning_config` et
-`error_reports` par un compte en attente ou révoqué, valeurs négatives dans
-`app_config/usage`.
+Le `todo` restant est la lecture de `users/{uid}` d'autrui par un éditeur. Il reste ouvert :
+la file de travail, la relecture d'un brouillon, le détail d'une recette (`userByUidProvider`)
+et la recherche de membres d'un groupe (`GroupRepository.searchUsers`) lisent ce document pour
+afficher un nom. Une règle Firestore ne filtre pas les champs d'une lecture : fermer la lecture
+casserait ces écrans tant que le nom n'est pas servi par un autre chemin (profil public
+dénormalisé ou callable).
 
 ---
 
@@ -2331,15 +2358,18 @@ client s'en sert pour décider s'il propose de réessayer.
 
 | Garde | Exige | Source du rôle |
 |---|---|---|
-| `requireAuth(req, feature)` | compte nommé et non révoqué | le **jeton** s'il porte le rôle ; à défaut, lecture Firestore |
+| `requireAuth(req, feature)` | compte nommé et non révoqué | le **document**, relu à chaque appel (`mergeAccount`) ; le rôle du jeton en repli seulement ; document absent : refusé |
 | `requireEditor(req, feature)` | `editor` ou `admin` | lecture Firestore |
 | `requireAdmin(req, feature)` | `admin` | lecture Firestore |
 
-`requireAuth` tranche sur le jeton quand celui-ci porte le rôle, ce qui évite une lecture
-Firestore sur le chemin normal ; sans claim, il lit le document plutôt que de laisser passer
-— c'est le seul moyen de tenir le sas d'entrée pendant la première minute d'un compte, avant
-que son jeton ne soit renouvelé. `requireAdmin` et `requireEditor` lisent **toujours** le
-document : une révocation ne s'attend pas.
+Depuis la v0.23.12, `requireAuth` lit le document `users/{uid}` à chaque appel, et ce document
+fait foi (`mergeAccount`) : le rôle est celui du document, celui du jeton ne sert que si le
+document n'en porte pas ; le compte est révoqué si le jeton **ou** le document le dit ; un
+document absent ou un rôle `pending` est refusé. Avant, le rôle du jeton tranchait seul : un
+compte révoqué, remis en attente ou supprimé gardait l'accès aux callables d'IA jusqu'à
+l'expiration de son jeton, une heure au plus. Une lecture Firestore par appel coûte moins
+qu'un appel d'IA laissé passer. `requireAdmin` et `requireEditor` lisent **toujours** le
+document.
 
 Chaque garde retourne un `AuthContext` porteur du `userId` et d'un `correlationId` frais
 dont la racine est le `feature` passé en argument.
@@ -2443,12 +2473,14 @@ réenfilait le job. `dispatchDeadlineSeconds: 540`.
 Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
 (`attempt_count`).
 
-**Quand la reprise n'a pas lieu.** Cinq échecs envoient le job **directement** en dead
+**Quand la reprise n'a pas lieu.** Six échecs envoient le job **directement** en dead
 letter, sans réessayer, parce qu'une nouvelle tentative échouerait à l'identique : un plafond
 de dépense atteint (`budget_exceeded`), un livre illisible (`book_file_unreadable`), un
 balisage coupé à tous les efforts (`tagging_truncated`), un livre cible qui n'appartient
 pas au créateur du job (`foreign_book`), et un fichier source hors du dossier du créateur du
-job (`forbidden_source_path`). Ces deux derniers sont contrôlés avant tout téléchargement et
+job (`forbidden_source_path`), un DOCX joint à un import de recette au-delà des bornes de
+lecture (`archive_limit_exceeded`, `ZipLimitError`). Un livre EPUB ou Word au-delà des bornes
+finit en `book_file_unreadable` : `openBookFile` transforme l'erreur en `BookFileError`. `foreign_book` et `forbidden_source_path` sont contrôlés avant tout téléchargement et
 tout appel de modèle. Le refus `concurrency` du plafond ne concerne pas le pipeline : il ne
 vise que les appels déclenchés par un utilisateur (§6).
 
@@ -2466,7 +2498,7 @@ refusés (`StoragePathRefusedError`).
 
 | Champ | Valeurs |
 |---|---|
-| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `pipeline_error` |
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `archive_limit_exceeded`, `pipeline_error` |
 | `last_error` | le message de l'exception |
 | `retry_count` | le nombre de tentatives consommées |
 | `file_path` | le fichier téléversé, pour pouvoir rejouer |
@@ -2500,8 +2532,28 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
    `scans/{uid}/livres/`. Elle ne dépense rien.
 3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` avec `budget_limit_usd`, le
    plafond lu dans le champ de l'écran de confirmation : le bouton reste grisé sans montant
-   valide. `recipeProcessor` prend le relais (voir § 3.4 et `scan_spend`). Quitter l'écran avec un
-   livre lu en attente appelle `discard`.
+   valide. `runBookImport` borne ce plafond côté serveur à 2 $ par tranche
+   (`effectiveImportLimitUsd`) : la valeur du client ne peut que réduire ce maximum. Une tranche
+   arrêtée par le plafond se relance, et la relance ouvre un palier de plus. `recipeProcessor`
+   prend le relais (voir § 3.4 et `scan_spend`). Quitter l'écran avec un livre lu en attente
+   appelle `discard`.
+
+Un DOCX et un EPUB sont des archives ZIP : `utils/boundedZip.ts` les lit avec trois bornes,
+vérifiées pendant le dépliage et non sur les tailles déclarées — 10 000 entrées, 50 Mo dépliés
+par entrée, 200 Mo cumulés par archive (`DEFAULT_ZIP_LIMITS`). Le nombre d'entrées se
+contrôle **avant** `JSZip.loadAsync` : `countCentralSignatures` compte les occurrences de la
+signature d'en-tête central (`50 4B 01 02`) dans tout le buffer, arrêt à la borne plus un.
+Chaque entrée que JSZip construit commence par cette signature à une position distincte : ce
+compte majore toujours le nombre d'entrées de JSZip, quel que soit le point de départ du
+parcours. L'enregistrement de fin d'archive (EOCD, ZIP64) n'est pas lu : son compteur, sa
+position et son localisateur se falsifient. Une signature présente par hasard dans des données
+compressées ne peut que surestimer le compte. Le nombre d'entrées est revérifié sur ce que
+JSZip a lu.
+Une borne franchie lève `ZipLimitError` : `BookFileError` pour un livre EPUB ou Word
+(`book_file_unreadable`, jamais réessayé) ; pour un DOCX joint à un import de recette, le job
+part en dead letter `archive_limit_exceeded` (`ai/attachment.ts` ne renvoie pas l'archive au
+modèle). Une couverture EPUB
+au-delà des bornes est écartée et journalisée ; le livre s'importe sans elle.
 
 Aucun poste d'IA nouveau : la lecture de la première page d'un PDF s'impute à `book_cover`, chaque
 tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `scan_id` du livre.
@@ -2699,6 +2751,28 @@ Dans `kass_dalle/firebase.json` :
 
 Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne version.
 
+### En-têtes de sécurité et CSP
+
+`firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` et une
+`Content-Security-Policy-Report-Only`. La CSP est **en rapport seul, sans destination de
+rapport** (ni `report-uri`, ni `report-to`) : le projet n'a pas de point de collecte. Une
+violation s'affiche dans la console du navigateur de celui qui la provoque, et nulle part
+ailleurs. La CSP ne bloque donc rien, et personne n'est prévenu de ce qu'elle bloquerait.
+
+Ce qui en dépend : `img-src` limite les images à `'self'`, `data:`, `blob:`,
+`*.googleapis.com` (dont Firebase Storage) et `*.googleusercontent.com` (photos de profil
+Google). Les champs d'image d'une recette ou d'un livre (`image_urls`, `thumbnail_urls`,
+`url_couverture`) et les images insérées dans le texte d'une recette sont écrits par le
+client ; aucune règle Firestore ne contrôle leur hôte — une règle ne parcourt pas une liste, ni
+le texte CookLang. Une URL `https://` d'un autre hôte s'affiche donc sans modération, sur toutes
+les plateformes, tant que la CSP reste en rapport seul. Le serveur ne télécharge aucune de ces
+URL : pas de requête sortante vers une adresse fournie par un client.
+
+Suite proposée (audit sécurité 2026-10-09, « Faible ») : mesurer d'abord, en ajoutant une
+destination de rapport (petite fonction HTTP qui journalise par `logWarn`, ou service
+externe), puis basculer en mode bloquant une fois les rapports vides ; côté client, n'afficher
+une image réseau que si son hôte est le bucket du projet ou `googleusercontent.com`.
+
 ### Build et déploiement
 
 Le chemin normal est un push sur `master`, depuis le PC comme depuis une session cloud :
@@ -2750,8 +2824,9 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 
 `.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
-précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Trois jobs, sur
-`ubuntu-latest` :
+précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Ses actions
+sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme celles de
+`deploy.yml`. Trois jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
@@ -2797,6 +2872,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
+| Droits et actions | jeton GitHub limité à `contents: read` ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et le compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
 
 **Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
 `Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à une

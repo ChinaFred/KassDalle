@@ -14,7 +14,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { accessDenial, accountFromToken, type AccountState } from "../callable/_auth";
+import { accessDenial, accountFromToken, mergeAccount, type AccountState } from "../callable/_auth";
+import { claimsFrom, shouldRevokeSessions } from "../triggers/userClaimsSync";
 import { founderRepair, isFounderEmail } from "../triggers/founderRole";
 import {
   APP_CHECK_MODES,
@@ -213,5 +214,66 @@ describe("compte fondateur", () => {
       role: "admin",
       is_revoked: false,
     });
+  });
+});
+
+describe("mergeAccount — le document relu à chaque appel fait foi", () => {
+  test("un jeton d'avant la révocation ne passe plus", () => {
+    const merged = mergeAccount(account("reader"), account("reader", true));
+    assert.equal(merged.revoked, true);
+    assert.notEqual(accessDenial(merged, "approved"), null);
+  });
+
+  test("le jeton confirme une révocation, le document ne l'infirme pas", () => {
+    assert.equal(mergeAccount(account("reader", true), account("reader")).revoked, true);
+  });
+
+  test("le rôle du document prime, celui du jeton sert de repli", () => {
+    assert.equal(mergeAccount(account("editor"), account("reader")).role, "reader");
+    assert.equal(mergeAccount(account("reader"), account(null)).role, "reader");
+  });
+
+  test("un compte remis en attente est refusé malgré son jeton", () => {
+    const merged = mergeAccount(account("editor"), account("pending"));
+    assert.notEqual(accessDenial(merged, "approved"), null);
+  });
+
+  test("un compte sans document est refusé malgré son jeton", () => {
+    const merged = mergeAccount(account("admin"), null);
+    assert.equal(merged.role, null);
+    assert.notEqual(accessDenial(merged, "approved"), null);
+  });
+});
+
+describe("syncUserClaims — sessions coupées quand le compte perd l'accès", () => {
+  const reader = claimsFrom({ role: "reader", is_revoked: false });
+  const revoked = claimsFrom({ role: "reader", is_revoked: true });
+  const pending = claimsFrom({ role: "pending", is_revoked: false });
+  const editor = claimsFrom({ role: "editor", is_revoked: false });
+
+  test("passage à révoqué", () => {
+    assert.equal(shouldRevokeSessions(reader, revoked, true), true);
+    assert.equal(shouldRevokeSessions(revoked, revoked, true), false);
+    assert.equal(shouldRevokeSessions(revoked, reader, true), false);
+  });
+
+  test("rôle qui sort de reader/editor/admin", () => {
+    assert.equal(shouldRevokeSessions(reader, pending, true), true);
+    assert.equal(shouldRevokeSessions(editor, claimsFrom({ is_revoked: false }), true), true);
+  });
+
+  test("changement de rôle entre rôles nommés, ou nomination : sessions gardées", () => {
+    assert.equal(shouldRevokeSessions(editor, reader, true), false);
+    assert.equal(shouldRevokeSessions(pending, reader, true), false);
+  });
+
+  test("document supprimé d'un compte nommé ou révoqué", () => {
+    assert.equal(shouldRevokeSessions(reader, claimsFrom(undefined), false), true);
+    assert.equal(shouldRevokeSessions(revoked, claimsFrom(undefined), false), true);
+    assert.equal(shouldRevokeSessions(pending, claimsFrom(undefined), false), false);
+  });
+
+  test("un document neuf déjà révoqué", () => {
+    assert.equal(shouldRevokeSessions(claimsFrom(undefined), revoked, true), true);
   });
 });

@@ -20,6 +20,59 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.12 — technique
+
+#### Failles faibles de l'audit sécurité : règles, plafond d'import, révocation, archives, CI
+
+**Règles Firestore.** Douze des treize tests `todo` de `rules-tests` deviennent bloquants. Un
+livre système garde son tag à toute mise à jour (`keepsSystemTags`) : retirer le tag puis
+supprimer le livre contournait la garde. `owner_id` d'un groupe et `uid` d'un repas planifié
+sont figés. Un compte en attente ou révoqué ne crée ni ne modifie de repas planifié et n'écrit
+plus `planning_config` ; il relit et supprime toujours ses données. Un compte révoqué n'écrit
+plus de rapport d'erreur ; un compte en attente, et un compte neuf sans document, en écrivent
+encore. Sur `app_config/usage`, chaque compteur écrit par le client reste un entier positif qui
+ne recule pas (`countsUp`). Un éditeur ne lit plus les jobs d'import d'autrui : aucun écran ne
+s'en servait. Vingt tests vérifient que les cas légitimes passent toujours. 297 tests, 296
+actifs, 1 `todo`.
+
+Le `todo` restant — un éditeur lit le document `users/{uid}` d'autrui — reste ouvert : la file
+de travail, la relecture d'un brouillon, le détail d'une recette et la recherche de membres
+d'un groupe affichent un nom lu dans ce document.
+
+**Plafond d'un import de livre.** Le plafond fixé par le client (`budget_limit_usd`) est borné
+côté serveur à 2 $ par tranche (`effectiveImportLimitUsd`) ; la valeur du client ne peut que
+réduire ce maximum, et un job sans plafond le reçoit. Le `scan_id` d'un import de livre est
+désormais tiré par `jobDispatcher`, et celui d'un autre job est remplacé s'il désigne le
+compteur d'un autre compte : un éditeur qui reprenait le `scan_id` d'autrui relevait son
+plafond et y imputait ses dépenses. `setImportCeiling` et `raiseImportCeiling` refusent un
+`scan_spend` posé au nom d'un autre compte.
+
+**Révocation.** `syncUserClaims` révoque les jetons de rafraîchissement d'un compte qui perd
+l'accès : passage à révoqué, rôle sorti de reader/editor/admin, document supprimé.
+`requireAuth` relit le document à chaque appel, et ce document fait foi pour le rôle ; un
+document absent ou un rôle `pending` est refusé. Un compte révoqué, remis en attente ou
+supprimé gardait jusqu'à une heure l'accès aux callables d'IA.
+
+**Archives DOCX et EPUB.** `utils/boundedZip.ts` lit ces archives avec trois bornes vérifiées
+pendant le dépliage : 10 000 entrées, 50 Mo par entrée, 200 Mo cumulés. Le nombre d'entrées
+est contrôlé avant le chargement par JSZip, en comptant les occurrences de la signature d'en-tête
+central (`50 4B 01 02`) dans tout le fichier. Chaque entrée que JSZip construit commence par
+cette signature : ce compte majore toujours le sien, sans se fier à l'enregistrement de fin
+d'archive (EOCD, ZIP64), qui se falsifie. Une bombe zip lève `ZipLimitError` au lieu de faire tomber la fonction
+par manque de mémoire, et le job part en dead letter sans nouvelle tentative : un DOCX joint à
+un import de recette finit en `archive_limit_exceeded` ; un livre EPUB ou Word finit en
+`book_file_unreadable`, parce que `openBookFile` transforme l'erreur en `BookFileError`.
+
+**CI.** Les actions de `ci.yml` et `deploy.yml` sont épinglées par SHA de commit, version en
+commentaire ; `deploy.yml` extrait le dépôt sans garder le jeton (`persist-credentials: false`).
+Les deux workflows avaient déjà `permissions: contents: read`.
+
+**Laissés en l'état, documentés.** La CSP reste en rapport seul, sans destination de rapport :
+le projet n'a pas de point de collecte. Les URL d'image écrites par le client ne sont pas
+contrôlées par les règles (une règle ne parcourt ni une liste ni le texte CookLang) ; le
+serveur ne télécharge aucune de ces URL. Les analyses Vision de la modération restent hors
+plafond d'IA, par décision.
+
 ### v0.23.11 — technique
 
 #### Bornes larges sur les entrées envoyées aux modèles, et relevé de leur taille

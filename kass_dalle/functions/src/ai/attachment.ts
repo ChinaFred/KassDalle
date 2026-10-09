@@ -14,6 +14,7 @@
  */
 
 import { logError, logInfo } from "../logging";
+import { ZipLimitError } from "../utils/boundedZip";
 import { docxToPlainText, isDocxMimeType } from "../utils/docx";
 import { filePart, textPart, type ModelCallContext, type ModelPart } from "./types";
 
@@ -69,8 +70,11 @@ export async function attachmentPart(
       userId: ctx.userId,
       feature: ctx.feature,
       errorDescription: err instanceof Error ? err.message : String(err),
-      extra: { bytes: bytes.length },
+      extra: { bytes: bytes.length, zipLimit: err instanceof ZipLimitError },
     });
+    // Une archive qui dépasse les bornes de lecture ne part pas chez un modèle :
+    // elle n'est pas un document à lire, et le traitement s'arrête en erreur.
+    if (err instanceof ZipLimitError) throw err;
     return filePart(mimeType, bytes);
   }
 }

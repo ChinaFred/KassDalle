@@ -30,7 +30,7 @@
  * et stocké. L'écran le montre en euros quand un taux est connu.
  */
 
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, type Firestore } from "firebase-admin/firestore";
 
 import { COLL_SCAN_SPEND } from "../config";
 import { logInfo, logWarn } from "../logging";
@@ -48,6 +48,39 @@ export const DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD = 0.5;
 
 /** Marge du plafond proposé sur l'estimation : la moitié en plus. */
 export const IMPORT_BUDGET_MARGIN = 1.5;
+
+/**
+ * Plafond le plus haut qu'un import peut recevoir à son ouverture, par tranche.
+ *
+ * Le plafond est écrit par le client sur le job (`budget_limit_usd`). Sans
+ * borne serveur, un client modifié posait un plafond d'un milliard de dollars,
+ * ou n'en posait aucun : seul le plafond du jour restait (audit sécurité,
+ * « Faible »). Le serveur fixe donc le maximum, et la valeur du client ne peut
+ * que le réduire. Une décision, pas une mesure : quatre fois le défaut proposé
+ * (`DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD`), soit douze à seize fois le coût
+ * attendu d'une tranche. Une tranche arrêtée par ce plafond se relance, et la
+ * relance ouvre un palier de plus (`raisedImportLimit`).
+ */
+export const MAX_IMPORT_BUDGET_PER_WINDOW_USD = 2;
+
+/** Le plafond maximal d'un import de `windows` tranches, en dollars entiers. */
+export function maxImportBudgetUsd(windows: number): number {
+  const n = Number.isFinite(windows) && windows > 0 ? windows : 0;
+  return Math.max(1, Math.ceil(n * MAX_IMPORT_BUDGET_PER_WINDOW_USD));
+}
+
+/**
+ * Le plafond posé à l'ouverture d'un import : celui du client s'il est plus
+ * bas que le maximum serveur, le maximum sinon — y compris quand le client
+ * n'en a fixé aucun (job d'avant ce champ, ou client modifié).
+ */
+export function effectiveImportLimitUsd(args: {
+  clientLimitUsd: number | null;
+  windows: number;
+}): number {
+  const max = maxImportBudgetUsd(args.windows);
+  return args.clientLimitUsd == null ? max : Math.min(args.clientLimitUsd, max);
+}
 
 /** Ce que le scan a dépensé, et le plafond qui le borne, en dollars. */
 export interface ScanSpend {
@@ -77,6 +110,24 @@ function positive(value: unknown): number | null {
 /** Le plafond écrit sur un job, ou `null` s'il est absent ou ne tient pas debout. */
 export function parseBudgetLimit(value: unknown): number | null {
   return typeof value === "number" || typeof value === "string" ? positive(value) : null;
+}
+
+/**
+ * Le compteur appartient-il à un autre compte ?
+ *
+ * `user_id` est posé par `setImportCeiling`. Un document sans `user_id` (scan
+ * de page, document ancien) n'a pas de propriétaire connu : pas de conflit.
+ */
+export function scanOwnerConflict(existingUserId: unknown, userId: string): boolean {
+  return typeof existingUserId === "string" && existingUserId !== "" && existingUserId !== userId;
+}
+
+/** Le plafond d'un scan qui appartient à un autre compte : refusé, jamais fusionné. */
+export class ForeignScanError extends Error {
+  constructor(scanId: string) {
+    super(`Le scan ${scanId} appartient à un autre compte : son plafond ne se modifie pas ici.`);
+    this.name = "ForeignScanError";
+  }
 }
 
 /** Relit le document `scan_spend/{scanId}`. Document absent = rien dépensé, aucun plafond. */
@@ -180,15 +231,24 @@ export async function addToScanSpend(args: {
  *
  * Idempotent, et jamais à la baisse : un rejeu du job parent après une relance
  * qui a relevé le plafond ne doit pas le ramener au chiffre du départ.
+ *
+ * Refuse (`ForeignScanError`) un compteur déjà posé au nom d'un autre compte :
+ * sans ce contrôle, un éditeur qui réutilisait le `scan_id` d'un autre relevait
+ * son plafond (`Math.max`) et y ajoutait ses dépenses.
  */
 export async function setImportCeiling(args: {
   scanId: string;
   userId: string;
   limitUsd: number;
+  /** Injectable pour les tests ; la base par défaut sinon. */
+  db?: Firestore;
 }): Promise<void> {
-  const ref = getFirestore().collection(COLL_SCAN_SPEND).doc(args.scanId);
-  await getFirestore().runTransaction(async (tx) => {
-    const current = readScanSpend((await tx.get(ref)).data());
+  const db = args.db ?? getFirestore();
+  const ref = db.collection(COLL_SCAN_SPEND).doc(args.scanId);
+  await db.runTransaction(async (tx) => {
+    const data = (await tx.get(ref)).data();
+    if (scanOwnerConflict(data?.user_id, args.userId)) throw new ForeignScanError(args.scanId);
+    const current = readScanSpend(data);
     tx.set(
       ref,
       {
@@ -208,10 +268,18 @@ export async function raiseImportCeiling(args: {
   scanId: string;
   userId?: string;
   jobId?: string;
+  /** Injectable pour les tests ; la base par défaut sinon. */
+  db?: Firestore;
 }): Promise<boolean> {
-  const ref = getFirestore().collection(COLL_SCAN_SPEND).doc(args.scanId);
-  const result = await getFirestore().runTransaction(async (tx) => {
-    const spend = readScanSpend((await tx.get(ref)).data());
+  const db = args.db ?? getFirestore();
+  const ref = db.collection(COLL_SCAN_SPEND).doc(args.scanId);
+  const result = await db.runTransaction(async (tx) => {
+    const data = (await tx.get(ref)).data();
+    // Une relance ne relève que le plafond de son propre import.
+    if (args.userId && scanOwnerConflict(data?.user_id, args.userId)) {
+      throw new ForeignScanError(args.scanId);
+    }
+    const spend = readScanSpend(data);
     const next = raisedImportLimit(spend);
     if (next == null) return null;
     tx.update(ref, { limit_usd: next, limit_raised_at: FieldValue.serverTimestamp() });

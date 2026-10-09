@@ -17,6 +17,12 @@
  * révocation devient donc effective sur les images au prochain rafraîchissement
  * (une heure au plus), immédiatement sur les données Firestore qui, elles,
  * lisent le document utilisateur.
+ *
+ * Quand un compte perd l'accès — révoqué, rôle sorti de reader/editor/admin,
+ * document supprimé —, ses jetons de rafraîchissement sont en plus invalidés
+ * (`revokeRefreshTokens`) : la session ne se renouvelle plus, et le jeton en
+ * cours n'est plus prolongé au-delà de son heure. Les callables relisent le
+ * document à chaque appel (`requireAuth`) et n'attendent pas cette heure.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -27,12 +33,12 @@ import { REGION } from "../config";
 import { logError, logInfo } from "../logging";
 
 /** Claims dérivés du document utilisateur. */
-interface UserClaims {
+export interface UserClaims {
   role: string | null;
   revoked: boolean;
 }
 
-function claimsFrom(data: Record<string, unknown> | undefined): UserClaims {
+export function claimsFrom(data: Record<string, unknown> | undefined): UserClaims {
   if (!data) return { role: null, revoked: false };
   const role = typeof data.role === "string" && data.role.trim() ? data.role.trim() : null;
   return { role, revoked: data.is_revoked === true };
@@ -40,6 +46,46 @@ function claimsFrom(data: Record<string, unknown> | undefined): UserClaims {
 
 function sameClaims(a: UserClaims, b: UserClaims): boolean {
   return a.role === b.role && a.revoked === b.revoked;
+}
+
+const APPROVED_ROLES = ["reader", "editor", "admin"];
+
+function isApprovedRole(role: string | null): boolean {
+  return role !== null && APPROVED_ROLES.includes(role);
+}
+
+/**
+ * Faut-il couper les sessions du compte (`revokeRefreshTokens`) ?
+ *
+ * Oui quand il perd l'accès : il passe à révoqué, son rôle sort de
+ * reader/editor/admin (remis en `pending`, effacé), ou son document est
+ * supprimé alors qu'il avait un rôle nommé.
+ */
+export function shouldRevokeSessions(
+  before: UserClaims,
+  after: UserClaims,
+  afterExists: boolean,
+): boolean {
+  if (!afterExists) return isApprovedRole(before.role) || before.revoked;
+  if (!before.revoked && after.revoked) return true;
+  return isApprovedRole(before.role) && !isApprovedRole(after.role);
+}
+
+/** Révoque les jetons de rafraîchissement ; un échec est journalisé, jamais tu. */
+async function revokeSessions(uid: string, reason: string): Promise<void> {
+  try {
+    await getAuth().revokeRefreshTokens(uid);
+    await logInfo({
+      message: `syncUserClaims: jetons de rafraîchissement révoqués pour ${uid} (${reason})`,
+      userId: uid,
+    });
+  } catch (err) {
+    await logError({
+      message: `syncUserClaims: révocation des jetons impossible pour ${uid} (${reason})`,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: uid,
+    });
+  }
 }
 
 export const syncUserClaims = onDocumentWritten(
@@ -54,7 +100,9 @@ export const syncUserClaims = onDocumentWritten(
     // sans rapport.
     if (sameClaims(before, after)) return;
 
-    if (!event.data?.after?.exists) {
+    const afterExists = event.data?.after?.exists === true;
+
+    if (!afterExists) {
       // Utilisateur supprimé : les claims partent avec le compte, s'il existe
       // encore. Un compte déjà supprimé fait échouer setCustomUserClaims, ce
       // qui est sans conséquence — mais doit rester visible.
@@ -68,6 +116,8 @@ export const syncUserClaims = onDocumentWritten(
           userId: uid,
         });
       }
+      if (shouldRevokeSessions(before, after, false))
+        await revokeSessions(uid, "document supprimé");
       return;
     }
 
@@ -87,6 +137,12 @@ export const syncUserClaims = onDocumentWritten(
         userId: uid,
         extra: { role: after.role, revoked: after.revoked },
       });
+    }
+
+    // Séparé de l'écriture des claims : l'un peut réussir sans l'autre, et
+    // chacun doit laisser sa trace.
+    if (shouldRevokeSessions(before, after, true)) {
+      await revokeSessions(uid, after.revoked ? "révoqué" : `rôle ${after.role ?? "aucun"}`);
     }
   },
 );

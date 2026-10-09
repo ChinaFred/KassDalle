@@ -245,15 +245,32 @@ service cloud.firestore {
       //
       // La garde vit aussi dans l'écran et dans le repository ; ici seulement,
       // elle ne se contourne pas.
+      function systemTags() {
+        return ['__libres', '__kassdale_ia', '__secretes'];
+      }
+
       function isSystemBook(data) {
-        return data.tags is list
-          && data.tags.hasAny(['__libres', '__kassdale_ia', '__secretes']);
+        return data.tags is list && data.tags.hasAny(systemTags());
+      }
+
+      /// Une mise à jour garde chaque tag système que le livre portait.
+      ///
+      /// Sans ce contrôle, la protection se contournait en deux écritures :
+      /// retirer le tag, puis supprimer le livre devenu ordinaire (audit
+      /// sécurité, « Faible »). Le propriétaire comme l'administrateur
+      /// renomment le livre ; aucun ne lui retire son tag.
+      function keepsSystemTags() {
+        return !isSystemBook(resource.data)
+          || (request.resource.data.get('tags', null) is list
+              && request.resource.data.tags.toSet().hasAll(
+                   resource.data.tags.toSet().intersection(systemTags().toSet())));
       }
 
       allow read: if isApproved()
         && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
-      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator();
+      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && keepsSystemTags();
       allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
         && !isSystemBook(resource.data);
     }
@@ -348,7 +365,12 @@ service cloud.firestore {
       allow create: if isApproved()
         && request.resource.data.owner_id == request.auth.uid
         && request.resource.data.member_ids == [request.auth.uid];
-      allow update, delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
+      // `owner_id` est figé : changer de propriétaire n'est pas un parcours de
+      // l'application, et un groupe offert à un autre compte lui en
+      // attribuerait la gestion sans son accord.
+      allow update: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin())
+        && request.resource.data.owner_id == resource.data.owner_id;
+      allow delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
     }
 
     // app_config contient DEUX natures de documents :
@@ -391,7 +413,24 @@ service cloud.firestore {
         isApproved() && docId == 'usage' &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['storage_bytes', 'updated_at', currentScansKey(), previousScansKey()])
+        && countsUp('storage_bytes')
+        && countsUp(currentScansKey())
+        && countsUp(previousScansKey())
       );
+    }
+
+    /// Un compteur de `app_config/usage` écrit par le client reste un entier
+    /// positif qui ne recule pas. Le client n'écrit que des incréments
+    /// (`FieldValue.increment`) ; les règles voient la valeur résultante.
+    /// Sans ce contrôle, la liste de champs bornait les noms, pas les
+    /// valeurs : un compte nommé remettait les compteurs à zéro ou les
+    /// rendait négatifs (audit sécurité, « Faible »). Un champ absent de
+    /// l'écriture n'est pas contrôlé.
+    function countsUp(field) {
+      return !(field in request.resource.data)
+        || (request.resource.data[field] is int
+            && request.resource.data[field] >= 0
+            && request.resource.data[field] >= resource.data.get(field, 0));
     }
 
     // Configurations de routage enregistrées.
@@ -429,7 +468,12 @@ service cloud.firestore {
         ]);
       }
 
-      allow read: if isEditor() || isJobOwner();
+      // Un job se lit par son créateur et par un administrateur. L'éditeur
+      // lisait ceux de tous les comptes (fichier envoyé, messages d'erreur) ;
+      // aucun écran ne s'en servait : la file de travail d'un éditeur ne
+      // liste que ses propres jobs, la vue de tous les jobs est réservée à
+      // l'administrateur.
+      allow read: if isAdmin() || isJobOwner();
       // Un job déclenche le pipeline (jobDispatcher), donc des appels d'IA
       // facturés : l'import est réservé aux éditeurs et aux administrateurs.
       // Un lecteur n'importe pas. Le job est toujours créé à son propre nom.
@@ -480,21 +524,41 @@ service cloud.firestore {
     }
 
     // Repas planifiés
+    //
+    // Planifier est un geste de compte nommé : un compte en attente ou révoqué
+    // relit et supprime ses repas, il n'en crée ni n'en modifie. `uid` est
+    // figé : un repas offert à un autre compte apparaîtrait dans son planning.
     match /planned_meals/{mealId} {
       allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
+      allow update: if isApproved() && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid;
     }
 
-    // Préférences de planning
+    // Préférences de planning — même règle : lues par leur titulaire,
+    // écrites par un compte nommé.
     match /planning_config/{uid} {
-      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow write: if isApproved() && request.auth.uid == uid;
     }
 
     // Rapports d'erreur
+    //
+    // Un compte en attente en écrit : c'est à la première connexion, avant
+    // tout rôle, qu'une panne a le plus besoin d'être vue. Un compte révoqué
+    // n'en écrit plus : il remplirait la collection que l'administrateur lit.
+    // La révocation se lit ici sans `getUserData()`, qui échoue tant que le
+    // document du compte n'existe pas encore (première connexion).
+    function isKnownRevoked() {
+      return ('revoked' in request.auth.token && request.auth.token.revoked == true)
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && getUserData().get('is_revoked', false) == true);
+    }
+
     match /error_reports/{reportId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.user_id == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && !isKnownRevoked()
+        && request.resource.data.user_id == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 

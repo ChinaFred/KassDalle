@@ -18,8 +18,14 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFunctions } from "firebase-admin/functions";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
-import { REGION, COLL_PROCESSING_JOBS, PROJECT_ID, TASK_QUEUE_FUNCTION } from "../config";
-import { raiseImportCeiling } from "../ai/importBudget";
+import {
+  REGION,
+  COLL_PROCESSING_JOBS,
+  COLL_SCAN_SPEND,
+  PROJECT_ID,
+  TASK_QUEUE_FUNCTION,
+} from "../config";
+import { raiseImportCeiling, scanOwnerConflict } from "../ai/importBudget";
 import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
 
 export const jobDispatcher = onDocumentWritten(
@@ -51,7 +57,7 @@ export const jobDispatcher = onDocumentWritten(
     // aussi le contrôle du fichier, qui a eu lieu avant que ce job existe.
     // Un job créé avant l'existence du champ n'en a pas : on en fabrique un,
     // qui rassemblera au moins l'import et ses suites.
-    const scanId = typeof job.scan_id === "string" && job.scan_id ? job.scan_id : newScanId();
+    let scanId = typeof job.scan_id === "string" && job.scan_id ? job.scan_id : newScanId();
 
     // On n'enqueue que les jobs en état queued (évite l'enqueue sur édition manuelle).
     if (job.status && job.status !== "queued") {
@@ -77,6 +83,55 @@ export const jobDispatcher = onDocumentWritten(
     // C'est le cas de notre propre marquage (correlation_id, dispatched_at)
     // juste en dessous — sans cette garde, il se redéclencherait sans fin.
     if (before?.status === "queued") return;
+
+    // À la création, le `scan_id` vient du client. Il ne doit pas désigner le
+    // compteur d'un autre compte : un éditeur qui reprenait le `scan_id` d'un
+    // import d'autrui relevait son plafond et y imputait ses dépenses. Un
+    // import de livre reçoit toujours un identifiant tiré ici ; un autre job
+    // garde le sien, sauf si le compteur existant appartient à un autre compte.
+    // Ensuite, le client ne peut plus changer `scan_id` (règles Firestore) :
+    // une relance garde celui qu'on écrit plus bas.
+    if (!before) {
+      const clientScanId = scanId;
+      try {
+        const existingOwner =
+          job.type === "bookDocumentScan"
+            ? null
+            : (await getFirestore().collection(COLL_SCAN_SPEND).doc(clientScanId).get()).get(
+                "user_id",
+              );
+        const next = dispatchScanId({
+          clientScanId,
+          jobType: job.type,
+          existingOwner,
+          userId,
+          generate: newScanId,
+        });
+        if (next !== clientScanId) {
+          scanId = next;
+          logInfo({
+            message: "scan_id du client remplacé par un identifiant serveur",
+            moduleType: "IMPORT",
+            jobId,
+            userId,
+            scanId,
+            extra: { clientScanId, jobType: job.type ?? null },
+          });
+        }
+      } catch (err) {
+        // Lecture impossible : on ne fait pas confiance au client.
+        scanId = newScanId();
+        await logError({
+          message: "Propriétaire du scan illisible — identifiant serveur tiré à la place",
+          errorDescription: err instanceof Error ? err.message : String(err),
+          moduleType: "IMPORT",
+          jobId,
+          userId,
+          scanId,
+          extra: { clientScanId },
+        });
+      }
+    }
 
     // Une tranche de livre qui revient en `queued` après avoir existé est une
     // relance de l'utilisateur. Si l'import a atteint son plafond, la relance
@@ -151,3 +206,23 @@ export const jobDispatcher = onDocumentWritten(
     }
   },
 );
+
+/**
+ * Le `scan_id` d'un job à sa création. Pure, pour être testée.
+ *
+ * Un import de livre (`bookDocumentScan`) reçoit toujours un identifiant neuf :
+ * c'est lui qui pose un plafond. Un autre job garde l'identifiant du client —
+ * il relie le contrôle du fichier, passé avant le job, à son import — sauf si
+ * le compteur existant appartient à un autre compte.
+ */
+export function dispatchScanId(args: {
+  clientScanId: string;
+  jobType: unknown;
+  existingOwner: unknown;
+  userId: string;
+  generate: () => string;
+}): string {
+  if (args.jobType === "bookDocumentScan") return args.generate();
+  if (scanOwnerConflict(args.existingOwner, args.userId)) return args.generate();
+  return args.clientScanId;
+}

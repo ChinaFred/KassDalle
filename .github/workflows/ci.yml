@@ -19,6 +19,9 @@ concurrency:
 permissions:
   contents: read
 
+# Actions épinglées par SHA de commit, version en commentaire, comme dans
+# deploy.yml : une étiquette se déplace, un SHA ne change pas de contenu.
+
 jobs:
   flutter:
     name: Flutter — analyse et tests
@@ -27,9 +30,9 @@ jobs:
       run:
         working-directory: kass_dalle
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.44.6'
           channel: stable
@@ -69,9 +72,9 @@ jobs:
       run:
         working-directory: kass_dalle/functions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -105,9 +108,9 @@ jobs:
       run:
         working-directory: kass_dalle/rules-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -116,14 +119,14 @@ jobs:
         # Les émulateurs Firestore et Storage tournent sur la JVM.
         # firebase-tools 15 refuse de les lancer avant Java 21
         # (MIN_SUPPORTED_JAVA_MAJOR_VERSION) : 17 ne suffit pas.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: '21'
 
         # Les binaires des émulateurs sont téléchargés par firebase-tools au
         # premier lancement. La clé suit la version épinglée de firebase-tools.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ hashFiles('kass_dalle/rules-tests/package-lock.json') }}

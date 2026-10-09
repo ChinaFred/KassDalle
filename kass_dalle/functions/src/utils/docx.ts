@@ -21,7 +21,7 @@
  *     chose ; un dépliage par un modèle, non.
  */
 
-import JSZip from "jszip";
+import { BoundedZip } from "./boundedZip";
 
 /** Type MIME d'un document Word moderne. */
 export const DOCX_MIME_TYPE =
@@ -92,18 +92,22 @@ export function docxXmlToPlainText(xml: string): string {
 /**
  * Texte d'un document Word, ou une erreur.
  *
+ * Lève `ZipLimitError` quand l'archive dépasse les bornes de lecture.
+ *
  * Ne rend jamais une chaîne vide en silence : un document illisible doit
  * remonter, pour que l'appelant serve le binaire au moteur qui sait le lire
  * plutôt que d'envoyer du vide à celui qui ne le sait pas.
  */
 export async function docxToPlainText(bytes: Buffer): Promise<string> {
-  const archive = await JSZip.loadAsync(bytes);
-  const entry = archive.file(DOCUMENT_ENTRY);
-  if (!entry) {
+  // Lecture bornée : un DOCX est une archive envoyée par l'utilisateur, et une
+  // bombe zip y tiendrait en quelques mégaoctets (`ZipLimitError`).
+  const archive = await BoundedZip.open(bytes);
+  const xml = await archive.text(DOCUMENT_ENTRY);
+  if (xml == null) {
     throw new Error(`archive Word sans ${DOCUMENT_ENTRY}`);
   }
 
-  const text = docxXmlToPlainText(await entry.async("string"));
+  const text = docxXmlToPlainText(xml);
   if (text.length === 0) {
     throw new Error("document Word sans texte lisible");
   }
