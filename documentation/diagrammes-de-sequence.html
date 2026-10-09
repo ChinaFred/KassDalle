@@ -733,7 +733,7 @@ sequenceDiagram
         <code>page_type</code> et <code>raw_cooklang</code>. Les écritures du déclencheur
         (<code>is_private</code>, <code>tags</code>, <code>shopping_products</code>,
         <code>nutrition</code>) ne touchent aucun de ces champs : le réveil qu'elles provoquent
-        sort à la garde. Il n'y a pas de compteur de tentatives dans ce chemin.
+        sort à la garde. Le déclencheur ne compte pas ses tentatives. Il remet à 0 <code>nutrition_catch_up_attempts</code>, le compteur du rattrapage (séquence 25).
       </figcaption>
       <figcaption>
         <b>Confidentialité et rôle passent avant la garde.</b> <code>book_id</code> n'est pas une
@@ -991,7 +991,7 @@ sequenceDiagram
     IM->>FS: update plating_advice.etapes
     IM-->>DC: URL du visuel
     end
-    Note over DC: seule la dernière image produite peut être refaite ;<br/>revenir plus tôt suppose de tout réinitialiser
+    Note over DC: seule la dernière image produite peut être refaite.<br/>Revenir plus tôt suppose de tout réinitialiser
   end
 
   opt intégration décidée par un éditeur
@@ -1611,7 +1611,7 @@ sequenceDiagram
   PM-->>B: recentlyServed, une fois par recette, du plus récent au plus ancien
   B->>SP: slotDates, slotConstraints (format du jour compris),<br/>alreadyAssigned, corpus, recentlyServed
   SP->>PL: applyRecentlyServed(corpus, recentlyServed, créneaux à remplir)
-  PL-->>SP: candidats sans les plats récents, tant qu'il en reste assez ;<br/>ceux qu'il a fallu garder sont nommés au modèle
+  PL-->>SP: candidats sans les plats récents, tant qu'il en reste assez.<br/>Ceux qu'il a fallu garder sont nommés au modèle
 
   SP->>PL: partitionByRole(candidats) : plats, entrées, desserts, en-cas — jamais un accompagnement
   loop chaque créneau vide
@@ -2614,7 +2614,8 @@ sequenceDiagram
     MI->>AI: même consigne, avec tous les titres déjà proposés
   end
   U->>MI: retient une idée
-  MI->>AI: generateRecipeConcept — requestedDish, contraintes du jour
+  MI->>P: conceive
+  P->>AI: generateRecipeConcept — requestedDish, contraintes du jour
   AI->>GC: callable
   GC->>M: planning_concept
   M-->>GC: titre, CookLang, justification
@@ -2693,7 +2694,7 @@ sequenceDiagram
 
   D->>GH: push sur master, ou fusion d'une PR
   GH->>CI: on push
-  par
+  par deux jobs en parallèle
     CI->>CI: Flutter — pub get, analyze, format, pubspec.lock, test, build web
   and
     CI->>CI: Functions — npm ci, lint, format:check, build, test
