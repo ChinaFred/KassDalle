@@ -18,13 +18,14 @@ enum ModerationTarget {
   const ModerationTarget(this.wire);
 }
 
-/// Origine d'une image.
+/// Origine déclarée d'une image — une indication, jamais une décision.
 ///
-/// Seules les images soumises par une personne sont analysées. Une image
-/// produite par l'IA sort d'un moteur qui applique déjà ses garde-fous, et un
-/// asset livré avec l'application est le nôtre. Toutes passent par le même
-/// chemin — c'est ce qui permet de fermer les dossiers publiés en écriture —
-/// et le journal dit pourquoi chacune est passée.
+/// Le serveur ne croit pas cette valeur (`functions/src/moderation/origin.ts`,
+/// v0.23.8) : `ai` venant d'un client est analysé comme une image
+/// d'utilisateur, et `asset` n'est dispensé d'analyse que si l'empreinte du
+/// fichier est celle d'une couverture livrée avec l'application. Toutes les
+/// images passent par le même chemin — c'est ce qui permet de fermer les
+/// dossiers publiés en écriture.
 enum ModerationOrigin {
   user('user'),
   ai('ai'),

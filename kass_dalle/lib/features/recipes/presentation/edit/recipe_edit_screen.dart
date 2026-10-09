@@ -25,6 +25,8 @@ import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/app_shortcuts.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../auth/presentation/auth_providers.dart';
+import '../../../auth/presentation/not_owner_scaffold.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -429,6 +431,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   @override
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
+    final userAsync = ref.watch(appUserProvider);
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
@@ -449,6 +452,16 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             body: const Center(child: Text('Recette introuvable')),
           );
         }
+
+        final gate = ownershipGate(
+          ref: ref,
+          userAsync: userAsync,
+          title: 'Modifier la recette',
+          message: 'Seul le créateur peut modifier cette recette.',
+          fallbackLocation: '/recipes/${recipe.id}',
+          canModify: (u) => u.canModifyRecipe(recipe.createdBy),
+        );
+        if (gate != null) return gate;
 
         initFormFromRecipe(recipe);
         _currentRecipe = recipe;

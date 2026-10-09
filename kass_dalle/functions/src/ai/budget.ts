@@ -70,6 +70,57 @@ export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
  */
 export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 100;
 
+/**
+ * Compte retenu quand l'appel n'est rattaché à personne (uid absent ou vide).
+ * Même clé que la ligne d'usage (`ai_usage.uid`) et que l'écran des plafonds —
+ * un seul nom pour la même dépense.
+ */
+export const UNATTRIBUTED = "system_unattributed";
+
+/**
+ * Compte auquel s'impute une recette sans propriétaire (`created_by` absent ou
+ * vide).
+ *
+ * Les déclencheurs d'une recette imputent la dépense à son `created_by`. Un
+ * `created_by` vide passait l'appel hors de tout plafond : un lecteur vidait le
+ * champ de sa recette, puis la réécrivait autant de fois qu'il voulait. Les
+ * règles Firestore figent désormais ce champ ; ce compte couvre les documents
+ * antérieurs et toute écriture serveur qui l'oublierait. Plafond commun
+ * (multiplicateur 1), partagé par toutes les recettes orphelines.
+ */
+export const ORPHAN_RECIPE_USER_ID = "system_recipe_without_owner";
+
+/**
+ * Multiplicateur du compte `UNATTRIBUTED` : celui du fondateur.
+ *
+ * Y tombent les appels de modèle passés **sans aucun uid** — un traitement
+ * serveur qui n'en transmet pas. Le rattrapage nutrition nocturne n'en fait
+ * pas partie : il impute chaque recette à son `created_by`, ou à
+ * `ORPHAN_RECIPE_USER_ID` (×1). L'enrichissement des référentiels
+ * (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts`) remplace un uid
+ * absent par la chaîne littérale `"system"` : ce compte-là est un compte
+ * ordinaire pour le plafond (×1), distinct de `UNATTRIBUTED`.
+ *
+ * Plafonné quand même — deux cents euros et quarante mille appels par jour
+ * avec les défauts : une boucle s'arrête aussi.
+ */
+export const SYSTEM_DAILY_BUDGET_MULTIPLIER = FOUNDER_DAILY_BUDGET_MULTIPLIER;
+
+/** Le compte de plafond d'un appel : l'uid s'il existe, le compte système sinon. */
+export function budgetUserId(userId: string | null | undefined): string {
+  const uid = (userId ?? "").trim();
+  return uid.length > 0 ? uid : UNATTRIBUTED;
+}
+
+/**
+ * Le compte auquel s'impute une recette : son `created_by`, ou le compte des
+ * recettes orphelines. Jamais vide, donc jamais hors plafond.
+ */
+export function recipeBudgetUserId(createdBy: unknown): string {
+  const uid = typeof createdBy === "string" ? createdBy.trim() : "";
+  return uid.length > 0 ? uid : ORPHAN_RECIPE_USER_ID;
+}
+
 export interface AiBudgetPolicy {
   /** Plafond quotidien par compte, en **euros**. `0` désactive ce plafond. */
   dailyCostEurPerUser: number;
@@ -296,8 +347,12 @@ export async function founderUid(): Promise<string | null> {
   }
 }
 
-/** Le multiplicateur de plafond d'un compte : cent pour le fondateur, un sinon. */
+/**
+ * Le multiplicateur de plafond d'un compte : cent pour le fondateur et pour le
+ * compte système, un sinon — recettes orphelines comprises.
+ */
 export async function budgetMultiplierFor(userId: string): Promise<number> {
+  if (userId === UNATTRIBUTED) return SYSTEM_DAILY_BUDGET_MULTIPLIER;
   return (await founderUid()) === userId ? FOUNDER_DAILY_BUDGET_MULTIPLIER : 1;
 }
 
@@ -366,16 +421,16 @@ export class BudgetExceededError extends Error {
 /**
  * Refuse l'appel si le compte a déjà atteint son plafond du jour.
  *
- * Les appels non rattachés à un compte — tâches planifiées, rattrapages — ne
- * sont pas plafonnés : ils ne viennent de personne, et les borner reviendrait
- * à laisser une maintenance nocturne fermer l'application au premier réveil.
+ * Un appel sans uid s'impute au compte système (`UNATTRIBUTED`), plafonné cent
+ * fois plus haut. Il passait
+ * auparavant sans aucun contrôle : tout chemin qui perdait l'uid de l'appelant
+ * (une recette au `created_by` vidé) sortait du plafond.
  */
 export async function assertWithinDailyBudget(
   userId: string | null | undefined,
   feature: string,
 ): Promise<void> {
-  const uid = (userId ?? "").trim();
-  if (!uid) return;
+  const uid = budgetUserId(userId);
 
   const [policy, spend, usdToEur, multiplier] = await Promise.all([
     getAiBudgetPolicy(),

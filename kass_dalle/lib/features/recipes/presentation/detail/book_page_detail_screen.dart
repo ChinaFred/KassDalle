@@ -287,8 +287,9 @@ class _BookPageContent extends ConsumerWidget {
     final images = allImages.toList();
 
     final user = ref.watch(appUserProvider).value;
-    final canEdit =
-        user != null && (user.canEdit || user.uid == recipe.createdBy);
+    // Créateur ou administrateur seulement, éditeur compris : miroir de la
+    // règle `recipes` de `firestore.rules`.
+    final canEdit = user?.canModifyRecipe(recipe.createdBy) ?? false;
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 

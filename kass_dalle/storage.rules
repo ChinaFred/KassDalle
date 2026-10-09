@@ -10,20 +10,25 @@ service firebase.storage {
     // refusé alors que la seule condition réelle était une égalité d'identifiant.
     //
     // Le rôle et la révocation voyagent désormais dans le jeton, entretenus par
-    // le déclencheur `syncUserClaims`. Un claim se lit sans appel réseau, sans
-    // coût, et son absence ne provoque jamais d'erreur — seulement une
-    // comparaison fausse. C'est la seule autorisation qu'une règle Storage peut
-    // évaluer de façon fiable.
+    // le déclencheur `syncUserClaims`. Un claim se lit sans appel réseau et sans
+    // coût. Son absence, en revanche, fait lever une erreur à toute comparaison
+    // qui le lit (`request.auth.token.revoked != true` sur un jeton sans
+    // `revoked`), et une erreur vaut refus : un claim facultatif se teste
+    // d'abord par sa présence (`'revoked' in request.auth.token`). C'est la
+    // seule autorisation qu'une règle Storage peut évaluer de façon fiable.
 
     function isAuthenticated() {
       return request.auth != null;
     }
 
     /// Révoqué UNIQUEMENT si le claim le dit explicitement.
-    /// Un jeton sans claim — compte ancien, claim pas encore propagé — est
-    /// traité comme actif : la migration ne doit verrouiller personne dehors.
+    /// Un jeton sans claim `revoked` — compte ancien, claim pas encore
+    /// propagé — est traité comme actif : la migration ne doit verrouiller
+    /// personne dehors. La présence se teste avant la valeur : comparer une
+    /// clé absente lève une erreur, et l'erreur refusait l'accès.
     function isActive() {
-      return isAuthenticated() && request.auth.token.revoked != true;
+      return isAuthenticated()
+        && (!('revoked' in request.auth.token) || request.auth.token.revoked != true);
     }
 
     /// Administrateur, sur la foi du claim.
@@ -83,15 +88,17 @@ service firebase.storage {
            ];
     }
 
-    // Couvertures de livres — les livres sont réservés aux editors côté
-    // Firestore, leurs images suivent la même logique.
+    // Couvertures de livres — écrites par le serveur pour le créateur du livre
+    // ou un administrateur, comme le livre lui-même côté Firestore.
     // Dossiers PUBLIÉS : écriture serveur uniquement, comme `scans/`.
     //
     // Une image vue par toute la famille passe par la quarantaine et par la
     // modération avant d'atterrir ici. Laisser le client y écrire en direct
     // rendrait la modération contournable en une ligne de code.
     match /covers/{allPaths=**} {
-      allow read: if isActive();
+      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
+      allow get: if isActive();
+      allow list: if isAdmin();
       allow write: if false;
     }
 
@@ -134,9 +141,14 @@ service firebase.storage {
            ];
     }
 
-    // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
+    // Scans validés (écriture uniquement via Admin SDK / Cloud Functions).
+    //
+    // Lire un fichier dont on a l'adresse reste ouvert ; LISTER le dossier
+    // d'un autre ne l'est pas — un listage donnait les noms des fichiers
+    // sources de chacun. Le client ne liste jamais ces dossiers.
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isActive() && (isOwner(uid) || isAdmin());
       allow write: if false;
     }
 
@@ -157,21 +169,28 @@ service firebase.storage {
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
+      allow get: if isActive();
+      allow list: if isAdmin();
       allow write: if false;
     }
 
-    // Illustrations de recettes.
-    // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle ne
-    // peut pas être une égalité d'uid. Il porte donc sur le rôle.
+    // Illustrations de recettes. Dossier publié, écrit par le serveur seul :
+    // `moderateAndPromoteImagesFn` (`assertTargetOwnership`) vérifie que
+    // l'appelant est le créateur de la recette ou un administrateur avant d'y
+    // déposer l'image modérée. Lister le dossier d'une recette — qui peut
+    // être privée — est réservé à l'administrateur ; le client ne liste pas.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isActive();
+      allow get: if isActive();
+      allow list: if isAdmin();
       allow write: if false;
     }
 
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
-      allow read: if isActive();
+      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
+      allow get: if isActive();
+      allow list: if isAdmin();
       allow write: if false;
     }
   }

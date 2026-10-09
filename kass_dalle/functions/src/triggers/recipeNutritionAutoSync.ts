@@ -12,6 +12,7 @@
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import { recipeBudgetUserId } from "../ai/budget";
 import { COLL_NUTRITION_INGREDIENTS } from "../config";
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
@@ -113,7 +114,10 @@ export async function syncRecipeNutrition(args: {
   // `nutrition_stale` ont disparu avec elle : ils ne servaient qu'à borner une
   // boucle qui n'existe plus, et ils ne la bornaient pas.
 
-  const userId = (data.created_by as string | undefined) ?? undefined;
+  // Jamais vide : une recette sans propriétaire s'impute au compte des
+  // recettes orphelines, plafonné comme un autre (`ai/budget.ts`). Un uid vide
+  // faisait passer l'appel hors de tout plafond.
+  const userId = recipeBudgetUserId(data.created_by);
 
   // Le texte de la recette, tracé une fois qu'on sait qu'il y a du travail.
   //

@@ -20,6 +20,122 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.8 — technique
+
+#### Confidentialité, propriété et modération imposées par le serveur
+
+L'audit de sécurité du 2026-10-09 relevait trois failles élevées et une moyenne. Les quatre
+sont corrigées ; leurs tests de règles ne sont plus `todo` et deviennent bloquants.
+
+- **Contenu privé** (`firestore.rules`). Un livre ou une recette privé ne se lit que par son
+  créateur et par un administrateur, éditeurs compris. Les annotations et les notes suivent
+  la recette, par `get()` : on en lit et on en pose sur toute recette qu'on voit. La
+  confidentialité ne vivait que dans les requêtes du client ; un compte qui interrogeait
+  Firestore directement lisait tout. Un document n'est partagé que s'il porte
+  `is_private == false` : une lecture par `get('is_private', false)` laissait passer une liste
+  sans filtre, l'émulateur l'a montré.
+- **Propriété** (`firestore.rules`, écrans). Un livre ou une recette ne se modifie et ne se
+  supprime que par son créateur ou un administrateur, éditeur compris. `created_by` vaut
+  l'appelant à la création et ne change plus, administrateur compris. Les écrans masquent les
+  gestes d'édition sur le contenu d'autrui (fiche recette, page de livre, liste d'un livre).
+- **Dépense hors plafond** (`ai/budget.ts`, déclencheurs). Un lecteur vidait `created_by` de
+  sa recette et faisait tourner les déclencheurs nutrition sans plafond. Une recette sans
+  propriétaire s'impute désormais à `system_recipe_without_owner` (plafond commun), et un
+  appel sans uid à `system_unattributed`, plafonné cent fois plus haut au lieu de passer sans
+  contrôle. Ces deux comptes apparaissent sous leur clé dans les coûts et les plafonds.
+- **Modération contournée** (`moderationCallables.ts`, `moderation/origin.ts`). Le client
+  déclarait `origin: "ai"` ou `"asset"` et l'image était publiée sans analyse. `ai` venant
+  d'un client est ignoré ; `asset` n'est retenu que sur l'empreinte SHA-256 d'une couverture
+  livrée. Une illustration retouchée sur l'appareil est donc analysée et facturée comme une
+  autre image (poste `image_moderation`).
+- **Couverture d'autrui** (`moderation/promote.ts`). Couverture de livre et illustration de
+  recette ne se publient que sur le document de l'appelant, ou par un administrateur,
+  contrôlé avant toute analyse facturée.
+- **Storage** : `isActive()` traite l'absence du claim `revoked` comme un compte actif, comme
+  son commentaire le disait. L'écart relevé par la suite de tests est fermé.
+- **Requêtes du client** : `RecipeRepository` scinde une requête par livre ou par statut en
+  « partagées » et « les miennes » (`RecipeViewer`), les livres de la famille filtrent
+  `is_private == false`, et le planning relit recette par recette un lot refusé. Les tests de
+  règles rejouent ces requêtes.
+
+Corrections après relecture (sécurité, interface) :
+
+- **Confidentialité suivant le livre** (`firestore.rules`, client). Une recette créée ou
+  déplacée dans un livre privé avec `is_private: false` restait lisible jusqu'au passage du
+  déclencheur. La règle exige désormais la confidentialité du livre à toute écriture qui pose
+  ou change `book_id` ou `is_private`, et le client l'écrit depuis le livre (`privacyOfBook`).
+- **Version analysée = version publiée** (`moderation/promote.ts`). La génération Storage lue
+  avant l'analyse est épinglée : réécrire le fichier de quarantaine ensuite fait échouer la
+  promotion. `ownerId` contenant « / » est refusé.
+- **Storage** : lister `scans/{uid}/` est réservé au propriétaire et à l'admin, lister
+  `recipes/{recipeId}/` à l'admin. Lire un fichier par son adresse reste ouvert.
+- **Livre supprimé** : son créateur ne supprime ou ne détache que ses recettes ; la boîte
+  annonce les pages des autres membres conservées, et `onBookWritten` les détache à la
+  suppression — elles deviennent des recettes libres de leurs auteurs, sans `book_id` orphelin.
+- **Écrans** : brouillons d'autrui sans « Valider », « Supprimer » ni sélection dans la file ;
+  badge « Recettes à valider » limité à ce qu'on peut valider ; actions recette par recette
+  dans un livre ; export PDF d'un livre ouvert à tout lecteur par une icône directe ; écran de
+  modification du contenu d'autrui ouvert par un lien remplacé par « Seul le créateur peut
+  modifier… » ; message clair quand le compte n'est pas encore chargé.
+
+Troisième passe :
+
+- **Page détachée d'un livre privé** : elle restait publique après le détachement (par le
+  serveur à la suppression du livre, ou par « Détacher les recettes »). Une recette sans livre
+  garde désormais sa confidentialité, le serveur écrit `is_private: true` en détachant les
+  pages d'un livre privé, et une recette libre privée n'est plus rangée dans « Mes recettes
+  libres ».
+- **Recette privée lue par une callable** : conseil de dressage, conseil de conservation,
+  visuel d'une étape et calcul de nutrition refusent la recette privée d'un autre, avant tout
+  appel de modèle (`assertCanReadRecipe`). Qui peut écrire un conseil reste à décider.
+- **Modération** : un document antérieur à l'épinglage n'est plus approuvé si le fichier a
+  changé depuis l'analyse ; il repasse en attente.
+- **Storage** : `covers/`, `illustrations/{uid}` et `users/{uid}` ne se listent que par un
+  admin ; le test « un compte en attente ne liste pas un dossier publié » devient bloquant.
+- **`book_id` avec « / »** refusé par les règles, signalé par le serveur.
+- **Écrans** : boîte de suppression d'un livre ouverte aussitôt, décompte « au moins N », jamais
+  « vos » pour un admin sur le livre d'un autre, message d'échec en clair ; export PDF dans
+  « Plus d'options », ouvert à tout lecteur ; lignes d'autrui grisées en mode sélection et
+  menu absent quand il n'a rien à proposer ; écrans d'édition avec chargement et erreur de
+  compte distincts du refus ; relecture d'un brouillon alignée sur la file pour l'admin.
+
+Quatrième passe :
+
+- **On ne range une recette que dans ses propres livres** (décision de l'utilisateur, option
+  A) ; l'administrateur partout. Les règles l'exigent à la création et à tout changement de
+  livre (le livre doit exister) ; le pipeline d'import le vérifie avant d'écrire hors règles
+  (`assertJobTargetBook`) ; le sélecteur de livre ne propose que les livres de l'utilisateur,
+  tous pour un administrateur. Les pages déjà rangées chez un autre y restent, sans migration.
+- **Recette libre privée** : enregistrer ou valider une recette sans livre ne réécrit plus sa
+  confidentialité ; elle ne redevient pas publique.
+- **Modération** : un ancien document jugé inchangé est promu en épinglant la génération lue
+  à la vérification.
+- **Suppression d'un livre par un administrateur** : la question et le message disent « pour
+  tous leurs auteurs », y compris sur son propre livre ; la ligne du décompte est réservée
+  pendant la recherche.
+
+Cinquième passe :
+
+- Enregistrer une page rangée dans le livre privé d'un autre ne relit plus ce livre (lecture
+  refusée) : le livre n'est lu qu'à un changement de livre.
+- `book_id` doit être nul ou une chaîne.
+- Sélecteur de livre : le livre d'origine d'une page rangée chez un autre reste en tête, avec
+  « Livre d'un autre membre. Choisir un de vos livres y déplace la recette. » ; pour un
+  administrateur, les livres système des autres sont masqués.
+- Import : un lien vers le livre d'un autre n'est plus verrouillé, le choix est effacé ;
+  « Ce scan sera ajouté au livre : … » affiche le titre, jamais l'identifiant. Un refus du
+  serveur part en dead letter avec `failure_reason: foreign_book`.
+- Boîte de suppression d'un livre : hauteur stable pendant le décompte, bouton « Supprimer
+  aussi » en couleur d'erreur lisible.
+
+Tests des règles : 269, dont 255 actifs et 14 `todo` (hors périmètre).
+
+**À lancer après le déploiement : Admin › Backfills › « Reprendre la confidentialité des
+livres »** (un passage, sans appel d'IA). La reprise « Reprendre la confidentialité » de
+l'automne avait posé `is_private` sur les recettes, pas sur les livres ; les règles ne
+laissant lire le livre d'un autre que s'il porte `is_private == false`, un livre sans le champ
+disparaîtrait de la bibliothèque familiale jusqu'à ce passage.
+
 ### v0.23.7 — technique
 
 #### Une suite de tests pour les règles Firestore et Storage

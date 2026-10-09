@@ -88,6 +88,19 @@ void main() {
       expect(r3['book_id'], 'autre-livre');
     });
 
+    // Une page détachée d'un livre privé est une recette libre privée : la
+    // ranger dans « Mes recettes libres » la rendrait partagée.
+    test('une recette libre privée n\'est pas rattachée', () async {
+      await addRecipe('privee', {'book_id': null, 'is_private': true});
+
+      final moved = await repo.migrateLibresRecipes('uid', 'libres', 'Libres');
+
+      expect(moved, 0);
+      final data = (await db.collection('recipes').doc('privee').get()).data()!;
+      expect(data['book_id'], isNull);
+      expect(data['is_private'], isTrue);
+    });
+
     test('un book_id VIDE compte aussi comme absent', () async {
       // Une chaîne vide n'est pas `null` pour Firestore : ces recettes
       // échappaient à la requête et restaient orphelines pour toujours, tout en

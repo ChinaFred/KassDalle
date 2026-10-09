@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import '../domain/book_order.dart';
 import 'book_providers.dart';
+import 'delete_book_flow.dart';
 import 'reorderable_books_grid.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
@@ -695,63 +695,13 @@ class _BookActionsMenu extends ConsumerWidget {
                 context.push('/books/${book.id}/edit');
                 break;
               case _BookAction.delete:
-                final mode = await showDialog<_DeleteBookMode>(
+                await confirmAndDeleteBook(
                   context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Supprimer ce livre ?'),
-                    content: Text(
-                      'Que faire des recettes liées à "${book.titre}" ?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Annuler'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () =>
-                            Navigator.pop(ctx, _DeleteBookMode.detach),
-                        child: const Text('Détacher les recettes'),
-                      ),
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(ctx).colorScheme.error,
-                        ),
-                        onPressed: () =>
-                            Navigator.pop(ctx, _DeleteBookMode.deleteAll),
-                        child: const Text('Supprimer aussi'),
-                      ),
-                    ],
-                  ),
+                  ref: ref,
+                  bookId: book.id,
+                  bookTitre: book.titre,
+                  bookIsPrivate: book.isPrivate,
                 );
-                if (mode == null || !context.mounted) return;
-
-                try {
-                  if (mode == _DeleteBookMode.deleteAll) {
-                    await ref
-                        .read(recipeRepositoryProvider)
-                        .deleteAllRecipesOfBook(book.id);
-                  } else {
-                    await ref
-                        .read(recipeRepositoryProvider)
-                        .detachAllRecipesFromBook(book.id);
-                  }
-                  await ref.read(bookRepositoryProvider).deleteBook(book.id);
-
-                  if (!context.mounted) return;
-                  context.showSuccessSnackBar(
-                    mode == _DeleteBookMode.deleteAll
-                        ? 'Livre et recettes supprimés.'
-                        : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
-                  );
-                } catch (e, stackTrace) {
-                  reportUnexpectedError(
-                    feature: 'bookListScreen.build',
-                    error: e,
-                    stackTrace: stackTrace,
-                  );
-                  if (!context.mounted) return;
-                  context.showErrorSnackBar('Erreur : $e');
-                }
                 break;
             }
           },
@@ -806,5 +756,3 @@ class _BookActionsMenu extends ConsumerWidget {
 }
 
 enum _BookAction { scanPage, scanDocument, edit, delete }
-
-enum _DeleteBookMode { detach, deleteAll }

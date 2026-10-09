@@ -49,10 +49,14 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 | Rôle | Accès |
 |---|---|
-| **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
-| **Editor** | Création, modification et suppression de livres et de recettes. Validation des brouillons IA. Peut annoter. |
+| **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Peut annoter. |
 | **Reader** | Consultation, annotation, notation, planning, export PDF. **Crée, modifie et valide ses propres recettes** : `firestore.rules` autorise la création et la mise à jour par le créateur, quel que soit son rôle. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. **Il n'importe pas** : l'import d'une recette ou d'un livre (`/scan`) lance des appels d'IA facturés et reste réservé à l'Editor et à l'Admin. Les boutons d'import lui sont masqués ; s'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
+
+> Administration › Backfills porte depuis la v0.23.8 « Reprendre la confidentialité des livres » : à lancer une fois après le déploiement, il pose « partagé » sur les livres qui ne disent pas s'ils sont privés — sans quoi la famille ne les voit plus.
+
+> Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -100,7 +104,7 @@ Création à partir d'un PDF ou d'un EPUB (« Ajouter à partir d'un PDF ou d'un
 - Un import qui échoue après la lecture de la page ne relit pas la page à la relance : la transcription réussie est gardée sur le traitement, et seule la suite est refaite.
 - Sont refusés avec un message clair : un PDF chiffré, un EPUB sans texte (pages en images), un livre qui demanderait plus de 400 imports.
 
-**Modification / Suppression :** accessible via le détail du livre. La suppression d'un livre demande une confirmation explicite car elle entraîne la dissociation des recettes liées (les recettes ne sont pas supprimées, elles deviennent "sans livre").
+**Modification / Suppression :** accessible via le détail du livre, à son créateur et à un Admin. La suppression demande une confirmation : « Supprimer aussi » supprime les recettes, « Détacher les recettes » en fait des recettes libres. Le créateur n'agit que sur ses propres recettes ; un Admin agit sur toutes. Les pages ajoutées par d'autres membres sont conservées et détachées : elles deviennent des recettes libres de leurs auteurs, privées si le livre l'était.
 
 ---
 
@@ -172,7 +176,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 ### 4.4 Consultation d'une Recette
 
-**Qui :** Tout utilisateur authentifié (Reader, Editor, Admin).
+**Qui :** Tout compte nommé (Reader, Editor, Admin) qui voit la recette. Les annotations
+d'une recette sont visibles par tous ceux qui voient cette recette ; celles d'une recette
+privée, par son créateur et un Admin seulement — et par leur auteur.
 
 1. L'utilisateur navigue dans la bibliothèque (vue par livre ou vue globale).
 2. La liste d'un livre ne porte ni filtre ni champ de recherche : chercher se fait depuis l'écran **Recherche** dédié (5.5).
@@ -202,7 +208,8 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   (« Ma note ») avec un raccourci vers le sélecteur 0–10. C'est un raccourci :
   la note reste stockée dans `recipe_ratings`, jamais dans l'annotation.
 - Un utilisateur peut modifier ou supprimer **ses propres** annotations.
-- Un Admin ou Editor peut supprimer n'importe quelle annotation.
+- Un Admin peut modifier ou supprimer n'importe quelle annotation. Un Editor, comme un
+  Reader, ne touche qu'aux siennes.
 - **Écriture au stylet** : un stylet posé sur le champ de l'annotation ouvre un pavé
   d'écriture — un grand champ, toute la largeur, tout l'espace au-dessus du clavier — où
   l'écriture manuscrite du système est convertie en texte ; *Terminé* le referme. Le champ du
@@ -462,7 +469,9 @@ pas dans le calcul.
 
 **Un livre se rend privé depuis son formulaire**, à la création comme à la
 modification : un interrupteur « Livre privé ». Le créateur en devient alors le
-seul lecteur. Le basculement annonce ce qu'il emporte — « les 34 recettes de ce
+seul lecteur, avec les Admins. Les règles Firestore l'imposent depuis la v0.23.8 :
+un compte qui interroge la base directement ne lit pas davantage que ce que montrent
+les écrans, annotations et notes comprises. Le basculement annonce ce qu'il emporte — « les 34 recettes de ce
 livre disparaîtront de la bibliothèque, de la recherche et du planning des membres
 de vos groupes » — parce qu'une case cochée qui retire trente recettes à quatre
 personnes doit se mesurer avant, pas après. Un cadenas marque la vignette dans la
@@ -590,19 +599,27 @@ déjà transmise continue de fonctionner.
 | Premier admin | Le compte **fondateur** — l'adresse `china.fred.75@gmail.com`, vérifiée sur le compte Auth par le déclencheur `enforceFounderRole` — est administrateur, et le reste. Tous les autres administrateurs procèdent d'une nomination. La règle précédente (« le premier UID enregistré reçoit `admin` ») était appliquée **par le client** : elle laissait n'importe qui créer son document avec `role: "admin"`. |
 | Autorité sur le fondateur | Seul le fondateur peut modifier son propre rôle ou sa révocation, et son compte ne peut pas être supprimé. Sans cette réserve, un administrateur adoubé pouvait destituer celui qui l'avait nommé. |
 | Conservation du scan | L'image ou le fichier source (PDF/image) est toujours conservé dans Firebase Storage et lié à vie à la recette (`sourceFileUrl`). Il ne peut pas être supprimé tant que la recette existe. |
-| Brouillons visibles | Les recettes en statut `draft` sont visibles uniquement par leur propriétaire (si Editor/Admin). Les brouillons d'un groupe sont visibles en lecture seule via le toggle 👥 dans l'écran Brouillons. |
+| Brouillons visibles | Les recettes en statut `draft` sont visibles par leur propriétaire. Un Editor ou un Admin voit aussi en lecture seule les brouillons **partagés** d'un groupe, via le toggle 👥 dans l'écran Brouillons ; un Reader ne voit que les siens. Un brouillon d'un livre privé n'est visible que par son créateur et un Admin. |
 | Isolation des données | Chaque utilisateur possède ses propres livres et recettes (champ `created_by`). La visibilité cross-utilisateur est contrôlée exclusivement par l'appartenance aux groupes familiaux. |
 | Validation exclusive | Seul le propriétaire d'un brouillon peut le valider ou le supprimer. Cette règle est enforced à la fois dans l'UI (boutons masqués) et dans le dépôt (vérification Firestore avant écriture). |
 | Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
 | Import réservé | Importer une recette ou un livre (`/scan`), et relancer un import, est réservé à l'Editor et à l'Admin. Les règles Firestore refusent le traitement créé ou relancé par un Reader. Joindre un fichier source à sa propre recette reste permis au Reader. |
-| Annotations non modifiables par autrui | Un Reader ne peut modifier/supprimer que ses propres annotations. |
+| Annotations non modifiables par autrui | Un Reader ou un Editor ne peut modifier/supprimer que ses propres annotations ; un Admin peut toutes les modifier. |
+| On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
+| Suppression d'un livre | Le créateur ne supprime ou ne détache que ses recettes ; un Admin agit sur toutes, et la boîte le lui dit (« pour tous leurs auteurs »). La boîte s'ouvre aussitôt et annonce les pages ajoutées par d'autres membres (« Au moins 2 pages ajoutées par d'autres membres seront conservées » ; sans chiffre pour un livre privé), et le message de fin dit ce qui reste. À la suppression, le serveur détache ces pages : aucune ne garde le lien vers un livre disparu, et celles d'un livre privé restent privées. Un échec affiche « La suppression du livre a échoué. Réessayez. » |
+| Export PDF d'un livre | Tout lecteur d'un livre l'exporte, depuis le menu « Plus d'options » de la liste du livre. « Modifier le livre » et « Supprimer le livre » n'y apparaissent qu'à son créateur et à un Admin. |
+| Recette privée et IA | Le conseil de dressage, le conseil de conservation, le visuel d'une étape et le calcul de nutrition refusent la recette privée d'un autre membre ; un Admin y accède. |
+| Badge « Recettes à valider » | Dans un livre, ne compte que les brouillons que le lecteur peut valider : les siens, tous pour un Admin. |
+| Confidentialité d'une recette | Une recette a toujours la confidentialité de son livre : elle est posée à la création, au déplacement et à la validation, et les règles refusent une recette partagée dans un livre privé. Une recette sans livre garde la sienne. |
+| Ranger dans ses propres livres | On ne crée, ne déplace ni n'importe une recette que dans **ses** livres ; un Admin range partout. Le choix du livre ne propose que les livres de l'utilisateur ; un Admin voit aussi ceux des autres, sauf leurs livres système. Quand on modifie une page rangée dans le livre d'un autre, ce livre reste proposé en tête, avec la mention « Livre d'un autre membre » : en choisir un autre déplace la page. Les pages déjà rangées dans le livre d'un autre y restent, et se modifient sans changer de livre. |
+| Privé = créateur seul | Un livre ou une recette privé ne se lit que par son créateur et un Admin, y compris ses annotations et ses notes. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
 | Toute recette a un livre | Il n'y a plus de recette orpheline : sans choix, elle rejoint « Mes recettes libres » ; conçue par l'IA, elle rejoint « Mes créations Kass'Dalle ». La règle est posée à l'entonnoir de création, pas dans un écran. |
 | Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle » et « Mes recettes secrètes » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. |
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
 | Une contrainte d'ensemble se donne à chaque appel | L'IA conçoit les plats **un créneau à la fois**. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque appel voit ce que les autres ont déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
-| Aucune image *envoyée* n'est publiée sans modération | Les dossiers publiés sont fermés en écriture aux **clients** côté Storage. La seule porte ouverte à un client est la quarantaine, suivie d'un verdict ; une image sans verdict attend, ni publiée ni refusée. Le serveur écrit en direct dans deux cas nommés en 5.11 — découpes d'un scan déjà accepté, images produites par l'IA. |
+| Aucune image *envoyée* n'est publiée sans modération | Les dossiers publiés sont fermés en écriture aux **clients** côté Storage. La seule porte ouverte à un client est la quarantaine, suivie d'un verdict ; une image sans verdict attend, ni publiée ni refusée. Ce que le client déclare de l'origine d'une image ne la dispense pas d'analyse : seule une couverture livrée avec l'application, reconnue à son empreinte, passe sans analyse. Le serveur écrit en direct dans deux cas nommés en 5.11 — découpes d'un scan déjà accepté, images produites par l'IA. |
 | Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense ; un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
@@ -998,7 +1015,14 @@ redéployer pour faire bouger.
 
 - **Les images produites par l'IA** — dressage, couvertures générées. Elles sortent d'un
   moteur qui applique déjà ses propres garde-fous ; les repasser au contrôle double le
-  coût pour rien. **Décision prise : elles ne passent pas.**
+  coût pour rien. **Décision prise : elles ne passent pas** — à condition que le serveur
+  les produise lui-même. Une image que l'appareil envoie en se disant « produite par l'IA »
+  (illustration retouchée sur l'appareil) est analysée comme une autre depuis la v0.23.8.
+- **Les couvertures livrées avec l'application** (livres système), reconnues à l'empreinte
+  du fichier, pas à ce que l'appareil en dit.
+
+La version publiée est celle qui a été analysée : réécrire le fichier après l'analyse fait
+échouer la publication.
 - **Le texte** — titres, étapes, annotations. Autre sujet, autres outils.
 - **Les images déjà en ligne.** La modération ne vaut que pour ce qui arrive après elle.
   Reprendre l'existant est un backfill, à décider séparément — l'écran Backfills existe.

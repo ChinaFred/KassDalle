@@ -141,3 +141,27 @@ final myBooksOrderedProvider = Provider<AsyncValue<List<Book>>>((ref) {
       .watch(myBooksProvider)
       .whenData((books) => applyBookOrder(books, order));
 });
+
+/// Les livres où l'utilisateur peut ranger une recette : les siens, rangés
+/// comme il les a rangés ; un administrateur y ajoute ceux des autres.
+///
+/// Décision de l'utilisateur (v0.23.8) : on ne range une recette que dans ses
+/// propres livres, l'administrateur partout. Les règles Firestore et le
+/// pipeline d'import le refusent de toute façon ; le sélecteur ne propose pas
+/// un choix qui échouerait à l'enregistrement.
+final targetBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
+  final mine = ref.watch(myBooksOrderedProvider);
+  if (!ref.watch(isAdminProvider)) return mine;
+  final others = ref.watch(allBooksProvider).value ?? const <Book>[];
+  // Les livres système des autres (« Mes recettes libres » de chacun…)
+  // portent tous le même titre : les proposer donnait une liste de doublons
+  // indiscernables. Le nom du propriétaire n'est pas ajouté au titre : le
+  // sélecteur rend ce titre, qui s'écrit dans `book_titre` de la recette.
+  return mine.whenData((books) {
+    final ids = {for (final b in books) b.id};
+    return [
+      ...books,
+      ...others.where((b) => !ids.contains(b.id) && !b.isSystemBook),
+    ];
+  });
+});

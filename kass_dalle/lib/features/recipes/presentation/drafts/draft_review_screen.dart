@@ -553,10 +553,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         }
         initFormFromRecipe(recipe, useDraft: true);
 
-        final myUid = ref.watch(appUserProvider).value?.uid ?? '';
-        final isOwner = recipe.createdBy == myUid;
+        final me = ref.watch(appUserProvider).value;
+        final isMine = recipe.createdBy == (me?.uid ?? '');
+        // Les gestes de modification suivent la même règle que la file des
+        // brouillons et que `firestore.rules` : créateur ou administrateur.
+        final isOwner = me?.canModifyRecipe(recipe.createdBy) ?? false;
         final isAdmin = ref.watch(isAdminProvider);
-        final ownerName = !isOwner
+        final ownerName = !isMine
             ? ref
                   .watch(userByUidProvider(recipe.createdBy))
                   .value
@@ -751,7 +754,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 IconButton(
                   icon: const Icon(Icons.copy_outlined),
                   tooltip: 'Copier comme mon brouillon',
-                  onPressed: saving ? null : () => _copyAsDraft(recipe, myUid),
+                  onPressed: saving
+                      ? null
+                      : () => _copyAsDraft(recipe, me?.uid ?? ''),
                 ),
             ],
           ),

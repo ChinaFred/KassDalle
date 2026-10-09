@@ -172,6 +172,47 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Confidentialité des livres (v0.23.8). Les règles Firestore ne laissent
+  /// lire le livre d'un autre que s'il porte `is_private: false` : un livre
+  /// sans le champ disparaissait de la bibliothèque familiale.
+  Future<void> _runBackfillBookPrivacy() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reprendre la confidentialité des livres'),
+        content: const Text(
+          'Pose « partagé » sur les livres qui ne disent pas s\'ils sont '
+          'privés (« privé » pour Mes Recettes Secrètes). Sans cela, ces '
+          'livres ne sont plus visibles que de leur créateur.\n\n'
+          'Aucun appel d\'IA. Un livre déjà renseigné n\'est pas touché ; '
+          'relancer ne refait rien. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Reprise de la confidentialité des livres en cours...',
+      feature: 'admin_backfill_book_privacy',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillBookPrivacy(),
+      format: (r) =>
+          'Livres : examinés=${r['examines']}, partagés=${r['partages']}, '
+          'privés=${r['prives']}, déjà renseignés=${r['dejaAJour']}, '
+          'en erreur=${r['echoues']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer pour continuer'}',
+    );
+  }
+
   Future<void> _runBackfillNutrition() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -480,6 +521,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À relancer après '
                           'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.lock_outline,
+                      title: 'Reprendre la confidentialité des livres',
+                      subtitle:
+                          'À lancer une fois après la v0.23.8 : pose « partagé » '
+                          'sur les livres sans réglage de confidentialité, '
+                          'sans quoi la famille ne les voit plus. Aucun appel '
+                          'd\'IA.',
+                      onTap: _busy ? null : _runBackfillBookPrivacy,
                     ),
                   ],
                 ),

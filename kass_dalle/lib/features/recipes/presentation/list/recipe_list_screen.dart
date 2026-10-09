@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../books/domain/book.dart';
 import '../../../books/presentation/book_providers.dart';
+import '../../../books/presentation/delete_book_flow.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
@@ -17,8 +18,6 @@ import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
 enum _BookMenuAction { edit, exportPdf, delete }
-
-enum _DeleteBookMode { detach, deleteAll }
 
 class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -150,6 +149,14 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         : const AsyncData<Book?>(null);
     final book = bookAsync.value;
     final ownerUid = book?.createdBy ?? '';
+    // Dans un livre, les gestes qui le modifient — ajouter des pages, le
+    // modifier, le supprimer, retoucher ses recettes — sont réservés à son
+    // créateur et à un administrateur, comme dans `firestore.rules`. Un
+    // éditeur consulte et exporte le livre d'un autre ; il ne le change pas.
+    final canEditBook =
+        !inBookContext ||
+        (ref.watch(appUserProvider).value?.canModifyBook(ownerUid) ?? false);
+    final canEditHere = canEdit && canEditBook;
     // D'où vient ce livre : qui le tient, et par quel groupe familial il
     // m'arrive. Le nom du propriétaire tenait auparavant entre parenthèses
     // dans le titre — il n'apprenait pas le lien, et allongeait un titre déjà
@@ -264,7 +271,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       child: const Icon(Icons.edit_note_outlined),
                     ),
                   ),
-                if (inBookContext && canEdit)
+                if (inBookContext && canEditHere)
                   IconButton(
                     tooltip:
                         'Ajouter des pages dans ce livre à partir d'
@@ -279,21 +286,26 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                     sourceFileUrl: bookAsync.value?.sourceFileUrl,
                     sourceFileName: bookAsync.value?.sourceFileName,
                   ),
-                if (inBookContext && canEdit)
+                // « Plus d'options » est ouvert à tout lecteur du livre :
+                // l'export se lit et ne modifie rien. Il était réservé aux
+                // éditeurs, et un lecteur ne pouvait pas exporter. Modifier
+                // et supprimer restent au créateur et à l'administrateur.
+                if (inBookContext)
                   PopupMenuButton<_BookMenuAction>(
                     tooltip: 'Plus d\'options',
                     onSelected: (action) =>
                         _onBookMenuAction(context, action, book: book),
                     itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: _BookMenuAction.edit,
-                        child: ListTile(
-                          leading: Icon(Icons.edit_outlined),
-                          title: Text('Modifier le livre'),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
+                      if (canEditHere)
+                        const PopupMenuItem(
+                          value: _BookMenuAction.edit,
+                          child: ListTile(
+                            leading: Icon(Icons.edit_outlined),
+                            title: Text('Modifier le livre'),
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
                       const PopupMenuItem(
                         value: _BookMenuAction.exportPdf,
                         child: ListTile(
@@ -303,7 +315,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                      if (bookAsync.value?.isSystemBook != true) ...[
+                      if (canEditHere &&
+                          bookAsync.value?.isSystemBook != true) ...[
                         const PopupMenuDivider(),
                         PopupMenuItem(
                           value: _BookMenuAction.delete,
@@ -338,6 +351,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 showUnattached: widget.showUnattached,
                 recipesAsync: recipesAsync,
                 canEdit: canEdit,
+                // Recette par recette, pas selon le propriétaire du livre :
+                // la page d'un autre membre ne se modifie que par lui ou un
+                // administrateur, et ma page dans son livre reste la mienne.
+                canModifyRecipe: (r) =>
+                    ref
+                        .read(appUserProvider)
+                        .value
+                        ?.canModifyRecipe(r.createdBy) ??
+                    false,
                 selectionMode: _selectionMode,
                 selectedIds: _selectedIds,
                 onItemSelect: _onItemSelect,
@@ -354,7 +376,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       ),
       // « Ajouter » n'ouvre plus de sous-menu : il mène à la page d'import,
       // qui porte désormais les trois voies — photo, fichier, texte.
-      floatingActionButton: canEdit
+      floatingActionButton: canEditHere
           ? FloatingActionButton.extended(
               onPressed: () =>
                   inBookContext ? _goToScan(context) : _goToScanFree(context),
@@ -380,7 +402,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         await _exportBookPdf(context, book);
         break;
       case _BookMenuAction.delete:
-        await _confirmDeleteBook(context);
+        await _confirmDeleteBook(context, book);
         break;
     }
   }
@@ -389,15 +411,19 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final bookId = widget.bookId;
     if (bookId == null || bookId.isEmpty) return;
 
+    final viewer = ref.read(recipeViewerProvider);
+    if (viewer == null) {
+      context.showErrorSnackBar(kAccountNotLoadedMessage);
+      return;
+    }
     context.showSnackBar(
       'Génération du PDF du livre…',
       duration: const Duration(seconds: 2),
     );
-
     try {
       final pages = await ref
           .read(recipeRepositoryProvider)
-          .getAllValidatedPagesByBook(bookId);
+          .getAllValidatedPagesByBook(bookId, viewer);
 
       if (!context.mounted) return;
       if (pages.isEmpty) {
@@ -435,59 +461,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     }
   }
 
-  Future<void> _confirmDeleteBook(BuildContext context) async {
-    final bookId = widget.bookId!;
-    final bookTitre = widget.bookTitre ?? 'ce livre';
-    final mode = await showDialog<_DeleteBookMode>(
+  Future<void> _confirmDeleteBook(BuildContext context, Book? book) async {
+    final deleted = await confirmAndDeleteBook(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer ce livre ?'),
-        content: Text('Que faire des recettes liées à "$bookTitre" ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.pop(ctx, _DeleteBookMode.detach),
-            child: const Text('Détacher les recettes'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, _DeleteBookMode.deleteAll),
-            child: const Text('Supprimer aussi'),
-          ),
-        ],
-      ),
+      ref: ref,
+      bookId: widget.bookId!,
+      bookTitre: book?.titre ?? widget.bookTitre ?? 'ce livre',
+      bookIsPrivate: book?.isPrivate ?? false,
     );
-    if (mode == null || !mounted) return;
-    try {
-      if (mode == _DeleteBookMode.deleteAll) {
-        await ref.read(recipeRepositoryProvider).deleteAllRecipesOfBook(bookId);
-      } else {
-        await ref
-            .read(recipeRepositoryProvider)
-            .detachAllRecipesFromBook(bookId);
-      }
-      await ref.read(bookRepositoryProvider).deleteBook(bookId);
-      if (!mounted) return;
-      this.context.go('/');
-      this.context.showSuccessSnackBar(
-        mode == _DeleteBookMode.deleteAll
-            ? 'Livre et recettes supprimés.'
-            : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
-      );
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeListScreen.confirmDeleteBook',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      this.context.showErrorSnackBar('Erreur : $e');
-    }
+    if (deleted && mounted) this.context.go('/');
   }
 
   void _showCoverZoom(BuildContext context, String coverUrl) {

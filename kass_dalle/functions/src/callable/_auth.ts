@@ -102,6 +102,15 @@ async function accountFromFirestore(uid: string): Promise<AccountState> {
   return { role, revoked: data?.is_revoked === true };
 }
 
+/**
+ * Le compte est-il administrateur, lu sur son document (une révocation ne
+ * s'attend pas) ? Sert les contrôles de propriété : l'administrateur agit sur
+ * le contenu d'autrui comme son créateur.
+ */
+export async function isAdminAccount(uid: string): Promise<boolean> {
+  return accessDenial(await accountFromFirestore(uid), "admin") === null;
+}
+
 function deny(denial: { message: string }): never {
   throw new HttpsError("permission-denied", denial.message);
 }

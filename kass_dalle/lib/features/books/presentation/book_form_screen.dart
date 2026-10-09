@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../auth/presentation/not_owner_scaffold.dart';
+import '../../../core/widgets/app_states.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
@@ -39,6 +41,19 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
   /// Le livre est-il réservé à son créateur ?
   bool _isPrivate = false;
+
+  /// Le livre à modifier, lu une seule fois : créé dans `build`, le futur
+  /// relisait le livre à chaque reconstruction.
+  Future<Book?>? _bookFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final bookId = widget.bookId;
+    if (bookId != null) {
+      _bookFuture = ref.read(bookRepositoryProvider).getBook(bookId);
+    }
+  }
 
   // Couverture sélectionnée localement (avant upload)
   Uint8List? _localCoverBytes;
@@ -188,9 +203,11 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
     int recipeCount;
     try {
+      final viewer = ref.read(recipeViewerProvider);
+      if (viewer == null) throw StateError('Compte non chargé');
       recipeCount = await ref
           .read(recipeRepositoryProvider)
-          .countInBook(existing.id);
+          .countInBook(existing.id, viewer);
     } catch (e, stackTrace) {
       // Le décompte échoue : on demande quand même, sans le chiffre. Renoncer
       // au basculement parce qu'on n'a pas su compter serait pire.
@@ -384,12 +401,23 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       return _buildScaffold(existing: null);
     }
 
+    // Lu ici, dans `build`, pour que la garde suive le compte.
+    final userAsync = ref.watch(appUserProvider);
+    Widget? gateFor(Book existing) => ownershipGate(
+      ref: ref,
+      userAsync: userAsync,
+      title: 'Modifier le livre',
+      message: 'Seul le créateur peut modifier ce livre.',
+      fallbackLocation: '/',
+      canModify: (u) => u.canModifyBook(existing.createdBy),
+    );
     return FutureBuilder<Book?>(
-      future: ref.read(bookRepositoryProvider).getBook(bookId),
+      future: _bookFuture,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return Scaffold(
+            appBar: AppBar(title: const Text('Modifier le livre')),
+            body: const AppLoadingState(),
           );
         }
         final existing = snap.data;
@@ -399,6 +427,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             body: const Center(child: Text('Livre introuvable')),
           );
         }
+        final gate = gateFor(existing);
+        if (gate != null) return gate;
         _initFromBook(existing);
         return _buildScaffold(existing: existing);
       },

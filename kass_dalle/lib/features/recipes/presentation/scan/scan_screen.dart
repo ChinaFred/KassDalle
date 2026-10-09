@@ -88,6 +88,11 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
   ScanIntent _selectedIntent = ScanIntent.recipe;
   bool _seededFromQuery = false;
 
+  /// Livre reçu par l'URL (`?bookId=`), vérifié une fois contre les livres où
+  /// l'utilisateur peut ranger une recette.
+  String? _queryBookId;
+  bool _queryBookChecked = false;
+
   /// Extraire les illustrations : le choix de cet écran, pas celui du compte.
   ///
   /// Il part du défaut enregistré dans les préférences, se garde d'un import au
@@ -158,6 +163,8 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
       }
       _scanNotifier.reset();
       _seededFromQuery = false;
+      _queryBookId = null;
+      _queryBookChecked = false;
       _autoStartedCamera = false;
       _showingEnhancer = false;
       _enhancerBytes = null;
@@ -179,6 +186,7 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
       _seededFromQuery = true;
       _selectedBookId = query['bookId'];
       _selectedBookTitre = query['bookTitre'];
+      _queryBookId = query['bookId'];
       final mode = query['mode'];
       if (mode == 'book-cover') {
         _selectedIntent = ScanIntent.bookCover;
@@ -188,7 +196,6 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
         _selectedIntent = ScanIntent.recipe;
       }
     }
-    final lockBook = (_selectedBookId ?? '').isNotEmpty;
 
     // Le défaut du compte arrive après coup : on l'applique à la première
     // lecture réussie, et plus jamais ensuite — sinon un rafraîchissement
@@ -215,7 +222,25 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
         }
       });
     }
-    final booksAsync = ref.watch(myBooksOrderedProvider);
+    final booksAsync = ref.watch(targetBooksProvider);
+
+    // Le livre de l'URL n'est verrouillé que s'il fait partie des livres de
+    // l'utilisateur (tous pour un administrateur). Sinon — le livre d'un
+    // autre membre, ou un lien périmé — le choix est effacé et le sélecteur
+    // propose ses livres : l'import serait refusé par le serveur.
+    final books = booksAsync.value;
+    final queryBookId = _queryBookId ?? '';
+    final queryBook = books == null || queryBookId.isEmpty
+        ? null
+        : books.where((b) => b.id == queryBookId).firstOrNull;
+    if (books != null && !_queryBookChecked) {
+      _queryBookChecked = true;
+      if (queryBookId.isNotEmpty && queryBook == null) {
+        _selectedBookId = null;
+        _selectedBookTitre = null;
+      }
+    }
+    final lockBook = queryBook != null && _selectedBookId == queryBook.id;
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
     // Auto-démarrage caméra uniquement sur mobile natif (pas web : le navigateur
@@ -351,7 +376,7 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      'Ce scan sera ajoute au livre: ${_selectedBookTitre ?? _selectedBookId}',
+                      'Ce scan sera ajouté au livre : ${queryBook.titre}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

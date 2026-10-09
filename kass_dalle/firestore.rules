@@ -161,6 +161,66 @@ service cloud.firestore {
       }
     }
 
+    // ── Confidentialité et propriété des livres et des recettes ─────────────
+    //
+    // Décisions de l'utilisateur (2026-10-09) :
+    //  • un document privé (`is_private == true`) ne se lit que par son
+    //    créateur — et par un administrateur, qui voit tout ;
+    //  • on ne modifie et ne supprime que ses propres livres et recettes,
+    //    éditeur compris ; l'administrateur agit comme le créateur ;
+    //  • `created_by` vaut l'appelant à la création et ne change plus
+    //    ensuite, administrateur compris : c'est le compte auquel les
+    //    déclencheurs imputent la dépense d'IA d'une recette.
+    //
+    // Auparavant la confidentialité ne vivait que dans les requêtes du client :
+    // un compte qui interrogeait Firestore directement lisait les livres et
+    // recettes privés des autres, et leurs annotations. Et un lecteur pouvait
+    // vider `created_by` de sa propre recette pour faire tourner les
+    // déclencheurs nutrition hors de tout plafond.
+    //
+    // Un document n'est partagé que s'il porte `is_private == false`. Les
+    // règles ne lisent pas ce champ par `get('is_private', false)` : dans une
+    // requête, une valeur par défaut n'est pas prouvée par les filtres — une
+    // liste sans filtre de confidentialité serait passée. Le champ est posé à
+    // la création (client et serveur). Pour le fonds antérieur : la reprise
+    // « Reprendre la confidentialité » l'a posé sur les recettes, et les livres
+    // ne l'ont qu'après `backfillBookPrivacyFn` (Admin › Backfills, v0.23.8).
+    // Un document qui ne le porte pas reste lisible par son créateur et par un
+    // administrateur.
+    //
+    // Les requêtes du client filtrent `is_private == false` ou
+    // `created_by == uid` : c'est ce qui permet à ces règles de prouver chaque
+    // résultat, sans quoi Firestore refuse la requête entière.
+
+    function isSharedDoc(data) {
+      return data.is_private == false;
+    }
+
+    function isCreator(data) {
+      return isAuthenticated() && data.created_by == request.auth.uid;
+    }
+
+    /// `created_by` inchangé par l'écriture en cours.
+    function keepsCreator() {
+      return request.resource.data.get('created_by', null)
+        == resource.data.get('created_by', null);
+    }
+
+    /// Lecture d'une recette. Un brouillon partagé reste lisible par un
+    /// éditeur (relecture) ; une recette privée, jamais par un autre que son
+    /// créateur ou un administrateur.
+    function canReadRecipe(data) {
+      return isApproved() && (
+        (isSharedDoc(data) && (data.review_status == 'validated' || isEditor()))
+        || isCreator(data)
+        || isAdmin()
+      );
+    }
+
+    function recipeDoc(recipeId) {
+      return get(/databases/$(database)/documents/recipes/$(recipeId)).data;
+    }
+
     // Collection books
     match /books/{bookId} {
       // Les trois livres système se reconnaissent à leur tag interne. Ils se
@@ -176,45 +236,94 @@ service cloud.firestore {
           && data.tags.hasAny(['__libres', '__kassdale_ia', '__secretes']);
       }
 
-      allow read: if isApproved();
-      allow create, update: if isEditor();
-      allow delete: if isEditor() && !isSystemBook(resource.data);
+      allow read: if isApproved()
+        && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator();
+      allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
+        && !isSystemBook(resource.data);
     }
 
     // Collection recipes
     match /recipes/{recipeId} {
-      // Brouillons visibles par editors/admins ou par le créateur
-      allow read: if isApproved() &&
-        (resource.data.review_status == 'validated'
-          || isEditor()
-          || isOwner(resource.data.created_by));
+      // Le livre d'une recette, contrôlé à toute écriture qui pose ou change
+      // `book_id` (et, pour la seule confidentialité, à celle qui change
+      // `is_private`). Un seul `get()` du livre par écriture.
+      //
+      //  • Propriété (décision de l'utilisateur, v0.23.8) : on ne range une
+      //    recette que dans SES livres — l'administrateur partout. Le livre
+      //    doit exister. Une page d'autrui déjà rangée dans un livre y reste :
+      //    une écriture qui ne change pas `book_id` n'est pas contrôlée ici.
+      //  • Confidentialité : la recette porte celle de son livre. Une recette
+      //    créée ou déplacée dans un livre privé avec `is_private: false`
+      //    restait lisible par la famille jusqu'au passage de
+      //    `syncRecipePrivacy`.
+      //
+      // Sans livre (`book_id` absent, nul ou vide) : rien à vérifier ; une
+      // recette sans livre garde la confidentialité qu'elle porte. Un « / »
+      // dans `book_id` viserait un autre document que le livre : refusé.
+      function bookAccepts(book, checkOwner) {
+        return book != null
+          && (!checkOwner || isAdmin() || book.data.get('created_by', null) == request.auth.uid)
+          && request.resource.data.get('is_private', false) == book.data.get('is_private', false);
+      }
 
-      // Création : editors/admins, ou tout compte nommé pour ses propres brouillons
-      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
+      function bookCheck(checkOwner) {
+        let bookId = request.resource.data.get('book_id', null);
+        // `book_id` est nul ou une chaîne : un autre type (nombre, liste) est
+        // refusé plutôt que traité comme « sans livre ».
+        return bookId == null
+          || (bookId is string && (bookId == ''
+          || (!bookId.matches('.*/.*')
+              && exists(/databases/$(database)/documents/books/$(bookId))
+              && bookAccepts(get(/databases/$(database)/documents/books/$(bookId)), checkOwner))));
+      }
 
-      // Mise à jour : editors/admins OU le créateur (pour ses propres recettes)
-      allow update: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
+      function changes(field) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+      }
 
-      // Suppression : editors/admins OU le créateur (pour ses propres brouillons/recettes)
-      allow delete: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
+      allow read: if canReadRecipe(resource.data);
 
-      // Annotations
+      // Création : tout compte nommé, toujours à son propre nom — éditeur et
+      // administrateur compris. Le serveur (Admin SDK) écrit hors de ces règles.
+      allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
+        && bookCheck(true);
+
+      // Mise à jour et suppression : le créateur ou un administrateur.
+      allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && ((changes('book_id') && bookCheck(true))
+            || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
+      allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
+
+      // Annotations : tout compte nommé qui voit la recette en lit et en pose ;
+      // seuls l'auteur et un administrateur les modifient ou les suppriment.
+      // L'auteur relit toujours la sienne, même si la recette a cessé de lui
+      // être visible.
       match /annotations/{annotationId} {
-        allow read: if isApproved();
-        allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
-        allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
+        allow read: if isApproved()
+          && (isOwner(resource.data.uid) || canReadRecipe(recipeDoc(recipeId)));
+        allow create: if isApproved() && request.resource.data.uid == request.auth.uid
+          && canReadRecipe(recipeDoc(recipeId));
+        allow update: if isApproved() && (isOwner(resource.data.uid) || isAdmin())
+          && request.resource.data.uid == resource.data.uid;
+        allow delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
     }
 
-    // Notes de recettes (recipe_ratings)
+    // Notes de recettes (recipe_ratings) — même confidentialité que la
+    // recette notée, lue par `get()` sur `recipe_id`.
     match /recipe_ratings/{ratingId} {
-      allow read: if isApproved();
-      allow create: if isApproved() && request.resource.data.user_id == request.auth.uid;
-      // `write` couvrait aussi la création, où `resource` n'existe pas encore :
-      // la clause était donc toujours fausse à la création et seule la règle
-      // `create` opérait. Dire explicitement ce qui est permis vaut mieux
-      // qu'une règle dont une moitié ne s'applique jamais.
-      allow update, delete: if isOwner(resource.data.user_id) || isAdmin();
+      allow read: if isApproved() && (isOwner(resource.data.user_id)
+        || canReadRecipe(recipeDoc(resource.data.recipe_id)));
+      allow create: if isApproved() && request.resource.data.user_id == request.auth.uid
+        && canReadRecipe(recipeDoc(request.resource.data.recipe_id));
+      // `user_id` et `recipe_id` sont figés : l'identifiant du document les
+      // contient tous les deux.
+      allow update: if (isOwner(resource.data.user_id) || isAdmin())
+        && request.resource.data.user_id == resource.data.user_id
+        && request.resource.data.get('recipe_id', null) == resource.data.get('recipe_id', null);
+      allow delete: if isOwner(resource.data.user_id) || isAdmin();
     }
 
     // Groupes familiaux

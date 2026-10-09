@@ -147,11 +147,16 @@
         </thead>
         <tbody>
           <tr><td>Lire les recettes et livres accessibles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Noter, annoter, planifier, exporter en PDF</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire le livre ou la recette <b>privé</b> d'autrui, ses annotations et ses notes</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Rechercher et faire générer une recette par l'IA</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer, modifier, valider ses propres recettes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer et modifier des livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Modifier les recettes d'autrui</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer, modifier, valider ses propres recettes, rangées dans ses propres livres</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer des livres, modifier et supprimer les siens (couverture comprise)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Modifier ou supprimer le livre ou la recette d'autrui, changer sa couverture ou ses illustrations — l'écran de modification ouvert par un lien le dit avant toute saisie</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Ranger une recette dans le livre d'un autre membre (création, déplacement, import)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Valider ou supprimer le brouillon d'un autre membre (la relecture et la copie restent ouvertes)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Supprimer son livre — les pages ajoutées par d'autres membres sont conservées et deviennent leurs recettes libres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>) — réservé à l'éditeur et à l'admin, imposé par les règles Firestore ; un lecteur qui ouvre <span class="path">/scan</span> voit que l'import lui est fermé</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
@@ -167,8 +172,11 @@
       Un <code>reader</code> n'est pas un simple spectateur : il crée et valide <b>ses</b>
       recettes. Les règles Firestore autorisent la création et la mise à jour par le créateur,
       indépendamment du rôle — à condition qu'il soit nommé. Ce que le rôle <code>editor</code>
-      ouvre en plus, c'est le travail <b>sur le fonds commun</b> : les livres et les recettes des
-      autres.
+      ouvre en plus, c'est l'import, la création de livres et la relecture des brouillons
+      partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
+      modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
+      d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
+      et l'<code>admin</code>.
     </span>
     <span class="expect warn">
       <code>pending</code> n'est pas un rôle diminué, c'est l'absence de rôle : ni lecture, ni

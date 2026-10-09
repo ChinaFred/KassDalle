@@ -31,7 +31,7 @@ import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../confi
 import { logError } from "../logging";
 import { periodOf } from "../billing/periods";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
-import { addToDailySpend } from "./budget";
+import { UNATTRIBUTED, addToDailySpend } from "./budget";
 import { addToScanSpend } from "./importBudget";
 import type { AiProvider } from "./types";
 
@@ -113,8 +113,8 @@ export interface UsageEntry {
   status?: "ok" | "error";
 }
 
-/** Utilisateur retenu quand l'appel n'est rattaché à personne. */
-export const UNATTRIBUTED = "system_unattributed";
+/** Utilisateur retenu quand l'appel n'est rattaché à personne (défini dans `budget.ts`). */
+export { UNATTRIBUTED };
 
 /** Période `AAAA-MM` d'une date, en UTC — la même que la réconciliation. */
 export function usagePeriod(date: Date): string {
@@ -480,20 +480,22 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   // appel non chiffré n'ajoute aucun montant mais compte pour un appel : c'est
   // ce qui permet au plafond de tenir même quand la grille tarifaire est en
   // panne et que plus rien n'a de prix.
-  if (trimmedUserId.length > 0) {
-    try {
-      await addToDailySpend({ userId: trimmedUserId, costUsd, at: now });
-    } catch (err) {
-      // Best-effort : un compteur de plafond qui n'a pas pu s'incrémenter ne
-      // doit pas faire échouer un appel déjà payé. Mais il rend le plafond
-      // trop permissif d'un appel, et cela doit se voir.
-      await logError({
-        message: "Dépense du jour non incrémentée : le plafond en est faussé d'autant",
-        errorDescription: err instanceof Error ? err.message : String(err),
-        userId: trimmedUserId,
-        extra: { feature: entry.feature },
-      });
-    }
+  //
+  // Un appel sans uid compte pour le compte système : c'est sur lui que
+  // `assertWithinDailyBudget` le plafonne, et un plafond qui ne lit aucune
+  // dépense ne borne rien.
+  try {
+    await addToDailySpend({ userId: effectiveUserId, costUsd, at: now });
+  } catch (err) {
+    // Best-effort : un compteur de plafond qui n'a pas pu s'incrémenter ne
+    // doit pas faire échouer un appel déjà payé. Mais il rend le plafond
+    // trop permissif d'un appel, et cela doit se voir.
+    await logError({
+      message: "Dépense du jour non incrémentée : le plafond en est faussé d'autant",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: effectiveUserId,
+      extra: { feature: entry.feature },
+    });
   }
 
   // 5. Le compteur du scan — ce que relit le plafond d'un import de livre.

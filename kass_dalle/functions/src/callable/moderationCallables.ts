@@ -13,8 +13,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
 import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
-import { requireAdmin, requireAuth } from "./_auth";
-import { logError, logInfo } from "../logging";
+import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
+import { logError, logInfo, logWarn } from "../logging";
 import { recordUsage } from "../ai/usage";
 import {
   MODERATION_FEATURE,
@@ -29,7 +29,16 @@ import {
   moderateAndPromote,
   type ModerationItem,
 } from "../moderation/moderateAndPromote";
-import { quarantineToRejected, isTargetKind, promoteImage } from "../moderation/promote";
+import { clientDeclaredOrigin } from "../moderation/origin";
+import {
+  TargetNotOwned,
+  quarantineToRejected,
+  isTargetKind,
+  isValidDocumentId,
+  legacyFileMayHaveChanged,
+  pinnedGeneration,
+  promoteImage,
+} from "../moderation/promote";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -45,6 +54,19 @@ const callableOpts = {
 };
 
 const COLLECTION = "image_moderation";
+
+/**
+ * `ownerId` absent ou vide vaut `null` ; présent, il doit être un identifiant
+ * de document. Un « / » ferait viser un autre document que celui dont la
+ * propriété est vérifiée, et un autre dossier Storage.
+ */
+function parseOwnerId(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (!isValidDocumentId(value)) {
+    throw new HttpsError("invalid-argument", "ownerId invalide.");
+  }
+  return value;
+}
 
 function parseItems(data: unknown, uid: string): ModerationItem[] {
   const raw = (data ?? {}) as { items?: unknown };
@@ -69,9 +91,11 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
     return {
       quarantinePath,
       targetKind: item.targetKind,
-      ownerId: typeof item.ownerId === "string" && item.ownerId.length > 0 ? item.ownerId : null,
+      ownerId: parseOwnerId(item.ownerId),
       contentType: typeof item.contentType === "string" ? item.contentType : "image/jpeg",
-      origin: item.origin === "ai" ? "ai" : item.origin === "asset" ? "asset" : "user",
+      // Jamais `ai` depuis un client, et `asset` seulement à vérifier sur
+      // l'empreinte du fichier (`moderation/origin.ts`).
+      origin: clientDeclaredOrigin(item.origin),
     };
   });
 }
@@ -92,6 +116,7 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
       items,
       userId: ctx.userId,
       correlationId: ctx.correlationId,
+      isAdmin: isAdminAccount,
     });
   } catch (err) {
     // Les deux refus que le cœur signale par une erreur typée sont des refus
@@ -101,6 +126,17 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
     }
     if (err instanceof QuarantineFileMissing) {
       throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
+    }
+    if (err instanceof TargetNotOwned) {
+      await logWarn({
+        message: "Publication refusée : destination d'un autre compte",
+        moduleType: "MODERATION",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        feature: MODERATION_FEATURE,
+        extra: { targetKind: err.kind, ownerId: err.ownerId },
+      });
+      throw new HttpsError("permission-denied", err.detail);
     }
     throw err;
   }
@@ -134,6 +170,40 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     throw new HttpsError("failed-precondition", "Cette image n'attend pas de décision.");
   }
 
+  // Document antérieur à l'épinglage de la génération : on ne publie pas un
+  // fichier qui a pu être réécrit après l'analyse. L'image repasse en attente,
+  // et « Relancer l'analyse » (`retryPendingModerationFn`) la juge à nouveau.
+  //
+  // Quand le fichier est jugé inchangé, sa génération lue ici est épinglée
+  // pour la copie : il ne doit pas pouvoir changer entre cette vérification
+  // et la promotion.
+  let sourceGeneration: unknown = doc.quarantine_generation;
+  if (decision === "approve" && pinnedGeneration(doc.quarantine_generation) == null) {
+    const [meta] = await getStorage()
+      .bucket()
+      .file(String(doc.quarantine_path ?? ""))
+      .getMetadata();
+    const createdAt = doc.created_at as { toMillis?: () => number } | undefined;
+    const createdAtMs = typeof createdAt?.toMillis === "function" ? createdAt.toMillis() : null;
+    if (legacyFileMayHaveChanged(meta.updated, createdAtMs)) {
+      await ref.update({ status: "pending" });
+      await logWarn({
+        message: "Approbation refusée : le fichier a pu changer depuis l'analyse",
+        moduleType: "MODERATION",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        feature: "image_moderation_review",
+        extra: { moderationId, fileUpdated: meta.updated ?? null, createdAtMs },
+      });
+      throw new HttpsError(
+        "failed-precondition",
+        "Le fichier a changé depuis son analyse. L'image repasse en attente : " +
+          "relancez l'analyse avant de décider.",
+      );
+    }
+    sourceGeneration = meta.generation;
+  }
+
   let publishedUrl: string | null = null;
   let rejectedPath: string | null = null;
   if (decision === "approve") {
@@ -143,6 +213,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
       contentType: String(doc.mime_type ?? "image/jpeg"),
       moderationId,
       correlationId: ctx.correlationId,
+      sourceGeneration,
     });
     publishedUrl = promoted.downloadUrl;
   } else {
@@ -150,6 +221,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
       quarantinePath: String(doc.quarantine_path ?? ""),
       moderationId,
       correlationId: ctx.correlationId,
+      sourceGeneration: doc.quarantine_generation,
     });
   }
 
@@ -215,7 +287,13 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
       continue;
     }
 
-    const [bytes] = await file.download();
+    // Même épinglage qu'au premier passage : la version relancée est celle
+    // qu'on promeut ou qu'on écarte.
+    const [meta] = await file.getMetadata();
+    const generation = pinnedGeneration(meta.generation);
+    const [bytes] = await bucket
+      .file(quarantinePath, generation != null ? { generation } : undefined)
+      .download();
     try {
       const analysis = await analyseImage(bytes, config);
       engineModel = analysis.model;
@@ -230,6 +308,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
           contentType: String(data.mime_type ?? "image/jpeg"),
           moderationId: doc.id,
           correlationId: ctx.correlationId,
+          sourceGeneration: generation,
         });
         publishedUrl = promoted.downloadUrl;
       } else if (decision.status === "rejected") {
@@ -237,9 +316,11 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
           quarantinePath,
           moderationId: doc.id,
           correlationId: ctx.correlationId,
+          sourceGeneration: generation,
         });
       }
       await doc.ref.update({
+        quarantine_generation: generation != null ? String(generation) : null,
         status: decision.status,
         decision_reason: decision.reason,
         culinary_matches: decision.culinaryMatches,

@@ -393,8 +393,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
             });
           }
         }
-        final canEdit =
-            user != null && (user.canEdit || user.uid == recipe.createdBy);
+        // Créateur ou administrateur seulement, éditeur compris : miroir de la
+        // règle `recipes` de `firestore.rules`.
+        final canEdit = user?.canModifyRecipe(recipe.createdBy) ?? false;
         _stripLegacyStorageSection(recipe, canEdit: canEdit);
 
         Future<void> onSelectedPortionsChanged(int value) async {

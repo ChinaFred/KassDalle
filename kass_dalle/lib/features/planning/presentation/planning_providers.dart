@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
+import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/recipe_picker_filter.dart';
 import '../domain/meal_component.dart';
@@ -17,8 +21,14 @@ import '../domain/recipe_search_scope.dart';
 class PlanningRepository {
   final FirebaseFirestore _db;
   final String _uid;
+  final ErrorReportService _errorReportService;
 
-  PlanningRepository(this._db, this._uid);
+  PlanningRepository(
+    this._db,
+    this._uid, {
+    ErrorReportService? errorReportService,
+  }) : _errorReportService =
+           errorReportService ?? ErrorReportService(firestore: _db);
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('planned_meals');
@@ -263,17 +273,54 @@ class PlanningRepository {
   /// Un repas planifié peut pointer sur un brouillon ou une recette de la
   /// famille : les résoudre par identifiant évite qu'ils disparaissent
   /// silencieusement de la liste de courses.
+  ///
+  /// Une recette devenue illisible — rendue privée par son créateur depuis
+  /// qu'on l'a planifiée — fait refuser le lot entier par les règles
+  /// Firestore. Le lot se relit alors recette par recette : celles qu'on voit
+  /// encore restent, les autres sont écartées et signalées au rapport
+  /// d'erreurs, sans vider toute la liste de courses.
   Future<List<Recipe>> getRecipesByIds(List<String> ids) async {
     final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
     if (unique.isEmpty) return [];
     final out = <Recipe>[];
     for (var i = 0; i < unique.length; i += 30) {
       final chunk = unique.sublist(i, (i + 30).clamp(0, unique.length));
-      final snap = await _db
-          .collection('recipes')
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-      out.addAll(snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())));
+      try {
+        final snap = await _db
+            .collection('recipes')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        out.addAll(snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())));
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+        out.addAll(await _getReadableOneByOne(chunk));
+      }
+    }
+    return out;
+  }
+
+  Future<List<Recipe>> _getReadableOneByOne(List<String> ids) async {
+    final out = <Recipe>[];
+    final refused = <String>[];
+    for (final id in ids) {
+      try {
+        final doc = await _db.collection('recipes').doc(id).get();
+        final data = doc.data();
+        if (data != null) out.add(Recipe.fromFirestore(doc.id, data));
+      } on FirebaseException catch (e, st) {
+        if (e.code != 'permission-denied') rethrow;
+        refused.add(id);
+        if (refused.length == 1) {
+          unawaited(
+            _errorReportService.reportError(
+              feature: 'planning_recipes_by_ids',
+              error: e,
+              stackTrace: st,
+              context: {'uid': _uid, 'first_refused_recipe_id': id},
+            ),
+          );
+        }
+      }
     }
     return out;
   }
@@ -373,7 +420,14 @@ class PlanningRepository {
       bookId: book.id,
       bookTitre: book.titre,
     );
-    final ref = await _db.collection('recipes').add(draft.toFirestore());
+    final ref = await _db
+        .collection('recipes')
+        .add(
+          withBookPrivacy(
+            draft.toFirestore(),
+            await privacyOfBook(_db, book.id),
+          ),
+        );
     return ref.id;
   }
 }
