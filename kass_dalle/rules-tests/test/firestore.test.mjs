@@ -46,7 +46,19 @@ beforeEach(async () => {
       is_private: true,
       tags: [],
     },
-    "books/system": { title: "Recettes libres", created_by: READER, tags: ["__libres"] },
+    "books/private-reader": {
+      title: "Mon carnet",
+      created_by: READER,
+      is_private: true,
+      tags: [],
+    },
+    "books/public-other": {
+      title: "Livre d'un autre",
+      created_by: OTHER,
+      is_private: false,
+      tags: [],
+    },
+    "books/system": { title: "Recettes libres", created_by: EDITOR, tags: ["__libres"] },
     "recipes/validated": {
       title: "Tarte",
       created_by: OTHER,
@@ -59,6 +71,13 @@ beforeEach(async () => {
       review_status: "validated",
       is_private: true,
     },
+    "recipes/validated-private-reader": {
+      title: "Ma recette secrète",
+      created_by: READER,
+      review_status: "validated",
+      is_private: true,
+    },
+    "recipes/editor-own": { title: "Gratin", created_by: EDITOR, review_status: "validated" },
     "recipes/draft-other": { title: "Brouillon", created_by: OTHER, review_status: "draft" },
     "recipes/draft-reader": { title: "Mon brouillon", created_by: READER, review_status: "draft" },
     "recipes/validated-private-other/annotations/a1": { uid: OTHER, text: "note privée" },
@@ -215,6 +234,10 @@ describe("users — lecture", () => {
     await assertFails(db("reader").doc(`users/${OTHER}`).get());
   });
 
+  it("un éditeur ne lit pas le document d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc(`users/${OTHER}`).get());
+  });
+
   it("un anonyme ne lit aucun document de compte", async () => {
     await assertFails(db("anonymous").doc(`users/${READER}`).get());
   });
@@ -245,7 +268,7 @@ describe("books", () => {
     await assertSucceeds(db("editor").doc("books/new").set({ title: "x", created_by: EDITOR }));
   });
 
-  it("un éditeur révoqué n'écrit plus, même jeton à jour", async () => {
+  it("un éditeur révoqué n'écrit plus, même jeton périmé", async () => {
     await assertFails(db("revokedStaleToken").doc("books/public").update({ title: "y" }));
   });
 
@@ -261,8 +284,38 @@ describe("books", () => {
     await assertFails(db("reader").doc("books/private-other").get());
   });
 
-  it("un éditeur ne retire pas le tag d'un livre système", OPEN_FLAW, async () => {
+  it("un lecteur lit son propre livre privé", async () => {
+    await assertSucceeds(db("reader").doc("books/private-reader").get());
+  });
+
+  it("un administrateur lit le livre privé d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("books/private-other").get());
+  });
+
+  it("un éditeur modifie son propre livre", async () => {
+    await assertSucceeds(db("editor").doc("books/public").update({ title: "y" }));
+  });
+
+  it("un éditeur ne lit pas le livre privé d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("books/private-other").get());
+  });
+
+  it("un éditeur ne modifie pas le livre d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("books/public-other").update({ title: "y" }));
+  });
+
+  it("un éditeur ne supprime pas le livre d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("books/public-other").delete());
+  });
+
+  // Le livre système appartient à l'éditeur : même son propriétaire ne
+  // retire pas le tag qui le protège de la suppression.
+  it("le propriétaire ne retire pas le tag d'un livre système", OPEN_FLAW, async () => {
     await assertFails(db("editor").doc("books/system").update({ tags: [] }));
+  });
+
+  it("un administrateur ne retire pas le tag d'un livre système", OPEN_FLAW, async () => {
+    await assertFails(db("admin").doc("books/system").update({ tags: [] }));
   });
 });
 
@@ -281,6 +334,9 @@ describe("recipes — lecture", () => {
     await assertSucceeds(db("reader").doc("recipes/draft-reader").get());
   });
 
+  // Droit conservé tant que l'utilisateur n'a pas tranché la relecture des
+  // brouillons par un éditeur : seule la confidentialité (is_private) est
+  // décidée — créateur seul, plus l'administrateur.
   it("un éditeur lit le brouillon d'un autre", async () => {
     await assertSucceeds(db("editor").doc("recipes/draft-other").get());
   });
@@ -291,8 +347,20 @@ describe("recipes — lecture", () => {
     });
   }
 
+  it("un lecteur lit sa propre recette privée", async () => {
+    await assertSucceeds(db("reader").doc("recipes/validated-private-reader").get());
+  });
+
+  it("un administrateur lit la recette privée d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated-private-other").get());
+  });
+
   it("un lecteur ne lit pas la recette privée validée d'un autre", OPEN_FLAW, async () => {
     await assertFails(db("reader").doc("recipes/validated-private-other").get());
+  });
+
+  it("un éditeur ne lit pas la recette privée d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("recipes/validated-private-other").get());
   });
 });
 
@@ -349,8 +417,24 @@ describe("recipes — écriture", () => {
     await assertFails(db("reader").doc("recipes/draft-reader").update({ created_by: OTHER }));
   });
 
-  it("un éditeur ne change pas created_by", OPEN_FLAW, async () => {
-    await assertFails(db("editor").doc("recipes/validated").update({ created_by: EDITOR }));
+  it("un administrateur modifie la recette d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated").update({ title: "y" }));
+  });
+
+  it("un administrateur supprime la recette d'un autre", async () => {
+    await assertSucceeds(db("admin").doc("recipes/validated").delete());
+  });
+
+  it("un éditeur ne modifie pas la recette d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("recipes/validated").update({ title: "y" }));
+  });
+
+  it("un éditeur ne supprime pas la recette d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("recipes/validated").delete());
+  });
+
+  it("un éditeur ne change pas created_by de sa propre recette", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("recipes/editor-own").update({ created_by: OTHER }));
   });
 });
 
@@ -509,6 +593,14 @@ describe("app_config", () => {
   it("usage : storage_bytes reste un entier positif", OPEN_FLAW, async () => {
     await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: -1 }));
   });
+
+  it("usage : le compteur de scans du mois reste positif", OPEN_FLAW, async () => {
+    await assertFails(
+      db("reader")
+        .doc("app_config/usage")
+        .update({ [currentScansKey()]: -1 }),
+    );
+  });
 });
 
 // ── collections de coût et écritures serveur ─────────────────────────────
@@ -623,6 +715,10 @@ describe("processing_jobs", () => {
   it("un lecteur lit son job, pas celui d'un autre", async () => {
     await assertSucceeds(db("reader").doc("processing_jobs/job-reader").get());
     await assertFails(db("reader").doc("processing_jobs/job-editor").get());
+  });
+
+  it("un éditeur ne lit pas le job d'un autre", OPEN_FLAW, async () => {
+    await assertFails(db("editor").doc("processing_jobs/job-reader").get());
   });
 
   it("seul un administrateur supprime un job", async () => {

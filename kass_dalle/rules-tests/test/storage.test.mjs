@@ -10,6 +10,10 @@ import { OPEN_FLAW, PERSONAS, as, createEnv } from "./helpers.mjs";
 
 let env;
 
+const NO_CLAIM_GAP = {
+  todo: "écart constaté 2026-10-09 : isActive() refuse un jeton sans claim revoked",
+};
+
 const storage = (name) => as(env, name).storage();
 
 const READER = PERSONAS.reader.uid;
@@ -79,8 +83,18 @@ describe("dossiers publiés", () => {
     await assertFails(storage("pending").ref("covers").listAll());
   });
 
-  it("un compte en attente ne lit pas une image publiée", OPEN_FLAW, async () => {
-    await assertFails(storage("pending").ref(`covers/${OTHER}/image.jpg`).getMetadata());
+  // La lecture reste sur isActive() (storage.rules, « isApprovedToken ») :
+  // l'aligner sur le rôle a coupé l'accès au fondateur le 2026-10-05, le temps
+  // que son jeton porte le claim. Ce test garde ce retour arrière.
+  //
+  // Écart constaté le 2026-10-09 contre l'émulateur : un jeton sans AUCUN
+  // claim est refusé. `request.auth.token.revoked != true` lève une erreur
+  // sur une clé absente, et l'erreur vaut refus — le commentaire de
+  // isActive() (« traité comme actif ») ne se vérifie pas. Un jeton
+  // `{ revoked: false }` sans rôle, lui, lit. Marqué `todo` jusqu'à la
+  // correction de isActive() (test de présence `'revoked' in request.auth.token`).
+  it("un compte sans claim de rôle lit une image publiée", NO_CLAIM_GAP, async () => {
+    await assertSucceeds(storage("readerNoClaim").ref(`covers/${OTHER}/image.jpg`).getMetadata());
   });
 });
 

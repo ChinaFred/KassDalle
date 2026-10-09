@@ -31,11 +31,18 @@ production sur la seule foi d'une relecture.
   émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle` et rejoue les règles
   du dépôt avec `@firebase/rules-unit-testing`. `firebase-tools` y est épinglé à 15.32.1,
   comme dans `deploy.yml`. Java 21 est requis.
-- 174 tests, rôle par rôle (admin, éditeur, lecteur, en attente, révoqué, sans claim,
-  fondateur, anonyme) : 153 décrivent le comportement actuel et doivent passer ; 21 décrivent
-  une faille encore ouverte de l'audit du 2026-10-09, avec l'attendu corrigé, et sont marqués
-  `todo`. Un `todo` qui échoue ne fait pas échouer la suite ; la correction d'une faille
-  retire son `todo`.
+- 191 tests, rôle par rôle (admin, éditeur, lecteur, en attente, révoqué, sans claim,
+  fondateur, anonyme) : 160 décrivent le comportement actuel et doivent passer ; 31 sont
+  marqués `todo` et décrivent l'attendu corrigé. 30 couvrent une faille encore ouverte de
+  l'audit du 2026-10-09, dont la décision de propriété : un document privé n'est lu que par son
+  créateur et l'administrateur, et chacun ne modifie que ses recettes et ses livres. Un `todo`
+  qui échoue ne fait pas échouer la suite ; la correction d'une faille retire son `todo`.
+- Écart constaté contre l'émulateur : `isActive()` (`storage.rules`) refuse la lecture
+  Storage à un jeton qui ne porte aucun claim, alors que son commentaire le dit traité comme
+  actif. La clé `revoked` absente fait lever une erreur à la comparaison, et l'erreur vaut
+  refus. Le test correspondant est marqué `todo` jusqu'à la correction de la règle.
+- `.claude/hooks/session-start.sh` installe aussi les dépendances de `rules-tests/`, et
+  avertit sans échouer quand Java manque.
 - CI : nouveau job « Règles — émulateur ». Le déploiement exige une CI entièrement verte,
   donc une règle qui casse un test bloque la mise en production. Le workflow `ci.yml` n'a plus
   que le droit `contents: read`.

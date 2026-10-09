@@ -1507,6 +1507,26 @@ corrigé et marqué `{ todo: "faille ouverte, audit 2026-10-09" }` (constante `O
 retire l'option dans le même commit : le test devient bloquant. Une règle corrigée sans test
 est une anomalie de relecture.
 
+L'attendu corrigé suit la décision de propriété : une recette ou un livre privé ne se lit que
+par son créateur et l'administrateur ; chacun ne modifie que ses propres recettes et livres ;
+l'administrateur peut tout. Un éditeur lit encore les brouillons d'autrui : ce droit reste
+actif tant qu'il n'est pas tranché.
+
+**Comptes au 2026-10-09** : 191 tests, 160 actifs et 31 `todo`.
+
+- Firestore : 135 tests, 106 actifs et 29 `todo`.
+- Storage : 56 tests, 54 actifs et 2 `todo`.
+
+Les `todo` se répartissent ainsi :
+
+- 30 failles de l'audit ;
+- 1 écart constaté contre l'émulateur. `isActive()` (`storage.rules`) refuse la lecture à un
+  jeton qui ne porte aucun claim. `request.auth.token.revoked != true` lève une erreur quand
+  la clé `revoked` est absente, et cette erreur vaut refus. Le commentaire de la règle dit
+  l'inverse (« traité comme actif »). Un jeton `{ revoked: false }` sans rôle lit. Le test
+  « un compte sans claim de rôle lit une image publiée » reste `todo` jusqu'à ce que la règle
+  teste la présence de la clé (`'revoked' in request.auth.token`).
+
 ---
 
 ## 5. Authentification Google Sign-In
