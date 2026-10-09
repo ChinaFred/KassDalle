@@ -15,6 +15,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Lecture seule : la CI ne publie rien, n'écrit ni commentaire ni statut.
+permissions:
+  contents: read
+
 jobs:
   flutter:
     name: Flutter — analyse et tests
@@ -92,4 +96,45 @@ jobs:
         # suite Dart : c'est ce qui détecte une divergence entre le parseur
         # CookLang du client et celui du backend.
       - name: Tests (fixtures partagées avec Dart)
+        run: npm test
+
+  rules:
+    name: Règles — émulateur
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kass_dalle/rules-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kass_dalle/rules-tests/package-lock.json
+
+        # Les émulateurs Firestore et Storage tournent sur la JVM.
+        # firebase-tools 15 refuse de les lancer avant Java 21
+        # (MIN_SUPPORTED_JAVA_MAJOR_VERSION) : 17 ne suffit pas.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+        # Les binaires des émulateurs sont téléchargés par firebase-tools au
+        # premier lancement. La clé suit la version épinglée de firebase-tools.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('kass_dalle/rules-tests/package-lock.json') }}
+
+      - name: Dépendances
+        run: npm ci
+
+        # Rejoue firestore.rules et storage.rules du dépôt, rôle par rôle, sur
+        # le projet fictif demo-kassdalle : aucun contact avec la production.
+        # Un test marqué `todo` décrit une faille encore ouverte et n'échoue
+        # pas la suite ; tous les autres sont bloquants, et une CI rouge
+        # bloque le déploiement (deploy.yml exige une CI `success`).
+      - name: Tests des règles Firestore et Storage
         run: npm test

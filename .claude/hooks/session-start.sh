@@ -1,6 +1,7 @@
 #!/bin/bash
-# Prépare une session Claude Code cloud : Flutter (version de la CI) et dépendances
-# Functions, pour que les agents puissent rejouer analyze, format, lint et tests.
+# Prépare une session Claude Code cloud : Flutter (version de la CI), dépendances
+# Functions et tests des règles, pour que les agents puissent rejouer analyze,
+# format, lint et tests.
 set -euo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
@@ -31,3 +32,14 @@ flutter --disable-analytics >/dev/null 2>&1 || true
 (cd "$PROJECT" && flutter pub get)
 # npm ci : package-lock.json reste intact, comme en CI.
 (cd "$PROJECT/functions" && npm ci --no-audit --no-fund)
+# Tests des règles : leurs dépendances s'installent toujours ; les émulateurs,
+# eux, exigent Java 21 (firebase-tools 15). Son absence n'empêche pas la
+# session de démarrer : seul `npm test` dans rules-tests échouera.
+(cd "$PROJECT/rules-tests" && npm ci --no-audit --no-fund) \
+  || echo "session-start : npm ci a échoué dans kass_dalle/rules-tests ; les tests des règles ne tourneront pas." >&2
+java_major=$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p' | head -n 1)
+if [ -z "$java_major" ]; then
+  echo "session-start : Java absent, les tests des règles (kass_dalle/rules-tests) ne pourront pas lancer les émulateurs." >&2
+elif [ "$java_major" -lt 21 ]; then
+  echo "session-start : Java $java_major trouvé, les émulateurs des tests des règles exigent Java 21." >&2
+fi

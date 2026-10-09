@@ -75,10 +75,13 @@ empêche déjà.
 ## Tests des règles
 
 Une règle Firestore ou Storage corrigée s'accompagne d'un cas de test qui empêche la faille
-de revenir (lecteur refusé, éditeur accepté…). Tant que la suite de tests de règles n'existe
-pas, décris dans ton rapport le cas de test attendu (rôle, opération, résultat), sans le
-compter comme anomalie. Une fois la suite en place, une règle corrigée sans test est une
-anomalie.
+de revenir (lecteur refusé, éditeur accepté…). La suite vit dans `kass_dalle/rules-tests/`
+(`test/firestore.test.mjs`, `test/storage.test.mjs`) et la CI la rejoue contre les émulateurs
+(job « Règles — émulateur »). Une faille encore ouverte y a son test, écrit avec l'attendu
+corrigé et marqué `todo` (`OPEN_FLAW`) : sa correction retire le `todo`. Une règle corrigée
+sans test, ou dont le test garde son `todo`, est une anomalie. Une faille nouvelle que tu
+relèves reçoit, dans ton rapport, le cas de test attendu (rôle, opération, résultat) à
+ajouter en `todo`.
 
 ## Format de sortie
 

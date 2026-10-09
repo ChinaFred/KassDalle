@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.7 — technique
+
+#### Une suite de tests pour les règles Firestore et Storage
+
+Aucun test ne rejouait `firestore.rules` ni `storage.rules`. Une règle modifiée partait en
+production sur la seule foi d'une relecture.
+
+- Nouveau paquet `kass_dalle/rules-tests/`, séparé de `functions/` : son `npm test` lance les
+  émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle` et rejoue les règles
+  du dépôt avec `@firebase/rules-unit-testing`. `firebase-tools` y est épinglé à 15.32.1,
+  comme dans `deploy.yml`. Java 21 est requis.
+- 192 tests, rôle par rôle (admin, éditeur, lecteur, en attente, révoqué, sans claim,
+  fondateur, anonyme) : 161 décrivent le comportement actuel et doivent passer ; 31 sont
+  marqués `todo` et décrivent l'attendu corrigé. 30 couvrent une faille encore ouverte de
+  l'audit du 2026-10-09, dont la décision de propriété : un document privé n'est lu que par son
+  créateur et l'administrateur, et chacun ne modifie que ses recettes et ses livres. Un `todo`
+  qui échoue ne fait pas échouer la suite ; la correction d'une faille retire son `todo`.
+- Écart constaté contre l'émulateur : `isActive()` (`storage.rules`) refuse la lecture
+  Storage à un jeton qui ne porte aucun claim, alors que son commentaire le dit traité comme
+  actif. La clé `revoked` absente fait lever une erreur à la comparaison, et l'erreur vaut
+  refus. Le test correspondant est marqué `todo` jusqu'à la correction de la règle.
+- `.claude/hooks/session-start.sh` installe aussi les dépendances de `rules-tests/`, et
+  avertit sans échouer quand Java manque.
+- CI : nouveau job « Règles — émulateur ». Le déploiement exige une CI entièrement verte,
+  donc une règle qui casse un test bloque la mise en production. Le workflow `ci.yml` n'a plus
+  que le droit `contents: read`.
+- `CLAUDE.md` et l'agent `securite` : une règle corrigée s'accompagne de son test dans la
+  suite, et le `todo` de la faille corrigée disparaît.
+
 ### v0.23.6 — technique
 
 #### Un agent de sécurité dans la chaîne de travail
