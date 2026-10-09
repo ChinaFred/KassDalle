@@ -464,6 +464,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = ref.watch(isAdminProvider);
+    // L'import lance des appels d'IA facturés : réservé aux éditeurs, et les
+    // règles refusent le `processing_job` d'un lecteur.
+    final canImport = ref.watch(canEditProvider);
     final adminUidFilter = ref.watch(adminJobUserFilterProvider);
 
     final myJobsAsync = ref.watch(processingJobsProvider);
@@ -582,11 +585,12 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   tooltip: 'Sélectionner',
                   onPressed: _busy ? null : _startSelection,
                 ),
-              IconButton(
-                icon: const Icon(Icons.upload_file),
-                tooltip: 'Importer un scan',
-                onPressed: () => context.go('/scan'),
-              ),
+              if (canImport)
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  tooltip: 'Importer un scan',
+                  onPressed: () => context.go('/scan'),
+                ),
               const SizedBox(width: 8),
             ],
           );
@@ -610,7 +614,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 : planDraftValidation(
                     selectedDrafts.map((d) => d.recipe),
                   ).validatableInBatch,
-            retryCount: retryableJobs.isEmpty ? null : retryableJobs.length,
+            retryCount: (retryableJobs.isEmpty || !canImport)
+                ? null
+                : retryableJobs.length,
             deleteCount: selectedItems.length,
             onValidate: () => _validateDrafts(
               selectedDrafts.map((d) => d.recipe).toList(),
@@ -637,23 +643,29 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 child: AppEmptyState(
                   icon: Icons.edit_note_outlined,
                   title: 'Aucun élément',
-                  message: 'Importez un scan pour commencer.',
-                  action: FilledButton.icon(
-                    onPressed: () => context.go('/scan'),
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text('Importer un fichier'),
-                  ),
+                  message: canImport
+                      ? 'Importez un scan pour commencer.'
+                      : null,
+                  action: canImport
+                      ? FilledButton.icon(
+                          onPressed: () => context.go('/scan'),
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Importer un fichier'),
+                        )
+                      : null,
                 ),
               ),
             ],
           ),
         ),
         bottomNavigationBar: bottomBar,
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.go('/scan'),
-          icon: const Icon(Icons.upload_file),
-          label: const Text('Importer'),
-        ),
+        floatingActionButton: canImport
+            ? FloatingActionButton.extended(
+                onPressed: () => context.go('/scan'),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Importer'),
+              )
+            : null,
       );
     }
 
@@ -696,8 +708,10 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                       ? _toggleSelect(item.key)
                       : _handleJobTap(context, job),
                   onLongPress: () => _toggleSelect(item.key),
-                  onRetry: () =>
-                      ref.read(scanUploadProvider.notifier).retryJob(job),
+                  onRetry: canImport
+                      ? () =>
+                            ref.read(scanUploadProvider.notifier).retryJob(job)
+                      : null,
                   onCancel: () =>
                       ref.read(scanUploadProvider.notifier).cancelJob(job.id),
                   onDelete: () => _deleteItems([item]),
@@ -738,7 +752,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         ),
       ),
       bottomNavigationBar: bottomBar,
-      floatingActionButton: (selecting || _busy)
+      floatingActionButton: (selecting || _busy || !canImport)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => context.go('/scan'),

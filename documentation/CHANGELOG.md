@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.5 — fonctionnel
+
+#### L'import est réservé aux éditeurs
+
+Importer une recette ou un livre (`/scan`) lance des appels d'IA facturés. C'était réservé à
+l'éditeur et à l'admin dans les documents, mais les règles Firestore laissaient un lecteur
+créer son `processing_job`, et donc lancer le pipeline. `firestore.rules` exige maintenant
+`isEditor()` pour créer un job, toujours à son propre nom. La relance d'un job, qui le remet
+en file et relance le pipeline, exige aussi ce droit ; un propriétaire qui n'est plus éditeur
+garde l'annulation.
+
+Côté écran, un lecteur ne voit plus les boutons « Importer » et « Relancer » de la file des
+brouillons, ni l'action « Nouveau scan » après la suppression d'un scan source. S'il ouvre
+`/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs, au lieu du
+formulaire. Joindre un fichier source à sa propre recette reste permis.
+
+L'écran des garnitures simples, vide, renvoyait à un backfill « Semer les garnitures
+simples » qui n'existe plus. Il invite maintenant à en ajouter une avec « Nouvelle
+garniture ».
+
 ### v0.23.4 — technique
 
 #### Chaque changement met à jour ses documents

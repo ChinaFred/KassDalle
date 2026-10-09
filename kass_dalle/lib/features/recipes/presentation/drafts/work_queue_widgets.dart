@@ -300,7 +300,10 @@ class QueueJobTile extends StatelessWidget {
   final bool isAdmin;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final VoidCallback onRetry;
+
+  /// `null` pour un compte qui ne peut pas importer : une relance remet le
+  /// job en file et relance le pipeline facturé, réservé aux éditeurs.
+  final VoidCallback? onRetry;
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
 
@@ -398,7 +401,7 @@ class QueueJobTile extends StatelessWidget {
                 PopupMenuButton<_JobMenuAction>(
                   tooltip: 'Actions',
                   onSelected: (action) async {
-                    if (action == _JobMenuAction.retry) onRetry();
+                    if (action == _JobMenuAction.retry) onRetry?.call();
                     if (action == _JobMenuAction.delete) onDelete();
                     if (action == _JobMenuAction.cancel) onCancel?.call();
                     if (action == _JobMenuAction.copyId) {
@@ -537,11 +540,12 @@ class QueueJobTile extends StatelessWidget {
         );
       case ProcessingJobStatus.error:
       case ProcessingJobStatus.rejected:
+        if (onRetry == null) return null;
         return _PrimaryJobAction(
           icon: Icons.refresh,
           label: 'Relancer',
           menuAction: _JobMenuAction.retry,
-          run: onRetry,
+          run: onRetry!,
         );
       case ProcessingJobStatus.done:
         return null;

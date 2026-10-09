@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kass_dalle/core/presentation/leave_guard.dart';
 import 'package:kass_dalle/features/auth/data/user_preferences_repository.dart';
+import 'package:kass_dalle/features/auth/domain/app_user.dart';
+import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/books/domain/book.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/processing/presentation/processing_providers.dart';
@@ -64,9 +66,22 @@ Widget _app(_FakeScanNotifier notifier, ProviderContainer container) {
   );
 }
 
-ProviderContainer _container(_FakeScanNotifier notifier) {
+AppUser _user(UserRole role) => AppUser(
+  uid: 'u1',
+  email: 'u1@example.com',
+  displayName: 'Utilisateur',
+  role: role,
+  createdAt: DateTime(2026),
+  lastSeenAt: DateTime(2026),
+);
+
+ProviderContainer _container(
+  _FakeScanNotifier notifier, {
+  UserRole role = UserRole.editor,
+}) {
   return ProviderContainer(
     overrides: [
+      appUserProvider.overrideWith((ref) => Stream.value(_user(role))),
       scanUploadProvider.overrideWith(() => notifier),
       userPreferencesProvider.overrideWith(
         (ref) async => const UserPreferences(),
@@ -216,5 +231,22 @@ void main() {
 
     expect(find.text('Envoi du livre en cours'), findsNothing);
     expect(find.text('Accueil'), findsOneWidget);
+  });
+
+  testWidgets('un lecteur arrivé par un lien voit que l\'import est réservé', (
+    tester,
+  ) async {
+    final notifier = _FakeScanNotifier(const ScanState());
+    final container = _container(notifier, role: UserRole.reader);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_app(notifier, container));
+    await tester.tap(find.text('Accueil'));
+    await _settle(tester);
+
+    expect(find.text('Importer un scan'), findsOneWidget);
+    expect(find.text('Import réservé aux éditeurs'), findsOneWidget);
+    // Ni formulaire, ni remise à zéro de l'import : l'écran ne touche à rien.
+    expect(find.byType(FilledButton), findsNothing);
+    expect(notifier.resets, 0);
   });
 }

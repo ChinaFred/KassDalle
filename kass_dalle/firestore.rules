@@ -307,10 +307,16 @@ service cloud.firestore {
       }
 
       allow read: if isEditor() || isJobOwner();
-      // Un job déclenche le pipeline, donc des appels d'IA facturés : il est
-      // réservé aux comptes nommés.
-      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
-      allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields());
+      // Un job déclenche le pipeline (jobDispatcher), donc des appels d'IA
+      // facturés : l'import est réservé aux éditeurs et aux administrateurs.
+      // Un lecteur n'importe pas. Le job est toujours créé à son propre nom.
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      // Une relance remet le job en `queued`, et jobDispatcher relance alors le
+      // pipeline facturé : elle suit le droit de création. Le propriétaire qui
+      // n'est plus éditeur (job créé avant ce droit, compte rétrogradé) garde
+      // l'annulation, pas la relance.
+      allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
+                                     && (isEditor() || request.resource.data.status != 'queued'));
       allow delete: if isAdmin();
     }
 

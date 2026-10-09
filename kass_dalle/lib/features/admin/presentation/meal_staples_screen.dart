@@ -90,8 +90,8 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        'Aucune garniture. Semez la liste de base depuis '
-                        'Admin › Backfills, « Semer les garnitures simples ».',
+                        'Aucune garniture. Ajoutez-en une avec le bouton '
+                        '« Nouvelle garniture ».',
                         textAlign: TextAlign.center,
                       ),
                     ),

@@ -1029,12 +1029,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (confirmed != true || !mounted) return;
     await ref.read(recipeRepositoryProvider).clearSourceFile(recipe.id);
     if (!mounted) return;
+    // « Nouveau scan » mène à l'import, réservé aux éditeurs : un lecteur ne
+    // voit que la confirmation.
+    final canImport = ref.read(canEditProvider);
     context.showSnackBar(
       'Scan source supprimé.',
-      action: SnackBarAction(
-        label: 'Nouveau scan',
-        onPressed: () => context.push('/scan'),
-      ),
+      action: canImport
+          ? SnackBarAction(
+              label: 'Nouveau scan',
+              onPressed: () => context.push('/scan'),
+            )
+          : null,
     );
   }
 
