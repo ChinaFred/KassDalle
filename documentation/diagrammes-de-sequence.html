@@ -739,8 +739,8 @@ sequenceDiagram
         <b>Confidentialité et rôle passent avant la garde.</b> <code>book_id</code> n'est pas une
         entrée de la garde : l'y ajouter relancerait nutrition et courses à chaque rangement d'une
         recette dans un autre livre. Le rôle se pose sur une recette créée à la main, générée par
-        l'IA ou copiée, qui n'a pas de <code>tags.meal_role</code>. Un modèle qui ne sait pas
-        classer n'écrit rien, et la prochaine écriture retente.
+        l'IA ou copiée, qui n'a pas de <code>tags.meal_role</code>. Si le modèle ne rend
+        aucun rôle, rien n'est écrit, et la prochaine écriture retente.
       </figcaption>
     </figure>
     <span class="expect">

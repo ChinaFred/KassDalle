@@ -740,7 +740,7 @@ demande pas ce champ), une copie d'une recette non classée (`copyRecipeAsDraft`
 toute écriture d'une recette (`page_type` recette) dont `tags.meal_role` est vide, **avant** la
 garde des entrées : la classification n'attend pas un changement d'ingrédients. Un appel de
 modèle, poste `inline_meal_role_classification`, qui écrit `tags.meal_role`, `contains`,
-`suggested_sides` et `roles_tagged_at`. Si le modèle ne sait pas classer, rien n'est écrit et
+`suggested_sides` et `roles_tagged_at`. Si le modèle ne rend aucun rôle, rien n'est écrit et
 la prochaine écriture retente ; une erreur passe par `logError`.
 
 ---
@@ -2788,8 +2788,11 @@ l'authentification.
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
 la garde de la callable, **jamais par le routeur** : hors `/admin`, il laisse passer tout
-compte nommé. Un `reader` qui ouvre `/scan` voit l'écran ; c'est le téléversement que les
-règles Storage refusent.
+compte nommé. Un `reader` qui ouvre `/scan` voit l'écran. L'import est réservé à l'éditeur
+et à l'admin, mais aucune règle ne l'impose encore : `storage.rules` accepte un `reader` en
+`quarantine/{uid}/` (il y dépose les images de ses propres recettes), `firestore.rules` le
+laisse créer son `processing_job`, et `scanAndPromoteUploadFn` n'exige que `requireAuth`. Une
+correction du code est prévue.
 
 | Route | Écran | Droit effectif |
 |---|---|---|

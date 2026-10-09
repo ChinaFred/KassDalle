@@ -470,7 +470,6 @@ flowchart TB
   APKQ{"version de pubspec.yaml&lt;br/&gt;supérieure à l'APK en ligne ?"}
   APK["construction et signature&lt;br/&gt;du nouvel APK"]
   KEEP["APK en ligne conservé"]
-  FN["déploiement des Functions"]
   RECHECK["revérification de l'APK en ligne"]
   HOST["hosting + règles Firestore + règles Storage"]
   PS1["deploy.ps1&lt;br/&gt;secours, depuis le PC"]
@@ -482,10 +481,12 @@ flowchart TB
   WEB --> APKQ
   APKQ -->|"oui"| APK
   APKQ -->|"non"| KEEP
-  APK --> FN
-  KEEP --> FN
-  FN --> RECHECK
+  APK --> FN1["déploiement des Functions"]
+  KEEP --> FN2["déploiement des Functions"]
+  FN1 --> RECHECK
+  FN2 --> KEEP2["APK en ligne recopié&lt;br/&gt;dans le build web"]
   RECHECK --> HOST
+  KEEP2 --> HOST
   PS1 -.->|"GitHub Actions indisponible"| HOST
 </pre>
       </div>

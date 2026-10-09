@@ -893,7 +893,7 @@ classDiagram
   SideCandidate ..> SideNeed : provides
   SideChoice --> SideNeed : besoin couvert
   RecipeSearchScope --> RecipeSource : sources
-  MealIdea ..> PlannedMeal : retenue, devient un repas libre sans recipeId
+  MealIdea ..> Recipe : retenue, rédigée en recette validée
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
   DayConstraint --> MealFormat : plat seul par défaut, sinon entrée, dessert ou léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
@@ -931,8 +931,11 @@ classDiagram
         </span>
         <span class="expect">
           <b><code>MealIdea</code> n'est pas une recette.</b> Rendue par
-          <code>suggestMealIdeasFn</code>, elle porte un nom, une phrase et deux durées. Retenue,
-          elle devient un repas libre du planning ; rien ne s'écrit dans les livres.
+          <code>suggestMealIdeasFn</code>, elle porte un nom, une phrase et deux durées. Retenue
+          depuis le planning, elle est rédigée par <code>generateRecipeConceptFn</code> et
+          enregistrée comme recette validée dans « Mes créations Kass'Dalle », puis placée dans
+          le créneau. Le repas libre sans recette n'existe que si l'écran ne fournit pas cette
+          étape de rédaction.
           <code>SideCandidate</code> et <code>SideNeed</code> servent au choix de
           l'accompagnement : <code>sideNeedsFor</code> ne rend un besoin que pour une recette
           de rôle <code>plat</code>, d'après <code>tags.contains</code>.

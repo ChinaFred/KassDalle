@@ -46,8 +46,9 @@ n'avait aucune consigne sur la documentation. Résultat : `cas-d-utilisation.htm
 
 Un audit a comparé le code aux six documents et relevé 71 écarts : 22 faux, 40 manquants,
 9 obsolètes. 70 sont corrigés. Le dernier attend la PR de code qui réservera l'import aux
-éditeurs et aux admins : `TechnicalRequirements.md` dit déjà que le lecteur ne peut pas
-importer, alors que les règles le permettent encore.
+éditeurs et aux admins : `TechnicalRequirements.md` (§13.1) et `cas-d-utilisation.html`
+décrivent cette décision et disent que les règles permettent encore l'import à un lecteur.
+Le dépôt en quarantaine reste ouvert au lecteur, qui y dépose les images de ses recettes.
 
 - `TechnicalRequirements.md` : diagnostic de qualité des données, 44 routes, redirection
   `?next=`, règles Firestore et Storage alignées sur les fichiers, `plating_advice` décrit
