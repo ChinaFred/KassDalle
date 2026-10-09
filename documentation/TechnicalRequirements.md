@@ -1321,7 +1321,7 @@ service cloud.firestore {
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `recipe_ratings` | `isApproved()` | l'auteur de la note, ou admin |
 | `groups` | membres du groupe | le propriétaire, ou admin |
-| `processing_jobs` | éditeur ou propriétaire du job | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire rétrogradé garde l'annulation |
+| `processing_jobs` | éditeur ou propriétaire du job | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur ; modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`) |

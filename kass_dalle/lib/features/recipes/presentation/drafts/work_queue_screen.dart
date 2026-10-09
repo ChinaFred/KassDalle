@@ -467,6 +467,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     // L'import lance des appels d'IA facturés : réservé aux éditeurs, et les
     // règles refusent le `processing_job` d'un lecteur.
     final canImport = ref.watch(canEditProvider);
+    // Tant que le rôle n'est pas lu, `canImport` vaut faux : un éditeur verrait
+    // la file sans bouton d'import. On attend le rôle comme on attend la file.
+    final roleLoading = ref.watch(appUserProvider).isLoading;
     final adminUidFilter = ref.watch(adminJobUserFilterProvider);
 
     final myJobsAsync = ref.watch(processingJobsProvider);
@@ -475,7 +478,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final allJobsAsync = isAdmin ? ref.watch(allProcessingJobsProvider) : null;
     final allDraftsAsync = isAdmin ? ref.watch(allDraftsProvider) : null;
 
-    if (myJobsAsync.isLoading || myDraftsAsync.isLoading) {
+    if (myJobsAsync.isLoading || myDraftsAsync.isLoading || roleLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -643,9 +646,14 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 child: AppEmptyState(
                   icon: Icons.edit_note_outlined,
                   title: 'Aucun élément',
+                  // Un lecteur n'importe pas : on lui dit d'où viennent les
+                  // brouillons, et où voir ceux de sa famille.
                   message: canImport
                       ? 'Importez un scan pour commencer.'
-                      : null,
+                      : 'Les brouillons naissent d\'un import, réservé aux '
+                            'éditeurs. Ceux de votre famille s\'affichent en '
+                            'choisissant « Groupe familial » dans le filtre en '
+                            'haut de l\'écran.',
                   action: canImport
                       ? FilledButton.icon(
                           onPressed: () => context.go('/scan'),

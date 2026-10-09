@@ -314,9 +314,17 @@ service cloud.firestore {
       // Une relance remet le job en `queued`, et jobDispatcher relance alors le
       // pipeline facturé : elle suit le droit de création. Le propriétaire qui
       // n'est plus éditeur (job créé avant ce droit, compte rétrogradé) garde
-      // l'annulation, pas la relance.
+      // l'annulation, et elle seule, sous la forme exacte qu'écrit `cancelJob` :
+      // `status: 'error'` et `cancel_requested: true`. Exclure `queued` ne
+      // suffisait pas : jobDispatcher met aussi en file un job dont le statut
+      // est absent ou vide.
+      function isExactCancel() {
+        return request.resource.data.status == 'error'
+          && request.resource.data.cancel_requested == true;
+      }
+
       allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
-                                     && (isEditor() || request.resource.data.status != 'queued'));
+                                     && (isEditor() || isExactCancel()));
       allow delete: if isAdmin();
     }
 

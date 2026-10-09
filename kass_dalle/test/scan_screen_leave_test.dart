@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kass_dalle/core/presentation/leave_guard.dart';
+import 'package:kass_dalle/core/widgets/app_states.dart';
 import 'package:kass_dalle/features/auth/data/user_preferences_repository.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
@@ -78,10 +81,13 @@ AppUser _user(UserRole role) => AppUser(
 ProviderContainer _container(
   _FakeScanNotifier notifier, {
   UserRole role = UserRole.editor,
+  Stream<AppUser?>? userStream,
 }) {
   return ProviderContainer(
     overrides: [
-      appUserProvider.overrideWith((ref) => Stream.value(_user(role))),
+      appUserProvider.overrideWith(
+        (ref) => userStream ?? Stream.value(_user(role)),
+      ),
       scanUploadProvider.overrideWith(() => notifier),
       userPreferencesProvider.overrideWith(
         (ref) async => const UserPreferences(),
@@ -91,6 +97,9 @@ ProviderContainer _container(
     ],
   );
 }
+
+/// Une phrase que seul le formulaire d'import affiche (mode livre entier).
+const _formMarker = 'Importez un livre en PDF, EPUB ou Word';
 
 /// Laisse passer les animations sans attendre qu'elles s'arrêtent : la barre de
 /// progression d'un livre en cours d'envoi tourne tant que l'écran est ouvert,
@@ -245,8 +254,58 @@ void main() {
 
     expect(find.text('Importer un scan'), findsOneWidget);
     expect(find.text('Import réservé aux éditeurs'), findsOneWidget);
+    expect(find.text('Retour à la bibliothèque'), findsOneWidget);
     // Ni formulaire, ni remise à zéro de l'import : l'écran ne touche à rien.
-    expect(find.byType(FilledButton), findsNothing);
+    expect(find.textContaining(_formMarker), findsNothing);
     expect(notifier.resets, 0);
+  });
+
+  testWidgets('tant que le rôle n\'est pas lu, ni formulaire ni refus', (
+    tester,
+  ) async {
+    final notifier = _FakeScanNotifier(const ScanState());
+    // Un flux qui n'émet jamais : le compte reste en cours de lecture.
+    final pendingUser = StreamController<AppUser?>();
+    addTearDown(pendingUser.close);
+    final container = _container(notifier, userStream: pendingUser.stream);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_app(notifier, container));
+    await tester.tap(find.text('Accueil'));
+    await _settle(tester);
+
+    expect(find.text('Importer un scan'), findsOneWidget);
+    expect(find.byType(AppLoadingState), findsOneWidget);
+    expect(find.textContaining(_formMarker), findsNothing);
+    expect(find.text('Import réservé aux éditeurs'), findsNothing);
+    expect(notifier.resets, 0);
+  });
+
+  testWidgets(
+    'un compte sans profil voit le refus, pas un chargement sans fin',
+    (tester) async {
+      final notifier = _FakeScanNotifier(const ScanState());
+      final container = _container(
+        notifier,
+        userStream: Stream<AppUser?>.value(null),
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(_app(notifier, container));
+      await tester.tap(find.text('Accueil'));
+      await _settle(tester);
+
+      expect(find.text('Import réservé aux éditeurs'), findsOneWidget);
+      expect(find.byType(AppLoadingState), findsNothing);
+    },
+  );
+
+  testWidgets('un éditeur voit le formulaire', (tester) async {
+    final notifier = _FakeScanNotifier(const ScanState());
+    final container = _container(notifier);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_app(notifier, container));
+    await _openScan(tester);
+
+    expect(find.textContaining(_formMarker), findsOneWidget);
+    expect(find.text('Import réservé aux éditeurs'), findsNothing);
   });
 }
