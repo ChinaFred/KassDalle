@@ -42,7 +42,28 @@ n'avait aucune consigne sur la documentation. Résultat : `cas-d-utilisation.htm
 - `business-analyst-culinaire` : il tient aussi `cas-d-utilisation.html`, avec son livrable
   de cadrage. Sans cadrage, `developpement-tech-couts` écrit tous les documents.
 
-Le rattrapage des écarts déjà présents fera l'objet d'une version à part.
+#### Rattrapage : 70 écarts corrigés entre le code et la documentation
+
+Un audit a comparé le code aux six documents et relevé 71 écarts : 22 faux, 40 manquants,
+9 obsolètes. 70 sont corrigés. Le dernier attend la PR de code qui réservera l'import aux
+éditeurs et aux admins : `TechnicalRequirements.md` dit déjà que le lecteur ne peut pas
+importer, alors que les règles le permettent encore.
+
+- `TechnicalRequirements.md` : diagnostic de qualité des données, 44 routes, redirection
+  `?next=`, règles Firestore et Storage alignées sur les fichiers, `plating_advice` décrit
+  comme un champ, modération et découpes d'illustrations, arbres des sources, CI, fixtures.
+- `FunctionalRequirements.md` : rôle de repas posé à l'écriture, Admin › Backfills, accueil
+  Admin, « Replanifier », retour après connexion, import d'un livre entier.
+- `cas-d-utilisation.html` : 15 cas ajoutés (qualité des données, garnitures, livre entier,
+  planning…). La liste de courses et l'ajustement des portions n'appellent plus l'IA dans
+  les diagrammes, comme dans le code.
+- `architecture.html` : 58 fonctions, section « Le déploiement », gardes et mémoire corrigées,
+  tableau de la logique dupliquée.
+- `diagramme-de-classes.html` : classes du planning, de la qualité des données et des rôles de
+  repas ; le diagramme « Planifier » ne s'affichait pas, à cause d'un « ; » dans une étiquette.
+- `diagrammes-de-sequence.html` : séquences 06 et 15 réécrites, six séquences ajoutées (25 à
+  30). Deux diagrammes qui ne s'affichaient pas sont réparés. Les 31 blocs Mermaid passent le
+  parseur.
 
 ### v0.23.3 — technique
 
