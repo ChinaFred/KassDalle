@@ -1512,10 +1512,10 @@ par son créateur et l'administrateur ; chacun ne modifie que ses propres recett
 l'administrateur peut tout. Un éditeur lit encore les brouillons d'autrui : ce droit reste
 actif tant qu'il n'est pas tranché.
 
-**Comptes au 2026-10-09** : 191 tests, 160 actifs et 31 `todo`.
+**Comptes au 2026-10-09** : 192 tests, 161 actifs et 31 `todo`.
 
 - Firestore : 135 tests, 106 actifs et 29 `todo`.
-- Storage : 56 tests, 54 actifs et 2 `todo`.
+- Storage : 57 tests, 55 actifs et 2 `todo`.
 
 Les `todo` se répartissent ainsi :
 

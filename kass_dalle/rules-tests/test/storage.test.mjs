@@ -96,6 +96,12 @@ describe("dossiers publiés", () => {
   it("un compte sans claim de rôle lit une image publiée", NO_CLAIM_GAP, async () => {
     await assertSucceeds(storage("readerNoClaim").ref(`covers/${OTHER}/image.jpg`).getMetadata());
   });
+
+  // Comportement retenu : un compte en attente lit une image publiée, il ne
+  // liste pas le dossier. Aligner la lecture sur le rôle ferait échouer ce test.
+  it("un compte en attente lit une image publiée", async () => {
+    await assertSucceeds(storage("pending").ref(`covers/${OTHER}/image.jpg`).getMetadata());
+  });
 });
 
 // ── quarantaine ──────────────────────────────────────────────────────────

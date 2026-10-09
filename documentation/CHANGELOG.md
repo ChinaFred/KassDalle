@@ -31,8 +31,8 @@ production sur la seule foi d'une relecture.
   émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle` et rejoue les règles
   du dépôt avec `@firebase/rules-unit-testing`. `firebase-tools` y est épinglé à 15.32.1,
   comme dans `deploy.yml`. Java 21 est requis.
-- 191 tests, rôle par rôle (admin, éditeur, lecteur, en attente, révoqué, sans claim,
-  fondateur, anonyme) : 160 décrivent le comportement actuel et doivent passer ; 31 sont
+- 192 tests, rôle par rôle (admin, éditeur, lecteur, en attente, révoqué, sans claim,
+  fondateur, anonyme) : 161 décrivent le comportement actuel et doivent passer ; 31 sont
   marqués `todo` et décrivent l'attendu corrigé. 30 couvrent une faille encore ouverte de
   l'audit du 2026-10-09, dont la décision de propriété : un document privé n'est lu que par son
   créateur et l'administrateur, et chacun ne modifie que ses recettes et ses livres. Un `todo`
