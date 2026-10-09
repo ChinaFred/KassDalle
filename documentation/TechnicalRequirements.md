@@ -1321,7 +1321,7 @@ service cloud.firestore {
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `recipe_ratings` | `isApproved()` | l'auteur de la note, ou admin |
 | `groups` | membres du groupe | le propriétaire, ou admin |
-| `processing_jobs` | éditeur ou propriétaire du job | création par le propriétaire ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation |
+| `processing_jobs` | éditeur ou propriétaire du job | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur ; modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`) |
@@ -2788,11 +2788,14 @@ l'authentification.
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
 la garde de la callable, **jamais par le routeur** : hors `/admin`, il laisse passer tout
-compte nommé. Un `reader` qui ouvre `/scan` voit l'écran. L'import est réservé à l'éditeur
-et à l'admin, mais aucune règle ne l'impose encore : `storage.rules` accepte un `reader` en
-`quarantine/{uid}/` (il y dépose les images de ses propres recettes), `firestore.rules` le
-laisse créer son `processing_job`, et `scanAndPromoteUploadFn` n'exige que `requireAuth`. Une
-correction du code est prévue.
+compte nommé. L'import (`/scan`) est réservé à l'éditeur et à l'admin, et `firestore.rules`
+l'impose : la création d'un `processing_job`, seul point qui lance le pipeline facturé
+(`jobDispatcher`), exige `isEditor()`, et sa relance aussi. La lecture d'un livre avant import
+(`analyzeBookFileFn`) exige `requireEditor`. Un `reader` qui ouvre `/scan` par un lien voit un
+état « Import réservé aux éditeurs » au lieu du formulaire, et aucune entrée vers `/scan` ne
+lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUploadFn`
+(`requireAuth`) restent ouverts au `reader` : il y dépose le fichier source de ses propres
+recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 
 | Route | Écran | Droit effectif |
 |---|---|---|

@@ -464,6 +464,12 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = ref.watch(isAdminProvider);
+    // L'import lance des appels d'IA facturés : réservé aux éditeurs, et les
+    // règles refusent le `processing_job` d'un lecteur.
+    final canImport = ref.watch(canEditProvider);
+    // Tant que le rôle n'est pas lu, `canImport` vaut faux : un éditeur verrait
+    // la file sans bouton d'import. On attend le rôle comme on attend la file.
+    final roleLoading = ref.watch(appUserProvider).isLoading;
     final adminUidFilter = ref.watch(adminJobUserFilterProvider);
 
     final myJobsAsync = ref.watch(processingJobsProvider);
@@ -472,7 +478,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final allJobsAsync = isAdmin ? ref.watch(allProcessingJobsProvider) : null;
     final allDraftsAsync = isAdmin ? ref.watch(allDraftsProvider) : null;
 
-    if (myJobsAsync.isLoading || myDraftsAsync.isLoading) {
+    if (myJobsAsync.isLoading || myDraftsAsync.isLoading || roleLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -582,11 +588,12 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   tooltip: 'Sélectionner',
                   onPressed: _busy ? null : _startSelection,
                 ),
-              IconButton(
-                icon: const Icon(Icons.upload_file),
-                tooltip: 'Importer un scan',
-                onPressed: () => context.go('/scan'),
-              ),
+              if (canImport)
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  tooltip: 'Importer un scan',
+                  onPressed: () => context.go('/scan'),
+                ),
               const SizedBox(width: 8),
             ],
           );
@@ -610,7 +617,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 : planDraftValidation(
                     selectedDrafts.map((d) => d.recipe),
                   ).validatableInBatch,
-            retryCount: retryableJobs.isEmpty ? null : retryableJobs.length,
+            retryCount: (retryableJobs.isEmpty || !canImport)
+                ? null
+                : retryableJobs.length,
             deleteCount: selectedItems.length,
             onValidate: () => _validateDrafts(
               selectedDrafts.map((d) => d.recipe).toList(),
@@ -637,23 +646,34 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 child: AppEmptyState(
                   icon: Icons.edit_note_outlined,
                   title: 'Aucun élément',
-                  message: 'Importez un scan pour commencer.',
-                  action: FilledButton.icon(
-                    onPressed: () => context.go('/scan'),
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text('Importer un fichier'),
-                  ),
+                  // Un lecteur n'importe pas : on lui dit d'où viennent les
+                  // brouillons, et où voir ceux de sa famille.
+                  message: canImport
+                      ? 'Importez un scan pour commencer.'
+                      : 'Les brouillons naissent d\'un import, réservé aux '
+                            'éditeurs. Ceux de votre famille s\'affichent en '
+                            'choisissant « Groupe familial » dans le filtre en '
+                            'haut de l\'écran.',
+                  action: canImport
+                      ? FilledButton.icon(
+                          onPressed: () => context.go('/scan'),
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Importer un fichier'),
+                        )
+                      : null,
                 ),
               ),
             ],
           ),
         ),
         bottomNavigationBar: bottomBar,
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.go('/scan'),
-          icon: const Icon(Icons.upload_file),
-          label: const Text('Importer'),
-        ),
+        floatingActionButton: canImport
+            ? FloatingActionButton.extended(
+                onPressed: () => context.go('/scan'),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Importer'),
+              )
+            : null,
       );
     }
 
@@ -696,8 +716,10 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                       ? _toggleSelect(item.key)
                       : _handleJobTap(context, job),
                   onLongPress: () => _toggleSelect(item.key),
-                  onRetry: () =>
-                      ref.read(scanUploadProvider.notifier).retryJob(job),
+                  onRetry: canImport
+                      ? () =>
+                            ref.read(scanUploadProvider.notifier).retryJob(job)
+                      : null,
                   onCancel: () =>
                       ref.read(scanUploadProvider.notifier).cancelJob(job.id),
                   onDelete: () => _deleteItems([item]),
@@ -738,7 +760,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         ),
       ),
       bottomNavigationBar: bottomBar,
-      floatingActionButton: (selecting || _busy)
+      floatingActionButton: (selecting || _busy || !canImport)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => context.go('/scan'),
