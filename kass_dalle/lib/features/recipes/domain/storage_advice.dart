@@ -157,3 +157,31 @@ class StorageAdvice {
 
   bool get isFreezable => congelateur != null;
 }
+
+/// Ce que rend la demande d'un conseil de conservation
+/// (`StorageRepository.ensure`).
+///
+/// Trois issues qu'un écran affiche différemment : le conseil, l'absence de
+/// droit de le demander, ou une recette qui n'existe plus. Un simple `null`
+/// confondait les deux dernières, et une recette supprimée s'affichait comme
+/// « réservée au créateur ».
+sealed class StorageAdviceLookup {
+  const StorageAdviceLookup();
+}
+
+/// Le conseil, relu ou produit.
+class StorageAdviceAvailable extends StorageAdviceLookup {
+  final StorageAdvice advice;
+  const StorageAdviceAvailable(this.advice);
+}
+
+/// Aucun conseil enregistré, et l'appelant n'est ni le créateur de la recette
+/// ni un administrateur : il ne peut pas en demander.
+class StorageAdviceReserved extends StorageAdviceLookup {
+  const StorageAdviceReserved();
+}
+
+/// La recette n'existe pas (ou plus).
+class StorageAdviceRecipeMissing extends StorageAdviceLookup {
+  const StorageAdviceRecipeMissing();
+}

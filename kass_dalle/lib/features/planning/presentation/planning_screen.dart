@@ -8,6 +8,8 @@ import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planning_history.dart';
+import '../../recipes/domain/recipe_advice_access.dart';
+import '../../recipes/domain/storage_advice.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
@@ -678,7 +680,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   }
 
   /// Affiche le conseil de conservation d'un repas, en le produisant s'il
-  /// manque.
+  /// manque et que l'utilisateur en a le droit.
   ///
   /// Un conseil déjà produit ne se repaie pas : il appartient au plat, pas au
   /// repas, et sert donc à toutes ses planifications.
@@ -687,10 +689,25 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     if (recipeId == null || recipeId.isEmpty) return;
     setState(() => _storageLoadingIds.add(meal.id));
     try {
-      final advice = await ref
+      final canGenerate = await ref.read(canWriteRecipeAdviceProvider.future);
+      final lookup = await ref
           .read(storageRepositoryProvider)
-          .ensure(recipeId: recipeId);
+          .ensure(recipeId: recipeId, canGenerate: canGenerate);
       if (!mounted) return;
+      final StorageAdvice advice;
+      switch (lookup) {
+        case StorageAdviceAvailable(advice: final found):
+          advice = found;
+        case StorageAdviceReserved():
+          // Aucun conseil enregistré, et seuls le créateur de la recette et
+          // un administrateur peuvent en demander un : on le dit plutôt que
+          // d'essuyer le refus du serveur.
+          context.showSnackBar(kStorageAdviceReservedMessage);
+          return;
+        case StorageAdviceRecipeMissing():
+          context.showErrorSnackBar(kRecipeNotFoundMessage);
+          return;
+      }
       final daysAhead = meal.prepDate == null
           ? 0
           : mealStorageDaysAhead(

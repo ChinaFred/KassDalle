@@ -934,7 +934,8 @@ sequenceDiagram
     <h2 id="dressage"><span class="n">09</span>Conseil de dressage et visuels de montage</h2>
     <p class="sec-note">
       Le conseil coûte un appel de modèle et vaut pour tous les lecteurs : il est demandé
-      explicitement, puis conservé dans son propre champ. L'utilisateur décide ensuite s'il
+      explicitement, par le créateur de la recette ou un administrateur, puis conservé dans son
+      propre champ. Les autres membres lisent le conseil enregistré. L'utilisateur décide ensuite s'il
       l'intègre au texte de la recette.
       <span class="path">dressing_coach_section.dart, plating_repository.dart, gemini/plating.ts</span>
     </p>
@@ -956,13 +957,17 @@ sequenceDiagram
   U->>DC: ouvre l'onglet Dressage
   DC->>PR: read recipeId
   PR->>FS: get plating_advice
-  alt aucun conseil stocké
+  alt aucun conseil stocké, ni créateur ni admin
+    FS-->>DC: vide
+    DC-->>U: Aucun conseil de dressage, seuls son créateur et un administrateur peuvent en demander un
+  else aucun conseil stocké, créateur ou admin
     FS-->>DC: vide
     DC-->>U: bouton Demander un dressage sur mesure
     U->>DC: contexte de service facultatif puis validation
     DC->>PR: generate recipeId, instruction
     PR->>CF: appel callable
-    CF->>FS: lecture titre, raw_cooklang, tags, portions
+    CF->>FS: lecture created_by, titre, raw_cooklang, tags, portions
+    CF->>CF: assertCanModifyRecipe, sinon permission-denied avant tout appel
     CF->>RT: prompt de dressage, poste plating_coach
     RT->>M: appel du moteur retenu par la politique
     M-->>RT: JSON contenant, étapes, pièges, dernière minute
@@ -980,7 +985,8 @@ sequenceDiagram
   end
   DC-->>U: contenant, gestes numérotés, pièges, dernière minute
 
-  opt rôle éditeur, sur n'importe quelle étape
+  Note over DC,U: créateur lecteur : boutons de visuel masqués, ligne « réservés aux éditeurs »
+  opt créateur ou admin, rôle éditeur, sur n'importe quelle étape
     U->>DC: Illustrer cette étape
     DC->>DC: missingImageIndexesUpTo, étapes à produire avant celle-ci
     opt plus d'un visuel nécessaire
@@ -990,7 +996,8 @@ sequenceDiagram
     loop chaque étape manquante, dans l'ordre
     DC->>PR: generateStepImage recipeId, stepIndex
     PR->>IM: appel callable
-    IM->>FS: relit l'étape et les gestes précédents
+    IM->>FS: relit created_by, l'étape et les gestes précédents
+    IM->>IM: assertCanModifyRecipe avant tout appel
     opt une étape antérieure a déjà son visuel
       IM->>ST: télécharge le dernier visuel produit
       Note over IM: l'image sert de point de départ, le prompt<br/>demande de n'ajouter que le geste en cours

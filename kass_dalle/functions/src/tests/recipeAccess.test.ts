@@ -1,50 +1,54 @@
 /**
- * Lecture d'une recette par une callable, et confidentialité d'une recette
+ * Écriture sur une recette par une callable, et confidentialité d'une recette
  * sans livre. Logique pure.
  */
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { privateRecipeReadDenial } from "../callable/_recipeAccess";
+import { recipeWriteDenial } from "../callable/_recipeAccess";
 import { privacyWithoutBook } from "../triggers/recipePrivacy";
 
-describe("privateRecipeReadDenial", () => {
-  const priv = { is_private: true, created_by: "auteur" };
-
-  test("recette privée d'un autre : refusée", () => {
-    assert.notEqual(
-      privateRecipeReadDenial({ data: priv, callerUid: "lecteur", callerIsAdmin: false }),
-      null,
-    );
-  });
-
-  test("le créateur et l'administrateur lisent", () => {
-    assert.equal(
-      privateRecipeReadDenial({ data: priv, callerUid: "auteur", callerIsAdmin: false }),
-      null,
-    );
-    assert.equal(
-      privateRecipeReadDenial({ data: priv, callerUid: "x", callerIsAdmin: true }),
-      null,
-    );
-  });
-
-  test("recette partagée ou sans champ : lue par tous", () => {
-    for (const data of [{ is_private: false, created_by: "a" }, { created_by: "a" }, undefined]) {
-      assert.equal(privateRecipeReadDenial({ data, callerUid: "x", callerIsAdmin: false }), null);
+// Faille 5 de l'audit : un conseil ou un calcul écrit sur la recette ne se
+// déclenche que par son créateur ou un administrateur.
+describe("recipeWriteDenial", () => {
+  test("le créateur écrit, sur une recette partagée comme privée", () => {
+    for (const isPrivate of [false, true]) {
+      assert.equal(
+        recipeWriteDenial({
+          data: { is_private: isPrivate, created_by: "auteur" },
+          callerUid: "auteur",
+          callerIsAdmin: false,
+        }),
+        null,
+      );
     }
   });
 
-  test("created_by vide ne donne aucun droit", () => {
+  test("un autre compte est refusé, même sur une recette partagée", () => {
     assert.notEqual(
-      privateRecipeReadDenial({
-        data: { is_private: true, created_by: "" },
-        callerUid: "",
+      recipeWriteDenial({
+        data: { is_private: false, created_by: "auteur" },
+        callerUid: "lecteur",
         callerIsAdmin: false,
       }),
       null,
     );
+  });
+
+  test("l'administrateur écrit partout", () => {
+    assert.equal(
+      recipeWriteDenial({ data: { created_by: "auteur" }, callerUid: "x", callerIsAdmin: true }),
+      null,
+    );
+  });
+
+  test("created_by absent, vide ou d'un autre type : personne sauf l'administrateur", () => {
+    for (const data of [{}, { created_by: "" }, { created_by: 42 }, undefined]) {
+      assert.notEqual(recipeWriteDenial({ data, callerUid: "", callerIsAdmin: false }), null);
+      assert.notEqual(recipeWriteDenial({ data, callerUid: "x", callerIsAdmin: false }), null);
+      assert.equal(recipeWriteDenial({ data, callerUid: "x", callerIsAdmin: true }), null);
+    }
   });
 });
 

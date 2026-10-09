@@ -26,6 +26,21 @@ final storageRepositoryProvider = Provider<StorageRepository>((ref) {
   return StorageRepository();
 });
 
+/// Droit de déclencher un conseil ou un calcul écrit sur la recette créée par
+/// `createdBy` — conservation, dressage, visuel d'étape, nutrition.
+///
+/// Le créateur ou un administrateur : miroir de `assertCanModifyRecipe` côté
+/// Functions, qui refuse les autres comptes avant tout appel de modèle.
+///
+/// Asynchrone : la décision attend le profil. Lu avant son chargement, un
+/// provider synchrone répondait « non » au créateur lui-même, et le bandeau de
+/// préparation lui annonçait un conseil réservé.
+final canWriteRecipeAdviceProvider =
+    FutureProvider<bool Function(String createdBy)>((ref) async {
+      final user = await ref.watch(appUserProvider.future);
+      return (createdBy) => user?.canModifyRecipe(createdBy) ?? false;
+    });
+
 /// Conseil de conservation déjà stocké sur la recette, ou null.
 ///
 /// Lecture ponctuelle : le conseil ne change que sur une action explicite.

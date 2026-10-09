@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
@@ -208,6 +209,11 @@ class BatchSlotTile extends StatelessWidget {
   /// Vrai pendant la production du conseil de conservation de ce créneau.
   final bool storageLoading;
 
+  /// La recette n'a pas de conseil et l'utilisateur n'est ni son créateur ni
+  /// un administrateur : une courte phrase remplace le bouton, constaté au
+  /// premier essai.
+  final bool storageReserved;
+
   /// Demande le conseil de conservation — null tant qu'aucune recette
   /// enregistrée n'est posée sur le créneau.
   final VoidCallback? onGenerateStorageAdvice;
@@ -264,6 +270,7 @@ class BatchSlotTile extends StatelessWidget {
     this.savedToPlanning = false,
     this.storageAdvice,
     this.storageLoading = false,
+    this.storageReserved = false,
     this.onGenerateStorageAdvice,
     required this.onAssign,
     required this.onRemove,
@@ -456,6 +463,16 @@ class BatchSlotTile extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2, left: 17),
               child: Text(
                 'Réchauffage : ${reheat.summary}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else if (storageReserved)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 17),
+              child: Text(
+                kStorageAdviceReservedMessage,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

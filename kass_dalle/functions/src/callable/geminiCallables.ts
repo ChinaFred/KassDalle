@@ -22,7 +22,7 @@ import {
   REGION,
 } from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
-import { assertCanReadRecipe } from "./_recipeAccess";
+import { assertCanModifyRecipe } from "./_recipeAccess";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
   polishCooklang,
@@ -1066,7 +1066,10 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  *
  * Le conseil est écrit sur la recette : il est cher à produire, identique pour
  * tous les lecteurs, et l'onglet ne doit pas le repayer à chaque ouverture.
- * L'appel n'est donc déclenché que par un geste explicite côté client.
+ * L'appel n'est donc déclenché que par un geste explicite côté client, et
+ * seulement par le créateur de la recette ou un administrateur : l'instruction
+ * libre (`user_instruction`) stockée avec le conseil n'est plus celle d'un
+ * tiers.
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "plating_coach");
@@ -1085,8 +1088,9 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
       throw new HttpsError("not-found", "Recette introuvable.");
     }
     const data = snap.data() ?? {};
-    // Même confidentialité que les règles, avant tout appel de modèle.
-    await assertCanReadRecipe(data, ctx.userId);
+    // Le conseil s'écrit sur la recette : créateur ou administrateur, comme
+    // `allow update` dans les règles — vérifié avant tout appel de modèle.
+    await assertCanModifyRecipe(data, ctx.userId);
     const cooklang = (data.raw_cooklang as string | undefined) ?? "";
     if (!cooklang.trim()) {
       throw new HttpsError("failed-precondition", "Cette recette n'a pas de contenu à dresser.");
@@ -1167,6 +1171,9 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
  * recette depuis un repas préparé un autre jour — la question de la
  * conservation est alors déjà posée. Dans les deux cas le client relit le
  * conseil stocké avant de demander : un plat n'est chiffré qu'une fois.
+ *
+ * Seuls le créateur de la recette et un administrateur le produisent. Les
+ * autres lisent le conseil stocké, ou n'en ont pas.
  */
 export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "storage_advice");
@@ -1182,8 +1189,9 @@ export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
       throw new HttpsError("not-found", "Recette introuvable.");
     }
     const data = snap.data() ?? {};
-    // Même confidentialité que les règles, avant tout appel de modèle.
-    await assertCanReadRecipe(data, ctx.userId);
+    // Le conseil s'écrit sur la recette : créateur ou administrateur, comme
+    // `allow update` dans les règles — vérifié avant tout appel de modèle.
+    await assertCanModifyRecipe(data, ctx.userId);
     const cooklang = (data.raw_cooklang as string | undefined) ?? "";
     if (!cooklang.trim()) {
       throw new HttpsError("failed-precondition", "Cette recette n'a pas de contenu à conserver.");
@@ -1243,7 +1251,8 @@ export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
 /**
  * Génère le visuel de montage d'une étape.
  *
- * Réservé aux éditeurs : chaque image coûte.
+ * Réservé aux éditeurs : chaque image coûte. Et, parmi eux, au créateur de la
+ * recette ou à un administrateur : le visuel s'écrit sur la recette.
  *
  * Le visuel se construit **par-dessus le précédent** quand il en existe un.
  * Regénérer chaque étape de zéro donnait une assiette différente à chaque fois
@@ -1270,8 +1279,12 @@ export const generatePlatingImageFn = onCall(
     try {
       const ref = getFirestore().collection(COLL_RECIPES).doc(recipeId);
       const snap = await ref.get();
-      // Même confidentialité que les règles, avant tout appel de modèle.
-      await assertCanReadRecipe(snap.data(), ctx.userId);
+      if (!snap.exists) {
+        throw new HttpsError("not-found", "Recette introuvable.");
+      }
+      // Le visuel s'écrit sur la recette : créateur ou administrateur, comme
+      // `allow update` dans les règles — vérifié avant tout appel de modèle.
+      await assertCanModifyRecipe(snap.data(), ctx.userId);
       const advice = readStoredAdvice(snap.data());
       if (!advice) {
         throw new HttpsError(
