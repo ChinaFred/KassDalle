@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.19 — technique
+
+#### Contrôle de version : deux titres permis, garde-fous signalés
+
+`check-version.sh` accepte deux entrées pour une même version dans ce fichier, une
+« — fonctionnel » et une « — technique », ajoutées dans le même commit. Il refuse une version
+sans entrée, un titre d'un autre type, deux titres du même type, et deux titres ajoutés par
+des commits distincts. Ces deux derniers cas signalent deux livraisons au même numéro. `relecteur-regles` reçoit un
+contrôle 14 : tout diff qui touche `check-version.sh`, `ci.yml` ou `deploy.yml` est signalé
+en tête de son rapport, et l'utilisateur décide avant la fusion.
+
 ### v0.23.18 — fonctionnel
 
 #### Planning : le serveur choisit les candidats, « Autre suggestion » sans IA, coût borné
