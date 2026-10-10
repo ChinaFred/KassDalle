@@ -20,6 +20,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.17 — technique
+
+#### Un numéro de version par livraison
+
+Le PC pousse sur `master` pendant que des sessions cloud préparent leurs PR. Deux livraisons
+qui passaient toutes deux de 0.23.14 à 0.23.15 fusionnaient sans conflit dans `pubspec.yaml`,
+et le second déploiement conservait l'APK en ligne : ses changements n'arrivaient pas sur
+Android. Le script `.github/scripts/check-version.sh` vérifie trois points : une version
+changée dépasse celle de `master`, aucun autre commit de l'historique n'a introduit le même
+numéro, et ce fichier n'a qu'une entrée pour elle. Il tourne dans un nouveau job de la CI,
+« Version — numéro libre », qui bloque le déploiement s'il échoue. `CLAUDE.md` demande de le
+lancer à la main avant chaque push depuis le PC et avant chaque fusion de PR, après avoir
+intégré `origin/master`. Un `.gitattributes` garde les scripts `*.sh` en fins de ligne LF,
+pour que le `bash` de Git for Windows les lise.
+
 ### v0.23.16 — fonctionnel
 
 #### Traduction des recettes étrangères à l'import
