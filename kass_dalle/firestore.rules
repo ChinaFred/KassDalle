@@ -269,14 +269,47 @@ service cloud.firestore {
         == resource.data.get('created_by', null);
     }
 
+    // ── Cloisonnement par groupe familial ───────────────────────────────────
+    //
+    // Décision de l'utilisateur (2026-10-10) : un groupe familial est un lieu
+    // de partage. Un livre ou une recette non privé d'un autre compte ne se
+    // lit que si ce compte partage au moins un groupe avec moi. Un compte qui
+    // sort d'un groupe est traité comme s'il était supprimé. L'administrateur
+    // voit tout, comme avant.
+    //
+    // Les règles ne peuvent pas parcourir `groups` pour répondre à « partage
+    // un groupe avec moi ». `group_reach/{uid}` porte la réponse toute faite :
+    // `uids`, la liste des autres comptes avec qui `uid` partage un groupe.
+    // Seul le serveur l'écrit (déclencheur `syncGroupReach` sur
+    // `groups/{groupId}`, et le backfill « Portée des groupes »).
+    //
+    // Une requête du client reste prouvable : elle filtre
+    // `created_by in [...]` sur des comptes de sa propre portée, et la règle
+    // vérifie chaque valeur contre la liste. Une lecture facturée de plus par
+    // requête, pas par document.
+    //
+    // Sans document de portée (compte sans groupe, ou backfill pas encore
+    // passé), on ne lit rien des autres.
+    function sharesGroupWith(ownerUid) {
+      return ownerUid is string
+        && exists(/databases/$(database)/documents/group_reach/$(request.auth.uid))
+        && ownerUid in get(/databases/$(database)/documents/group_reach/$(request.auth.uid))
+             .data.get('uids', []);
+    }
+
+    /// Un document partagé, et d'un compte de mes groupes.
+    function isSharedWithMe(data) {
+      return isSharedDoc(data) && sharesGroupWith(data.get('created_by', null));
+    }
+
     /// Lecture d'une recette. Un brouillon partagé reste lisible par un
-    /// éditeur (relecture) ; une recette privée, jamais par un autre que son
-    /// créateur ou un administrateur.
+    /// éditeur de mes groupes (relecture) ; une recette privée, jamais par un
+    /// autre que son créateur ou un administrateur.
     function canReadRecipe(data) {
       return isApproved() && (
-        (isSharedDoc(data) && (data.review_status == 'validated' || isEditor()))
-        || isCreator(data)
+        isCreator(data)
         || isAdmin()
+        || ((data.review_status == 'validated' || isEditor()) && isSharedWithMe(data))
       );
     }
 
@@ -316,7 +349,7 @@ service cloud.firestore {
       }
 
       allow read: if isApproved()
-        && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
+        && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && keepsSystemTags();
@@ -406,19 +439,99 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.user_id) || isAdmin();
     }
 
+    // Portée des groupes : les comptes avec qui `uid` partage un groupe.
+    // Lue par son titulaire (le client en tire ses requêtes) et par un
+    // administrateur. Écrite par le serveur seul : un compte qui pourrait
+    // s'ajouter la portée d'un autre lirait ses livres.
+    match /group_reach/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if false;
+    }
+
     // Groupes familiaux
+    //
+    // Être membre d'un groupe ouvre la lecture des livres et recettes non
+    // privés des autres membres, dans les deux sens (`group_reach`). On n'y
+    // entre donc que de son propre chef (décision de l'utilisateur,
+    // 2026-10-10) : le propriétaire INVITE (`invited_ids`), l'invité accepte
+    // ou refuse. Auparavant le propriétaire écrivait directement
+    // `member_ids` : n'importe quel compte créait un groupe, y ajoutait un
+    // inconnu, et lisait ses livres.
+    //
+    // Quatre écritures, et elles seules :
+    //  • gestion (propriétaire ou administrateur) : renommer, inviter,
+    //    annuler une invitation, retirer un membre — jamais en ajouter un ;
+    //  • accepter (l'invité) : passer de `invited_ids` à `member_ids` ;
+    //  • refuser (l'invité) : sortir de `invited_ids` ;
+    //  • quitter (un membre autre que le propriétaire) : sortir de
+    //    `member_ids`. La règle le refusait : « Quitter le groupe » échouait.
     match /groups/{groupId} {
+      function oldMembers() {
+        return resource.data.get('member_ids', []).toSet();
+      }
+      function newMembers() {
+        return request.resource.data.get('member_ids', []).toSet();
+      }
+      function oldInvited() {
+        return resource.data.get('invited_ids', []).toSet();
+      }
+      function newInvited() {
+        return request.resource.data.get('invited_ids', []).toSet();
+      }
+      function onlyTouches(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+      function me() {
+        return [request.auth.uid].toSet();
+      }
+
+      /// Le propriétaire (ou un administrateur) gère le groupe sans y faire
+      /// entrer personne : `member_ids` ne peut que perdre des comptes, le
+      /// propriétaire y reste, et une invitation ne vise pas un compte déjà
+      /// membre.
+      function isManagement() {
+        return (isOwner(resource.data.owner_id) || isAdmin())
+          && onlyTouches(['name', 'member_ids', 'invited_ids'])
+          && oldMembers().hasAll(newMembers())
+          && newMembers().hasAll([resource.data.owner_id])
+          && !newInvited().hasAny(newMembers());
+      }
+
+      function isAcceptance() {
+        return request.auth.uid in oldInvited()
+          && onlyTouches(['member_ids', 'invited_ids'])
+          && newMembers() == oldMembers().union(me())
+          && newInvited() == oldInvited().difference(me());
+      }
+
+      function isRefusal() {
+        return request.auth.uid in oldInvited()
+          && onlyTouches(['invited_ids'])
+          && newInvited() == oldInvited().difference(me());
+      }
+
+      function isLeaving() {
+        return request.auth.uid in oldMembers()
+          && request.auth.uid != resource.data.owner_id
+          && onlyTouches(['member_ids'])
+          && newMembers() == oldMembers().difference(me());
+      }
+
+      // L'invité lit le groupe pour décider : son nom et ses membres.
       allow read: if isApproved() &&
         (resource.data.owner_id == request.auth.uid
-          || request.auth.uid in resource.data.member_ids);
+          || request.auth.uid in resource.data.member_ids
+          || request.auth.uid in resource.data.get('invited_ids', []));
       allow create: if isApproved()
         && request.resource.data.owner_id == request.auth.uid
-        && request.resource.data.member_ids == [request.auth.uid];
+        && request.resource.data.member_ids == [request.auth.uid]
+        && request.resource.data.get('invited_ids', []).size() == 0;
       // `owner_id` est figé : changer de propriétaire n'est pas un parcours de
       // l'application, et un groupe offert à un autre compte lui en
       // attribuerait la gestion sans son accord.
-      allow update: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin())
-        && request.resource.data.owner_id == resource.data.owner_id;
+      allow update: if isApproved()
+        && request.resource.data.owner_id == resource.data.owner_id
+        && (isManagement() || isAcceptance() || isRefusal() || isLeaving());
       allow delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
     }
 

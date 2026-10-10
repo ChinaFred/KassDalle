@@ -128,6 +128,14 @@ export const COLL_USERS = "users";
  */
 export const COLL_USER_PROFILES = "user_profiles";
 export const COLL_APP_CONFIG = "app_config";
+/** Groupes familiaux : `owner_id` et `member_ids`. */
+export const COLL_GROUPS = "groups";
+/**
+ * Portée des groupes : `group_reach/{uid}.uids` liste les autres comptes avec
+ * qui `uid` partage au moins un groupe. Lue par les règles Firestore pour
+ * cloisonner livres et recettes. Écrite par le serveur seul.
+ */
+export const COLL_GROUP_REACH = "group_reach";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 
 /**

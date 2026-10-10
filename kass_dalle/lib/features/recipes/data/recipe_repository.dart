@@ -193,10 +193,44 @@ class RecipeRepository {
   //
   // Firestore refuse une requête entière si ses règles ne peuvent pas prouver,
   // sur les seuls filtres, que chaque résultat est lisible. Pour un autre
-  // qu'un administrateur, une requête par livre ou par statut se scinde donc
-  // en deux : les recettes partagées (`is_private == false`) et les siennes
-  // (`created_by == uid`). Un lecteur ne relit pas les brouillons des autres :
-  // pour lui, une requête de brouillons ne porte que sur les siens.
+  // qu'un administrateur, une requête par livre ou par statut se scinde donc :
+  // les siennes (`created_by == uid`), et les recettes partagées
+  // (`is_private == false`) des comptes de ses groupes (`created_by in`, par
+  // lots). Les règles ne laissent lire une recette partagée d'un autre que
+  // s'il partage un groupe avec le lecteur (`group_reach`, v0.23.15). Un
+  // lecteur ne relit pas les brouillons des autres : pour lui, une requête de
+  // brouillons ne porte que sur les siens.
+
+  /// Firestore borne une requête à 30 disjonctions : le produit des valeurs
+  /// de ses filtres `in`. Une requête de [base] qui porte déjà un `in` à
+  /// [baseDisjunctions] valeurs reçoit des lots de comptes d'autant plus
+  /// petits.
+  static List<List<String>> _peerChunks(
+    List<String> peers, {
+    int baseDisjunctions = 1,
+  }) {
+    final size = 30 ~/ baseDisjunctions;
+    return [
+      for (var i = 0; i < peers.length; i += size)
+        peers.sublist(i, (i + size).clamp(0, peers.length)),
+    ];
+  }
+
+  /// Les recettes partagées de [base] écrites par les comptes des groupes du
+  /// lecteur, une requête par lot.
+  static List<Query<Map<String, dynamic>>> _sharedByPeers(
+    Query<Map<String, dynamic>> base,
+    RecipeViewer viewer, {
+    int baseDisjunctions = 1,
+  }) => [
+    for (final chunk in _peerChunks(
+      viewer.groupPeers,
+      baseDisjunctions: baseDisjunctions,
+    ))
+      base
+          .where('is_private', isEqualTo: false)
+          .where('created_by', whereIn: chunk),
+  ];
 
   List<Query<Map<String, dynamic>>> _visibleQueries(
     Query<Map<String, dynamic>> base,
@@ -206,7 +240,11 @@ class RecipeRepository {
     if (viewer.isAdmin) return [base];
     final mine = base.where('created_by', isEqualTo: viewer.uid);
     if (drafts && !viewer.canEdit) return [mine];
-    return [base.where('is_private', isEqualTo: false), mine];
+    // Une requête de brouillons porte déjà `review_status in [draft, inReview]`.
+    return [
+      mine,
+      ..._sharedByPeers(base, viewer, baseDisjunctions: drafts ? 2 : 1),
+    ];
   }
 
   List<Recipe> _toRecipes(QuerySnapshot<Map<String, dynamic>> snap) =>
@@ -294,9 +332,10 @@ class RecipeRepository {
   /// agrégation plutôt qu'un `get()` : on veut un nombre, pas les documents,
   /// et lire cent recettes pour en compter cent est facturé cent fois.
   ///
-  /// Hors administrateur, deux comptes disjoints : les recettes partagées, et
-  /// mes recettes privées. Une recette privée d'un autre rangée dans mon livre
-  /// n'est pas comptée — je ne peux pas la lire.
+  /// Hors administrateur, des comptes disjoints : les miennes, puis les
+  /// recettes partagées des comptes de mes groupes. Une recette d'un compte
+  /// hors de mes groupes rangée dans mon livre n'est pas comptée — je ne peux
+  /// pas la lire.
   Future<int> countInBook(String bookId, RecipeViewer viewer) async {
     final base = _col.where('book_id', isEqualTo: bookId);
     if (viewer.isAdmin) {
@@ -304,12 +343,8 @@ class RecipeRepository {
       return snap.count ?? 0;
     }
     final counts = await Future.wait([
-      base.where('is_private', isEqualTo: false).count().get(),
-      base
-          .where('created_by', isEqualTo: viewer.uid)
-          .where('is_private', isEqualTo: true)
-          .count()
-          .get(),
+      base.where('created_by', isEqualTo: viewer.uid).count().get(),
+      for (final q in _sharedByPeers(base, viewer)) q.count().get(),
     ]);
     return counts.fold<int>(0, (total, c) => total + (c.count ?? 0));
   }
@@ -318,18 +353,15 @@ class RecipeRepository {
   /// ne pourra ni supprimer ni détacher — annoncé avant de supprimer le livre.
   ///
   /// Zéro pour un administrateur, qui agit sur toutes. Sinon, les pages
-  /// partagées moins les siennes ; les pages privées d'un autre rangées dans
-  /// le livre ne sont pas lisibles, donc pas comptées.
+  /// partagées des comptes de mes groupes ; les pages privées d'un autre, ou
+  /// d'un compte hors de mes groupes, ne sont pas lisibles, donc pas comptées.
   Future<int> countOthersInBook(String bookId, RecipeViewer viewer) async {
     if (viewer.isAdmin) return 0;
-    final shared = _col
-        .where('book_id', isEqualTo: bookId)
-        .where('is_private', isEqualTo: false);
+    final base = _col.where('book_id', isEqualTo: bookId);
     final counts = await Future.wait([
-      shared.count().get(),
-      shared.where('created_by', isEqualTo: viewer.uid).count().get(),
+      for (final q in _sharedByPeers(base, viewer)) q.count().get(),
     ]);
-    return (counts[0].count ?? 0) - (counts[1].count ?? 0);
+    return counts.fold<int>(0, (total, c) => total + (c.count ?? 0));
   }
 
   Query<Map<String, dynamic>> _validatedOfBook(String bookId) => _col

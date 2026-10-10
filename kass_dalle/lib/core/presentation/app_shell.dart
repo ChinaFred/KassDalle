@@ -15,6 +15,7 @@ import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
+import '../../features/groups/presentation/group_providers.dart';
 import '../../features/moderation/presentation/moderation_providers.dart';
 import 'usage_warning_banner.dart';
 
@@ -318,28 +319,32 @@ class _AccountBadge extends ConsumerWidget {
         }
         ref.read(authRepositoryProvider).signOut();
       },
-      child: Chip(
-        avatar:
-            (FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl ?? '')
-                .isNotEmpty
-            ? ClipOval(
-                child: CachedNetworkImage(
-                  imageUrl:
-                      FirebaseAuth.instance.currentUser?.photoURL ??
-                      user.photoUrl!,
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.cover,
-                  placeholder: (_, _) => CircleAvatar(
-                    child: Text(user.displayName[0].toUpperCase()),
+      child: _InvitationsDot(
+        child: Chip(
+          avatar:
+              (FirebaseAuth.instance.currentUser?.photoURL ??
+                      user.photoUrl ??
+                      '')
+                  .isNotEmpty
+              ? ClipOval(
+                  child: CachedNetworkImage(
+                    imageUrl:
+                        FirebaseAuth.instance.currentUser?.photoURL ??
+                        user.photoUrl!,
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => CircleAvatar(
+                      child: Text(user.displayName[0].toUpperCase()),
+                    ),
+                    errorWidget: (_, _, _) => CircleAvatar(
+                      child: Text(user.displayName[0].toUpperCase()),
+                    ),
                   ),
-                  errorWidget: (_, _, _) => CircleAvatar(
-                    child: Text(user.displayName[0].toUpperCase()),
-                  ),
-                ),
-              )
-            : CircleAvatar(child: Text(user.displayName[0].toUpperCase())),
-        label: Text(user.displayName, overflow: TextOverflow.ellipsis),
+                )
+              : CircleAvatar(child: Text(user.displayName[0].toUpperCase())),
+          label: Text(user.displayName, overflow: TextOverflow.ellipsis),
+        ),
       ),
       itemBuilder: (_) => <PopupMenuEntry<_AccountAction>>[
         PopupMenuItem<_AccountAction>(
@@ -390,7 +395,7 @@ class _AccountBadge extends ConsumerWidget {
           value: _AccountAction.groups,
           child: Row(
             children: [
-              Icon(Icons.group_outlined),
+              _GroupsIcon(),
               SizedBox(width: 8),
               Text('Groupes familiaux'),
             ],
@@ -442,6 +447,44 @@ class _AdminIcon extends ConsumerWidget {
     return Semantics(
       label: '$pending image(s) en attente de modération',
       child: Badge(label: Text('$pending'), child: Icon(icon)),
+    );
+  }
+}
+
+/// Point sur le compte = invitation(s) de groupe en attente.
+///
+/// L'écran Groupes ne s'ouvre que par le menu du compte : sans ce signal, un
+/// invité ne trouverait pas son invitation, et le propriétaire croirait que
+/// l'invitation n'est pas partie.
+class _InvitationsDot extends ConsumerWidget {
+  final Widget child;
+  const _InvitationsDot({required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(pendingInvitationsCountProvider);
+    if (pending == 0) return child;
+    return Semantics(
+      label: 'Invitation(s) de groupe en attente',
+      child: Badge(child: child),
+    );
+  }
+}
+
+/// Icône « Groupes familiaux » du menu compte — badge = invitations reçues.
+class _GroupsIcon extends ConsumerWidget {
+  const _GroupsIcon();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(pendingInvitationsCountProvider);
+    if (pending == 0) return const Icon(Icons.group_outlined);
+    return Semantics(
+      label: '$pending invitation(s) de groupe en attente',
+      child: Badge(
+        label: Text('$pending'),
+        child: const Icon(Icons.group_outlined),
+      ),
     );
   }
 }

@@ -7,7 +7,6 @@ import '../domain/family_group.dart';
 import 'group_providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
-import '../../../core/theme/app_icon_size.dart';
 
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
@@ -15,6 +14,7 @@ class GroupsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(myGroupsProvider);
+    final invitationsAsync = ref.watch(myInvitationsProvider);
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
 
     return Scaffold(
@@ -26,38 +26,61 @@ class GroupsScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(myGroupsProvider),
         ),
         data: (groups) {
-          if (groups.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.group_outlined,
-                    size: AppIconSize.hero,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Aucun groupe familial',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    onPressed: () => _showCreateGroupDialog(context, ref),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Créer un groupe'),
-                  ),
-                ],
+          // Les invitations ont leur propre flux : en chargement, la section
+          // n'apparaît pas ; en erreur, un encart, et le reste de l'écran sert.
+          final invitations = invitationsAsync.value ?? const <FamilyGroup>[];
+          if (groups.isEmpty &&
+              invitations.isEmpty &&
+              !invitationsAsync.hasError) {
+            return AppEmptyState(
+              icon: Icons.group_outlined,
+              title: 'Aucun groupe familial',
+              message:
+                  'Créez un groupe, ou attendez qu\'un proche vous invite '
+                  'dans le sien. Ses invitations apparaîtront ici.',
+              action: FilledButton.icon(
+                onPressed: () => _showCreateGroupDialog(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('Créer un groupe'),
               ),
             );
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: groups.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) =>
+          final textTheme = Theme.of(context).textTheme;
+          Widget header(String text) => Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(text, style: textTheme.titleSmall),
+          );
+
+          return ListView(
+            padding: const EdgeInsets.only(top: 8, bottom: 88),
+            children: [
+              if (invitationsAsync.hasError)
+                AppErrorState(
+                  compact: true,
+                  error: invitationsAsync.error,
+                  title: 'Invitations illisibles',
+                  onRetry: () => ref.invalidate(myInvitationsProvider),
+                ),
+              if (invitations.isNotEmpty) ...[
+                header('Invitations reçues'),
+                for (final group in invitations)
+                  _InvitationCard(group: group, myUid: myUid),
+                header('Mes groupes'),
+              ],
+              if (groups.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: Text(
+                    'Vous ne faites partie d\'aucun groupe pour l\'instant.',
+                    style: textTheme.bodySmall,
+                  ),
+                ),
+              for (var i = 0; i < groups.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
                 _GroupTile(group: groups[i], myUid: myUid),
+              ],
+            ],
           );
         },
       ),
@@ -91,7 +114,12 @@ class _GroupTile extends ConsumerWidget {
     return ListTile(
       leading: CircleAvatar(child: Text(group.name[0].toUpperCase())),
       title: Text(group.name),
-      subtitle: Text('${group.memberIds.length} membre(s)'),
+      subtitle: Text(
+        isOwner && group.invitedIds.isNotEmpty
+            ? '${group.memberIds.length} membre(s) · '
+                  '${group.invitedIds.length} invitation(s) en attente'
+            : '${group.memberIds.length} membre(s)',
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -314,15 +342,31 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     });
   }
 
-  Future<void> _addMember(FamilyGroup group, UserProfile user) async {
+  Future<void> _inviteMember(FamilyGroup group, UserProfile user) async {
     try {
-      await ref.read(groupRepositoryProvider).addMember(group.id, user.uid);
+      await ref.read(groupRepositoryProvider).inviteMember(group.id, user.uid);
       if (!mounted) return;
       _clearSearch();
-      context.showSuccessSnackBar('${user.displayedName} ajouté(e) au groupe');
+      context.showSuccessSnackBar('Invitation envoyée à ${user.displayedName}');
     } catch (e) {
       if (!mounted) return;
-      context.showErrorSnackBar('Ajout impossible : $e');
+      context.showErrorSnackBar('Invitation impossible : $e');
+    }
+  }
+
+  /// Sans confirmation : le geste se refait d'un appui.
+  Future<void> _cancelInvitation(
+    FamilyGroup group,
+    String uid,
+    String name,
+  ) async {
+    try {
+      await ref.read(groupRepositoryProvider).withdrawInvitation(group.id, uid);
+      if (!mounted) return;
+      context.showSuccessSnackBar('Invitation de $name annulée');
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Annulation impossible : $e');
     }
   }
 
@@ -364,7 +408,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     final group = liveGroup ?? widget.group;
     final isOwner = group.isOwner(widget.myUid);
     final candidates = _searchResults
-        .where((u) => !group.memberIds.contains(u.uid))
+        .where((u) => !group.isMember(u.uid) && !group.isInvited(u.uid))
         .toList();
     final typed = _searchController.text.trim();
     final searchDone =
@@ -399,7 +443,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SearchBar(
                     controller: _searchController,
-                    hintText: 'Rechercher un membre par son nom…',
+                    hintText: 'Rechercher une personne à inviter…',
                     leading: _searching
                         ? const SizedBox(
                             width: 18,
@@ -443,8 +487,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                           subtitle: _fullNameSubtitle(user),
                           trailing: IconButton(
                             icon: const Icon(Icons.person_add_outlined),
-                            tooltip: 'Ajouter au groupe',
-                            onPressed: () => _addMember(group, user),
+                            tooltip: 'Inviter dans le groupe',
+                            onPressed: () => _inviteMember(group, user),
                           ),
                         );
                       },
@@ -459,8 +503,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                           ? 'Aucun membre trouvé pour « $typed ». La recherche '
                                 'se fait par nom. Un compte en attente de '
                                 'validation n\'apparaît qu\'une fois validé.'
-                          : 'Les membres trouvés pour « $typed » sont déjà '
-                                'dans le groupe.',
+                          : 'Les personnes trouvées pour « $typed » sont déjà '
+                                'membres ou invitées.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -478,18 +522,32 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                 ),
               ),
               Expanded(
-                child: ListView.builder(
+                child: ListView(
                   controller: scrollController,
-                  itemCount: group.memberIds.length,
-                  itemBuilder: (context, i) {
-                    final uid = group.memberIds[i];
-                    return _MemberTile(
-                      uid: uid,
-                      isOwner: group.isOwner(uid),
-                      canRemove: isOwner && uid != widget.myUid,
-                      onRemove: (name) => _removeMember(group, uid, name),
-                    );
-                  },
+                  children: [
+                    for (final uid in group.memberIds)
+                      _MemberTile(
+                        uid: uid,
+                        isOwner: group.isOwner(uid),
+                        canRemove: isOwner && uid != widget.myUid,
+                        onRemove: (name) => _removeMember(group, uid, name),
+                      ),
+                    if (isOwner && group.invitedIds.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Text(
+                          'Invitations en attente (${group.invitedIds.length})',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      for (final uid in group.invitedIds)
+                        _InvitedTile(
+                          uid: uid,
+                          onCancel: (name) =>
+                              _cancelInvitation(group, uid, name),
+                        ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -551,6 +609,137 @@ class _MemberTile extends ConsumerWidget {
               tooltip: 'Retirer du groupe',
               onPressed: () => onRemove(name),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un compte invité, vu par le propriétaire, avec de quoi annuler.
+class _InvitedTile extends ConsumerWidget {
+  final String uid;
+
+  /// Reçoit le nom affiché, que le message de confirmation reprend.
+  final ValueChanged<String> onCancel;
+
+  const _InvitedTile({required this.uid, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = ref.watch(memberNameProvider(uid)) ?? '…';
+    return ListTile(
+      leading: CircleAvatar(
+        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+      ),
+      title: Text(name),
+      subtitle: const Text('Invitation envoyée'),
+      trailing: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Annuler l\'invitation',
+        onPressed: () => onCancel(name),
+      ),
+    );
+  }
+}
+
+// ── Invitation reçue ───────────────────────────────────────────────────────────
+
+/// Une invitation dans un groupe, vue par l'invité.
+///
+/// Accepter demande une confirmation qui dit ce qui sera partagé : entrer
+/// dans un groupe ouvre ses livres et recettes non privés aux autres membres.
+/// Refuser part sans confirmation : un refus n'expose rien, et le
+/// propriétaire peut réinviter.
+class _InvitationCard extends ConsumerWidget {
+  final FamilyGroup group;
+  final String myUid;
+
+  const _InvitationCard({required this.group, required this.myUid});
+
+  Future<void> _accept(BuildContext context, WidgetRef ref) async {
+    final n = group.memberIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Rejoindre « ${group.name} » ?'),
+        content: Text(
+          'Les $n membre(s) de ce groupe verront vos livres et recettes, sauf '
+          'ceux que vous avez rendus privés. Vous verrez aussi les leurs. '
+          'Vous pourrez quitter le groupe à tout moment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Rejoindre'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref.read(groupRepositoryProvider).acceptInvitation(group.id, myUid);
+      if (!context.mounted) return;
+      context.showSuccessSnackBar('Vous avez rejoint « ${group.name} »');
+    } catch (e) {
+      if (!context.mounted) return;
+      context.showErrorSnackBar('Impossible de rejoindre le groupe : $e');
+    }
+  }
+
+  Future<void> _refuse(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref
+          .read(groupRepositoryProvider)
+          .withdrawInvitation(group.id, myUid);
+      if (!context.mounted) return;
+      context.showSuccessSnackBar('Invitation refusée');
+    } catch (e) {
+      if (!context.mounted) return;
+      context.showErrorSnackBar('Refus impossible : $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final owner = ref.watch(memberNameProvider(group.ownerId));
+    final members = '${group.memberIds.length} membre(s)';
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: CircleAvatar(
+              child: Text(
+                group.name.isNotEmpty ? group.name[0].toUpperCase() : '?',
+              ),
+            ),
+            title: Text(group.name),
+            subtitle: Text(
+              owner == null ? members : '$members · invitation de $owner',
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              children: [
+                TextButton(
+                  onPressed: () => _refuse(context, ref),
+                  child: const Text('Refuser'),
+                ),
+                FilledButton(
+                  onPressed: () => _accept(context, ref),
+                  child: const Text('Accepter'),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

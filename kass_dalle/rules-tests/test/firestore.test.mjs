@@ -139,6 +139,14 @@ beforeEach(async () => {
     },
     "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
     "groups/g1": { owner_id: READER, member_ids: [READER] },
+    // La famille : lecteur, autre lecteur et éditeur partagent un groupe.
+    // `stranger` n'en partage aucun. La portée est ce qu'écrit
+    // `syncGroupReach` à partir des groupes.
+    "groups/famille": { owner_id: OTHER, member_ids: [OTHER, READER, EDITOR] },
+    "group_reach/reader": { uids: [EDITOR, OTHER] },
+    "group_reach/other-reader": { uids: [EDITOR, READER] },
+    "group_reach/editor": { uids: [OTHER, READER] },
+    "group_reach/reader-no-claim": { uids: [EDITOR] },
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
     "app_config/nutrition_policy": { mode: "strict" },
@@ -1101,8 +1109,10 @@ describe("champs propriétaire", () => {
     await assertFails(db("reader").doc("groups/g1").update({ owner_id: OTHER }));
   });
 
-  it("groupe : son propriétaire ajoute un membre", async () => {
-    await assertSucceeds(
+  // Depuis les invitations, le propriétaire n'ajoute plus personne : il
+  // invite, et l'invité accepte (voir « groupes — invitations »).
+  it("groupe : son propriétaire n'ajoute pas un membre directement", async () => {
+    await assertFails(
       db("reader")
         .doc("groups/g1")
         .update({ member_ids: [READER, OTHER] }),
@@ -1467,12 +1477,35 @@ describe("référentiels", () => {
 describe("requêtes du client", () => {
   const recipes = (who) => db(who).collection("recipes");
 
-  it("livre partagé : pages validées non privées (lecteur)", async () => {
+  it("livre partagé : pages validées non privées de mes groupes (lecteur)", async () => {
     await assertSucceeds(
       recipes("reader")
         .where("book_id", "==", "public-other")
         .where("review_status", "==", "validated")
         .where("is_private", "==", false)
+        .where("created_by", "in", [EDITOR, OTHER])
+        .get(),
+    );
+  });
+
+  // Avant le cloisonnement par groupe, `is_private == false` suffisait.
+  it("livre partagé sans filtre sur les comptes de mes groupes : refusé", async () => {
+    await assertFails(
+      recipes("reader")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("livre partagé : un compte hors de mes groupes dans le filtre fait tout refuser", async () => {
+    await assertFails(
+      recipes("reader")
+        .where("book_id", "==", "public-other")
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .where("created_by", "in", [OTHER, PERSONAS.stranger.uid])
         .get(),
     );
   });
@@ -1516,12 +1549,13 @@ describe("requêtes du client", () => {
     );
   });
 
-  it("brouillons partagés d'un livre : éditeur avec is_private == false", async () => {
+  it("brouillons partagés d'un livre : éditeur, comptes de ses groupes", async () => {
     await assertSucceeds(
       recipes("editor")
         .where("book_id", "==", "public-other")
         .where("review_status", "in", ["draft", "inReview"])
         .where("is_private", "==", false)
+        .where("created_by", "in", [OTHER, READER])
         .get(),
     );
   });
@@ -1548,15 +1582,15 @@ describe("requêtes du client", () => {
 
   // Le client compte par `count()` ; l'émulateur rejoue la même preuve sur
   // un `get()` aux mêmes filtres.
-  it("comptage d'un livre : partagées + mes privées (éditeur)", async () => {
+  it("comptage d'un livre : les miennes + partagées de mes groupes (éditeur)", async () => {
     await assertSucceeds(
-      recipes("editor").where("book_id", "==", "public").where("is_private", "==", false).get(),
+      recipes("editor").where("book_id", "==", "public").where("created_by", "==", EDITOR).get(),
     );
     await assertSucceeds(
       recipes("editor")
         .where("book_id", "==", "public")
-        .where("created_by", "==", EDITOR)
-        .where("is_private", "==", true)
+        .where("is_private", "==", false)
+        .where("created_by", "in", [OTHER, READER])
         .get(),
     );
   });
@@ -1615,6 +1649,316 @@ describe("requêtes du client", () => {
   it("mes notes (user_id == moi)", async () => {
     await assertSucceeds(
       db("reader").collection("recipe_ratings").where("user_id", "==", READER).get(),
+    );
+  });
+});
+
+// ── Cloisonnement par groupe familial ────────────────────────────────────
+//
+// Décision de l'utilisateur (2026-10-10) : je ne vois les livres et recettes
+// non privés d'un autre compte que s'il partage au moins un groupe avec moi.
+// `stranger` est un éditeur nommé qui ne partage aucun groupe avec les autres
+// personas ; un membre sorti d'un groupe est rejoué en réécrivant les portées
+// comme le ferait `syncGroupReach`.
+
+describe("groupes — cloisonnement des lectures", () => {
+  const STRANGER = PERSONAS.stranger.uid;
+
+  it("un membre du groupe lit le livre partagé d'un autre membre", async () => {
+    await assertSucceeds(db("reader").doc("books/public-other").get());
+  });
+
+  it("un membre du groupe lit la recette validée d'un autre membre", async () => {
+    await assertSucceeds(db("reader").doc("recipes/validated").get());
+  });
+
+  it("un membre du groupe lit la note et l'annotation d'un autre membre", async () => {
+    await assertSucceeds(db("reader").doc("recipe_ratings/r-other").get());
+    await assertSucceeds(db("reader").doc("recipes/validated/annotations/other").get());
+  });
+
+  it("un compte hors groupe ne lit pas le livre partagé", async () => {
+    await assertFails(db("stranger").doc("books/public-other").get());
+  });
+
+  it("un compte hors groupe ne lit pas la recette validée partagée", async () => {
+    await assertFails(db("stranger").doc("recipes/validated").get());
+  });
+
+  it("un compte hors groupe ne lit ni la note ni l'annotation", async () => {
+    await assertFails(db("stranger").doc("recipe_ratings/r-other").get());
+    await assertFails(db("stranger").doc("recipes/validated/annotations/other").get());
+    await assertFails(db("stranger").collection("recipes/validated/annotations").get());
+  });
+
+  it("un compte hors groupe n'annote ni ne note la recette", async () => {
+    await assertFails(
+      db("stranger").doc("recipes/validated/annotations/new").set({ uid: STRANGER, text: "x" }),
+    );
+    await assertFails(
+      db("stranger")
+        .doc("recipe_ratings/new")
+        .set({ user_id: STRANGER, recipe_id: "validated", rating: 1 }),
+    );
+  });
+
+  it("un éditeur hors groupe ne relit pas le brouillon partagé", async () => {
+    await assertFails(db("stranger").doc("recipes/draft-other").get());
+  });
+
+  it("un éditeur du groupe relit le brouillon partagé", async () => {
+    await assertSucceeds(db("editor").doc("recipes/draft-other").get());
+  });
+
+  it("un compte hors groupe : ses requêtes sur un autre compte sont refusées", async () => {
+    await assertFails(
+      db("stranger")
+        .collection("recipes")
+        .where("created_by", "in", [OTHER])
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .get(),
+    );
+    await assertFails(
+      db("stranger")
+        .collection("books")
+        .where("created_by", "in", [OTHER])
+        .where("is_private", "==", false)
+        .get(),
+    );
+  });
+
+  it("un membre ne lit pas ce que partage un compte hors de ses groupes", async () => {
+    await seedDocs(env, {
+      "books/stranger-book": { title: "x", created_by: STRANGER, is_private: false, tags: [] },
+      "recipes/stranger-recipe": {
+        title: "x",
+        created_by: STRANGER,
+        review_status: "validated",
+        is_private: false,
+      },
+    });
+    await assertFails(db("reader").doc("books/stranger-book").get());
+    await assertFails(db("reader").doc("recipes/stranger-recipe").get());
+    await assertSucceeds(db("stranger").doc("recipes/stranger-recipe").get());
+  });
+
+  it("un membre sorti du groupe ne lit plus", async () => {
+    // Le lecteur quitte la famille : `syncGroupReach` vide sa portée et
+    // retire son uid de celle des autres.
+    await seedDocs(env, {
+      "groups/famille": { owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+      "group_reach/reader": { uids: [] },
+      "group_reach/other-reader": { uids: [EDITOR] },
+      "group_reach/editor": { uids: [OTHER] },
+    });
+    await assertFails(db("reader").doc("books/public-other").get());
+    await assertFails(db("reader").doc("recipes/validated").get());
+    await assertFails(db("reader").doc("recipe_ratings/r-other").get());
+    await assertFails(
+      db("reader")
+        .collection("recipes")
+        .where("created_by", "in", [OTHER])
+        .where("review_status", "==", "validated")
+        .where("is_private", "==", false)
+        .get(),
+    );
+    // Et les membres restants ne lisent plus ce qu'il partage.
+    await assertFails(db("otherReader").doc("books/public-reader").get());
+    await assertFails(db("otherReader").doc("recipes/reader-in-other-book").get());
+  });
+
+  it("le membre sorti garde ses propres livres et recettes", async () => {
+    await seedDocs(env, { "group_reach/reader": { uids: [] } });
+    await assertSucceeds(db("reader").doc("books/public-reader").get());
+    await assertSucceeds(db("reader").doc("recipes/reader-in-other-book").get());
+  });
+
+  it("sans document de portée, on ne lit rien des autres", async () => {
+    await assertFails(db("stranger").doc("books/public").get());
+  });
+
+  it("un administrateur hors groupe lit tout", async () => {
+    await assertSucceeds(db("admin").doc("books/public-other").get());
+    await assertSucceeds(db("admin").doc("recipes/validated").get());
+    await assertSucceeds(db("admin").doc("recipe_ratings/r-other").get());
+  });
+});
+
+describe("group_reach — portée des groupes", () => {
+  it("son titulaire la lit", async () => {
+    await assertSucceeds(db("reader").doc("group_reach/reader").get());
+  });
+
+  it("un autre compte ne la lit pas", async () => {
+    await assertFails(db("otherReader").doc("group_reach/reader").get());
+  });
+
+  it("un administrateur la lit", async () => {
+    await assertSucceeds(db("admin").doc("group_reach/reader").get());
+  });
+
+  it("personne ne l'écrit depuis le client, administrateur compris", async () => {
+    await assertFails(db("stranger").doc("group_reach/stranger").set({ uids: [READER] }));
+    await assertFails(
+      db("reader")
+        .doc("group_reach/reader")
+        .update({ uids: [EDITOR, OTHER, "stranger"] }),
+    );
+    await assertFails(db("admin").doc("group_reach/reader").delete());
+  });
+});
+
+// ── Invitations ──────────────────────────────────────────────────────────
+//
+// Entrer dans un groupe ouvre la lecture des livres des autres membres, dans
+// les deux sens : on n'y entre que de son propre chef. `g1` appartient au
+// lecteur, seul membre.
+
+describe("groupes — invitations", () => {
+  const STRANGER = PERSONAS.stranger.uid;
+  const invite = () =>
+    seedDocs(env, {
+      "groups/g1": { owner_id: READER, member_ids: [READER], invited_ids: [STRANGER] },
+    });
+
+  it("le propriétaire invite un compte", async () => {
+    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: [STRANGER] }));
+  });
+
+  it("le propriétaire n'invite pas un compte déjà membre", async () => {
+    await assertFails(db("reader").doc("groups/g1").update({ invited_ids: [READER] }));
+  });
+
+  it("un membre qui n'est pas propriétaire n'invite pas", async () => {
+    await assertFails(
+      db("editor")
+        .doc("groups/famille")
+        .update({ invited_ids: [STRANGER] }),
+    );
+  });
+
+  it("un compte ne crée pas un groupe avec des invités", async () => {
+    await assertFails(
+      db("reader")
+        .doc("groups/new")
+        .set({ owner_id: READER, member_ids: [READER], invited_ids: [OTHER] }),
+    );
+  });
+
+  it("le propriétaire n'ajoute pas un membre en même temps qu'il invite", async () => {
+    await assertFails(
+      db("reader")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, OTHER], invited_ids: [STRANGER] }),
+    );
+  });
+
+  it("un administrateur n'ajoute pas un membre directement", async () => {
+    await assertFails(
+      db("admin")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, OTHER] }),
+    );
+  });
+
+  it("l'invité lit le groupe", async () => {
+    await invite();
+    await assertSucceeds(db("stranger").doc("groups/g1").get());
+    await assertSucceeds(
+      db("stranger").collection("groups").where("invited_ids", "array-contains", STRANGER).get(),
+    );
+  });
+
+  it("un compte non invité ne lit pas le groupe", async () => {
+    await invite();
+    await assertFails(db("otherReader").doc("groups/g1").get());
+  });
+
+  it("l'invité accepte : il passe des invités aux membres", async () => {
+    await invite();
+    await assertSucceeds(
+      db("stranger")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, STRANGER], invited_ids: [] }),
+    );
+  });
+
+  it("l'invité n'accepte pas en restant invité", async () => {
+    await invite();
+    await assertFails(
+      db("stranger")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, STRANGER] }),
+    );
+  });
+
+  it("l'invité n'entre pas avec un autre compte", async () => {
+    await invite();
+    await assertFails(
+      db("stranger")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, STRANGER, OTHER], invited_ids: [] }),
+    );
+  });
+
+  it("l'invité ne renomme pas le groupe en acceptant", async () => {
+    await invite();
+    await assertFails(
+      db("stranger")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, STRANGER], invited_ids: [], name: "x" }),
+    );
+  });
+
+  it("un compte non invité ne s'ajoute pas", async () => {
+    await invite();
+    await assertFails(
+      db("otherReader")
+        .doc("groups/g1")
+        .update({ member_ids: [READER, OTHER] }),
+    );
+  });
+
+  it("l'invité refuse", async () => {
+    await invite();
+    await assertSucceeds(db("stranger").doc("groups/g1").update({ invited_ids: [] }));
+  });
+
+  it("le propriétaire annule l'invitation", async () => {
+    await invite();
+    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: [] }));
+  });
+
+  it("un membre quitte le groupe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER, READER] }),
+    );
+  });
+
+  it("un membre ne retire pas un autre membre en partant", async () => {
+    await assertFails(
+      db("editor")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER] }),
+    );
+  });
+
+  it("le propriétaire ne quitte pas son propre groupe", async () => {
+    await assertFails(
+      db("otherReader")
+        .doc("groups/famille")
+        .update({ member_ids: [READER, EDITOR] }),
+    );
+  });
+
+  it("le propriétaire retire un membre", async () => {
+    await assertSucceeds(
+      db("otherReader")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER, READER] }),
     );
   });
 });

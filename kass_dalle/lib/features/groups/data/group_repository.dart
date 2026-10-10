@@ -33,6 +33,37 @@ class GroupRepository {
     });
   }
 
+  /// Groupes qui invitent [uid] et attendent sa réponse.
+  Stream<List<FamilyGroup>> watchMyInvitations(String uid) {
+    return _col.where('invited_ids', arrayContains: uid).snapshots().map((
+      snap,
+    ) {
+      final list = snap.docs
+          .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
+          .toList();
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      return list;
+    });
+  }
+
+  /// Les autres comptes avec qui [uid] partage un groupe : `group_reach/{uid}`.
+  ///
+  /// C'est la liste que les règles Firestore relisent pour laisser lire un
+  /// livre ou une recette partagé d'un autre compte. Le serveur la tient à
+  /// jour à chaque écriture d'un groupe (`syncGroupReach`). Les requêtes du
+  /// client partent de cette liste plutôt que des groupes eux-mêmes : juste
+  /// après l'ajout d'un membre, les groupes le connaissent déjà et la portée
+  /// pas encore, et une requête qui le nommerait serait refusée en entier.
+  ///
+  /// Document absent (aucun groupe, ou portée pas encore calculée) : vide.
+  Stream<Set<String>> watchReach(String uid) {
+    return _firestore.collection('group_reach').doc(uid).snapshots().map((doc) {
+      final raw = doc.data()?['uids'];
+      if (raw is! List) return <String>{};
+      return raw.whereType<String>().where((id) => id != uid).toSet();
+    });
+  }
+
   // ── Écriture ─────────────────────────────────────────────────────────────────
 
   // Chaque écriture signale son échec puis le relance : l'écran a besoin de
@@ -61,18 +92,52 @@ class GroupRepository {
     }
   }
 
-  /// Ajoute [uid] au groupe.
-  Future<void> addMember(String groupId, String uid) async {
+  /// Invite [uid] dans le groupe. Il n'en devient membre qu'en acceptant
+  /// ([acceptInvitation]) : être membre ouvre la lecture de ses livres aux
+  /// autres membres, et des leurs à lui. Les règles Firestore refusent qu'un
+  /// propriétaire écrive directement `member_ids` pour y ajouter quelqu'un.
+  Future<void> inviteMember(String groupId, String uid) => _write(
+    'group_invite_member',
+    {'group_id': groupId, 'member_uid': uid},
+    () => _col.doc(groupId).update({
+      'invited_ids': FieldValue.arrayUnion([uid]),
+    }),
+  );
+
+  /// Retire l'invitation de [uid], qu'elle soit annulée par le propriétaire
+  /// ou refusée par l'invité : l'écriture est la même.
+  Future<void> withdrawInvitation(String groupId, String uid) => _write(
+    'group_withdraw_invitation',
+    {'group_id': groupId, 'member_uid': uid},
+    () => _col.doc(groupId).update({
+      'invited_ids': FieldValue.arrayRemove([uid]),
+    }),
+  );
+
+  /// [uid] accepte l'invitation : il quitte les invités et entre dans les
+  /// membres, en une seule écriture — la forme exacte qu'admet la règle.
+  Future<void> acceptInvitation(String groupId, String uid) => _write(
+    'group_accept_invitation',
+    {'group_id': groupId, 'member_uid': uid},
+    () => _col.doc(groupId).update({
+      'member_ids': FieldValue.arrayUnion([uid]),
+      'invited_ids': FieldValue.arrayRemove([uid]),
+    }),
+  );
+
+  Future<void> _write(
+    String feature,
+    Map<String, Object?> context,
+    Future<void> Function() write,
+  ) async {
     try {
-      await _col.doc(groupId).update({
-        'member_ids': FieldValue.arrayUnion([uid]),
-      });
+      await write();
     } catch (e, st) {
       await _errorReportService.reportError(
-        feature: 'group_add_member',
+        feature: feature,
         error: e,
         stackTrace: st,
-        context: {'group_id': groupId, 'member_uid': uid},
+        context: context,
       );
       rethrow;
     }
