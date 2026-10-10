@@ -55,6 +55,12 @@ Deux tests. Si une phrase demande une deuxième lecture, elle est mal écrite. S
 bien à voix haute mais ne contient ni chiffre, ni nom de fichier, ni verbe d'action, elle
 n'apporte rien : la supprimer.
 
+**Pas de théâtre — règle absolue.** Une réponse informe ; elle ne se met pas en scène. Interdits :
+une phrase d'accroche qui annonce ce qui suit (« Voici le constat », « Ce qui change pour
+vous »), une phrase-titre en gras suivie de son explication, l'enchaînement de formules courtes
+pour l'effet, la reprise de la même idée sous une autre forme, les intertitres qui dramatisent.
+On écrit comme on parle à un collègue : les faits, dans l'ordre, puis la question s'il y en a une.
+
 ### Une question appelle une réponse, pas du code — règle absolue
 
 **Quand la demande est une question, on répond. On ne modifie aucun fichier.**
