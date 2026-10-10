@@ -37,6 +37,9 @@ les anciens journaux. Les documents `app_config/user_profiles_backfill_checkpoin
 `app_config/group_reach_backfill_checkpoint` restent en base ; plus rien ne les écrit ni ne les
 lit. Le workflow de déploiement supprime les deux functions en ligne (`--force`).
 
+Risque accepté, écrit dans `TechnicalRequirements.md` (§3.5 bis) : sans backfill, une panne de
+`syncGroupReach` de plus de 7 jours laisserait une portée périmée sans outil pour la recalculer.
+
 ### v0.23.22 — fonctionnel
 
 #### Planning : un plat écarté revient moins souvent pendant 21 jours

@@ -919,6 +919,14 @@ Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée
 un membre sorti lire encore les livres du groupe. `backfillGroupReachFn`, qui a semé le fonds
 après la v0.23.19, est retiré depuis la v0.23.23 : lancé en production, son travail est fait.
 
+**Risque accepté (v0.23.23).** Aucun outil ne recalcule plus la portée en masse. Si
+`syncGroupReach` échoue au-delà de la fenêtre de nouvelles tentatives d'Eventarc (environ
+7 jours), la portée des comptes concernés reste périmée jusqu'à la prochaine modification des
+membres de ce groupe ; un renommage ne la corrige pas. Un membre retiré pendant cette panne
+lirait encore les livres et recettes non privés du groupe. L'échec est journalisé
+(`logError`) : il se voit dans Admin › Journaux. Le jour où ce cas se produit, la réparation
+passe par un nouveau backfill (Admin › Backfills).
+
 **Qui le lit :** son titulaire (`GroupRepository.watchReach`, d'où le client tire ses requêtes)
 et un administrateur.
 
