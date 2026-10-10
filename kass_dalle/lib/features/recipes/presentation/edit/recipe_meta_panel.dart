@@ -13,6 +13,13 @@ import '../../../../core/theme/app_icon_size.dart';
 /// et redevient `null` au moment de prévenir le parent.
 const _kNoMealRole = '';
 
+/// Même rôle pour « Non renseigné » dans les listes protéine et féculent.
+const _kNotFilled = '';
+
+/// Aide sous les listes protéine et féculent.
+const kMainIngredientHelper =
+    'Laissé à Non renseigné, il sera proposé par l\'IA.';
+
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
 ///
@@ -41,6 +48,15 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   /// classé ». La liste n'apparaît que si [onMealRoleChanged] est donné.
   final String? mealRole;
   final void Function(String?)? onMealRoleChanged;
+
+  /// Protéine et féculent principaux (`tags.main_protein`,
+  /// `tags.main_starch`), `null` pour « Non renseigné ». Chaque liste
+  /// n'apparaît que si son rappel est donné, et seulement quand le rôle
+  /// choisi est un plat ou un accompagnement.
+  final String? mainProtein;
+  final void Function(String?)? onMainProteinChanged;
+  final String? mainStarch;
+  final void Function(String?)? onMainStarchChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
 
@@ -69,6 +85,10 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     this.onDishTypesChanged,
     this.mealRole,
     this.onMealRoleChanged,
+    this.mainProtein,
+    this.onMainProteinChanged,
+    this.mainStarch,
+    this.onMainStarchChanged,
     this.suggestingTags = false,
     this.onSuggestTags,
     this.pageType,
@@ -177,6 +197,9 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
         currentRole != null &&
         currentRole.isNotEmpty &&
         !kMealRoles.contains(currentRole);
+    final showMainIngredients =
+        widget.onMealRoleChanged != null &&
+        kRolesWithMainIngredients.contains(currentRole);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,6 +383,31 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             const SizedBox(height: 12),
           ],
 
+          if (showMainIngredients && widget.onMainProteinChanged != null) ...[
+            _mainIngredientDropdown(
+              key: const ValueKey('mainProteinDropdown'),
+              label: 'Protéine principale',
+              icon: Icons.set_meal_outlined,
+              value: widget.mainProtein,
+              values: kMainProteins,
+              labelOf: mainProteinLabel,
+              onChanged: widget.onMainProteinChanged!,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (showMainIngredients && widget.onMainStarchChanged != null) ...[
+            _mainIngredientDropdown(
+              key: const ValueKey('mainStarchDropdown'),
+              label: 'Féculent principal',
+              icon: Icons.rice_bowl_outlined,
+              value: widget.mainStarch,
+              values: kMainStarches,
+              labelOf: mainStarchLabel,
+              onChanged: widget.onMainStarchChanged!,
+            ),
+            const SizedBox(height: 12),
+          ],
+
           Text(
             'Cuisine',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -498,6 +546,46 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           ],
         ],
       ],
+    );
+  }
+
+  /// Liste « Protéine principale » ou « Féculent principal », construite comme
+  /// celle du rôle : `initialValue` qui suit le parent, valeur hors liste
+  /// gardée telle quelle, désactivée pendant l'enregistrement.
+  Widget _mainIngredientDropdown({
+    required Key key,
+    required String label,
+    required IconData icon,
+    required String? value,
+    required List<String> values,
+    required String Function(String) labelOf,
+    required void Function(String?) onChanged,
+  }) {
+    final horsListe =
+        value != null && value.isNotEmpty && !values.contains(value);
+    return DropdownButtonFormField<String>(
+      key: key,
+      initialValue: (value == null || value.isEmpty) ? _kNotFilled : value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: kMainIngredientHelper,
+        helperMaxLines: 3,
+        prefixIcon: Icon(icon),
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: _kNotFilled,
+          child: Text('Non renseigné'),
+        ),
+        for (final v in values)
+          DropdownMenuItem(value: v, child: Text(labelOf(v))),
+        if (horsListe)
+          DropdownMenuItem(value: value, child: Text(labelOf(value))),
+      ],
+      onChanged: widget.saving
+          ? null
+          : (v) => onChanged((v == null || v == _kNotFilled) ? null : v),
     );
   }
 

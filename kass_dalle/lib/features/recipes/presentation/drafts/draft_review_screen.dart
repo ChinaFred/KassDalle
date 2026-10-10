@@ -927,12 +927,16 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     selectedCuisines: selectedCuisines,
     selectedDishTypes: selectedDishTypes,
     selectedMealRole: selectedMealRole,
+    selectedMainProtein: selectedMainProtein,
+    selectedMainStarch: selectedMainStarch,
     suggestingTags: suggestingTags,
     formIngredients: formIngredients,
     onBookChanged: setBook,
     onCuisinesChanged: setCuisines,
     onDishTypesChanged: setDishTypes,
     onMealRoleChanged: setMealRole,
+    onMainProteinChanged: setMainProtein,
+    onMainStarchChanged: setMainStarch,
     onIngredientsChanged: setIngredients,
     onUploadImage: _uploadImageFromGallery,
     onExtractIllustrations: () => _doExtractIllustrations(recipe),
@@ -998,6 +1002,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             // écrivait `rest_time: null` par-dessus celui de l'import.
             tagsOverride: buildTagsFromForm(recipe.tags),
             clearMealRole: selectedMealRole == null,
+            // La protéine et le féculent sont ceux du formulaire : « Non
+            // renseigné » ou un rôle qui ne les porte pas les retire.
+            mainIngredientsFromForm: true,
             ingredientsOverride: formIngredients,
             onNormalizationApplied:
                 ({

@@ -806,6 +806,13 @@ class RecipeRepository {
     /// part, et ce qui en dépendait avec lui. Sans ce drapeau, un rôle absent
     /// de [tagsOverride] laisse celui de la base.
     bool clearMealRole = false,
+
+    /// La protéine et le féculent de [tagsOverride] viennent du formulaire de
+    /// relecture : un champ `null` y vaut « Non renseigné » et s'efface en
+    /// base, marqueur d'examen compris. Sans ce drapeau (validation en lot),
+    /// un champ absent laisse celui de la base : le déclencheur ou le
+    /// backfill a pu le poser depuis la lecture du brouillon.
+    bool mainIngredientsFromForm = false,
     int? portionsOverride,
     List<RecipeIngredient>? ingredientsOverride,
     void Function({
@@ -824,7 +831,18 @@ class RecipeRepository {
     final ingredientsStructured =
         ingredientsOverride ?? extractIngredientsStructured(editedCooklang);
     final portions = portionsOverride ?? extractPortions(editedCooklang);
-    final tags = tagsOverride ?? extractRecipeTags(editedCooklang);
+    final readTags = tagsOverride ?? extractRecipeTags(editedCooklang);
+    // Un rôle connu qui ne porte ni protéine ni féculent (entrée, dessert,
+    // snack) : les deux champs et le marqueur partent, quelle que soit
+    // l'origine des tags. Une valeur restée d'un ancien rôle ne vaut plus.
+    final roleDropsMainIngredients =
+        readTags.mealRole != null && !readTags.carriesMainIngredients;
+    final tags = roleDropsMainIngredients
+        ? readTags.withMainIngredients()
+        : readTags;
+    final deleteMissingMainIngredients =
+        tags.mealRole != null &&
+        (roleDropsMainIngredients || mainIngredientsFromForm);
     await _col.doc(recipeId).update({
       'titre': titre,
       'raw_cooklang': editedCooklang,
@@ -836,6 +854,15 @@ class RecipeRepository {
       // et le formulaire ne le porte que si l'utilisateur ou l'IA l'a posé.
       // Réécrire `tags` en bloc l'effacerait sans un mot.
       for (final e in tags.toMap().entries) 'tags.${e.key}': e.value,
+      // Effacement champ par champ de ce que `toMap` n'écrit pas : rôle sans
+      // protéine ni féculent, ou « Non renseigné » choisi dans la relecture.
+      // `toMap` n'écrit jamais une clé nulle, donc aucune ne se dispute ici.
+      if (deleteMissingMainIngredients) ...{
+        if (tags.mainProtein == null) 'tags.main_protein': FieldValue.delete(),
+        if (tags.mainStarch == null) 'tags.main_starch': FieldValue.delete(),
+        if (tags.mainIngredientsCheckedAt == null)
+          'tags.main_ingredients_checked_at': FieldValue.delete(),
+      },
       // Seul cas où l'on efface : « Non classé » choisi dans la liste. Et
       // seulement si l'objet relu n'en porte pas, sinon deux écritures se
       // disputeraient la même clé.

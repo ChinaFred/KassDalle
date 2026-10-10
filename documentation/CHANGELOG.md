@@ -20,6 +20,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.25 — fonctionnel
+
+#### Protéine et féculent corrigeables à la main
+
+Le formulaire d'une recette (relecture d'un import, correction, création) montre deux listes
+sous « Rôle dans un repas » : « Protéine principale » et « Féculent principal ». Elles
+n'apparaissent que pour un plat ou un accompagnement. « Suggérer les tags » les remplit.
+
+Un choix à la main remplace la valeur proposée par l'IA, et aucun traitement automatique ne la
+remplace ensuite. « Non renseigné » retire la valeur : le backfill « Protéine et féculent des
+plats » la propose à nouveau. Passer la recette en entrée, dessert ou snack retire les deux
+valeurs.
+
+Côté serveur, ce backfill ne pose plus son marqueur sans appel que si la protéine **et** le
+féculent sont présents (`hasBothMainIngredients`). Avant, une protéine seule suffisait, et un
+féculent remis à « Non renseigné » n'aurait jamais été reproposé. `validateDraft` efface champ
+par champ ce que le formulaire retire (`mainIngredientsFromForm`).
+
 ### v0.23.24 — fonctionnel
 
 #### Protéine et féculent des plats, lus par le planning

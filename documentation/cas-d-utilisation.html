@@ -421,6 +421,7 @@ flowchart LR
     b15(["Importer un livre entier&lt;br/&gt;PDF, EPUB ou Word"])
     b16(["Valider, relancer ou supprimer en lot"])
     b17(["Choisir le rôle de la recette dans un repas"])
+    b20(["Corriger la protéine et le féculent&lt;br/&gt;d'un plat ou d'un accompagnement"])
     b18(["Retoucher une illustration par l'IA"])
     b2(["Créer une recette à la main"])
     b3(["Faire générer une recette"])
@@ -447,6 +448,7 @@ flowchart LR
   EDI --- b15
   LEC --- b16
   LEC --- b17
+  LEC --- b20
   ADM --- b18
   b15 -.->|"inclut"| c1
   b15 -.->|"inclut"| c4
@@ -456,6 +458,7 @@ flowchart LR
   b3 -.->|"à l'écriture, si aucun rôle"| c5
   b4 -.->|"à l'écriture, si aucun rôle"| c5
   b17 -.->|"Non classé : reclassé"| c5
+  b17 -.->|"plat ou accompagnement"| b20
   c5 --- GEM
   c2 -.->|"étend : recette dans une autre langue"| c6
   b2 -.->|"étend : texte collé dans une autre langue"| c6
@@ -508,6 +511,12 @@ flowchart LR
         modèle à l'enregistrement. Le même appel pose la protéine principale et le féculent
         principal d'un plat ou d'un accompagnement, sans appel de plus ; une valeur hors liste
         reste non renseignée.
+        <b>La protéine et le féculent se corrigent à la main</b>, dans le même panneau, par deux
+        listes placées sous « Rôle dans un repas » et visibles seulement pour un plat ou un
+        accompagnement. Le créateur de la recette ou un administrateur les modifie.
+        « Non renseigné » rend la recette à la reprise <i>Protéine et féculent des plats</i>.
+        Ni l'import, ni le classement à l'écriture, ni la reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
+        dessert ou snack efface les deux valeurs à l'enregistrement.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
         transcription détecte sans appel de plus. Elle ajoute un appel (poste
         <code>recipe_translation</code>) à l'import d'une page ou à la mise en forme d'un texte
@@ -629,7 +638,8 @@ flowchart LR
         <b>« Protéine et féculent des plats »</b> est une reprise de Backfills : elle traite les
         plats et accompagnements qu'elle n'a pas encore examinés, quarante par passage, et rend le
         compte des recettes examinées, traitées, déjà traitées, ignorées, sans réponse et en échec. Elle ne réécrit ni le rôle dans un repas ni les
-        autres tags. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
+        autres tags, ni une protéine ou un féculent posés à la main. Une recette remise à
+        « Non renseigné » dans le panneau de métadonnées est reprise au passage suivant. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
         base.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
