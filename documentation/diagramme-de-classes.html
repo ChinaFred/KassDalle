@@ -1010,6 +1010,20 @@ classDiagram
     +int unpricedCalls
   }
 
+  class PlanningRefusals {
+    &lt;&lt;users/uid/preferences&gt;&gt;
+    +Map~String, PlanningRefusal~ entries
+    +activeCount(now) int
+    +record(recipeIds, now) PlanningRefusals
+    +fromFirestore(data) PlanningRefusals$
+  }
+
+  class PlanningRefusal {
+    +DateTime refusedAt
+    +int count
+    +isActiveAt(now) bool
+  }
+
   class PlanningPolicy {
     &lt;&lt;app_config&gt;&gt;
     +int platsPerSlot
@@ -1028,6 +1042,9 @@ classDiagram
   RankedCandidate ..> PlannedMeal : « Autre suggestion », sans IA
   PlanningPolicy ..> SlotRanking : têtes et profondeur des listes
   PlanningPolicy ..> PlanningRun : conceptsMax, plafond en euros
+  PlanningRefusals "1" *-- "0..300" PlanningRefusal : entries, par recipeId
+  MealChoiceSource ..> PlanningRefusals : ai, rules, concept écartées = refus
+  PlanningRefusals ..> SlotRanking : poids x0,5 sur 21 jours, x0,25 dès 3 refus
   MealComponent ..> MealStaple : garniture figée au choix
   MealComponent ..> Recipe : recette d'accompagnement
   SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
@@ -1081,6 +1098,14 @@ classDiagram
           le compte : il borne les conceptions d'une génération et cumule leur coût.
           <code>PlanningPolicy</code> vit dans <code>app_config/planning_policy</code>, avec des
           valeurs par défaut dans le code.
+        </span>
+        <span class="expect">
+          <b><code>PlanningRefusals</code> vit sous le compte</b>,
+          <code>users/{uid}/preferences/planning_refusals</code> : les recettes proposées que
+          le titulaire a écartées, avec la date du dernier refus et leur nombre. Le client
+          l'écrit et l'élague (21 jours, 300 entrées) ; <code>suggestMealPlanFn</code> le lit
+          pour l'appelant seul et réduit le poids de ces recettes, sans jamais les exclure.
+          Rien n'est écrit dans la recette partagée.
         </span>
         <span class="expect">
           <b><code>MealIdea</code> n'est pas une recette.</b> Rendue par

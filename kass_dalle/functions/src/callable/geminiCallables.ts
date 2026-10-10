@@ -63,6 +63,7 @@ import {
   newPlanningRunId,
   readServedHistory,
   readUserRatings,
+  readUserRefusals,
   reservePlanningConcept,
   writePlanningRun,
 } from "../gemini/planningStore";
@@ -501,10 +502,11 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
   try {
     const mode = input.mode ?? "model";
     const cycleStart = [...input.slotDates].sort()[0]?.slice(0, 10) ?? "";
-    const today = new Date().toISOString().slice(0, 10);
-    // Ce qui sert à décider se lit à la source : l'historique et les notes de
-    // l'appelant, jamais ceux d'un autre membre.
-    const [policy, history, ratings] = await Promise.all([
+    const nowMs = Date.now();
+    const today = new Date(nowMs).toISOString().slice(0, 10);
+    // Ce qui sert à décider se lit à la source : l'historique, les notes et
+    // les refus de l'appelant, jamais ceux d'un autre membre.
+    const [policy, history, ratings, refusals] = await Promise.all([
       getPlanningPolicy(),
       readServedHistory({
         uid: ctx.userId,
@@ -512,6 +514,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
         correlationId: ctx.correlationId,
       }),
       readUserRatings({ uid: ctx.userId, correlationId: ctx.correlationId }),
+      readUserRefusals({ uid: ctx.userId, nowMs, correlationId: ctx.correlationId }),
     ]);
     // Le mode « code » n'appelle aucun modèle : pas de génération à journaliser.
     const runId = mode === "model" ? newPlanningRunId() : null;
@@ -525,6 +528,8 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
         lastServed: history.lastServed,
         historyAvailable: history.available,
         ratings,
+        refusals,
+        nowMs,
         today,
         rng: seededRng(randomInt(0, 0xffffffff)),
         runId,

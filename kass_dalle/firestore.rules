@@ -95,6 +95,15 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    /// Forme de `users/{uid}/preferences/planning_refusals` :
+    /// `{ entries: { recipeId: { refused_at, count } }, updated_at }`.
+    function isPlanningRefusals(data) {
+      return data.keys().hasOnly(['entries', 'updated_at'])
+        && data.entries is map
+        && data.entries.size() <= 300
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     /// Le compte fondateur, seul à pouvoir se nommer administrateur sans que
     /// personne ne l'y autorise — et seul à pouvoir toucher à son propre rôle.
     ///
@@ -205,8 +214,16 @@ service cloud.firestore {
       // Préférences d'affichage — dont `book_order`, le rangement de la
       // bibliothèque. Ce sont des choix de lecteur : ils n'appartiennent qu'à
       // leur propriétaire, et n'existent pas dans les documents partagés.
+      //
+      // `planning_refusals` — la mémoire des refus du planning — est lue par
+      // `suggestMealPlanFn` pour pondérer la présélection : sa forme est
+      // bornée ici (`entries` en carte, 300 entrées au plus), comme le client
+      // l'écrit (`PlanningRefusalsRepository`).
       match /preferences/{prefId} {
-        allow read, write: if isOwner(uid) || isAdmin();
+        allow read, delete: if isOwner(uid) || isAdmin();
+        allow create, update: if (isOwner(uid) || isAdmin())
+          && (prefId != 'planning_refusals'
+              || isPlanningRefusals(request.resource.data));
       }
 
       // Générations de planning : journal des propositions, compteur des
