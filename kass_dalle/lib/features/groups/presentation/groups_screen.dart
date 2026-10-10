@@ -348,9 +348,12 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       if (!mounted) return;
       _clearSearch();
       context.showSuccessSnackBar('Invitation envoyée à ${user.displayedName}');
-    } catch (e) {
+    } catch (_) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar('Invitation impossible : $e');
+      context.showErrorSnackBar(
+        'Impossible d\'envoyer l\'invitation. Réessayez.',
+      );
     }
   }
 
@@ -364,9 +367,12 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       await ref.read(groupRepositoryProvider).withdrawInvitation(group.id, uid);
       if (!mounted) return;
       context.showSuccessSnackBar('Invitation de $name annulée');
-    } catch (e) {
+    } catch (_) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar('Annulation impossible : $e');
+      context.showErrorSnackBar(
+        'Impossible d\'annuler l\'invitation. Réessayez.',
+      );
     }
   }
 
@@ -626,10 +632,13 @@ class _InvitedTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(memberNameProvider(uid)) ?? '…';
+    final known = ref.watch(memberNameProvider(uid));
+    final name = known ?? '…';
     return ListTile(
       leading: CircleAvatar(
-        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+        child: known == null || known.isEmpty
+            ? const Icon(Icons.person_outline)
+            : Text(known[0].toUpperCase()),
       ),
       title: Text(name),
       subtitle: const Text('Invitation envoyée'),
@@ -650,23 +659,58 @@ class _InvitedTile extends ConsumerWidget {
 /// dans un groupe ouvre ses livres et recettes non privés aux autres membres.
 /// Refuser part sans confirmation : un refus n'expose rien, et le
 /// propriétaire peut réinviter.
-class _InvitationCard extends ConsumerWidget {
+class _InvitationCard extends ConsumerStatefulWidget {
   final FamilyGroup group;
   final String myUid;
 
   const _InvitationCard({required this.group, required this.myUid});
 
-  Future<void> _accept(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<_InvitationCard> createState() => _InvitationCardState();
+}
+
+class _InvitationCardState extends ConsumerState<_InvitationCard> {
+  /// Une réponse est en cours : les deux boutons sont désactivés, sans quoi
+  /// un double appui enverrait une seconde écriture que la règle refuserait.
+  bool _busy = false;
+
+  FamilyGroup get group => widget.group;
+
+  String _sharingNotice() {
     final n = group.memberIds.length;
+    final who = n == 1
+        ? 'Le membre de ce groupe verra'
+        : 'Les $n membres de ce groupe verront';
+    return '$who vos livres et recettes, sauf ceux que vous avez rendus '
+        'privés. Vous verrez aussi les ${n == 1 ? 'siens' : 'leurs'}. '
+        'Vous pourrez quitter le groupe à tout moment.';
+  }
+
+  Future<void> _respond(
+    Future<void> Function() write, {
+    required String success,
+    required String failure,
+  }) async {
+    setState(() => _busy = true);
+    try {
+      await write();
+      if (!mounted) return;
+      context.showSuccessSnackBar(success);
+    } catch (_) {
+      // Signalée au rapport d'erreurs par GroupRepository.
+      if (!mounted) return;
+      context.showErrorSnackBar(failure);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _accept() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Rejoindre « ${group.name} » ?'),
-        content: Text(
-          'Les $n membre(s) de ce groupe verront vos livres et recettes, sauf '
-          'ceux que vous avez rendus privés. Vous verrez aussi les leurs. '
-          'Vous pourrez quitter le groupe à tout moment.',
-        ),
+        content: Text(_sharingNotice()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -679,32 +723,26 @@ class _InvitationCard extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed != true || !context.mounted) return;
-    try {
-      await ref.read(groupRepositoryProvider).acceptInvitation(group.id, myUid);
-      if (!context.mounted) return;
-      context.showSuccessSnackBar('Vous avez rejoint « ${group.name} »');
-    } catch (e) {
-      if (!context.mounted) return;
-      context.showErrorSnackBar('Impossible de rejoindre le groupe : $e');
-    }
+    if (confirmed != true || !mounted) return;
+    await _respond(
+      () => ref
+          .read(groupRepositoryProvider)
+          .acceptInvitation(group.id, widget.myUid),
+      success: 'Vous avez rejoint « ${group.name} »',
+      failure: 'Impossible de rejoindre le groupe. Réessayez.',
+    );
   }
 
-  Future<void> _refuse(BuildContext context, WidgetRef ref) async {
-    try {
-      await ref
-          .read(groupRepositoryProvider)
-          .withdrawInvitation(group.id, myUid);
-      if (!context.mounted) return;
-      context.showSuccessSnackBar('Invitation refusée');
-    } catch (e) {
-      if (!context.mounted) return;
-      context.showErrorSnackBar('Refus impossible : $e');
-    }
-  }
+  Future<void> _refuse() => _respond(
+    () => ref
+        .read(groupRepositoryProvider)
+        .withdrawInvitation(group.id, widget.myUid),
+    success: 'Invitation refusée',
+    failure: 'Impossible de refuser l\'invitation. Réessayez.',
+  );
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final owner = ref.watch(memberNameProvider(group.ownerId));
     final members = '${group.memberIds.length} membre(s)';
     return Card(
@@ -730,11 +768,11 @@ class _InvitationCard extends ConsumerWidget {
               spacing: 8,
               children: [
                 TextButton(
-                  onPressed: () => _refuse(context, ref),
+                  onPressed: _busy ? null : _refuse,
                   child: const Text('Refuser'),
                 ),
                 FilledButton(
-                  onPressed: () => _accept(context, ref),
+                  onPressed: _busy ? null : _accept,
                   child: const Text('Accepter'),
                 ),
               ],
