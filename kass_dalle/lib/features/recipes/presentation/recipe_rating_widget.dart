@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import '../domain/family_ratings.dart';
 import '../presentation/recipe_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Badge compact affichant la note de l'utilisateur (ex : ★ 8).
 /// Appuyez dessus pour ouvrir le sélecteur de note.
@@ -194,8 +198,14 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+              if (!_editing) ...[
+                const SizedBox(height: 4),
+                _FamilyRatingsSection(recipeId: widget.recipeId),
+              ],
               if (_editing) ...[
                 const SizedBox(height: 8),
+                const _RatingVisibilityNotice(),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Text(
@@ -232,22 +242,22 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                         onPressed: () async {
                           final uid = ref.read(appUserProvider).value?.uid;
                           if (uid == null) return;
-                          await ref
-                              .read(recipeRatingRepositoryProvider)
-                              .deleteRating(
-                                userId: uid,
-                                recipeId: widget.recipeId,
-                              );
-                          setState(() => _editing = false);
+                          final ok = await _deleteRating(
+                            context,
+                            ref,
+                            uid,
+                            widget.recipeId,
+                          );
+                          if (ok && mounted) setState(() => _editing = false);
                         },
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.delete_outline,
                           size: AppIconSize.inline,
-                          color: Colors.red,
+                          color: theme.colorScheme.error,
                         ),
-                        label: const Text(
+                        label: Text(
                           'Supprimer',
-                          style: TextStyle(color: Colors.red),
+                          style: TextStyle(color: theme.colorScheme.error),
                         ),
                       ),
                     const Spacer(),
@@ -260,14 +270,14 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                       onPressed: () async {
                         final uid = ref.read(appUserProvider).value?.uid;
                         if (uid == null) return;
-                        await ref
-                            .read(recipeRatingRepositoryProvider)
-                            .setRating(
-                              userId: uid,
-                              recipeId: widget.recipeId,
-                              rating: _draft ?? 5,
-                            );
-                        setState(() => _editing = false);
+                        final ok = await _saveRating(
+                          context,
+                          ref,
+                          uid,
+                          widget.recipeId,
+                          _draft ?? 5,
+                        );
+                        if (ok && mounted) setState(() => _editing = false);
                       },
                       child: const Text('Enregistrer'),
                     ),
@@ -337,6 +347,8 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
         children: [
           _RatingChip(rating: _value),
           const SizedBox(height: 12),
+          const _RatingVisibilityNotice(),
+          const SizedBox(height: 4),
           Row(
             children: [
               const Text('0'),
@@ -361,13 +373,19 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
             onPressed: () async {
               final uid = ref.read(appUserProvider).value?.uid;
               if (uid == null) return;
-              await ref
-                  .read(recipeRatingRepositoryProvider)
-                  .deleteRating(userId: uid, recipeId: widget.recipeId);
-              if (!context.mounted) return;
+              final ok = await _deleteRating(
+                context,
+                ref,
+                uid,
+                widget.recipeId,
+              );
+              if (!ok || !context.mounted) return;
               Navigator.of(context).pop();
             },
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'Supprimer',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -377,19 +395,204 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
           onPressed: () async {
             final uid = ref.read(appUserProvider).value?.uid;
             if (uid == null) return;
-            await ref
-                .read(recipeRatingRepositoryProvider)
-                .setRating(
-                  userId: uid,
-                  recipeId: widget.recipeId,
-                  rating: _value,
-                );
-            if (!context.mounted) return;
+            final ok = await _saveRating(
+              context,
+              ref,
+              uid,
+              widget.recipeId,
+              _value,
+            );
+            if (!ok || !context.mounted) return;
             Navigator.of(context).pop();
           },
           child: const Text('Enregistrer'),
         ),
       ],
+    );
+  }
+}
+
+// ── Enregistrement ────────────────────────────────────────────────────────────
+
+/// Enregistre la note et annonce un échec. `true` si l'écriture a réussi.
+///
+/// Le repository a déjà rapporté l'erreur : il ne reste qu'à la dire à
+/// l'utilisateur, qui croirait sinon sa note enregistrée.
+Future<bool> _saveRating(
+  BuildContext context,
+  WidgetRef ref,
+  String uid,
+  String recipeId,
+  int rating,
+) async {
+  try {
+    await ref
+        .read(recipeRatingRepositoryProvider)
+        .setRating(userId: uid, recipeId: recipeId, rating: rating);
+    return true;
+  } catch (e) {
+    if (context.mounted) {
+      context.showErrorSnackBar('Note non enregistrée : $e');
+    }
+    return false;
+  }
+}
+
+/// Supprime la note et annonce un échec. `true` si la suppression a réussi.
+Future<bool> _deleteRating(
+  BuildContext context,
+  WidgetRef ref,
+  String uid,
+  String recipeId,
+) async {
+  try {
+    await ref
+        .read(recipeRatingRepositoryProvider)
+        .deleteRating(userId: uid, recipeId: recipeId);
+    return true;
+  } catch (e) {
+    if (context.mounted) {
+      context.showErrorSnackBar('Note non supprimée : $e');
+    }
+    return false;
+  }
+}
+
+// ── Notes de la famille ───────────────────────────────────────────────────────
+
+/// Rappel affiché au moment de noter : la note n'est pas privée.
+class _RatingVisibilityNotice extends StatelessWidget {
+  const _RatingVisibilityNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.visibility_outlined, size: AppIconSize.inline, color: muted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'Votre note est visible des membres qui ont accès à cette recette.',
+            style: theme.textTheme.bodySmall?.copyWith(color: muted),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Moyenne de la famille et, dépliée, la note de chaque membre de mes
+/// groupes. Repliée par défaut.
+class _FamilyRatingsSection extends ConsumerWidget {
+  final String recipeId;
+
+  const _FamilyRatingsSection({required this.recipeId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final async = ref.watch(familyRatingsProvider(recipeId));
+
+    return async.when(
+      loading: () => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Chargement des notes de la famille…', style: muted),
+            ),
+          ],
+        ),
+      ),
+      error: (e, _) => AppErrorState(
+        error: e,
+        compact: true,
+        title: 'Notes de la famille indisponibles',
+        onRetry: () => ref.invalidate(recipeRatingsProvider(recipeId)),
+      ),
+      data: (family) {
+        final average = family.average;
+        if (average == null) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              "Aucun autre membre n'a encore noté cette recette.",
+              style: muted,
+            ),
+          );
+        }
+        final avg = formatRatingAverage(average);
+        final count = family.count;
+        final notes = count > 1 ? 'notes' : 'note';
+        return Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            initiallyExpanded: false,
+            leading: Icon(
+              Icons.groups_outlined,
+              size: AppIconSize.small,
+              color: theme.colorScheme.primary,
+            ),
+            title: Semantics(
+              label:
+                  'Moyenne de la famille : ${avg.replaceAll(',', '.')} sur 10, '
+                  '$count $notes',
+              excludeSemantics: true,
+              child: Text(
+                'Famille : $avg / 10 · $count $notes',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            children: [
+              for (final member in family.others) _MemberRatingTile(member),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MemberRatingTile extends StatelessWidget {
+  final MemberRating member;
+
+  const _MemberRatingTile(this.member);
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateFormat('d MMM yyyy', 'fr').format(member.updatedAt);
+    final initial = member.name.trim().isEmpty
+        ? '?'
+        : member.name.trim().characters.first.toUpperCase();
+    return MergeSemantics(
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: ExcludeSemantics(
+          child: CircleAvatar(radius: 16, child: Text(initial)),
+        ),
+        title: Text(member.name),
+        subtitle: Text(date),
+        trailing: Semantics(
+          label: '${member.rating} sur 10',
+          excludeSemantics: true,
+          child: _RatingChip(rating: member.rating),
+        ),
+      ),
     );
   }
 }

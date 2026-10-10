@@ -2268,6 +2268,9 @@ sequenceDiagram
   U->>D: ouvre la fiche
   D->>AN: flux des annotations
   D->>RA: sa propre note
+  D->>RR: watchAllForRecipe — where recipe_id ==
+  RR-->>D: toutes les notes de la recette
+  Note over D: familyRatingsProvider garde ma note et celles des membres<br/>de mes groupes dont le profil existe, puis calcule la moyenne
 
   U->>DL: Ajouter une annotation
   DL-->>U: rappelle « Ma note » en tête, avec un raccourci 0–10
@@ -2292,6 +2295,11 @@ sequenceDiagram
         au même endroit parce qu'on y pense en même temps ; la valeur, elle, reste dans
         <code>recipe_ratings</code>. Recopier la note dans l'annotation aurait créé deux vérités
         qui divergent dès la première modification.
+        <span class="expect">
+          <b>Les notes de la famille se lisent, elles ne se stockent pas.</b> La fiche lit toutes
+          les notes de la recette, garde celles des membres de mes groupes et calcule la moyenne
+          à l'affichage. Le planning, lui, ne lit que ma note.
+        </span>
         <span class="expect">
           <b>Les notes alimentent la recherche.</b> Les recettes notées partent avec leur valeur
           dans la demande adressée au moteur, qui en déduit les goûts — voir la séquence 07.

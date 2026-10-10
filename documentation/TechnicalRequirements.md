@@ -945,6 +945,21 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
 donne, pas à la recette.
 
+| Champ | Type | Description |
+|---|---|---|
+| `user_id` | `String` | Auteur de la note, figé |
+| `recipe_id` | `String` | Recette notée, figée |
+| `rating` | `int` | De 0 à 10 ; 0 est une vraie note |
+| `updated_at` | `Timestamp` | Dernière modification |
+
+La fiche recette lit toutes les notes d'une recette par `where recipe_id ==`
+(`RecipeRatingRepository.watchAllForRecipe`) ; la règle de lecture prouve cette requête par
+son `get()` sur `recipe_id`, et `rules-tests` le vérifie. Le filtre par groupe se fait côté
+client (`familyRatingsProvider`, `FamilyRatings.from`) : ne restent que les notes des membres
+de `groupMemberIdsProvider` dont le profil public existe, plus la mienne. La moyenne est
+dérivée à l'affichage et n'est stockée nulle part. Aucun index composite : le tri par date se
+fait côté client. Le planning ne lit que la note de l'utilisateur (`getAllForUser`).
+
 ---
 
 ### 3.10 Référentiels nutrition — `nutrition_ingredients`, `nutrition_units`

@@ -1033,6 +1033,23 @@ describe("recipe_ratings — confidentialité", () => {
     await assertFails(db("reader").doc("recipe_ratings/r-other-private").get());
   });
 
+  // La fiche d'une recette liste les notes de la famille par une requête sur
+  // `recipe_id` : la règle doit pouvoir la prouver sans lire chaque note.
+  it("un lecteur liste les notes d'une recette visible", async () => {
+    await assertSucceeds(
+      db("reader").collection("recipe_ratings").where("recipe_id", "==", "validated").get(),
+    );
+  });
+
+  it("un lecteur ne liste pas les notes d'une recette privée d'autrui", async () => {
+    await assertFails(
+      db("reader")
+        .collection("recipe_ratings")
+        .where("recipe_id", "==", "validated-private-other")
+        .get(),
+    );
+  });
+
   it("un lecteur ne note pas la recette privée d'autrui", async () => {
     await assertFails(
       db("reader")

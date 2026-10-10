@@ -46,7 +46,7 @@ class _MobileCommunitySummaryState
           children: [
             CooklangSectionHeader(
               icon: Icons.forum_outlined,
-              title: 'Communaute',
+              title: 'Communauté',
               expanded: _expanded,
               onTap: () => setState(() => _expanded = !_expanded),
               action: TextButton.icon(

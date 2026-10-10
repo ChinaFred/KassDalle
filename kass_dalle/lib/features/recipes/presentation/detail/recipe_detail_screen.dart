@@ -138,7 +138,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         child: Column(
           children: [
             ListTile(
-              title: const Text('Communaute'),
+              title: const Text('Communauté'),
               trailing: IconButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 icon: const Icon(Icons.close),
@@ -490,7 +490,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                             ),
                             Tab(
                               icon: Icon(Icons.forum_outlined),
-                              text: 'Communaute',
+                              text: 'Communauté',
                             ),
                             Tab(
                               icon: Icon(Icons.photo_library_outlined),
