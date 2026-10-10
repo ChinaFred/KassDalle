@@ -1618,3 +1618,44 @@ describe("requêtes du client", () => {
     );
   });
 });
+
+// ── users/{uid}/planning_runs ────────────────────────────────────────────
+
+describe("planning_runs — écrites par le serveur seul", () => {
+  const own = `users/${READER}/planning_runs/pr_run`;
+  const others = `users/${OTHER}/planning_runs/pr_run`;
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [own]: { concepts_max: 2, concepts_used: 0, cost_usd: 0 },
+      [others]: { concepts_max: 2, concepts_used: 0, cost_usd: 0 },
+    });
+  });
+
+  it("le titulaire ne lit pas sa génération", async () => {
+    await assertFails(db("reader").doc(own).get());
+  });
+
+  it("le titulaire ne remet pas son compteur de conceptions à zéro", async () => {
+    await assertFails(db("reader").doc(own).update({ concepts_used: 0, concepts_max: 99 }));
+  });
+
+  it("le titulaire ne crée pas de génération", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}/planning_runs/pr_new`)
+        .set({ concepts_max: 99, concepts_used: 0 }),
+    );
+  });
+
+  it("un autre compte ne lit ni n'écrit la génération d'un autre", async () => {
+    await assertFails(db("reader").doc(others).get());
+    await assertFails(db("reader").doc(others).update({ concepts_used: 0 }));
+  });
+
+  it("un administrateur lit une génération, sans l'écrire", async () => {
+    await assertSucceeds(db("admin").doc(own).get());
+    await assertFails(db("admin").doc(own).update({ concepts_used: 0 }));
+    await assertFails(db("admin").doc(own).delete());
+  });
+});

@@ -128,6 +128,14 @@ export interface ModelCallResult {
   callId: string;
   /** Raison d'arrêt telle que rendue par le fournisseur, si elle est connue. */
   stopReason?: string;
+  /**
+   * Coût calculé par `recordUsage` pour cet appel, au tarif de la grille en
+   * vigueur. `null` quand la grille était illisible (appel compté sans
+   * montant) ; absent quand l'appel n'a pas été enregistré. Le coût reste
+   * calculé une seule fois, dans `ai/usage.ts` : ce champ le relaie, il ne le
+   * recalcule pas.
+   */
+  recordedCostUsd?: number | null;
 }
 
 /** Contexte d'appel : traçabilité, imputation, garde-fous. */

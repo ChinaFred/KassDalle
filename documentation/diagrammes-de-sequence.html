@@ -1630,11 +1630,12 @@ sequenceDiagram
   <section>
     <h2 id="menus"><span class="n">14</span>Suggestion de menus</h2>
     <p class="sec-note">
-      L'IA compose <b>un créneau à la fois</b>, et chaque appel voit ce que les précédents ont
-      déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois
-      le même réflexe.
-      <span class="path">batch_planning_screen.dart → suggestMealPlanFn → gemini/planning.ts →
-      planned_meals</span>
+      Le serveur choisit les candidats de chaque créneau ; le modèle tranche entre eux en
+      <b>un seul appel</b> pour tout le cycle, puis le code relit sa réponse. « Autre
+      suggestion » ne fait aucun appel de modèle. Les conceptions automatiques sont plafonnées
+      par génération.
+      <span class="path">batch_planning_screen.dart → suggestMealPlanFn → gemini/planning.ts ·
+      gemini/planningStore.ts → users/{uid}/planning_runs · planned_meals</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1643,56 +1644,87 @@ sequenceDiagram
   autonumber
   actor U as Lecteur
   participant B as BatchPlanningScreen
-  participant PC as planning_config/{uid}
-  participant RE as Recettes accessibles
   participant SP as suggestMealPlanFn
+  participant FS as Firestore
   participant PL as gemini/planning.ts
   participant M as Moteur d'IA
-  participant PM as planned_meals
+  participant GC as generateRecipeConceptFn
 
-  U->>B: Nouveau planning
-  B->>PC: lit PlanningPreferences
-  PC-->>B: repas par cycle, jour de démarrage, jour de batch,<br/>contraintes par jour, contraintes globales, fenêtre de variété
-  opt Reprendre une semaine passée — sans IA
-    B->>PM: lit les semaines qui portent des repas
-    U-->>B: la semaine choisie
-    B->>B: replayWeek : jour de semaine pour jour de semaine,<br/>créneaux vides seulement, une recette une seule fois
-  end
   U->>B: Planifier avec l'IA — n créneaux vides
-  B->>U: où chercher ? mes recettes validées, mes brouillons,<br/>celles de la famille, inventer si rien ne convient
+  B->>U: où chercher ? mes recettes, mes brouillons,<br/>la famille, inventer si rien ne convient
   U-->>B: périmètre choisi
-  B->>RE: charge le corpus, livres privés d'autrui exclus
-  B->>PM: lit les repas des N semaines avant le cycle
-  PM-->>B: recentlyServed, une fois par recette, du plus récent au plus ancien
-  B->>SP: slotDates, slotConstraints (format du jour compris),<br/>alreadyAssigned, corpus, recentlyServed
-  SP->>PL: applyRecentlyServed(corpus, recentlyServed, créneaux à remplir)
-  PL-->>SP: candidats sans les plats récents, tant qu'il en reste assez.<br/>Ceux qu'il a fallu garder sont nommés au modèle
+  B->>FS: lit les repas de la fenêtre de variété
+  B->>SP: résumés de recettes (portions comprises), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
+  SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings (appelant seul)
+  FS-->>SP: politique, dernière date servie par recette, notes
+  SP->>PL: applyRecentlyServed puis preselect
+  PL->>PL: filtres durs : rôle, prépa max, repos, note ≤ 3, écartées, déjà au cycle
+  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
+  PL-->>SP: listes classées par créneau (5 plats, 3 entrées, 3 desserts en tête, 15 plats gardés)
+  SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées
+  SP->>SP: coût plafond (grille en vigueur, taux de la facture)
+  alt estimation au-delà de 0,50 € ou plafond du jour atteint
+    SP->>PL: codeFill — premier candidat libre, aucun appel
+    Note over SP: modelStatus budget · « Rien n'a été facturé »
+  else
+    SP->>M: callModel(planning, maxTokens 4 000, entity planning_run)
+    alt réponse lisible
+      M-->>SP: [{slot, recipe_id, starter_id, dessert_id}]
+      SP->>PL: validateModelChoices — hors liste ou en double : premier candidat libre
+    else panne ou réponse illisible
+      SP->>PL: codeFill
+      Note over SP: modelStatus failed · « L'IA n'a pas répondu… »
+    end
+  end
+  SP->>FS: users/{uid}/planning_runs/{runId} — propositions, statut,<br/>concepts_max, coût
+  SP-->>B: suggestions (faits du code, source model | code), rankedCandidates,<br/>runId, conceptsRemaining, notice
+  B->>B: ligne d'origine : Choisie par l'IA · Choisie par Kass'Dalle ;<br/>bandeau si notice, « Réessayer avec l'IA » après une panne
 
-  SP->>PL: partitionByRole(candidats) : plats, entrées, desserts, en-cas — jamais un accompagnement
-  loop chaque créneau vide
-    SP->>PL: slotKind(jour, jour de batch)
-    PL->>PL: mealFormatOf(format du jour) : entrée ? dessert ? léger ?<br/>batch, jour de préparation ?
-    SP->>M: un créneau, avec les choix déjà faits
-    M-->>SP: plat retenu + raison, et entrée / dessert si le format en demande
-    SP->>SP: ajoute au contexte du créneau suivant
+  opt créneaux restés vides, conception IA cochée
+    loop tant que conceptsRemaining > 0
+      B->>GC: conception, runId
+      GC->>FS: transaction : génération connue, moins de 6 h,<br/>compteur, coût + estimation sous le plafond
+      alt refusée
+        GC-->>B: resource-exhausted (reason) — la boucle s'arrête
+      else réservée
+        GC->>M: callModel(planning_concept, maxTokens 6 000, entity planning_run)
+        GC->>FS: cost_usd += coût enregistré
+        GC-->>B: recette conçue → brouillon, « Conçue par l'IA »
+      end
+    end
+    B->>U: « 5 créneaux remplis. 2 recettes conçues, c'est le maximum par génération… »
   end
 
-  SP-->>B: une proposition par créneau, chacune avec sa raison,<br/>et les plats récents écartés — l'écran en dit le nombre
-  B->>B: chooseSide, par créneau : ce que le plat n'apporte pas,<br/>ses accompagnements classiques, les garnitures du compte,<br/>rotation sur les jours voisins — aucun appel de modèle
-  U->>B: ajuste — plat, accompagnement —, puis Valider le planning
-  B->>PM: écrit les repas
-  Note over B,PM: un créneau sans proposition reste vide.<br/>Le client ne comble pas : il ne rejoue plus les règles
+  U->>B: Autre suggestion sur un créneau
+  alt liste classée en mémoire
+    B->>B: nextRankedCandidate — ni écartée, ni posée ailleurs, ni sortie du corpus
+  else pas de liste, ou liste épuisée
+    B->>SP: mode code, ce créneau seul
+    SP-->>B: liste classée et premier candidat — aucun appel de modèle
+  end
+  alt rien à proposer
+    B->>U: « Plus d'autre recette à proposer pour ce créneau. »<br/>Choisir une recette · Concevoir avec l'IA (sans runId)
+  else
+    B->>B: recette posée, « Choisie par Kass'Dalle », l'ancienne écartée
+  end
+  U->>B: Valider le planning
+  B->>FS: planned_meals — recette, justification, choice_source
 </pre>
       </div>
       <figcaption>
-        <b>Les règles de créneau ont quitté le client.</b> Il les rejouait pour combler ce que le
-        serveur laissait vide. Ce filet dupliquait les règles de variété, de dessert et de jour de
-        préparation, masquait qu'aucune suggestion n'avait été rendue, et faisait passer une
-        recette choisie par lui pour une décision de l'IA. Un créneau vide est plus honnête.
+        <b>Le modèle ne trie plus le corpus.</b> Il recevait toutes les recettes à chaque appel,
+        soit environ 25 000 jetons pour 400 recettes. Il reçoit au plus cinq plats par créneau et
+        choisit parmi eux ; ce qu'il rend hors liste est remplacé par le code et compté.
         <span class="expect">
-          <b><code>planning_slot_rules.json</code> ne verrouille plus qu'un seul côté.</b> Format du
-          repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de
-          préparation et fenêtre de variété sont testés par <code>gemini/planning.ts</code> uniquement.
+          <b><code>planning_slot_rules.json</code> verrouille la présélection.</b> Filtres durs,
+          note de fraîcheur, note personnelle, tirage pondéré, répartition par protéine, lecture
+          de la réponse, plafond de conceptions : testés par <code>gemini/planning.ts</code>
+          uniquement. Le client ne note rien : il filtre la liste reçue.
+        </span>
+        <span class="expect">
+          <b>Une recette choisie par le code ne se présente pas comme un choix de l'IA.</b> Le
+          libellé « Choisie par Kass'Dalle » et des faits vérifiables remplacent les phrases
+          génériques d'avant.
         </span>
         <span class="expect warn">
           <b>Le corpus exclut les livres privés des autres membres.</b> Le générateur chargeait les

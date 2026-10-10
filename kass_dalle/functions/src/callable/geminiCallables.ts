@@ -44,7 +44,28 @@ import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover, generateWebSearchQuery } from "../gemini/search";
-import { suggestMealPlan, generateRecipeConcept } from "../gemini/planning";
+import { randomInt } from "node:crypto";
+import {
+  PLANNING_CONCEPT_MAX_TOKENS,
+  PLANNING_MAX_TOKENS,
+  buildConceptPrompt,
+  generateRecipeConcept,
+  seededRng,
+  suggestMealPlan,
+  type SlotRanking,
+} from "../gemini/planning";
+import {
+  PlanningRunDenied,
+  addPlanningRunCost,
+  ceilingEstimator,
+  generationCapUsd,
+  getPlanningPolicy,
+  newPlanningRunId,
+  readServedHistory,
+  readUserRatings,
+  reservePlanningConcept,
+  writePlanningRun,
+} from "../gemini/planningStore";
 import {
   MEAL_IDEAS_MAX_PREVIOUS,
   MEAL_IDEAS_MAX_PROMPT_CHARS,
@@ -457,6 +478,18 @@ export const extractBookCoverFn = onCall(callableOpts, async (req) => {
   }
 });
 
+/** Les listes classées, telles que le client les garde pour « Autre suggestion ». */
+function rankedCandidatesPayload(rankings: SlotRanking[]) {
+  return rankings.map((r) => ({
+    slot: r.slot,
+    plats: r.plats,
+    entrees: r.entrees,
+    desserts: r.desserts,
+    relaxed: r.relaxed,
+    ...(r.prepDate ? { prepDate: r.prepDate } : {}),
+  }));
+}
+
 export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "planning");
   const raw = (req.data ?? {}) as Record<string, unknown>;
@@ -465,14 +498,63 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
     readPlanningInput(raw, inputs),
   );
   try {
-    const data = await suggestMealPlan(GEMINI_API_KEY.value(), input, {
-      ...ctx,
-      feature: "planning",
-      moduleType: "DESIGN",
-    });
-    // Les recettes écartées par la fenêtre de variété voyagent avec les
-    // suggestions : l'écran dit combien de plats récents n'ont pas été proposés.
-    return { suggestions: data.slots, excludedRecentIds: data.excludedRecentIds };
+    const mode = input.mode ?? "model";
+    const cycleStart = [...input.slotDates].sort()[0]?.slice(0, 10) ?? "";
+    const today = new Date().toISOString().slice(0, 10);
+    // Ce qui sert à décider se lit à la source : l'historique et les notes de
+    // l'appelant, jamais ceux d'un autre membre.
+    const [policy, history, ratings] = await Promise.all([
+      getPlanningPolicy(),
+      readServedHistory({
+        uid: ctx.userId,
+        cycleStart: cycleStart || today,
+        correlationId: ctx.correlationId,
+      }),
+      readUserRatings({ uid: ctx.userId, correlationId: ctx.correlationId }),
+    ]);
+    // Le mode « code » n'appelle aucun modèle : pas de génération à journaliser.
+    const runId = mode === "model" ? newPlanningRunId() : null;
+    const costCapUsd = mode === "model" ? await generationCapUsd(policy) : null;
+    const data = await suggestMealPlan(
+      GEMINI_API_KEY.value(),
+      input,
+      { ...ctx, feature: "planning", moduleType: "DESIGN" },
+      {
+        policy,
+        lastServed: history.lastServed,
+        historyAvailable: history.available,
+        ratings,
+        today,
+        rng: seededRng(randomInt(0, 0xffffffff)),
+        runId,
+        costCapUsd,
+        estimateCeilingUsd: ceilingEstimator("planning", PLANNING_MAX_TOKENS),
+      },
+    );
+    const written =
+      runId != null &&
+      (await writePlanningRun({
+        uid: ctx.userId,
+        runId,
+        correlationId: ctx.correlationId,
+        slotDates: input.slotDates,
+        suggestion: data,
+        policy,
+        costCapUsd,
+      }));
+    return {
+      runId: written ? runId : null,
+      mode,
+      modelStatus: data.modelStatus,
+      notice: data.notice,
+      suggestions: data.slots,
+      rankedCandidates: rankedCandidatesPayload(data.rankings),
+      // Les recettes écartées par la fenêtre de variété voyagent avec les
+      // suggestions : l'écran dit combien de plats récents n'ont pas été proposés.
+      excludedRecentIds: data.excludedRecentIds,
+      conceptsRemaining: written ? policy.conceptsPerGeneration : 0,
+      stats: data.stats,
+    };
   } catch (e) {
     throw toHttpsError(e);
   }
@@ -516,12 +598,59 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
     readConceptInput(raw, inputs),
   );
   try {
-    const data = await generateRecipeConcept(GEMINI_API_KEY.value(), input, {
-      ...ctx,
-      feature: "planning_concept",
-      moduleType: "DESIGN",
-    });
-    return data;
+    // Rattachée à une génération, la conception passe d'abord le plafond de
+    // la génération : nombre, puis coût estimé. Le compteur est incrémenté
+    // avant l'appel — une conception en échec a pu être facturée.
+    let conceptsRemaining: number | null = null;
+    if (input.runId) {
+      const estimateUsd = await ceilingEstimator(
+        "planning_concept",
+        PLANNING_CONCEPT_MAX_TOKENS,
+      )(buildConceptPrompt(input).length);
+      try {
+        conceptsRemaining = await reservePlanningConcept({
+          uid: ctx.userId,
+          runId: input.runId,
+          estimateUsd,
+        });
+      } catch (err) {
+        if (err instanceof PlanningRunDenied) {
+          await logInfo({
+            message: "Conception refusée par le plafond de la génération",
+            correlationId: ctx.correlationId,
+            userId: ctx.userId,
+            feature: "planning_concept",
+            extra: { runId: input.runId, reason: err.reason },
+          });
+          throw new HttpsError(
+            err.reason === "unknown" ? "not-found" : "resource-exhausted",
+            err.message,
+            { reason: err.reason },
+          );
+        }
+        throw err;
+      }
+    }
+    const data = await generateRecipeConcept(
+      GEMINI_API_KEY.value(),
+      input,
+      { ...ctx, feature: "planning_concept", moduleType: "DESIGN" },
+      { runId: input.runId },
+    );
+    if (input.runId) {
+      await addPlanningRunCost({
+        uid: ctx.userId,
+        runId: input.runId,
+        costUsd: data.costUsd,
+        correlationId: ctx.correlationId,
+      });
+    }
+    return {
+      titre: data.titre,
+      cooklang: data.cooklang,
+      justification: data.justification,
+      ...(conceptsRemaining != null ? { conceptsRemaining } : {}),
+    };
   } catch (e) {
     throw toHttpsError(e);
   }

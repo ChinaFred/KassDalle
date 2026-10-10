@@ -22,7 +22,7 @@ import {
   anthropicSupportsParts,
   callAnthropic,
 } from "./anthropic";
-import { recordUsage } from "./usage";
+import { recordUsage, type RecordedUsage } from "./usage";
 import { withDailyBudget } from "./budget";
 // `recordUsage` est aussi le nom d'un drapeau de `callModel` : l'import garde
 // le nom de la fonction, l'option se lit toujours `args.recordUsage`.
@@ -265,6 +265,29 @@ export function resolveProvider(
 }
 
 /**
+ * Moteur et modèle qui serviraient un poste, sans appel de fournisseur.
+ *
+ * Sert à estimer le coût plafond d'un appel avant de le lancer (plafond par
+ * génération du planning). Même résolution que `callModel` : politique,
+ * disponibilité de la clé Anthropic, modèle par poste, plafond de
+ * raisonnement Gemini.
+ */
+export async function resolveCallTarget(
+  feature: string,
+): Promise<{ provider: AiProvider; model: string; thinkingBudget: number | null }> {
+  const policy = await getAiRoutingPolicy();
+  const provider = resolveProvider(policy, feature, anthropicApiKey() != null);
+  if (provider === "anthropic") {
+    return { provider, model: resolveAnthropicModel(policy, feature), thinkingBudget: null };
+  }
+  return {
+    provider: "gemini",
+    model: GEMINI_MODEL,
+    thinkingBudget: resolveThinkingBudget(policy, feature),
+  };
+}
+
+/**
  * Enregistre la consommation d'un appel, au tarif du modèle qui a répondu.
  *
  * L'ancien `recordTokenUsage` écrivait `GEMINI_MODEL` en dur : un appel Claude
@@ -276,12 +299,12 @@ export async function recordModelUsage(
   result: ModelCallResult,
   ctx: ModelCallContext,
   meta?: { entityType?: string; entityId?: string; costBucket?: string },
-): Promise<void> {
+): Promise<RecordedUsage> {
   // Un appel sans jetons connus est enregistré quand même. Le court-circuit
   // qui existait ici (`if (totalTokens === 0) return;`) faisait disparaître du
   // reporting des appels réellement facturés par le fournisseur : ils
   // ressortaient plus tard en « non attribué », sans origine identifiable.
-  await recordUsage({
+  return recordUsage({
     feature: ctx.feature,
     provider: result.provider,
     model: result.model,
@@ -484,7 +507,10 @@ async function callModelWithinBudget(args: CallModelArgs): Promise<ModelCallResu
         maxTokens: args.maxTokens,
       });
       if (args.recordUsage !== false) {
-        await recordModelUsage(result, args.ctx, args.usageMeta);
+        const recorded = await recordModelUsage(result, args.ctx, args.usageMeta);
+        // Le coût calculé à l'enregistrement remonte à l'appelant : le
+        // planning le cumule par génération sans le recalculer.
+        return { ...result, recordedCostUsd: recorded.costUsd };
       }
       return result;
     } catch (err) {

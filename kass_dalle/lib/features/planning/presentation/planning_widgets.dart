@@ -5,9 +5,11 @@ import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../../core/utils/ingredient_display.dart';
 import '../../../core/utils/shopping_products.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
+import 'batch_planning_widgets.dart' show MealOriginLine;
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
 
@@ -264,7 +266,9 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
-  final VoidCallback onSuggestWithAI;
+
+  /// « Autre suggestion » : la recette suivante de la liste classée, sans IA.
+  final VoidCallback onOtherSuggestion;
   final VoidCallback onReschedule;
 
   /// Ajoute un accompagnement de plus, choisi à la main.
@@ -291,7 +295,7 @@ class PlanningMealTile extends StatelessWidget {
     required this.onDelete,
     required this.onChangeRecipe,
     required this.onClearRecipe,
-    required this.onSuggestWithAI,
+    required this.onOtherSuggestion,
     required this.onReschedule,
     required this.onAddComponent,
     required this.onRemoveComponent,
@@ -307,39 +311,27 @@ class PlanningMealTile extends StatelessWidget {
   ///
   /// La consigne est calculée, pas générée : elle s'affiche toujours, même si
   /// la recette n'a jamais reçu de conseil de conservation.
-  /// Le « pourquoi ce plat, ce jour-là », quand l'IA l'a écrit.
+  /// L'origine du choix et les faits qui le justifient : « Choisie par
+  /// Kass'Dalle · volaille · 35 min ».
   ///
-  /// Il porte l'icône de ce qui vient d'une machine — la même partout dans
-  /// l'application —, et non celle qui sert à en demander.
+  /// Le robot ne précède que ce qu'une IA a produit. Il précédait toute
+  /// justification, « Sélection manuelle » comprise : un choix fait à la main
+  /// s'affichait comme une décision de l'IA. Un repas antérieur au champ
+  /// d'origine qui porte cette phrase est lu comme un choix manuel.
   Widget? _buildWhy(ThemeData theme) {
-    final why = meal.justification?.trim();
-    if (why == null || why.isEmpty) return null;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.smart_toy_outlined,
-            size: AppIconSize.badge,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              why,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
+    var source = meal.choiceSource;
+    var facts = meal.justification?.trim() ?? '';
+    if (source == null && facts.startsWith(_legacyManualJustification)) {
+      source = MealChoiceSource.manual;
+      facts = '';
+    }
+    final line = MealOriginLine.maybe(source: source, facts: facts);
+    if (line == null) return null;
+    return Padding(padding: const EdgeInsets.only(top: 4), child: line);
   }
+
+  /// Phrase écrite sur les repas choisis à la main avant le champ d'origine.
+  static const _legacyManualJustification = 'Sélection manuelle';
 
   /// Ce qui accompagne le plat : « Accompagnement : Riz · 70 g par part ».
   ///
@@ -570,8 +562,8 @@ class PlanningMealTile extends StatelessWidget {
                       iconSize: AppIconSize.small,
                       onSelected: (action) {
                         switch (action) {
-                          case PlanningMealAction.suggestWithAI:
-                            onSuggestWithAI();
+                          case PlanningMealAction.otherSuggestion:
+                            onOtherSuggestion();
                           case PlanningMealAction.changeRecipe:
                             onChangeRecipe();
                           case PlanningMealAction.reschedule:
@@ -589,11 +581,18 @@ class PlanningMealTile extends StatelessWidget {
                         }
                       },
                       itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: PlanningMealAction.suggestWithAI,
+                        // Sans IA : la recette suivante de la liste classée
+                        // par le serveur, pour ce jour-là.
+                        PopupMenuItem(
+                          value: PlanningMealAction.otherSuggestion,
                           child: ListTile(
-                            leading: Icon(Icons.auto_awesome_outlined),
-                            title: Text('Suggestion IA'),
+                            leading: const Icon(Icons.autorenew),
+                            // Un repas libre n'a pas de recette à remplacer.
+                            title: Text(
+                              meal.recipeId == null
+                                  ? 'Proposer une recette'
+                                  : 'Autre suggestion',
+                            ),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
@@ -670,7 +669,7 @@ class PlanningMealTile extends StatelessWidget {
 }
 
 enum PlanningMealAction {
-  suggestWithAI,
+  otherSuggestion,
   changeRecipe,
   reschedule,
   addComponent,

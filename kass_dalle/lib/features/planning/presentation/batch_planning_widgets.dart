@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/domain/storage_advice.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
@@ -185,8 +186,15 @@ class BatchSlotTile extends StatelessWidget {
   final bool isBatchDay;
   final bool constraintsReadOnly;
 
-  /// Justification IA de la suggestion (critères respectés/enfreints).
+  /// Faits qui justifient le choix (protéine, durée, note, dernier service),
+  /// produits par le serveur ; ou la justification d'une conception.
   final String? justification;
+
+  /// Qui a choisi la recette ; `null` pour un repas sans origine connue.
+  final MealChoiceSource? choiceSource;
+
+  /// Vrai pendant la conception d'une recette pour ce créneau.
+  final bool conceiving;
 
   /// Jour de préparation à l'avance (calculé depuis le batch cooking day).
   final DateTime? prepDate;
@@ -226,6 +234,9 @@ class BatchSlotTile extends StatelessWidget {
   final ValueChanged<int> onTargetPortionsChanged;
   final ValueChanged<bool> onReheatChanged;
   final ValueChanged<String> onNotesChanged;
+
+  /// « Autre suggestion » sur un créneau rempli, « Proposer une recette » sur
+  /// un créneau vide : la recette suivante de la liste classée, sans IA.
   final VoidCallback? onGenerateWithAI;
   final VoidCallback? onExportToCalendar;
 
@@ -263,6 +274,8 @@ class BatchSlotTile extends StatelessWidget {
     required this.isBatchDay,
     this.constraintsReadOnly = false,
     this.justification,
+    this.choiceSource,
+    this.conceiving = false,
     this.prepDate,
     this.wasResized = false,
     this.resizeReason,
@@ -571,7 +584,7 @@ class BatchSlotTile extends StatelessWidget {
                       if (isGeneratedByAI) ...[
                         const SizedBox(width: 4),
                         Tooltip(
-                          message: 'Générée par l\'IA',
+                          message: 'Recette conçue par l\'IA',
                           child: Icon(
                             Icons.smart_toy_outlined,
                             size: AppIconSize.inline,
@@ -594,7 +607,7 @@ class BatchSlotTile extends StatelessWidget {
                   ),
                 )
               : Text(
-                  'À assigner',
+                  conceiving ? 'Conception en cours…' : 'À assigner',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
@@ -611,12 +624,13 @@ class BatchSlotTile extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else if (onGenerateWithAI != null)
+                // Sans IA : la recette suivante de la liste classée par le
+                // serveur. L'icône d'IA mentait sur ce geste.
                 IconButton(
-                  icon: const Icon(
-                    Icons.auto_awesome_outlined,
-                    size: AppIconSize.small,
-                  ),
-                  tooltip: 'Suggérer avec l\'IA',
+                  icon: const Icon(Icons.autorenew, size: AppIconSize.small),
+                  tooltip: recipe != null
+                      ? 'Autre suggestion'
+                      : 'Proposer une recette',
                   onPressed: onGenerateWithAI,
                 ),
               if (recipe != null) ...[
@@ -701,34 +715,17 @@ class BatchSlotTile extends StatelessWidget {
         // Jour de préparation à l'avance, et ce que le plat devra supporter.
         if (prepDate != null || onGenerateStorageAdvice != null)
           _buildStorageLine(theme),
-        // Explicabilité (pourquoi + statut redimensionnement)
+        // Origine du choix, puis les faits qui le justifient, puis le
+        // redimensionnement.
         if (recipe != null)
           Padding(
             padding: const EdgeInsets.only(left: 72, right: 16, bottom: 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: AppIconSize.badge,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        'Pourquoi : $_explainWhy',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                ?MealOriginLine.maybe(
+                  source: choiceSource,
+                  facts: justification,
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -757,12 +754,6 @@ class BatchSlotTile extends StatelessWidget {
           ),
       ],
     );
-  }
-
-  String get _explainWhy {
-    final value = justification?.trim() ?? '';
-    if (value.isNotEmpty) return value;
-    return 'Sélection validée sans justification détaillée.';
   }
 
   String get _resizeExplainability {
@@ -1074,7 +1065,7 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
 /// principale : sans elle, il n'y a rien à valider.
 ///
 /// Il ouvre le même menu que l'icône du mobile, parce que remplir les créneaux
-/// vides et tout regénérer ne sont pas la même chose : la seconde efface le
+/// vides et tout régénérer ne sont pas la même chose : la seconde efface le
 /// travail déjà fait à l'écran, et ce choix ne doit pas se faire par mégarde.
 class PlanWithAiButton extends StatelessWidget {
   final bool generating;
@@ -1123,6 +1114,189 @@ class PlanWithAiButton extends StatelessWidget {
                       '${emptySlots > 1 ? 's' : ''})'
                 : 'Planifier avec l\'IA',
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ligne d'origine d'un repas : qui l'a choisi, puis les faits qui le
+/// justifient. « Choisie par Kass'Dalle · volaille · 35 min ».
+///
+/// L'icône dit l'origine : le robot pour ce qu'une IA a produit, une
+/// personne pour un choix à la main, l'icône des règles pour un choix du
+/// code. Un repas sans origine connue n'affiche que ses faits.
+class MealOriginLine extends StatelessWidget {
+  final MealChoiceSource? source;
+  final String? facts;
+
+  const MealOriginLine({super.key, this.source, this.facts});
+
+  /// La ligne, ou `null` quand il n'y a rien à dire.
+  static MealOriginLine? maybe({MealChoiceSource? source, String? facts}) {
+    final text = facts?.trim() ?? '';
+    if (source == null && text.isEmpty) return null;
+    return MealOriginLine(source: source, facts: text);
+  }
+
+  static IconData iconFor(MealChoiceSource? source) => switch (source) {
+    MealChoiceSource.ai || MealChoiceSource.concept => Icons.smart_toy_outlined,
+    MealChoiceSource.rules => Icons.rule_outlined,
+    MealChoiceSource.manual => Icons.person_outline,
+    null => Icons.info_outline,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = facts?.trim() ?? '';
+    final label = source?.label;
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(iconFor(source), size: AppIconSize.badge, color: color),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                if (label != null)
+                  TextSpan(
+                    text: label,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                if (label != null && text.isNotEmpty)
+                  const TextSpan(text: ' · '),
+                if (text.isNotEmpty) TextSpan(text: text),
+              ],
+            ),
+            style: theme.textTheme.labelSmall?.copyWith(color: color),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bandeau d'avis au-dessus des créneaux : l'IA n'a pas répondu, un plafond
+/// a été atteint, ou le plafond de conceptions a laissé des créneaux vides.
+/// Une action au plus, et une croix pour le fermer.
+///
+/// Deux lignes par défaut, « Voir plus » pour le reste : sur un téléphone, un
+/// avis long poussait la liste des créneaux hors de l'écran. Annoncé au
+/// lecteur d'écran dès qu'il apparaît (`liveRegion`).
+class PlanningNoticeBanner extends StatefulWidget {
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final VoidCallback onClose;
+
+  const PlanningNoticeBanner({
+    super.key,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+    required this.onClose,
+  });
+
+  @override
+  State<PlanningNoticeBanner> createState() => _PlanningNoticeBannerState();
+}
+
+class _PlanningNoticeBannerState extends State<PlanningNoticeBanner> {
+  static const _collapsedLines = 2;
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(PlanningNoticeBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message != widget.message) _expanded = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onTertiaryContainer);
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        color: scheme.tertiaryContainer,
+        padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(
+                Icons.info_outline,
+                size: AppIconSize.small,
+                color: scheme.onTertiaryContainer,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final painter = TextPainter(
+                    text: TextSpan(text: widget.message, style: style),
+                    maxLines: _collapsedLines,
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout(maxWidth: constraints.maxWidth);
+                  final overflows = painter.didExceedMaxLines;
+                  painter.dispose();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.message,
+                        style: style,
+                        maxLines: _expanded ? null : _collapsedLines,
+                        overflow: _expanded ? null : TextOverflow.ellipsis,
+                      ),
+                      Wrap(
+                        spacing: 4,
+                        children: [
+                          if (overflows || _expanded)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _expanded = !_expanded),
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                _expanded ? 'Voir moins' : 'Voir plus',
+                              ),
+                            ),
+                          if (widget.actionLabel != null &&
+                              widget.onAction != null)
+                            TextButton(
+                              onPressed: widget.onAction,
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(widget.actionLabel!),
+                            ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: AppIconSize.small),
+              tooltip: 'Fermer',
+              color: scheme.onTertiaryContainer,
+              onPressed: widget.onClose,
+            ),
+          ],
         ),
       ),
     );

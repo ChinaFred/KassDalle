@@ -234,15 +234,18 @@ flowchart LR
     a22(["Replanifier un repas à une autre date"])
     a23(["Exporter vers Google Calendar"])
     a24(["Ajuster mes garnitures"])
+    a25(["Demander une autre suggestion"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
     i3(["Classer les résultats"])
-    i4(["Proposer un planning"])
+    i4(["Présélectionner les candidats&lt;br/&gt;filtres, fraîcheur, ma note"])
     i5(["Composer le dressage de ce plat"])
     i6(["Calculer la fenêtre de conservation"])
     i7(["Proposer trois idées de repas"])
-    i8(["Rédiger la recette de l'idée retenue"])
+    i8(["Rédiger une recette conçue par l'IA"])
+    i9(["Choisir un plat parmi cinq candidats"])
+    i10(["Remplir les créneaux sans l'IA"])
   end
 
   LEC --- a1
@@ -271,6 +274,8 @@ flowchart LR
   a12 --- a20
   a12 --- a21
   a12 --- a23
+  a9 --- a25
+  a12 --- a25
   a3 -.->|"inclut"| i0
   a4 -.->|"inclut"| i0
   a4 -.->|"Recalculer, sa recette"| i1
@@ -278,13 +283,19 @@ flowchart LR
   a8 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
   a12 -.->|"inclut"| i4
+  a25 -.->|"liste classée"| i4
+  a6 -.->|"ma note"| i4
+  a12 -.->|"sous 0,50 €"| i9
+  i10 -.->|"étend : IA muette ou plafond"| a12
+  a12 -.->|"créneau sans candidat, 2 au plus"| i8
+  a25 -.->|"liste épuisée"| i8
   a11 -.->|"sa recette"| i5
   a14 -.->|"si absent, sa recette"| i6
   a19 -.->|"inclut"| i7
   a19 -.->|"idée retenue"| i8
   i1 --- GEM
   i3 --- GEM
-  i4 --- GEM
+  i9 --- GEM
   i5 --- GEM
   i6 --- GEM
   i7 --- GEM
@@ -312,6 +323,16 @@ flowchart LR
         l'écran le dit, sans bouton.
         <b>Les idées de repas</b> coûtent un appel par consigne ou relance, puis un appel par idée
         retenue : sa recette est rédigée et rangée validée dans « Mes créations Kass'Dalle ».
+        <b>Le planning présélectionne sans IA</b> : le serveur filtre les recettes (rôle, temps
+        de préparation, repos, écartées, déjà au cycle, notées 3/10 ou moins par le lecteur),
+        les classe par fraîcheur sur 90 jours et par la note du lecteur, puis tire 5 plats par
+        créneau. L'IA choisit parmi eux. Une génération coûte 0,50 € au plus, conceptions
+        comprises, et conçoit 2 recettes au plus. Si l'IA ne répond pas ou si un plafond est
+        atteint, Kass'Dalle remplit les créneaux et un bandeau le dit.
+        <b>« Autre suggestion » n'appelle aucun modèle</b> : elle pose la recette suivante de la
+        liste classée. Quand la liste est épuisée, seule « Concevoir avec l'IA » est facturée.
+        Chaque plat affiche son origine : choisie par l'IA, par Kass'Dalle, par le lecteur, ou
+        conçue par l'IA.
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
         appel d'IA. Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.

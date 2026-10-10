@@ -5,8 +5,10 @@
 
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
-import { textPart, type ModelCallContext } from "../ai/types";
-import { logError } from "../logging";
+import { BudgetExceededError } from "../ai/budget";
+import { estimateAiCostUsd, type AiModelPricing } from "../ai/pricing";
+import { textPart, type AiProvider, type ModelCallContext } from "../ai/types";
+import { logError, logInfo, logWarn } from "../logging";
 
 export interface RecipeConceptInput {
   slotDate: string;
@@ -32,12 +34,21 @@ export interface RecipeConceptInput {
    * sous ce titre, au lieu d'en inventer une.
    */
   requestedDish?: { titre: string; description?: string };
+
+  /**
+   * Génération à laquelle la conception se rattache (`pr_…`). Présent, le
+   * plafond de conceptions et de coût de la génération s'applique ; absent,
+   * c'est un geste unitaire, borné par le plafond du jour.
+   */
+  runId?: string;
 }
 
 export interface RecipeConceptResult {
   titre: string;
   cooklang: string;
   justification: string;
+  /** Coût enregistré par `callModel` — interne, non renvoyé au client. */
+  costUsd?: number | null;
 }
 
 export interface PlanningRecipeSummary {
@@ -58,6 +69,11 @@ export interface PlanningRecipeSummary {
    * pour une recette pas encore classée.
    */
   mealRole?: string | null;
+  /**
+   * Parts pour lesquelles la recette est écrite. Sert à dire qu'un repas sera
+   * redimensionné (`resizeOf`) ; rien n'est écrit dans la recette.
+   */
+  portions?: number | null;
 }
 
 /**
@@ -284,16 +300,28 @@ export interface PlanningInput {
   globalConstraints: string;
   /** Jour de la semaine dédié au batch cooking (1=lundi…7=dimanche). */
   batchCookingDay?: number;
-  /** Recettes déjà assignées dans le cycle (pour éviter les répétitions). */
+  /**
+   * Recettes déjà assignées dans le cycle (pour éviter les répétitions). Un
+   * `slot` hors de `slotDates` (−1) désigne une recette posée ailleurs dans le
+   * cycle, hors de cette demande : « Autre suggestion » sur un seul créneau.
+   */
   alreadyAssigned?: Array<{ slot: number; recipeId: string }>;
   /**
    * Repas servis AVANT le cycle, dans la fenêtre de variété choisie par
    * l'utilisateur (« ne pas reproposer un plat servi dans les N dernières
    * semaines »). Le client les lit dans ses propres repas planifiés ; le
-   * serveur les retire du corpus tant qu'il reste assez de recettes, et nomme
-   * ceux qu'il a dû garder. Absent ou vide : aucune fenêtre.
+   * serveur les retire du corpus tant qu'il reste assez de recettes ; celles
+   * qu'il a dû garder reçoivent une note de fraîcheur basse et, sélectionnées,
+   * la mention « peu d'autres choix ». Absent ou vide : aucune fenêtre.
    */
   recentlyServed?: RecentlyServedMeal[];
+  /**
+   * `model` (défaut) : présélection puis un appel de modèle. `code` :
+   * présélection seule, sans appel — « Autre suggestion » sans liste en main.
+   */
+  mode?: "model" | "code";
+  /** Recettes écartées par créneau, même index que `slotDates`. */
+  slotDismissed?: Array<string[] | null>;
 }
 
 /** Un repas servi avant le cycle : ce que la fenêtre de variété regarde. */
@@ -310,7 +338,7 @@ export interface RecentlyServedOutcome {
   candidates: PlanningRecipeSummary[];
   /** Retirées du corpus : servies dans la fenêtre, et le corpus restait suffisant. */
   excludedIds: string[];
-  /** Servies dans la fenêtre, mais gardées faute d'alternatives : le prompt les nomme. */
+  /** Servies dans la fenêtre, mais gardées faute d'alternatives. */
   keptRecentIds: string[];
 }
 
@@ -321,7 +349,7 @@ export interface RecentlyServedOutcome {
  * dans le prompt est un vœu. Mais retirer sans compter peut laisser moins de
  * recettes que de créneaux : on retire donc du plus récent au plus ancien, et
  * on s'arrête dès que le corpus tomberait sous le nombre de créneaux à
- * remplir. Ce qui reste de récent est signalé au modèle, pas caché.
+ * remplir. Ce qui reste de récent garde une note de fraîcheur basse.
  *
  * Testé par la fixture `planning_slot_rules.json`, section `recently_served`.
  */
@@ -367,13 +395,6 @@ function recentlyServedIdsNewestFirst(meals: RecentlyServedMeal[]): string[] {
   return ids;
 }
 
-/** Ce que rend une suggestion de cycle. */
-export interface PlanningSuggestion {
-  slots: PlanningSlotResult[];
-  /** Recettes retirées du corpus par la fenêtre de variété, pour le dire à l'écran. */
-  excludedRecentIds: string[];
-}
-
 export interface PlanningSlotResult {
   slot: number;
   recipeId: string;
@@ -381,21 +402,23 @@ export interface PlanningSlotResult {
   starterId?: string;
   /** Le dessert, quand le format du créneau en demande un ; une recette de rôle `dessert`. */
   dessertId?: string;
-  /** Justification de la suggestion : critères respectés ou enfreints. */
+  /**
+   * Faits vérifiables produits par le code (`codeJustification`) : protéine,
+   * durée, note personnelle, dernier service. Jamais un texte du modèle.
+   */
   justification?: string;
-  /** True si la suggestion implique un redimensionnement/ajustement. */
+  /** Vrai quand les parts servies diffèrent de celles de la recette (`resizeOf`). */
   resized?: boolean;
-  /** Détail du redimensionnement, si applicable. */
+  /** « Écrite pour 4 parts, servie pour 6. » */
   resizeReason?: string;
   /** ISO date (YYYY-MM-DD) du jour de préparation à l'avance, si applicable. */
   prepDate?: string;
+  /** Qui a choisi : le modèle parmi les candidats, ou le code. */
+  source: "model" | "code";
+  /** Vrai si la recette n'est là que par relâchement d'un filtre (petit corpus). */
+  repeat?: boolean;
 }
 
-/**
- * Retourne les suggestions sous forme de paires {slot, recipeId}.
- * Le client est responsable de la résolution recipeId → Recipe pleine.
- */
-/** Calcule la date ISO du jour de batch cooking le plus récent avant slotDate. */
 /** Jour de semaine (1=lundi … 7=dimanche) d'une date ISO de slot. */
 export function weekdayOfSlot(slotDateStr: string): number {
   return ((new Date(slotDateStr).getUTCDay() + 6) % 7) + 1;
@@ -426,358 +449,1205 @@ export function computePrepDate(slotDateStr: string, batchCookingWeekday: number
   return prepDate.toISOString().slice(0, 10);
 }
 
-export async function suggestMealPlan(
-  apiKey: string,
-  input: PlanningInput,
-  ctx: ModelCallContext,
-): Promise<PlanningSuggestion> {
-  if (input.recipes.length === 0) return { slots: [], excludedRecentIds: [] };
+// ── Présélection ─────────────────────────────────────────────────────────────
+//
+// Le serveur choisit lui-même les candidats de chaque créneau ; le modèle ne
+// fait plus que trancher entre cinq plats. Tout ce qui suit est pur — ni
+// Firestore, ni réseau — et verrouillé par `planning_slot_rules.json`.
 
-  // La fenêtre de variété s'applique AVANT d'écrire le prompt : une recette
-  // absente de la liste ne peut pas être choisie, quoi que dise la consigne.
-  const slotsToFill = Math.max(1, input.slotDates.length - (input.alreadyAssigned?.length ?? 0));
-  const {
-    candidates,
-    excludedIds: excludedRecentIds,
-    keptRecentIds,
-  } = applyRecentlyServed(input.recipes, input.recentlyServed ?? [], slotsToFill);
+/** Profondeur d'historique lue pour la note de fraîcheur, en jours. */
+export const HISTORY_DAYS = 90;
+/** Note de fraîcheur minimale : une recette servie hier reste tirable. */
+export const FRESHNESS_FLOOR = 0.1;
+/** Bonus d'un plat qui se réchauffe, sur un créneau de réchauffage. */
+export const REHEAT_BONUS = 2;
+/** Facteur appliqué par répétition d'une protéine déjà posée dans le cycle. */
+export const PROTEIN_REPEAT_FACTOR = 0.6;
+/** Protéines distinctes visées dans la tête de liste d'un créneau. */
+export const MIN_DISTINCT_PROTEINS = 3;
+/** Repos qui oblige à commencer la veille. */
+export const REST_EVE_MINUTES = 240;
+/** Note personnelle jusqu'à laquelle une recette n'est plus proposée. */
+export const RATING_EXCLUDE_MAX = 3;
+/** Plage basse : de `RATING_EXCLUDE_MAX + 1` à cette note, poids réduit. */
+export const RATING_LOW_MAX = 6;
+export const RATING_LOW_FACTOR = 0.5;
+/** À partir de cette note, poids augmenté. */
+export const RATING_HIGH_MIN = 8;
+export const RATING_HIGH_FACTOR = 1.5;
+/** Forme d'un identifiant de génération (`pr_` + 32 hexadécimaux), tiré par le serveur. */
+export const PLANNING_RUN_ID_PATTERN = /^pr_[0-9a-f]{32}$/;
+/** Durée de vie d'une génération pour les conceptions qui s'y rattachent. */
+export const CONCEPT_RUN_TTL_MS = 6 * 60 * 60 * 1000;
+/** Plafond de jetons de sortie du poste `planning` : sept lignes de JSON. */
+export const PLANNING_MAX_TOKENS = 4_000;
+/** Plafond de jetons de sortie du poste `planning_concept` : une recette. */
+export const PLANNING_CONCEPT_MAX_TOKENS = 6_000;
+
+/** Réglages de la présélection, lus dans `app_config/planning_policy`. */
+export interface PlanningPolicy {
+  platsPerSlot: number;
+  startersPerSlot: number;
+  dessertsPerSlot: number;
+  /** Plats gardés par créneau pour « Autre suggestion » (tête comprise). */
+  rankedDepth: number;
+  conceptsPerGeneration: number;
+  costCapEurPerGeneration: number;
+}
+
+/**
+ * Valeurs par défaut. Ce sont des réglages, pas des prix : un défaut dans le
+ * code est admis, comme `DEFAULT_AI_BUDGET_POLICY`.
+ */
+export const DEFAULT_PLANNING_POLICY: PlanningPolicy = {
+  platsPerSlot: 5,
+  startersPerSlot: 3,
+  dessertsPerSlot: 3,
+  rankedDepth: 15,
+  conceptsPerGeneration: 2,
+  costCapEurPerGeneration: 0.5,
+};
+
+function boundedInt(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+/** Lit la politique depuis sa forme Firestore, chaque champ borné. */
+export function readPlanningPolicy(
+  raw: Record<string, unknown> | null | undefined,
+): PlanningPolicy {
+  const d = DEFAULT_PLANNING_POLICY;
+  const r = raw ?? {};
+  const platsPerSlot = boundedInt(r.plats_per_slot, 3, 10, d.platsPerSlot);
+  const cap = r.cost_cap_eur_per_generation;
+  return {
+    platsPerSlot,
+    startersPerSlot: boundedInt(r.starters_per_slot, 1, 10, d.startersPerSlot),
+    dessertsPerSlot: boundedInt(r.desserts_per_slot, 1, 10, d.dessertsPerSlot),
+    rankedDepth: boundedInt(
+      r.ranked_depth,
+      platsPerSlot,
+      30,
+      Math.max(d.rankedDepth, platsPerSlot),
+    ),
+    conceptsPerGeneration: boundedInt(r.concepts_per_generation, 0, 7, d.conceptsPerGeneration),
+    costCapEurPerGeneration:
+      typeof cap === "number" && Number.isFinite(cap)
+        ? Math.min(5, Math.max(0.05, cap))
+        : d.costCapEurPerGeneration,
+  };
+}
+
+/** Générateur pseudo-aléatoire injectable : valeurs dans [0, 1[. */
+export type Rng = () => number;
+
+/** mulberry32 — reproductible pour les tests ; graine tirée par crypto en production. */
+export function seededRng(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function normalize(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** Avant les tags `main_protein` (lot 3), la protéine se lit dans `dishTypes`. */
+export type ProteinKey =
+  "viande" | "volaille" | "poisson" | "fruits_de_mer" | "vegetarien" | "inconnue";
+
+/** Ordre de lecture : le plus précis d'abord (volaille avant viande). */
+const PROTEIN_MARKERS: Array<[ProteinKey, string[]]> = [
+  ["vegetarien", ["vegetarien", "vegan", "vegetalien"]],
+  [
+    "fruits_de_mer",
+    ["fruits de mer", "crevette", "moule", "saint-jacques", "calamar", "homard", "crustace"],
+  ],
+  [
+    "poisson",
+    ["poisson", "saumon", "cabillaud", "thon", "truite", "colin", "merlu", "sardine", "maquereau"],
+  ],
+  ["volaille", ["volaille", "poulet", "dinde", "canard", "pintade", "chapon"]],
+  [
+    "viande",
+    ["viande", "boeuf", "bœuf", "porc", "agneau", "veau", "mouton", "gibier", "lapin", "saucisse"],
+  ],
+];
+
+export function proteinOf(r: Pick<PlanningRecipeSummary, "dishTypes">): ProteinKey {
+  const bag = normalize((r.dishTypes ?? []).join(" | "));
+  if (!bag) return "inconnue";
+  for (const [key, markers] of PROTEIN_MARKERS) {
+    if (markers.some((m) => bag.includes(m))) return key;
+  }
+  return "inconnue";
+}
+
+const PROTEIN_LABELS: Record<ProteinKey, string> = {
+  viande: "viande",
+  volaille: "volaille",
+  poisson: "poisson",
+  fruits_de_mer: "fruits de mer",
+  vegetarien: "végétarien",
+  inconnue: "",
+};
+
+const REHEAT_MARKERS = [
+  "soupe",
+  "mijot",
+  "gratin",
+  "plat complet",
+  "ragout",
+  "curry",
+  "lasagne",
+  "potee",
+  "tajine",
+  "daube",
+];
+
+/** Indice « se réchauffe bien » : souple, un bonus de poids, jamais un filtre. */
+export function isReheatFriendly(r: Pick<PlanningRecipeSummary, "dishTypes" | "themes">): boolean {
+  const bag = normalize([...(r.dishTypes ?? []), ...(r.themes ?? [])].join(" | "));
+  return REHEAT_MARKERS.some((m) => bag.includes(m));
+}
+
+/** Ce que la présélection sait d'un créneau. */
+export interface SlotContext {
+  slot: number;
+  /** YYYY-MM-DD */
+  date: string;
+  /** 1 = lundi */
+  weekday: number;
+  kind: "batch" | "reheat" | "regular";
+  format: MealFormatSpec;
+  maxPrepMinutes: number | null;
+  targetPortions: number | null;
+  dismissedIds: ReadonlySet<string>;
+}
+
+export function slotContexts(input: PlanningInput): SlotContext[] {
+  return input.slotDates.map((raw, slot) => {
+    const date = raw.slice(0, 10);
+    const weekday = weekdayOfSlot(date);
+    const constraint = constraintForSlot(input, slot);
+    const maxPrep = constraint?.maxPrepMinutes ?? 0;
+    const target = constraint?.targetPortions ?? 0;
+    const dismissed = input.slotDismissed?.[slot];
+    return {
+      slot,
+      date,
+      weekday,
+      kind: slotKind(weekday, !!constraint?.isBatchCooking, input.batchCookingDay),
+      format: mealFormatOf(constraint?.mealFormat),
+      maxPrepMinutes: maxPrep > 0 ? maxPrep : null,
+      targetPortions: target > 0 ? target : null,
+      dismissedIds: new Set(Array.isArray(dismissed) ? dismissed : []),
+    };
+  });
+}
+
+export type CandidateRole = "main" | "starter" | "dessert";
+export type HardFilterReason = "role" | "prep" | "rest" | "rating" | "dismissed" | "in_cycle";
+
+/** Le rôle de la recette convient-il à cette place du repas ? */
+export function roleFits(
+  r: PlanningRecipeSummary,
+  format: MealFormatSpec,
+  role: CandidateRole,
+): boolean {
+  const own = planningRoleOf(r);
+  if (role === "starter") return own === "entree";
+  if (role === "dessert") return own === "dessert";
+  return own === "plat" || (format.light && (own === "entree" || own === "snack"));
+}
+
+/** Une note personnelle lisible : un entier de 0 à 10, sinon rien. */
+export function readRating(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10
+    ? value
+    : null;
+}
+
+function isLowRated(rating: number | null | undefined): boolean {
+  const n = readRating(rating);
+  return n != null && n <= RATING_EXCLUDE_MAX;
+}
+
+/**
+ * Pourquoi une recette ne peut pas aller sur ce créneau, ou `null`.
+ *
+ * L'ordre des tests est celui du type : le premier qui échoue est rendu.
+ */
+export function hardFilterReason(
+  r: PlanningRecipeSummary,
+  ctx: SlotContext,
+  role: CandidateRole,
+  opts: {
+    inCycle: ReadonlySet<string>;
+    today: string;
+    ratings?: ReadonlyMap<string, number>;
+  },
+): HardFilterReason | null {
+  if (!roleFits(r, ctx.format, role)) return "role";
+  // La préparation maximale borne le plat : une entrée ou un dessert se
+  // préparent souvent à l'avance, et les borner viderait leurs listes.
+  if (
+    role === "main" &&
+    ctx.maxPrepMinutes != null &&
+    typeof r.prepTime === "number" &&
+    r.prepTime > ctx.maxPrepMinutes
+  ) {
+    return "prep";
+  }
+  // Une veille n'est impossible que si le créneau tombe aujourd'hui (ou avant).
+  if (typeof r.restTime === "number" && r.restTime >= REST_EVE_MINUTES && ctx.date <= opts.today) {
+    return "rest";
+  }
+  if (isLowRated(opts.ratings?.get(r.id))) return "rating";
+  if (ctx.dismissedIds.has(r.id)) return "dismissed";
+  if (opts.inCycle.has(r.id)) return "in_cycle";
+  return null;
+}
+
+/** 1 si pas servie dans la fenêtre ; sinon jours / 90, entre 0,1 et 1. */
+export function freshnessScore(daysSinceServed: number | null): number {
+  if (daysSinceServed == null) return 1;
+  return Math.min(1, Math.max(FRESHNESS_FLOOR, daysSinceServed / HISTORY_DAYS));
+}
+
+/** Facteur de la note personnelle : 0 (exclue), 0,5, 1 ou 1,5. */
+export function ratingFactor(rating: number | null | undefined): number {
+  const n = readRating(rating);
+  if (n == null) return 1;
+  if (n <= RATING_EXCLUDE_MAX) return 0;
+  if (n <= RATING_LOW_MAX) return RATING_LOW_FACTOR;
+  if (n >= RATING_HIGH_MIN) return RATING_HIGH_FACTOR;
+  return 1;
+}
+
+export function candidateWeight(args: {
+  daysSinceServed: number | null;
+  reheatSlot: boolean;
+  reheatFriendly: boolean;
+  /** Fois où cette protéine est déjà posée dans le cycle ("inconnue" : 0). */
+  proteinRepeats: number;
+  rating?: number | null;
+  /** Lot 2 : facteur de refus (1 sans refus). */
+  refusalFactor?: number;
+}): number {
+  return (
+    freshnessScore(args.daysSinceServed) *
+    (args.reheatSlot && args.reheatFriendly ? REHEAT_BONUS : 1) *
+    Math.pow(PROTEIN_REPEAT_FACTOR, Math.max(0, args.proteinRepeats)) *
+    ratingFactor(args.rating) *
+    (args.refusalFactor ?? 1)
+  );
+}
+
+/**
+ * Ordre aléatoire pondéré sans remise (Efraimidis–Spirakis : clé = u^(1/w),
+ * tri décroissant). Rend toute la liste : la tête part au modèle, la queue
+ * sert « Autre suggestion ». Un poids nul passe en dernier, dans l'ordre
+ * d'entrée.
+ */
+export function weightedOrder<T>(items: readonly T[], weightOf: (t: T) => number, rng: Rng): T[] {
+  const keyed = items.map((item, index) => {
+    const u = Math.max(rng(), Number.MIN_VALUE);
+    const w = weightOf(item);
+    return { item, index, key: w > 0 && Number.isFinite(w) ? Math.pow(u, 1 / w) : -1 };
+  });
+  keyed.sort((a, b) => (b.key !== a.key ? b.key - a.key : a.index - b.index));
+  return keyed.map((k) => k.item);
+}
+
+/**
+ * Réordonne la tête pour couvrir au moins `minDistinct` protéines parmi les
+ * `k` premiers, si la liste le permet. « inconnue » compte comme une
+ * catégorie. Glouton, stable sur le reste.
+ */
+export function spreadProteins(
+  ordered: readonly PlanningRecipeSummary[],
+  k: number,
+  minDistinct: number,
+): PlanningRecipeSummary[] {
+  const chosen = new Set<number>();
+  const seen = new Set<ProteinKey>();
+  const target = Math.min(k, minDistinct);
+  for (let i = 0; i < ordered.length && chosen.size < target; i++) {
+    const p = proteinOf(ordered[i]);
+    if (!seen.has(p)) {
+      seen.add(p);
+      chosen.add(i);
+    }
+  }
+  for (let i = 0; i < ordered.length && chosen.size < k; i++) chosen.add(i);
+  return [...ordered.filter((_, i) => chosen.has(i)), ...ordered.filter((_, i) => !chosen.has(i))];
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from.slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${to.slice(0, 10)}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000);
+}
+
+const WEEKDAY_NAMES = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+
+/**
+ * Justification produite par le code, à partir de faits vérifiables :
+ * protéine, durée, note personnelle haute, dernier service, répétition.
+ * Vide quand aucun fait n'est connu — jamais une phrase générique.
+ */
+export function codeJustification(
+  r: PlanningRecipeSummary,
+  ctx: Pick<SlotContext, "date" | "weekday" | "maxPrepMinutes">,
+  opts: {
+    lastServed: string | null;
+    historyAvailable: boolean;
+    rating?: number | null;
+    repeat?: boolean;
+  },
+): string {
+  const facts: string[] = [];
+  const protein = PROTEIN_LABELS[proteinOf(r)];
+  if (protein) facts.push(protein);
+  if (typeof r.prepTime === "number" && r.prepTime > 0) {
+    facts.push(
+      ctx.maxPrepMinutes != null && r.prepTime <= ctx.maxPrepMinutes
+        ? `${r.prepTime} min, sous les ${ctx.maxPrepMinutes} min du ${WEEKDAY_NAMES[ctx.weekday - 1]}`
+        : `${r.prepTime} min`,
+    );
+  }
+  const rating = readRating(opts.rating);
+  if (rating != null && rating >= RATING_HIGH_MIN) facts.push(`notée ${rating}/10`);
+  let served: string | null = null;
+  if (opts.historyAvailable) {
+    if (opts.lastServed == null) {
+      served = "pas servie ces 3 derniers mois";
+    } else {
+      const days = Math.max(0, daysBetween(opts.lastServed, ctx.date));
+      served =
+        days === 0
+          ? "servie aujourd'hui"
+          : days === 1
+            ? "servie hier"
+            : days < 14
+              ? `servie il y a ${days} jours`
+              : `pas servie depuis ${Math.floor(days / 7)} semaines`;
+    }
+  }
+  if (opts.repeat) served = served ? `${served}, peu d'autres choix` : "peu d'autres choix";
+  if (served) facts.push(served);
+  return facts.join(" · ");
+}
+
+/**
+ * Le redimensionnement se calcule ; il ne se demande plus au modèle. Rien
+ * n'est écrit dans la recette : les quantités sont recalculées à l'affichage.
+ */
+export function resizeOf(
+  r: Pick<PlanningRecipeSummary, "portions">,
+  ctx: Pick<SlotContext, "targetPortions">,
+): { resized: boolean; resizeReason?: string } {
+  const portions = typeof r.portions === "number" && r.portions > 0 ? r.portions : null;
+  const target = ctx.targetPortions;
+  if (portions == null || target == null || portions === target) return { resized: false };
+  return { resized: true, resizeReason: `Écrite pour ${portions} parts, servie pour ${target}.` };
+}
+
+export interface RankedCandidate {
+  recipeId: string;
+  /** Faits produits par le code (`codeJustification`). */
+  why: string;
+  /** Vrai si la recette n'est là que par relâchement d'un filtre. */
+  repeat?: boolean;
+  /** « Écrite pour 4 parts, servie pour 6. » quand les parts diffèrent. */
+  resizeReason?: string;
+}
+
+export type RelaxedFilter = "rating" | "in_cycle" | "variety_window";
+
+export interface SlotRanking {
+  slot: number;
+  /** Profondeur `policy.rankedDepth` ; la tête part au modèle. */
+  plats: RankedCandidate[];
+  /** Vide si le format n'en demande pas. */
+  entrees: RankedCandidate[];
+  desserts: RankedCandidate[];
+  /** Combien de têtes de liste partent au modèle. */
+  sent: { plats: number; entrees: number; desserts: number };
+  /** Filtres relâchés pour les plats de ce créneau, dans l'ordre. */
+  relaxed: RelaxedFilter[];
+  /** Jour de préparation d'un créneau de réchauffage (YYYY-MM-DD). */
+  prepDate?: string;
+}
+
+export interface PreselectArgs {
+  input: PlanningInput;
+  /** Corpus après `applyRecentlyServed`. */
+  candidates: PlanningRecipeSummary[];
+  /** Recettes retirées par la fenêtre de variété : réservoir du relâchement. */
+  recentExcluded: PlanningRecipeSummary[];
+  /** recipeId → dernière date servie (YYYY-MM-DD), avant le cycle. */
+  lastServed: ReadonlyMap<string, string>;
+  /** recipeId → note personnelle de l'appelant (0 à 10). */
+  ratings: ReadonlyMap<string, number>;
+  historyAvailable: boolean;
+  policy: PlanningPolicy;
+  /** YYYY-MM-DD */
+  today: string;
+  rng: Rng;
+}
+
+const NO_IDS: ReadonlySet<string> = new Set();
+const NO_RATINGS: ReadonlyMap<string, number> = new Map();
+
+/**
+ * Classe les candidats de chaque créneau à remplir.
+ *
+ * Créneaux traités dans l'ordre des dates. Les têtes de liste évitent ce qui
+ * est déjà en tête d'un autre créneau tant que le corpus le permet. Quand un
+ * créneau n'a aucun plat admissible, les filtres se relâchent dans cet ordre :
+ * « déjà au cycle », puis « fenêtre de variété ». La note personnelle ne se
+ * relâche que si tous les plats du corpus sont mal notés ; le rôle, la durée,
+ * le repos et les écartés ne se relâchent jamais.
+ */
+export function preselect(args: PreselectArgs): SlotRanking[] {
+  const { input, candidates, recentExcluded, lastServed, ratings, policy, today, rng } = args;
+  const corpusById = new Map(input.recipes.map((r) => [r.id, r]));
+  const assigned = new Set((input.alreadyAssigned ?? []).map((a) => a.slot));
+  const inCycle = new Set((input.alreadyAssigned ?? []).map((a) => a.recipeId));
+  const recentIds = new Set(recentExcluded.map((r) => r.id));
+  const proteinCounts = new Map<ProteinKey, number>();
+  for (const id of inCycle) {
+    const r = corpusById.get(id);
+    if (!r) continue;
+    const p = proteinOf(r);
+    if (p !== "inconnue") proteinCounts.set(p, (proteinCounts.get(p) ?? 0) + 1);
+  }
+  const reserved = new Set<string>();
+  const contexts = slotContexts(input)
+    .filter((c) => !assigned.has(c.slot))
+    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.slot - b.slot));
+
+  const rank = (
+    ctx: SlotContext,
+    role: CandidateRole,
+    headSize: number,
+    depth: number,
+  ): { list: RankedCandidate[]; sent: number; relaxed: RelaxedFilter[] } => {
+    const relaxed: RelaxedFilter[] = [];
+    const ofRole = [...candidates, ...recentExcluded].filter((r) => roleFits(r, ctx.format, role));
+    const ratingRelaxed = ofRole.length > 0 && ofRole.every((r) => isLowRated(ratings.get(r.id)));
+    if (ratingRelaxed) relaxed.push("rating");
+    const ratingsUsed = ratingRelaxed ? NO_RATINGS : ratings;
+    const admit = (pool: PlanningRecipeSummary[], cycle: ReadonlySet<string>) =>
+      pool.filter(
+        (r) =>
+          hardFilterReason(r, ctx, role, { inCycle: cycle, today, ratings: ratingsUsed }) == null,
+      );
+
+    let admissible = admit(candidates, inCycle);
+    if (admissible.length === 0) {
+      relaxed.push("in_cycle");
+      admissible = admit(candidates, NO_IDS);
+    }
+    if (admissible.length === 0) {
+      relaxed.push("variety_window");
+      admissible = admit([...candidates, ...recentExcluded], NO_IDS);
+    }
+    const isRepeat = (r: PlanningRecipeSummary) =>
+      inCycle.has(r.id) || recentIds.has(r.id) || (ratingRelaxed && isLowRated(ratings.get(r.id)));
+
+    const daysOf = (r: PlanningRecipeSummary): number | null => {
+      const last = lastServed.get(r.id);
+      return last ? Math.max(0, daysBetween(last, ctx.date)) : null;
+    };
+    const weightOf = (r: PlanningRecipeSummary) => {
+      const p = proteinOf(r);
+      return candidateWeight({
+        daysSinceServed: daysOf(r),
+        reheatSlot: ctx.kind === "reheat",
+        reheatFriendly: isReheatFriendly(r),
+        proteinRepeats: role === "main" && p !== "inconnue" ? (proteinCounts.get(p) ?? 0) : 0,
+        rating: ratingRelaxed ? null : ratings.get(r.id),
+      });
+    };
+    const ordered = weightedOrder(admissible, weightOf, rng);
+    const fresh = ordered.filter((r) => !reserved.has(r.id));
+    const shared = ordered.filter((r) => reserved.has(r.id));
+    const list =
+      role === "main"
+        ? [...spreadProteins(fresh, headSize, MIN_DISTINCT_PROTEINS), ...shared]
+        : [...fresh, ...shared];
+    const head = list.slice(0, headSize);
+    for (const r of head) reserved.add(r.id);
+    return {
+      list: list.slice(0, Math.max(depth, headSize)).map((r) => {
+        const repeat = isRepeat(r);
+        const resize = role === "main" ? resizeOf(r, ctx) : { resized: false };
+        return {
+          recipeId: r.id,
+          why: codeJustification(r, ctx, {
+            lastServed: lastServed.get(r.id) ?? null,
+            historyAvailable: args.historyAvailable,
+            rating: ratings.get(r.id),
+            repeat,
+          }),
+          ...(repeat ? { repeat: true } : {}),
+          ...(resize.resizeReason ? { resizeReason: resize.resizeReason } : {}),
+        };
+      }),
+      sent: head.length,
+      relaxed,
+    };
+  };
+
+  return contexts.map((ctx) => {
+    const plats = rank(ctx, "main", policy.platsPerSlot, policy.rankedDepth);
+    const entrees = ctx.format.wantsStarter
+      ? rank(ctx, "starter", policy.startersPerSlot, policy.startersPerSlot)
+      : { list: [], sent: 0, relaxed: [] };
+    const desserts = ctx.format.wantsDessert
+      ? rank(ctx, "dessert", policy.dessertsPerSlot, policy.dessertsPerSlot)
+      : { list: [], sent: 0, relaxed: [] };
+    const prepDate =
+      ctx.kind === "reheat" && input.batchCookingDay != null
+        ? computePrepDate(ctx.date, input.batchCookingDay)
+        : undefined;
+    return {
+      slot: ctx.slot,
+      plats: plats.list,
+      entrees: entrees.list,
+      desserts: desserts.list,
+      sent: { plats: plats.sent, entrees: entrees.sent, desserts: desserts.sent },
+      relaxed: plats.relaxed,
+      ...(prepDate ? { prepDate } : {}),
+    };
+  });
+}
+
+/** Un créneau ne part au modèle que s'il y a un choix à faire. */
+export function needsModel(ranking: SlotRanking): boolean {
+  return ranking.sent.plats > 1 || ranking.sent.entrees > 1 || ranking.sent.desserts > 1;
+}
+
+interface ValidateArgs {
+  /** Tableau parsé de la réponse du modèle, éléments non fiables ; `null` sans réponse. */
+  raw: unknown;
+  rankings: SlotRanking[];
+  input: PlanningInput;
+  corpusById: ReadonlyMap<string, PlanningRecipeSummary>;
+  /** Créneaux envoyés au modèle ; absent : tous. */
+  sentSlots?: ReadonlySet<number>;
+}
+
+/**
+ * Lit les choix du modèle contre les listes envoyées.
+ *
+ * Un `recipe_id` hors de la tête de liste du créneau, ou déjà pris dans le
+ * cycle, est remplacé par le premier candidat libre de la liste (source
+ * `code`). Même règle pour l'entrée et le dessert. Un créneau absent de la
+ * réponse reçoit aussi le premier candidat. `rejected` compte ces
+ * remplacements sur les créneaux envoyés. Les créneaux non envoyés sont
+ * remplis par le code en premier, sans compter de rejet.
+ */
+export function validateModelChoices(args: ValidateArgs): {
+  slots: PlanningSlotResult[];
+  rejected: number;
+} {
+  const { rankings, input, corpusById } = args;
+  const contexts = slotContexts(input);
+  const entries = new Map<number, Record<string, unknown>>();
+  if (Array.isArray(args.raw)) {
+    for (const e of args.raw) {
+      if (!e || typeof e !== "object") continue;
+      const o = e as Record<string, unknown>;
+      if (typeof o.slot === "number" && !entries.has(o.slot)) entries.set(o.slot, o);
+    }
+  }
+  const asId = (v: unknown): string | null =>
+    typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+  const isSent = (slot: number) => (args.sentSlots ? args.sentSlots.has(slot) : true);
+  const used = new Set((input.alreadyAssigned ?? []).map((a) => a.recipeId));
+  const free = (c: RankedCandidate) => !used.has(c.recipeId) || c.repeat === true;
+  const proteinById = (id: string): ProteinKey => {
+    const r = corpusById.get(id);
+    return r ? proteinOf(r) : "inconnue";
+  };
+  const firstFree = (list: RankedCandidate[], avoid: ProteinKey | null) =>
+    (avoid && avoid !== "inconnue"
+      ? list.find((c) => free(c) && proteinById(c.recipeId) !== avoid)
+      : undefined) ?? list.find(free);
+
+  const ordered = [
+    ...rankings.filter((r) => !isSent(r.slot)),
+    ...rankings.filter((r) => isSent(r.slot)),
+  ];
+  const results: PlanningSlotResult[] = [];
+  let rejected = 0;
+  let lastProtein: ProteinKey | null = null;
+
+  for (const ranking of ordered) {
+    const ctx = contexts[ranking.slot];
+    if (!ctx || ranking.plats.length === 0) continue;
+    const sent = isSent(ranking.slot);
+    const e = sent ? entries.get(ranking.slot) : undefined;
+
+    const pick = (
+      list: RankedCandidate[],
+      head: number,
+      wanted: string | null,
+      avoid: ProteinKey | null,
+    ): { candidate: RankedCandidate | undefined; fromModel: boolean } => {
+      const fromModel =
+        wanted != null
+          ? list.slice(0, head).find((c) => c.recipeId === wanted && free(c))
+          : undefined;
+      if (fromModel) return { candidate: fromModel, fromModel: true };
+      return { candidate: firstFree(list, avoid), fromModel: false };
+    };
+
+    const main = pick(ranking.plats, ranking.sent.plats, asId(e?.recipe_id), lastProtein);
+    if (!main.candidate) continue;
+    if (sent && !main.fromModel) rejected++;
+    used.add(main.candidate.recipeId);
+    lastProtein = proteinById(main.candidate.recipeId);
+
+    let starterId: string | undefined;
+    if (ctx.format.wantsStarter && ranking.entrees.length > 0) {
+      const s = pick(ranking.entrees, ranking.sent.entrees, asId(e?.starter_id), null);
+      if (s.candidate) {
+        starterId = s.candidate.recipeId;
+        used.add(starterId);
+        if (sent && !s.fromModel) rejected++;
+      }
+    }
+    let dessertId: string | undefined;
+    if (ctx.format.wantsDessert && ranking.desserts.length > 0) {
+      const d = pick(ranking.desserts, ranking.sent.desserts, asId(e?.dessert_id), null);
+      if (d.candidate) {
+        dessertId = d.candidate.recipeId;
+        used.add(dessertId);
+        if (sent && !d.fromModel) rejected++;
+      }
+    }
+
+    const recipe = corpusById.get(main.candidate.recipeId);
+    const resize = recipe ? resizeOf(recipe, ctx) : { resized: false };
+    let prepDate: string | undefined;
+    if (ctx.kind === "reheat" && input.batchCookingDay != null) {
+      prepDate = computePrepDate(ctx.date, input.batchCookingDay);
+    }
+    results.push({
+      slot: ranking.slot,
+      recipeId: main.candidate.recipeId,
+      ...(starterId ? { starterId } : {}),
+      ...(dessertId ? { dessertId } : {}),
+      ...(main.candidate.why ? { justification: main.candidate.why } : {}),
+      resized: resize.resized,
+      ...(resize.resizeReason ? { resizeReason: resize.resizeReason } : {}),
+      ...(prepDate ? { prepDate } : {}),
+      source: main.fromModel ? "model" : "code",
+      ...(main.candidate.repeat ? { repeat: true } : {}),
+    });
+  }
+  results.sort((a, b) => a.slot - b.slot);
+  return { slots: results, rejected };
+}
+
+/** Remplissage par le code : premier candidat libre de chaque liste, sans modèle. */
+export function codeFill(args: Omit<ValidateArgs, "raw" | "sentSlots">): PlanningSlotResult[] {
+  return validateModelChoices({ ...args, raw: null, sentSlots: NO_SLOTS }).slots;
+}
+
+const NO_SLOTS: ReadonlySet<number> = new Set();
+
+/** Jetons d'entrée estimés depuis la longueur du prompt (prudent : 3 caractères par jeton). */
+export function estimateInputTokens(promptChars: number): number {
+  return Math.ceil(Math.max(0, promptChars) / 3);
+}
+
+/**
+ * Coût plafond d'un appel, calculé sur la grille reçue en argument : aucun
+ * prix dans le code. Sur Gemini, la sortie n'est pas bornée par `maxTokens` :
+ * l'appelant passe `maxTokens + plafond de raisonnement`.
+ */
+export function estimateCallCeilingUsd(args: {
+  model: string;
+  promptChars: number;
+  maxOutputTokens: number;
+  table: Record<string, AiModelPricing>;
+  at: Date;
+}): number {
+  return estimateAiCostUsd({
+    model: args.model,
+    inputTokens: estimateInputTokens(args.promptChars),
+    outputTokens: Math.max(0, args.maxOutputTokens),
+    table: args.table,
+    at: args.at,
+  });
+}
+
+export type ConceptDenialReason = "unknown" | "expired" | "count" | "cost";
+
+/** État d'une génération, tel que la conception le relit. */
+export interface PlanningRunState {
+  createdAtMs: number;
+  conceptsMax: number;
+  conceptsUsed: number;
+  costUsd: number;
+  costCapUsd: number | null;
+}
+
+/**
+ * Une conception rattachée à une génération est-elle permise ?
+ *
+ * Sans taux de change (`costCapUsd` nul) ou sans grille (`estimateUsd` nul),
+ * le plafond en euros ne s'applique pas — aucun chiffre n'est inventé — et le
+ * plafond de nombre reste seul actif.
+ */
+export function planningConceptDecision(args: {
+  run: PlanningRunState | null;
+  nowMs: number;
+  estimateUsd: number | null;
+}): { ok: true } | { ok: false; reason: ConceptDenialReason; message: string } {
+  const { run } = args;
+  if (!run) {
+    return {
+      ok: false,
+      reason: "unknown",
+      message: "Génération introuvable : relancez la génération du planning.",
+    };
+  }
+  if (args.nowMs - run.createdAtMs > CONCEPT_RUN_TTL_MS) {
+    return {
+      ok: false,
+      reason: "expired",
+      message:
+        "Cette génération a plus de 6 heures : utilisez « Concevoir avec l'IA » sur le créneau.",
+    };
+  }
+  if (run.conceptsUsed >= run.conceptsMax) {
+    return {
+      ok: false,
+      reason: "count",
+      message: `${run.conceptsMax} recette${run.conceptsMax > 1 ? "s" : ""} conçue${run.conceptsMax > 1 ? "s" : ""}, c'est le maximum par génération.`,
+    };
+  }
+  if (
+    run.costCapUsd != null &&
+    args.estimateUsd != null &&
+    run.costUsd + args.estimateUsd > run.costCapUsd
+  ) {
+    return {
+      ok: false,
+      reason: "cost",
+      message: "Cette conception dépasserait le plafond de coût de la génération.",
+    };
+  }
+  return { ok: true };
+}
+
+/** Format d'un montant en euros pour un message : « 0,50 € ». */
+export function formatEur(amount: number): string {
+  return `${amount.toFixed(2).replace(".", ",")} €`;
+}
+
+const NOTICE_FAILED = "L'IA n'a pas répondu. Kass'Dalle a choisi les plats selon vos contraintes.";
+const NOTICE_DAILY_CAP =
+  "Votre plafond d'IA du jour est atteint. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé.";
+
+export function generationCapNotice(capEur: number): string {
+  return `Cette génération aurait coûté plus de ${formatEur(capEur)} en IA. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé.`;
+}
+
+/** Une ligne compacte par recette candidate, pour la section RECETTES. */
+function describeCandidate(r: PlanningRecipeSummary): string {
+  const attrs: string[] = [];
+  if (r.prepTime) attrs.push(`${r.prepTime} min prép`);
+  if (r.cookTime) attrs.push(`${r.cookTime} min cuisson`);
+  if (r.restTime) attrs.push(`${formatRepos(r.restTime)} de repos avant de servir`);
+  if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type : ${r.dishTypes.join(", ")}`);
+  if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine : ${r.cuisines.join(", ")}`);
+  if (r.mainIngredients && r.mainIngredients.length > 0) {
+    attrs.push(`ingrédients : ${r.mainIngredients.slice(0, 6).join(", ")}`);
+  }
+  return `${r.id} | ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`;
+}
+
+/**
+ * Prompt compact : chaque candidat décrit une fois, puis les identifiants
+ * proposés par créneau. Les deux listes sont mélangées : la position d'une
+ * recette ne dépend ni de l'ordre du corpus ni de sa note.
+ */
+export function buildPlanningPrompt(args: {
+  input: PlanningInput;
+  rankings: SlotRanking[];
+  sentSlots: ReadonlySet<number>;
+  corpusById: ReadonlyMap<string, PlanningRecipeSummary>;
+  rng: Rng;
+}): { prompt: string; candidateIds: string[] } {
+  const { input, rankings, sentSlots, corpusById, rng } = args;
+  const contexts = slotContexts(input);
+  const shuffle = (ids: string[]) => weightedOrder(ids, () => 1, rng);
+  const sent = rankings.filter((r) => sentSlots.has(r.slot));
+  const headIds = (list: RankedCandidate[], n: number) => list.slice(0, n).map((c) => c.recipeId);
+  const unique = new Set<string>();
+  for (const r of sent) {
+    for (const id of [
+      ...headIds(r.plats, r.sent.plats),
+      ...headIds(r.entrees, r.sent.entrees),
+      ...headIds(r.desserts, r.sent.desserts),
+    ]) {
+      unique.add(id);
+    }
+  }
+  const candidateIds = shuffle([...unique]);
 
   const lines: string[] = [];
   lines.push(
-    "Tu es un assistant culinaire expert. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.",
+    "Tu composes un planning de repas. Pour chaque créneau ci-dessous, choisis une recette parmi les identifiants listés pour CE créneau, et aucun autre.",
   );
   lines.push(
-    "Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes), maximiser la variété, et justifier chaque suggestion.",
-  );
-  lines.push(
-    "Tu dois rigoureusement distinguer trois types de slots : (a) repas frais cuisiné le jour même, (b) repas servi un jour de batch cooking, qui reste un vrai repas de ce jour, (c) slot de réchauffage qui consomme un plat préparé un autre jour.",
+    "Les candidats respectent déjà le rôle, la durée de préparation et la variété récente. Ton travail : varier les protéines et les féculents d'un jour à l'autre, et suivre les préférences.",
   );
   lines.push("");
-  // Les formats des créneaux décident des listes à montrer : pas de liste de
-  // desserts si aucun jour n'en veut. Le corpus est partitionné par rôle, pas
-  // envoyé en bloc — les mêmes lignes, sous trois titres.
-  const formats = input.slotDates.map((_, i) =>
-    mealFormatOf(constraintForSlot(input, i)?.mealFormat),
-  );
-  const anyStarter = formats.some((f) => f.wantsStarter);
-  const anyDessert = formats.some((f) => f.wantsDessert);
-  const anyLight = formats.some((f) => f.light);
-  const { plats, entrees, desserts, encas } = partitionByRole(candidates);
-
-  const describe = (r: PlanningRecipeSummary): string => {
-    const attrs: string[] = [];
-    if (r.prepTime) attrs.push(`${r.prepTime}min prép`);
-    if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
-    // Le repos est la seule durée qui change la DATE de préparation, et non la
-    // durée du geste : quatre heures au frais veulent dire « commencer la
-    // veille ». Il est donc annoncé au modèle en clair, pas en minutes brutes.
-    if (r.restTime) attrs.push(`${formatRepos(r.restTime)} de repos AVANT de servir`);
-    if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type: ${r.dishTypes.join(", ")}`);
-    if (r.themes && r.themes.length > 0) attrs.push(`thèmes: ${r.themes.join(", ")}`);
-    if (r.occasions && r.occasions.length > 0) attrs.push(`occasions: ${r.occasions.join(", ")}`);
-    if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine: ${r.cuisines.join(", ")}`);
-    if (r.mainIngredients && r.mainIngredients.length > 0)
-      attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
-    return `- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`;
-  };
-
-  lines.push('=== PLATS DISPONIBLES (le "recipe_id" de chaque slot vient d\'ici) ===');
-  for (const r of plats) lines.push(describe(r));
-  if (plats.length === 0) lines.push("(aucun)");
+  lines.push("=== RECETTES (id | titre | détails) ===");
+  for (const id of candidateIds) {
+    const r = corpusById.get(id);
+    if (r) lines.push(describeCandidate(r));
+  }
   lines.push("");
-  if (anyStarter || anyLight) {
-    lines.push(
-      '=== ENTRÉES DISPONIBLES ("starter_id" des slots dont le format comprend une entrée ; ou plat d\'un repas léger) ===',
-    );
-    for (const r of entrees) lines.push(describe(r));
-    if (entrees.length === 0) lines.push("(aucune)");
-    lines.push("");
-  }
-  if (anyDessert) {
-    lines.push(
-      '=== DESSERTS DISPONIBLES ("dessert_id" des slots dont le format comprend un dessert — jamais en "recipe_id") ===',
-    );
-    for (const r of desserts) lines.push(describe(r));
-    if (desserts.length === 0) lines.push("(aucun)");
-    lines.push("");
-  }
-  if (anyLight && encas.length > 0) {
-    lines.push("=== EN-CAS (plat d'un repas léger seulement) ===");
-    for (const r of encas) lines.push(describe(r));
-    lines.push("");
-  }
 
   if (input.globalConstraints.trim()) {
-    lines.push("=== PRÉFÉRENCES GÉNÉRALES (s'appliquent à TOUS les jours) ===");
+    lines.push("=== PRÉFÉRENCES GÉNÉRALES ===");
     lines.push(input.globalConstraints.trim());
     lines.push("");
   }
 
-  if (input.alreadyAssigned && input.alreadyAssigned.length > 0) {
-    lines.push("=== REPAS DÉJÀ ASSIGNÉS (éviter les répétitions) ===");
-    for (const a of input.alreadyAssigned) {
-      const recipe = input.recipes.find((r) => r.id === a.recipeId);
-      if (recipe) lines.push(`- Slot ${a.slot} : ${recipe.titre}`);
-    }
+  const decided: string[] = [];
+  for (const a of input.alreadyAssigned ?? []) {
+    const r = corpusById.get(a.recipeId);
+    if (!r) continue;
+    decided.push(
+      a.slot >= 0 && a.slot < input.slotDates.length
+        ? `- Slot ${a.slot} : ${r.titre}`
+        : `- ${r.titre}`,
+    );
+  }
+  for (const r of rankings) {
+    if (sentSlots.has(r.slot) || r.plats.length === 0) continue;
+    const t = corpusById.get(r.plats[0].recipeId);
+    if (t) decided.push(`- Slot ${r.slot} : ${t.titre}`);
+  }
+  if (decided.length > 0) {
+    lines.push("=== DÉJÀ AU MENU DE CE CYCLE (à ne pas répéter) ===");
+    lines.push(...decided);
     lines.push("");
   }
 
-  // Ce qui a été servi avant le cycle. La variété ne s'arrête pas au premier
-  // créneau : la semaine précédente s'est terminée par quelque chose, et le
-  // cycle doit enchaîner dessus. Les recettes retirées du corpus figurent ici
-  // par leur titre — le modèle sait ce qu'il ne voit plus, et pourquoi.
   const recent = [...(input.recentlyServed ?? [])]
     .filter((m) => typeof m.date === "string" && m.date.length > 0)
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-    .slice(0, 14);
+    .slice(0, 5);
   if (recent.length > 0) {
-    lines.push("=== SERVIS RÉCEMMENT, AVANT CE CYCLE (du plus récent au plus ancien) ===");
+    lines.push("=== DERNIERS REPAS SERVIS AVANT CE CYCLE ===");
     for (const m of recent) {
-      const titre = m.titre?.trim() || input.recipes.find((r) => r.id === m.recipeId)?.titre;
+      const titre = m.titre?.trim() || corpusById.get(m.recipeId)?.titre;
       if (titre) lines.push(`- ${m.date} : ${titre}`);
     }
-    if (excludedRecentIds.length > 0) {
-      lines.push(
-        `${excludedRecentIds.length} de ces recettes ont été retirées de la liste des recettes disponibles : ne les propose pas.`,
-      );
-    }
-    if (keptRecentIds.length > 0) {
-      lines.push(
-        "Les recettes suivantes ont été servies récemment mais restent disponibles faute d'alternatives : ne les propose qu'en dernier recours, et dis-le dans \"why\".",
-      );
-      for (const id of keptRecentIds) {
-        const r = input.recipes.find((x) => x.id === id);
-        if (r) lines.push(`- ${r.titre}`);
-      }
-    }
     lines.push(
-      "Enchaîne avec ces derniers repas comme s'ils faisaient partie du cycle : pas la même protéine principale ni le même féculent dominant que les deux derniers servis.",
+      "Enchaîne avec eux : pas la même protéine principale ni le même féculent que les deux derniers.",
     );
     lines.push("");
   }
 
   if (input.batchCookingDay != null) {
-    lines.push("=== RÔLE DU JOUR DE BATCH COOKING ===");
+    lines.push("=== BATCH COOKING ===");
     lines.push(
-      `Le jour de batch cooking est le jour de semaine n°${input.batchCookingDay} (1=lundi … 7=dimanche).`,
-    );
-    lines.push(
-      "Ce jour-là, l'utilisateur a plus de temps pour cuisiner ou préparer à l'avance. Mais le repas SERVI ce jour-là reste un repas normal du cycle.",
-    );
-    lines.push(
-      "Le plat préparé à l'avance pour plus tard n'est PAS obligatoirement le plat servi ce jour-là.",
-    );
-    lines.push(
-      'Les slots taggés "SLOT DE RÉCHAUFFAGE" sont les seuls slots où l\'on sert un plat préparé un autre jour.',
+      `Le jour de batch cooking (jour n°${input.batchCookingDay}, 1 = lundi) sert un repas normal. Un créneau « RÉCHAUFFAGE » sert un plat préparé un autre jour : préfère un plat qui se réchauffe, et pas le même que celui du jour de batch.`,
     );
     lines.push("");
   }
 
-  lines.push("=== JOURS À PLANIFIER ===");
-  for (let i = 0; i < input.slotDates.length; i++) {
-    const dateStr = input.slotDates[i];
-    const weekday = weekdayOfSlot(dateStr);
-    const constraint = constraintForSlot(input, i);
-    const isBatchCookingDay = input.batchCookingDay != null && weekday === input.batchCookingDay;
-    const isReheatDay = !!constraint?.isBatchCooking && !isBatchCookingDay;
-    let line = `Slot ${i} — ${dateStr}`;
-    const tags: string[] = [];
-    if (isBatchCookingDay)
-      tags.push(
-        "JOUR DE BATCH COOKING (jour avec plus de temps; repas servi ce jour = repas normal)",
-      );
-    if (isReheatDay) tags.push("SLOT DE RÉCHAUFFAGE (repas préparé un autre jour)");
-    // Le format est dit sur chaque slot, plat seul compris : c'est lui qui
-    // ouvre ou ferme l'entrée et le dessert, pas une contrainte en prose.
-    tags.push(`FORMAT : ${formats[i].label}`);
-    if (tags.length > 0) line += ` [TYPE : ${tags.join(" + ")}]`;
-    if (constraint) {
-      const parts: string[] = [];
-      if (constraint.maxPrepMinutes && constraint.maxPrepMinutes > 0) {
-        parts.push(`max ${constraint.maxPrepMinutes}min de préparation`);
-      }
-      if (constraint.targetPortions && constraint.targetPortions > 0) {
-        parts.push(`${constraint.targetPortions} parts à servir`);
-      }
-      if (isReheatDay) parts.push("réchauffage uniquement (préparé à l'avance)");
-      if (constraint.notes?.trim()) parts.push(constraint.notes.trim());
-      if (parts.length > 0) line += ` [PRÉFÉRENCES DU JOUR : ${parts.join(" | ")}]`;
-    }
+  lines.push("=== CRÉNEAUX ===");
+  for (const r of sent) {
+    const ctx = contexts[r.slot];
+    if (!ctx) continue;
+    const tags = [`FORMAT : ${ctx.format.label}`];
+    if (ctx.kind === "batch") tags.push("JOUR DE BATCH COOKING");
+    if (ctx.kind === "reheat") tags.push("RÉCHAUFFAGE");
+    let line = `Slot ${r.slot} — ${ctx.date} (${WEEKDAY_NAMES[ctx.weekday - 1]}) [${tags.join(" + ")}]`;
+    const notes = constraintForSlot(input, r.slot)?.notes?.trim();
+    if (notes) line += ` [PRÉFÉRENCES DU JOUR : ${notes}]`;
     lines.push(line);
+    lines.push(`  PLATS : ${shuffle(headIds(r.plats, r.sent.plats)).join(", ")}`);
+    if (r.sent.entrees > 0) {
+      lines.push(`  ENTRÉES : ${shuffle(headIds(r.entrees, r.sent.entrees)).join(", ")}`);
+    }
+    if (r.sent.desserts > 0) {
+      lines.push(`  DESSERTS : ${shuffle(headIds(r.desserts, r.sent.desserts)).join(", ")}`);
+    }
   }
   lines.push("");
-  lines.push("=== INSTRUCTIONS ===");
-  lines.push(`Réponds UNIQUEMENT avec un tableau JSON valide. Pour chaque slot, indique :
-- "slot" : numéro du slot
-- "recipe_id" : l'ID exact du plat choisi
-- "starter_id" : UNIQUEMENT pour un slot dont le FORMAT comprend une entrée — l'ID exact d'une recette de la liste ENTRÉES DISPONIBLES ; omets la clé sinon
-- "dessert_id" : UNIQUEMENT pour un slot dont le FORMAT comprend un dessert — l'ID exact d'une recette de la liste DESSERTS DISPONIBLES ; omets la clé sinon
-- "why" : en 1-2 phrases, explique pourquoi cette recette est adaptée (critères respectés) ou note les éventuelles contraintes enfreintes
-- "resized" : true si tu as dû redimensionner/adapter la proposition, sinon false
-- "resize_reason" : texte court décrivant ce qui a été redimensionné, chaîne vide si resized=false
+  lines.push("=== RÉPONSE ===");
+  lines.push(
+    'Réponds UNIQUEMENT avec un tableau JSON, une entrée par créneau listé : [{"slot":0,"recipe_id":"…","starter_id":"…","dessert_id":"…"}]',
+  );
+  lines.push(
+    '- "recipe_id" vient de la liste PLATS du créneau ; "starter_id" de sa liste ENTRÉES et "dessert_id" de sa liste DESSERTS, seulement quand le créneau en a une.',
+  );
+  lines.push("- Une recette ne sert qu'une fois dans le cycle.");
+  lines.push(
+    "- Pas la même protéine principale ni le même féculent dominant deux jours de suite, tant qu'une alternative existe.",
+  );
+  lines.push(
+    "- Le nombre de parts à servir ne guide pas ton choix : les quantités sont recalculées à l'affichage.",
+  );
+  lines.push("- N'écris rien d'autre que le tableau.");
+  return { prompt: lines.join("\n"), candidateIds };
+}
 
-Format attendu :
-[{"slot": 0, "recipe_id": "abc123", "starter_id": "def456", "dessert_id": "ghi789", "why": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas.", "resized": false, "resize_reason": ""}, ...]
+/** Ce que rend une suggestion de cycle. */
+export interface PlanningSuggestion {
+  slots: PlanningSlotResult[];
+  /** Recettes retirées du corpus par la fenêtre de variété, pour le dire à l'écran. */
+  excludedRecentIds: string[];
+  /** Listes classées par créneau, pour « Autre suggestion » côté client. */
+  rankings: SlotRanking[];
+  modelStatus: "ok" | "partial" | "failed" | "budget" | "skipped";
+  /** Phrase prête à afficher quand le modèle n'a pas choisi (`failed`, `budget`). */
+  notice: string | null;
+  stats: {
+    corpus: number;
+    candidatesSent: number;
+    durationMs: number;
+    rejectedChoices: number;
+    historyAvailable: boolean;
+  };
+  /** L'appel de modèle, s'il a eu lieu. */
+  modelCall: { provider: AiProvider; model: string; costUsd: number | null } | null;
+}
 
-Règles :
-- respecte toutes les contraintes globales ET quotidiennes
-- TU DOIS proposer une recette pour CHAQUE slot listé ci-dessus, y compris le jour de batch cooking. Ne saute un slot QUE si aucune recette n'est compatible avec ses contraintes ; dans ce cas explique-le dans le "why" d'un autre slot, mais c'est l'exception.
-- VARIÉTÉ STRICTE DES RECETTES : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
-- VARIÉTÉ STRICTE DES INGRÉDIENTS / PROTÉINES : ne planifie pas plusieurs fois d'affilée la même protéine principale (porc, bœuf, poulet, poisson…) ni le même féculent dominant (pâtes, riz, pommes de terre…). Avant de proposer un plat, vérifie ses "type", "thèmes" et "ingrédients" dans la liste des recettes : si une protéine ou un féculent apparaît déjà 1 fois dans le cycle, ne le ressers que si AUCUNE autre recette compatible ne propose une alternative. Idéalement, alterne protéines et féculents pour couvrir le maximum de variété.
-- NOMBRE DE PARTS : quand un slot indique "N parts à servir", privilégie une recette qui se prête à cette quantité (plat familial, plat unique, cuisson au four…) plutôt qu'une recette individuelle difficile à multiplier. Si tu dois multiplier ou diviser les quantités de la recette pour atteindre N parts, mets "resized": true et dis-le en une phrase dans "resize_reason".
-- FORMAT DU REPAS : "recipe_id" vient TOUJOURS de la liste PLATS DISPONIBLES — sauf pour un slot au format "repas léger", où il peut venir des ENTRÉES ou des EN-CAS. Un dessert n'est JAMAIS un "recipe_id". Une entrée ("starter_id") ne va que sur un slot dont le format comprend une entrée ; un dessert ("dessert_id") que sur un slot dont le format comprend un dessert. Un slot au format "plat seul" ne reçoit ni entrée ni dessert, quoi que disent les contraintes en langage naturel.
-- VARIÉTÉ DES ENTRÉES ET DESSERTS : la même entrée ou le même dessert ne revient pas deux fois dans le cycle tant qu'il en reste d'autres.
-- ne suggère JAMAIS le même plat sur deux slots consécutifs
-- si une répétition (recette OU protéine/féculent) est vraiment inévitable, explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
-- n'invente jamais d'id
+/** Ce que la génération reçoit de l'appelant, hors entrée du client. */
+export interface PlanningDeps {
+  policy: PlanningPolicy;
+  lastServed: ReadonlyMap<string, string>;
+  historyAvailable: boolean;
+  ratings: ReadonlyMap<string, number>;
+  /** YYYY-MM-DD */
+  today: string;
+  rng: Rng;
+  /** Rattache les lignes `ai_usage` de la génération ; `null` en mode code. */
+  runId: string | null;
+  /** Plafond de la génération en dollars ; `null` sans taux de change utilisable. */
+  costCapUsd: number | null;
+  /** Coût plafond de l'appel pour ce prompt ; `null` si la grille est illisible. */
+  estimateCeilingUsd: (promptChars: number) => Promise<number | null>;
+}
 
-Règles spécifiques au batch cooking :
-- Le slot "JOUR DE BATCH COOKING" est OBLIGATOIREMENT rempli : c'est le repas SERVI ce jour-là. Ne le laisse JAMAIS vide.
-- Ce repas doit être traité comme un repas normal du cycle. Le fait que l'utilisateur fasse du batch cooking ce jour-là ne signifie PAS qu'il souhaite manger ce même plat le jour batch ET un jour de réchauffage.
-- N'écris JAMAIS "réchauffage" pour ce slot.
-- Les slots "SLOT DE RÉCHAUFFAGE" sont les seuls slots correspondant à un plat préparé un autre jour.
-- N'utilise PAS automatiquement le même plat sur le jour batch et sur un slot de réchauffage. Une telle répétition n'est autorisée que si elle est explicitement inévitable faute d'alternative compatible, et doit alors être expliquée dans "why".`);
+/**
+ * Génère un cycle : présélection par le code, un appel de modèle qui tranche
+ * entre les têtes de liste, validation, remplissage par le code de ce que le
+ * modèle n'a pas choisi.
+ *
+ * Mode `code` : présélection seule, aucun appel de modèle, aucune ligne
+ * `ai_usage`. Le modèle n'est pas appelé non plus quand aucun créneau n'a de
+ * choix à faire, quand l'estimation dépasse le plafond de la génération, ou
+ * quand le plafond du jour est atteint.
+ */
+export async function suggestMealPlan(
+  apiKey: string,
+  input: PlanningInput,
+  ctx: ModelCallContext,
+  deps: PlanningDeps,
+): Promise<PlanningSuggestion> {
+  const startedAt = Date.now();
+  const mode = input.mode ?? "model";
+  const corpusById = new Map(input.recipes.map((r) => [r.id, r]));
+  const slotsToFill = Math.max(1, input.slotDates.length - (input.alreadyAssigned?.length ?? 0));
+  const { candidates, excludedIds } = applyRecentlyServed(
+    input.recipes,
+    input.recentlyServed ?? [],
+    slotsToFill,
+  );
+  const excluded = new Set(excludedIds);
+  const rankings =
+    input.recipes.length === 0
+      ? []
+      : preselect({
+          input,
+          candidates,
+          recentExcluded: input.recipes.filter((r) => excluded.has(r.id)),
+          lastServed: deps.lastServed,
+          ratings: deps.ratings,
+          historyAvailable: deps.historyAvailable,
+          policy: deps.policy,
+          today: deps.today,
+          rng: deps.rng,
+        });
+  const sentSlots = new Set(rankings.filter(needsModel).map((r) => r.slot));
 
-  const result = await callModel({
-    parts: [textPart(lines.join("\n"))],
-    ctx: { ...ctx, feature: "planning", timeoutMs: 2 * 60 * 1000 },
-    maxTokens: 16_000,
-  });
+  let modelStatus: PlanningSuggestion["modelStatus"] = "skipped";
+  let notice: string | null = null;
+  let slots: PlanningSlotResult[] | null = null;
+  let rejected = 0;
+  let candidatesSent = 0;
+  let modelCall: PlanningSuggestion["modelCall"] = null;
+  const logCtx = {
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    moduleType: "DESIGN" as const,
+    feature: "planning",
+  };
 
-  const text = result.text.trim();
-  if (!text) return { slots: [], excludedRecentIds };
-
-  try {
-    const arr = JSON.parse(extractJsonArray(text)) as Array<{
-      slot?: number;
-      recipe_id?: string;
-      starter_id?: string;
-      dessert_id?: string;
-      justification?: string;
-      why?: string;
-      resized?: boolean;
-      resize_reason?: string;
-      resizeReason?: string;
-    }>;
-    const asId = (v: unknown): string | undefined =>
-      typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
-    const base = arr
-      .filter((e) => typeof e.slot === "number" && typeof e.recipe_id === "string")
-      .map((e) => {
-        const slot = e.slot as number;
-        const recipeId = e.recipe_id as string;
-        const starterId = asId(e.starter_id);
-        const dessertId = asId(e.dessert_id);
-        const why =
-          typeof e.why === "string"
-            ? e.why
-            : typeof e.justification === "string"
-              ? e.justification
-              : undefined;
-        const resized = typeof e.resized === "boolean" ? e.resized : false;
-        const resizeReasonRaw =
-          typeof e.resize_reason === "string"
-            ? e.resize_reason
-            : typeof e.resizeReason === "string"
-              ? e.resizeReason
-              : "";
-        const resizeReason = resizeReasonRaw.trim();
-
-        // Calcul du jour de préparation pour les slots "réchauffage"
-        let prepDate: string | undefined;
-        const dateStr = input.slotDates[slot];
-        if (dateStr && input.batchCookingDay != null) {
-          const constraint = constraintForSlot(input, slot);
-          const isBatchCookingDay = weekdayOfSlot(dateStr) === input.batchCookingDay;
-          if (constraint?.isBatchCooking && !isBatchCookingDay) {
-            prepDate = computePrepDate(dateStr, input.batchCookingDay);
+  if (mode === "model" && sentSlots.size > 0) {
+    const { prompt, candidateIds } = buildPlanningPrompt({
+      input,
+      rankings,
+      sentSlots,
+      corpusById,
+      rng: deps.rng,
+    });
+    candidatesSent = candidateIds.length;
+    const ceiling = await deps.estimateCeilingUsd(prompt.length);
+    if (deps.costCapUsd != null && ceiling != null && ceiling > deps.costCapUsd) {
+      modelStatus = "budget";
+      notice = generationCapNotice(deps.policy.costCapEurPerGeneration);
+      await logWarn({
+        ...logCtx,
+        message: "Planning — plafond de la génération : appel évité, choix par le code",
+        extra: { runId: deps.runId, ceilingUsd: ceiling, capUsd: deps.costCapUsd },
+      });
+    } else {
+      try {
+        const result = await callModel({
+          parts: [textPart(prompt)],
+          ctx: { ...ctx, feature: "planning", timeoutMs: 2 * 60 * 1000 },
+          maxTokens: PLANNING_MAX_TOKENS,
+          ...(deps.runId
+            ? { usageMeta: { entityType: "planning_run", entityId: deps.runId } }
+            : {}),
+        });
+        modelCall = {
+          provider: result.provider,
+          model: result.model,
+          costUsd: result.recordedCostUsd ?? null,
+        };
+        const text = result.text.trim();
+        let parsed: unknown = null;
+        try {
+          parsed = text ? JSON.parse(extractJsonArray(text)) : null;
+        } catch (e) {
+          await logError({
+            ...logCtx,
+            message: "Planning — réponse du modèle illisible, choix par le code",
+            geminiStatus: "ERROR",
+            errorDescription: e instanceof Error ? e.message : String(e),
+            extra: {
+              runId: deps.runId,
+              stopReason: result.stopReason ?? null,
+              responsePreview: text.slice(0, 500),
+            },
+          });
+        }
+        if (!Array.isArray(parsed)) {
+          modelStatus = "failed";
+          notice = NOTICE_FAILED;
+          if (!text) {
+            await logError({
+              ...logCtx,
+              message: "Planning — réponse vide du modèle, choix par le code",
+              extra: { runId: deps.runId, stopReason: result.stopReason ?? null },
+            });
+          }
+        } else {
+          const validated = validateModelChoices({
+            raw: parsed,
+            rankings,
+            input,
+            corpusById,
+            sentSlots,
+          });
+          slots = validated.slots;
+          rejected = validated.rejected;
+          modelStatus = rejected > 0 ? "partial" : "ok";
+          if (rejected > 0) {
+            await logWarn({
+              ...logCtx,
+              message: "Planning — choix du modèle hors des listes, remplacés par le code",
+              extra: { runId: deps.runId, rejected },
+            });
           }
         }
-
-        return {
-          slot,
-          recipeId,
-          starterId,
-          dessertId,
-          justification: why,
-          resized,
-          resizeReason: resizeReason.length > 0 ? resizeReason : undefined,
-          prepDate,
-        };
-      });
-
-    // Garde-fou variété : pas de doublon de recette sur le cycle tant qu'une
-    // alternative existe. Le jour batch n'autorise pas automatiquement une
-    // répétition avec un slot de réchauffage.
-    // Les candidats, pas le corpus : une recette retirée par la fenêtre de
-    // variété et rendue quand même par le modèle ne passe pas.
-    const roleOf = new Map(candidates.map((r) => [r.id, planningRoleOf(r)]));
-    const bySlot = [...base].sort((a, b) => a.slot - b.slot);
-    const deduped: PlanningSlotResult[] = [];
-    const usedRecipeIds = new Set<string>();
-
-    for (const s of bySlot) {
-      const mainRole = roleOf.get(s.recipeId);
-      if (mainRole == null) continue;
-      const format = mealFormatOf(constraintForSlot(input, s.slot)?.mealFormat);
-      // Le plat vient des plats ; en repas léger, une entrée ou un en-cas
-      // passent aussi. Un dessert n'est jamais un plat, quoi que rende le
-      // modèle — c'est le format du jour qui décide, pas une consigne en prose.
-      const mainOk =
-        mainRole === "plat" || (format.light && (mainRole === "entree" || mainRole === "snack"));
-      if (!mainOk) continue;
-      if (usedRecipeIds.has(s.recipeId)) continue;
-      usedRecipeIds.add(s.recipeId);
-
-      // Entrée et dessert : seulement si le format en demande, seulement du
-      // bon rôle, et une fois chacun dans le cycle.
-      const starterId =
-        format.wantsStarter &&
-        s.starterId &&
-        roleOf.get(s.starterId) === "entree" &&
-        !usedRecipeIds.has(s.starterId)
-          ? s.starterId
-          : undefined;
-      if (starterId) usedRecipeIds.add(starterId);
-      const dessertId =
-        format.wantsDessert &&
-        s.dessertId &&
-        roleOf.get(s.dessertId) === "dessert" &&
-        !usedRecipeIds.has(s.dessertId)
-          ? s.dessertId
-          : undefined;
-      if (dessertId) usedRecipeIds.add(dessertId);
-
-      deduped.push({ ...s, starterId, dessertId });
+      } catch (err) {
+        if (err instanceof BudgetExceededError) {
+          modelStatus = "budget";
+          notice = NOTICE_DAILY_CAP;
+          await logWarn({
+            ...logCtx,
+            message: "Planning — plafond du jour atteint, choix par le code",
+            errorDescription: err.message,
+            extra: { runId: deps.runId },
+          });
+        } else {
+          modelStatus = "failed";
+          notice = NOTICE_FAILED;
+          await logError({
+            ...logCtx,
+            message: "Planning — appel du modèle en échec, choix par le code",
+            errorDescription: err instanceof Error ? err.message : String(err),
+            extra: { runId: deps.runId },
+          });
+        }
+      }
     }
-
-    return { slots: deduped, excludedRecentIds };
-  } catch (e) {
-    // Une réponse illisible ne doit pas passer pour « l'IA n'a rien trouvé » :
-    // sans ce log, le client comble tous les créneaux en silence et l'utilisateur
-    // croit à de mauvais choix alors qu'aucun choix n'a été rendu.
-    await logError("Planning — réponse du modèle illisible, aucune suggestion retenue", {
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      geminiStatus: "ERROR",
-      feature: "planning",
-      errorDescription: e instanceof Error ? e.message : String(e),
-      extra: { slots: input.slotDates.length, responsePreview: text.slice(0, 500) },
-    });
-    return { slots: [], excludedRecentIds };
   }
+
+  if (slots == null) slots = codeFill({ rankings, input, corpusById });
+  const durationMs = Date.now() - startedAt;
+  const stats = {
+    corpus: input.recipes.length,
+    candidatesSent,
+    durationMs,
+    rejectedChoices: rejected,
+    historyAvailable: deps.historyAvailable,
+  };
+  await logInfo({
+    ...logCtx,
+    message: "Planning — génération",
+    executionTimeMs: durationMs,
+    extra: {
+      ...stats,
+      mode,
+      modelStatus,
+      slots: input.slotDates.length,
+      filled: slots.length,
+      runId: deps.runId,
+    },
+  });
+  return {
+    slots,
+    excludedRecentIds: excludedIds,
+    rankings,
+    modelStatus,
+    notice,
+    stats,
+    modelCall,
+  };
 }
 
 /**
  * Génère une recette de toutes pièces (conception IA) qui respecte les contraintes
  * d'un slot spécifique. Utilisé en fallback quand aucune recette existante ne convient.
  */
-export async function generateRecipeConcept(
-  apiKey: string,
-  input: RecipeConceptInput,
-  ctx: ModelCallContext,
-): Promise<RecipeConceptResult> {
+export function buildConceptPrompt(input: RecipeConceptInput): string {
   const lines: string[] = [];
   const requestedTitre = (input.requestedDish?.titre ?? "").trim().slice(0, 200);
   const requestedDescription = (input.requestedDish?.description ?? "").trim().slice(0, 600);
@@ -870,11 +1740,23 @@ export async function generateRecipeConcept(
   lines.push("- Durées : ~{durée%unité}  ex: ~{15%min}");
   lines.push("- Ustensiles : #nom{}  ex: #casserole{}");
 
+  return lines.join("\n");
+}
+
+export async function generateRecipeConcept(
+  apiKey: string,
+  input: RecipeConceptInput,
+  ctx: ModelCallContext,
+  opts?: { runId?: string },
+): Promise<RecipeConceptResult> {
   const result = await callModel({
-    parts: [textPart(lines.join("\n"))],
+    parts: [textPart(buildConceptPrompt(input))],
     ctx: { ...ctx, feature: "planning_concept", timeoutMs: 90 * 1000 },
-    maxTokens: 16_000,
+    maxTokens: PLANNING_CONCEPT_MAX_TOKENS,
+    // Rattache le coût de la conception à sa génération, dans `ai_usage`.
+    ...(opts?.runId ? { usageMeta: { entityType: "planning_run", entityId: opts.runId } } : {}),
   });
+  const costUsd = result.recordedCostUsd ?? null;
 
   const text = result.text.trim();
   const cleaned = text
@@ -891,6 +1773,7 @@ export async function generateRecipeConcept(
       titre: parsed.titre ?? "Recette générée par l'IA",
       cooklang: parsed.cooklang ?? "",
       justification: parsed.justification ?? "Recette créée par l'IA selon les contraintes.",
+      costUsd,
     };
   } catch (e) {
     // Le brouillon serait enregistré avec un CookLang vide : le dire, sinon la
@@ -909,6 +1792,7 @@ export async function generateRecipeConcept(
       cooklang: "",
       justification:
         "L'IA n'a pas renvoyé de recette exploitable. Rien n'a été conçu pour ce créneau.",
+      costUsd,
     };
   }
 }

@@ -1,21 +1,26 @@
 import '../../../../core/services/gemini_service.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/meal_idea.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/ranked_candidates.dart';
 
 /// Résultat d'une suggestion de repas pour un slot donné.
 class SlotSuggestion {
   final Recipe? recipe;
 
-  /// Justification de l'IA : critères respectés ou enfreints.
+  /// Faits produits par le serveur (protéine, durée, note, dernier service),
+  /// ou la justification d'une conception. Jamais une phrase générique.
   final String? justification;
 
-  /// True si l'IA indique avoir redimensionné/ajusté la proposition.
+  /// Vrai quand les parts servies diffèrent de celles de la recette :
+  /// calculé par le serveur, recalculé à l'affichage, jamais écrit dans la
+  /// recette.
   final bool wasResized;
 
-  /// Détail du redimensionnement/ajustement quand [wasResized] est true.
+  /// « Écrite pour 4 parts, servie pour 6. »
   final String? resizeReason;
 
   /// Jour de préparation à l'avance (non-null si réchauffage).
@@ -30,6 +35,12 @@ class SlotSuggestion {
   final Recipe? starter;
   final Recipe? dessert;
 
+  /// Qui a choisi : l'IA, les règles de Kass'Dalle, ou une conception IA.
+  final MealChoiceSource source;
+
+  /// Vrai si la recette n'est proposée que faute d'autre choix.
+  final bool repeat;
+
   const SlotSuggestion({
     this.recipe,
     this.justification,
@@ -39,6 +50,8 @@ class SlotSuggestion {
     this.isGenerated = false,
     this.starter,
     this.dessert,
+    this.source = MealChoiceSource.ai,
+    this.repeat = false,
   });
 }
 
@@ -51,11 +64,55 @@ class MealPlanSuggestion {
   final List<SlotSuggestion> slots;
   final int excludedRecentCount;
 
+  /// Génération à laquelle rattacher les conceptions automatiques.
+  final String? runId;
+
+  /// `ok`, `partial`, `failed`, `budget` ou `skipped`.
+  final String modelStatus;
+
+  /// Phrase du serveur à afficher quand le modèle n'a pas choisi.
+  final String? notice;
+
+  /// Listes classées, par index de créneau de la demande.
+  final Map<int, SlotRanking> rankings;
+
+  /// Conceptions encore permises pour cette génération.
+  final int conceptsRemaining;
+
   const MealPlanSuggestion({
     required this.slots,
     required this.excludedRecentCount,
+    this.runId,
+    this.modelStatus = 'skipped',
+    this.notice,
+    this.rankings = const {},
+    this.conceptsRemaining = 0,
   });
+
+  /// Le modèle n'a pas choisi : panne ou plafond. L'écran affiche [notice].
+  bool get modelUnavailable =>
+      modelStatus == 'failed' || modelStatus == 'budget';
 }
+
+/// Résumé d'une recette envoyé au serveur pour la présélection.
+Map<String, dynamic> planningRecipeSummary(Recipe r) => {
+  'id': r.id,
+  'titre': r.titre,
+  if (r.tags.prepTime != null) 'prepTime': r.tags.prepTime,
+  if (r.tags.cookTime != null) 'cookTime': r.tags.cookTime,
+  if (r.tags.restTime != null) 'restTime': r.tags.restTime,
+  if (r.tags.dishTypes.isNotEmpty) 'dishTypes': r.tags.dishTypes,
+  if (r.tags.themes.isNotEmpty) 'themes': r.tags.themes,
+  if (r.tags.occasions.isNotEmpty) 'occasions': r.tags.occasions,
+  if (r.tags.cuisines.isNotEmpty) 'cuisines': r.tags.cuisines,
+  if (r.ingredientsIndex.isNotEmpty)
+    'mainIngredients': r.ingredientsIndex.take(8).toList(),
+  // Le rôle range la recette dans la bonne liste : plats, entrées,
+  // desserts. Absent, elle est un plat.
+  if (r.tags.hasMealRole) 'mealRole': r.tags.mealRole,
+  // Les parts de la recette : le serveur dit si le repas sera redimensionné.
+  if (r.portions != null && r.portions! > 0) 'portions': r.portions,
+};
 
 /// Service d'IA pour la génération de planning de repas via Gemini.
 /// Délègue à la Cloud Function `suggestMealPlanFn` via [GeminiService].
@@ -63,6 +120,16 @@ class PlanningAiService {
   final GeminiService _gemini;
 
   const PlanningAiService(this._gemini);
+
+  /// Plafond serveur des écarts envoyés par créneau (`_aiInputReaders.ts`).
+  static const int _maxDismissedPerSlot = 30;
+
+  static List<String> _lastDismissed(Iterable<String> ids) {
+    final list = ids.toList();
+    return list.length <= _maxDismissedPerSlot
+        ? list
+        : list.sublist(list.length - _maxDismissedPerSlot);
+  }
 
   Map<String, dynamic> _constraintPayload(DayConstraint c) => {
     'maxPrepMinutes': c.maxPrepMinutes,
@@ -76,9 +143,11 @@ class PlanningAiService {
 
   /// Suggère un planning de repas pour les [slotDates] données.
   ///
-  /// Retourne une liste de la même taille que [slotDates].
-  /// Chaque entrée contient la recette suggérée, une justification et
-  /// éventuellement un jour de préparation à l'avance.
+  /// Retourne une liste de la même taille que [slotDates]. Le serveur
+  /// présélectionne les candidats de chaque créneau, puis le modèle tranche
+  /// entre les têtes de liste. [withoutModel] : présélection seule, sans
+  /// appel de modèle ni coût. [slotDismissed] : les recettes écartées de
+  /// chaque créneau, même index que [slotDates].
   ///
   /// [recentlyServed] : les repas servis avant le cycle, dans la fenêtre de
   /// variété. Le serveur les retire du corpus tant qu'il en reste assez, et
@@ -92,36 +161,13 @@ class PlanningAiService {
     List<({int slot, String recipeId})> alreadyAssigned = const [],
     List<DayConstraint?>? slotConstraints,
     List<RecentlyServedMeal> recentlyServed = const [],
+    bool withoutModel = false,
+    List<Set<String>?>? slotDismissed,
   }) async {
-    if (recipes.isEmpty) {
-      return MealPlanSuggestion(
-        slots: List.generate(slotDates.length, (_) => const SlotSuggestion()),
-        excludedRecentCount: 0,
-      );
-    }
-
-    final gemini = _gemini;
-    final response = await gemini.suggestMealPlan(
-      recipes: recipes
-          .map(
-            (r) => {
-              'id': r.id,
-              'titre': r.titre,
-              if (r.tags.prepTime != null) 'prepTime': r.tags.prepTime,
-              if (r.tags.cookTime != null) 'cookTime': r.tags.cookTime,
-              if (r.tags.restTime != null) 'restTime': r.tags.restTime,
-              if (r.tags.dishTypes.isNotEmpty) 'dishTypes': r.tags.dishTypes,
-              if (r.tags.themes.isNotEmpty) 'themes': r.tags.themes,
-              if (r.tags.occasions.isNotEmpty) 'occasions': r.tags.occasions,
-              if (r.tags.cuisines.isNotEmpty) 'cuisines': r.tags.cuisines,
-              if (r.ingredientsIndex.isNotEmpty)
-                'mainIngredients': r.ingredientsIndex.take(8).toList(),
-              // Le rôle range la recette dans la bonne liste du prompt :
-              // plats, entrées, desserts. Absent, elle est un plat.
-              if (r.tags.hasMealRole) 'mealRole': r.tags.mealRole,
-            },
-          )
-          .toList(),
+    // Un corpus vide part quand même : le serveur ouvre la génération à
+    // laquelle se rattachent les conceptions, et leur plafond.
+    final response = await _gemini.suggestMealPlan(
+      recipes: recipes.map(planningRecipeSummary).toList(),
       slotDates: slotDates.map((d) => d.toIso8601String()).toList(),
       dailyConstraints: {
         for (final e in dailyConstraints.entries)
@@ -146,24 +192,28 @@ class PlanningAiService {
             },
           )
           .toList(),
+      // « Autre suggestion » sans liste en main : la présélection seule, sans
+      // appel de modèle.
+      mode: withoutModel ? 'code' : null,
+      // Le serveur refuse plus de 30 écarts par créneau : on envoie les 30
+      // derniers. Sur un créneau isolé, `recipes` exclut déjà tous les écarts
+      // (`candidatesForMeal`) ; sur un cycle entier, un écart plus ancien que
+      // les 30 derniers peut revenir sur ce créneau.
+      slotDismissed: slotDismissed
+          ?.map((d) => d == null || d.isEmpty ? null : _lastDismissed(d))
+          .toList(),
     );
-    final suggestions = response.suggestions;
 
     // Traduction pure de ce que le serveur a décidé : identifiant → recette.
-    //
-    // Le client comblait autrefois les créneaux laissés vides, en rejouant les
-    // règles de variété, de dessert et de jour de préparation. Ce filet coûtait
-    // une duplication entière de ces règles pour un service discutable : il
-    // masquait qu'aucune suggestion n'avait été rendue, et une recette choisie
-    // par lui s'affichait comme une décision de l'IA. Un créneau vide est plus
-    // honnête, et l'écran sait le compléter à la demande.
+    // Un créneau que le serveur laisse vide reste vide : l'écran le dit et
+    // propose de le compléter.
     final recipeById = {for (final r in recipes) r.id: r};
     final result = List<SlotSuggestion>.generate(
       slotDates.length,
       (_) => const SlotSuggestion(),
     );
 
-    for (final s in suggestions) {
+    for (final s in response.suggestions) {
       if (s.slot < 0 || s.slot >= slotDates.length) continue;
       final recipe = recipeById[s.recipeId];
       if (recipe == null) continue;
@@ -177,12 +227,28 @@ class PlanningAiService {
         // le serveur ne les rend qu'en identifiants, jamais en titres.
         starter: s.starterId == null ? null : recipeById[s.starterId!],
         dessert: s.dessertId == null ? null : recipeById[s.dessertId!],
+        source: MealChoiceSource.fromServer(s.source),
+        repeat: s.repeat,
       );
+    }
+
+    final rankings = <int, SlotRanking>{};
+    for (final raw in response.rankedCandidates) {
+      final slot = raw['slot'];
+      if (slot is! num) continue;
+      final index = slot.toInt();
+      if (index < 0 || index >= slotDates.length) continue;
+      rankings[index] = SlotRanking.fromMap(raw);
     }
 
     return MealPlanSuggestion(
       slots: result,
       excludedRecentCount: response.excludedRecentIds.length,
+      runId: response.runId,
+      modelStatus: response.modelStatus,
+      notice: response.notice,
+      rankings: rankings,
+      conceptsRemaining: response.conceptsRemaining,
     );
   }
 
@@ -206,8 +272,10 @@ class PlanningAiService {
     DayConstraint? dayConstraint,
     List<String> alreadyPlanned = const [],
     MealIdea? requestedDish,
+    String? runId,
   }) async {
     final result = await _gemini.generateRecipeConcept(
+      runId: runId,
       slotDate: slotDate.toIso8601String(),
       globalConstraints: globalConstraints,
       alreadyPlanned: alreadyPlanned,
@@ -233,6 +301,7 @@ class PlanningAiService {
       return SlotSuggestion(
         justification: result.justification,
         isGenerated: true,
+        source: MealChoiceSource.concept,
       );
     }
     // Le modèle rend un CookLang, pas une liste : les ingrédients, les temps
@@ -259,11 +328,14 @@ class PlanningAiService {
       createdAt: now,
       updatedAt: now,
     );
+    // L'origine (« Conçue par l'IA ») s'affiche sur sa propre ligne : la
+    // justification ne la répète pas.
     return SlotSuggestion(
       recipe: recipe,
-      justification: '🤖 Conçu par l\'IA : ${result.justification}',
+      justification: result.justification,
       wasResized: false,
       isGenerated: true,
+      source: MealChoiceSource.concept,
     );
   }
 
