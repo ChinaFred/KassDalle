@@ -13,7 +13,6 @@ import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import {
   FOUNDER_EMAIL,
-  OPEN_FLAW,
   PERSONAS,
   as,
   createEnv,
@@ -151,6 +150,7 @@ beforeEach(async () => {
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
     "nutrition_ingredients/farine": { name: "farine", kcal: 364, shopping_product: "farine" },
     "users/founder": PERSONAS.founder.doc,
+    "user_profiles/other-reader": { display_name: "Autre Lecteur", preferred_name: null },
   });
 });
 
@@ -208,6 +208,101 @@ describe("users — création de compte", () => {
         .doc("users/newcomer")
         .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
     );
+  });
+
+  it("refuse un nom Google de 61 caractères à la création", async () => {
+    await assertFails(
+      fresh().doc("users/newcomer").set({
+        role: "pending",
+        is_revoked: false,
+        email: "new@example.com",
+        display_name: "a".repeat(61),
+      }),
+    );
+  });
+
+  it("accepte un nom Google de 60 caractères à la création", async () => {
+    await assertSucceeds(
+      fresh().doc("users/newcomer").set({
+        role: "pending",
+        is_revoked: false,
+        email: "new@example.com",
+        display_name: "a".repeat(60),
+      }),
+    );
+  });
+
+  // `string.size()` compte en unités UTF-16 : un emoji vaut 2. Les deux
+  // `truncateName` (Dart, TypeScript) coupent de la même façon, donc un nom
+  // Google de 30 emoji, la plus longue coupe possible, passe la règle.
+  it("accepte un nom de 30 emoji à la création", async () => {
+    await assertSucceeds(
+      fresh().doc("users/newcomer").set({
+        role: "pending",
+        is_revoked: false,
+        email: "new@example.com",
+        display_name: "😀".repeat(30),
+      }),
+    );
+  });
+
+  it("refuse un nom de 31 emoji (62 unités UTF-16) à la création", async () => {
+    await assertFails(
+      fresh().doc("users/newcomer").set({
+        role: "pending",
+        is_revoked: false,
+        email: "new@example.com",
+        display_name: "😀".repeat(31),
+      }),
+    );
+  });
+});
+
+describe("users — longueur des noms", () => {
+  it("un lecteur ne pose pas un nom préféré de 61 caractères", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ preferred_name: "a".repeat(61) }),
+    );
+  });
+
+  it("un lecteur pose un nom préféré de 60 caractères", async () => {
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}`).update({ preferred_name: "a".repeat(60) }),
+    );
+  });
+
+  it("un lecteur efface son nom préféré", async () => {
+    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ preferred_name: null }));
+  });
+
+  it("un nom préféré qui n'est pas une chaîne est refusé", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ preferred_name: { x: "a".repeat(10) } }),
+    );
+  });
+
+  it("un lecteur ne pose pas un nom Google de 61 caractères", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ display_name: "a".repeat(61) }),
+    );
+  });
+
+  it("un administrateur ne pose pas un nom préféré de 61 caractères", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ preferred_name: "a".repeat(61) }),
+    );
+  });
+
+  it("un compte ancien au nom trop long reste modifiable sans toucher au nom", async () => {
+    await seedDocs(env, {
+      "users/long-name": {
+        role: "reader",
+        is_revoked: false,
+        email: "long@example.com",
+        display_name: "a".repeat(80),
+      },
+    });
+    await assertSucceeds(db("admin").doc("users/long-name").update({ role: "editor" }));
   });
 });
 
@@ -341,16 +436,74 @@ describe("users — lecture", () => {
     await assertFails(db("reader").doc(`users/${OTHER}`).get());
   });
 
-  // Reste ouvert (v0.23.12) : la file de travail, la relecture d'un brouillon,
-  // le détail d'une recette et la recherche de membres d'un groupe lisent
-  // `users/{uid}` d'autrui pour afficher un nom. Fermer la lecture casserait
-  // ces écrans tant que le nom n'est pas servi par un autre chemin.
-  it("un éditeur ne lit pas le document d'un autre", OPEN_FLAW, async () => {
+  // Fermé en v0.23.14 : les noms des autres membres se lisent désormais
+  // dans `user_profiles/{uid}`.
+  it("un éditeur ne lit pas le document d'un autre", async () => {
     await assertFails(db("editor").doc(`users/${OTHER}`).get());
+  });
+
+  it("un éditeur ne liste pas les comptes", async () => {
+    await assertFails(db("editor").collection("users").limit(10).get());
+  });
+
+  it("un administrateur lit le document d'un autre", async () => {
+    await assertSucceeds(db("admin").doc(`users/${OTHER}`).get());
+  });
+
+  it("un administrateur liste les comptes", async () => {
+    await assertSucceeds(db("admin").collection("users").get());
   });
 
   it("un anonyme ne lit aucun document de compte", async () => {
     await assertFails(db("anonymous").doc(`users/${READER}`).get());
+  });
+});
+
+// ── user_profiles ─────────────────────────────────────────────────────────
+
+describe("user_profiles — profils publics", () => {
+  const profile = { display_name: "Autre Lecteur", preferred_name: null };
+
+  it("un lecteur lit le profil public d'un autre", async () => {
+    await assertSucceeds(db("reader").doc(`user_profiles/${OTHER}`).get());
+  });
+
+  it("un éditeur lit le profil public d'un autre", async () => {
+    await assertSucceeds(db("editor").doc(`user_profiles/${OTHER}`).get());
+  });
+
+  it("un lecteur liste les profils publics", async () => {
+    await assertSucceeds(db("reader").collection("user_profiles").limit(200).get());
+  });
+
+  it("un compte en attente ne lit aucun profil", async () => {
+    await assertFails(db("pending").doc(`user_profiles/${OTHER}`).get());
+  });
+
+  it("un compte révoqué ne lit aucun profil", async () => {
+    await assertFails(db("revokedStaleToken").doc(`user_profiles/${OTHER}`).get());
+  });
+
+  it("un anonyme ne lit aucun profil", async () => {
+    await assertFails(db("anonymous").doc(`user_profiles/${OTHER}`).get());
+  });
+
+  it("personne n'écrit son propre profil côté client", async () => {
+    await assertFails(
+      db("reader").doc(`user_profiles/${READER}`).set({ display_name: "Usurpé" }),
+    );
+  });
+
+  it("un éditeur n'écrit pas le profil d'un autre", async () => {
+    await assertFails(db("editor").doc(`user_profiles/${OTHER}`).update({ display_name: "X" }));
+  });
+
+  it("un administrateur n'écrit pas de profil côté client", async () => {
+    await assertFails(db("admin").doc(`user_profiles/${OTHER}`).set(profile));
+  });
+
+  it("personne ne supprime un profil côté client", async () => {
+    await assertFails(db("admin").doc(`user_profiles/${OTHER}`).delete());
   });
 });
 

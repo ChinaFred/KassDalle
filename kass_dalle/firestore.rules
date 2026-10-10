@@ -145,17 +145,52 @@ service cloud.firestore {
         return resource.data.get('email', '').lower() == founderEmail();
       }
 
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
+      /// Un nom (`display_name`, `preferred_name`) est absent, nul, ou une
+      /// chaîne de 60 caractères au plus. Il est recopié tel quel dans le
+      /// profil public que lit toute la famille : sans borne, un compte
+      /// pouvait y poser un texte de plusieurs centaines de kilo-octets
+      /// (revue sécurité v0.23.14). Le serveur tronque aussi à la recopie
+      /// (`publicProfileFrom`), et le client avant d'écrire.
+      function nameOk(field) {
+        return !(field in request.resource.data)
+               || request.resource.data[field] == null
+               || (request.resource.data[field] is string
+                   && request.resource.data[field].size() <= 60);
+      }
+
+      /// À la création, les deux noms sont bornés.
+      function namesBounded() {
+        return nameOk('display_name') && nameOk('preferred_name');
+      }
+
+      /// À la mise à jour, seul un nom modifié est contrôlé : un document
+      /// antérieur à la borne, au nom Google plus long, reste modifiable
+      /// (rôle, dernière visite) sans qu'on touche à son nom.
+      function touchedNamesBounded() {
+        let keys = request.resource.data.diff(resource.data).affectedKeys();
+        return (!keys.hasAny(['display_name']) || nameOk('display_name'))
+               && (!keys.hasAny(['preferred_name']) || nameOk('preferred_name'));
+      }
+
+      // Le document d'un compte porte son adresse, son rôle et sa révocation :
+      // il ne se lit que par son titulaire et par un administrateur. Les
+      // écrans qui affichent le nom d'un autre membre lisent
+      // `user_profiles/{uid}`, la projection publique tenue par le serveur
+      // (v0.23.14). Un éditeur lisait auparavant tous les comptes, adresses
+      // comprises, pour afficher un prénom (audit 2026-10-09).
+      allow read: if isOwner(uid) || isAdmin();
 
       allow create: if isAuthenticated() && request.auth.uid == uid
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
-                      && request.resource.data.email == request.auth.token.email;
+                      && request.resource.data.email == request.auth.token.email
+                      && namesBounded();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer. Sans cette réserve, un administrateur adoubé pouvait
       // mettre dehors celui qui l'avait nommé.
       allow update: if !touchesEmail()
+                      && touchedNamesBounded()
                       && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
                           || (isAuthenticated() && request.auth.uid == uid
                               && !touchesAuthority()));
@@ -173,6 +208,19 @@ service cloud.firestore {
       match /preferences/{prefId} {
         allow read, write: if isOwner(uid) || isAdmin();
       }
+    }
+
+    // Profils publics : la part d'un compte que les autres membres voient.
+    //
+    // `user_profiles/{uid}` ne porte que le nom (`display_name`,
+    // `preferred_name`) et la couverture « Recette libre »
+    // (`free_recipe_cover_url`) — jamais l'adresse, le rôle ni la révocation.
+    // Seul le serveur l'écrit : `syncUserClaims` le recopie de `users/{uid}`
+    // à chaque écriture, et `backfillUserProfilesFn` sème le fonds existant.
+    // Un compte en attente n'a pas de profil.
+    match /user_profiles/{uid} {
+      allow read: if isApproved();
+      allow write: if false;
     }
 
     // ── Confidentialité et propriété des livres et des recettes ─────────────
@@ -196,9 +244,10 @@ service cloud.firestore {
     // règles ne lisent pas ce champ par `get('is_private', false)` : dans une
     // requête, une valeur par défaut n'est pas prouvée par les filtres — une
     // liste sans filtre de confidentialité serait passée. Le champ est posé à
-    // la création (client et serveur). Pour le fonds antérieur : la reprise
-    // « Reprendre la confidentialité » l'a posé sur les recettes, et les livres
-    // ne l'ont qu'après `backfillBookPrivacyFn` (Admin › Backfills, v0.23.8).
+    // la création (client et serveur). Le fonds antérieur l'a reçu par deux
+    // reprises lancées en production puis retirées du code : « Reprendre la
+    // confidentialité » pour les recettes, `backfillBookPrivacyFn` pour les
+    // livres (v0.23.8, retirée en v0.23.14).
     // Un document qui ne le porte pas reste lisible par son créateur et par un
     // administrateur.
     //

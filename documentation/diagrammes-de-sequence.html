@@ -1564,6 +1564,7 @@ sequenceDiagram
   participant FS as users/{uid}
   participant SY as syncUserClaims
   participant FD as enforceFounderRole
+  participant UP as user_profiles/{uid}
   participant CF as Callables
 
   N->>L: Se connecter avec Google
@@ -1578,6 +1579,7 @@ sequenceDiagram
 
   A->>FS: attribue un premier rôle — reader
   FS->>SY: onDocumentWritten
+  SY->>UP: crée le profil public — nom, couverture des recettes libres
   SY->>AU: setCustomUserClaims { role, revoked }
   Note over SY,AU: le jeton du compte ne porte le rôle<br/>qu'au renouvellement suivant
   FS-->>R: appUserProvider se met à jour
@@ -1589,6 +1591,7 @@ sequenceDiagram
 
   A->>FS: révoque, remet en attente ou supprime le compte
   FS->>SY: onDocumentWritten
+  SY->>UP: profil retiré si remis en attente ou supprimé, gardé si révoqué
   SY->>AU: setCustomUserClaims { role, revoked } (effacés si supprimé)
   SY->>AU: revokeRefreshTokens — la session ne se renouvelle plus
   R->>R: user.isRevoked → /login?revoked=true
@@ -1605,7 +1608,10 @@ sequenceDiagram
         une heure au plus, et ne passe plus pendant ce temps. <code>requireAdmin</code> et
         <code>requireEditor</code> lisent aussi le document. Quand un compte perd l'accès —
         révoqué, rôle sorti de reader/editor/admin, document supprimé —,
-        <code>syncUserClaims</code> appelle <code>revokeRefreshTokens</code>.
+        <code>syncUserClaims</code> appelle <code>revokeRefreshTokens</code>. Le même
+        déclencheur tient le profil public <code>user_profiles/{uid}</code> (v0.23.14) : il le
+        relit à chaque écriture du compte et ne le réécrit que si le nom ou la couverture
+        diffèrent. C'est ce profil, et non <code>users/{uid}</code>, que les autres membres lisent.
         <span class="expect">
           <b>Un compte <code>pending</code> est envoyé en salle d'attente, pas au login.</b> Il est
           authentifié : le renvoyer vers <code>/login</code> le ferait rebondir vers l'accueil, où
@@ -1789,7 +1795,7 @@ sequenceDiagram
   participant G as GroupsScreen
   participant R as GroupRepository
   participant FS as groups/{groupId}
-  participant US as users
+  participant US as user_profiles
   participant BL as Bibliothèque
 
   O->>G: Créer un groupe — nom libre
@@ -1797,9 +1803,10 @@ sequenceDiagram
   R->>FS: owner_id, members[owner]
   Note over R,FS: un reader peut créer un groupe et en être propriétaire
 
-  O->>G: chercher un membre par nom ou adresse
-  G->>US: searchUsers — lecture plafonnée à 200 comptes
-  US-->>G: candidats
+  O->>G: chercher un membre par nom
+  G->>US: searchUsers — lecture plafonnée à 200 profils publics
+  US-->>G: candidats — nom seul, ni adresse ni rôle
+  Note over G,US: users/{uid} ne se lit que par son titulaire et un admin (v0.23.14)
   O->>R: addMember(groupId, uid)
   R->>FS: members += uid
   FS-->>BL: le membre apparaît aussitôt dans les sections

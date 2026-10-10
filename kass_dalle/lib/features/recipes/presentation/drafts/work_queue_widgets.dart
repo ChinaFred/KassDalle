@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/web_download.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../admin/presentation/admin_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_trail_row.dart';
@@ -94,15 +95,29 @@ class WorkQueueAdminUidFilter extends ConsumerWidget {
   }
 }
 
+/// Le compte d'une entrée du filtre administrateur.
+///
+/// Le filtre n'est montré qu'à un administrateur, qui lit `users/{uid}` : il
+/// affiche le nom du compte et son adresse, pour que deux comptes sans profil
+/// public (tous deux « Membre ») ou de même prénom restent distincts. Un
+/// compte absent de la liste (supprimé) se rabat sur le profil public.
 class _UserNameText extends ConsumerWidget {
   final String uid;
   const _UserNameText({required this.uid});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name =
-        ref.watch(userByUidProvider(uid)).value?.displayedName ??
-        uid.substring(0, 8);
+    final accounts = ref.watch(allUsersProvider).value;
+    final account = accounts?.where((u) => u.uid == uid).firstOrNull;
+    if (account != null) {
+      final email = account.email.trim();
+      return Text(
+        email.isEmpty
+            ? account.displayedName
+            : '${account.displayedName} ($email)',
+      );
+    }
+    final name = ref.watch(memberNameProvider(uid)) ?? '…';
     return Text(name);
   }
 }
@@ -135,7 +150,7 @@ class WorkQueueSectionHeader extends ConsumerWidget {
     final theme = Theme.of(context);
     final name = ownerUid == '__me'
         ? 'Mes éléments'
-        : ref.watch(userByUidProvider(ownerUid)).value?.displayedName ?? '…';
+        : ref.watch(memberNameProvider(ownerUid)) ?? '…';
 
     return InkWell(
       onTap: onToggle,

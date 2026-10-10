@@ -1,29 +1,25 @@
 /**
- * Confidentialité des livres — pose `is_private` sur les livres qui ne le
- * portent pas.
+ * Profils publics — sème `user_profiles/{uid}` pour les comptes existants.
  *
- * Depuis la v0.23.8, les règles Firestore ne laissent lire le livre d'un autre
- * que s'il porte `is_private == false` explicitement : un livre sans le champ
- * n'est plus visible que de son créateur et des administrateurs. Le client et
- * le serveur posent le champ à chaque création ; la reprise « Reprendre la
- * confidentialité » l'avait posé sur les RECETTES antérieures, pas sur les
- * livres. Ce backfill comble l'écart.
+ * Depuis la v0.23.14, `users/{uid}` ne se lit plus que par son titulaire et
+ * par un administrateur, et les écrans qui affichent le nom d'un autre membre
+ * lisent `user_profiles/{uid}`. Le déclencheur `syncUserClaims` tient ce
+ * profil à jour à chaque écriture sur le compte ; un compte que personne n'a
+ * touché depuis le déploiement n'en a pas encore, et son nom s'affiche
+ * « Membre ». Ce backfill parcourt `users/` et crée, met à jour ou supprime
+ * chaque profil par `syncPublicProfile`, la même fonction que le déclencheur.
  *
- * Valeur posée : `true` pour « Mes Recettes Secrètes » (tag `__secretes`),
- * `false` sinon — la lecture que le client faisait déjà d'un champ absent
- * (`is_private ?? false`). Un livre qui porte déjà le champ n'est pas touché.
- * Passer de « absent » à `false` ne réveille pas la propagation de
- * `onBookWritten`, qui lit un champ absent comme `false`.
- *
- * Aucun appel de modèle. Réentrant, borné par le délai, par un nombre de
- * livres par appel et par trois échecs de suite ; reprend au curseur.
+ * Aucun appel de modèle. Réentrant : un profil déjà à jour n'est pas réécrit.
+ * Borné par le délai, par un nombre de comptes par appel et par trois échecs
+ * de suite ; reprend au curseur.
  */
 
 import { onCall } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { COLL_BOOKS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
+import { COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
+import { syncPublicProfile } from "../triggers/userPublicProfile";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin } from "./_auth";
 
@@ -32,32 +28,34 @@ const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.firebaseapp.com",
 ];
 
-/** Où l'on retient le dernier livre examiné, et le compte rendu du passage. */
-export const BOOK_PRIVACY_CHECKPOINT_DOC_ID = "book_privacy_backfill_checkpoint";
+/** Où l'on retient le dernier compte examiné, et le compte rendu du passage. */
+export const USER_PROFILES_CHECKPOINT_DOC_ID = "user_profiles_backfill_checkpoint";
 
-const FEATURE = "book_privacy_backfill";
+const FEATURE = "user_profiles_backfill";
 
-const DEFAULT_MAX_BOOKS = 2000;
+const DEFAULT_MAX_USERS = 2000;
 const PAGE_SIZE = 300;
 /** Marge gardée sur le délai de la fonction, pour écrire le curseur avant la fin. */
 const DEADLINE_MARGIN_MS = 45_000;
-/** Trois échecs de suite : une panne, pas trois livres difficiles. */
+/** Trois échecs de suite : une panne, pas trois comptes difficiles. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-interface BackfillBookPrivacyRequest {
+interface BackfillUserProfilesRequest {
   maxMinutes?: number;
   maxDocs?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
 }
 
-export interface BackfillBookPrivacyResponse {
+export interface BackfillUserProfilesResponse {
   examines: number;
-  /** `is_private: false` posé. */
-  partages: number;
-  /** `is_private: true` posé (livre « Mes Recettes Secrètes »). */
-  prives: number;
-  /** Le champ existait déjà : rien d'écrit. */
+  /** Profil créé (compte approuvé sans profil). */
+  crees: number;
+  /** Profil réécrit (nom ou couverture différents). */
+  misAJour: number;
+  /** Profil retiré (compte en attente qui en portait un). */
+  supprimes: number;
+  /** Profil déjà conforme, ou compte en attente sans profil : rien d'écrit. */
   dejaAJour: number;
   echoues: number;
   stoppedByDeadline: boolean;
@@ -66,17 +64,7 @@ export interface BackfillBookPrivacyResponse {
   completed: boolean;
 }
 
-/**
- * La valeur à poser sur un livre, ou `null` s'il porte déjà un booléen.
- * Pure et exportée pour être testée.
- */
-export function bookPrivacyToSet(data: Record<string, unknown>): boolean | null {
-  if (typeof data.is_private === "boolean") return null;
-  const tags = Array.isArray(data.tags) ? data.tags : [];
-  return tags.includes("__secretes");
-}
-
-export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
+export const backfillUserProfilesFn = onCall<BackfillUserProfilesRequest>(
   {
     region: REGION,
     timeoutSeconds: 540,
@@ -84,7 +72,7 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillBookPrivacyResponse> => {
+  async (req): Promise<BackfillUserProfilesResponse> => {
     const ctx = await requireAdmin(req, FEATURE);
     const db = getFirestore();
 
@@ -92,23 +80,24 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
     const maxMinutes = Number.isFinite(maxMinutesRaw)
       ? Math.max(1, Math.min(8.5, maxMinutesRaw))
       : 8;
-    const maxDocsRaw = Number(req.data?.maxDocs ?? DEFAULT_MAX_BOOKS);
+    const maxDocsRaw = Number(req.data?.maxDocs ?? DEFAULT_MAX_USERS);
     const maxDocs = Number.isFinite(maxDocsRaw)
       ? Math.max(1, Math.min(10000, Math.trunc(maxDocsRaw)))
-      : DEFAULT_MAX_BOOKS;
+      : DEFAULT_MAX_USERS;
     const deadline = Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS;
 
     let cursor = await getBackfillCursor({
       db,
-      docId: BOOK_PRIVACY_CHECKPOINT_DOC_ID,
+      docId: USER_PROFILES_CHECKPOINT_DOC_ID,
       resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
       resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
     });
 
-    const response: BackfillBookPrivacyResponse = {
+    const response: BackfillUserProfilesResponse = {
       examines: 0,
-      partages: 0,
-      prives: 0,
+      crees: 0,
+      misAJour: 0,
+      supprimes: 0,
       dejaAJour: 0,
       echoues: 0,
       stoppedByDeadline: false,
@@ -119,7 +108,7 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
     let consecutiveFailures = 0;
 
     pages: for (;;) {
-      let query = db.collection(COLL_BOOKS).orderBy("__name__").limit(PAGE_SIZE);
+      let query = db.collection(COLL_USERS).orderBy("__name__").limit(PAGE_SIZE);
       if (cursor) query = query.startAfter(cursor);
       const page = await query.get();
       if (page.empty) {
@@ -142,28 +131,24 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
         }
 
         response.examines += 1;
-        const value = bookPrivacyToSet(doc.data() as Record<string, unknown>);
-        if (value === null) {
-          response.dejaAJour += 1;
-          cursor = doc.id;
-          continue;
-        }
         try {
-          await doc.ref.update({ is_private: value });
-          if (value) response.prives += 1;
-          else response.partages += 1;
+          const outcome = await syncPublicProfile(doc.id, doc.data() as Record<string, unknown>);
+          if (outcome === "created") response.crees += 1;
+          else if (outcome === "updated") response.misAJour += 1;
+          else if (outcome === "deleted") response.supprimes += 1;
+          else response.dejaAJour += 1;
           consecutiveFailures = 0;
         } catch (e) {
           response.echoues += 1;
           consecutiveFailures += 1;
           await logError({
-            message: "Confidentialité des livres — échec sur un livre",
+            message: "Profils publics — échec sur un compte",
             correlationId: ctx.correlationId,
             userId: ctx.userId,
             moduleType: "DESIGN",
             feature: FEATURE,
             errorDescription: e instanceof Error ? e.message : String(e),
-            extra: { bookId: doc.id, consecutiveFailures },
+            extra: { targetUid: doc.id, consecutiveFailures },
           });
         }
         cursor = doc.id;
@@ -177,7 +162,7 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
 
     await setBackfillCursor({
       db,
-      docId: BOOK_PRIVACY_CHECKPOINT_DOC_ID,
+      docId: USER_PROFILES_CHECKPOINT_DOC_ID,
       lastDocId: response.completed ? null : cursor,
       operation: FEATURE,
       adminUid: ctx.userId,
@@ -185,7 +170,7 @@ export const backfillBookPrivacyFn = onCall<BackfillBookPrivacyRequest>(
     });
 
     await logInfo({
-      message: "Confidentialité des livres — reprise",
+      message: "Profils publics — reprise",
       correlationId: ctx.correlationId,
       userId: ctx.userId,
       moduleType: "DESIGN",

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/context_extensions.dart';
 import '../domain/app_user.dart';
+import '../domain/user_profile.dart';
 import 'auth_providers.dart';
 
 /// Demande le nom préféré de [user] et l'enregistre.
@@ -19,7 +20,11 @@ Future<void> showPreferredNameDialog(
   WidgetRef ref,
   AppUser user,
 ) async {
-  final controller = TextEditingController(text: user.preferredName ?? '');
+  // Un nom enregistré avant la borne de 60 caractères se pré-remplit coupé :
+  // les règles refuseraient sinon de l'enregistrer tel quel.
+  final controller = TextEditingController(
+    text: UserProfile.truncateName(user.preferredName ?? ''),
+  );
   final fallback = AppUser.defaultPreferredName(user.displayName, user.email);
 
   final confirmed = await showDialog<bool>(
@@ -41,6 +46,7 @@ Future<void> showPreferredNameDialog(
             TextField(
               controller: controller,
               autofocus: true,
+              maxLength: UserProfile.maxNameLength,
               textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(
                 labelText: 'Nom préféré',
@@ -74,7 +80,7 @@ Future<void> showPreferredNameDialog(
     // Le profil des autres membres est lu une fois et mis en cache : sans
     // cette invalidation, les en-têtes de bibliothèque garderaient l'ancien
     // nom jusqu'au prochain démarrage.
-    ref.invalidate(userByUidProvider(user.uid));
+    ref.invalidate(userProfileProvider(user.uid));
     if (context.mounted) {
       context.showSuccessSnackBar('Nom préféré enregistré.');
     }

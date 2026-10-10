@@ -1,3 +1,5 @@
+import 'user_profile.dart';
+
 /// Les rôles d'un compte, du plus large au plus étroit.
 ///
 /// [pending] n'ouvre rien : c'est l'état d'un compte qui vient d'être créé et
@@ -94,7 +96,7 @@ class AppUser {
         .where((w) => w.isNotEmpty);
     if (words.isNotEmpty) return words.first;
     final local = email.split('@').first.trim();
-    return local.isEmpty ? 'Utilisateur' : local;
+    return local.isEmpty ? UserProfile.fallbackName : local;
   }
 
   factory AppUser.fromFirestore(Map<String, dynamic> data) {

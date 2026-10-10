@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/domain/app_user.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/family_group.dart';
 import 'group_providers.dart';
@@ -261,8 +261,12 @@ class _ManageMembersSheet extends ConsumerStatefulWidget {
 
 class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
   final TextEditingController _searchController = TextEditingController();
-  List<AppUser> _searchResults = [];
+  List<UserProfile> _searchResults = [];
   bool _searching = false;
+
+  /// La saisie dont [_searchResults] est la réponse. `null` tant qu'aucune
+  /// recherche n'a abouti : l'état vide ne s'affiche qu'après une réponse.
+  String? _searchedQuery;
 
   @override
   void dispose() {
@@ -272,42 +276,78 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
 
   /// Recherche brute : les membres déjà présents sont écartés à l'affichage,
   /// contre la liste vivante du groupe et non contre un instantané figé.
+  ///
+  /// Une réponse qui arrive après une frappe plus récente est écartée : la
+  /// liste et l'état vide correspondent toujours à la saisie affichée.
   Future<void> _search(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() => _searchResults = []);
+    final q = query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchedQuery = null;
+        _searching = false;
+      });
       return;
     }
     setState(() => _searching = true);
     try {
-      final results = await ref
-          .read(groupRepositoryProvider)
-          .searchUsers(query.trim());
-      if (!mounted) return;
+      final results = await ref.read(groupRepositoryProvider).searchUsers(q);
+      if (!mounted || _searchController.text.trim() != q) return;
       setState(() {
         _searchResults = results;
+        _searchedQuery = q;
         _searching = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || _searchController.text.trim() != q) return;
       setState(() => _searching = false);
       context.showErrorSnackBar('Recherche impossible : $e');
     }
   }
 
-  Future<void> _addMember(FamilyGroup group, AppUser user) async {
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchResults = [];
+      _searchedQuery = null;
+      _searching = false;
+    });
+  }
+
+  Future<void> _addMember(FamilyGroup group, UserProfile user) async {
     try {
       await ref.read(groupRepositoryProvider).addMember(group.id, user.uid);
       if (!mounted) return;
-      _searchController.clear();
-      setState(() => _searchResults = []);
-      context.showSuccessSnackBar('${user.displayName} ajouté(e) au groupe');
+      _clearSearch();
+      context.showSuccessSnackBar('${user.displayedName} ajouté(e) au groupe');
     } catch (e) {
       if (!mounted) return;
       context.showErrorSnackBar('Ajout impossible : $e');
     }
   }
 
-  Future<void> _removeMember(FamilyGroup group, String uid) async {
+  /// Retire [uid] du groupe, après confirmation : le geste est à un appui
+  /// du bouton voisin, et le membre perd aussitôt l'accès aux livres
+  /// partagés par le groupe.
+  Future<void> _removeMember(FamilyGroup group, String uid, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Retirer du groupe'),
+        content: Text('Retirer $name du groupe « ${group.name} » ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Retirer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await ref.read(groupRepositoryProvider).removeMember(group.id, uid);
     } catch (e) {
@@ -326,6 +366,9 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     final candidates = _searchResults
         .where((u) => !group.memberIds.contains(u.uid))
         .toList();
+    final typed = _searchController.text.trim();
+    final searchDone =
+        !_searching && typed.isNotEmpty && _searchedQuery == typed;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.65,
@@ -356,7 +399,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SearchBar(
                     controller: _searchController,
-                    hintText: 'Rechercher un utilisateur à inviter…',
+                    hintText: 'Rechercher un membre par son nom…',
                     leading: _searching
                         ? const SizedBox(
                             width: 18,
@@ -369,10 +412,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                         IconButton(
                           icon: const Icon(Icons.clear),
                           tooltip: 'Effacer la recherche',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchResults = []);
-                          },
+                          onPressed: _clearSearch,
                         ),
                     ],
                     onChanged: _search,
@@ -394,12 +434,13 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                       itemCount: candidates.length,
                       itemBuilder: (context, i) {
                         final user = candidates[i];
+                        final name = user.displayedName;
                         return ListTile(
                           leading: CircleAvatar(
-                            child: Text(user.displayName[0].toUpperCase()),
+                            child: Text(name[0].toUpperCase()),
                           ),
-                          title: Text(user.displayName),
-                          subtitle: Text(user.email),
+                          title: Text(name),
+                          subtitle: _fullNameSubtitle(user),
                           trailing: IconButton(
                             icon: const Icon(Icons.person_add_outlined),
                             tooltip: 'Ajouter au groupe',
@@ -410,6 +451,19 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     ),
                   ),
                 ],
+                if (searchDone && candidates.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      _searchResults.isEmpty
+                          ? 'Aucun membre trouvé pour « $typed ». La recherche '
+                                'se fait par nom. Un compte en attente de '
+                                'validation n\'apparaît qu\'une fois validé.'
+                          : 'Les membres trouvés pour « $typed » sont déjà '
+                                'dans le groupe.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 const SizedBox(height: 8),
               ],
               const Divider(height: 1),
@@ -433,7 +487,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                       uid: uid,
                       isOwner: group.isOwner(uid),
                       canRemove: isOwner && uid != widget.myUid,
-                      onRemove: () => _removeMember(group, uid),
+                      onRemove: (name) => _removeMember(group, uid, name),
                     );
                   },
                 ),
@@ -446,11 +500,22 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
   }
 }
 
+/// Sous-titre d'un membre : son nom Google complet, quand il diffère du nom
+/// affiché. Le même dans la recherche et dans la liste des membres.
+Widget? _fullNameSubtitle(UserProfile? profile) {
+  if (profile == null) return null;
+  final full = profile.displayName.trim();
+  if (full.isEmpty || full == profile.displayedName) return null;
+  return Text(full);
+}
+
 class _MemberTile extends ConsumerWidget {
   final String uid;
   final bool isOwner;
   final bool canRemove;
-  final VoidCallback onRemove;
+
+  /// Reçoit le nom affiché, que la boîte de confirmation reprend.
+  final ValueChanged<String> onRemove;
 
   const _MemberTile({
     required this.uid,
@@ -461,17 +526,15 @@ class _MemberTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(userByUidProvider(uid));
-    final user = userAsync.value;
-    final name = user?.displayedName ?? '…';
-    final email = user?.email ?? '';
+    final name = ref.watch(memberNameProvider(uid)) ?? '…';
+    final profile = ref.watch(userProfileProvider(uid)).value;
 
     return ListTile(
       leading: CircleAvatar(
         child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
       ),
       title: Text(name),
-      subtitle: Text(email),
+      subtitle: _fullNameSubtitle(profile),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -486,7 +549,7 @@ class _MemberTile extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.person_remove_outlined),
               tooltip: 'Retirer du groupe',
-              onPressed: onRemove,
+              onPressed: () => onRemove(name),
             ),
         ],
       ),

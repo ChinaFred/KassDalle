@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/book.dart';
 import '../domain/book_order.dart';
@@ -345,10 +346,13 @@ class _MemberSectionHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.value?.displayedName ?? '…';
+    final name = ref.watch(memberNameProvider(ownerUid));
     return _SectionHeader(
-      title: 'Livres de $name',
+      title: switch (name) {
+        null => 'Livres de …',
+        UserProfile.fallbackName => 'Livres d\'un membre',
+        _ => 'Livres de $name',
+      },
       count: count,
       expanded: expanded,
       onToggle: onToggle,

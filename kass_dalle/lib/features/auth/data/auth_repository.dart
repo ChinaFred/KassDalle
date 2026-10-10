@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../domain/app_user.dart';
+import '../domain/user_profile.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
   'DEV_AUTO_LOGIN',
@@ -123,12 +124,6 @@ class AuthRepository {
     ]);
   }
 
-  Future<AppUser?> getAppUser(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    if (!doc.exists) return null;
-    return AppUser.fromFirestore(doc.data()!);
-  }
-
   Stream<AppUser?> watchAppUser(String uid) {
     return _firestore
         .collection('users')
@@ -164,7 +159,10 @@ class AuthRepository {
           updates['photo_url'] = firebaseUser.photoURL;
         }
         if (firebaseUser.displayName != null) {
-          updates['display_name'] = firebaseUser.displayName;
+          // Les règles refusent un nom de plus de 60 caractères.
+          updates['display_name'] = UserProfile.truncateName(
+            firebaseUser.displayName!,
+          );
         }
         transaction.update(userRef, updates);
         final data = userSnap.data()!..addAll(updates);
@@ -180,7 +178,10 @@ class AuthRepository {
       final newUser = AppUser(
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
-        displayName: firebaseUser.displayName ?? 'Utilisateur',
+        // Sans nom Google, un nom vide : l'affichage se rabat sur l'adresse
+        // pour le titulaire et sur « Membre » pour les autres, au lieu de
+        // recopier un faux nom « Utilisateur » dans le profil public.
+        displayName: UserProfile.truncateName(firebaseUser.displayName ?? ''),
         photoUrl: firebaseUser.photoURL,
         role: UserRole.pending,
         createdAt: now,
@@ -201,7 +202,7 @@ class AuthRepository {
   /// Un administrateur peut écrire pour un autre ; chacun peut écrire pour
   /// soi. Les règles Firestore posent les deux, et refusent tout le reste.
   Future<void> updatePreferredName(String uid, String? name) async {
-    final trimmed = name?.trim() ?? '';
+    final trimmed = UserProfile.truncateName(name?.trim() ?? '').trim();
     try {
       await _firestore.collection('users').doc(uid).update({
         'preferred_name': trimmed.isEmpty ? null : trimmed,

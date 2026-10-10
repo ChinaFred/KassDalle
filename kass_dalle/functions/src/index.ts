@@ -115,7 +115,7 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
-export { backfillBookPrivacyFn } from "./callable/bookPrivacyBackfillCallable";
+export { backfillUserProfilesFn } from "./callable/userProfilesBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

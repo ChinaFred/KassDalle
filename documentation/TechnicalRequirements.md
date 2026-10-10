@@ -187,6 +187,7 @@ firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
 │   └── preferences/{prefId}                       ← book_order, recipe_search_scope
+├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
 │   └── annotations/{annotationId}/
@@ -220,8 +221,8 @@ Créée automatiquement à la première connexion Google.
 |---|---|---|
 | `uid` | `String` | UID Google Firebase (= ID du document) |
 | `email` | `String` | Adresse email du compte Google |
-| `display_name` | `String` | Nom d'affichage Google |
-| `preferred_name` | `String?` | Nom sous lequel la famille voit cette personne et sa bibliothèque. Absent ou vide = le **prénom** du compte Google (premier mot de `display_name`). Écrit depuis **Profil et compte** par chacun pour soi, et depuis **Admin → Gestion des utilisateurs** par un administrateur pour n'importe qui. Lu par `AppUser.displayedName`, qui applique le repli. |
+| `display_name` | `String` | Nom d'affichage Google, coupé à 60 unités UTF-16 par le client (`UserProfile.truncateName` ; un emoji compte pour 2, comme `string.size()` dans les règles) ; `""` si le compte Google n'en a pas (avant la v0.23.14 : `"Utilisateur"`). Les règles refusent plus de 60 unités UTF-16 à la création et à la modification du champ |
+| `preferred_name` | `String?` | 60 unités UTF-16 au plus, un emoji comptant pour 2 (règles, champ de saisie et `AuthRepository.updatePreferredName`). Nom sous lequel la famille voit cette personne et sa bibliothèque. Absent ou vide = le **prénom** du compte Google (premier mot de `display_name`). Écrit depuis **Profil et compte** par chacun pour soi, et depuis **Admin → Gestion des utilisateurs** par un administrateur pour n'importe qui. Lu par `AppUser.displayedName`, qui applique le repli. |
 | `photo_url` | `String?` | URL de l'avatar Google |
 | `role` | `String` | Enum : `admin` \| `editor` \| `reader` \| `pending` |
 | `created_at` | `Timestamp` | Date de première connexion |
@@ -247,6 +248,52 @@ et non par le champ `email` du document, qu'un client a pu écrire. Il est *idem
 ne réécrit rien quand ils sont corrects — d'où l'absence de boucle. Les règles interdisent par
 ailleurs à tout autre administrateur de toucher au rôle, à la révocation ou à l'existence de ce
 document.
+
+**Lecture :** `users/{uid}` ne se lit que par son titulaire et par un administrateur
+(v0.23.14). Le nom d'un autre membre se lit dans `user_profiles/{uid}` (§3.1 bis).
+
+### 3.1 bis Collection `user_profiles` — le profil public
+
+La part d'un compte que les autres membres voient. Le document a pour identifiant l'`uid` du
+compte. Il est **écrit par le serveur seul** et lu par tout compte nommé (`isApproved()`).
+
+| Champ | Type | Description |
+|---|---|---|
+| `display_name` | `String` | Copie de `users/{uid}.display_name`, espaces de bord retirés, coupée à 60 unités UTF-16 (`truncateName`, `MAX_NAME_LENGTH`), sans couper un caractère en deux ; `""` si absent ou mal formé |
+| `preferred_name` | `String?` | Copie de `users/{uid}.preferred_name`, coupée à 60 unités UTF-16 ; `null` si absent ou vide |
+| `free_recipe_cover_url` | `String?` | Copie de `users/{uid}.free_recipe_cover_url` : la couverture de « Mes recettes libres », affichée dans le détail d'une recette libre de ce compte |
+| `updated_at` | `Timestamp` | Heure serveur de la dernière écriture |
+
+**Jamais recopiés :** `email`, `role`, `is_revoked`, `photo_url`, `created_at`, `last_seen_at`,
+`import_illustrations`. Aucun écran n'affiche la photo d'un autre membre : elle n'est pas
+recopiée.
+
+**Qui a un profil :** un compte de rôle `reader`, `editor` ou `admin`, révoqué ou non. Un compte
+révoqué garde son nom d'auteur sur ses recettes. Un compte `pending` (ou sans rôle) n'a pas de
+profil : il n'apparaît ni dans la recherche de membres d'un groupe, ni sous un nom. Un compte
+supprimé perd son profil.
+
+**Qui l'écrit :** `syncUserClaims`, déclencheur sur `users/{uid}`, à chaque écriture du compte,
+par `syncPublicProfile` (`triggers/userPublicProfile.ts`). Il lit le profil stocké, le compare
+aux champs publics attendus, et n'écrit que s'ils diffèrent : une connexion, qui ne change que
+`last_seen_at`, coûte une lecture et aucune écriture. La comparaison se fait contre le profil en
+base : un profil absent se recrée à la première écriture du compte. `backfillUserProfilesFn`
+(Admin › Backfills, §7.10) applique la même fonction à tous les comptes existants.
+
+**Lecture côté client :** `UserProfileRepository.getProfile` (`features/auth/data/`), exposé
+par `userProfileProvider(uid)` et `memberNameProvider(uid)` (`auth_providers.dart`). Un profil
+lu avec succès est gardé pour la session (`keepAlive`) ; une lecture en échec ne l'est pas. Le
+compte courant ne lit pas son profil : il se tire de son propre document (`appUserProvider`),
+en direct, et garde le repli sur la partie locale de son adresse s'il n'a pas de nom Google.
+
+**Un seul repli : « Membre »** (`UserProfile.fallbackName`), pour un profil absent ou illisible
+comme pour un compte sans nom. Le nom affiché suit `UserProfile.displayedName` : nom préféré,
+sinon premier mot de `display_name`, sinon « Membre » — la règle d'`AppUser.displayedName`,
+sans le repli sur l'adresse. Là où « Membre » ferait une phrase vide, l'écran la reformule ou se
+tait : « Livres d'un membre », « Recettes libres d'un membre », et pas de phrase d'origine
+(`libraryOriginProvider`) sur un livre partagé. Le filtre par compte de la file de travail,
+réservé à l'administrateur, lit `users/` (`allUsersProvider`) et affiche le nom et l'adresse,
+pour que deux comptes sans profil restent distincts.
 
 ---
 
@@ -1046,7 +1093,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
-| `book_privacy_backfill_checkpoint` | `backfillBookPrivacyFn` |
+| `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn` |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1273,18 +1320,39 @@ service cloud.firestore {
       function targetIsFounder() {
         return resource.data.get('email', '').lower() == founderEmail();
       }
+      // Un nom est absent, nul, ou une chaîne de 60 unités UTF-16 au plus
+      // (v0.23.14) : il est recopié dans le profil public.
+      function nameOk(field) {
+        return !(field in request.resource.data)
+               || request.resource.data[field] == null
+               || (request.resource.data[field] is string
+                   && request.resource.data[field].size() <= 60);
+      }
+      function namesBounded() {
+        return nameOk('display_name') && nameOk('preferred_name');
+      }
+      // À la mise à jour, seul un nom modifié est contrôlé.
+      function touchedNamesBounded() {
+        let keys = request.resource.data.diff(resource.data).affectedKeys();
+        return (!keys.hasAny(['display_name']) || nameOk('display_name'))
+               && (!keys.hasAny(['preferred_name']) || nameOk('preferred_name'));
+      }
 
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
+      // Titulaire ou administrateur (v0.23.14) : le nom d'un autre membre
+      // se lit dans `user_profiles/{uid}`.
+      allow read: if isOwner(uid) || isAdmin();
 
       // Le rôle et l'identité d'un compte neuf sont imposés, pas proposés.
       allow create: if isAuthenticated() && request.auth.uid == uid
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
-                      && request.resource.data.email == request.auth.token.email;
+                      && request.resource.data.email == request.auth.token.email
+                      && namesBounded();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer.
       allow update: if !touchesEmail()
+                      && touchedNamesBounded()
                       && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
                           || (isAuthenticated() && request.auth.uid == uid
                               && !touchesAuthority()));
@@ -1426,6 +1494,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
+| `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` et `backfillUserProfilesFn` |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire ; modification et suppression par l'auteur ou un admin, `user_id` et `recipe_id` figés |
@@ -1455,9 +1524,9 @@ par identifiants (`FieldPath.documentId whereIn`, planning) est évaluée docume
 une recette devenue privée fait refuser le lot, que `PlanningRepository.getRecipesByIds` relit
 alors recette par recette en écartant celles qui sont refusées. Un document sans `is_private`
 n'est lisible que par son créateur et l'administrateur. Toute écriture pose le champ depuis sa
-création. Pour le fonds antérieur : la reprise « Reprendre la confidentialité » l'a posé sur
-les recettes ; les livres ne l'ont qu'après `backfillBookPrivacyFn` (Admin › Backfills, à
-lancer une fois après la v0.23.8).
+création. Le fonds antérieur l'a reçu par deux reprises lancées en production puis retirées
+du code : « Reprendre la confidentialité » pour les recettes, `backfillBookPrivacyFn` pour les
+livres (v0.23.8, retirée en v0.23.14).
 
 **Une recette prend la confidentialité de son livre à l'écriture.** Une recette créée ou
 déplacée dans un livre privé avec `is_private: false` restait lisible par la famille jusqu'au
@@ -1720,10 +1789,16 @@ lit que par son créateur et l'administrateur ; chacun ne modifie que ses propre
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
 brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
 
-**Comptes au 2026-10-09 (v0.23.12)** : 297 tests, 296 actifs et 1 `todo`.
+**Comptes au 2026-10-10 (v0.23.14)** : 321 tests, 321 actifs, aucun `todo`.
 
-- Firestore : 229 tests, 228 actifs et 1 `todo`.
+- Firestore : 253 tests, 253 actifs, aucun `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
+
+La v0.23.14 rend bloquant le dernier `todo`, « un éditeur ne lit pas le document d'un autre »,
+et ajoute 13 tests : un éditeur ne liste pas `users`, un administrateur lit et liste `users` ;
+sur `user_profiles`, un lecteur et un éditeur lisent le profil d'un autre, un lecteur liste les
+profils, un compte en attente, un compte révoqué et un anonyme n'en lisent aucun, et personne
+n'écrit ni ne supprime un profil côté client, administrateur compris.
 
 La v0.23.12 rend bloquants 12 des 13 `todo` et ajoute 20 tests qui vérifient que le cas
 légitime reste accepté : renommer un livre système et lui ajouter un tag, changer les tags
@@ -1742,12 +1817,11 @@ administrateur et du fondateur, champ neutre d'un autre compte modifiable par un
 administrateur, réécriture à l'identique permise, compte ancien sans adresse toujours
 nommable.
 
-Le `todo` restant est la lecture de `users/{uid}` d'autrui par un éditeur. Il reste ouvert :
-la file de travail, la relecture d'un brouillon, le détail d'une recette (`userByUidProvider`)
-et la recherche de membres d'un groupe (`GroupRepository.searchUsers`) lisent ce document pour
-afficher un nom. Une règle Firestore ne filtre pas les champs d'une lecture : fermer la lecture
-casserait ces écrans tant que le nom n'est pas servi par un autre chemin (profil public
-dénormalisé ou callable).
+La lecture de `users/{uid}` d'autrui par un éditeur est fermée depuis la v0.23.14. Une règle
+Firestore ne filtre pas les champs d'une lecture : les écrans qui affichaient un nom — file de
+travail, relecture d'un brouillon, détail et liste des recettes, bibliothèque, membres d'un
+groupe — lisent désormais le profil public `user_profiles/{uid}` (§3.1 bis), et la recherche de
+membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, par nom seulement.
 
 ---
 
@@ -2582,7 +2656,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
-| `backfillBookPrivacyFn` | `admin` | pose `is_private` sur les livres qui ne le portent pas : `false`, ou `true` pour « Mes Recettes Secrètes » (tag `__secretes`). Un livre déjà renseigné n'est pas touché. Sans appel de modèle, 2 000 livres par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/book_privacy_backfill_checkpoint`. À lancer une fois après la v0.23.8 : les règles ne laissent lire le livre d'un autre que s'il porte `is_private == false` |
+| `backfillUserProfilesFn` | `admin` | crée, met à jour ou retire le profil public `user_profiles/{uid}` de chaque compte, d'après `users/{uid}`, par `syncPublicProfile` (la fonction du déclencheur `syncUserClaims`). Un profil déjà conforme n'est pas réécrit ; un compte en attente n'a pas de profil. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/user_profiles_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.14 : jusque-là, les noms des autres membres s'affichent « Membre » |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit

@@ -18,6 +18,72 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-10
+
+### v0.23.14 — fonctionnel
+
+#### Profils publics : le compte d'un membre ne se lit plus que par lui et par un administrateur
+
+**Ce que voit l'utilisateur.** Un lecteur voit désormais le nom des autres membres sur les
+recettes, les brouillons et les sections de la bibliothèque. La recherche de membres d'un groupe
+se fait par nom seulement (« Rechercher un membre par son nom… ») : la recherche par adresse
+e-mail et l'adresse affichée sous chaque membre disparaissent. Une recherche sans résultat le dit,
+et rappelle qu'un compte en attente n'apparaît qu'une fois validé. La liste des membres affiche,
+comme la recherche, le nom Google complet quand il diffère du nom affiché. « Retirer du groupe »
+demande confirmation, avec le nom du membre. Un nom préféré compte au plus 60 caractères.
+
+**Règle.** `users/{uid}` ne se lit plus que par son titulaire et par un administrateur. Un
+éditeur lisait le document de tous les comptes — adresse, rôle, révocation — pour afficher un
+prénom. Le dernier test `todo` des règles (« un éditeur ne lit pas le document d'un autre »)
+devient bloquant : 310 tests, aucun `todo`.
+
+**Nouvelle collection `user_profiles/{uid}`.** Elle porte `display_name`, `preferred_name`,
+`free_recipe_cover_url` et `updated_at`, jamais l'adresse ni le rôle. Elle se lit par tout
+compte nommé et ne s'écrit que côté serveur. Un compte en attente n'a pas de profil ; un compte
+révoqué garde le sien. Le déclencheur existant `syncUserClaims` la tient à jour à chaque
+écriture sur `users/{uid}`, sans second déclencheur : il relit le profil et ne le réécrit que
+s'il diffère.
+
+**Client.** Les écrans qui affichent le nom d'un autre membre lisent ce profil :
+`userByUidProvider` est remplacé par `userProfileProvider` et `memberNameProvider` (file de
+travail, relecture d'un brouillon, détail et liste des recettes, bibliothèque, membres d'un
+groupe). Le compte courant continue de lire son propre document. Un lecteur voit désormais ces
+noms ; il ne les voyait pas, faute de droit sur `users/`. La recherche de membres d'un groupe
+interroge `user_profiles`, **par nom seulement** : la recherche par adresse e-mail et l'adresse
+affichée sous chaque membre disparaissent. Admin › Gestion des utilisateurs garde la lecture
+complète.
+
+**Un seul nom de remplacement : « Membre ».** « Utilisateur » disparaît : un compte sans nom
+Google s'affiche « Membre » pour les autres, et sous la partie locale de son adresse pour
+lui-même. Un compte neuf sans nom Google enregistre un `display_name` vide au lieu de
+« Utilisateur ». Là où « Membre » ferait une phrase vide, l'écran écrit « Livres d'un membre »
+ou « Recettes libres d'un membre », et la phrase d'origine d'un livre partagé se tait. Le filtre
+par compte de la file de travail, réservé à l'administrateur, affiche le nom et l'adresse de
+chaque compte. Un profil lu avec succès est gardé pour la session.
+
+**Noms bornés à 60 caractères.** `display_name` et `preferred_name` sont recopiés dans un profil
+que toute la famille lit : les règles de `users/{uid}` refusent désormais plus de 60 caractères
+à la création et à la modification de ces champs (un document ancien au nom plus long reste
+modifiable tant qu'on ne touche pas au nom). Le client coupe le nom Google à 60 caractères avant
+d'écrire, le champ « Nom préféré » est limité à 60, et le serveur coupe aussi à la recopie
+(`publicProfileFrom`). Onze tests de règles de plus : 321 tests, aucun `todo`. La limite se compte en unités UTF-16, comme `string.size()` dans les règles : un emoji y vaut 2 ; le client et le serveur coupent de la même façon, sans couper un caractère en deux.
+
+**Code mort retiré.** `isAuthenticatedProvider`, `draftBooksCountProvider`, `libresBookProvider`
+et `secretesBookProvider` n'avaient plus aucun appelant.
+
+**À faire juste après le déploiement : Admin › Backfills › « Créer les profils publics »**
+(`backfillUserProfilesFn`). Sans appel d'IA, 2 000 comptes par passage : un seul passage
+suffit. Tant qu'il n'a pas tourné, le nom d'un membre dont le compte n'a pas été écrit depuis le
+déploiement s'affiche « Membre ». Une connexion Google, un nom préféré ou une couverture changés
+recréent aussi le profil du compte concerné, mais une session reste ouverte des semaines sans
+nouvelle connexion : le backfill reste nécessaire.
+
+**backfillBookPrivacyFn retiré : lancé en production, son travail est fait.** La callable, son
+test, la méthode `backfillBookPrivacy` de `GcpBillingRepository` et le bouton « Reprendre la
+confidentialité des livres » d'Admin › Backfills disparaissent. Le libellé de journal
+`book_privacy_backfill` reste, pour lire les anciens journaux. Le document
+`app_config/book_privacy_backfill_checkpoint` reste en base ; plus rien ne l'écrit ni ne le lit.
+
 ## 2026-10-09
 
 ### v0.23.13 — fonctionnel

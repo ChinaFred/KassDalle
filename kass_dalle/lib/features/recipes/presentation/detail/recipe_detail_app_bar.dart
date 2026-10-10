@@ -92,7 +92,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final coverUrl = (bookId != null && bookId.isNotEmpty)
         ? ref.watch(bookByIdProvider(bookId)).value?.urlCouverture ?? ''
         : '';
-    final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
+    final ownerAsync = ref.watch(userProfileProvider(recipe.createdBy));
     final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations
