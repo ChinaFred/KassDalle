@@ -24,6 +24,7 @@ import {
   normalizeRoleKey,
   parseMealContains,
   parseMealRole,
+  hasBothMainIngredients,
   mainIngredientsPatch,
   parseMainProtein,
   parseMainProteinStarch,
@@ -341,5 +342,21 @@ describe("fixture partagée avec le client", () => {
     assert.deepEqual([...MAIN_PROTEINS], fixture.main_proteins);
     assert.deepEqual([...MAIN_STARCHES], fixture.main_starches);
     assert.deepEqual([...ROLES_WITH_MAIN_INGREDIENTS], fixture.roles_with_main_ingredients);
+  });
+});
+
+describe("backfill : marqueur sans appel seulement si les deux champs sont posés", () => {
+  test("protéine et féculent posés : pas d'appel", () => {
+    assert.equal(hasBothMainIngredients({ main_protein: "boeuf", main_starch: "aucun" }), true);
+  });
+
+  test("protéine choisie à la main, féculent non renseigné : le modèle propose le féculent", () => {
+    assert.equal(hasBothMainIngredients({ main_protein: "boeuf" }), false);
+  });
+
+  test("féculent seul, ou valeurs vides ou d'un autre type : appel", () => {
+    assert.equal(hasBothMainIngredients({ main_starch: "riz" }), false);
+    assert.equal(hasBothMainIngredients({ main_protein: " ", main_starch: "riz" }), false);
+    assert.equal(hasBothMainIngredients({ main_protein: 3, main_starch: "riz" }), false);
   });
 });

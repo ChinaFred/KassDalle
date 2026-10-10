@@ -231,6 +231,18 @@ export function mainIngredientsPatch(
 }
 
 /**
+ * Vrai quand la recette porte déjà une protéine et un féculent : le backfill
+ * pose alors le marqueur sans appeler le modèle. Un seul des deux posé — une
+ * protéine choisie à la main, le féculent laissé à « Non renseigné » — ne
+ * suffit pas : le modèle est questionné, et `mainIngredientsPatch` n'écrit que
+ * le champ manquant.
+ */
+export function hasBothMainIngredients(tags: Record<string, unknown>): boolean {
+  const present = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+  return present(tags.main_protein) && present(tags.main_starch);
+}
+
+/**
  * Variantes d'écriture admises : accent, pluriel, ligature, espace au lieu du
  * tiret bas. Aucun synonyme de sens (« poulet », « veau ») : une valeur
  * voisine rangée par le code serait une valeur inventée.

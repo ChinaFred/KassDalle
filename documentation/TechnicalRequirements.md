@@ -805,9 +805,9 @@ documents déjà écrits, sans migration. Cas de test dans
 | `contains` | `List<String>` | Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`. Un plat à qui il manque l'un des deux derniers appelle un accompagnement (`needsSide`) |
 | `suggested_sides` | `List<String>` | Accompagnements classiques d'un plat, noms courts, quatre au plus ; vide pour les autres rôles. Le programme y choisit au moment du planning, jamais le modèle |
 | `roles_tagged_at` | `Timestamp?` | Quand le backfill a posé le rôle |
-| `main_protein` | `String?` | **Protéine principale** d'un plat ou d'un accompagnement : `boeuf` \| `porc` \| `volaille` \| `agneau` \| `poisson` \| `fruits_de_mer` \| `oeuf` \| `vegetarien` \| `legumineuses`. Rendue par le même appel que `meal_role` (`MEAL_ROLE_PROMPT`) — passe 2 de l'import, suggestion de tags, `onRecipeWritten`, backfill « Rôle des recettes » — ou par le backfill « Protéine et féculent des plats » pour les recettes classées avant v0.23.24. Une valeur hors liste est lue comme absente (`parseMainProtein`), jamais rangée dans une valeur voisine. Absente pour une entrée, un dessert ou un snack. Écrite seulement quand elle est connue. Lue par la présélection du planning (`proteinOf`) et affichée dans « Catégorisation » ; pas encore corrigeable dans le panneau de métadonnées |
-| `main_starch` | `String?` | **Féculent principal** : `pates` \| `riz` \| `pommes_de_terre` \| `semoule` \| `pain` \| `aucun`. Même origine, même règle de lecture (`parseMainStarch`), même affichage. Lu par la présélection pour alterner les féculents (`starchOf`) |
-| `main_ingredients_checked_at` | `Timestamp?` | **Marqueur d'examen** : le modèle a répondu sur la protéine et le féculent, même par une valeur hors liste (« veau ») qui laisse les champs vides. Posé par la passe 2 de l'import, `onRecipeWritten`, le backfill « Rôle des recettes », le backfill « Protéine et féculent des plats » (heure serveur) et « Suggérer les tags » (heure du client). Deux chaînes vides ou des clés absentes ne sont pas une réponse : pas de marqueur. Le backfill saute une recette marquée. `RecipeTags` le relit et le réécrit, pour qu'une carte `tags` réécrite en bloc ne l'efface pas ; « Non classé » le retire |
+| `main_protein` | `String?` | **Protéine principale** d'un plat ou d'un accompagnement : `boeuf` \| `porc` \| `volaille` \| `agneau` \| `poisson` \| `fruits_de_mer` \| `oeuf` \| `vegetarien` \| `legumineuses`. Rendue par le même appel que `meal_role` (`MEAL_ROLE_PROMPT`) — passe 2 de l'import, suggestion de tags, `onRecipeWritten`, backfill « Rôle des recettes » — ou par le backfill « Protéine et féculent des plats » pour les recettes classées avant v0.23.24. Une valeur hors liste est lue comme absente (`parseMainProtein`), jamais rangée dans une valeur voisine. Absente pour une entrée, un dessert ou un snack. Écrite seulement quand elle est connue. Lue par la présélection du planning (`proteinOf`) et affichée dans « Catégorisation ». Corrigeable à la main dans la liste « Protéine principale » du panneau de métadonnées (relecture d'un import, correction, création), visible pour un plat ou un accompagnement seulement ; voir « Correction à la main de la protéine et du féculent » ci-dessous |
+| `main_starch` | `String?` | **Féculent principal** : `pates` \| `riz` \| `pommes_de_terre` \| `semoule` \| `pain` \| `aucun`. Même origine, même règle de lecture (`parseMainStarch`), même affichage. Lu par la présélection pour alterner les féculents (`starchOf`). Corrigeable à la main dans la liste « Féculent principal », mêmes règles que `main_protein` |
+| `main_ingredients_checked_at` | `Timestamp?` | **Marqueur d'examen** : le modèle a répondu sur la protéine et le féculent, même par une valeur hors liste (« veau ») qui laisse les champs vides. Posé par la passe 2 de l'import, `onRecipeWritten`, le backfill « Rôle des recettes », le backfill « Protéine et féculent des plats » (heure serveur) et « Suggérer les tags » (heure du client). Deux chaînes vides ou des clés absentes ne sont pas une réponse : pas de marqueur. Le backfill saute une recette marquée. `RecipeTags` le relit et le réécrit, pour qu'une carte `tags` réécrite en bloc ne l'efface pas ; « Non classé » le retire. Posé aussi (heure du client) quand l'utilisateur renseigne à la main les deux champs ; retiré quand il remet l'un des deux à « Non renseigné », ou quand le rôle final est une entrée, un dessert ou un snack |
 
 **Le rôle survit aux réécritures de `tags`.** Côté client, `RecipeTags.toMap()` n'écrit
 les trois champs que si le rôle est connu, et `validateDraft` écrit `tags` champ par champ
@@ -818,6 +818,36 @@ le formulaire, qui ne connaît pas le rôle, ne l'efface pas. Le pipeline d'impo
 connus, une carte réécrite depuis un objet lu en base les garde, et « Non classé » les retire
 avec le rôle. Une valeur restée d'un ancien rôle (plat devenu dessert) n'est ni affichée ni
 envoyée au planning (`RecipeTags.carriesMainIngredients`).
+
+**Correction à la main de la protéine et du féculent.** Le panneau de métadonnées
+(`recipe_meta_panel.dart`) montre deux listes sous « Rôle dans un repas » : « Protéine
+principale » et « Féculent principal », avec « Non renseigné » en tête puis `kMainProteins` /
+`kMainStarches`. Elles n'apparaissent que si le rôle choisi dans le formulaire est un plat ou un
+accompagnement (`kRolesWithMainIngredients`). Une valeur hors liste lue en base reste affichée
+telle quelle. L'état vit dans `RecipeFormMixin` (`selectedMainProtein`, `selectedMainStarch`,
+`mainIngredientsCheckedAt`), initialisé depuis la recette quand son rôle porte ces champs ;
+« Suggérer les tags » remplit les deux listes quand le modèle répond. `buildTagsFromForm` écrit
+les valeurs du formulaire, `null` compris (`RecipeTags.withMainIngredients`) :
+
+- un choix à la main remplace la valeur de la base ; quand les deux champs sont renseignés, le
+  marqueur `main_ingredients_checked_at` prend l'heure du choix ;
+- « Non renseigné » retire le champ **et** le marqueur : le backfill « Protéine et féculent des
+  plats » reprend la recette, demande au modèle le champ manquant et ne remplace pas l'autre
+  (`mainIngredientsPatch`). Il ne pose le marqueur sans appel que si les deux champs sont
+  présents (`hasBothMainIngredients`) ;
+- un rôle final qui ne les porte pas (entrée, dessert, snack, non classé) retire les deux champs
+  et le marqueur. Changer de rôle puis revenir à plat dans la même session retrouve les valeurs
+  du formulaire.
+
+Écriture : `updateRecipe` et `createRecipe` écrivent la carte `tags` entière, donc un champ absent
+de l'objet disparaît. `validateDraft` écrit champ par champ et efface par `FieldValue.delete()`
+`tags.main_protein`, `tags.main_starch` et `tags.main_ingredients_checked_at` absents de l'objet
+quand le rôle final ne les porte pas, ou quand l'écran de relecture passe
+`mainIngredientsFromForm: true`. La validation en lot de la file de travail ne passe pas ce
+drapeau : un champ posé par le serveur depuis la lecture du brouillon reste. Aucun chemin
+serveur ne remplace une valeur posée à la main : l'import écrit une recette neuve,
+`onRecipeWritten` ne classe qu'une recette sans rôle, et les deux backfills passent par
+`mainIngredientsPatch`.
 
 **Le rôle se pose aussi à l'écriture.** Trois chemins créent une recette sans rôle : une
 création manuelle sans clic « Suggérer », une recette de l'Explorer IA (`generateRecipeFn` ne
@@ -3093,7 +3123,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
-| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` sans marqueur reçoit le marqueur seul, sans appel. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
+| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.

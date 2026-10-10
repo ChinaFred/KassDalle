@@ -32,6 +32,8 @@ class DraftReviewFormData {
   final List<String> selectedCuisines;
   final List<String> selectedDishTypes;
   final String? selectedMealRole;
+  final String? selectedMainProtein;
+  final String? selectedMainStarch;
   final bool suggestingTags;
   final List<RecipeIngredient> formIngredients;
 
@@ -40,6 +42,8 @@ class DraftReviewFormData {
   final void Function(List<String>) onCuisinesChanged;
   final void Function(List<String>) onDishTypesChanged;
   final void Function(String?) onMealRoleChanged;
+  final void Function(String?) onMainProteinChanged;
+  final void Function(String?) onMainStarchChanged;
   final VoidCallback? onSuggestTags;
   final void Function(List<RecipeIngredient>) onIngredientsChanged;
   final Future<String?> Function(Uint8List, String)? onUploadImage;
@@ -69,12 +73,16 @@ class DraftReviewFormData {
     required this.selectedCuisines,
     required this.selectedDishTypes,
     required this.selectedMealRole,
+    required this.selectedMainProtein,
+    required this.selectedMainStarch,
     required this.suggestingTags,
     required this.formIngredients,
     required this.onBookChanged,
     required this.onCuisinesChanged,
     required this.onDishTypesChanged,
     required this.onMealRoleChanged,
+    required this.onMainProteinChanged,
+    required this.onMainStarchChanged,
     this.onSuggestTags,
     required this.onIngredientsChanged,
     this.onUploadImage,
@@ -134,6 +142,10 @@ class DraftReviewWideBody extends StatelessWidget {
                 onDishTypesChanged: data.onDishTypesChanged,
                 mealRole: data.selectedMealRole,
                 onMealRoleChanged: data.onMealRoleChanged,
+                mainProtein: data.selectedMainProtein,
+                onMainProteinChanged: data.onMainProteinChanged,
+                mainStarch: data.selectedMainStarch,
+                onMainStarchChanged: data.onMainStarchChanged,
                 suggestingTags: data.suggestingTags,
                 onSuggestTags: data.onSuggestTags,
                 pageType: data.pageType,
@@ -199,6 +211,10 @@ class DraftReviewWideBody extends StatelessWidget {
               onDishTypesChanged: data.onDishTypesChanged,
               mealRole: data.selectedMealRole,
               onMealRoleChanged: data.onMealRoleChanged,
+              mainProtein: data.selectedMainProtein,
+              onMainProteinChanged: data.onMainProteinChanged,
+              mainStarch: data.selectedMainStarch,
+              onMainStarchChanged: data.onMainStarchChanged,
               suggestingTags: data.suggestingTags,
               onSuggestTags: data.onSuggestTags,
               pageType: data.pageType,
@@ -424,6 +440,10 @@ class DraftReviewNarrowBody extends StatelessWidget {
     onDishTypesChanged: data.onDishTypesChanged,
     mealRole: data.selectedMealRole,
     onMealRoleChanged: data.onMealRoleChanged,
+    mainProtein: data.selectedMainProtein,
+    onMainProteinChanged: data.onMainProteinChanged,
+    mainStarch: data.selectedMainStarch,
+    onMainStarchChanged: data.onMainStarchChanged,
     suggestingTags: data.suggestingTags,
     onSuggestTags: data.onSuggestTags,
     pageType: data.pageType,

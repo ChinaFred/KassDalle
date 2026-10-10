@@ -5,6 +5,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/cooklang_parser.dart'
     show extractIngredientsStructured;
+import '../../domain/meal_role.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
@@ -40,6 +41,19 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// l'ouverture, puis ce que l'utilisateur choisit dans la liste ou ce que
   /// « Suggérer les tags » a posé. `null` : non classé.
   String? selectedMealRole;
+
+  /// Protéine et féculent principaux tels que le formulaire les montre :
+  /// ceux de la base à l'ouverture (si le rôle de la base les porte), puis le
+  /// choix de l'utilisateur ou ce que « Suggérer les tags » a posé. `null` :
+  /// « Non renseigné », que le backfill reprendra.
+  String? selectedMainProtein;
+  String? selectedMainStarch;
+
+  /// Marqueur d'examen (`main_ingredients_checked_at`) que l'enregistrement
+  /// écrira. Celui de la base à l'ouverture ; l'heure du choix quand
+  /// l'utilisateur a renseigné les deux champs ; `null` dès que l'un des deux
+  /// est remis à « Non renseigné », pour que le backfill le propose.
+  DateTime? mainIngredientsCheckedAt;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -83,6 +97,14 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     selectedCuisines = List<String>.from(recipe.tags.cuisines);
     selectedDishTypes = List<String>.from(recipe.tags.dishTypes);
     selectedMealRole = recipe.tags.hasMealRole ? recipe.tags.mealRole : null;
+    // Une valeur restée d'un ancien rôle (une entrée qui était un plat) n'est
+    // pas reprise : elle ne vaut plus, et l'enregistrement la retire.
+    final carries = recipe.tags.carriesMainIngredients;
+    selectedMainProtein = carries ? recipe.tags.mainProtein : null;
+    selectedMainStarch = carries ? recipe.tags.mainStarch : null;
+    mainIngredientsCheckedAt = carries
+        ? recipe.tags.mainIngredientsCheckedAt
+        : null;
     formInitialized = true;
   }
 
@@ -120,6 +142,28 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void setDishTypes(List<String> v) => setState(() => selectedDishTypes = v);
 
   void setMealRole(String? v) => setState(() => selectedMealRole = v);
+
+  /// Choix à la main de la protéine principale ; `null` : « Non renseigné ».
+  void setMainProtein(String? v) => setState(() {
+    selectedMainProtein = v;
+    _markMainIngredientsChosenByHand();
+  });
+
+  /// Choix à la main du féculent principal ; `null` : « Non renseigné ».
+  void setMainStarch(String? v) => setState(() {
+    selectedMainStarch = v;
+    _markMainIngredientsChosenByHand();
+  });
+
+  /// Les deux champs renseignés : la recette est examinée, le backfill la
+  /// saute. Un seul renseigné : pas de marqueur, le backfill demande au
+  /// modèle celui qui manque et ne remplace pas l'autre.
+  void _markMainIngredientsChosenByHand() {
+    mainIngredientsCheckedAt =
+        selectedMainProtein != null && selectedMainStarch != null
+        ? DateTime.now()
+        : null;
+  }
 
   // ── CookLang meta sync ─────────────────────────────────────────────────────
 
@@ -181,13 +225,6 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       mealRole: selectedMealRole,
       contains: aiClassifiedInSession ? suggestedContains : null,
       suggestedSides: aiClassifiedInSession ? suggestedSidesByAI : null,
-      // Même règle : la protéine et le féculent de la dernière suggestion,
-      // sinon ceux de la base.
-      mainProtein: aiClassifiedInSession ? suggestedMainProtein : null,
-      mainStarch: aiClassifiedInSession ? suggestedMainStarch : null,
-      mainIngredientsCheckedAt: aiClassifiedInSession
-          ? suggestedMainIngredientsCheckedAt
-          : null,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),
@@ -195,7 +232,17 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       cookTime: int.tryParse(cookTimeCtrl.text.trim()),
       restTime: int.tryParse(restTimeCtrl.text.trim()),
     );
-    if (selectedMealRole != null) return tags;
+    if (selectedMealRole != null) {
+      // La protéine et le féculent sont ceux du formulaire, `null` compris :
+      // « Non renseigné » retire le champ. Un rôle qui ne les porte pas
+      // (entrée, dessert, snack) les retire tous les deux, avec le marqueur.
+      final carries = kRolesWithMainIngredients.contains(selectedMealRole);
+      return tags.withMainIngredients(
+        mainProtein: carries ? selectedMainProtein : null,
+        mainStarch: carries ? selectedMainStarch : null,
+        mainIngredientsCheckedAt: carries ? mainIngredientsCheckedAt : null,
+      );
+    }
     // « Non classé » : le rôle part, et ce qui en dépendait avec lui.
     // `copyWith` ne sait pas effacer ; on reconstruit sans les cinq champs
     // (rôle, apports, accompagnements, protéine, féculent),
@@ -232,12 +279,6 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   bool aiClassifiedInSession = false;
   List<String> suggestedContains = const [];
   List<String> suggestedSidesByAI = const [];
-  String? suggestedMainProtein;
-  String? suggestedMainStarch;
-
-  /// Heure de la suggestion quand le modèle a répondu sur la protéine et le
-  /// féculent : le backfill ne requestionnera pas la recette.
-  DateTime? suggestedMainIngredientsCheckedAt;
 
   /// Suggère des tags (cuisine, type de plat, rôle dans un repas) via l'IA
   /// pour la recette dont le titre est [titre].
@@ -258,11 +299,15 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           aiClassifiedInSession = true;
           suggestedContains = result.contains;
           suggestedSidesByAI = result.suggestedSides;
-          suggestedMainProtein = result.mainProtein;
-          suggestedMainStarch = result.mainStarch;
-          suggestedMainIngredientsCheckedAt = result.mainIngredientsChecked
-              ? DateTime.now()
-              : null;
+          // La suggestion remplit les deux listes. Une réponse vide ou hors
+          // liste laisse la valeur du formulaire, choisie à la main ou lue
+          // en base. Le marqueur suit le modèle quand il a répondu : le
+          // backfill ne requestionnera pas la recette.
+          selectedMainProtein = result.mainProtein ?? selectedMainProtein;
+          selectedMainStarch = result.mainStarch ?? selectedMainStarch;
+          if (result.mainIngredientsChecked) {
+            mainIngredientsCheckedAt = DateTime.now();
+          }
         });
       }
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');

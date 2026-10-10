@@ -37,6 +37,7 @@ import {
 } from "../config";
 import {
   MAIN_INGREDIENTS_CHECKED_FIELD,
+  hasBothMainIngredients,
   mainIngredientsPatch,
   parseMealRole,
   ROLES_WITH_MAIN_INGREDIENTS,
@@ -74,7 +75,10 @@ interface BackfillProteinResponse {
   examinees: number;
   /** Plats et accompagnements examinés par le modèle dans ce passage, et marqués. */
   traitees: number;
-  /** Déjà marqués, ou portant `main_protein` sans marqueur (marqueur posé, sans appel). */
+  /**
+   * Déjà marqués, ou portant `main_protein` et `main_starch` sans marqueur
+   * (marqueur posé, sans appel).
+   */
   dejaTraitees: number;
   /** Pages non-recettes, recettes sans rôle, entrées, desserts, snacks. */
   ignorees: number;
@@ -231,10 +235,11 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
           cursor = doc.id;
           continue;
         }
-        if (asString(tags.main_protein).length > 0) {
-          // Protéine posée sans marqueur (« Suggérer les tags » d'un ancien
-          // client, ou valeur saisie) : rien à demander au modèle. Le marqueur
-          // seul, pour que le reste à traiter tombe à zéro.
+        if (hasBothMainIngredients(tags)) {
+          // Protéine et féculent posés sans marqueur (« Suggérer les tags »
+          // d'un ancien client, ou valeurs saisies) : rien à demander au
+          // modèle. Le marqueur seul, pour que le reste à traiter tombe à
+          // zéro. Un seul des deux posé : le modèle propose l'autre.
           try {
             await doc.ref.update({
               [`tags.${MAIN_INGREDIENTS_CHECKED_FIELD}`]: FieldValue.serverTimestamp(),

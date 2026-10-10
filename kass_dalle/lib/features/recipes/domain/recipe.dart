@@ -291,7 +291,8 @@ class RecipeTags {
 
   /// Protéine principale d'un plat ou d'un accompagnement (`boeuf`,
   /// `volaille`, `vegetarien`…), posée par le modèle avec le rôle ou par le
-  /// backfill « Protéine et féculent des plats ». Lue par la présélection du
+  /// backfill « Protéine et féculent des plats », ou choisie par l'utilisateur
+  /// dans le formulaire. Lue par la présélection du
   /// planning. Valeurs décidées par `functions/src/gemini/mealRole.ts`,
   /// reprises dans `meal_role.dart` pour l'affichage.
   final String? mainProtein;
@@ -391,6 +392,34 @@ class RecipeTags {
   /// envoyée au planning.
   bool get carriesMainIngredients =>
       kRolesWithMainIngredients.contains(mealRole);
+
+  /// Copie dont la protéine, le féculent et le marqueur d'examen valent
+  /// exactement [mainProtein], [mainStarch] et [mainIngredientsCheckedAt],
+  /// `null` compris. [copyWith] ne sait pas effacer ; le formulaire en a
+  /// besoin quand l'utilisateur remet « Non renseigné » ou choisit un rôle
+  /// qui ne porte pas ces champs. Sans argument : les trois retirés.
+  RecipeTags withMainIngredients({
+    String? mainProtein,
+    String? mainStarch,
+    DateTime? mainIngredientsCheckedAt,
+  }) {
+    return RecipeTags(
+      themes: themes,
+      cuisines: cuisines,
+      occasions: occasions,
+      dishTypes: dishTypes,
+      difficulty: difficulty,
+      prepTime: prepTime,
+      cookTime: cookTime,
+      restTime: restTime,
+      mealRole: mealRole,
+      contains: contains,
+      suggestedSides: suggestedSides,
+      mainProtein: mainProtein,
+      mainStarch: mainStarch,
+      mainIngredientsCheckedAt: mainIngredientsCheckedAt,
+    );
+  }
 
   RecipeTags copyWith({
     List<String>? themes,
