@@ -106,9 +106,15 @@ class RecipePortionOverrideRef {
 /// Celui qui lit, pour construire des requêtes que les règles Firestore
 /// peuvent prouver (voir [RecipeViewer]). `null` tant que le compte n'est pas
 /// chargé.
+///
+/// La portée des groupes n'attend pas d'être chargée : tant qu'elle ne l'est
+/// pas, le lecteur ne voit que ses propres recettes, puis celles de ses
+/// groupes s'ajoutent.
 final recipeViewerProvider = Provider<RecipeViewer?>((ref) {
   final user = ref.watch(appUserProvider).value;
-  return user == null ? null : RecipeViewer.of(user);
+  if (user == null) return null;
+  final peers = ref.watch(groupMemberIdsProvider).value ?? const <String>{};
+  return RecipeViewer.of(user, peers: peers);
 });
 
 /// Brouillons de l'utilisateur connecté (draft + inReview).

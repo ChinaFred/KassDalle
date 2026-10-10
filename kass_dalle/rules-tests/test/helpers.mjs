@@ -70,6 +70,12 @@ export const PERSONAS = {
     claims: { role: "editor", revoked: false, email: "stale@example.com" },
     doc: { role: "editor", is_revoked: true, email: "stale@example.com" },
   },
+  // Compte nommé qui ne partage aucun groupe avec les autres personas.
+  stranger: {
+    uid: "stranger",
+    claims: { role: "editor", revoked: false, email: "stranger@example.com" },
+    doc: { role: "editor", is_revoked: false, email: "stranger@example.com" },
+  },
   // Compte approuvé dont le jeton ne porte pas encore le claim de rôle :
   // Firestore se replie sur le document.
   readerNoClaim: {

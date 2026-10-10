@@ -15,6 +15,18 @@ final myGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
+/// Groupes qui invitent l'utilisateur connecté et attendent sa réponse.
+final myInvitationsProvider = StreamProvider<List<FamilyGroup>>((ref) {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(groupRepositoryProvider).watchMyInvitations(uid);
+});
+
+/// Nombre d'invitations en attente, pour le badge du menu compte.
+final pendingInvitationsCountProvider = Provider<int>((ref) {
+  return ref.watch(myInvitationsProvider).value?.length ?? 0;
+});
+
 /// Un groupe précis, suivi en direct.
 ///
 /// La feuille de gestion des membres recevait le groupe par valeur, figé à
@@ -32,19 +44,21 @@ final groupByIdProvider = Provider.family<FamilyGroup?, String>((ref, id) {
   return null;
 });
 
+/// Portée des groupes de l'utilisateur connecté, lue sur `group_reach/{uid}`.
+final groupReachProvider = StreamProvider<Set<String>>((ref) {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(groupRepositoryProvider).watchReach(uid);
+});
+
 /// UIDs des autres membres des groupes (sans l'uid courant).
+///
+/// Lus sur la portée (`group_reach`) et non sur les groupes : ce sont les
+/// comptes que les règles Firestore laissent lire. Un membre que les groupes
+/// viennent de recevoir n'y figure qu'une fois le déclencheur passé, une
+/// seconde plus tard ; le nommer plus tôt ferait refuser toute la requête.
 final groupMemberIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
-  final myUid = ref.watch(appUserProvider).value?.uid;
-  final groups = ref.watch(myGroupsProvider);
-  return groups.when(
-    loading: () => const AsyncValue.loading(),
-    error: AsyncValue.error,
-    data: (groupList) {
-      final ids = groupList.expand((g) => g.memberIds).toSet();
-      if (myUid != null) ids.remove(myUid);
-      return AsyncValue.data(ids);
-    },
-  );
+  return ref.watch(groupReachProvider);
 });
 
 /// Noms des groupes familiaux qui me relient à [uid].

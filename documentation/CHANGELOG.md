@@ -30,6 +30,35 @@ sans entrée, un titre d'un autre type, deux titres du même type, et deux titre
 des commits distincts. Ces deux derniers cas signalent deux livraisons au même numéro. `relecteur-regles` reçoit un
 contrôle 14 : tout diff qui touche `check-version.sh`, `ci.yml` ou `deploy.yml` est signalé
 en tête de son rapport, et l'utilisateur décide avant la fusion.
+### v0.23.19 — fonctionnel
+
+#### Groupes familiaux : on ne lit que ce que partagent les membres de ses groupes, et on n'entre dans un groupe qu'en acceptant une invitation
+
+**Ce que voit l'utilisateur.** Le propriétaire d'un groupe n'ajoute plus un membre : il
+l'invite (« Inviter dans le groupe »), et peut annuler l'invitation tant qu'elle attend.
+L'invité voit « Invitations reçues » en tête de l'écran Groupes, et un badge sur son compte.
+Il accepte, après une confirmation qui dit que les membres verront ses livres et recettes non
+privés et lui les leurs, ou il refuse. « Quitter le groupe » marche : la règle Firestore le
+refusait. La bibliothèque, la recherche et le planning montrent les mêmes livres qu'avant.
+
+**Ce qui change pour la sécurité.** Le cloisonnement par groupe n'existait que côté client.
+`canReadRecipe` et la lecture des livres acceptaient toute recette ou tout livre non privé
+pour tout compte nommé : un compte hors de mes groupes lisait mes recettes, leurs notes et
+leurs annotations par une requête Firestore directe. Les règles vérifient maintenant que le
+créateur partage un groupe avec le lecteur (`sharesGroupWith`), par une lecture de
+`group_reach/{lecteur}`, une nouvelle collection écrite par le serveur seul. Le déclencheur
+`syncGroupReach` la recalcule à chaque écriture d'un groupe. Un membre sorti d'un groupe ne lit
+plus ses livres, et le groupe ne lit plus les siens. La relecture des brouillons partagés par un
+éditeur est limitée de la même façon, sur décision de l'utilisateur. L'administrateur lit tout.
+Les invitations ferment le contournement : ajouter un inconnu à son propre groupe suffisait
+pour lire ses livres.
+
+**Côté client.** Les requêtes sur les livres et recettes des autres portent `created_by in` les
+comptes de la portée (`RecipeViewer.groupPeers`), par lots de 30, de 15 pour les brouillons :
+sans ce filtre, Firestore refuse une requête que les règles ne peuvent plus prouver.
+
+**À lancer après le déploiement : Admin › Backfills › « Calculer la portée des groupes »**
+(`backfillGroupReachFn`), un passage. Jusque-là, personne ne voit les livres de sa famille.
 
 ### v0.23.18 — fonctionnel
 

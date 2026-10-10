@@ -40,6 +40,8 @@ const Map<String, String> kLogTreatmentLabels = {
   'backfill_recipe_privacy': 'Reprise de la confidentialité des recettes',
   'book_privacy_backfill': 'Reprise de la confidentialité des livres',
   'user_profiles_backfill': 'Reprise des profils publics',
+  'group_reach_backfill': 'Reprise de la portée des groupes',
+  'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'backfill_ai_pricing': 'Correction de la grille tarifaire',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',

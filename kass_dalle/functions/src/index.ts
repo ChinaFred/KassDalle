@@ -116,6 +116,7 @@ export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule"
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillUserProfilesFn } from "./callable/userProfilesBackfillCallable";
+export { backfillGroupReachFn } from "./callable/groupReachBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //
@@ -132,4 +133,5 @@ export { backfillUserProfilesFn } from "./callable/userProfilesBackfillCallable"
 export { onRecipeWritten } from "./triggers/recipeWritten";
 export { onBookWritten } from "./triggers/bookWritten";
 export { syncUserClaims } from "./triggers/userClaimsSync";
+export { syncGroupReach } from "./triggers/groupReach";
 export { enforceFounderRole } from "./triggers/founderRole";
