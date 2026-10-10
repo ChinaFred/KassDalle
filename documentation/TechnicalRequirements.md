@@ -3063,13 +3063,51 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
 précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Ses actions
 sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme celles de
-`deploy.yml`. Trois jobs, sur `ubuntu-latest` :
+`deploy.yml`. Quatre jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
+| Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
+
+#### Le contrôle de version
+
+Le PC pousse directement sur `master` pendant que des PR attendent leur fusion. Deux livraisons
+qui passent toutes deux de 0.23.14 à 0.23.15 écrivent la même ligne `version:` : Git les
+fusionne sans conflit, et le second déploiement conserve l'APK en ligne, dont la version n'est
+pas plus ancienne. `check-version.sh` détecte ce cas.
+
+Deux contrôles. Le premier porte sur tout l'historique de la tête : son nom de version (avant
+le `+`) ne doit avoir été introduit que par un seul commit ordinaire (`git log --full-history
+--no-merges -G'^version:'`). Il ne dépend pas de la plage poussée : après un push refusé pour
+doublon, un push suivant qui ne touche pas la version échoue encore, et une CI annulée par
+`cancel-in-progress` ne laisse pas passer son doublon. Un job rouge sur `master` se corrige
+par un commit qui passe à la version suivante.
+
+Le second compare la tête à la base, quand le changement touche la version : l'un de ses
+commits ordinaires modifie la ligne `version:` de `kass_dalle/pubspec.yaml` par rapport à son
+parent, ou la tête descend de la base sans en avoir la version (hausse faite dans un commit de
+fusion). Les commits de fusion ne comptent pas comme hausse : fusionner `master` dans une
+branche y apporte la version de `master` sans que la branche l'ait choisie. Le script échoue
+alors quand le nom de version n'est pas strictement supérieur à celui de la base. Dans tous
+les cas, `documentation/CHANGELOG.md` doit avoir une, et une seule, entrée `### v<nom>` pour la
+version de la tête : un rebase sur une hausse identique vide le changement de `pubspec.yaml`,
+et seul le `CHANGELOG.md` garde alors les deux entrées. `CLAUDE.md` demande d'intégrer
+`origin/master` par une fusion, jamais par un rebase. Une base
+introuvable (premier push, historique réécrit) saute ce second contrôle ; une tête
+introuvable fait échouer le script.
+
+Un script modifié par une PR s'exécute dans sa version modifiée, sur la PR puis sur le push de
+fusion : seule la relecture empêche d'affaiblir le contrôle. `.gitattributes` force les fins
+de ligne LF sur les `*.sh`, pour que le `bash` de Git for Windows les lise sur le PC.
+
+Le même script se lance à la main avant un push depuis le PC ou avant la fusion d'une PR :
+`bash .github/scripts/check-version.sh origin/master HEAD` (voir `CLAUDE.md`, « Un numéro de
+version par livraison »). La CI d'une PR ne se rejoue pas quand `master` avance : ce lancement
+manuel couvre l'intervalle, et le job du push sur `master` arrête le déploiement si un doublon
+passe quand même. `deploy.ps1` n'appelle pas le script : le lancer avant lui.
 
 Le déploiement automatique ne part qu'après une CI verte sur un push sur `master` : `deploy.yml`
 exige la conclusion `success` du workflow entier, donc un seul job en échec, celui des règles

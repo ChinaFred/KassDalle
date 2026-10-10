@@ -43,11 +43,13 @@ Rien ne bump la version. Séquence après un travail validé, sur le PC :
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
    `documentation/CHANGELOG.md` ;
-3. commiter sur `master` et pousser ;
+3. commiter sur `master`, vérifier le numéro de version contre `origin/master` (section
+   « Un numéro de version par livraison » de `CLAUDE.md`), puis pousser ;
 4. suivre le workflow « Déploiement » jusqu'au bout, puis annoncer la version déployée
    (ex. `Déployé en v0.19.37`).
 
-Depuis une session cloud : version incrémentée et entrée du changelog dans la PR, fusion une fois la CI verte, puis
+Depuis une session cloud : version incrémentée et entrée du changelog dans la PR, numéro vérifié
+contre `origin/master` juste avant la fusion (même section), fusion une fois la CI verte, puis
 suivi du workflow « Déploiement » jusqu'au bout avant d'annoncer la version.
 
 Pour une **release complète** : vérifier que les documents du tableau « Chaque changement met

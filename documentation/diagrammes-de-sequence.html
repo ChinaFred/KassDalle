@@ -2818,12 +2818,12 @@ sequenceDiagram
   <section>
     <h2 id="deploiement"><span class="n">30</span>Déploiement par GitHub Actions</h2>
     <p class="sec-note">
-      Un push sur <code>master</code> lance la CI. Ses trois jobs doivent réussir : un test de
-      règles en échec bloque le déploiement. Une CI verte lance le workflow « Déploiement »,
+      Un push sur <code>master</code> lance la CI. Ses quatre jobs doivent réussir : un test de
+      règles en échec, ou un numéro de version déjà pris, bloque le déploiement. Une CI verte lance le workflow « Déploiement »,
       qui met en ligne Functions, web et règles, et construit un APK quand la version a changé.
       <code>deploy.ps1</code> reste l'outil de secours.
       <span class="path">.github/workflows/ci.yml → .github/workflows/deploy.yml →
-      .github/scripts/build-apk.sh, keep-online-apk.sh, firebase-deploy.sh</span>
+      .github/scripts/check-version.sh, build-apk.sh, keep-online-apk.sh, firebase-deploy.sh</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -2840,7 +2840,9 @@ sequenceDiagram
 
   D->>GH: push sur master, ou fusion d'une PR
   GH->>CI: on push
-  par trois jobs en parallèle
+  par quatre jobs en parallèle
+    CI->>CI: Version — check-version.sh, version supérieure à celle d'avant le push
+  and
     CI->>CI: Flutter — pub get, analyze, format, pubspec.lock, test, build web
   and
     CI->>CI: Functions — npm ci, lint, format:check, build, test
