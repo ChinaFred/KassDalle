@@ -1709,19 +1709,19 @@ sequenceDiagram
       Note over SP: modelStatus failed · « L'IA n'a pas répondu… »
     end
   end
-  SP->>FS: users/{uid}/planning_runs/{runId} — propositions, statut,<br/>concepts_max, coût
+  SP->>FS: users/{uid}/planning_runs/{runId} — propositions, statut,<br/>concepts_max (borné par les créneaux vides), coût
   SP-->>B: suggestions (faits du code, source model | code), rankedCandidates,<br/>runId, conceptsRemaining, notice
   B->>B: ligne d'origine : Choisie par l'IA · Choisie par Kass'Dalle ;<br/>bandeau si notice, « Réessayer avec l'IA » après une panne
 
   opt créneaux restés vides, conception IA cochée
     loop tant que conceptsRemaining > 0
       B->>GC: conception, runId
-      GC->>FS: transaction : génération connue, moins de 6 h,<br/>compteur, coût + estimation sous le plafond
+      GC->>FS: transaction : génération connue, moins de 6 h,<br/>compteur, coût + réservations + estimation sous le plafond,<br/>reserved_usd += estimation
       alt refusée
         GC-->>B: resource-exhausted (reason) — la boucle s'arrête
       else réservée
         GC->>M: callModel(planning_concept, maxTokens 6 000, entity planning_run)
-        GC->>FS: cost_usd += coût enregistré
+        GC->>FS: cost_usd += coût enregistré, reserved_usd −= estimation
         GC-->>B: recette conçue → brouillon, « Conçue par l'IA »
       end
     end

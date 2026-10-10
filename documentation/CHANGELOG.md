@@ -20,6 +20,30 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.21 — technique
+
+#### Planning : plafond de génération tenu sous des conceptions parallèles
+
+Deux points faibles relevés par la relecture sécurité de la v0.23.18, tous deux bornés par le
+plafond du jour de chaque compte.
+
+**Conceptions parallèles.** La transaction de `reservePlanningConcept` comptait la conception
+mais pas son coût : le coût réel n'arrivait qu'après l'appel. Des conceptions lancées en même
+temps sur une génération voyaient le même `cost_usd`, et le plafond en euros pouvait être
+dépassé d'une estimation par conception. L'estimation est désormais réservée dans la même
+transaction (`reserved_usd`), et `addPlanningRunCost` la libère en ajoutant le coût réel. Une
+conception en échec garde sa réservation : le plafond devient plus strict, jamais plus large.
+
+**Conceptions ouvertes par une génération.** `concepts_max` valait toujours
+`concepts_per_generation`, même pour une génération qui avait rempli tous ses créneaux. Il est
+désormais borné par le nombre de créneaux restés vides (`conceptsAllowance`), et
+`conceptsRemaining` dans la réponse suit la même valeur. Un compte qui enchaîne des générations
+avec des créneaux vides obtient encore des conceptions automatiques à chaque fois, comme il peut
+lancer « Concevoir avec l'IA » à la main : les deux chemins restent bornés par le plafond du
+jour, ce que `TechnicalRequirements.md` dit maintenant.
+
+Fixture `planning_slot_rules.json` : deux cas de réservation, une section `concepts_allowance`.
+
 ### v0.23.20 — technique
 
 #### Contrôle de version : deux titres permis, garde-fous signalés

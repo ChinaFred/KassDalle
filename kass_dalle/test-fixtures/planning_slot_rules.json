@@ -1034,6 +1034,40 @@
       "estimate_usd": null,
       "expected": null,
       "why": "grille illisible : pas d'estimation inventée, le compte reste seul actif"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 1,
+        "cost_usd": 0.1,
+        "reserved_usd": 0.35,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 1000,
+      "estimate_usd": 0.1,
+      "expected": "cost",
+      "why": "une conception parallèle déjà réservée compte avant son coût réel"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 1,
+        "cost_usd": 0.1,
+        "reserved_usd": 0.2,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 1000,
+      "estimate_usd": 0.1,
+      "expected": null,
+      "why": "coût réel plus réservations sous le plafond : permis"
     }
+  ],
+  "concepts_allowance": [
+    { "policy_max": 2, "slots": 7, "filled": 7, "expected": 0, "why": "aucun créneau vide : aucune conception automatique" },
+    { "policy_max": 2, "slots": 7, "filled": 6, "expected": 1, "why": "un créneau vide : une conception" },
+    { "policy_max": 2, "slots": 7, "filled": 0, "expected": 2, "why": "créneaux vides au-delà du maximum : le maximum" },
+    { "policy_max": 0, "slots": 7, "filled": 0, "expected": 0, "why": "conceptions automatiques coupées par la politique" }
   ]
 }

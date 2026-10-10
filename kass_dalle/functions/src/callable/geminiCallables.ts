@@ -532,19 +532,22 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
         estimateCeilingUsd: ceilingEstimator("planning", PLANNING_MAX_TOKENS),
       },
     );
-    const written =
-      runId != null &&
-      (await writePlanningRun({
-        uid: ctx.userId,
-        runId,
-        correlationId: ctx.correlationId,
-        slotDates: input.slotDates,
-        suggestion: data,
-        policy,
-        costCapUsd,
-      }));
+    // Le nombre de conceptions automatiques ouvertes, borné par les créneaux
+    // restés vides ; `null` sans génération écrite.
+    const conceptsMax =
+      runId == null
+        ? null
+        : await writePlanningRun({
+            uid: ctx.userId,
+            runId,
+            correlationId: ctx.correlationId,
+            slotDates: input.slotDates,
+            suggestion: data,
+            policy,
+            costCapUsd,
+          });
     return {
-      runId: written ? runId : null,
+      runId: conceptsMax != null ? runId : null,
       mode,
       modelStatus: data.modelStatus,
       notice: data.notice,
@@ -553,7 +556,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       // Les recettes écartées par la fenêtre de variété voyagent avec les
       // suggestions : l'écran dit combien de plats récents n'ont pas été proposés.
       excludedRecentIds: data.excludedRecentIds,
-      conceptsRemaining: written ? policy.conceptsPerGeneration : 0,
+      conceptsRemaining: conceptsMax ?? 0,
       stats: data.stats,
     };
   } catch (e) {
@@ -603,8 +606,9 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
     // la génération : nombre, puis coût estimé. Le compteur est incrémenté
     // avant l'appel — une conception en échec a pu être facturée.
     let conceptsRemaining: number | null = null;
+    let estimateUsd: number | null = null;
     if (input.runId) {
-      const estimateUsd = await ceilingEstimator(
+      estimateUsd = await ceilingEstimator(
         "planning_concept",
         PLANNING_CONCEPT_MAX_TOKENS,
       )(buildConceptPrompt(input).length);
@@ -643,6 +647,7 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
         uid: ctx.userId,
         runId: input.runId,
         costUsd: data.costUsd,
+        reservedUsd: estimateUsd,
         correlationId: ctx.correlationId,
       });
     }

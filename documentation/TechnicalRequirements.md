@@ -1031,10 +1031,11 @@ déploiement des index).
 | `model_status` | `String` | `ok` · `partial` · `failed` · `budget` · `skipped` |
 | `provider` · `model` | `String?` | moteur qui a répondu ; `null` sans appel |
 | `proposals` | `List<Map>` | `{slot, date, recipe_id, starter_id, dessert_id, source}` — `source` `model` ou `code` |
-| `concepts_max` | `int` | `concepts_per_generation` au moment de la génération |
+| `concepts_max` | `int` | conceptions automatiques ouvertes : `concepts_per_generation` au moment de la génération, borné par le nombre de créneaux restés vides (`conceptsAllowance`) — une génération qui a tout rempli n'en ouvre aucune |
 | `concepts_used` | `int` | incrémenté en transaction **avant** chaque conception rattachée (une conception en échec a pu être facturée) |
 | `cost_cap_usd` | `Number?` | plafond de la génération converti au taux de la facture ; `null` sans taux utilisable (le plafond en euros ne s'applique pas) |
 | `cost_usd` | `Number` | somme des coûts enregistrés (`recordedCostUsd`) de l'appel de planning et des conceptions |
+| `reserved_usd` | `Number` | coût estimé des conceptions réservées dont le coût réel n'est pas encore reporté : augmenté dans la transaction de réservation, diminué par `addPlanningRunCost`. Une conception en échec garde sa réservation, ce qui rend le plafond plus strict, jamais plus large |
 | `unpriced_calls` | `int` | appels sans montant (grille illisible) |
 
 Le coût d'une génération se relit aussi dans `ai_usage` : chaque ligne de l'appel de
@@ -2378,11 +2379,15 @@ s'applique pas — le plafond de nombre de conceptions et le plafond du jour res
 Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
 (transaction sur `users/{uid}/planning_runs/{runId}`) refuse une génération inconnue sous
 l'appelant (`not-found`), de plus de 6 heures, au compteur atteint, ou dont le coût cumulé
-plus l'estimation dépasserait le plafond (`resource-exhausted`, `details.reason`). Le
-compteur est incrémenté **avant** l'appel ; après, `addPlanningRunCost` ajoute le coût
-enregistré. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
+plus les réservations en cours plus l'estimation dépasserait le plafond
+(`resource-exhausted`, `details.reason`). Le compteur est incrémenté et l'estimation réservée
+(`reserved_usd`) **avant** l'appel, dans la même transaction : des conceptions lancées en
+parallèle se voient l'une l'autre. Après, `addPlanningRunCost` ajoute le coût enregistré et
+libère la réservation. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
 unitaire (« Concevoir avec l'IA » sur un créneau, idée retenue dans le sélecteur) : hors
-plafond de génération, borné par le plafond du jour.
+plafond de génération, borné par le plafond du jour. Le plafond de génération ne borne donc
+que les conceptions automatiques ; le total des conceptions, automatiques et manuelles, n'est
+borné que par le plafond du jour de chaque compte.
 
 **Réponse de `suggestMealPlanFn`** : `runId` (`null` en mode `code` ou si le document n'a pas
 pu être écrit), `mode`, `modelStatus`, `notice`, `suggestions` (`slot`, `recipeId`,
