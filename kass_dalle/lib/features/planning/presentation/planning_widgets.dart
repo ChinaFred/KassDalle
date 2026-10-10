@@ -678,3 +678,43 @@ enum PlanningMealAction {
   exportToCalendar,
   delete,
 }
+
+/// Un jour de la semaine lue sans repas : il est dit libre, et un jour à
+/// venir propose d'y poser une recette.
+class PlanningEmptyDayRow extends StatelessWidget {
+  final bool isPast;
+  final VoidCallback? onPick;
+
+  const PlanningEmptyDayRow({super.key, required this.isPast, this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      // Un Wrap, pas un Row : sur un téléphone, avec un texte agrandi, le
+      // bouton passe sous le libellé au lieu de déborder.
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text(
+            'Rien de prévu',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant.withValues(
+                alpha: isPast ? 0.5 : 1,
+              ),
+            ),
+          ),
+          if (!isPast && onPick != null) ...[
+            TextButton.icon(
+              onPressed: onPick,
+              icon: const Icon(Icons.add),
+              label: const Text('Choisir une recette'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}

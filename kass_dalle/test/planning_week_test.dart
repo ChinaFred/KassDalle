@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/domain/planning_week.dart';
 
-/// La semaine de planning, unité de lecture de l'onglet Liste.
+/// La semaine de planning, unité de lecture de l'écran Planning.
 ///
 /// Une semaine mal bornée ne lève rien : un repas du jeudi se retrouve dans
 /// la semaine suivante, et la liste dit qu'il n'y a rien à cuisiner ce soir.
@@ -135,43 +135,41 @@ void main() {
     });
   });
 
-  group('semaines à proposer', () {
-    final today = DateTime(2026, 9, 9);
-
-    test('sans repas : la semaine en cours et la suivante', () {
-      final weeks = planningWeeksFor(
-        mealDays: const [],
-        today: today,
+  group('semaines qui couvrent un mois', () {
+    test('cycle du vendredi : octobre 2026 tient en six lignes', () {
+      final weeks = planningWeeksCovering(
+        DateTime(2026, 10),
         cycleStartDay: DateTime.friday,
       );
-      expect(weeks.map((w) => w.start), [
-        DateTime(2026, 9, 4),
-        DateTime(2026, 9, 11),
-      ]);
-    });
-
-    test('les repas anciens et lointains étendent la plage, sans trou', () {
-      final weeks = planningWeeksFor(
-        mealDays: [DateTime(2026, 8, 14, 19), DateTime(2026, 9, 26, 12)],
-        today: today,
-        cycleStartDay: DateTime.friday,
-      );
-      expect(weeks.first.start, DateTime(2026, 8, 14));
-      expect(weeks.last.start, DateTime(2026, 9, 25));
-      expect(weeks.length, 7);
+      // Le 1er octobre 2026 est un jeudi : la première ligne part du
+      // vendredi 25 septembre.
+      expect(weeks.first.start, DateTime(2026, 9, 25));
+      expect(weeks.last.start, DateTime(2026, 10, 30));
+      expect(weeks.length, 6);
       for (var i = 1; i < weeks.length; i++) {
         expect(weeks[i].start, weeks[i - 1].next.start);
       }
     });
 
-    test('la semaine où l\'on a navigué reste proposée', () {
-      final weeks = planningWeeksFor(
-        mealDays: const [],
-        today: today,
+    test('chaque ligne commence au jour du cycle', () {
+      for (var start = 1; start <= 7; start++) {
+        final weeks = planningWeeksCovering(
+          DateTime(2026, 2),
+          cycleStartDay: start,
+        );
+        expect(weeks.every((w) => w.start.weekday == start), isTrue);
+        expect(weeks.first.contains(DateTime(2026, 2, 1)), isTrue);
+        expect(weeks.last.contains(DateTime(2026, 2, 28)), isTrue);
+      }
+    });
+
+    test('un mois qui commence le jour du cycle ne déborde pas avant', () {
+      // Le 1er mai 2026 est un vendredi.
+      final weeks = planningWeeksCovering(
+        DateTime(2026, 5),
         cycleStartDay: DateTime.friday,
-        alsoCover: [DateTime(2026, 10, 30)],
       );
-      expect(weeks.last.start, DateTime(2026, 10, 30));
+      expect(weeks.first.start, DateTime(2026, 5, 1));
     });
   });
 }

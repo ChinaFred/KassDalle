@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -27,9 +28,8 @@ import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_week.dart';
 import '../services/calendar_service.dart';
-import 'planning_month_grid.dart';
+import 'planning_period_calendar.dart';
 import 'planning_providers.dart';
-import 'planning_week_bar.dart';
 import 'planning_widgets.dart';
 import 'recipe_picker_sheet.dart';
 import 'side_picker_sheet.dart';
@@ -51,33 +51,39 @@ class PlanningScreen extends ConsumerStatefulWidget {
   ConsumerState<PlanningScreen> createState() => _PlanningScreenState();
 }
 
-class _PlanningScreenState extends ConsumerState<PlanningScreen>
-    with SingleTickerProviderStateMixin {
+class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
   final Set<String> _aiLoadingIds = {};
   final Set<String> _storageLoadingIds = {};
 
-  late final TabController _tabs = TabController(length: 2, vsync: this);
-
-  /// Mois et jour affichés par l'onglet Calendrier.
-  ///
-  /// Ils vivent dans l'état de l'écran et nulle part ailleurs : choisir un mois
-  /// à regarder n'est pas une donnée du planning, c'est une position de lecture.
-  late DateTime _visibleMonth = PlanningMonthBand.monthOf(DateTime.now());
-  late DateTime _selectedDay = PlanningMonthBand.dayOf(DateTime.now());
-
-  /// Semaine lue par l'onglet Liste, par un jour repère.
+  /// Semaine lue, par un jour repère.
   ///
   /// La semaine se recalcule à chaque construction : son premier jour dépend
   /// du jour de démarrage du cycle, lu dans les préférences, qui peuvent
   /// arriver après le premier affichage. Null tant qu'on n'a pas navigué :
   /// c'est alors la semaine d'aujourd'hui.
-  DateTime? _weekAnchor;
+  ///
+  /// Elle vit dans l'état de l'écran et nulle part ailleurs : choisir une
+  /// semaine à regarder n'est pas une donnée du planning.
+  DateTime? _periodAnchor;
 
-  /// Vrai quand la liste montre toutes les semaines à la suite — la lecture
-  /// d'avant, gardée derrière la puce « Tout ».
-  bool _allWeeks = false;
+  /// Mois affiché quand le calendrier est déplié.
+  DateTime _visibleMonth = PlanningPeriodCalendar.monthOf(DateTime.now());
+
+  /// Calendrier déplié sur un téléphone. Il s'ouvre replié : la liste des
+  /// repas est ce qu'on lit, le mois sert à aller ailleurs.
+  bool _calendarExpanded = false;
+
+  /// État du bouton « Nouveau planning » sur un téléphone : réduit à son
+  /// icône dès qu'on a fait défiler la liste, masqué pendant qu'on descend.
+  /// Étendu en permanence, il couvrait les actions des repas.
+  bool _fabCompact = false;
+  bool _fabHidden = false;
+
+  /// Une clé par jour de la semaine lue, pour y amener la liste quand on
+  /// touche ce jour dans le bandeau.
+  final Map<DateTime, GlobalKey> _dayKeys = {};
 
   /// Mois d'archive déjà lus, et ceux en cours de lecture.
   ///
@@ -96,12 +102,6 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   /// court pour que la navigation vers le passé ait une fin. Sans borne, la
   /// flèche continuerait indéfiniment sur des mois vides.
   static const _archiveDepth = Duration(days: 730);
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
 
   Future<void> _loadRecipesIfNeeded() async {
     if (_recipesLoaded) return;
@@ -459,20 +459,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     }
   }
 
-  /// La semaine que la liste de courses couvre : celle qu'on est en train de lire.
-  ///
-  /// Onglet Liste : la semaine choisie dans la barre, ou toutes avec la puce
-  /// « Tout » (null). Onglet Calendrier : la semaine du jour sélectionné.
-  PlanningWeek? _shoppingWeek(DateTime today) {
+  /// La semaine lue, recalculée sur le jour de démarrage du cycle.
+  PlanningWeek _period(DateTime today) {
     final cycleStartDay =
         ref.read(planningPreferencesProvider).value?.cycleStartDay ??
         DateTime.friday;
-    if (_tabs.index == 1) {
-      return planningWeekOf(_selectedDay, cycleStartDay: cycleStartDay);
-    }
-    if (_allWeeks) return null;
-    return planningWeekOf(_weekAnchor ?? today, cycleStartDay: cycleStartDay);
+    return planningWeekOf(_periodAnchor ?? today, cycleStartDay: cycleStartDay);
   }
+
+  /// La semaine que la liste de courses couvre : celle qu'on est en train de
+  /// lire.
+  PlanningWeek? _shoppingWeek(DateTime today) => _period(today);
 
   Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
     final today = DateTime.now();
@@ -928,15 +925,18 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       appBar: AppBar(
         title: const Text('Planning des repas'),
         centerTitle: false,
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(icon: Icon(Icons.view_agenda_outlined), text: 'Liste'),
-            Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Calendrier'),
-          ],
-        ),
         actions: [
           if (isWide) ...[
+            // Sur grand écran, le bouton rejoint la barre : il ne flotte plus
+            // au-dessus des repas.
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.icon(
+                onPressed: () => context.push('/planning/batch'),
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Nouveau planning'),
+              ),
+            ),
             // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -950,8 +950,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                 onPressed: () => _showIngredientsList(mealsAsync.value!),
               ),
               // La même icône que sur chaque repas et chaque créneau : un
-              // geste, une icône. Elle reste distincte du calendrier de
-              // l'onglet juste en dessous, qui sert à voir, pas à envoyer.
+              // geste, une icône. Elle reste distincte de celle du calendrier
+              // de l'écran, qui sert à voir, pas à envoyer.
               IconButton(
                 icon: const Icon(AppIcons.calendarExport),
                 tooltip: 'Exporter le planning vers le calendrier',
@@ -1007,35 +1007,51 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/planning/batch'),
-        icon: const Icon(Icons.auto_awesome_outlined),
-        label: const Text('Nouveau planning'),
-      ),
+      floatingActionButton: isWide
+          ? null
+          : AnimatedSlide(
+              offset: _fabHidden ? const Offset(0, 2) : Offset.zero,
+              duration: const Duration(milliseconds: 200),
+              child: FloatingActionButton.extended(
+                onPressed: () => context.push('/planning/batch'),
+                // Étendu, le libellé se lit déjà : l'infobulle le doublerait.
+                tooltip: _fabCompact ? 'Nouveau planning' : null,
+                isExtended: !_fabCompact,
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Nouveau planning'),
+              ),
+            ),
       body: RefreshIndicator(
         onRefresh: _refreshMeals,
         child: mealsAsync.when(
           loading: () => const AppLoadingState(),
           error: (e, _) => AppErrorState(error: e, onRetry: _refreshMeals),
-          data: (meals) => TabBarView(
-            controller: _tabs,
-            children: [
-              _buildList(context, theme, meals, isWide),
-              _buildMonth(context, theme, meals, isWide),
-            ],
-          ),
+          data: (meals) => _buildPeriod(context, theme, meals, isWide),
         ),
       ),
     );
   }
 
-  /// Onglet « Liste » : la lecture chronologique, inchangée.
-  Widget _buildList(
+  /// L'écran : le calendrier, puis les sept jours de la semaine choisie.
+  ///
+  /// Aucun document n'est créé pour cette vue : elle range par jour les repas
+  /// du flux temps réel et ceux de l'archive déjà lue. Une semaine est une
+  /// lecture, pas un porteur.
+  Widget _buildPeriod(
     BuildContext context,
     ThemeData theme,
-    List<PlannedMeal> meals,
+    List<PlannedMeal> live,
     bool isWide,
   ) {
+    // Le flux temps réel ne remonte que quatre-vingt-dix jours ; les mois plus
+    // anciens sont lus à la demande. On les réunit ici, en écartant les
+    // doublons : un mois d'archive peut chevaucher le flux.
+    final meals = <String, PlannedMeal>{
+      for (final m in live) m.id: m,
+      for (final month in _archive.values)
+        for (final m in month) m.id: m,
+    }.values.toList();
+
     if (meals.isEmpty) {
       return Center(
         child: Padding(
@@ -1085,108 +1101,236 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       );
     }
 
-    // Regrouper par date (sans heure)
-    final grouped = <DateTime, List<PlannedMeal>>{};
-    for (final meal in meals) {
-      final day = DateTime(
-        meal.plannedAt.year,
-        meal.plannedAt.month,
-        meal.plannedAt.day,
-      );
-      (grouped[day] ??= []).add(meal);
-    }
-
-    // La semaine lue, et celles qu'on peut atteindre. La liste partait de
-    // quatre-vingt-dix jours en arrière : la semaine à cuisiner arrivait après
-    // trois écrans de repas passés.
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final cycleStartDay =
         ref.watch(planningPreferencesProvider).value?.cycleStartDay ??
         DateTime.friday;
-    final selectedWeek = planningWeekOf(
-      _weekAnchor ?? today,
-      cycleStartDay: cycleStartDay,
-    );
-    final weeks = planningWeeksFor(
-      mealDays: grouped.keys,
-      today: today,
-      cycleStartDay: cycleStartDay,
-      alsoCover: [selectedWeek.start],
-    );
-    // En lecture continue, seuls les jours qui portent un repas ; en lecture
-    // par semaine, les sept jours, vides compris — un jour libre est une
-    // information, et l'endroit où poser une recette.
-    final days = _allWeeks
-        ? (grouped.keys.toList()..sort())
-        : selectedWeek.days;
+    final period = _period(today);
+    final earliestDay = today.subtract(_archiveDepth);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: PlanningWeekBar(
-            weeks: weeks,
-            selected: selectedWeek,
-            allSelected: _allWeeks,
-            today: today,
-            isWide: isWide,
-            onSelect: (week) => setState(() {
-              _weekAnchor = week.start;
-              _allWeeks = false;
+    final calendar = PlanningPeriodCalendar(
+      period: period,
+      cycleStartDay: cycleStartDay,
+      meals: meals,
+      expanded: isWide || _calendarExpanded,
+      month: _visibleMonth,
+      earliestDay: earliestDay,
+      onSelectPeriod: (week) => _selectPeriod(week, collapse: !isWide),
+      onMonthChanged: (month) {
+        setState(() => _visibleMonth = month);
+        _loadArchiveAround(month);
+      },
+      onTapDay: _revealDay,
+      onToggleExpanded: isWide
+          ? null
+          : () => setState(() {
+              _calendarExpanded = !_calendarExpanded;
+              // Déplié, le mois montré est celui de la semaine lue.
+              if (_calendarExpanded) {
+                _visibleMonth = PlanningPeriodCalendar.monthOf(period.start);
+                _loadArchiveAround(_visibleMonth);
+              }
             }),
-            onSelectAll: () => setState(() => _allWeeks = true),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            // La marge du bas laisse passer la dernière ligne sous le bouton
-            // « Nouveau planning » : sans elle, il couvrait l'icône d'export
-            // du dernier repas, et rien ne permettait de descendre plus bas.
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, 96),
-            itemCount: days.length,
-            itemBuilder: (context, index) {
-              final day = days[index];
-              final dayMeals = grouped[day] ?? const <PlannedMeal>[];
-              final isToday = _isToday(day);
-              final isPast = day.isBefore(today);
+    );
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  PlanningDayHeader(day: day, isToday: isToday, isPast: isPast),
-                  if (dayMeals.isEmpty)
-                    PlanningEmptyDayRow(
-                      isPast: isPast,
-                      onPick: isPast ? null : () => _addMealOnDay(day),
-                    ),
-                  ...dayMeals.map(
-                    (meal) => PlanningMealTile(
-                      meal: meal,
-                      isPast: isPast,
-                      aiLoading:
-                          _aiLoadingIds.contains(meal.id) ||
-                          _storageLoadingIds.contains(meal.id),
-                      isWide: isWide,
-                      onDelete: () => _deleteMeal(meal),
-                      onChangeRecipe: () => _changeRecipe(meal),
-                      onReschedule: () => _rescheduleMeal(meal),
-                      onAddComponent: () => _addComponent(meal),
-                      onRemoveComponent: (c) => _removeComponent(meal, c),
-                      onClearRecipe: () => _clearRecipe(meal),
-                      onOtherSuggestion: () => _otherSuggestion(meal),
-                      onStorageAdvice: () => _showStorageAdvice(meal),
-                      onTimeChanged: () => _changeTime(meal),
-                      onExportToCalendar: () => _exportMealToCalendar(meal),
-                      onTap: _openRecipeFor(meal),
-                      onComponentTap: (c) => _openComponentRecipe(meal, c),
-                    ),
-                  ),
-                ],
-              );
-            },
+    final days = _buildPeriodDays(theme, meals, period, today, isWide);
+
+    if (isWide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 8),
+              child: calendar,
+            ),
           ),
-        ),
+          const VerticalDivider(width: 1),
+          Expanded(child: days),
+        ],
+      );
+    }
+    // Déplié, le mois peut dépasser la hauteur d'un téléphone tenu à
+    // l'horizontale ou d'un texte agrandi : il défile dans une hauteur bornée
+    // au lieu de déborder, et la liste garde le reste.
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.7),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 4),
+              child: calendar,
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onListScroll,
+              child: days,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Change de semaine : le calendrier déplié se replie sur un téléphone, et
+  /// l'archive des mois touchés se charge si besoin.
+  void _selectPeriod(PlanningWeek week, {required bool collapse}) {
+    setState(() {
+      _periodAnchor = week.start;
+      if (collapse) _calendarExpanded = false;
+      _fabCompact = false;
+      _fabHidden = false;
+    });
+    _loadArchiveMonth(week.start);
+    _loadArchiveMonth(week.end);
+  }
+
+  /// Amène la liste sur [day], touché dans le bandeau replié.
+  void _revealDay(DateTime day) {
+    final ctx = _dayKeys[day]?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// Réduit le bouton « Nouveau planning » dès que la liste a défilé, le
+  /// masque pendant qu'on descend, le rend quand on remonte.
+  bool _onListScroll(ScrollNotification n) {
+    if (n.depth != 0) return false;
+    final compact = n.metrics.pixels > 0;
+    var hidden = _fabHidden;
+    if (n is UserScrollNotification) {
+      if (n.direction == ScrollDirection.reverse) hidden = true;
+      if (n.direction == ScrollDirection.forward) hidden = false;
+    }
+    if (n.metrics.pixels <= 0) hidden = false;
+    if (compact != _fabCompact || hidden != _fabHidden) {
+      setState(() {
+        _fabCompact = compact;
+        _fabHidden = hidden;
+      });
+    }
+    return false;
+  }
+
+  /// Les sept jours de la semaine lue, vides compris : un jour libre est une
+  /// information, et l'endroit où poser une recette.
+  Widget _buildPeriodDays(
+    ThemeData theme,
+    List<PlannedMeal> meals,
+    PlanningWeek period,
+    DateTime today,
+    bool isWide,
+  ) {
+    final grouped = <DateTime, List<PlannedMeal>>{};
+    final prepared = <DateTime, List<PlannedMeal>>{};
+    for (final meal in meals) {
+      (grouped[PlanningPeriodCalendar.dayOf(meal.plannedAt)] ??= []).add(meal);
+      final prep = meal.prepDate;
+      if (prep != null) {
+        (prepared[PlanningPeriodCalendar.dayOf(prep)] ??= []).add(meal);
+      }
+    }
+    for (final list in grouped.values) {
+      list.sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+    }
+
+    _dayKeys.removeWhere((day, _) => !period.contains(day));
+
+    return ListView(
+      // Une clé par semaine : une nouvelle semaine s'ouvre sur son premier
+      // jour, pas à la hauteur où l'on avait laissé la précédente.
+      key: ValueKey(period.start),
+      // La marge du bas laisse passer la dernière ligne sous le bouton
+      // « Nouveau planning » : sans elle, il couvrait l'icône d'export du
+      // dernier repas, et rien ne permettait de descendre plus bas.
+      padding: EdgeInsets.fromLTRB(0, 0, 0, isWide ? 24 : 96),
+      children: [
+        for (final day in period.days)
+          Column(
+            key: _dayKeys.putIfAbsent(day, GlobalKey.new),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              PlanningDayHeader(
+                day: day,
+                isToday: day == today,
+                isPast: day.isBefore(today),
+              ),
+              if ((grouped[day] ?? const []).isEmpty)
+                PlanningEmptyDayRow(
+                  isPast: day.isBefore(today),
+                  onPick: day.isBefore(today) ? null : () => _addMealOnDay(day),
+                ),
+              for (final meal in grouped[day] ?? const <PlannedMeal>[])
+                PlanningMealTile(
+                  meal: meal,
+                  isPast: day.isBefore(today),
+                  aiLoading:
+                      _aiLoadingIds.contains(meal.id) ||
+                      _storageLoadingIds.contains(meal.id),
+                  isWide: isWide,
+                  onDelete: () => _deleteMeal(meal),
+                  onChangeRecipe: () => _changeRecipe(meal),
+                  onReschedule: () => _rescheduleMeal(meal),
+                  onAddComponent: () => _addComponent(meal),
+                  onRemoveComponent: (c) => _removeComponent(meal, c),
+                  onClearRecipe: () => _clearRecipe(meal),
+                  onOtherSuggestion: () => _otherSuggestion(meal),
+                  onStorageAdvice: () => _showStorageAdvice(meal),
+                  onTimeChanged: () => _changeTime(meal),
+                  onExportToCalendar: () => _exportMealToCalendar(meal),
+                  onTap: _openRecipeFor(meal),
+                  onComponentTap: (c) => _openComponentRecipe(meal, c),
+                ),
+              // Ce qui se prépare ce jour-là pour être mangé plus tard : le
+              // calendrier le signale par une pastille creuse, la liste dit
+              // quoi et pour quand.
+              if (prepared[day] != null) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.soup_kitchen_outlined,
+                        size: AppIconSize.inline,
+                        color: theme.colorScheme.tertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'À préparer ce jour-là',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.tertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                for (final meal in prepared[day]!)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.schedule_outlined,
+                      size: AppIconSize.small,
+                    ),
+                    title: Text(meal.recipeTitre),
+                    subtitle: Text(
+                      'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+                    ),
+                    onTap: _openRecipeFor(meal),
+                  ),
+              ],
+            ],
+          ),
       ],
     );
   }
@@ -1257,165 +1401,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     }
   }
 
-  /// Onglet « Calendrier » : la grille du mois, puis l'agenda du jour choisi.
+  /// Charge, si besoin, les mois d'archive que le calendrier déplié va
+  /// montrer.
   ///
-  /// Aucun document n'est créé pour cette vue, et aucune requête ne lui est
-  /// propre : elle range par jour les repas déjà chargés par le stream. Un mois
-  /// est une lecture, pas un porteur.
-  Widget _buildMonth(
-    BuildContext context,
-    ThemeData theme,
-    List<PlannedMeal> live,
-    bool isWide,
-  ) {
-    final selected = PlanningMonthBand.dayOf(_selectedDay);
-    final today = PlanningMonthBand.dayOf(DateTime.now());
-
-    // Le flux temps réel ne remonte que quatre-vingt-dix jours ; les mois plus
-    // anciens sont lus à la demande. On les réunit ici, en écartant les
-    // doublons : un mois d'archive peut chevaucher le flux.
-    final meals = <String, PlannedMeal>{
-      for (final m in live) m.id: m,
-      for (final month in _archive.values)
-        for (final m in month) m.id: m,
-    }.values.toList();
-
-    final dayMeals =
-        meals
-            .where((m) => PlanningMonthBand.dayOf(m.plannedAt) == selected)
-            .toList()
-          ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
-
-    // Un plat préparé un autre jour occupe AUSSI son jour de préparation :
-    // c'est ce jour-là qu'on cuisine, et l'oublier ferait mentir la vue sur la
-    // charge réelle de la semaine.
-    final dayPrepared = meals.where((m) {
-      final prep = m.prepDate;
-      return prep != null && PlanningMonthBand.dayOf(prep) == selected;
-    }).toList();
-
-    final isPast = selected.isBefore(today);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // La bande garde une hauteur imposée : le calendrier est un repère, le
-        // détail du jour est ce qu'on lit. L'inverse donnait des cases de deux
-        // cents pixels et une journée hors de l'écran.
-        SizedBox(
-          height: PlanningMonthBand.bandHeight(context),
-          child: PlanningMonthBand(
-            month: _visibleMonth,
-            selectedDay: selected,
-            meals: meals,
-            earliestMonth: PlanningMonthBand.monthOf(
-              today.subtract(_archiveDepth),
-            ),
-            // Choisir un jour dans un mois latéral ne déplace pas la bande :
-            // le regard vient d'y aller, la faire sauter le perdrait.
-            onSelectDay: (day) => setState(() => _selectedDay = day),
-            onMonthChanged: (month) {
-              setState(() => _visibleMonth = month);
-              _loadArchiveAround(month);
-            },
-          ),
-        ),
-        const PlanningMonthLegend(),
-        const Divider(height: 1),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 96),
-            children: [
-              PlanningDayHeader(
-                day: selected,
-                isToday: selected == today,
-                isPast: isPast,
-              ),
-              if (dayMeals.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Text(
-                    dayPrepared.isEmpty
-                        ? 'Aucun repas ce jour-là.'
-                        : 'Aucun repas servi ce jour-là — mais de la cuisine à faire.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
-              else
-                ...dayMeals.map(
-                  (meal) => PlanningMealTile(
-                    meal: meal,
-                    isPast: isPast,
-                    aiLoading:
-                        _aiLoadingIds.contains(meal.id) ||
-                        _storageLoadingIds.contains(meal.id),
-                    isWide: isWide,
-                    onDelete: () => _deleteMeal(meal),
-                    onChangeRecipe: () => _changeRecipe(meal),
-                    onReschedule: () => _rescheduleMeal(meal),
-                    onAddComponent: () => _addComponent(meal),
-                    onRemoveComponent: (c) => _removeComponent(meal, c),
-                    onClearRecipe: () => _clearRecipe(meal),
-                    onOtherSuggestion: () => _otherSuggestion(meal),
-                    onStorageAdvice: () => _showStorageAdvice(meal),
-                    onTimeChanged: () => _changeTime(meal),
-                    onExportToCalendar: () => _exportMealToCalendar(meal),
-                    onTap: _openRecipeFor(meal),
-                    onComponentTap: (c) => _openComponentRecipe(meal, c),
-                  ),
-                ),
-              // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
-              // signale par une pastille creuse, l'agenda dit quoi et pour quand.
-              if (dayPrepared.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.soup_kitchen_outlined,
-                        size: AppIconSize.inline,
-                        color: theme.colorScheme.tertiary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'À préparer ce jour-là',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.tertiary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ...dayPrepared.map(
-                  (meal) => ListTile(
-                    dense: true,
-                    leading: const Icon(
-                      Icons.schedule_outlined,
-                      size: AppIconSize.small,
-                    ),
-                    title: Text(meal.recipeTitre),
-                    subtitle: Text(
-                      'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
-                    ),
-                    onTap: _openRecipeFor(meal),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Charge, si besoin, les mois d'archive que la bande va montrer.
-  ///
-  /// La bande affiche trois mois : celui qu'on regarde, et ses deux voisins.
-  /// Charger les trois évite qu'un mois latéral s'affiche vide alors qu'il
-  /// contient des repas — un vide qui ressemblerait à une semaine sans cuisine.
+  /// La grille montre aussi les jours des mois voisins, sur ses première et
+  /// dernière lignes : charger les trois mois évite qu'un de ces jours
+  /// s'affiche vide alors qu'il porte des repas.
   void _loadArchiveAround(DateTime month) {
     for (final m in [
       DateTime(month.year, month.month - 1),
@@ -1431,15 +1422,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   /// Les mois couverts par le flux temps réel ne sont pas relus : ils arrivent
   /// déjà, et les relire les paierait deux fois.
   Future<void> _loadArchiveMonth(DateTime month) async {
-    final key = PlanningMonthBand.monthOf(month);
+    final key = PlanningPeriodCalendar.monthOf(month);
     if (_archive.containsKey(key) || _archiveLoading.contains(key)) return;
 
-    final today = PlanningMonthBand.dayOf(DateTime.now());
+    final today = PlanningPeriodCalendar.dayOf(DateTime.now());
     final liveFrom = today.subtract(PlanningRepository.historyWindow);
     final lastDay = DateTime(key.year, key.month + 1, 0);
     if (!lastDay.isBefore(liveFrom)) return;
     if (key.isBefore(
-      PlanningMonthBand.monthOf(today.subtract(_archiveDepth)),
+      PlanningPeriodCalendar.monthOf(today.subtract(_archiveDepth)),
     )) {
       return;
     }
@@ -1493,10 +1484,5 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         targetPortions: meal.portionsForComponents,
       ),
     );
-  }
-
-  bool _isToday(DateTime day) {
-    final now = DateTime.now();
-    return day.year == now.year && day.month == now.month && day.day == now.day;
   }
 }

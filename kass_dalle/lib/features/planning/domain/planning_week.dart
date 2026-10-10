@@ -1,6 +1,6 @@
 /// La semaine de planning : sept jours à partir du jour de démarrage du cycle.
 ///
-/// C'est l'unité de lecture de l'onglet Liste. Elle suit le découpage de
+/// C'est l'unité de lecture de l'écran Planning. Elle suit le découpage de
 /// « Nouveau planning » : un cycle y commence au [PlanningPreferences.cycleStartDay]
 /// et dure `mealsPerCycle` jours — sept par défaut, donc une semaine. Quand le
 /// cycle n'en fait pas sept, la semaine reste le repère : elle pave le
@@ -63,8 +63,7 @@ PlanningWeek planningWeekOf(DateTime day, {required int cycleStartDay}) {
 ///
 /// Seuls comptent ceux qui restent à cuisiner : le jour même compte, quelle
 /// que soit l'heure du repas. Avec une [week], on ne garde que les repas de
-/// cette semaine ; sans elle, toutes les semaines à venir — c'est la puce
-/// « Tout » de l'onglet Liste.
+/// cette semaine ; sans elle, toutes les semaines à venir.
 List<PlannedMeal> mealsToShop(
   Iterable<PlannedMeal> meals, {
   required DateTime today,
@@ -79,29 +78,23 @@ List<PlannedMeal> mealsToShop(
   ];
 }
 
-/// Les semaines à proposer dans la barre de navigation.
+/// Les semaines qui couvrent [month], dans l'ordre : une ligne du calendrier
+/// chacune.
 ///
-/// De la plus ancienne qui porte un repas à la plus tardive, sans trou, en
-/// couvrant toujours la semaine d'aujourd'hui et la suivante : on doit pouvoir
-/// aller planifier la semaine prochaine même quand rien n'y est encore prévu.
-/// [alsoCover] force la présence d'autres jours — la semaine où l'on se trouve
-/// après avoir navigué au-delà des repas.
-List<PlanningWeek> planningWeeksFor({
-  required Iterable<DateTime> mealDays,
-  required DateTime today,
+/// La première contient le 1er du mois, la dernière son dernier jour. Comme
+/// une semaine part du [cycleStartDay], la grille s'aligne sur le cycle : une
+/// ligne est une semaine de planning entière, jamais deux moitiés.
+List<PlanningWeek> planningWeeksCovering(
+  DateTime month, {
   required int cycleStartDay,
-  Iterable<DateTime> alsoCover = const [],
 }) {
-  final thisWeek = planningWeekOf(today, cycleStartDay: cycleStartDay);
-  var first = thisWeek;
-  var last = thisWeek.next;
-  for (final day in mealDays.followedBy(alsoCover)) {
-    final week = planningWeekOf(day, cycleStartDay: cycleStartDay);
-    if (week.start.isBefore(first.start)) first = week;
-    if (week.start.isAfter(last.start)) last = week;
-  }
+  final first = planningWeekOf(
+    DateTime(month.year, month.month),
+    cycleStartDay: cycleStartDay,
+  );
+  final lastDay = DateTime(month.year, month.month + 1, 0);
   final weeks = <PlanningWeek>[];
-  for (var w = first; !w.start.isAfter(last.start); w = w.next) {
+  for (var w = first; !w.start.isAfter(lastDay); w = w.next) {
     weeks.add(w);
   }
   return weeks;

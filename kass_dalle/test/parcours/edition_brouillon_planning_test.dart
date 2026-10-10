@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'package:kass_dalle/core/widgets/app_states.dart';
@@ -10,7 +11,9 @@ import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 import 'package:kass_dalle/features/recipes/presentation/drafts/work_queue_screen.dart';
 import 'package:kass_dalle/features/recipes/presentation/edit/recipe_edit_screen.dart';
 import 'package:kass_dalle/features/recipes/presentation/recipe_providers.dart';
+import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_screen.dart';
+import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 
 import '../support/test_backend.dart';
 
@@ -196,6 +199,86 @@ void main() {
 
       expect(find.text('Aucun repas planifié'), findsOneWidget);
       expect(find.text('Nouveau planning'), findsOneWidget);
+    });
+
+    // Le planning n'a pas de repository injectable : ses repas passent par
+    // un ProviderScope imbriqué qui remplace le flux.
+    Future<void> pumpPlanningWith(
+      WidgetTester tester,
+      TestBackend backend,
+      Size logical,
+    ) async {
+      final now = DateTime.now();
+      final meals = [
+        PlannedMeal(
+          id: 'm1',
+          uid: backend.user.uid,
+          recipeTitre: 'Pizzas surgelées',
+          plannedAt: DateTime(now.year, now.month, now.day, 19),
+          durationMinutes: 30,
+          createdAt: now,
+        ),
+      ];
+      // La largeur lue par l'écran vient de la vue, pas de la surface.
+      tester.view.physicalSize = logical;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.binding.setSurfaceSize(logical);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await initializeDateFormatting('fr', null);
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: appProviderRetry,
+          overrides: backend.overrides,
+          child: ProviderScope(
+            overrides: [
+              plannedMealsProvider.overrideWith((ref) => Stream.value(meals)),
+            ],
+            child: const MaterialApp(
+              locale: Locale('fr'),
+              home: PlanningScreen(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sur un téléphone, la semaine en cours sous un calendrier '
+        'replié, sans onglets', (tester) async {
+      await pumpPlanningWith(tester, TestBackend(), const Size(360, 800));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TabBar), findsNothing);
+      expect(find.text('Cette semaine'), findsOneWidget);
+      expect(find.text('Pizzas surgelées'), findsOneWidget);
+      expect(find.text('préparation'), findsNothing);
+
+      await tester.tap(find.text('Cette semaine'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('préparation'), findsOneWidget);
+    });
+
+    testWidgets('sur grand écran, le mois à gauche et le bouton dans la '
+        'barre', (tester) async {
+      await pumpPlanningWith(tester, TestBackend(), const Size(1400, 1000));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.text('Nouveau planning'), findsOneWidget);
+      expect(find.text('préparation'), findsOneWidget);
+      expect(find.text('Pizzas surgelées'), findsOneWidget);
+    });
+
+    testWidgets('téléphone à l\'horizontale : le mois déplié ne déborde pas', (
+      tester,
+    ) async {
+      await pumpPlanningWith(tester, TestBackend(), const Size(740, 360));
+
+      await tester.tap(find.text('Cette semaine'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('le planning se tire pour se rafraîchir', (tester) async {
