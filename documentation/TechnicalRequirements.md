@@ -3328,15 +3328,23 @@ parent, ou la tête descend de la base sans en avoir la version (hausse faite da
 fusion). Les commits de fusion ne comptent pas comme hausse : fusionner `master` dans une
 branche y apporte la version de `master` sans que la branche l'ait choisie. Le script échoue
 alors quand le nom de version n'est pas strictement supérieur à celui de la base. Dans tous
-les cas, `documentation/CHANGELOG.md` doit avoir une, et une seule, entrée `### v<nom>` pour la
-version de la tête : un rebase sur une hausse identique vide le changement de `pubspec.yaml`,
-et seul le `CHANGELOG.md` garde alors les deux entrées. `CLAUDE.md` demande d'intégrer
+les cas, `documentation/CHANGELOG.md` doit avoir au moins un titre `### v<nom> — fonctionnel`
+ou `### v<nom> — technique` pour la version de la tête, au plus un de chaque type, et aucun
+autre titre `### v<nom>`. Deux titres doivent avoir été ajoutés par un seul commit ordinaire.
+Un rebase sur une hausse identique vide le changement de `pubspec.yaml`, et seul le
+`CHANGELOG.md` garde alors la trace des deux livraisons : deux titres du même type, ou deux
+titres ajoutés chacun par son commit. Une livraison qui ajoute son second titre dans un
+commit à part échoue aussi ; elle regroupe les deux titres dans un commit. `CLAUDE.md` demande d'intégrer
 `origin/master` par une fusion, jamais par un rebase. Une base
 introuvable (premier push, historique réécrit) saute ce second contrôle ; une tête
 introuvable fait échouer le script.
 
 Un script modifié par une PR s'exécute dans sa version modifiée, sur la PR puis sur le push de
-fusion : seule la relecture empêche d'affaiblir le contrôle. `.gitattributes` force les fins
+fusion : seule la relecture empêche d'affaiblir le contrôle. `relecteur-regles` signale tout
+diff qui touche `check-version.sh`, `ci.yml` ou `deploy.yml` (contrôle 14), et l'utilisateur
+décide avant la fusion. Un `CODEOWNERS` avec protection de branche a été écarté : il
+bloquerait les pushes directs du PC sur `master`, et les PR ouvertes sous le compte de
+l'utilisateur ne peuvent pas recevoir son approbation. `.gitattributes` force les fins
 de ligne LF sur les `*.sh`, pour que le `bash` de Git for Windows les lise sur le PC.
 
 Le même script se lance à la main avant un push depuis le PC ou avant la fusion d'une PR :
