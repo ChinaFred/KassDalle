@@ -5,6 +5,7 @@ import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/domain/book.dart';
 import '../../../books/presentation/book_providers.dart';
+import '../../../auth/domain/user_profile.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
@@ -85,10 +86,13 @@ class RecipeMemberSectionHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.value?.displayedName ?? '…';
+    final name = ref.watch(memberNameProvider(ownerUid));
     return RecipeSectionHeader(
-      title: 'Recettes libres de $name',
+      title: switch (name) {
+        null => 'Recettes libres de …',
+        UserProfile.fallbackName => 'Recettes libres d\'un membre',
+        _ => 'Recettes libres de $name',
+      },
       count: count,
       expanded: expanded,
       onToggle: onToggle,

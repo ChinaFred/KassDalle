@@ -349,6 +349,17 @@ classDiagram
     +String displayedName
   }
 
+  class UserProfile {
+    +String uid
+    +String displayName
+    +String? preferredName
+    +String? freeRecipeCoverUrl
+    +String displayedName
+    +String fallbackName$
+    +int maxNameLength$
+    +truncateName(String) String$
+  }
+
   class UserRole {
     &lt;&lt;enumeration&gt;&gt;
     admin
@@ -461,6 +472,7 @@ classDiagram
   }
 
   AppUser "1" --&gt; "1" UserRole
+  AppUser "1" --&gt; "0..1" UserProfile : user_profiles/uid
   AppUser "1..*" --o "0..*" FamilyGroup : memberIds
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy

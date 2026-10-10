@@ -122,6 +122,11 @@ export const COLL_DEAD_LETTERS = "dead_letters";
 export const COLL_TOKEN_USAGE = "token_usage";
 export const COLL_AI_USAGE = "ai_usage";
 export const COLL_USERS = "users";
+/**
+ * Projection publique de `users/{uid}` : nom et couverture « Recette libre »,
+ * lisibles par tout compte approuvé. Écrite par le serveur seul.
+ */
+export const COLL_USER_PROFILES = "user_profiles";
 export const COLL_APP_CONFIG = "app_config";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 

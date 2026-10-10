@@ -23,6 +23,12 @@
  * (`revokeRefreshTokens`) : la session ne se renouvelle plus, et le jeton en
  * cours n'est plus prolongé au-delà de son heure. Les callables relisent le
  * document à chaque appel (`requireAuth`) et n'attendent pas cette heure.
+ *
+ * Le même déclencheur tient le profil public `user_profiles/{uid}`
+ * (`userPublicProfile.ts`, v0.23.14) : un second déclencheur sur
+ * `users/{uid}` aurait doublé les réveils pour la même écriture. Le profil
+ * est traité avant les claims et indépendamment d'eux : l'un peut échouer
+ * sans empêcher l'autre, et chacun laisse sa trace.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -31,6 +37,7 @@ import { getAuth } from "firebase-admin/auth";
 
 import { REGION } from "../config";
 import { logError, logInfo } from "../logging";
+import { syncPublicProfile } from "./userPublicProfile";
 
 /** Claims dérivés du document utilisateur. */
 export interface UserClaims {
@@ -92,6 +99,23 @@ export const syncUserClaims = onDocumentWritten(
   { document: "users/{uid}", region: REGION },
   async (event) => {
     const uid = event.params.uid;
+    const afterData = event.data?.after?.exists
+      ? (event.data.after.data() as Record<string, unknown> | undefined)
+      : undefined;
+
+    try {
+      const outcome = await syncPublicProfile(uid, afterData);
+      if (outcome !== "unchanged") {
+        await logInfo({ message: `syncUserClaims: profil public ${outcome}`, userId: uid });
+      }
+    } catch (err) {
+      await logError({
+        message: `syncUserClaims: profil public non synchronisé pour ${uid}`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+      });
+    }
+
     const before = claimsFrom(event.data?.before?.data() as Record<string, unknown> | undefined);
     const after = claimsFrom(event.data?.after?.data() as Record<string, unknown> | undefined);
 

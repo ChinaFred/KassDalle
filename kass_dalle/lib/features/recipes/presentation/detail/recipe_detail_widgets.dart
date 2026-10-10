@@ -363,8 +363,7 @@ class RecipeDetailOwnerLabel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ownerAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = ownerAsync.value?.displayedName;
+    final name = ref.watch(memberNameProvider(ownerUid));
     if (name == null) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,

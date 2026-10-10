@@ -39,6 +39,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'backfill_nutrition': 'Reprise de la nutrition demandée',
   'backfill_recipe_privacy': 'Reprise de la confidentialité des recettes',
   'book_privacy_backfill': 'Reprise de la confidentialité des livres',
+  'user_profiles_backfill': 'Reprise des profils publics',
   'backfill_ai_pricing': 'Correction de la grille tarifaire',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',

@@ -252,7 +252,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     setState(() => _uploadingFreeCover = true);
     try {
       final oldUrl =
-          ref.read(userByUidProvider(uid)).value?.freeRecipeCoverUrl ?? '';
+          ref.read(userProfileProvider(uid)).value?.freeRecipeCoverUrl ?? '';
       if (oldUrl.isNotEmpty) {
         await CachedNetworkImage.evictFromCache(oldUrl);
       }
@@ -263,7 +263,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
             bytes,
             oldUrl: oldUrl.isNotEmpty ? oldUrl : null,
           );
-      ref.invalidate(userByUidProvider(uid));
+      ref.invalidate(userProfileProvider(uid));
       if (mounted) {
         context.showSuccessSnackBar('Couverture « Recette libre » mise à jour');
       }

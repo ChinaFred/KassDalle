@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/error_report_service.dart';
-import '../../auth/domain/app_user.dart';
+import '../../auth/domain/user_profile.dart';
 import '../domain/family_group.dart';
 
 class GroupRepository {
@@ -127,19 +127,28 @@ class GroupRepository {
 
   // ── Recherche d'utilisateurs ─────────────────────────────────────────────────
 
-  /// Recherche des utilisateurs par nom ou email (filtrage client-side).
-  Future<List<AppUser>> searchUsers(String query) async {
-    if (query.trim().isEmpty) return [];
+  /// Recherche des membres à inviter, par nom (filtrage côté client).
+  ///
+  /// Lit les profils publics (`user_profiles`), pas `users` : le document d'un
+  /// compte, adresse comprise, ne se lit plus que par son titulaire et par un
+  /// administrateur (v0.23.14). La recherche par adresse a disparu avec : la
+  /// servir aurait demandé d'exposer les adresses, ou une Cloud Function de
+  /// plus. Un compte en attente n'a pas de profil, et n'apparaît donc pas.
+  /// Plafonné à 200 profils : une famille en compte quelques dizaines.
+  Future<List<UserProfile>> searchUsers(String query) async {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return [];
     try {
-      final snap = await _firestore.collection('users').limit(200).get();
-      final q = query.trim().toLowerCase();
+      final snap = await _firestore
+          .collection('user_profiles')
+          .limit(200)
+          .get();
       return snap.docs
-          .map((d) => AppUser.fromFirestore(d.data()))
+          .map((d) => UserProfile.fromFirestore(d.id, d.data()))
           .where(
-            (u) =>
-                u.displayName.toLowerCase().contains(q) ||
-                u.displayedName.toLowerCase().contains(q) ||
-                u.email.toLowerCase().contains(q),
+            (p) =>
+                p.displayName.toLowerCase().contains(q) ||
+                p.displayedName.toLowerCase().contains(q),
           )
           .toList();
     } catch (e, st) {

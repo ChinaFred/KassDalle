@@ -414,15 +414,16 @@ class GcpBillingRepository {
     return out;
   }
 
-  /// Pose `is_private` sur les livres qui ne le portent pas (`false`, ou
-  /// `true` pour « Mes Recettes Secrètes »). Sans appel de modèle, réentrante,
-  /// avec reprise sur point de contrôle. Compteurs tels quels, drapeaux en 1/0.
-  Future<Map<String, int>> backfillBookPrivacy({
+  /// Sème les profils publics (`user_profiles/{uid}`) des comptes existants :
+  /// crée, met à jour ou retire chaque profil selon `users/{uid}`. Sans appel
+  /// de modèle, réentrante, avec reprise sur point de contrôle. Compteurs tels
+  /// quels, drapeaux en 1/0.
+  Future<Map<String, int>> backfillUserProfiles({
     double maxMinutes = 8,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
   }) async {
-    final dynamic raw = await _callViaSdk('backfillBookPrivacyFn', {
+    final dynamic raw = await _callViaSdk('backfillUserProfilesFn', {
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,

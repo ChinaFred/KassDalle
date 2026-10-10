@@ -172,20 +172,24 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  /// Confidentialité des livres (v0.23.8). Les règles Firestore ne laissent
-  /// lire le livre d'un autre que s'il porte `is_private: false` : un livre
-  /// sans le champ disparaissait de la bibliothèque familiale.
-  Future<void> _runBackfillBookPrivacy() async {
+  /// Profils publics (v0.23.14). `users/{uid}` ne se lit plus que par son
+  /// titulaire et par un administrateur : les noms des autres membres se
+  /// lisent dans `user_profiles/{uid}`. Sans profil, un nom s'affiche
+  /// « Membre ».
+  Future<void> _runBackfillUserProfiles() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reprendre la confidentialité des livres'),
+        title: const Text('Créer les profils publics'),
         content: const Text(
-          'Pose « partagé » sur les livres qui ne disent pas s\'ils sont '
-          'privés (« privé » pour Mes Recettes Secrètes). Sans cela, ces '
-          'livres ne sont plus visibles que de leur créateur.\n\n'
-          'Aucun appel d\'IA. Un livre déjà renseigné n\'est pas touché ; '
-          'relancer ne refait rien. Continuer ?',
+          'Recopie le nom et la couverture « Recette libre » de chaque compte '
+          'dans son profil public, que les autres membres lisent. Sans '
+          'profil, un nom s\'affiche « Membre ».\n\n'
+          'Ni adresse, ni rôle ne sont recopiés. Les comptes en attente n\'ont '
+          'pas de profil.\n\n'
+          'Aucun appel d\'IA, jusqu\'à 2 000 comptes par passage. Un profil '
+          'déjà à jour n\'est pas réécrit ; relancer ne refait rien. '
+          'Continuer ?',
         ),
         actions: [
           TextButton(
@@ -202,12 +206,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     if (confirmed != true || !mounted) return;
 
     await _runBackfill<Map<String, int>>(
-      label: 'Reprise de la confidentialité des livres en cours...',
-      feature: 'admin_backfill_book_privacy',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillBookPrivacy(),
+      label: 'Création des profils publics en cours...',
+      feature: 'admin_backfill_user_profiles',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillUserProfiles(),
       format: (r) =>
-          'Livres : examinés=${r['examines']}, partagés=${r['partages']}, '
-          'privés=${r['prives']}, déjà renseignés=${r['dejaAJour']}, '
+          'Comptes : examinés=${r['examines']}, créés=${r['crees']}, '
+          'mis à jour=${r['misAJour']}, retirés=${r['supprimes']}, '
+          'ignorés (déjà à jour)=${r['dejaAJour']}, '
           'en erreur=${r['echoues']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer pour continuer'}',
     );
@@ -387,6 +392,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // à constater. Si la règle change à nouveau, l'outil se retrouve dans
   // l'historique git, écrit pour cette occasion-là.
   //
+  // « Reprendre la confidentialité des livres » (`backfillBookPrivacyFn`) a posé
+  // `is_private` sur les livres antérieurs au champ. Lancée en production,
+  // retirée en v0.23.14 (10 octobre 2026) : son travail est fait.
+  //
   // « Reprendre la confidentialité » a posé `is_private` sur tout le fonds
   // antérieur au champ. Passée au complet le 5 octobre 2026 — la politique IAM
   // qui la rendait inappelable venait d'être corrigée le même jour. Toute
@@ -524,14 +533,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(
-                      icon: Icons.lock_outline,
-                      title: 'Reprendre la confidentialité des livres',
+                      icon: Icons.badge_outlined,
+                      title: 'Créer les profils publics',
                       subtitle:
-                          'À lancer une fois après la v0.23.8 : pose « partagé » '
-                          'sur les livres sans réglage de confidentialité, '
-                          'sans quoi la famille ne les voit plus. Aucun appel '
-                          'd\'IA.',
-                      onTap: _busy ? null : _runBackfillBookPrivacy,
+                          'À lancer une fois juste après la v0.23.14 : recopie '
+                          'le nom de chaque compte dans son profil public. '
+                          'Sans cela, les noms des autres membres s\'affichent '
+                          '« Membre ». Aucun appel d\'IA.',
+                      onTap: _busy ? null : _runBackfillUserProfiles,
                     ),
                   ],
                 ),

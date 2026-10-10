@@ -3,6 +3,7 @@ import '../data/book_repository.dart';
 import '../domain/book.dart';
 import '../domain/book_order.dart';
 import '../domain/library_origin.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 
@@ -61,10 +62,6 @@ final draftBooksProvider = StreamProvider<List<Book>>((ref) {
   return ref.watch(bookRepositoryProvider).watchDraftBooks(uid);
 });
 
-final draftBooksCountProvider = Provider<int>((ref) {
-  return ref.watch(draftBooksProvider).value?.length ?? 0;
-});
-
 /// Récupère un livre par son id (lecture unique, mis en cache par Riverpod).
 final bookByIdProvider = FutureProvider.autoDispose.family<Book?, String>((
   ref,
@@ -73,36 +70,12 @@ final bookByIdProvider = FutureProvider.autoDispose.family<Book?, String>((
   return ref.read(bookRepositoryProvider).getBook(bookId);
 });
 
-/// ID du livre "Mes recettes libres" de l'utilisateur connecté.
-final libresBookProvider = FutureProvider<({String id, String titre})?>((
-  ref,
-) async {
-  final user = ref.watch(appUserProvider).value;
-  if (user == null) return null;
-  final displayName = user.displayName;
-  return ref
-      .read(bookRepositoryProvider)
-      .findOrCreateLibresBook(user.uid, displayName);
-});
-
-/// ID du livre "Mes Recettes Secrètes" de l'utilisateur connecté.
-final secretesBookProvider = FutureProvider<({String id, String titre})?>((
-  ref,
-) async {
-  final user = ref.watch(appUserProvider).value;
-  if (user == null) return null;
-  final displayName = user.displayName;
-  return ref
-      .read(bookRepositoryProvider)
-      .findOrCreateSecretesBook(user.uid, displayName);
-});
-
 /// D'où vient le livre tenu par [ownerUid], en une phrase prête à afficher.
 ///
-/// Rend `null` tant que le profil du propriétaire n'est pas chargé, ou si le
-/// lecteur n'a pas le droit de le lire : les rôles `reader` ne voient que leur
-/// propre document utilisateur. Une phrase absente vaut mieux qu'un « au
-/// travers de … » sans nom.
+/// Rend `null` tant que le profil du propriétaire n'est pas chargé, ou quand
+/// son nom n'est pas connu (profil absent ou illisible, qui s'affiche
+/// [UserProfile.fallbackName]) : « Bibliothèque de Membre » ne désigne
+/// personne, et une phrase absente vaut mieux qu'un nom de remplacement.
 final libraryOriginProvider = Provider.autoDispose.family<String?, String>((
   ref,
   ownerUid,
@@ -116,10 +89,10 @@ final libraryOriginProvider = Provider.autoDispose.family<String?, String>((
       groupNames: const [],
     );
   }
-  final owner = ref.watch(userByUidProvider(ownerUid)).value;
+  final ownerName = ref.watch(memberNameProvider(ownerUid));
   return libraryOriginLabel(
     isMine: false,
-    ownerName: owner?.displayedName,
+    ownerName: ownerName == UserProfile.fallbackName ? null : ownerName,
     groupNames: ref.watch(sharedGroupNamesProvider(ownerUid)),
   );
 });

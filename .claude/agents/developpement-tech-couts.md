@@ -58,6 +58,28 @@ kass_dalle/functions/src/
   `CLAUDE.md`) se corrige **des deux côtés** dans le même changement, cas ajouté à la fixture
   d'abord. Le signaler explicitement dans le bilan.
 
+## Code mort — vérifier à chaque changement
+
+Avant de rendre la main, chercher le code mort dans ce que le changement touche ou rend
+inutile : une fonction, une classe, un provider, un écran, une route, une Cloud Function
+exportée, une constante ou un fichier que plus rien n'appelle, ou que plus aucun parcours ne
+peut atteindre. Le chercher par `grep` sur le nom, côté Dart et côté Functions, tests exclus.
+
+- Code mort trouvé : le supprimer dans le même changement, avec ses tests, son export, son
+  bouton ou sa route, et sa mention dans la documentation (le `CHANGELOG.md` garde
+  l'historique).
+- Un backfill déjà lancé en production sort du code une fois son travail fait, comme le
+  décrit le skill `backfill` : la callable, son bouton dans Admin › Backfills
+  (avec un commentaire daté à sa place), sa section de documentation. Son libellé de journal
+  reste, pour lire les anciens journaux.
+- Ne sont pas du code mort : un poste d'IA retiré du code **reste** dans `kFeatureCatalog`
+  et `kFeatureProcess` (règle « Un poste d'IA vit à trois endroits »), et un libellé de
+  journal reste pour les anciens journaux.
+- Ne pas supprimer sans preuve : un code appelé par réflexion, par un déclencheur, par une
+  route ou par le client se cherche aussi par sa chaîne (nom d'export, chemin de route). En
+  cas de doute, le signaler dans le bilan au lieu de supprimer.
+- Le bilan liste ce qui a été supprimé, et ce qui est resté avec la raison.
+
 ## Skills à charger
 
 Avant d'écrire, charger le skill qui couvre la tâche :
