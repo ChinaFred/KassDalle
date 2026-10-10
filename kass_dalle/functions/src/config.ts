@@ -194,6 +194,16 @@ export const COLL_PLANNING_RUNS = "planning_runs";
 /** Réglages de la présélection du planning — `app_config/planning_policy`. */
 export const PLANNING_POLICY_DOC_ID = "planning_policy";
 
+/** Préférences d'un compte — sous-collection `users/{uid}/preferences`. */
+export const COLL_USER_PREFERENCES = "preferences";
+
+/**
+ * Mémoire des refus du planning — `users/{uid}/preferences/planning_refusals`.
+ * Écrite par le titulaire depuis l'application, lue par `suggestMealPlanFn`
+ * pour l'appelant seul.
+ */
+export const PLANNING_REFUSALS_DOC_ID = "planning_refusals";
+
 /** Notes personnelles des recettes — `recipe_ratings/{uid}_{recipeId}`. */
 export const COLL_RECIPE_RATINGS = "recipe_ratings";
 

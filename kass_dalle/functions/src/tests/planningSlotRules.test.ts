@@ -36,6 +36,12 @@ import {
   RATING_HIGH_MIN,
   RATING_LOW_FACTOR,
   RATING_LOW_MAX,
+  REFUSAL_FACTOR,
+  REFUSAL_FUTURE_TOLERANCE_DAYS,
+  REFUSAL_MAX_ENTRIES,
+  REFUSAL_PENALTY_DAYS,
+  REFUSAL_REPEAT_FACTOR,
+  REFUSAL_REPEAT_THRESHOLD,
   REHEAT_BONUS,
   REST_EVE_MINUTES,
   buildPlanningPrompt,
@@ -51,6 +57,8 @@ import {
   proteinOf,
   ratingFactor,
   readPlanningPolicy,
+  readRefusals,
+  refusalFactor,
   resizeOf,
   seededRng,
   slotContexts,
@@ -64,6 +72,7 @@ import {
   type CandidateRole,
   type ProteinKey,
   type RankedCandidate,
+  type RefusalEntry,
   type SlotRanking,
 } from "../gemini/planning";
 
@@ -156,12 +165,19 @@ interface PreselectionFixture {
   }>;
   freshness: Array<{ days: number | null; expected: number; why: string }>;
   rating_factor: Array<{ rating: number | null; expected: number; why: string }>;
+  refusal_factor: Array<{
+    age_days: number | null;
+    count: number | null;
+    expected: number;
+    why: string;
+  }>;
   weight: Array<{
     days: number | null;
     reheat_slot: boolean;
     reheat_friendly: boolean;
     protein_repeats: number;
     rating?: number;
+    refusal_factor?: number;
     expected: number;
     why: string;
   }>;
@@ -185,6 +201,7 @@ interface PreselectionFixture {
     already_assigned?: Array<{ slot: number; recipe_id: string }>;
     served?: Array<{ recipe_id: string; date: string }>;
     ratings?: Record<string, number>;
+    refusals?: Record<string, { age_days: number; count: number }>;
     policy: Record<string, unknown>;
     seed: number;
     today: string;
@@ -198,6 +215,7 @@ interface PreselectionFixture {
         desserts?: string[];
         repeat: string[];
         relaxed: string[];
+        refused?: string[];
       }>;
     };
     why: string;
@@ -217,6 +235,7 @@ interface PreselectionFixture {
     history: boolean;
     rating?: number;
     repeat?: boolean;
+    refused?: boolean;
     expected: string;
     why: string;
   }>;
@@ -456,6 +475,12 @@ describe("présélection — constantes recopiées dans la fixture", () => {
     assert.equal(RATING_HIGH_MIN, c.rating_high_min);
     assert.equal(RATING_HIGH_FACTOR, c.rating_high_factor);
     assert.equal(CONCEPT_RUN_TTL_MS, c.concept_run_ttl_hours * 3_600_000);
+    assert.equal(REFUSAL_PENALTY_DAYS, c.refusal_penalty_days);
+    assert.equal(REFUSAL_FACTOR, c.refusal_factor);
+    assert.equal(REFUSAL_REPEAT_THRESHOLD, c.refusal_repeat_threshold);
+    assert.equal(REFUSAL_REPEAT_FACTOR, c.refusal_repeat_factor);
+    assert.equal(REFUSAL_MAX_ENTRIES, c.refusal_max_entries);
+    assert.equal(REFUSAL_FUTURE_TOLERANCE_DAYS, c.refusal_future_tolerance_days);
   });
 });
 
@@ -511,10 +536,68 @@ describe("présélection — note et poids", () => {
         reheatFriendly: c.reheat_friendly,
         proteinRepeats: c.protein_repeats,
         rating: c.rating ?? null,
+        ...(c.refusal_factor != null ? { refusalFactor: c.refusal_factor } : {}),
       });
       assert.ok(Math.abs(w - c.expected) < 1e-9, `${w} ≠ ${c.expected}`);
     });
   }
+});
+
+const DAY_MS = 86_400_000;
+const NOW_MS = Date.parse("2026-10-10T12:00:00Z");
+
+/** Refus de la fixture (âge en jours) → entrée, relative à [nowMs]. */
+function refusalOf(r: { age_days: number; count: number | null }, nowMs: number): RefusalEntry {
+  return { refusedAtMs: nowMs - r.age_days * DAY_MS, count: r.count ?? 0 };
+}
+
+describe("présélection — mémoire des refus", () => {
+  for (const c of fixture.refusal_factor) {
+    test(`refus ${c.age_days ?? "aucun"} j, ${c.count ?? "-"} fois (${c.why})`, () => {
+      const entry =
+        c.age_days == null ? null : refusalOf({ age_days: c.age_days, count: c.count }, NOW_MS);
+      assert.equal(refusalFactor(entry, NOW_MS), c.expected);
+    });
+  }
+
+  /** Horodatage Firestore minimal : seule `toMillis()` est lue. */
+  const ts = (ms: number) => ({ toMillis: () => ms });
+
+  test("lecture du document : entrées expirées et illisibles ignorées", () => {
+    const out = readRefusals(
+      {
+        entries: {
+          recent: { refused_at: ts(NOW_MS - 2 * DAY_MS), count: 2 },
+          old: { refused_at: ts(NOW_MS - 30 * DAY_MS), count: 9 },
+          noDate: { count: 1 },
+          future: { refused_at: ts(NOW_MS + 3 * DAY_MS), count: 1 },
+          badCount: { refused_at: ts(NOW_MS - DAY_MS), count: "x" },
+          notAMap: "x",
+        },
+      },
+      NOW_MS,
+    );
+    assert.deepEqual([...out.keys()].sort(), ["badCount", "recent"]);
+    assert.equal(out.get("recent")?.count, 2);
+    assert.equal(out.get("badCount")?.count, 1);
+  });
+
+  test("lecture du document : absent ou mal formé, aucune entrée", () => {
+    assert.equal(readRefusals(null, NOW_MS).size, 0);
+    assert.equal(readRefusals({ entries: [] }, NOW_MS).size, 0);
+    assert.equal(readRefusals({ entries: "x" }, NOW_MS).size, 0);
+  });
+
+  test("lecture du document : au plus les entrées les plus récentes", () => {
+    const entries: Record<string, unknown> = {};
+    for (let i = 0; i < REFUSAL_MAX_ENTRIES + 20; i++) {
+      entries[`r${i}`] = { refused_at: ts(NOW_MS - i * 60_000), count: 1 };
+    }
+    const out = readRefusals({ entries }, NOW_MS);
+    assert.equal(out.size, REFUSAL_MAX_ENTRIES);
+    assert.ok(out.has("r0"));
+    assert.ok(!out.has(`r${REFUSAL_MAX_ENTRIES + 19}`));
+  });
 });
 
 describe("présélection — tirage pondéré", () => {
@@ -589,6 +672,13 @@ describe("présélection — listes par créneau", () => {
         recentExcluded: recipes.filter((r) => window.excludedIds.includes(r.id)),
         lastServed: new Map(served.map((m) => [m.recipe_id as string, m.date as string])),
         ratings: new Map(Object.entries((c.ratings ?? {}) as Record<string, number>)),
+        refusals: new Map(
+          Object.entries(c.refusals ?? {}).map(([id, r]) => [
+            id,
+            refusalOf(r, Date.parse(`${c.today}T12:00:00Z`)),
+          ]),
+        ),
+        nowMs: Date.parse(`${c.today}T12:00:00Z`),
         historyAvailable: true,
         policy: readPlanningPolicy(c.policy),
         today: c.today,
@@ -622,6 +712,15 @@ describe("présélection — listes par créneau", () => {
           want.repeat,
         );
         assert.deepEqual(got.relaxed, want.relaxed);
+        if (want.refused) {
+          assert.deepEqual(
+            got.plats
+              .filter((x) => x.why.includes("refusée récemment"))
+              .map((x) => x.recipeId)
+              .sort(),
+            want.refused,
+          );
+        }
       }
       assert.ok(
         out.every((r) => !(input.alreadyAssigned ?? []).some((a) => a.slot === r.slot)),
@@ -735,6 +834,7 @@ describe("justification produite par le code", () => {
           historyAvailable: c.history,
           rating: c.rating ?? null,
           repeat: c.repeat ?? false,
+          refused: c.refused ?? false,
         }),
         c.expected,
       );

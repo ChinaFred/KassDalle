@@ -475,6 +475,25 @@ export const RATING_LOW_FACTOR = 0.5;
 /** À partir de cette note, poids augmenté. */
 export const RATING_HIGH_MIN = 8;
 export const RATING_HIGH_FACTOR = 1.5;
+/**
+ * Mémoire des refus (`users/{uid}/preferences/planning_refusals`) : un refus
+ * pèse pendant 21 jours après le dernier, puis il est ignoré. Le client
+ * rejoue cette durée pour élaguer le document et compter les refus actifs.
+ */
+export const REFUSAL_PENALTY_DAYS = 21;
+/** Poids d'une recette refusée dans les 21 jours. */
+export const REFUSAL_FACTOR = 0.5;
+/** À partir de ce nombre de refus, la pénalité double. */
+export const REFUSAL_REPEAT_THRESHOLD = 3;
+export const REFUSAL_REPEAT_FACTOR = 0.25;
+/** Entrées gardées au plus dans le document ; les plus anciennes sortent. */
+export const REFUSAL_MAX_ENTRIES = 300;
+/**
+ * Avance tolérée d'une date de refus sur l'horloge du serveur (horloge du
+ * téléphone). Au-delà, l'entrée est ignorée : une date lointaine dans le
+ * futur ne s'éteindrait jamais.
+ */
+export const REFUSAL_FUTURE_TOLERANCE_DAYS = 1;
 /** Forme d'un identifiant de génération (`pr_` + 32 hexadécimaux), tiré par le serveur. */
 export const PLANNING_RUN_ID_PATTERN = /^pr_[0-9a-f]{32}$/;
 /** Durée de vie d'une génération pour les conceptions qui s'y rattachent. */
@@ -721,6 +740,60 @@ export function freshnessScore(daysSinceServed: number | null): number {
   return Math.min(1, Math.max(FRESHNESS_FLOOR, daysSinceServed / HISTORY_DAYS));
 }
 
+/** Un refus de l'appelant : date du dernier, et combien depuis le premier encore actif. */
+export interface RefusalEntry {
+  refusedAtMs: number;
+  count: number;
+}
+
+/**
+ * Vrai tant que le dernier refus a 21 jours ou moins, et n'est pas daté de
+ * plus d'un jour dans le futur.
+ */
+export function isRefusalActive(entry: RefusalEntry, nowMs: number): boolean {
+  const age = nowMs - entry.refusedAtMs;
+  return (
+    age <= REFUSAL_PENALTY_DAYS * 86_400_000 && age >= -REFUSAL_FUTURE_TOLERANCE_DAYS * 86_400_000
+  );
+}
+
+/**
+ * Facteur de refus : 1 sans refus actif, 0,5 dans les 21 jours, 0,25 à partir
+ * de 3 refus. Jamais 0 : une recette refusée reste tirable.
+ */
+export function refusalFactor(entry: RefusalEntry | null | undefined, nowMs: number): number {
+  if (!entry || !isRefusalActive(entry, nowMs)) return 1;
+  return entry.count >= REFUSAL_REPEAT_THRESHOLD ? REFUSAL_REPEAT_FACTOR : REFUSAL_FACTOR;
+}
+
+/**
+ * Lit le document des refus, données non fiables : écrit par le client.
+ *
+ * Une entrée sans date lisible est ignorée ; un compte illisible vaut un
+ * refus. Les entrées expirées, ou datées de plus d'un jour dans le futur,
+ * sont ignorées ; au plus
+ * `REFUSAL_MAX_ENTRIES`, les plus récentes.
+ */
+export function readRefusals(raw: unknown, nowMs: number): Map<string, RefusalEntry> {
+  const out: Array<[string, RefusalEntry]> = [];
+  const entries =
+    raw != null && typeof raw === "object" ? (raw as Record<string, unknown>).entries : null;
+  if (entries == null || typeof entries !== "object" || Array.isArray(entries)) return new Map();
+  for (const [id, value] of Object.entries(entries as Record<string, unknown>)) {
+    if (!id || value == null || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    const at = v.refused_at as { toMillis?: unknown } | null | undefined;
+    const ms = at != null && typeof at.toMillis === "function" ? Number(at.toMillis()) : NaN;
+    if (!Number.isFinite(ms)) continue;
+    const count =
+      typeof v.count === "number" && Number.isInteger(v.count) && v.count >= 1 ? v.count : 1;
+    const entry = { refusedAtMs: ms, count };
+    if (isRefusalActive(entry, nowMs)) out.push([id, entry]);
+  }
+  out.sort((a, b) => b[1].refusedAtMs - a[1].refusedAtMs);
+  return new Map(out.slice(0, REFUSAL_MAX_ENTRIES));
+}
+
 /** Facteur de la note personnelle : 0 (exclue), 0,5, 1 ou 1,5. */
 export function ratingFactor(rating: number | null | undefined): number {
   const n = readRating(rating);
@@ -738,7 +811,7 @@ export function candidateWeight(args: {
   /** Fois où cette protéine est déjà posée dans le cycle ("inconnue" : 0). */
   proteinRepeats: number;
   rating?: number | null;
-  /** Lot 2 : facteur de refus (1 sans refus). */
+  /** Facteur de refus (`refusalFactor`), 1 sans refus. */
   refusalFactor?: number;
 }): number {
   return (
@@ -811,6 +884,8 @@ export function codeJustification(
     historyAvailable: boolean;
     rating?: number | null;
     repeat?: boolean;
+    /** Refus actif de l'appelant : le dire, la recette pèse moins. */
+    refused?: boolean;
   },
 ): string {
   const facts: string[] = [];
@@ -843,6 +918,7 @@ export function codeJustification(
   }
   if (opts.repeat) served = served ? `${served}, peu d'autres choix` : "peu d'autres choix";
   if (served) facts.push(served);
+  if (opts.refused) facts.push("refusée récemment");
   return facts.join(" · ");
 }
 
@@ -897,6 +973,10 @@ export interface PreselectArgs {
   lastServed: ReadonlyMap<string, string>;
   /** recipeId → note personnelle de l'appelant (0 à 10). */
   ratings: ReadonlyMap<string, number>;
+  /** recipeId → refus de l'appelant ; absent : aucun. */
+  refusals?: ReadonlyMap<string, RefusalEntry>;
+  /** Instant de référence des refus ; absent : midi UTC de `today`. */
+  nowMs?: number;
   historyAvailable: boolean;
   policy: PlanningPolicy;
   /** YYYY-MM-DD */
@@ -906,6 +986,7 @@ export interface PreselectArgs {
 
 const NO_IDS: ReadonlySet<string> = new Set();
 const NO_RATINGS: ReadonlyMap<string, number> = new Map();
+const NO_REFUSALS: ReadonlyMap<string, RefusalEntry> = new Map();
 
 /**
  * Classe les candidats de chaque créneau à remplir.
@@ -919,6 +1000,9 @@ const NO_RATINGS: ReadonlyMap<string, number> = new Map();
  */
 export function preselect(args: PreselectArgs): SlotRanking[] {
   const { input, candidates, recentExcluded, lastServed, ratings, policy, today, rng } = args;
+  const refusals = args.refusals ?? NO_REFUSALS;
+  const nowMs = args.nowMs ?? Date.parse(`${today}T12:00:00Z`);
+  const refusalOf = (r: PlanningRecipeSummary) => refusalFactor(refusals.get(r.id), nowMs);
   const corpusById = new Map(input.recipes.map((r) => [r.id, r]));
   const assigned = new Set((input.alreadyAssigned ?? []).map((a) => a.slot));
   const inCycle = new Set((input.alreadyAssigned ?? []).map((a) => a.recipeId));
@@ -976,6 +1060,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
         reheatFriendly: isReheatFriendly(r),
         proteinRepeats: role === "main" && p !== "inconnue" ? (proteinCounts.get(p) ?? 0) : 0,
         rating: ratingRelaxed ? null : ratings.get(r.id),
+        refusalFactor: refusalOf(r),
       });
     };
     const ordered = weightedOrder(admissible, weightOf, rng);
@@ -998,6 +1083,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
             historyAvailable: args.historyAvailable,
             rating: ratings.get(r.id),
             repeat,
+            refused: refusalOf(r) < 1,
           }),
           ...(repeat ? { repeat: true } : {}),
           ...(resize.resizeReason ? { resizeReason: resize.resizeReason } : {}),
@@ -1460,6 +1546,10 @@ export interface PlanningDeps {
   lastServed: ReadonlyMap<string, string>;
   historyAvailable: boolean;
   ratings: ReadonlyMap<string, number>;
+  /** Refus actifs de l'appelant (`readRefusals`). */
+  refusals: ReadonlyMap<string, RefusalEntry>;
+  /** Instant de référence des refus. */
+  nowMs: number;
   /** YYYY-MM-DD */
   today: string;
   rng: Rng;
@@ -1506,6 +1596,8 @@ export async function suggestMealPlan(
           recentExcluded: input.recipes.filter((r) => excluded.has(r.id)),
           lastServed: deps.lastServed,
           ratings: deps.ratings,
+          refusals: deps.refusals,
+          nowMs: deps.nowMs,
           historyAvailable: deps.historyAvailable,
           policy: deps.policy,
           today: deps.today,

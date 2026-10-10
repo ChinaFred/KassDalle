@@ -20,6 +20,43 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.23 — technique
+
+#### Deux backfills retirés : profils publics et portée des groupes
+
+`backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) ont été lancés en
+production : les profils publics existent, et la portée des groupes est calculée. Les deux
+callables, leurs boutons d'Admin › Backfills (« Créer les profils publics », « Calculer la
+portée des groupes ») et les méthodes `backfillUserProfiles` et `backfillGroupReach` de
+`GcpBillingRepository` disparaissent, avec le test de `groupsByMember`, qui ne servait qu'au
+second. Les déclencheurs `syncUserClaims` et `syncGroupReach` continuent de tenir profils et
+portée à jour pour chaque compte et chaque groupe écrits.
+
+Les libellés de journal `user_profiles_backfill` et `group_reach_backfill` restent, pour lire
+les anciens journaux. Les documents `app_config/user_profiles_backfill_checkpoint` et
+`app_config/group_reach_backfill_checkpoint` restent en base ; plus rien ne les écrit ni ne les
+lit. Le workflow de déploiement supprime les deux functions en ligne (`--force`).
+
+### v0.23.22 — fonctionnel
+
+#### Planning : un plat écarté revient moins souvent pendant 21 jours
+
+Une recette proposée par l'IA ou par Kass'Dalle, puis écartée par « Autre suggestion »,
+« Changer la recette » ou « Tout régénérer », compte comme un refus. La génération suivante la
+propose moins souvent pendant 21 jours : son poids est divisé par deux, et par quatre à partir
+de trois refus. Elle n'est jamais exclue, et sa justification dit « refusée récemment ».
+
+Les refus vivent sous le compte, dans `users/{uid}/preferences/planning_refusals`, et jamais
+dans la recette partagée : un refus d'un membre ne change rien pour les autres. Dans Nouveau
+planning, ils s'enregistrent à la validation du cycle ; un cycle abandonné n'en laisse aucun.
+« Réessayer avec l'IA » après une panne et « Remettre à blanc » ne comptent pas.
+
+Préférences du planning affiche « Plats refusés récemment » et le bouton « Oublier mes
+refus ». Les règles Firestore bornent la forme du document (300 entrées au plus), et un test
+d'émulateur vérifie qu'un compte ne lit ni n'écrit les refus d'un autre. Un refus daté de
+plus d'un jour dans le futur est ignoré. La durée de 21 jours, le plafond de 300 entrées et le
+prédicat d'activité d'un refus sont rejoués des deux côtés par `planning_slot_rules.json`.
+
 ### v0.23.21 — technique
 
 #### Planning : plafond de génération tenu sous des conceptions parallèles

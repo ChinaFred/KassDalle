@@ -186,7 +186,7 @@ Côté Cloud Functions (Node 22, TypeScript) :
 firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
-│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope
+│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, meal_staples, planning_refusals
 │   └── planning_runs/{runId}                      ← générations de planning, serveur seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
@@ -1046,6 +1046,46 @@ planning et des conceptions rattachées porte `entity_type: "planning_run"` et
 
 ---
 
+### 3.8 ter Document `users/{uid}/preferences/planning_refusals` — la mémoire des refus
+
+Depuis v0.23.22. Un seul document par compte. Il retient les recettes **proposées** que le
+titulaire a écartées, pour qu'elles pèsent moins dans les générations suivantes. Écrit par
+le client (`PlanningRefusalsRepository`, `features/planning/data/`), lu par
+`suggestMealPlanFn` pour l'appelant seul (`readUserRefusals`, `gemini/planningStore.ts`).
+Rien n'est écrit dans la recette partagée : un refus de l'un ne pénalise pas la recette pour
+un autre membre.
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `entries` | `Map<String, Map>` | clé : `recipeId` ; valeur : `refused_at` (`Timestamp`, dernier refus) et `count` (`int` ≥ 1, refus depuis le premier encore actif). 300 entrées au plus (`kRefusalMaxEntries` / `REFUSAL_MAX_ENTRIES`), les plus anciennes sortent |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Ce qui compte comme un refus.** Une recette dont l'origine (`choice_source`, ou l'origine du
+créneau pendant la composition) est `ai`, `rules` ou `concept`, écartée par « Autre
+suggestion », « Changer la recette », « Tout régénérer », ou remplacée par une conception sur
+un repas planifié (`countsAsRefusal`, `planning_refusals.dart`). Ne comptent pas : une recette
+choisie à la main ou d'origine inconnue (repas antérieur à `choice_source`), « Réessayer avec
+l'IA » après une panne, « Remettre à blanc », le retrait d'une recette d'un créneau, la
+suppression d'un repas. Dans Nouveau planning, les refus de la session s'écrivent **à la
+validation du cycle**, en une transaction : un cycle abandonné n'en laisse aucun, et une
+recette écartée puis reprise dans le cycle n'est pas refusée. Sur un repas déjà planifié, le
+refus s'écrit au remplacement.
+
+**Écriture** (`record`, transaction) : les entrées de plus de 21 jours sortent ; un refus
+encore actif voit `count` augmenter et `refused_at` avancer ; sinon `count` repart à 1. Un
+échec est remonté au rapport d'erreurs (`planning.recordRefusals`) et ne bloque pas le geste.
+**Lecture serveur** (`readRefusals`, donnée non fiable) : entrée sans date lisible ignorée,
+compte illisible = 1, entrées de plus de 21 jours ou datées de plus d'un jour dans le futur
+ignorées (`REFUSAL_FUTURE_TOLERANCE_DAYS` : l'horloge d'un téléphone peut avancer, une date
+lointaine ne s'éteindrait jamais), 300 au plus. Le client applique le même prédicat
+(`isActiveAt`) pour élaguer et compter. Lecture en échec :
+`logError`, génération sans pénalité de refus.
+
+**« Oublier mes refus »** (Préférences du planning) supprime le document. Pas de backfill : le
+document naît au premier refus.
+
+---
+
 ### 3.9 Collection `recipe_ratings`
 
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
@@ -1301,6 +1341,7 @@ pourquoi.
   **ce** lecteur a rangé sa bibliothèque au glisser-déposer, et `updated_at`. Même raison : un
   livre est vu par toute la famille, chacun le range où il veut. Les identifiants disparus sont
   ignorés à la lecture, les livres créés depuis se rangent à la fin.
+- `users/{uid}/preferences/planning_refusals` : la mémoire des refus du planning, voir §3.8 ter.
 - `users/{uid}/preferences/recipe_search_scope` : `sources` (clés de `RecipeSource` — recettes
   validées, brouillons, recettes famille, conception IA) et `book_ids`, le dernier périmètre
   choisi dans « Où chercher des recettes ? » du planning par lots. Un livre absent de `book_ids`
@@ -1424,6 +1465,15 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    /// Forme de `users/{uid}/preferences/planning_refusals` :
+    /// `{ entries: { recipeId: { refused_at, count } }, updated_at }`.
+    function isPlanningRefusals(data) {
+      return data.keys().hasOnly(['entries', 'updated_at'])
+        && data.entries is map
+        && data.entries.size() <= 300
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     function founderEmail() {
       return 'china.fred.75@gmail.com';
     }
@@ -1497,8 +1547,13 @@ service cloud.firestore {
       match /nutrition_portion_overrides/{recipeId} {
         allow read, write: if isOwner(uid) || isAdmin();
       }
+      // `preferences/planning_refusals` : la mémoire des refus du planning,
+      // lue par `suggestMealPlanFn`. Sa forme est bornée.
       match /preferences/{prefId} {
-        allow read, write: if isOwner(uid) || isAdmin();
+        allow read, delete: if isOwner(uid) || isAdmin();
+        allow create, update: if (isOwner(uid) || isAdmin())
+          && (prefId != 'planning_refusals'
+              || isPlanningRefusals(request.resource.data));
       }
     }
 
@@ -1647,7 +1702,7 @@ service cloud.firestore {
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
-| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
+| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Un autre compte ne lit ni n'écrit les refus d'un autre (`rules-tests`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
@@ -1961,7 +2016,8 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore.
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
   rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
-  propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels ; côté
+  propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels, mémoire des
+  refus du planning (`preferences/planning_refusals`) ; côté
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
@@ -2316,9 +2372,10 @@ modèle, aucune ligne `ai_usage`) et `slotDismissed` (écartés par créneau). U
 de `slot` hors des dates de la demande (−1) désigne une recette posée ailleurs dans le cycle.
 Le serveur lit lui-même `app_config/planning_policy`, les `planned_meals` de l'appelant sur les
 90 jours qui précèdent le cycle (`readServedHistory`, index `uid` + `planned_at` existant) et
-ses `recipe_ratings` (`readUserRatings`). Une lecture en échec : `logError`, la génération
-continue sans historique (`historyAvailable: false`, aucun fait de service affirmé) ou sans
-note.
+ses `recipe_ratings` (`readUserRatings`), et depuis v0.23.22 sa mémoire des refus
+(`readUserRefusals`, §3.8 ter). Une lecture en échec : `logError`, la génération continue
+sans historique (`historyAvailable: false`, aucun fait de service affirmé), sans note ou sans
+pénalité de refus.
 
 **Présélection** (`preselect`), créneau par créneau dans l'ordre des dates :
 
@@ -2329,7 +2386,9 @@ note.
 2. **Poids** (`candidateWeight`) = fraîcheur (1 si pas servie en 90 jours, sinon
    jours / 90 borné entre 0,1 et 1) × 2 pour un plat qui se réchauffe sur un créneau de
    réchauffage × 0,6 par répétition d'une protéine déjà au cycle × facteur de note (0,5 de 4
-   à 6, 1,5 à partir de 8). La protéine se lit dans `dishTypes` (`proteinOf` : viande,
+   à 6, 1,5 à partir de 8) × facteur de refus (`refusalFactor` : 0,5 si l'appelant a refusé
+   la recette dans les 21 derniers jours, 0,25 à partir de 3 refus ; jamais une exclusion).
+   La protéine se lit dans `dishTypes` (`proteinOf` : viande,
    volaille, poisson, fruits de mer, végétarien, inconnue).
 3. **Tirage pondéré sans remise** (`weightedOrder`, Efraimidis–Spirakis, graine tirée par
    `crypto`) : deux générations ne rendent pas la même liste. Les recettes déjà en tête d'un
@@ -2356,7 +2415,8 @@ Le modèle rend `[{slot, recipe_id, starter_id?, dessert_id?}]`, sans phrase. `m
 **Lecture de la réponse** (`validateModelChoices`) : un identifiant hors de la tête du
 créneau, déjà pris, ou un créneau oublié est remplacé par le premier candidat libre de la
 liste (`source: "code"`, en évitant la protéine du créneau précédent) ; `rejected_choices`
-les compte, `logWarn` si > 0. Les justifications sont les faits du code (`codeJustification`) ;
+les compte, `logWarn` si > 0. Les justifications sont les faits du code (`codeJustification`,
+qui ajoute « refusée récemment » en dernier quand la pénalité de refus s'applique) ;
 le redimensionnement est calculé (`resizeOf` : « Écrite pour 4 parts, servie pour 6. »),
 jamais demandé au modèle, et rien n'est écrit dans la recette.
 
@@ -2407,6 +2467,8 @@ seulement : écartées, posées ailleurs, sorties du corpus), sinon il rappelle
 `suggestMealPlanFn` en mode `code` sur ce créneau. La liste d'un créneau est oubliée quand
 son format, sa préparation maximale ou son réchauffage changent. Les conceptions
 automatiques ne bouclent que sur `conceptsRemaining` créneaux et s'arrêtent au premier refus.
+Les recettes proposées que l'utilisateur écarte sont enregistrées dans sa mémoire des refus
+(§3.8 ter) ; Préférences du planning en affiche le nombre et propose « Oublier mes refus ».
 
 ### Les réponses JSON
 
@@ -3375,7 +3437,7 @@ Functions.
 | `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle, coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
-| `planning_slot_rules.json` | règles de créneau et présélection du planning — serveur seul | — | `gemini/planning.ts` |
+| `planning_slot_rules.json` | règles de créneau et présélection du planning, dont la pénalité de refus — serveur ; le client rejoue les constantes de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur) et le prédicat d'activité d'un refus, pour élaguer le document qu'il écrit et compter les refus actifs | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, paliers Vision — serveur seul | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |

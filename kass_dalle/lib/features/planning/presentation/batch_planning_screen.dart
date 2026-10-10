@@ -15,6 +15,7 @@ import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_refusals.dart';
 import '../domain/ranked_candidates.dart';
 import '../domain/registered_meals.dart';
 import '../domain/week_replay.dart';
@@ -112,6 +113,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // Recettes écartées de chaque créneau pendant cette session : une nouvelle
   // suggestion ne les repropose pas, et elles suivent le repas à la validation.
   Map<int, Set<String>> _slotDismissed = {};
+  // Recettes proposées (IA, règles, conception) que l'utilisateur a écartées
+  // pendant cette session. Enregistrées comme refus à la validation du cycle
+  // seulement : un cycle abandonné ne laisse aucun refus.
+  final Set<String> _refusedIds = {};
   // Identifiant du repas déjà enregistré pour un créneau, depuis son icône
   // calendrier. « Valider » réécrit ce repas sous le même identifiant au lieu
   // d'en créer un second sur la même date. Les repas déjà au planning à
@@ -1057,6 +1062,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         await repo.deleteMeals(existing.map((m) => m.id).toList());
       }
       await repo.saveMeals(mealsToAdd);
+      unawaited(_recordRefusals(repo.uid));
       await _ensureStorageAdviceForPreparedMeals(mealsToAdd);
       // Les repas posés dans le calendrier depuis leur créneau n'y retournent
       // pas ; les autres y entrent maintenant. Le planning est enregistré
@@ -1340,10 +1346,29 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   /// Écarte la recette en place sur [slotIndex], s'il y en a une enregistrée.
+  ///
+  /// Appelé par « Autre suggestion », « Changer la recette » et « Tout
+  /// régénérer ». Une recette proposée (et non choisie à la main) compte
+  /// aussi comme un refus. « Réessayer avec l'IA » et le retrait d'une
+  /// recette passent par [_clearSlot] : ce ne sont pas des refus.
   void _dismissSlotRecipe(int slotIndex) {
     final current = _slots[slotIndex];
     if (current == null || current.id.isEmpty) return;
     (_slotDismissed[slotIndex] ??= {}).add(current.id);
+    if (countsAsRefusal(_slotSources[slotIndex])) _refusedIds.add(current.id);
+  }
+
+  /// Enregistre les refus de la session, une fois le cycle validé. Une
+  /// recette écartée puis reprise sur un créneau du cycle n'est pas refusée.
+  Future<void> _recordRefusals(String uid) async {
+    final kept = {
+      for (final r in _slots.values)
+        if (r != null && r.id.isNotEmpty) r.id,
+    };
+    final refused = _refusedIds.difference(kept);
+    if (refused.isEmpty) return;
+    // Jamais bloquant : le repository remonte lui-même un échec au rapport.
+    await ref.read(planningRefusalsRepositoryProvider).record(uid, refused);
   }
 
   /// « Autre suggestion » sur un créneau rempli, « Proposer une recette » sur
