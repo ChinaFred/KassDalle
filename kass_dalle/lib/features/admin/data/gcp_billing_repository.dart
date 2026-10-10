@@ -414,55 +414,6 @@ class GcpBillingRepository {
     return out;
   }
 
-  /// Sème les profils publics (`user_profiles/{uid}`) des comptes existants :
-  /// crée, met à jour ou retire chaque profil selon `users/{uid}`. Sans appel
-  /// de modèle, réentrante, avec reprise sur point de contrôle. Compteurs tels
-  /// quels, drapeaux en 1/0.
-  Future<Map<String, int>> backfillUserProfiles({
-    double maxMinutes = 8,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final dynamic raw = await _callViaSdk('backfillUserProfilesFn', {
-      'maxMinutes': maxMinutes,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-    }, timeout: const Duration(minutes: 9));
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      for (final entry in data.entries)
-        if (entry.value is num)
-          entry.key: (entry.value as num).toInt()
-        else if (entry.value is bool)
-          entry.key: (entry.value as bool) ? 1 : 0,
-    };
-  }
-
-  /// Écrit la portée des groupes (`group_reach/{uid}`) de chaque compte : la
-  /// liste des autres comptes avec qui il partage un groupe, que les règles
-  /// lisent pour cloisonner livres et recettes. Sans appel de modèle,
-  /// réentrante, avec reprise sur point de contrôle. Compteurs tels quels,
-  /// drapeaux en 1/0 ; `restants` est absent si le serveur n'a pas pu compter.
-  Future<Map<String, int>> backfillGroupReach({
-    double maxMinutes = 8,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final dynamic raw = await _callViaSdk('backfillGroupReachFn', {
-      'maxMinutes': maxMinutes,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-    }, timeout: const Duration(minutes: 9));
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      for (final entry in data.entries)
-        if (entry.value is num)
-          entry.key: (entry.value as num).toInt()
-        else if (entry.value is bool)
-          entry.key: (entry.value as bool) ? 1 : 0,
-    };
-  }
-
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

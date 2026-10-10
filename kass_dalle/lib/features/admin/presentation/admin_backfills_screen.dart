@@ -172,100 +172,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  /// Profils publics (v0.23.14). `users/{uid}` ne se lit plus que par son
-  /// titulaire et par un administrateur : les noms des autres membres se
-  /// lisent dans `user_profiles/{uid}`. Sans profil, un nom s'affiche
-  /// « Membre ».
-  Future<void> _runBackfillUserProfiles() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Créer les profils publics'),
-        content: const Text(
-          'Recopie le nom et la couverture « Recette libre » de chaque compte '
-          'dans son profil public, que les autres membres lisent. Sans '
-          'profil, un nom s\'affiche « Membre ».\n\n'
-          'Ni adresse, ni rôle ne sont recopiés. Les comptes en attente n\'ont '
-          'pas de profil.\n\n'
-          'Aucun appel d\'IA, jusqu\'à 2 000 comptes par passage. Un profil '
-          'déjà à jour n\'est pas réécrit ; relancer ne refait rien. '
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Création des profils publics en cours...',
-      feature: 'admin_backfill_user_profiles',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillUserProfiles(),
-      format: (r) =>
-          'Comptes : examinés=${r['examines']}, créés=${r['crees']}, '
-          'mis à jour=${r['misAJour']}, retirés=${r['supprimes']}, '
-          'ignorés (déjà à jour)=${r['dejaAJour']}, '
-          'en erreur=${r['echoues']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer pour continuer'}',
-    );
-  }
-
-  /// Portée des groupes. Les règles cloisonnent la lecture des livres et des
-  /// recettes par groupe familial, et lisent `group_reach/{uid}`. Le
-  /// déclencheur `syncGroupReach` la tient à jour à chaque écriture sur un
-  /// groupe ; ce backfill l'écrit pour les groupes antérieurs au déploiement.
-  Future<void> _runBackfillGroupReach() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Calculer la portée des groupes'),
-        content: const Text(
-          'Un livre ou une recette d\'un autre compte ne se lit plus que si '
-          'ce compte partage un groupe familial avec le lecteur. Pour chaque '
-          'compte, cette opération enregistre la liste des membres de ses '
-          'groupes.\n\n'
-          'À lancer une fois après le déploiement : sans elle, personne ne '
-          'voit plus les livres de sa famille.\n\n'
-          'Aucun appel d\'IA, aucun coût d\'IA, jusqu\'à 2 000 comptes par '
-          'passage. Une portée déjà juste n\'est pas réécrite ; relancer ne '
-          'refait rien. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Calcul de la portée des groupes en cours...',
-      feature: 'admin_backfill_group_reach',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillGroupReach(),
-      format: (r) =>
-          'Groupes lus=${r['groupes']} | Comptes : examinés=${r['examines']}, '
-          'écrits=${r['ecrits']}, ignorés (déjà à jour)=${r['dejaAJour']}, '
-          'en erreur=${r['echoues']}, restants=${r['restants'] ?? '?'}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer pour continuer'}'
-          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (arrêt après trois échecs de suite)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
-    );
-  }
-
   Future<void> _runBackfillNutrition() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -578,29 +484,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À relancer après '
                           'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.badge_outlined,
-                      title: 'Créer les profils publics',
-                      subtitle:
-                          'À lancer une fois juste après la v0.23.14 : recopie '
-                          'le nom de chaque compte dans son profil public. '
-                          'Sans cela, les noms des autres membres s\'affichent '
-                          '« Membre ». Aucun appel d\'IA.',
-                      onTap: _busy ? null : _runBackfillUserProfiles,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.groups_outlined,
-                      title: 'Calculer la portée des groupes',
-                      subtitle:
-                          'À lancer une fois après le déploiement du '
-                          'cloisonnement par groupe : enregistre pour chaque '
-                          'compte les membres de ses groupes. Sans cela, '
-                          'personne ne voit plus les livres de sa famille. '
-                          'Aucun appel d\'IA.',
-                      onTap: _busy ? null : _runBackfillGroupReach,
                     ),
                   ],
                 ),

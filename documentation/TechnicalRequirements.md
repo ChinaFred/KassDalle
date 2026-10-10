@@ -279,8 +279,9 @@ supprimé perd son profil.
 par `syncPublicProfile` (`triggers/userPublicProfile.ts`). Il lit le profil stocké, le compare
 aux champs publics attendus, et n'écrit que s'ils diffèrent : une connexion, qui ne change que
 `last_seen_at`, coûte une lecture et aucune écriture. La comparaison se fait contre le profil en
-base : un profil absent se recrée à la première écriture du compte. `backfillUserProfilesFn`
-(Admin › Backfills, §7.10) applique la même fonction à tous les comptes existants.
+base : un profil absent se recrée à la première écriture du compte. `backfillUserProfilesFn`,
+qui appliquait la même fonction à tous les comptes existants, est retiré depuis la v0.23.23 :
+lancé en production, son travail est fait.
 
 **Lecture côté client :** `UserProfileRepository.getProfile` (`features/auth/data/`), exposé
 par `userProfileProvider(uid)` et `memberNameProvider(uid)` (`auth_providers.dart`). Un profil
@@ -915,7 +916,8 @@ la portée de chaque compte présent avant ou après l'écriture, dans une trans
 tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`). Un renommage ne déclenche
 rien. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
 Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée périmée laisserait
-un membre sorti lire encore les livres du groupe. `backfillGroupReachFn` (§7.10) sème le fonds.
+un membre sorti lire encore les livres du groupe. `backfillGroupReachFn`, qui a semé le fonds
+après la v0.23.19, est retiré depuis la v0.23.23 : lancé en production, son travail est fait.
 
 **Qui le lit :** son titulaire (`GroupRepository.watchReach`, d'où le client tire ses requêtes)
 et un administrateur.
@@ -1218,8 +1220,8 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
-| `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn` |
-| `group_reach_backfill_checkpoint` | `backfillGroupReachFn` |
+| `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1641,8 +1643,8 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` et `backfillUserProfilesFn` |
-| `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` et `backfillGroupReachFn` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
+| `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
+| `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
@@ -2997,8 +2999,6 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
-| `backfillUserProfilesFn` | `admin` | crée, met à jour ou retire le profil public `user_profiles/{uid}` de chaque compte, d'après `users/{uid}`, par `syncPublicProfile` (la fonction du déclencheur `syncUserClaims`). Un profil déjà conforme n'est pas réécrit ; un compte en attente n'a pas de profil. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/user_profiles_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.14 : jusque-là, les noms des autres membres s'affichent « Membre » |
-| `backfillGroupReachFn` | `admin` | calcule la portée `group_reach/{uid}` de chaque compte de `users`, d'après tous les groupes lus une fois, par `syncReachFor` (la fonction transactionnelle du déclencheur `syncGroupReach`). Une portée déjà juste n'est pas réécrite. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/group_reach_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.19 : jusque-là, personne ne lit les livres et recettes de sa famille |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit

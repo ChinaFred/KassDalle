@@ -14,8 +14,8 @@
  * Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`.
  *
  * Écrit par le déclencheur `syncGroupReach` (toute écriture sur
- * `groups/{groupId}`) et par le backfill « Portée des groupes »
- * (`groupReachBackfillCallable.ts`). Les règles en interdisent l'écriture
+ * `groups/{groupId}`). Le backfill « Portée des groupes », qui l'a écrit pour
+ * les groupes antérieurs à la v0.23.19, est retiré depuis la v0.23.23. Les règles en interdisent l'écriture
  * au client : un compte qui pourrait s'ajouter la portée d'un autre lirait
  * ses livres.
  *

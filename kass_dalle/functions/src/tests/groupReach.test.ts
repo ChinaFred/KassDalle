@@ -8,7 +8,6 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import { accountsToResync, membersOf, reachFromGroups, sameReach } from "../triggers/groupReach";
-import { groupsByMember } from "../callable/groupReachBackfillCallable";
 
 describe("membersOf", () => {
   test("réunit le propriétaire et les membres, triés, sans doublon", () => {
@@ -117,29 +116,5 @@ describe("sameReach", () => {
     assert.equal(sameReach(undefined, []), false);
     assert.equal(sameReach({ uids: "a" }, ["a"]), false);
     assert.equal(sameReach({}, []), false);
-  });
-});
-
-describe("groupsByMember", () => {
-  test("indexe chaque groupe sous chacun de ses membres", () => {
-    const g1 = { owner_id: "a", member_ids: ["b"] };
-    const g2 = { owner_id: "b", member_ids: ["c"] };
-    const index = groupsByMember([g1, g2, undefined]);
-    assert.deepEqual(index.get("a"), [g1]);
-    assert.deepEqual(index.get("b"), [g1, g2]);
-    assert.deepEqual(index.get("c"), [g2]);
-    assert.equal(index.has("d"), false);
-  });
-
-  test("l'index donne la même portée que la liste complète", () => {
-    const groups = [
-      { owner_id: "a", member_ids: ["a", "b"] },
-      { owner_id: "b", member_ids: ["c"] },
-      { owner_id: "x", member_ids: ["y"] },
-    ];
-    const index = groupsByMember(groups);
-    for (const uid of ["a", "b", "c", "x", "y", "z"]) {
-      assert.deepEqual(reachFromGroups(uid, index.get(uid) ?? []), reachFromGroups(uid, groups));
-    }
   });
 });

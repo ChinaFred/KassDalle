@@ -115,8 +115,9 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
-export { backfillUserProfilesFn } from "./callable/userProfilesBackfillCallable";
-export { backfillGroupReachFn } from "./callable/groupReachBackfillCallable";
+// `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
+// v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
+// et `syncGroupReach` tiennent profils et portée à jour.
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //
