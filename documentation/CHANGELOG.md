@@ -20,6 +20,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.26 — fonctionnel
+
+#### Planning : un calendrier qui choisit la semaine
+
+Les onglets « Liste » et « Calendrier » sont fusionnés en un seul écran. Le calendrier est en
+haut, et les sept jours de la semaine choisie s'affichent en dessous. La barre de puces
+« Sem. du … » et la puce « Tout » sont retirées.
+
+Les colonnes du calendrier partent du jour de démarrage du cycle, réglé dans Configuration du
+planning : « V S D L M M J » pour un cycle du vendredi. Une ligne de la grille est une semaine
+de planning, et un appui sur n'importe quel jour du mois choisit toute sa semaine.
+
+Sur un téléphone, le calendrier s'ouvre replié : un en-tête et le bandeau des sept jours, soit
+environ 110 px au lieu de 360. Un appui sur l'en-tête déplie le mois. Les flèches et un balayage
+du bandeau changent de semaine. Le bouton « Nouveau planning » se réduit à son icône quand on fait
+défiler la liste et se masque pendant qu'on descend : il couvrait le menu des repas. Sur grand
+écran, le mois reste affiché à gauche et le bouton passe dans la barre de l'écran.
+
+Les cases du calendrier passent à 48 px, contre 37 px avant. La liste de courses couvre la
+semaine affichée. « Rien de prévu » et « Choisir une recette » passent l'un sous l'autre quand
+la largeur manque.
+
 ### v0.23.25 — fonctionnel
 
 #### Protéine et féculent corrigeables à la main
