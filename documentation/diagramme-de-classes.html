@@ -472,6 +472,7 @@ classDiagram
     +String? justification
     +List~String~ dismissedRecipeIds
     +List~MealComponent~ components
+    +MealChoiceSource? choiceSource
     +DateTime createdAt
   }
 
@@ -952,9 +953,62 @@ classDiagram
   class PlannedMeal
   class RecipeDetailScreen
 
+  class MealChoiceSource {
+    &lt;&lt;enumeration&gt;&gt;
+    ai
+    rules
+    concept
+    manual
+    +String value
+    +String label
+  }
+
+  class RankedCandidate {
+    +String recipeId
+    +String why
+    +bool repeat
+    +String? resizeReason
+  }
+
+  class SlotRanking {
+    +List~RankedCandidate~ plats
+    +List~RankedCandidate~ entrees
+    +List~RankedCandidate~ desserts
+    +DateTime? prepDate
+    +fromMap(raw) SlotRanking$
+  }
+
+  class PlanningRun {
+    &lt;&lt;serveur seul&gt;&gt;
+    +Timestamp createdAt
+    +Timestamp expiresAt
+    +String modelStatus
+    +List~Map~ proposals
+    +int conceptsMax
+    +int conceptsUsed
+    +double? costCapUsd
+    +double costUsd
+    +int unpricedCalls
+  }
+
+  class PlanningPolicy {
+    &lt;&lt;app_config&gt;&gt;
+    +int platsPerSlot
+    +int startersPerSlot
+    +int dessertsPerSlot
+    +int rankedDepth
+    +int conceptsPerGeneration
+    +double costCapEurPerGeneration
+  }
+
   MealStaple "1" <.. "0..1" StapleOverride : retouche, sous users/{uid}
   MealStaple ..> UserStaple : mergeStaples, base + retouches
   PlannedMeal "1" *-- "0..*" MealComponent : components, le plat reste dans recipeId
+  PlannedMeal --> MealChoiceSource : qui a choisi la recette
+  SlotRanking "1" *-- "0..*" RankedCandidate : classés par le serveur
+  RankedCandidate ..> PlannedMeal : « Autre suggestion », sans IA
+  PlanningPolicy ..> SlotRanking : têtes et profondeur des listes
+  PlanningPolicy ..> PlanningRun : conceptsMax, plafond en euros
   MealComponent ..> MealStaple : garniture figée au choix
   MealComponent ..> Recipe : recette d'accompagnement
   SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
@@ -999,6 +1053,15 @@ classDiagram
           et <code>book_ids</code>). Un livre absent de <code>bookIds</code> est écarté ; une
           recette sans livre ne l'est jamais. <code>RecipePickerFilter</code> filtre le
           sélecteur par types de plat et cuisines ; il n'est pas stocké.
+        </span>
+        <span class="expect">
+          <b><code>SlotRanking</code> n'est pas stocké.</b> Rendu par
+          <code>suggestMealPlanFn</code>, il vit en mémoire de l'écran : « Autre suggestion » y
+          prend la recette suivante sans appel de modèle (<code>nextRankedCandidate</code>, qui
+          filtre et ne note rien). <code>PlanningRun</code> est écrit par le serveur seul, sous
+          le compte : il borne les conceptions d'une génération et cumule leur coût.
+          <code>PlanningPolicy</code> vit dans <code>app_config/planning_policy</code>, avec des
+          valeurs par défaut dans le code.
         </span>
         <span class="expect">
           <b><code>MealIdea</code> n'est pas une recette.</b> Rendue par

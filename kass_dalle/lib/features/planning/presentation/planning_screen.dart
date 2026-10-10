@@ -13,6 +13,7 @@ import '../../recipes/domain/storage_advice.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_idea.dart';
 import '../domain/meal_recipe_location.dart';
@@ -31,9 +32,14 @@ import 'recipe_picker_sheet.dart';
 import 'side_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/services/gemini_service.dart'
+    show GeminiCallableException;
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
+
+/// Choix proposé quand « Autre suggestion » n'a plus de recette.
+enum _ExhaustedChoice { pick, conceive }
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -309,6 +315,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       dismissRecipeId: _oustedBy(meal, recipe.id),
       // Un autre plat, un autre accompagnement.
       components: _composeComponents(recipe),
+      choiceSource: MealChoiceSource.manual,
     );
   }
 
@@ -585,29 +592,29 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       durationMinutes: 0,
       clearPortions: true,
       dismissRecipeId: _oustedBy(meal, null),
-      // Sans plat, pas d'accompagnement.
+      // Sans plat, pas d'accompagnement, ni d'origine ni de faits : un repas
+      // libre n'affiche pas « Choisie par vous ».
       components: const [],
+      clearChoice: true,
     );
   }
 
-  Future<void> _suggestRecipeWithAI(PlannedMeal meal) async {
+  /// « Autre suggestion » : la recette suivante pour ce jour, tirée par la
+  /// présélection du serveur, sans appel de modèle ni coût.
+  ///
+  /// La recette en place et celles déjà écartées de ce repas ne reviennent
+  /// pas. Liste épuisée : l'écran le dit et propose de choisir une recette ou
+  /// de la concevoir avec l'IA.
+  Future<void> _otherSuggestion(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
-    if (_availableRecipes.isEmpty) {
-      context.showSnackBar('Aucune recette disponible pour l\'IA.');
-      return;
-    }
-    // Ni la recette en place, ni celles déjà écartées de ce repas : l'IA ne
-    // voit que ce qu'elle a le droit de proposer.
     final candidates = candidatesForMeal(
       _availableRecipes,
       currentRecipeId: meal.recipeId,
       dismissedRecipeIds: meal.dismissedRecipeIds,
     );
     if (candidates.isEmpty) {
-      context.showSnackBar(
-        'Toutes les recettes disponibles ont déjà été écartées pour ce repas.',
-      );
+      await _offerWhenExhausted(meal);
       return;
     }
     setState(() => _aiLoadingIds.add(meal.id));
@@ -631,52 +638,174 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
             globalConstraints: prefs.globalConstraints,
             batchCookingDay: prefs.batchCookingDay,
             recentlyServed: recentlyServed,
+            withoutModel: true,
+            slotDismissed: [
+              {...meal.dismissedRecipeIds, ?meal.recipeId},
+            ],
           );
-      final suggestions = result.slots;
       if (!mounted) return;
-      if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
-        final suggestion = suggestions[0];
-        final recipe = suggestion.recipe!;
-        final repo = ref.read(planningRepositoryProvider);
-        final duration =
-            (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
-        await repo?.updateMealRecipe(
-          meal.id,
-          recipeId: recipe.id.isEmpty ? null : recipe.id,
-          recipeTitre: recipe.titre,
-          durationMinutes: duration,
-          prepMinutes: recipe.tags.prepTime,
-          cookMinutes: recipe.tags.cookTime,
-          basePortions: recipe.portions,
-          targetPortions: meal.targetPortions ?? recipe.portions,
-          dismissRecipeId: _oustedBy(meal, recipe.id),
-          components: _composeComponents(recipe),
-        );
-        if (mounted) {
-          final why = (suggestion.justification ?? '').trim();
-          final resized = suggestion.wasResized
-              ? ' · redimensionnée'
-              : ' · non redimensionnée';
-          final explain = why.isNotEmpty ? ' — $why' : '';
-          context.showSnackBar(
-            '\'${recipe.titre}\' suggéré par l\'IA$resized$explain ✓',
-          );
-        }
-      } else if (mounted) {
-        context.showSnackBar('L\'IA n\'a pas trouvé de suggestion.');
+      final suggestion = result.slots.isEmpty ? null : result.slots.first;
+      final recipe = suggestion?.recipe;
+      if (suggestion == null || recipe == null) {
+        await _offerWhenExhausted(meal);
+        return;
+      }
+      final repo = ref.read(planningRepositoryProvider);
+      final duration =
+          (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+      await repo?.updateMealRecipe(
+        meal.id,
+        recipeId: recipe.id.isEmpty ? null : recipe.id,
+        recipeTitre: recipe.titre,
+        durationMinutes: duration,
+        prepMinutes: recipe.tags.prepTime,
+        cookMinutes: recipe.tags.cookTime,
+        basePortions: recipe.portions,
+        targetPortions: meal.targetPortions ?? recipe.portions,
+        dismissRecipeId: _oustedBy(meal, recipe.id),
+        components: _composeComponents(recipe),
+        choiceSource: suggestion.source,
+        justification: suggestion.justification,
+      );
+      if (mounted) {
+        context.showSuccessSnackBar('« ${recipe.titre} » proposée');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'planningScreen.suggestRecipeWithAI',
+        feature: 'planningScreen.otherSuggestion',
         error: e,
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur IA : $e');
+        context.showErrorSnackBar(
+          'La suggestion n\'a pas abouti.',
+          action: SnackBarAction(
+            label: 'Réessayer',
+            onPressed: () => _otherSuggestion(meal),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _aiLoadingIds.remove(meal.id));
     }
+  }
+
+  /// Liste épuisée pour ce repas : choisir une recette, ou la concevoir avec
+  /// l'IA — un appel facturé, que la personne demande elle-même.
+  Future<void> _offerWhenExhausted(PlannedMeal meal) async {
+    final choice = await showDialog<_ExhaustedChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: const Text(
+          'Plus d\'autre recette à proposer pour ce créneau.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fermer'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.conceive),
+            child: const Text('Concevoir avec l\'IA'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.pick),
+            child: const Text('Choisir une recette'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _ExhaustedChoice.pick:
+        await _changeRecipe(meal);
+      case _ExhaustedChoice.conceive:
+        await _conceiveForMeal(meal);
+    }
+  }
+
+  /// Conçoit une recette pour ce repas, l'enregistre dans les brouillons et
+  /// la pose sur le repas. Un geste unitaire : il ne se rattache à aucune
+  /// génération, le plafond du jour le borne.
+  Future<void> _conceiveForMeal(PlannedMeal meal) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    setState(() => _aiLoadingIds.add(meal.id));
+    try {
+      final prefs =
+          ref.read(planningPreferencesProvider).value ??
+          const PlanningPreferences();
+      final dayConstraint = prefs.dailyConstraints[meal.plannedAt.weekday];
+      final suggestion = await ref
+          .read(planningAiServiceProvider)
+          .generateRecipeConcept(
+            slotDate: meal.plannedAt,
+            globalConstraints: prefs.globalConstraints,
+            dayConstraint: dayConstraint == null || dayConstraint.isEmpty
+                ? null
+                : dayConstraint,
+          );
+      final recipe = suggestion.recipe;
+      if (recipe == null) {
+        if (mounted) _conceptFailed(meal);
+        return;
+      }
+      final id = await repo.saveAsDraft(recipe);
+      await repo.updateMealRecipe(
+        meal.id,
+        recipeId: id,
+        recipeTitre: recipe.titre,
+        durationMinutes:
+            (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0),
+        prepMinutes: recipe.tags.prepTime,
+        cookMinutes: recipe.tags.cookTime,
+        basePortions: recipe.portions,
+        targetPortions: meal.targetPortions ?? recipe.portions,
+        dismissRecipeId: _oustedBy(meal, id),
+        components: _composeComponents(recipe),
+        choiceSource: MealChoiceSource.concept,
+        justification: suggestion.justification,
+      );
+      if (mounted) {
+        context.showSuccessSnackBar(
+          'Recette conçue et enregistrée dans vos brouillons',
+        );
+      }
+    } on GeminiCallableException catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.conceiveForMeal',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'code': e.code},
+      );
+      if (!mounted) return;
+      if (e.code == 'resource-exhausted' && e.message.isNotEmpty) {
+        // Plafond du jour : le message du serveur est écrit pour l'écran, et
+        // réessayer ne servirait à rien avant demain.
+        context.showErrorSnackBar(e.message);
+      } else {
+        _conceptFailed(meal);
+      }
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.conceiveForMeal',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) _conceptFailed(meal);
+    } finally {
+      if (mounted) setState(() => _aiLoadingIds.remove(meal.id));
+    }
+  }
+
+  void _conceptFailed(PlannedMeal meal) {
+    context.showErrorSnackBar(
+      'La conception n\'a pas abouti.',
+      action: SnackBarAction(
+        label: 'Réessayer',
+        onPressed: () => _conceiveForMeal(meal),
+      ),
+    );
   }
 
   /// Affiche le conseil de conservation d'un repas, en le produisant s'il
@@ -1025,7 +1154,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                       onAddComponent: () => _addComponent(meal),
                       onRemoveComponent: (c) => _removeComponent(meal, c),
                       onClearRecipe: () => _clearRecipe(meal),
-                      onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                      onOtherSuggestion: () => _otherSuggestion(meal),
                       onStorageAdvice: () => _showStorageAdvice(meal),
                       onTimeChanged: () => _changeTime(meal),
                       onExportToCalendar: () => _exportMealToCalendar(meal),
@@ -1094,6 +1223,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
           basePortions: recipe.portions,
           targetPortions: targetPortions,
           components: _composeComponents(recipe),
+          choiceSource: MealChoiceSource.manual,
           createdAt: DateTime.now(),
         ),
       );
@@ -1208,7 +1338,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     onAddComponent: () => _addComponent(meal),
                     onRemoveComponent: (c) => _removeComponent(meal, c),
                     onClearRecipe: () => _clearRecipe(meal),
-                    onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                    onOtherSuggestion: () => _otherSuggestion(meal),
                     onStorageAdvice: () => _showStorageAdvice(meal),
                     onTimeChanged: () => _changeTime(meal),
                     onExportToCalendar: () => _exportMealToCalendar(meal),

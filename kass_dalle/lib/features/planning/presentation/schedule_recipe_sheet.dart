@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_recipe_location.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
@@ -159,6 +160,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             durationMinutes: _totalDurationMin,
             prepMinutes: widget.prepTimeMin,
             cookMinutes: widget.cookTimeMin,
+            choiceSource: MealChoiceSource.manual,
             createdAt: DateTime.now(),
           ),
         );

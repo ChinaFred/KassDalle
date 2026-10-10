@@ -219,7 +219,7 @@
       "why": "franchit le passage à l'heure d'été européenne"
     }
   ],
-  "_recently_served_comment": "Fenêtre de variété — serveur seul (gemini/planning.ts, applyRecentlyServed). Les recettes servies avant le cycle sont retirées du corpus, du plus récent au plus ancien, tant qu'il reste au moins autant de recettes que de créneaux à remplir ; celles qu'on n'a pas pu retirer sont nommées au modèle (kept).",
+  "_recently_served_comment": "Fenêtre de variété — serveur seul (gemini/planning.ts, applyRecentlyServed). Les recettes servies avant le cycle sont retirées du corpus, du plus récent au plus ancien, tant qu'il reste au moins autant de recettes que de créneaux à remplir ; celles qu'on n'a pas pu retirer restent au corpus (kept), avec une note de fraîcheur basse.",
   "recently_served": [
     {
       "corpus": ["a", "b", "c", "d", "e"],
@@ -243,7 +243,7 @@
       "expected_candidates": ["a", "c", "d"],
       "expected_excluded": ["b"],
       "expected_kept": ["a"],
-      "why": "quatre recettes pour trois créneaux : on ne peut en retirer qu'une, la plus récente ; l'autre reste et le prompt la nomme"
+      "why": "quatre recettes pour trois créneaux : on ne peut en retirer qu'une, la plus récente ; l'autre reste au corpus"
     },
     {
       "corpus": ["a", "b"],
@@ -287,6 +287,753 @@
       "expected_excluded": [],
       "expected_kept": [],
       "why": "sans fenêtre, le corpus passe entier"
+    }
+  ],
+  "_preselection_comment": "Présélection serveur (gemini/planning.ts) : filtres durs, note de fraîcheur, note personnelle, tirage pondéré, répartition par protéine, validation du choix du modèle, remplissage par le code. Serveur seul : le client reçoit des listes déjà classées et ne note rien. Ajouter le cas ici AVANT de corriger.",
+  "constants": {
+    "history_days": 90,
+    "freshness_floor": 0.1,
+    "reheat_bonus": 2,
+    "protein_repeat_factor": 0.6,
+    "min_distinct_proteins": 3,
+    "rest_eve_minutes": 240,
+    "rating_exclude_max": 3,
+    "rating_low_max": 6,
+    "rating_low_factor": 0.5,
+    "rating_high_min": 8,
+    "rating_high_factor": 1.5,
+    "concept_run_ttl_hours": 6
+  },
+  "protein_of": [
+    {
+      "dish_types": ["poulet basquaise", "volaille"],
+      "expected": "volaille",
+      "why": "le type volaille"
+    },
+    { "dish_types": ["Lasagnes"], "expected": "inconnue", "why": "aucun indice de protéine" },
+    { "dish_types": ["vegan"], "expected": "vegetarien", "why": "vegan compte comme végétarien" },
+    {
+      "dish_types": ["Végétarien", "gratin"],
+      "expected": "vegetarien",
+      "why": "accent et majuscule ignorés"
+    },
+    {
+      "dish_types": ["poisson", "fruits de mer"],
+      "expected": "fruits_de_mer",
+      "why": "fruits de mer l'emporte sur poisson, plus précis"
+    },
+    { "dish_types": ["plat de boeuf"], "expected": "viande", "why": "le boeuf est une viande" },
+    {
+      "dish_types": ["volaille", "viande"],
+      "expected": "volaille",
+      "why": "volaille l'emporte sur viande, plus précis"
+    },
+    { "dish_types": [], "expected": "inconnue", "why": "sans type" }
+  ],
+  "reheat_friendly": [
+    {
+      "dish_types": ["plat mijoté"],
+      "themes": [],
+      "expected": true,
+      "why": "un mijoté se réchauffe"
+    },
+    { "dish_types": [], "themes": ["Soupes d'hiver"], "expected": true, "why": "le thème suffit" },
+    {
+      "dish_types": ["salade composée"],
+      "themes": ["été"],
+      "expected": false,
+      "why": "une salade ne se réchauffe pas"
+    }
+  ],
+  "_hard_filter_comment": "Filtres durs d'une recette pour un créneau, dans l'ordre : role, prep (plat seulement), rest (créneau d'aujourd'hui ou passé), rating (note personnelle <= 3), dismissed, in_cycle. null : la recette passe.",
+  "hard_filter": [
+    {
+      "recipe": { "id": "r", "prep": 45 },
+      "slot": { "date": "2026-10-14", "max_prep": 30 },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "prep",
+      "why": "45 min de préparation pour 30 autorisées"
+    },
+    {
+      "recipe": { "id": "r", "prep": 30 },
+      "slot": { "date": "2026-10-14", "max_prep": 30 },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "la borne est incluse"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14", "max_prep": 30 },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "durée absente : passe"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "dessert" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "role",
+      "why": "un dessert n'est jamais un plat"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "entree" },
+      "slot": { "date": "2026-10-14", "format": "leger" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "une entrée sert de plat en repas léger"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "entree" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "role",
+      "why": "une entrée n'est pas un plat hors repas léger"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "accompagnement" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "role",
+      "why": "un accompagnement ne se sert pas seul"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "dessert", "prep": 90 },
+      "slot": { "date": "2026-10-14", "max_prep": 30 },
+      "role": "dessert",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "la préparation maximale ne borne que le plat"
+    },
+    {
+      "recipe": { "id": "r", "rest": 720 },
+      "slot": { "date": "2026-10-10" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "rest",
+      "why": "12 h de repos, le créneau tombe aujourd'hui : la veille est passée"
+    },
+    {
+      "recipe": { "id": "r", "rest": 720 },
+      "slot": { "date": "2026-10-11" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "demain : la veille, c'est aujourd'hui"
+    },
+    {
+      "recipe": { "id": "r", "rest": 120 },
+      "slot": { "date": "2026-10-10" },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "2 h de repos tiennent dans la journée"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "rating": 3,
+      "expected": "rating",
+      "why": "notée 3/10 : exclue des propositions"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "rating": 0,
+      "expected": "rating",
+      "why": "notée 0/10 : exclue"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "rating": 4,
+      "expected": null,
+      "why": "notée 4/10 : gardée, poids réduit"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14", "dismissed": ["r"] },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "dismissed",
+      "why": "écartée de ce créneau"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14" },
+      "role": "main",
+      "today": "2026-10-10",
+      "in_cycle": ["r"],
+      "expected": "in_cycle",
+      "why": "déjà posée dans le cycle"
+    }
+  ],
+  "freshness": [
+    { "days": null, "expected": 1, "why": "pas servie dans les 90 jours" },
+    { "days": 9, "expected": 0.1, "why": "plancher" },
+    { "days": 0, "expected": 0.1, "why": "servie le jour même : plancher" },
+    { "days": 45, "expected": 0.5, "why": "à mi-fenêtre" },
+    { "days": 120, "expected": 1, "why": "au-delà de la fenêtre" }
+  ],
+  "rating_factor": [
+    { "rating": null, "expected": 1, "why": "sans note : inchangé" },
+    { "rating": 3, "expected": 0, "why": "exclue" },
+    { "rating": 4, "expected": 0.5, "why": "4 à 6 : divisé par deux" },
+    { "rating": 6, "expected": 0.5, "why": "borne haute de la plage basse" },
+    { "rating": 7, "expected": 1, "why": "7 : inchangé" },
+    { "rating": 8, "expected": 1.5, "why": "8 et plus : multiplié par 1,5" },
+    { "rating": 10, "expected": 1.5, "why": "note maximale" },
+    { "rating": 11, "expected": 1, "why": "hors bornes : ignorée" }
+  ],
+  "weight": [
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "expected": 1,
+      "why": "jamais servie, rien d'autre"
+    },
+    {
+      "days": null,
+      "reheat_slot": true,
+      "reheat_friendly": true,
+      "protein_repeats": 0,
+      "expected": 2,
+      "why": "réchauffage et mijoté : x2"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": true,
+      "protein_repeats": 0,
+      "expected": 1,
+      "why": "mijoté hors réchauffage : pas de bonus"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 2,
+      "expected": 0.36,
+      "why": "protéine déjà posée deux fois : x0,36"
+    },
+    {
+      "days": 45,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "rating": 9,
+      "expected": 0.75,
+      "why": "0,5 de fraîcheur x 1,5 de note"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "rating": 5,
+      "expected": 0.5,
+      "why": "note moyenne : divisé par deux"
+    }
+  ],
+  "weighted_order": [
+    {
+      "seed": 42,
+      "weights": { "a": 1, "b": 0, "c": 8 },
+      "expected_last": "b",
+      "why": "un poids nul passe en dernier"
+    },
+    {
+      "seed": 7,
+      "weights": { "a": 0, "b": 0 },
+      "expected_order": ["a", "b"],
+      "why": "poids tous nuls : l'ordre d'entrée est gardé"
+    }
+  ],
+  "spread_proteins": [
+    {
+      "ordered": [
+        ["v1", "volaille"],
+        ["v2", "volaille"],
+        ["v3", "volaille"],
+        ["v4", "volaille"],
+        ["v5", "volaille"],
+        ["p1", "poisson"],
+        ["b1", "viande"]
+      ],
+      "k": 5,
+      "min_distinct": 3,
+      "expected": ["v1", "v2", "v3", "p1", "b1", "v4", "v5"],
+      "why": "cinq volailles en tête : la tête accueille le poisson et le boeuf"
+    },
+    {
+      "ordered": [
+        ["v1", "volaille"],
+        ["v2", "volaille"]
+      ],
+      "k": 5,
+      "min_distinct": 3,
+      "expected": ["v1", "v2"],
+      "why": "le corpus ne permet pas trois protéines"
+    },
+    {
+      "ordered": [
+        ["u1", "inconnue"],
+        ["u2", "inconnue"],
+        ["v1", "volaille"],
+        ["p1", "poisson"]
+      ],
+      "k": 2,
+      "min_distinct": 3,
+      "expected": ["u1", "v1", "u2", "p1"],
+      "why": "la tête de deux prend deux protéines différentes, « inconnue » compte comme une catégorie"
+    }
+  ],
+  "_preselect_comment": "Têtes de liste par créneau (ensembles triés), relâchements. Les créneaux déjà assignés n'ont pas de liste. Les têtes évitent ce qui est déjà en tête d'un autre créneau tant que le corpus le permet.",
+  "preselect": [
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }, { "date": "2026-10-14" }],
+      "recipes": [
+        { "id": "p1" },
+        { "id": "p2" },
+        { "id": "p3" },
+        { "id": "p4" },
+        { "id": "p5" },
+        { "id": "p6" },
+        { "id": "p7" },
+        { "id": "p8" },
+        { "id": "p9" }
+      ],
+      "policy": { "plats_per_slot": 3 },
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "heads_disjoint": true, "head_sizes": [3, 3, 3] },
+      "why": "neuf plats pour trois créneaux de trois : têtes disjointes"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "recipes": [{ "id": "p1" }],
+      "already_assigned": [{ "slot": 0, "recipe_id": "p1" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [{ "slot": 1, "plats": ["p1"], "repeat": ["p1"], "relaxed": ["in_cycle"] }]
+      },
+      "why": "une seule recette, déjà au menu : reproposée, marquée répétée"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "max_prep": 30 }],
+      "recipes": [
+        { "id": "p1", "prep": 60 },
+        { "id": "p2", "prep": 20 }
+      ],
+      "served": [{ "recipe_id": "p2", "date": "2026-10-05" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": ["p2"],
+            "repeat": ["p2"],
+            "relaxed": ["in_cycle", "variety_window"]
+          }
+        ]
+      },
+      "why": "le seul plat assez rapide a été servi récemment : la fenêtre de variété se relâche"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }],
+      "recipes": [{ "id": "p1" }, { "id": "p2" }],
+      "ratings": { "p1": 2 },
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "slots": [{ "slot": 0, "plats": ["p2"], "repeat": [], "relaxed": [] }] },
+      "why": "notée 2/10 : exclue"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }],
+      "recipes": [{ "id": "p1" }],
+      "ratings": { "p1": 1 },
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [{ "slot": 0, "plats": ["p1"], "repeat": ["p1"], "relaxed": ["rating"] }]
+      },
+      "why": "tous les plats du corpus sont mal notés : la note se relâche, et seulement dans ce cas"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "max_prep": 30 }],
+      "recipes": [
+        { "id": "p1", "rating": 1 },
+        { "id": "p2", "prep": 60 }
+      ],
+      "ratings": { "p1": 1 },
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          { "slot": 0, "plats": [], "repeat": [], "relaxed": ["in_cycle", "variety_window"] }
+        ]
+      },
+      "why": "un plat reste au corpus sans être mal noté : la note ne se relâche pas, le créneau reste sans candidat"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "dismissed": ["p1"] }],
+      "recipes": [{ "id": "p1" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          { "slot": 0, "plats": [], "repeat": [], "relaxed": ["in_cycle", "variety_window"] }
+        ]
+      },
+      "why": "une recette écartée ne revient jamais, même seule"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "format": "plat_dessert" }],
+      "recipes": [
+        { "id": "p1" },
+        { "id": "p2" },
+        { "id": "d1", "meal_role": "dessert" },
+        { "id": "e1", "meal_role": "entree" }
+      ],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": ["p1", "p2"],
+            "desserts": ["d1"],
+            "entrees": [],
+            "repeat": [],
+            "relaxed": []
+          }
+        ]
+      },
+      "why": "plat + dessert : une liste de desserts, pas d'entrées"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "format": "leger" }],
+      "recipes": [
+        { "id": "e1", "meal_role": "entree" },
+        { "id": "s1", "meal_role": "snack" },
+        { "id": "d1", "meal_role": "dessert" }
+      ],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "slots": [{ "slot": 0, "plats": ["e1", "s1"], "repeat": [], "relaxed": [] }] },
+      "why": "repas léger : l'entrée et l'en-cas servent de plat, jamais le dessert"
+    }
+  ],
+  "_validate_choice_comment": "Lecture de la réponse du modèle contre les listes envoyées. Un identifiant hors de la tête du créneau, ou déjà pris, est remplacé par le premier candidat libre (source code). Un créneau absent de la réponse aussi.",
+  "validate_choice": [
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["a", "b", "c"] },
+        { "slot": 1, "plats": ["d", "e", "f"] }
+      ],
+      "raw": [
+        { "slot": 0, "recipe_id": "b" },
+        { "slot": 1, "recipe_id": "f" }
+      ],
+      "expected": [
+        { "slot": 0, "recipe_id": "b", "source": "model" },
+        { "slot": 1, "recipe_id": "f", "source": "model" }
+      ],
+      "rejected": 0,
+      "why": "deux choix dans les listes"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["a", "b", "c"] },
+        { "slot": 1, "plats": ["d", "e", "f"] }
+      ],
+      "raw": [
+        { "slot": 0, "recipe_id": "zz" },
+        { "slot": 1, "recipe_id": "a" }
+      ],
+      "expected": [
+        { "slot": 0, "recipe_id": "a", "source": "code" },
+        { "slot": 1, "recipe_id": "d", "source": "code" }
+      ],
+      "rejected": 2,
+      "why": "inventé, puis hors de la liste du créneau : premier candidat libre"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["a", "b"] },
+        { "slot": 1, "plats": ["a", "c"] }
+      ],
+      "raw": [
+        { "slot": 0, "recipe_id": "a" },
+        { "slot": 1, "recipe_id": "a" }
+      ],
+      "expected": [
+        { "slot": 0, "recipe_id": "a", "source": "model" },
+        { "slot": 1, "recipe_id": "c", "source": "code" }
+      ],
+      "rejected": 1,
+      "why": "la même recette deux fois : la seconde est remplacée"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["a", "b"] },
+        { "slot": 1, "plats": ["c", "d"] }
+      ],
+      "raw": [{ "slot": 0, "recipe_id": "b" }],
+      "expected": [
+        { "slot": 0, "recipe_id": "b", "source": "model" },
+        { "slot": 1, "recipe_id": "c", "source": "code" }
+      ],
+      "rejected": 1,
+      "why": "créneau oublié par le modèle : premier candidat"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "format": "plat_dessert" }],
+      "rankings": [{ "slot": 0, "plats": ["a", "b"], "desserts": ["d1", "d2"] }],
+      "raw": [{ "slot": 0, "recipe_id": "a", "dessert_id": "zz", "starter_id": "e1" }],
+      "expected": [{ "slot": 0, "recipe_id": "a", "source": "model", "dessert_id": "d1" }],
+      "rejected": 1,
+      "why": "dessert inventé remplacé, entrée retirée : le format n'en demande pas"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }],
+      "rankings": [{ "slot": 0, "plats": [] }],
+      "raw": [{ "slot": 0, "recipe_id": "a" }],
+      "expected": [],
+      "rejected": 0,
+      "why": "aucun candidat : le créneau reste vide, le choix du modèle n'est pas lu"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }],
+      "rankings": [{ "slot": 0, "plats": ["a", "b"] }],
+      "raw": "pas un tableau",
+      "expected": [{ "slot": 0, "recipe_id": "a", "source": "code" }],
+      "rejected": 1,
+      "why": "réponse inexploitable : tout par le code"
+    }
+  ],
+  "_code_justification_comment": "Faits produits par le code, jamais par le modèle. Ordre : protéine, durée, note, dernier service, répétition.",
+  "code_justification": [
+    {
+      "recipe": { "id": "r", "prep": 35, "dish_types": ["volaille"] },
+      "slot": { "date": "2026-10-13", "max_prep": 40 },
+      "last_served": null,
+      "history": true,
+      "expected": "volaille · 35 min, sous les 40 min du mardi · pas servie ces 3 derniers mois",
+      "why": "le cas complet"
+    },
+    {
+      "recipe": { "id": "r", "prep": 20 },
+      "slot": { "date": "2026-10-13" },
+      "last_served": "2026-09-01",
+      "history": true,
+      "expected": "20 min · pas servie depuis 6 semaines",
+      "why": "servie il y a 42 jours"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-13" },
+      "last_served": "2026-10-04",
+      "history": true,
+      "repeat": true,
+      "expected": "servie il y a 9 jours, peu d'autres choix",
+      "why": "répétition dite"
+    },
+    {
+      "recipe": { "id": "r", "dish_types": ["poisson"] },
+      "slot": { "date": "2026-10-13" },
+      "last_served": "2026-10-12",
+      "history": true,
+      "rating": 9,
+      "expected": "poisson · notée 9/10 · servie hier",
+      "why": "note haute citée ; la veille se dit « hier »"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-13" },
+      "last_served": null,
+      "history": false,
+      "rating": 5,
+      "expected": "",
+      "why": "historique illisible : aucun fait de service inventé ; une note moyenne n'est pas citée"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-13" },
+      "last_served": "2026-10-13",
+      "history": true,
+      "expected": "servie aujourd'hui",
+      "why": "servie le jour même : « aujourd'hui », jamais « il y a 0 jour »"
+    }
+  ],
+  "resize": [
+    {
+      "portions": 4,
+      "target": 6,
+      "expected": { "resized": true, "reason": "Écrite pour 4 parts, servie pour 6." },
+      "why": "recalcul à l'affichage"
+    },
+    { "portions": 4, "target": 4, "expected": { "resized": false }, "why": "même nombre de parts" },
+    {
+      "portions": null,
+      "target": 6,
+      "expected": { "resized": false },
+      "why": "parts de la recette inconnues : rien n'est affirmé"
+    },
+    {
+      "portions": 4,
+      "target": null,
+      "expected": { "resized": false },
+      "why": "pas de cible : les parts de la recette"
+    }
+  ],
+  "policy": [
+    {
+      "raw": null,
+      "expected": {
+        "plats_per_slot": 5,
+        "starters_per_slot": 3,
+        "desserts_per_slot": 3,
+        "ranked_depth": 15,
+        "concepts_per_generation": 2,
+        "cost_cap_eur_per_generation": 0.5
+      },
+      "why": "absent : défauts"
+    },
+    {
+      "raw": {
+        "plats_per_slot": 50,
+        "ranked_depth": 2,
+        "concepts_per_generation": -1,
+        "cost_cap_eur_per_generation": "x"
+      },
+      "expected": {
+        "plats_per_slot": 10,
+        "starters_per_slot": 3,
+        "desserts_per_slot": 3,
+        "ranked_depth": 10,
+        "concepts_per_generation": 0,
+        "cost_cap_eur_per_generation": 0.5
+      },
+      "why": "bornes : 10 plats au plus, profondeur au moins égale aux plats, conceptions au moins 0, plafond illisible = défaut"
+    },
+    {
+      "raw": {
+        "plats_per_slot": 3,
+        "concepts_per_generation": 4,
+        "cost_cap_eur_per_generation": 1.2
+      },
+      "expected": {
+        "plats_per_slot": 3,
+        "starters_per_slot": 3,
+        "desserts_per_slot": 3,
+        "ranked_depth": 15,
+        "concepts_per_generation": 4,
+        "cost_cap_eur_per_generation": 1.2
+      },
+      "why": "valeurs dans les bornes gardées"
+    }
+  ],
+  "concept_decision": [
+    {
+      "run": null,
+      "now_ms": 1000,
+      "estimate_usd": 0.01,
+      "expected": "unknown",
+      "why": "génération introuvable sous l'appelant"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 0,
+        "cost_usd": 0,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 21600001,
+      "estimate_usd": 0.01,
+      "expected": "expired",
+      "why": "plus de 6 heures"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 2,
+        "cost_usd": 0,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 1000,
+      "estimate_usd": 0.01,
+      "expected": "count",
+      "why": "deux conceptions déjà faites"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 1,
+        "cost_usd": 0.45,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 1000,
+      "estimate_usd": 0.1,
+      "expected": "cost",
+      "why": "dépasserait le plafond de la génération"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 1,
+        "cost_usd": 0.45,
+        "cost_cap_usd": null
+      },
+      "now_ms": 1000,
+      "estimate_usd": 0.1,
+      "expected": null,
+      "why": "sans taux de change, le plafond en euros ne s'applique pas ; le compte, si"
+    },
+    {
+      "run": {
+        "created_at_ms": 0,
+        "concepts_max": 2,
+        "concepts_used": 1,
+        "cost_usd": 0.45,
+        "cost_cap_usd": 0.5
+      },
+      "now_ms": 1000,
+      "estimate_usd": null,
+      "expected": null,
+      "why": "grille illisible : pas d'estimation inventée, le compte reste seul actif"
     }
   ]
 }
