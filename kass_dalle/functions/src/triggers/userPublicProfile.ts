@@ -101,7 +101,7 @@ export function sameProfile(
   );
 }
 
-/** Ce que `syncPublicProfile` a fait — pour le compte rendu du backfill. */
+/** Ce que `syncPublicProfile` a fait. */
 export type ProfileSyncOutcome = "created" | "updated" | "deleted" | "unchanged";
 
 /**
@@ -109,8 +109,7 @@ export type ProfileSyncOutcome = "created" | "updated" | "deleted" | "unchanged"
  *
  * Lit le profil stocké avant d'écrire, et n'écrit que s'il diffère : la
  * comparaison se fait contre ce qui est en base, pas contre l'état précédent
- * de `users/{uid}`. Un profil manquant — compte antérieur à la v0.23.14 que
- * le backfill n'a pas encore traité — se recrée donc à la première écriture
+ * de `users/{uid}`. Un profil manquant se recrée donc à la première écriture
  * sur le compte (connexion, nom préféré, couverture).
  *
  * Les erreurs remontent à l'appelant, qui les journalise.

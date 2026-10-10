@@ -244,7 +244,7 @@ service cloud.firestore {
     // `preferred_name`) et la couverture « Recette libre »
     // (`free_recipe_cover_url`) — jamais l'adresse, le rôle ni la révocation.
     // Seul le serveur l'écrit : `syncUserClaims` le recopie de `users/{uid}`
-    // à chaque écriture, et `backfillUserProfilesFn` sème le fonds existant.
+    // à chaque écriture (le fonds existant a été semé en v0.23.14).
     // Un compte en attente n'a pas de profil.
     match /user_profiles/{uid} {
       allow read: if isApproved();
@@ -309,15 +309,15 @@ service cloud.firestore {
     // un groupe avec moi ». `group_reach/{uid}` porte la réponse toute faite :
     // `uids`, la liste des autres comptes avec qui `uid` partage un groupe.
     // Seul le serveur l'écrit (déclencheur `syncGroupReach` sur
-    // `groups/{groupId}`, et le backfill « Portée des groupes »).
+    // `groups/{groupId}`).
     //
     // Une requête du client reste prouvable : elle filtre
     // `created_by in [...]` sur des comptes de sa propre portée, et la règle
     // vérifie chaque valeur contre la liste. Une lecture facturée de plus par
     // requête, pas par document.
     //
-    // Sans document de portée (compte sans groupe, ou backfill pas encore
-    // passé), on ne lit rien des autres.
+    // Sans document de portée (compte sans groupe), on ne lit rien des
+    // autres.
     function sharesGroupWith(ownerUid) {
       return ownerUid is string
         && exists(/databases/$(database)/documents/group_reach/$(request.auth.uid))
