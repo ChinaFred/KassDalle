@@ -465,7 +465,7 @@ rechargement. iOS n'autorise aucune installation hors App Store.
 
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
-- Un utilisateur peut créer un ou plusieurs groupes familiaux (avec un nom libre).
+- Un utilisateur peut créer un ou plusieurs groupes familiaux (avec un nom de 60 caractères au plus). Un groupe compte 50 invitations en attente au plus.
 - Le créateur est propriétaire du groupe. Il peut renommer ou supprimer le groupe.
 - **On entre dans un groupe en acceptant une invitation** (v0.23.17). Le propriétaire n'ajoute personne : il invite. Être membre ouvre ses livres et recettes non privés aux autres membres, et les leurs à lui ; ce choix appartient à celui qui entre.
 - Invitation : dans « Gérer les membres », le propriétaire cherche une personne (« Rechercher une personne à inviter… ») — nom préféré ou nom du compte Google, parmi les comptes nommés ; un compte en attente n'apparaît pas — et l'invite d'un appui sur « Inviter dans le groupe ». Un message confirme « Invitation envoyée à … ». Une recherche sans résultat le dit : « Aucun membre trouvé pour « … ». La recherche se fait par nom. Un compte en attente de validation n'apparaît qu'une fois validé. » Une personne déjà membre ou déjà invitée n'est pas proposée : « Les personnes trouvées pour « … » sont déjà membres ou invitées. » La recherche par adresse e-mail a disparu en v0.23.14 : les adresses des comptes ne sont plus lisibles par les autres membres.
