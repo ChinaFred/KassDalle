@@ -37,6 +37,7 @@ import {
   RATING_LOW_FACTOR,
   RATING_LOW_MAX,
   REFUSAL_FACTOR,
+  REFUSAL_FUTURE_TOLERANCE_DAYS,
   REFUSAL_MAX_ENTRIES,
   REFUSAL_PENALTY_DAYS,
   REFUSAL_REPEAT_FACTOR,
@@ -479,6 +480,7 @@ describe("présélection — constantes recopiées dans la fixture", () => {
     assert.equal(REFUSAL_REPEAT_THRESHOLD, c.refusal_repeat_threshold);
     assert.equal(REFUSAL_REPEAT_FACTOR, c.refusal_repeat_factor);
     assert.equal(REFUSAL_MAX_ENTRIES, c.refusal_max_entries);
+    assert.equal(REFUSAL_FUTURE_TOLERANCE_DAYS, c.refusal_future_tolerance_days);
   });
 });
 
@@ -568,6 +570,7 @@ describe("présélection — mémoire des refus", () => {
           recent: { refused_at: ts(NOW_MS - 2 * DAY_MS), count: 2 },
           old: { refused_at: ts(NOW_MS - 30 * DAY_MS), count: 9 },
           noDate: { count: 1 },
+          future: { refused_at: ts(NOW_MS + 3 * DAY_MS), count: 1 },
           badCount: { refused_at: ts(NOW_MS - DAY_MS), count: "x" },
           notAMap: "x",
         },

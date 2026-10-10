@@ -35,6 +35,26 @@ void main() {
     test('plafond d\'entrées', () {
       expect(kRefusalMaxEntries, constants['refusal_max_entries']);
     });
+    test('tolérance d\'horloge', () {
+      expect(
+        kRefusalFutureToleranceDays,
+        constants['refusal_future_tolerance_days'],
+      );
+    });
+  });
+
+  group('activité d\'un refus — cas de la fixture (refusal_factor)', () {
+    final cases = (fixture['refusal_factor'] as List)
+        .cast<Map<String, dynamic>>()
+        .where((c) => c['age_days'] != null);
+    for (final c in cases) {
+      final age = c['age_days'] as num;
+      final active = c['expected'] != 1;
+      test('${c['why']} ($age j)', () {
+        final entry = PlanningRefusal(refusedAt: daysAgo(age), count: 1);
+        expect(entry.isActiveAt(now), active);
+      });
+    }
   });
 
   group('ce qui compte comme un refus', () {

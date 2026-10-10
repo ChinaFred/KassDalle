@@ -36,8 +36,9 @@ planning, ils s'enregistrent à la validation du cycle ; un cycle abandonné n'e
 
 Préférences du planning affiche « Plats refusés récemment » et le bouton « Oublier mes
 refus ». Les règles Firestore bornent la forme du document (300 entrées au plus), et un test
-d'émulateur vérifie qu'un compte ne lit ni n'écrit les refus d'un autre. La durée de 21 jours
-et le plafond de 300 entrées sont rejoués des deux côtés par `planning_slot_rules.json`.
+d'émulateur vérifie qu'un compte ne lit ni n'écrit les refus d'un autre. Un refus daté de
+plus d'un jour dans le futur est ignoré. La durée de 21 jours, le plafond de 300 entrées et le
+prédicat d'activité d'un refus sont rejoués des deux côtés par `planning_slot_rules.json`.
 
 ### v0.23.21 — technique
 

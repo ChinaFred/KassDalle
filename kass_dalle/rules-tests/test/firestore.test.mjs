@@ -2205,6 +2205,11 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
     await assertFails(db("reader").doc(own).set({ entries }));
   });
 
+  it("un administrateur lit les refus d'un autre, sans y écrire une forme invalide", async () => {
+    await assertSucceeds(db("admin").doc(others).get());
+    await assertFails(db("admin").doc(others).set({ entries: "x" }));
+  });
+
   it("les autres préférences du titulaire gardent leur règle", async () => {
     await assertSucceeds(
       db("reader").doc(`users/${READER}/preferences/book_order`).set({ order: ["b1"] }),

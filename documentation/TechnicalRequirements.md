@@ -1046,7 +1046,7 @@ planning et des conceptions rattachées porte `entity_type: "planning_run"` et
 
 ### 3.8 ter Document `users/{uid}/preferences/planning_refusals` — la mémoire des refus
 
-Depuis v0.23.20. Un seul document par compte. Il retient les recettes **proposées** que le
+Depuis v0.23.22. Un seul document par compte. Il retient les recettes **proposées** que le
 titulaire a écartées, pour qu'elles pèsent moins dans les générations suivantes. Écrit par
 le client (`PlanningRefusalsRepository`, `features/planning/data/`), lu par
 `suggestMealPlanFn` pour l'appelant seul (`readUserRefusals`, `gemini/planningStore.ts`).
@@ -1073,7 +1073,10 @@ refus s'écrit au remplacement.
 encore actif voit `count` augmenter et `refused_at` avancer ; sinon `count` repart à 1. Un
 échec est remonté au rapport d'erreurs (`planning.recordRefusals`) et ne bloque pas le geste.
 **Lecture serveur** (`readRefusals`, donnée non fiable) : entrée sans date lisible ignorée,
-compte illisible = 1, entrées de plus de 21 jours ignorées, 300 au plus. Lecture en échec :
+compte illisible = 1, entrées de plus de 21 jours ou datées de plus d'un jour dans le futur
+ignorées (`REFUSAL_FUTURE_TOLERANCE_DAYS` : l'horloge d'un téléphone peut avancer, une date
+lointaine ne s'éteindrait jamais), 300 au plus. Le client applique le même prédicat
+(`isActiveAt`) pour élaguer et compter. Lecture en échec :
 `logError`, génération sans pénalité de refus.
 
 **« Oublier mes refus »** (Préférences du planning) supprime le document. Pas de backfill : le
@@ -2367,7 +2370,7 @@ modèle, aucune ligne `ai_usage`) et `slotDismissed` (écartés par créneau). U
 de `slot` hors des dates de la demande (−1) désigne une recette posée ailleurs dans le cycle.
 Le serveur lit lui-même `app_config/planning_policy`, les `planned_meals` de l'appelant sur les
 90 jours qui précèdent le cycle (`readServedHistory`, index `uid` + `planned_at` existant) et
-ses `recipe_ratings` (`readUserRatings`), et depuis v0.23.20 sa mémoire des refus
+ses `recipe_ratings` (`readUserRatings`), et depuis v0.23.22 sa mémoire des refus
 (`readUserRefusals`, §3.8 ter). Une lecture en échec : `logError`, la génération continue
 sans historique (`historyAvailable: false`, aucun fait de service affirmé), sans note ou sans
 pénalité de refus.
@@ -3434,7 +3437,7 @@ Functions.
 | `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle, coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
-| `planning_slot_rules.json` | règles de créneau et présélection du planning, dont la pénalité de refus — serveur ; le client ne rejoue que deux constantes de la mémoire des refus (21 jours, 300 entrées), pour élaguer le document qu'il écrit | `features/planning/domain/planning_refusals.dart` (constantes seules) | `gemini/planning.ts` |
+| `planning_slot_rules.json` | règles de créneau et présélection du planning, dont la pénalité de refus — serveur ; le client rejoue les constantes de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur) et le prédicat d'activité d'un refus, pour élaguer le document qu'il écrit et compter les refus actifs | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, paliers Vision — serveur seul | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |

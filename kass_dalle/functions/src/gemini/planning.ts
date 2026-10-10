@@ -488,6 +488,12 @@ export const REFUSAL_REPEAT_THRESHOLD = 3;
 export const REFUSAL_REPEAT_FACTOR = 0.25;
 /** Entrées gardées au plus dans le document ; les plus anciennes sortent. */
 export const REFUSAL_MAX_ENTRIES = 300;
+/**
+ * Avance tolérée d'une date de refus sur l'horloge du serveur (horloge du
+ * téléphone). Au-delà, l'entrée est ignorée : une date lointaine dans le
+ * futur ne s'éteindrait jamais.
+ */
+export const REFUSAL_FUTURE_TOLERANCE_DAYS = 1;
 /** Forme d'un identifiant de génération (`pr_` + 32 hexadécimaux), tiré par le serveur. */
 export const PLANNING_RUN_ID_PATTERN = /^pr_[0-9a-f]{32}$/;
 /** Durée de vie d'une génération pour les conceptions qui s'y rattachent. */
@@ -740,9 +746,15 @@ export interface RefusalEntry {
   count: number;
 }
 
-/** Vrai tant que le dernier refus a 21 jours ou moins. */
+/**
+ * Vrai tant que le dernier refus a 21 jours ou moins, et n'est pas daté de
+ * plus d'un jour dans le futur.
+ */
 export function isRefusalActive(entry: RefusalEntry, nowMs: number): boolean {
-  return nowMs - entry.refusedAtMs <= REFUSAL_PENALTY_DAYS * 86_400_000;
+  const age = nowMs - entry.refusedAtMs;
+  return (
+    age <= REFUSAL_PENALTY_DAYS * 86_400_000 && age >= -REFUSAL_FUTURE_TOLERANCE_DAYS * 86_400_000
+  );
 }
 
 /**
@@ -758,7 +770,8 @@ export function refusalFactor(entry: RefusalEntry | null | undefined, nowMs: num
  * Lit le document des refus, données non fiables : écrit par le client.
  *
  * Une entrée sans date lisible est ignorée ; un compte illisible vaut un
- * refus. Les entrées expirées sont ignorées ; au plus
+ * refus. Les entrées expirées, ou datées de plus d'un jour dans le futur,
+ * sont ignorées ; au plus
  * `REFUSAL_MAX_ENTRIES`, les plus récentes.
  */
 export function readRefusals(raw: unknown, nowMs: number): Map<string, RefusalEntry> {

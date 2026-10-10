@@ -1,5 +1,5 @@
 {
-  "_comment": "Règles de créneau du planning — serveur (functions/src/tests/planningSlotRules.test.ts) ; le client ne rejoue que deux constantes de la mémoire des refus (test/planning_refusals_test.dart). Un écart ne casse aucun écran : il laisse passer un dessert en plat, ou décale un jour de préparation. Ajouter le cas ici AVANT de corriger.",
+  "_comment": "Règles de créneau du planning — serveur (functions/src/tests/planningSlotRules.test.ts) ; le client rejoue les trois constantes de la mémoire des refus (refusal_penalty_days, refusal_max_entries, refusal_future_tolerance_days) et le prédicat d'activité d'un refus, cas actif / expiré de la section refusal_factor (test/planning_refusals_test.dart). Un écart ne casse aucun écran : il laisse passer un dessert en plat, ou décale un jour de préparation. Ajouter le cas ici AVANT de corriger.",
   "_meal_format_comment": "Le format d'un créneau (mealFormatOf) : ce qu'il demande autour du plat. Absent ou inconnu = plat seul — un format deviné vaudrait un dessert que personne n'a demandé. C'est le format qui décide d'un dessert, et plus un mot-clé lu dans une contrainte en prose.",
   "meal_format": [
     {
@@ -307,7 +307,8 @@
     "refusal_factor": 0.5,
     "refusal_repeat_threshold": 3,
     "refusal_repeat_factor": 0.25,
-    "refusal_max_entries": 300
+    "refusal_max_entries": 300,
+    "refusal_future_tolerance_days": 1
   },
   "protein_of": [
     {
@@ -502,7 +503,7 @@
     { "rating": 10, "expected": 1.5, "why": "note maximale" },
     { "rating": 11, "expected": 1, "why": "hors bornes : ignorée" }
   ],
-  "_refusal_factor_comment": "Mémoire des refus (users/{uid}/preferences/planning_refusals). Âge du dernier refus en jours, nombre de refus. Une entrée de plus de 21 jours est ignorée ; dans les 21 jours, poids x0,5, et x0,25 à partir de 3 refus. Jamais une exclusion. refusal_penalty_days et refusal_max_entries sont aussi rejoués par le client (planning_refusals_test.dart), qui élague le document à l'écriture.",
+  "_refusal_factor_comment": "Mémoire des refus (users/{uid}/preferences/planning_refusals). Âge du dernier refus en jours, nombre de refus. Une entrée de plus de 21 jours, ou datée de plus d'un jour dans le futur, est ignorée ; dans les 21 jours, poids x0,5, et x0,25 à partir de 3 refus. Jamais une exclusion. Le client rejoue refusal_penalty_days, refusal_max_entries, refusal_future_tolerance_days et l'activité de chaque cas (expected différent de 1 = actif) dans planning_refusals_test.dart : il élague le document à l'écriture et compte les refus actifs.",
   "refusal_factor": [
     { "age_days": null, "count": null, "expected": 1, "why": "jamais refusée : inchangé" },
     { "age_days": 0, "count": 1, "expected": 0.5, "why": "refusée aujourd'hui : divisé par deux" },
@@ -513,7 +514,9 @@
     { "age_days": 3, "count": 7, "expected": 0.25, "why": "au-delà de trois : pas plus fort, jamais exclue" },
     { "age_days": 30, "count": 5, "expected": 1, "why": "refus répétés mais expirés : ignorée" },
     { "age_days": 2, "count": 0, "expected": 0.5, "why": "compte illisible : un refus" },
-    { "age_days": -1, "count": 1, "expected": 0.5, "why": "date un peu dans le futur (horloge du téléphone) : active" }
+    { "age_days": -1, "count": 1, "expected": 0.5, "why": "un jour dans le futur au plus (horloge du téléphone) : active" },
+    { "age_days": -1.5, "count": 1, "expected": 1, "why": "plus d'un jour dans le futur : ignorée" },
+    { "age_days": -30, "count": 9, "expected": 1, "why": "date lointaine dans le futur : ignorée, elle ne pèserait jamais à expiration" }
   ],
   "weight": [
     {

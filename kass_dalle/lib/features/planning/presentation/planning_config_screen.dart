@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/presentation/auth_providers.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
@@ -590,9 +591,29 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
     if (confirmed == true && mounted) await _forget(count);
   }
 
+  void _forgetFailed(int count) {
+    context.showErrorSnackBar(
+      'Les refus n\'ont pas été effacés.',
+      action: SnackBarAction(
+        label: 'Réessayer',
+        onPressed: () {
+          if (mounted) _forget(count);
+        },
+      ),
+    );
+  }
+
   Future<void> _forget(int count) async {
-    final uid = ref.read(planningRepositoryProvider)?.uid;
-    if (uid == null) return;
+    // Même source que le compte du compteur (`planningActiveRefusalsProvider`).
+    final uid = ref.read(appUserProvider).value?.uid;
+    if (uid == null) {
+      reportUnexpectedError(
+        feature: 'planningConfigScreen.forgetRefusals',
+        error: StateError('Compte introuvable au moment d\'oublier les refus'),
+      );
+      _forgetFailed(count);
+      return;
+    }
     setState(() => _clearing = true);
     try {
       await ref.read(planningRefusalsRepositoryProvider).clear(uid);
@@ -611,15 +632,7 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
         userId: uid,
       );
       if (!mounted) return;
-      context.showErrorSnackBar(
-        'Les refus n\'ont pas été effacés.',
-        action: SnackBarAction(
-          label: 'Réessayer',
-          onPressed: () {
-            if (mounted) _forget(count);
-          },
-        ),
-      );
+      _forgetFailed(count);
     } finally {
       if (mounted) setState(() => _clearing = false);
     }
@@ -629,12 +642,14 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
   Widget build(BuildContext context) {
     final countAsync = ref.watch(planningActiveRefusalsProvider);
     final String subtitle;
-    Widget? trailing;
-    if (countAsync.isLoading || _clearing) {
+    Widget? action;
+    if (_clearing) {
+      subtitle = 'Effacement…';
+    } else if (countAsync.isLoading) {
       subtitle = 'Chargement…';
     } else if (countAsync.hasError) {
       subtitle = 'Liste des refus illisible';
-      trailing = TextButton(
+      action = TextButton(
         onPressed: () => ref.invalidate(planningActiveRefusalsProvider),
         child: const Text('Réessayer'),
       );
@@ -646,16 +661,26 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
         subtitle =
             '${_plats(count)} proposé${count > 1 ? 's' : ''} moins souvent '
             'pendant $kRefusalPenaltyDays jours';
-        trailing = TextButton(
+        action = TextButton(
           onPressed: () => _confirmForget(count),
           child: const Text('Oublier mes refus'),
         );
       }
     }
+    // Le bouton sous le sous-titre, pas en `trailing` : à 200 % de taille de
+    // texte, un bouton à droite écrase le titre et le sous-titre.
     return ListTile(
       title: const Text('Plats refusés récemment'),
-      subtitle: Text(subtitle),
-      trailing: trailing,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(subtitle),
+          if (action != null)
+            Align(alignment: AlignmentDirectional.centerStart, child: action),
+        ],
+      ),
+      isThreeLine: action != null,
     );
   }
 }

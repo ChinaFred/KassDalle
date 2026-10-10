@@ -12,6 +12,10 @@ const kRefusalPenaltyDays = 21;
 /// Même valeur que `REFUSAL_MAX_ENTRIES` côté serveur.
 const kRefusalMaxEntries = 300;
 
+/// Avance tolérée d'une date de refus (horloge du téléphone). Au-delà,
+/// l'entrée est ignorée. Même valeur que `REFUSAL_FUTURE_TOLERANCE_DAYS`.
+const kRefusalFutureToleranceDays = 1;
+
 /// Vrai quand écarter la recette d'un repas compte comme un refus : elle
 /// avait été proposée par l'IA, par les règles de Kass'Dalle, ou conçue par
 /// l'IA. Une recette choisie à la main, ou d'origine inconnue (repas
@@ -27,9 +31,15 @@ class PlanningRefusal {
   final DateTime refusedAt;
   final int count;
 
-  /// Vrai tant que le dernier refus a [kRefusalPenaltyDays] jours ou moins.
-  bool isActiveAt(DateTime now) =>
-      now.difference(refusedAt) <= const Duration(days: kRefusalPenaltyDays);
+  /// Vrai tant que le dernier refus a [kRefusalPenaltyDays] jours ou moins,
+  /// et n'est pas daté de plus de [kRefusalFutureToleranceDays] jour dans le
+  /// futur. Même prédicat que `isRefusalActive` côté serveur, rejoué par la
+  /// fixture `planning_slot_rules.json` (section `refusal_factor`).
+  bool isActiveAt(DateTime now) {
+    final age = now.difference(refusedAt);
+    return age <= const Duration(days: kRefusalPenaltyDays) &&
+        age >= -const Duration(days: kRefusalFutureToleranceDays);
+  }
 }
 
 /// La mémoire des refus d'un compte :
