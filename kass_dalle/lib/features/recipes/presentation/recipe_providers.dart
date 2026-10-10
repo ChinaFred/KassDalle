@@ -2,16 +2,20 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../admin/data/nutrition_ingredients_repository.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../data/original_text_repository.dart';
 import '../data/plating_repository.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
 import '../data/storage_repository.dart';
+import '../domain/original_text.dart';
 import '../domain/plating_advice.dart';
 import '../domain/storage_advice.dart';
+import '../domain/family_ratings.dart';
 import '../domain/recipe.dart';
 import '../domain/recipe_rating.dart';
 import '../domain/recipe_viewer.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 
 final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
@@ -277,6 +281,18 @@ final recipeByIdProvider = FutureProvider.autoDispose.family<Recipe?, String>((
   return ref.watch(recipeRepositoryProvider).getById(id);
 });
 
+final originalTextRepositoryProvider = Provider<OriginalTextRepository>(
+  (_) => OriginalTextRepository(),
+);
+
+/// Texte d'origine d'une recette traduite, lu à l'ouverture de la vue qui
+/// l'affiche et pas avant : la recette est lue dans toutes les listes, ce
+/// texte seulement à la demande.
+final originalTextProvider = FutureProvider.autoDispose
+    .family<OriginalText?, String>((ref, recipeId) {
+      return ref.watch(originalTextRepositoryProvider).read(recipeId);
+    });
+
 /// Notifier du scan upload.
 final scanUploadProvider = NotifierProvider<ScanUploadNotifier, ScanState>(
   ScanUploadNotifier.new,
@@ -297,3 +313,61 @@ final myRatingProvider = StreamProvider.family<RecipeRating?, String>((
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRatingRepositoryProvider).watch(uid, recipeId);
 });
+
+/// Toutes les notes posées sur une recette, tous comptes confondus. Brut :
+/// passer par [familyRatingsProvider] pour l'affichage.
+final recipeRatingsProvider = StreamProvider.autoDispose
+    .family<List<RecipeRating>, String>((ref, recipeId) {
+      return ref
+          .watch(recipeRatingRepositoryProvider)
+          .watchAllForRecipe(recipeId);
+    });
+
+/// Notes de la famille sur une recette : ma note et celles des membres de
+/// mes groupes.
+///
+/// En chargement tant que les notes, les groupes ou un profil de noteur ne
+/// sont pas lus : une moyenne provisoire changerait sous les yeux. Un profil
+/// absent écarte la note (compte supprimé) ; un profil illisible la garde
+/// sous [UserProfile.fallbackName], pour qu'une coupure réseau ne fasse pas
+/// baisser la moyenne.
+final familyRatingsProvider = Provider.autoDispose
+    .family<AsyncValue<FamilyRatings>, String>((ref, recipeId) {
+      final ratingsAsync = ref.watch(recipeRatingsProvider(recipeId));
+      final membersAsync = ref.watch(groupMemberIdsProvider);
+      final myUid = ref.watch(appUserProvider).value?.uid;
+
+      if (ratingsAsync.hasError) {
+        return AsyncValue.error(ratingsAsync.error!, ratingsAsync.stackTrace!);
+      }
+      if (membersAsync.hasError) {
+        return AsyncValue.error(membersAsync.error!, membersAsync.stackTrace!);
+      }
+      final ratings = ratingsAsync.value;
+      final memberIds = membersAsync.value;
+      if (ratings == null || memberIds == null) {
+        return const AsyncValue.loading();
+      }
+
+      final names = <String, String?>{};
+      for (final r in ratings) {
+        if (r.userId == myUid || !memberIds.contains(r.userId)) continue;
+        final profile = ref.watch(userProfileProvider(r.userId));
+        if (profile.hasError) {
+          names[r.userId] = UserProfile.fallbackName;
+        } else if (!profile.hasValue) {
+          return const AsyncValue.loading();
+        } else {
+          names[r.userId] = profile.value?.displayedName;
+        }
+      }
+
+      return AsyncValue.data(
+        FamilyRatings.from(
+          ratings: ratings,
+          myUid: myUid,
+          memberIds: memberIds,
+          nameOf: (uid) => names[uid],
+        ),
+      );
+    });

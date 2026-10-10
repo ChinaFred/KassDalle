@@ -217,6 +217,7 @@ flowchart LR
     a5(["Ouvrir la liste de courses"])
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
+    a25(["Voir les notes de la famille"])
     a8(["Rechercher une recette"])
     a9(["Planifier un repas"])
     a10(["Exporter en PDF"])
@@ -234,6 +235,7 @@ flowchart LR
     a22(["Replanifier un repas à une autre date"])
     a23(["Exporter vers Google Calendar"])
     a24(["Ajuster mes garnitures"])
+    a26(["Consulter le texte d'origine&lt;br/&gt;d'une recette traduite"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -263,6 +265,8 @@ flowchart LR
   LEC --- a22
   LEC --- a23
   LEC --- a24
+  LEC --- a25
+  a2 -.->|"si la recette est traduite"| a26
   a2 --- a4
   a2 --- a5
   a9 --- a5
@@ -313,7 +317,9 @@ flowchart LR
         <b>Les idées de repas</b> coûtent un appel par consigne ou relance, puis un appel par idée
         retenue : sa recette est rédigée et rangée validée dans « Mes créations Kass'Dalle ».
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
-        appel d'IA. Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
+        appel d'IA. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
+        non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
+        la mention « Traduit de l'… ». Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
       </figcaption>
     </figure>
@@ -361,6 +367,8 @@ flowchart LR
     c3(["Normaliser unités et ingrédients"])
     c4(["Lire le fichier, estimer le coût&lt;br/&gt;et fixer le plafond de l'import"])
     c5(["Classer le rôle dans un repas"])
+    c6(["Traduire en français,&lt;br/&gt;mesures en métrique"])
+    b19(["Comparer la traduction&lt;br/&gt;au texte d'origine"])
   end
 
   EDI --- b1
@@ -377,6 +385,10 @@ flowchart LR
   b4 -.->|"à l'écriture, si aucun rôle"| c5
   b17 -.->|"Non classé : reclassé"| c5
   c5 --- GEM
+  c2 -.->|"étend : recette dans une autre langue"| c6
+  b2 -.->|"étend : texte collé dans une autre langue"| c6
+  b5 -.->|"si le brouillon est traduit"| b19
+  c6 --- GEM
   b18 --- GEM
   EDI --- b9
   EDI --- b10
@@ -422,6 +434,11 @@ flowchart LR
         le donne, et le serveur classe à l'écriture toute recette qui n'en a pas. Choisir
         « Non classé » dans le panneau de métadonnées le retire ; le serveur le redemande au
         modèle à l'enregistrement.
+        <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
+        transcription détecte sans appel de plus. Elle ajoute un appel (poste
+        <code>recipe_translation</code>) à l'import d'une page ou à la mise en forme d'un texte
+        collé. Le texte d'avant traduction d'une page importée est gardé à côté de la recette ;
+        celui d'un texte collé reste le fichier source.
         <b>Un lot ne valide pas ce que personne n'a relu</b> : un brouillon avec une réserve de
         fidélité, ou vide, reste de côté.
         <span class="expect">

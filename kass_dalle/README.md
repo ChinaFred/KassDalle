@@ -13,6 +13,8 @@ Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation compl
 
 - **Import de recettes** : photo, PDF, document Word ou texte collé → CookLang, par un
   pipeline asynchrone côté serveur. Multi-pages, reprise après échec, file d'attente visible.
+  Une recette dans une autre langue est traduite en français, mesures en métrique ; son texte
+  d'origine reste consultable.
 - **Édition** : éditeur hybride — visuel par blocs ou CookLang brut — avec rendu interactif
   en temps réel dans un panneau split.
 - **Bibliothèque** : livres, couvertures, mode lecture page à page (swipe, clavier).

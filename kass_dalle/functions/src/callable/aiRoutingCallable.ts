@@ -167,6 +167,7 @@ export const ROUTABLE_FEATURES: Array<{
   // sélecteur promettait un réglage qui ne commandait rien.
   { id: "transcription_page", label: "Transcription d'une page", group: "Import" },
   { id: "recipe_tagging", label: "Balisage et normalisation d'une recette", group: "Import" },
+  { id: "recipe_translation", label: "Traduction d'une recette étrangère", group: "Import" },
   { id: "text_extraction", label: "Extraction depuis un texte libre", group: "Import" },
   { id: "book_cover", label: "Lecture d'une couverture de livre", group: "Import" },
 

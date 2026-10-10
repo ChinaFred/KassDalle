@@ -8,7 +8,7 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 
 ## Fonctionnalités principales
 
-- **Import intelligent** : photos, PDF, documents Word ou texte libre → CookLang, par un pipeline asynchrone côté serveur
+- **Import intelligent** : photos, PDF, documents Word ou texte libre → CookLang, par un pipeline asynchrone côté serveur ; une recette dans une autre langue est traduite en français, mesures en métrique, et son texte d'origine reste consultable
 - **Format CookLang** : recettes structurées, ingrédients et étapes balisés, éditeur visuel ou brut
 - **Bibliothèque** : organisation par livres, mode lecture page à page
 - **Planning repas** : cycles assistés par l'IA, fenêtre de variété sur les semaines passées, reprise d'une semaine, garnitures simples, export Google Calendar, conseils de conservation
