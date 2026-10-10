@@ -1014,7 +1014,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               duration: const Duration(milliseconds: 200),
               child: FloatingActionButton.extended(
                 onPressed: () => context.push('/planning/batch'),
-                tooltip: 'Nouveau planning',
+                // Étendu, le libellé se lit déjà : l'infobulle le doublerait.
+                tooltip: _fabCompact ? 'Nouveau planning' : null,
                 isExtended: !_fabCompact,
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('Nouveau planning'),
@@ -1128,6 +1129,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               // Déplié, le mois montré est celui de la semaine lue.
               if (_calendarExpanded) {
                 _visibleMonth = PlanningPeriodCalendar.monthOf(period.start);
+                _loadArchiveAround(_visibleMonth);
               }
             }),
     );
@@ -1150,18 +1152,29 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         ],
       );
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(padding: const EdgeInsets.only(top: 4), child: calendar),
-        const Divider(height: 1),
-        Expanded(
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _onListScroll,
-            child: days,
+    // Déplié, le mois peut dépasser la hauteur d'un téléphone tenu à
+    // l'horizontale ou d'un texte agrandi : il défile dans une hauteur bornée
+    // au lieu de déborder, et la liste garde le reste.
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.7),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 4),
+              child: calendar,
+            ),
           ),
-        ),
-      ],
+          const Divider(height: 1),
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onListScroll,
+              child: days,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1234,6 +1247,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     _dayKeys.removeWhere((day, _) => !period.contains(day));
 
     return ListView(
+      // Une clé par semaine : une nouvelle semaine s'ouvre sur son premier
+      // jour, pas à la hauteur où l'on avait laissé la précédente.
+      key: ValueKey(period.start),
       // La marge du bas laisse passer la dernière ligne sous le bouton
       // « Nouveau planning » : sans elle, il couvrait l'icône d'export du
       // dernier repas, et rien ne permettait de descendre plus bas.

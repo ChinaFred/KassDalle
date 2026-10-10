@@ -271,6 +271,16 @@ void main() {
       expect(find.text('Pizzas surgelées'), findsOneWidget);
     });
 
+    testWidgets('téléphone à l\'horizontale : le mois déplié ne déborde pas', (
+      tester,
+    ) async {
+      await pumpPlanningWith(tester, TestBackend(), const Size(740, 360));
+
+      await tester.tap(find.text('Cette semaine'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('le planning se tire pour se rafraîchir', (tester) async {
       final backend = TestBackend();
 

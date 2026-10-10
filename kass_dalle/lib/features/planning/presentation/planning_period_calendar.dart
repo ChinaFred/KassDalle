@@ -137,6 +137,10 @@ class PlanningPeriodCalendar extends StatelessWidget {
                 today: today,
                 byDay: byDay,
                 prepByDay: prepByDay,
+                firstLoadedDay: monthOf(earliestDay),
+                tapHint: !expanded && onTapDay != null
+                    ? 'Afficher ce jour'
+                    : 'Choisir cette semaine',
                 onTapDay: (day) {
                   if (!expanded && onTapDay != null) {
                     onTapDay!(day);
@@ -299,26 +303,32 @@ class _Header extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: titleBlock,
                 )
-              : Tooltip(
-                  message: expanded
-                      ? 'Réduire le calendrier'
-                      : 'Afficher le mois',
-                  child: InkWell(
-                    onTap: onToggleExpanded,
-                    borderRadius: BorderRadius.circular(8),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          children: [
-                            Flexible(child: titleBlock),
-                            const SizedBox(width: 4),
-                            Icon(
-                              expanded ? Icons.expand_less : Icons.expand_more,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ],
+              : Semantics(
+                  button: true,
+                  expanded: expanded,
+                  child: Tooltip(
+                    message: expanded
+                        ? 'Réduire le calendrier'
+                        : 'Afficher le mois',
+                    child: InkWell(
+                      onTap: onToggleExpanded,
+                      borderRadius: BorderRadius.circular(8),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            children: [
+                              Flexible(child: titleBlock),
+                              const SizedBox(width: 4),
+                              Icon(
+                                expanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -397,6 +407,11 @@ class _WeekRow extends StatelessWidget {
   final DateTime today;
   final Map<DateTime, List<PlannedMeal>> byDay;
   final Map<DateTime, int> prepByDay;
+
+  /// Premier jour dont les repas sont lus. Avant lui, une case ne répond
+  /// pas : sa semaine dirait « Rien de prévu » faute de lecture.
+  final DateTime firstLoadedDay;
+  final String tapHint;
   final ValueChanged<DateTime> onTapDay;
 
   const _WeekRow({
@@ -407,6 +422,8 @@ class _WeekRow extends StatelessWidget {
     required this.today,
     required this.byDay,
     required this.prepByDay,
+    required this.firstLoadedDay,
+    required this.tapHint,
     required this.onTapDay,
   });
 
@@ -443,7 +460,10 @@ class _WeekRow extends StatelessWidget {
                       month != null &&
                       (day.month != month!.month || day.year != month!.year),
                   weekLabel: rangeLabel,
-                  onTap: () => onTapDay(day),
+                  tapHint: tapHint,
+                  onTap: day.isBefore(firstLoadedDay)
+                      ? null
+                      : () => onTapDay(day),
                 ),
               ),
           ],
@@ -464,7 +484,8 @@ class _DayCell extends StatelessWidget {
   final bool isPast;
   final bool outsideMonth;
   final String weekLabel;
-  final VoidCallback onTap;
+  final String tapHint;
+  final VoidCallback? onTap;
 
   const _DayCell({
     required this.day,
@@ -476,6 +497,7 @@ class _DayCell extends StatelessWidget {
     required this.isPast,
     required this.outsideMonth,
     required this.weekLabel,
+    required this.tapHint,
     required this.onTap,
   });
 
@@ -523,6 +545,7 @@ class _DayCell extends StatelessWidget {
       selected: inSelectedWeek,
       label: DateFormat('EEEE d MMMM', 'fr').format(day),
       value: '$mealsLabel, $weekLabel',
+      onTapHint: onTap == null ? null : tapHint,
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),

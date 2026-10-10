@@ -63,8 +63,7 @@ PlanningWeek planningWeekOf(DateTime day, {required int cycleStartDay}) {
 ///
 /// Seuls comptent ceux qui restent à cuisiner : le jour même compte, quelle
 /// que soit l'heure du repas. Avec une [week], on ne garde que les repas de
-/// cette semaine ; sans elle, toutes les semaines à venir — c'est la puce
-/// « Tout » de l'onglet Liste.
+/// cette semaine ; sans elle, toutes les semaines à venir.
 List<PlannedMeal> mealsToShop(
   Iterable<PlannedMeal> meals, {
   required DateTime today,
