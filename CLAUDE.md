@@ -289,7 +289,8 @@ travail demandé, sur le PC :
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
    `documentation/CHANGELOG.md` ;
-3. commiter sur `master` et pousser ;
+3. commiter sur `master`, vérifier le numéro de version contre `origin/master` (voir
+   « Un numéro de version par livraison » ci-dessous), puis pousser ;
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée (ex.
    `Déployé en v0.19.37`). Un workflow en échec se diagnostique et se corrige comme une CI
    rouge.
@@ -299,7 +300,8 @@ Depuis une session cloud :
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
    `documentation/CHANGELOG.md`, dans la PR ;
-3. fusionner la PR une fois la CI verte ;
+3. juste avant de fusionner, vérifier le numéro de version contre `origin/master` (voir
+   ci-dessous), puis fusionner la PR une fois la CI verte ;
 4. attendre la fin du workflow « Déploiement », puis annoncer la version déployée. Un
    workflow en échec se diagnostique et se corrige comme une CI rouge.
 
@@ -308,6 +310,43 @@ Un nouvel APK part par le workflow dès que la version change, ou par `deploy.ps
 Pour une release complète : vérifier que les documents du tableau « Chaque changement met à jour
 ses documents » sont à jour, mettre à jour `README.md` (racine et `kass_dalle/README.md`), builder le
 desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
+
+### Un numéro de version par livraison
+
+Plusieurs sessions travaillent en même temps : des sessions cloud par PR, et le PC qui pousse
+directement sur `master`. Deux livraisons qui passent toutes deux de 0.23.14+361 à
+0.23.15+362 écrivent la même ligne `version:` : Git les fusionne **sans conflit**. Le second
+déploiement ne reconstruit pas l'APK, puisque sa version n'est pas plus récente que celle en
+ligne, et ses changements n'arrivent pas sur Android.
+
+Juste avant de pousser sur `master` (PC) ou de fusionner une PR (cloud) :
+
+1. `git fetch origin`, puis intégrer `origin/master` **par une fusion, jamais par un
+   rebase** (`git pull --no-rebase` sur le PC, `git merge origin/master` dans la branche de
+   la PR). Un rebase sur une hausse identique vide le changement de `pubspec.yaml`, et le
+   doublon ne se voit plus que dans le `CHANGELOG.md` ;
+2. lancer `bash .github/scripts/check-version.sh origin/master HEAD` depuis la racine du
+   dépôt — sur le PC, avec le `bash` de Git for Windows (Git Bash), pas celui de WSL. Il
+   échoue si la version n'est pas supérieure à celle de `origin/master`, si un autre commit
+   a déjà introduit ce numéro, ou si le `CHANGELOG.md` n'a pas une et une seule entrée pour
+   elle ;
+3. s'il échoue : reprendre `version:` à celle de `origin/master` + 1, renommer l'entrée du
+   `CHANGELOG.md` et la remettre en tête, relancer les contrôles touchés par la fusion, puis
+   recommencer à l'étape 1.
+
+Jamais de `git push --force` sur `master`.
+
+Le même script tourne dans la CI (job « Version — numéro libre » de `ci.yml`) : sur une PR
+contre la `master` du moment, sur un push contre la `master` d'avant le push. Une CI rouge
+bloque le déploiement. Le contrôle du doublon porte sur tout l'historique : tant que deux
+commits ont introduit le numéro de la tête de `master`, chaque push échoue, même un
+correctif qui ne touche pas la version. **Un job « Version » rouge sur `master` se corrige
+par un commit qui passe à la version suivante**, avec son entrée de `CHANGELOG.md` qui
+décrit les deux livraisons.
+
+`deploy.ps1`, l'outil de secours, n'appelle pas ce script : lancer l'étape 2 avant lui. Son
+commit relance la CI, et un job « Version » rouge à ce moment signale un doublon déjà en
+ligne, à corriger comme ci-dessus.
 
 ## Documentation à tenir à jour
 
@@ -471,6 +510,7 @@ pas pour chaque travail.
 
 | Job | Étapes |
 |---|---|
+| Version | `check-version.sh` : une version changée doit dépasser celle de `master` ; dans tous les cas, la version de la tête n'a qu'une origine dans l'historique et une seule entrée au `CHANGELOG.md` |
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 | Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |

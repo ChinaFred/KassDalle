@@ -655,6 +655,18 @@ class Recipe {
   /// le serveur le corrige s'il diverge du livre.
   final bool isPrivate;
 
+  /// Code ISO 639-1 de la langue d'origine, sur une recette traduite à
+  /// l'import. `null` pour une recette écrite en français.
+  ///
+  /// Posé par le serveur, avec le texte d'origine dans
+  /// `recipes/{id}/origine/texte`. Le client le lit et ne l'écrit jamais :
+  /// [toFirestore] l'omet, et une mise à jour le laisse en place. Une copie
+  /// ne le reprend pas, puisqu'elle n'emporte pas le texte d'origine.
+  final String? langueOrigine;
+
+  /// Vrai quand la recette a été traduite à l'import.
+  bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
+
   /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
   bool get fidelityRejected => fidelityLevel == 'rupture';
 
@@ -703,6 +715,7 @@ class Recipe {
     this.fidelityFindings = const [],
     this.illustrationReport,
     this.isPrivate = false,
+    this.langueOrigine,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -772,6 +785,7 @@ class Recipe {
         data['illustration_report'],
       ),
       isPrivate: data['is_private'] as bool? ?? false,
+      langueOrigine: data['langue_origine'] as String?,
     );
   }
 
@@ -880,6 +894,8 @@ class Recipe {
       // La confidentialité suit la recette, et n'est pas un paramètre : elle
       // appartient au livre porteur, que seul le serveur consulte.
       isPrivate: isPrivate,
+      // La langue d'origine suit la recette : une édition ne la retraduit pas.
+      langueOrigine: langueOrigine,
     );
   }
 }

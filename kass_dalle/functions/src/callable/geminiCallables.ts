@@ -255,6 +255,7 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
           }
         : {}),
       recettes_trouvees: extraction.recettesTrouvees,
+      ...(extraction.langueOrigine ? { langue_origine: extraction.langueOrigine } : {}),
     };
   } catch (e) {
     throw toHttpsError(e);

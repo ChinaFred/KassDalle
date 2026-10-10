@@ -1,0 +1,3 @@
+# Les scripts shell gardent des fins de ligne LF, y compris sur le PC Windows :
+# bash refuse « set -euo pipefail\r ».
+*.sh text eol=lf

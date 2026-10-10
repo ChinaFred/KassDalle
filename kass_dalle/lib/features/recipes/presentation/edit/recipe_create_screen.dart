@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/utils/language_names.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
@@ -120,7 +121,16 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         _fidelityFindings = extraction.fidelityFindings;
       });
       if (!mounted) return;
-      if (extraction.recettesTrouvees > 1) {
+      if (extraction.langueOrigine != null) {
+        // Le texte collé reste joint à la recette : il s'ouvre depuis
+        // « Document original » une fois la recette enregistrée.
+        context.showSnackBar(
+          '${translatedFromLabel(extraction.langueOrigine!)}, mesures '
+          'converties. Le texte collé reste consultable comme document '
+          'original.'
+          '${extraction.recettesTrouvees > 1 ? ' ${extraction.recettesTrouvees} recettes trouvées : seule la première a été reprise.' : ''}',
+        );
+      } else if (extraction.recettesTrouvees > 1) {
         context.showSnackBar(
           '${extraction.recettesTrouvees} recettes trouvées : '
           'seule la première a été reprise.',

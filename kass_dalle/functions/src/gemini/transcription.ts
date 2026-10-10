@@ -77,10 +77,31 @@ export interface TranscriptionInventory {
   etapes: number | null;
 }
 
+/**
+ * Ce que la traduction a remplacé : la langue de la page et la recette telle
+ * qu'elle y était écrite. Présent seulement sur une recette traduite.
+ */
+export interface RecipeTranslationOrigin {
+  /** Code ISO 639-1 de la langue d'origine. */
+  langue: string;
+  recette: TranscribedRecipe;
+}
+
 /** Une recette telle qu'elle est écrite dans le livre. */
 export interface TranscribedRecipe {
   /** Absent des transcriptions antérieures à ce contrôle. */
   inventaire?: TranscriptionInventory;
+
+  /**
+   * Code ISO 639-1 de la langue des étapes, lu par la transcription.
+   *
+   * Absent des transcriptions antérieures à la traduction : elles valent "fr".
+   * Une recette traduite porte "fr" et garde son origine dans `traduction`.
+   */
+  langue?: string;
+
+  /** La recette d'origine, quand celle-ci est une traduction. */
+  traduction?: RecipeTranslationOrigin;
 
   /**
    * Le paragraphe d'ouverture de la recette, quand le livre en porte un.
@@ -149,6 +170,23 @@ function asStringOrNull(value: unknown): string | null {
   return out.length > 0 ? out : null;
 }
 
+/**
+ * Code de langue lu par la transcription, ramené à deux lettres minuscules.
+ *
+ * Toute valeur illisible vaut "fr" : traduire à tort réécrirait une recette
+ * française, alors qu'une recette étrangère laissée telle quelle se corrige à
+ * la main.
+ */
+export function normalizeLanguageCode(value: unknown): string {
+  const code = asString(value).toLowerCase().split(/[-_]/)[0];
+  return /^[a-z]{2}$/.test(code) ? code : "fr";
+}
+
+/** Vrai quand la recette est écrite dans une autre langue que le français. */
+export function needsTranslation(recette: TranscribedRecipe): boolean {
+  return normalizeLanguageCode(recette.langue) !== "fr";
+}
+
 /** L'inventaire déclaré, ou `undefined` si le modèle n'en a pas rendu. */
 function parseInventory(value: unknown): TranscriptionInventory | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -205,6 +243,7 @@ export function parseTranscription(json: Record<string, unknown>): PageTranscrip
     .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
     .map((r) => ({
       titre: asString(r.titre),
+      langue: normalizeLanguageCode(r.langue),
       introduction: asString(r.introduction),
       inventaire: parseInventory(r.inventaire),
       lecturesIncertaines: asStringList(r.lectures_incertaines),

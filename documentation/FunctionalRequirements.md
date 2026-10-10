@@ -133,6 +133,7 @@ Comportement asynchrone :
 - **Le moteur n'est pas figé dans le code** : chaque poste est routé vers Gemini ou Claude selon `app_config/ai_routing_policy`, modifiable depuis *Admin › Moteur d'IA* sans déploiement. Par défaut, Gemini.
 - **Le texte est lu en deux passes, jamais en une.** Un seul appel qui transcrivait *et* restructurait perdait la transcription au profit de la mise en forme : ingrédients fusionnés, précisions déplacées, énumérations abrégées.
   - **Passe 1 — transcription.** Un appel rend le **type** de la page (`recipe`, `ingredient_note`, `technique`, `equipment`, `other`, `no_recipe`) et son contenu **recopié** en JSON : sections d'ingrédients ligne à ligne, sections d'étapes phrase par phrase, notes typées, chapeau de la recette. Aucune balise. Toutes les pages d'un même scan partent dans le **même** appel.
+  - **Traduction, seulement pour une recette écrite dans une autre langue.** La passe 1 rend la langue de chaque recette (code ISO 639-1), lue sur les **étapes** et non sur le titre ou les noms d'ingrédients : une recette française qui parle de « cheesecake » ou de « wok » reste en `fr`. Dans le doute, elle écrit `fr`. La passe 1 recopie dans la langue de la page et ne traduit rien. Si la langue n'est pas `fr`, un appel de plus (poste `recipe_translation`) traduit le texte transcrit en français et convertit les mesures en métrique : solides mesurés en volume en grammes, liquides en millilitres, °F en °C arrondis à 5 °C, pouces en centimètres. Les valeurs américaines s'appliquent par défaut, les britanniques si la source l'est. Un ingrédient sans équivalent garde son nom, suivi d'un équivalent courant entre parenthèses. Du code vérifie ensuite que la traduction garde la forme de l'original — mêmes nombres de groupes, de lignes, d'étapes et de notes, aucun titre, ligne, étape ou note vidé ; sinon le traitement échoue avec « Traduction impossible : … » et se relance depuis la file. Le balisage, le contrôle de fidélité, les tags et la nutrition travaillent sur la traduction. Pour un livre entier, le plafond de l'import est vérifié avant chaque traduction. Une relance après un échec du balisage ne refait pas la traduction. Le texte d'avant traduction est conservé avec la recette (voir 4.4).
   - **Passe 2 — balisage.** Un second appel, sur du texte seul, produit le **Cooklang**, la liste normalisée (`nom`, `qte`, `unite`, `note`, `section`), les cuisines et les types de plat.
   - **Une recette écrite en prose garde sa liste d'ingrédients.** Certains livres n'en donnent pas : « faites revenir un oignon avec deux gousses d'ail » et rien d'autre. La passe 2 construit alors la liste depuis les étapes, et n'y met une quantité que si la phrase la donne. Si elle rend quand même une liste vide, le serveur la dérive du texte balisé avant d'enregistrer. Une recette sans liste n'a ni liste de courses, ni planification, ni nutrition.
   - **Contrôle de fidélité, sans appel supplémentaire.** Du code compare la passe 2 à la passe 1 — disparitions, fusions, titres de section raccourcis, précisions perdues. Une *rupture* écarte le balisage et conserve le texte exact, non balisé. Un *avertissement* laisse passer et s'affiche sur le brouillon.
@@ -170,6 +171,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Les métadonnées sont saisies manuellement.
 - Un bouton **"Mettre en forme avec l'IA"** permet de coller un texte brut (texte web, note, etc.) et de le convertir en CookLang. **Le texte collé emprunte exactement la même chaîne que la page scannée** : transcription, puis balisage, puis contrôle de fidélité. Seule l'entrée de la passe 1 diffère — du texte au lieu d'une image. Le passage par un appel unique perdait la liste d'ingrédients, qui se dissolvait dans les étapes.
 - Le nombre de recettes trouvées dans le texte est rendu à l'écran : une seule est reprise, et l'utilisateur doit l'apprendre plutôt que de découvrir la seconde absente.
+- **Un texte collé dans une autre langue est traduit**, comme une page scannée (4.2). L'écran l'annonce : « Traduit de l'anglais, mesures converties. Le texte collé reste consultable comme document original. » Le texte d'origine n'est pas stocké une seconde fois avec la recette : le texte collé, conservé comme fichier source, en tient lieu.
 - **Le texte original collé est automatiquement conservé** : il est uploadé sur Firebase Storage et attaché à la recette comme fichier source. Le bouton de téléchargement de l'original apparaît ensuite dans l'en-tête de la recette, comme pour un scan.
 - Si l'IA n'est pas utilisée (saisie CookLang directe), aucun fichier source n'est attaché.
 
@@ -190,8 +192,10 @@ privée, par son créateur et un Admin seulement — et par leur auteur.
    - **Instructions** : étapes numérotées, avec mise en valeur des ingrédients et du matériel (rendu Cooklang interactif).
    - **Taille du texte** : sur l'APK Android en présentation étendue, deux boutons de la barre — réduire, agrandir — zooment l'onglet *Préparer* (ingrédients, étapes, puces) par paliers : 100, 125, 150, 175 et 200 %. Le zoom s'ajoute à la taille de police du système, il ne la remplace pas. Il est mémorisé sur l'appareil (`SharedPreferences`, clé `recipe_text_zoom`), pas dans le compte : il dépend de l'écran et de la distance de lecture, pas de la personne. Les autres onglets, la barre et les feuilles ouvertes depuis la fiche gardent leur taille.
    - **Document original** : bouton "Voir l'original" (icône scanner) toujours visible dans la barre d'actions. Ouvre l'image en plein écran zoomable ou le PDF dans le navigateur.
+   - **Recette traduite** : une recette traduite à l'import porte la mention « Traduit de l'anglais » (ou de la langue lue ; « Traduit d'une autre langue » pour une langue absente de la table d'une trentaine de langues). Sur grand écran, la mention suit le livre et sa page, sur la même ligne sous le titre, et une icône de traduction « Voir le texte d'origine (anglais) » s'ajoute à la barre d'actions. Sur téléphone, la mention se place dans la rangée d'actions et sert de bouton. Les deux ouvrent la vue **« Texte d'origine, avant traduction »** : une feuille à 90 % de la hauteur sur téléphone, une fenêtre de 640 px de large sur grand écran. Elle montre titre, chapeau, ingrédients, étapes et notes tels que la page les écrivait. Le texte se sélectionne, suit le zoom de lecture de la recette, s'écrit de droite à gauche pour l'arabe, l'hébreu et le persan, et emploie les glyphes de sa langue. La vue affiche un état de chargement, un état d'erreur, et « Texte d'origine indisponible » quand le document manque. Tout lecteur de la recette la voit. Une recette non traduite ne montre rien de tout cela. Le texte d'origine n'entre pas dans la recherche. Une copie de la recette n'emporte ni la mention ni le texte d'origine.
    - **Photos** : sur grand écran, un onglet **Photos** — placé après Communauté — montre les illustrations de la recette en grille, ouvre chacune en plein écran, et laisse un éditeur en ajouter ou en supprimer. Elles restent aussi visibles en vignettes dans le bandeau de l'onglet Préparer, et en vignettes sur mobile, qui n'a pas d'onglets.
    - **Annotations** : section en bas de fiche pour consulter et ajouter des notes personnelles.
+   - **Notes de la famille** : sous « Ma note », une ligne repliée « Famille : 7 / 10 · 2 notes » donne la moyenne et le nombre de notes. Dépliée, elle liste chaque membre avec son nom, sa date de note et sa note, la plus récente en tête. **Seules comptent les notes des membres qui partagent au moins un groupe avec moi**, plus la mienne : ma note entre dans la moyenne et le nombre, mais n'est pas répétée dans la liste. Un membre sorti de mes groupes, ou dont le compte a été supprimé, disparaît de la liste et de la moyenne. Une note à 0 compte. Sans note d'un autre membre, la ligne dit « Aucun autre membre n'a encore noté cette recette. » Une lecture en panne affiche « Notes de la famille indisponibles », jamais une moyenne. Au moment de noter, un rappel dit : « Votre note est visible des membres qui ont accès à cette recette. » Les notes des autres ne pèsent pas sur mes propositions de planning : seule ma note y compte.
 
 ---
 
@@ -271,6 +275,9 @@ privée, par son créateur et un Admin seulement — et par leur auteur.
   - Les deux lignes sont posées **sous** la tuile, sur toute la largeur de la carte. Dans la
     colonne du sous-titre, elles n'avaient que la place laissée par les boutons de droite, et le
     libellé s'y coupait.
+  - Une recette écrite dans une autre langue passe par une étape de plus, la traduction. Elle n'a
+    pas d'icône dans la rangée ; la seconde ligne affiche « Traduction de la recette par l'IA… »
+    pendant qu'elle a lieu.
   - Le nombre d'étapes dépend du travail : **trois** pour une couverture de livre (envoi, lecture,
     écriture), **sept** pour une page de recette (envoi, lecture, analyse, photos, balisage,
     ingrédients, écriture). Les séquences viennent des branchements du pipeline serveur, pas d'une
@@ -283,7 +290,7 @@ privée, par son créateur et un Admin seulement — et par leur auteur.
 
 Deux lignes. Le titre occupe la première, sur deux lignes de texte au besoin. Toutes les actions
 occupent la seconde, en icônes : note, annotations, document source, retouche par l'IA, copie en
-brouillon, changement de couverture, détachement du livre, modification, export PDF, suppression.
+brouillon, changement de couverture, détachement du livre, modification, export PDF, suppression. Sur une recette traduite, la mention « Traduit de l'… » s'y ajoute en tête et ouvre le texte d'origine.
 
 Il n'y a plus de menu « … ». Il cachait huit actions derrière un geste et un temps d'attente, et
 privait le titre de la place dont il manquait.
@@ -299,6 +306,7 @@ privait le titre de la place dont il manquait.
 - Validation explicite des brouillons livre crees par IA.
 - Sur Web / Desktop : accessible pour modifier des recettes existantes (pas de nouveau scan).
 - **Le sous-titre d'un brouillon dit d'où il vient** — issu d'un scan, conçu par l'IA, saisi à la main, copie de travail — d'après ce que son créateur a écrit à la création. Un document antérieur à cette information n'est pas présenté comme un scan : sans fichier source ni recette source, l'écran dit que l'origine n'est pas renseignée.
+- **Relire une traduction.** Un brouillon traduit porte la même mention « Traduit de l'anglais » que la fiche (4.4). Sur grand écran, une icône de traduction (« Afficher le texte d'origine » / « Masquer le texte d'origine »), ou un appui sur la mention, ouvre un panneau de 360 px à droite de l'éditeur, à partir d'une fenêtre de 1 150 px de large : on compare la traduction à la page pendant qu'on la corrige. Dans une fenêtre plus étroite, la mention et l'icône ouvrent la même feuille ou la même fenêtre que la fiche.
 - **Un brouillon conçu par l'IA pour le planning arrive avec sa liste d'ingrédients**, ses temps et ses parts, lus dans le texte CookLang à l'enregistrement. Un ancien brouillon enregistré sans liste la retrouve à l'ouverture, lue dans le même texte.
 
 ### 5.4 Module Traitements IA (tous les clients)
@@ -646,6 +654,7 @@ déjà transmise continue de fonctionner.
 | Aucune image *envoyée* n'est publiée sans modération | Les dossiers publiés sont fermés en écriture aux **clients** côté Storage. La seule porte ouverte à un client est la quarantaine, suivie d'un verdict ; une image sans verdict attend, ni publiée ni refusée. Ce que le client déclare de l'origine d'une image ne la dispense pas d'analyse : seule une couverture livrée avec l'application, reconnue à son empreinte, passe sans analyse. Le serveur écrit en direct dans deux cas nommés en 5.11 — découpes d'un scan déjà accepté, images produites par l'IA. |
 | Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
+| Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -656,6 +665,7 @@ déjà transmise continue de fonctionner.
 - Authentification Google, sas d'entrée `pending`, rôles et révocation
 - CRUD livres et recettes, groupes familiaux
 - Import (photo, PDF, DOCX, texte collé) → CookLang, par un pipeline asynchrone
+- Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
 - Recherche assistée par IA — bibliothèque, propositions, requête web — annotations, notes personnelles
@@ -825,8 +835,16 @@ sequenceDiagram
 
     Worker->>Router: passe 1 — transcription (toutes les pages en un appel)
     Router->>Model: recopie la page, ne balise rien
-    Model-->>Router: JSON { page_type, inventaire, sections, étapes, notes }
+    Model-->>Router: JSON { page_type, inventaire, sections, étapes, notes, langue }
     Router->>Firestore: recordUsage — appel, moteur, modèle, coût
+
+    opt recette écrite dans une autre langue que le français
+        Worker->>Router: traduction — recipe_translation (le JSON transcrit)
+        Router->>Model: traduit en français, mesures en métrique
+        Model-->>Router: le même JSON, traduit
+        Router->>Firestore: recordUsage
+        Worker->>Worker: même nombre de groupes, lignes, étapes, notes ?\nsinon « Traduction impossible : … », job relançable
+    end
 
     Worker->>Router: passe 2 — balisage (texte seul, plus d'image)
     Router->>Model: transforme la transcription en CookLang
@@ -843,7 +861,7 @@ sequenceDiagram
         Worker->>Storage: écrit les découpes sous illustrations/{uid}/
     end
 
-    Worker->>Firestore: createRecipe(status: draft, rawCooklang…)
+    Worker->>Firestore: createRecipe(status: draft, rawCooklang…)\n+ langue_origine et origine/texte si traduite, même lot
     Worker->>Firestore: current_step: done
 
     Note over Worker,Firestore: Trois échecs → dead_letters/, sans exception relancée\n(sans quoi Cloud Tasks recommencerait indéfiniment)

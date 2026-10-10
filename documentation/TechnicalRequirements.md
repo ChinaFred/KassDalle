@@ -191,7 +191,8 @@ firestore/
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
-│   └── annotations/{annotationId}/
+│   ├── annotations/{annotationId}/
+│   └── origine/texte                              ← texte d'avant traduction, écrit par le serveur seul
 ├── recipe_ratings/{uid}_{recipeId}/
 ├── groups/{groupId}/
 ├── processing_jobs/{jobId}/
@@ -336,7 +337,8 @@ Document principal d'une recette.
 | `book_id` | `String?` | Identifiant du livre (`books/{bookId}`), nullable si sans livre |
 | `book_titre` | `String?` | Dénormalisation du titre du livre pour les requêtes |
 | `page_number` | `int?` | Numéro de page dans le livre source |
-| `langue` | `String` | Code ISO 639-1 de la langue de la recette |
+| `langue` | `String` | Code ISO 639-1 de la langue de la recette. Vaut `fr` pour toute recette importée, traduite ou non |
+| `langue_origine` | `String?` | Code ISO 639-1 de la langue de la page, posé par `recipeProcessor` **seulement sur une recette traduite** à l'import (v0.23.16). Absent = écrite en français : les recettes existantes n'ont rien à reprendre. Le client le lit (`Recipe.langueOrigine`, `isTranslated`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour le laisse en place, une copie ne le reprend pas. Le texte d'origine vit dans `recipes/{id}/origine/texte` (§3.6 bis). Le texte collé traduit (`extractRecipeFromTextFn`) ne le pose pas : la callable le renvoie à l'écran seulement |
 | `raw_cooklang` | `String` | Contenu Cooklang validé (version finale) |
 | `draft_cooklang` | `String?` | Version en cours de révision (avant validation) |
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
@@ -844,14 +846,14 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
-| `current_step` | `String?` | Étape courante du traitement IA |
+| `current_step` | `String?` | Étape courante du traitement IA. `translate` (« Traduction de la recette par l'IA… ») n'apparaît que pour une recette écrite dans une autre langue, entre `gemini_call` et `parse` ; elle n'a pas de jalon dans `processing_trail` |
 | `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites. **À la création, la valeur du client n'est pas crue telle quelle** (v0.23.12, `dispatchScanId`) : un `bookDocumentScan` reçoit toujours un identifiant tiré par le serveur, et un autre job reçoit un identifiant neuf si `scan_spend/{scan_id}` appartient déjà à un autre compte (`user_id`). Sans cela, un éditeur qui reprenait le `scan_id` d'un import d'autrui relevait son plafond et y imputait ses dépenses. Le client ne peut plus changer ce champ ensuite (règles) |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
 | `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_EUR` (4 €) par tranche depuis v0.23.13, convertis en dollars au moment du calcul avec le taux de la facture (`app_config/currency_rate`, `getUsdToEurRate`), jamais plus de `MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD` (8 $) par tranche, et arrondis au centime inférieur. Sans taux, ou avec un taux hors des bornes de vraisemblance de la réconciliation (`MIN_PLAUSIBLE_RATE` 0,1 – `MAX_PLAUSIBLE_RATE` 10, `usableRate`), aucun taux n'est inventé : le maximum vaut 4 $ par tranche, valeur plus basse que 4 € tant qu'un dollar vaut moins qu'un euro, et `runBookImport` le journalise (`logWarn`). La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
-| `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
+| `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Réécrit après chaque recette étrangère traduite : une relance ne retraduit pas les recettes déjà traduites. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
 
@@ -897,6 +899,38 @@ Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp?` | Date de modification |
 
+### 3.6 bis Sous-collection `recipes/{recipeId}/origine` — le texte d'avant traduction
+
+Un seul document, `texte` (`pipeline/originalText.ts`, `SUBCOLL_ORIGINAL_TEXT`,
+`ORIGINAL_TEXT_DOC_ID`). Il n'existe que sur une recette qui porte `langue_origine`. Il est
+écrit par `saveDraft` (`recipeProcessor`) **dans le même lot** (`batch`) que la recette : une
+recette marquée traduite sans son original afficherait un lien vide. Il vit à part de la recette
+parce que la recette est lue dans toutes les listes, et ce texte seulement à la demande.
+
+| Champ | Type | Description |
+|---|---|---|
+| `langue` | `String` | Code ISO 639-1 de la langue d'origine, égal à `langue_origine` de la recette |
+| `titre` | `String` | Titre tel que la page l'écrit |
+| `introduction` | `String?` | Chapeau de la recette, `null` s'il n'y en a pas |
+| `portions` | `int?` | Recopié de la transcription |
+| `temps_preparation` · `temps_cuisson` · `temps_repos` | `String?` | Durées telles qu'écrites, unités d'origine |
+| `sections_ingredients` | `List<Map>` | `{titre, lignes: List<String>}`, lignes d'ingrédients dans la langue et les unités d'origine |
+| `sections_etapes` | `List<Map>` | `{titre, etapes: List<String>}` |
+| `notes` | `List<Map>` | `{genre, texte}` |
+| `created_at` | `Timestamp` | Horodatage serveur de l'écriture |
+
+Les lectures incertaines et l'inventaire de la transcription n'y figurent pas : ils servent au
+contrôle de l'import, pas au lecteur. Le client le lit par `OriginalTextRepository`
+(`originalTextProvider`, `OriginalText.fromMap`) à l'ouverture de la vue « Texte d'origine »,
+jamais avant. Il n'entre pas dans `ingredients_index` ni dans la recherche.
+
+**Écriture interdite au client** (règles, §4), administrateur compris. **Suppression** :
+`onRecipeWritten`, à la suppression de toute recette, sans condition sur `langue_origine` (le champ a
+pu être retiré avant) : supprimer un document absent ne fait rien, et une
+sous-collection ne disparaît pas avec son document. Best-effort : un échec est journalisé
+(`logError`, « Texte d'origine non supprimé avec sa recette ») et laisse un document que les
+règles ne laissent plus lire, puisque la recette n'existe plus.
+
 ---
 
 ### 3.7 Collection `planned_meals`
@@ -916,9 +950,9 @@ partagée.
 | `base_portions` | `int?` | Parts de la recette d'origine |
 | `target_portions` | `int?` | Parts voulues ce jour-là — avec `base_portions`, c'est **tout** ce qu'il faut pour recalculer les quantités à l'affichage |
 | `prep_date` | `Timestamp?` | Jour de préparation, quand il diffère du jour du repas |
-| `justification` | `String?` | Pourquoi ce plat, ce jour-là. Depuis v0.23.15, des **faits produits par le serveur** (`codeJustification`, `gemini/planning.ts`) : protéine lue dans les types de plat, durée sous la limite du jour, note personnelle ≥ 8, dernier service (« pas servie depuis 6 semaines »), « peu d'autres choix » quand un filtre s'est relâché — jamais un texte du modèle ; pour une recette conçue, la justification de la conception. Le client n'écrit plus de phrase générique de repli. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle. Sur la recette, il aurait menti au prochain qui la planifie |
+| `justification` | `String?` | Pourquoi ce plat, ce jour-là. Depuis v0.23.18, des **faits produits par le serveur** (`codeJustification`, `gemini/planning.ts`) : protéine lue dans les types de plat, durée sous la limite du jour, note personnelle ≥ 8, dernier service (« pas servie depuis 6 semaines »), « peu d'autres choix » quand un filtre s'est relâché — jamais un texte du modèle ; pour une recette conçue, la justification de la conception. Le client n'écrit plus de phrase générique de repli. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle. Sur la recette, il aurait menti au prochain qui la planifie |
 | `dismissed_recipe_ids` | `List<String>?` | Recettes écartées de ce repas — par « Changer la recette », « Vider le créneau », une nouvelle suggestion, et déjà pendant la composition d'un cycle. Le client les retire des candidats **avant** l'appel à l'IA : une consigne dans le prompt est un vœu, un candidat absent de la liste est une certitude. Elles appartiennent au repas, pas au profil : écarter un plat un mardi ne dit rien du samedi suivant. Ajoutées par `arrayUnion`, jamais retirées |
-| `choice_source` | `String?` | **Qui a choisi la recette** : `ai` (le modèle, parmi les candidats présélectionnés), `rules` (le code de Kass'Dalle, sans modèle : « Autre suggestion », panne du modèle, plafond), `concept` (recette conçue par l'IA), `manual` (l'utilisateur). Écrit à la validation d'un cycle et à chaque changement de recette depuis le planning ; « Remettre à blanc » le retire, avec `justification`. L'écran affiche la ligne d'origine « Choisie par l'IA » · « Choisie par Kass'Dalle » · « Conçue par l'IA » · « Choisie par vous », suivie de `justification`. Absent sur un repas antérieur à v0.23.15 : pas de ligne d'origine, et une `justification` « Sélection manuelle… » est lue comme `manual`. Aucun backfill |
+| `choice_source` | `String?` | **Qui a choisi la recette** : `ai` (le modèle, parmi les candidats présélectionnés), `rules` (le code de Kass'Dalle, sans modèle : « Autre suggestion », panne du modèle, plafond), `concept` (recette conçue par l'IA), `manual` (l'utilisateur). Écrit à la validation d'un cycle et à chaque changement de recette depuis le planning ; « Remettre à blanc » le retire, avec `justification`. L'écran affiche la ligne d'origine « Choisie par l'IA » · « Choisie par Kass'Dalle » · « Conçue par l'IA » · « Choisie par vous », suivie de `justification`. Absent sur un repas antérieur à v0.23.18 : pas de ligne d'origine, et une `justification` « Sélection manuelle… » est lue comme `manual`. Aucun backfill |
 | `components` | `List<Map>?` | **Ce qui accompagne le plat.** Une entrée par composant : `role` (`accompagnement` \| `entree` \| `dessert`), soit `recipe_id` (une recette d'accompagnement), soit `staple_id` (une garniture), `label`, et pour une garniture la part **figée** au choix — `quantity_per_portion`, `unit`, `shopping_product`, `note` — plus `justification` (« le plat n'apporte pas de féculent : riz, accompagnement classique »). Le plat lui-même n'y figure pas, il reste dans `recipe_id`. Choisi par le **programme** (`side_chooser.dart` : ce que le plat n'apporte pas, ses accompagnements classiques, les garnitures visibles du compte, rotation sur les jours voisins), jamais par le modèle au moment du planning. L'**entrée** et le **dessert**, eux, viennent du même appel de planning que le plat, quand le format du jour (`meal_format`) en demande, parmi les recettes de ce rôle, une fois chacun dans le cycle (`starter_id`, `dessert_id`). Absent = aucun composant |
 | `created_at` | `Timestamp` | Création |
 
@@ -938,7 +972,7 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 | `default_meal_hour` · `default_meal_minute` | `int` | Heure par défaut d'un repas |
 | `default_calendar_duration_minutes` | `int` | Durée d'un événement Google Calendar, depuis tous les points d'export : le repas à table, jamais les temps de la recette (ceux-ci ne servent qu'au rappel et à `duration_minutes` du repas) |
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
-| `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.15, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
+| `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
 
 ---
 
@@ -979,14 +1013,22 @@ planning et des conceptions rattachées porte `entity_type: "planning_run"` et
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
 donne, pas à la recette.
 
-| Champ | Type | Contenu |
+| Champ | Type | Description |
 |---|---|---|
-| `user_id` | `String` | auteur de la note |
-| `recipe_id` | `String` | recette notée |
-| `rating` | `int` | de 0 à 10 |
-| `updated_at` | `Timestamp` | dernière modification |
+| `user_id` | `String` | Auteur de la note, figé |
+| `recipe_id` | `String` | Recette notée, figée |
+| `rating` | `int` | De 0 à 10 ; 0 est une vraie note |
+| `updated_at` | `Timestamp` | Dernière modification |
 
-Depuis v0.23.15, `suggestMealPlanFn` lit les notes **de l'appelant seul**
+La fiche recette lit toutes les notes d'une recette par `where recipe_id ==`
+(`RecipeRatingRepository.watchAllForRecipe`) ; la règle de lecture prouve cette requête par
+son `get()` sur `recipe_id`, et `rules-tests` le vérifie. Le filtre par groupe se fait côté
+client (`familyRatingsProvider`, `FamilyRatings.from`) : ne restent que les notes des membres
+de `groupMemberIdsProvider` dont le profil public existe, plus la mienne. La moyenne est
+dérivée à l'affichage et n'est stockée nulle part. Aucun index composite : le tri par date se
+fait côté client. Le planning ne lit que la note de l'utilisateur (`getAllForUser`).
+
+Depuis v0.23.18, `suggestMealPlanFn` lit les notes **de l'appelant seul**
 (`where user_id == uid`, `readUserRatings`, `gemini/planningStore.ts`) : jamais celles des
 autres membres. Une note ≤ 3 exclut la recette des propositions (elle reste choisissable à la
 main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
@@ -1097,7 +1139,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -1522,6 +1564,14 @@ service cloud.firestore {
           && request.resource.data.uid == resource.data.uid;
         allow delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
+
+      // Texte d'origine d'une recette traduite à l'import : lu avec les droits
+      // de la recette, écrit seulement par le serveur (`recipeProcessor`), et
+      // retiré avec elle par `onRecipeWritten`.
+      match /origine/{docId} {
+        allow read: if isApproved() && canReadRecipe(recipeDoc(recipeId));
+        allow write: if false;
+      }
     }
 
     // Suivi de l'usage des tokens IA — écrit par les Cloud Functions seules.
@@ -1542,10 +1592,11 @@ service cloud.firestore {
 | Collection | Lecture | Écriture |
 |---|---|---|
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` et `backfillUserProfilesFn` |
+| `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
-| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire ; modification et suppression par l'auteur ou un admin, `user_id` et `recipe_id` figés |
+| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe | création à son nom, soi seul membre ; modification et suppression par le propriétaire ou un admin, `owner_id` figé |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
@@ -1837,10 +1888,17 @@ lit que par son créateur et l'administrateur ; chacun ne modifie que ses propre
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
 brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
 
-**Comptes au 2026-10-10 (v0.23.14)** : 321 tests, 321 actifs, aucun `todo`.
+**Comptes au 2026-10-10 (v0.23.18)** : 342 tests attendus, aucun `todo` — 321 avant la v0.23.15,
+11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16 (texte d'origine), 5 par la
+v0.23.18 (planning). La CI confirme le compte.
 
-- Firestore : 253 tests, 253 actifs, aucun `todo`.
+- Firestore : 274 tests attendus, aucun `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
+
+La v0.23.16 ajoute 5 tests sur `recipes/{id}/origine/texte` : un lecteur lit le texte d'origine
+d'une recette visible, ne lit pas celui d'une recette privée d'autrui, un compte en attente ne
+le lit pas, un administrateur ne le réécrit pas, un éditeur ne le crée pas. Ces tests n'ont pas
+tourné sur le poste de développement (Java absent) : la CI les rejoue.
 
 La v0.23.14 rend bloquant le dernier `todo`, « un éditeur ne lit pas le document d'un autre »,
 et ajoute 13 tests : un éditeur ne liste pas `users`, un administrateur lit et liste `users` ;
@@ -2041,7 +2099,8 @@ Ce qui compte ici, c'est ce que chaque passe demande au moteur :
 
 | Passe | Fichier | Poste | Entrée | Sortie |
 |---|---|---|---|---|
-| 1 — transcription | `gemini/transcription.ts` | `transcription_page` (scan) ou `text_extraction` (texte collé) | l'image, ou le texte | **du JSON** — type de page, inventaire déclaré, sections d'ingrédients, sections d'étapes, notes, chapeau |
+| 1 — transcription | `gemini/transcription.ts` | `transcription_page` (scan) ou `text_extraction` (texte collé) | l'image, ou le texte | **du JSON** — type de page, inventaire déclaré, sections d'ingrédients, sections d'étapes, notes, chapeau, `langue` de chaque recette |
+| 1 bis — traduction, si `langue` ≠ `fr` | `gemini/translation.ts` | `recipe_translation` (scan et texte collé) | le JSON de la passe 1, **jamais l'image** | le même JSON, en français, mesures en métrique |
 | 2 — balisage | `gemini/tagging.ts` | `recipe_tagging` | la transcription, **jamais l'image** | **du CookLang**, plus la liste normalisée, les cuisines et les types de plat |
 
 Un seul appel faisait autrefois les deux, et rendait du CookLang directement. Il perdait la
@@ -2067,6 +2126,41 @@ qui vivaient là — classification, extraction depuis une image, extraction d'u
 sans quoi les mois déjà comptabilisés cesseraient de les nommer, mais ils ont quitté
 `ROUTABLE_FEATURES` : un sélecteur de moteur qui ne commande aucun appel fait croire à un
 réglage.
+
+**La traduction (v0.23.16).** La passe 1 rend `langue`, code ISO 639-1 lu sur les **étapes** :
+le titre et les noms d'ingrédients ne décident pas (« cheesecake », « wok » restent `fr`). Elle
+recopie dans la langue de la page, unités comprises, sans rien traduire.
+`normalizeLanguageCode` ramène la valeur à deux lettres minuscules ; toute valeur illisible
+vaut `fr`, et une transcription antérieure au champ aussi. Traduire à tort réécrirait une
+recette française ; une recette étrangère laissée telle quelle se corrige à la main.
+`needsTranslation` décide, sans appel. Une page française ne coûte rien de plus.
+
+`translateRecipe` envoie `TRANSLATION_PROMPT` (mis en cache) et le JSON transcrit, sans image,
+avec `effort: "medium"`, `maxTokens: 16 000` et un délai de 3 minutes. Le prompt impose :
+traduire phrase par phrase, sans résumer ni fusionner ; garder les noms établis en français ;
+garder le nom d'un ingrédient sans équivalent, suivi d'un équivalent courant entre parenthèses ;
+convertir un solide mesuré en volume en grammes selon l'ingrédient, un liquide en millilitres,
+°F en °C arrondis à 5 °C, inch en cm ; valeurs US par défaut, UK si la source est britannique ;
+`tbsp` et `tsp` en cuillères, nombre gardé ; portions et page recopiées.
+
+`translationShapeMismatches` contrôle la réponse, sans appel : mêmes nombres de groupes
+d'ingrédients et de lignes par groupe, de groupes d'étapes et d'étapes par groupe, de notes ;
+aucun titre, introduction, titre de groupe, ligne, étape ou note vidé (les durées ne sont
+pas contrôlées). Une réponse illisible ou un écart lève « Traduction
+impossible : … » après un `logError`. Le job suit alors le chemin ordinaire d'une erreur de
+pipeline : nouvelles tentatives Cloud Tasks, puis `dead_letters` (`pipeline_error`) ; il se
+relance depuis la file. La réponse brute est journalisée sous le stage `traduction`
+(`logAiText`).
+
+Dans `recipeProcessor`, l'étape `translate` se place entre `gemini_call` et `parse`
+(`STEP_ORDER`). Pour une tranche de livre, `assertWithinImportBudget(scanId,
+"recipe_translation")` précède chaque traduction. Le point de reprise
+(`transcription_checkpoint`) est réécrit après chaque recette traduite : une relance après un balisage en
+échec ne retraduit pas. Le balisage, `checkFidelity`, les tags et la nutrition travaillent sur
+la traduction. `saveDraft` pose `langue_origine` et écrit `origine/texte` dans le même lot
+(§3.6 bis). Le texte collé (`extractRecipeFromText`) traduit de la même façon, renvoie
+`langue_origine` au client et ne stocke pas l'original : le texte collé est déjà conservé en
+`.txt` comme fichier source. Une page qui n'est pas une recette n'est pas traduite.
 
 Deux réglages tiennent à ce que ces passes demandent :
 
@@ -2095,6 +2189,7 @@ Deux réglages tiennent à ce que ces passes demandent :
 | Fichier | Ce qu'il porte |
 |---|---|
 | `gemini/promptsExtraction.ts` | `TRANSCRIPTION_PROMPT`, `TEXT_TRANSCRIPTION_PREAMBLE`, `TAGGING_PROMPT` |
+| `gemini/translation.ts` | `TRANSLATION_PROMPT` |
 | `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
 | `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
 
@@ -2115,7 +2210,7 @@ semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu
 
 ### Le planning : présélection par le code, choix par le modèle
 
-Depuis v0.23.15, `suggestMealPlanFn` n'envoie plus tout le corpus au modèle. Le serveur
+Depuis v0.23.18, `suggestMealPlanFn` n'envoie plus tout le corpus au modèle. Le serveur
 choisit lui-même les candidats de chaque créneau, le modèle tranche entre eux, et le code
 relit sa réponse. Code : `gemini/planning.ts` (fonctions pures, fixture
 `planning_slot_rules.json`), `gemini/planningStore.ts` (lectures et écritures Firestore).
@@ -2370,7 +2465,7 @@ Photographier une page de livre en déroule quatre, chacun tirant son propre ide
 | Ordre | Traitement | Où | Ce qu'il contient |
 |---|---|---|---|
 | 1 | `upload_security_scan` | `scanAndPromoteUploadFn` | le contrôle du fichier envoyé, facturé à l'unité |
-| 2 | `import_recette` | `jobDispatcher` → `recipeProcessor` | `transcription_page`, `recipe_tagging`, la normalisation contre les référentiels |
+| 2 | `import_recette` | `jobDispatcher` → `recipeProcessor` | `transcription_page`, `recipe_translation` pour une recette étrangère, `recipe_tagging`, la normalisation contre les référentiels |
 | 3 | `import_recette…_p1`, `_p2` | `illustrations/` | une détection d'illustrations par page |
 | 4 | `ecriture_recette:creation` | `onRecipeWritten` | la liste de courses et toute la nutrition |
 
@@ -2926,6 +3021,12 @@ ces lignes telles quelles.
 - La barre d'actions : titre éditable, **Enregistrer en brouillon**, **Créer et valider**.
 - Le bouton **« Voir l'original »** — visionneuse plein écran zoomable pour une image, ouverture
   système pour un PDF ou un DOCX. Le document source est lié à vie à la recette.
+- Sur un brouillon traduit, la mention « Traduit de l'… » (`TranslatedFromLabel`) sous le titre.
+  Sur grand écran, une icône `translate` (« Afficher / Masquer le texte d'origine ») ouvre un
+  panneau `OriginalTextView` de 360 px à droite du corps, séparé par un `VerticalDivider` ; la
+  mention l'ouvre aussi. Le panneau exige une fenêtre d'au moins 1 150 px
+  (`_originalPanelMinWindowWidth`) ; en dessous, `OriginalTextButton` ouvre la feuille ou la
+  fenêtre de la fiche.
 - Le `FidelityBanner`, quand le contrôle de fidélité a émis une réserve. Il n'apparaît **que**
   sur cet écran, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. Valider
   l'efface — valider, c'est avoir relu et tranché.
@@ -2989,6 +3090,10 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 rapport** (ni `report-uri`, ni `report-to`) : le projet n'a pas de point de collecte. Une
 violation s'affiche dans la console du navigateur de celui qui la provoque, et nulle part
 ailleurs. La CSP ne bloque donc rien, et personne n'est prévenu de ce qu'elle bloquerait.
+
+`font-src` et `connect-src` admettent `https://fonts.gstatic.com` (v0.23.16) : CanvasKit y
+télécharge les polices de secours des écritures que ses polices embarquées ne couvrent pas
+(japonais, arabe…). Le texte d'origine d'une recette traduite en a besoin.
 
 Ce qui en dépend : `img-src` limite les images à `'self'`, `data:`, `blob:`,
 `*.googleapis.com` (dont Firebase Storage) et `*.googleusercontent.com` (photos de profil
@@ -3101,13 +3206,51 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
 précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Ses actions
 sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme celles de
-`deploy.yml`. Trois jobs, sur `ubuntu-latest` :
+`deploy.yml`. Quatre jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
+| Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
+
+#### Le contrôle de version
+
+Le PC pousse directement sur `master` pendant que des PR attendent leur fusion. Deux livraisons
+qui passent toutes deux de 0.23.14 à 0.23.15 écrivent la même ligne `version:` : Git les
+fusionne sans conflit, et le second déploiement conserve l'APK en ligne, dont la version n'est
+pas plus ancienne. `check-version.sh` détecte ce cas.
+
+Deux contrôles. Le premier porte sur tout l'historique de la tête : son nom de version (avant
+le `+`) ne doit avoir été introduit que par un seul commit ordinaire (`git log --full-history
+--no-merges -G'^version:'`). Il ne dépend pas de la plage poussée : après un push refusé pour
+doublon, un push suivant qui ne touche pas la version échoue encore, et une CI annulée par
+`cancel-in-progress` ne laisse pas passer son doublon. Un job rouge sur `master` se corrige
+par un commit qui passe à la version suivante.
+
+Le second compare la tête à la base, quand le changement touche la version : l'un de ses
+commits ordinaires modifie la ligne `version:` de `kass_dalle/pubspec.yaml` par rapport à son
+parent, ou la tête descend de la base sans en avoir la version (hausse faite dans un commit de
+fusion). Les commits de fusion ne comptent pas comme hausse : fusionner `master` dans une
+branche y apporte la version de `master` sans que la branche l'ait choisie. Le script échoue
+alors quand le nom de version n'est pas strictement supérieur à celui de la base. Dans tous
+les cas, `documentation/CHANGELOG.md` doit avoir une, et une seule, entrée `### v<nom>` pour la
+version de la tête : un rebase sur une hausse identique vide le changement de `pubspec.yaml`,
+et seul le `CHANGELOG.md` garde alors les deux entrées. `CLAUDE.md` demande d'intégrer
+`origin/master` par une fusion, jamais par un rebase. Une base
+introuvable (premier push, historique réécrit) saute ce second contrôle ; une tête
+introuvable fait échouer le script.
+
+Un script modifié par une PR s'exécute dans sa version modifiée, sur la PR puis sur le push de
+fusion : seule la relecture empêche d'affaiblir le contrôle. `.gitattributes` force les fins
+de ligne LF sur les `*.sh`, pour que le `bash` de Git for Windows les lise sur le PC.
+
+Le même script se lance à la main avant un push depuis le PC ou avant la fusion d'une PR :
+`bash .github/scripts/check-version.sh origin/master HEAD` (voir `CLAUDE.md`, « Un numéro de
+version par livraison »). La CI d'une PR ne se rejoue pas quand `master` avance : ce lancement
+manuel couvre l'intervalle, et le job du push sur `master` arrête le déploiement si un doublon
+passe quand même. `deploy.ps1` n'appelle pas le script : le lancer avant lui.
 
 Le déploiement automatique ne part qu'après une CI verte sur un push sur `master` : `deploy.yml`
 exige la conclusion `success` du workflow entier, donc un seul job en échec, celui des règles

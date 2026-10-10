@@ -335,6 +335,7 @@ class GeminiService {
       fidelityLevel: map['fidelity_level'] as String?,
       fidelityFindings: FidelityFinding.listFrom(map['fidelity_findings']),
       recettesTrouvees: (map['recettes_trouvees'] as num?)?.toInt() ?? 1,
+      langueOrigine: map['langue_origine'] as String?,
     );
   }
 
@@ -616,6 +617,7 @@ class TextRecipeExtraction {
     this.fidelityLevel,
     this.fidelityFindings = const [],
     this.recettesTrouvees = 1,
+    this.langueOrigine,
   });
 
   final String cooklang;
@@ -635,6 +637,9 @@ class TextRecipeExtraction {
   /// de création n'en édite qu'une, et l'utilisateur doit apprendre que le
   /// reste n'a pas été gardé.
   final int recettesTrouvees;
+
+  /// Code ISO 639-1 du texte collé quand il a été traduit, sinon `null`.
+  final String? langueOrigine;
 }
 
 /// Exception levée quand un appel Callable Gemini échoue.
@@ -654,7 +659,7 @@ typedef MealPlanSlotDto = ({
 
 /// Réponse de `suggestMealPlanFn`.
 ///
-/// Les champs ajoutés avec la présélection serveur (v0.23.15) sont lus avec
+/// Les champs ajoutés avec la présélection serveur (v0.23.18) sont lus avec
 /// des valeurs neutres : une réponse plus ancienne reste lisible.
 class MealPlanResponse {
   final List<MealPlanSlotDto> suggestions;

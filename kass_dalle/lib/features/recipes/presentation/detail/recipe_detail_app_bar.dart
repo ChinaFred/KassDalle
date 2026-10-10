@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../domain/recipe.dart';
 import '../recipe_rating_widget.dart';
+import '../original_text_viewer.dart';
 import '../source_viewer.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -161,6 +162,14 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
       // La note et les pastilles ne sont pas des actions : elles décrivent la
       // recette, et vivent donc avec son titre.
       final actionsCompactes = <Widget>[
+        // Sur téléphone, la mention tient lieu de bouton : une icône de plus
+        // parmi dix ne se remarquerait pas, et le lecteur doit savoir que les
+        // mesures ont été converties.
+        if (recipe.isTranslated)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TranslatedFromLabel(recipe: recipe, minTapHeight: 36),
+          ),
         SourceViewerButton(
           sourceFileUrl: recipe.sourceFileUrl,
           sourceFileName: recipe.sourceFileName,
@@ -357,34 +366,52 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                     ...annotBadges,
                   ],
                 ),
-                if (recipe.bookTitre != null)
-                  GestureDetector(
-                    onTap: () => context.push(bookListLocation),
-                    child: Text(
-                      [
-                        recipe.bookTitre!,
-                        if (recipe.pageNumber != null)
-                          'pg\u00a0${recipe.pageNumber}',
-                      ].join(', '),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        decoration: TextDecoration.underline,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                // La mention de traduction partage la ligne du livre : une ligne
+                // de plus déborderait la barre, qui garde sa hauteur standard.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: recipe.bookTitre != null
+                          ? GestureDetector(
+                              onTap: () => context.push(bookListLocation),
+                              child: Text(
+                                [
+                                  recipe.bookTitre!,
+                                  if (recipe.pageNumber != null)
+                                    'pg\u00a0${recipe.pageNumber}',
+                                ].join(', '),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      decoration: TextDecoration.underline,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )
+                          : GestureDetector(
+                              onTap: () => context.push('/recipes'),
+                              child: Text(
+                                'Recette libre',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      decoration: TextDecoration.underline,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                     ),
-                  ),
-                if (recipe.bookTitre == null)
-                  GestureDetector(
-                    onTap: () => context.push('/recipes'),
-                    child: Text(
-                      'Recette libre',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        decoration: TextDecoration.underline,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                    if (recipe.isTranslated) ...[
+                      const SizedBox(width: 12),
+                      Flexible(child: TranslatedFromLabel(recipe: recipe)),
+                    ],
+                  ],
+                ),
                 if (recipe.createdBy != user?.uid)
                   RecipeDetailOwnerLabel(ownerUid: recipe.createdBy),
               ],
@@ -402,6 +429,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           sourceFileName: recipe.sourceFileName,
           additionalSourceFileUrls: recipe.additionalSourceFileUrls,
         ),
+        OriginalTextButton(recipe: recipe),
         if (user != null && recipe.createdBy != user!.uid)
           IconButton(
             icon: const Icon(Icons.copy_outlined),

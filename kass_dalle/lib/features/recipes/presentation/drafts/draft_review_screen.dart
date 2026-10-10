@@ -9,6 +9,7 @@ import '../ai/ai_processing_overlay.dart';
 import '../ai/ai_ui_copy.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../original_text_viewer.dart';
 import '../source_viewer.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../edit/recipe_form_mixin.dart';
@@ -31,6 +32,11 @@ import '../../../../core/utils/app_image_url.dart';
 /// centimètre effaçait le brouillon qu'il venait de relire.
 enum _DraftOverflowAction { clearSourceFile, delete }
 
+/// Largeur de fenêtre à partir de laquelle le texte d'origine s'ouvre en
+/// panneau à côté de l'éditeur : 336 px de colonne gauche, 384 px de panneau,
+/// et 400 px au moins pour l'éditeur, plus la barre de navigation.
+const double _originalPanelMinWindowWidth = 1150;
+
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
   final bool autoOpenAiRefine;
@@ -48,6 +54,10 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
+
+  /// Panneau du texte d'origine, à droite de l'éditeur sur grand écran : on
+  /// compare la traduction à la page pendant qu'on la corrige.
+  bool _showOriginalPanel = false;
 
   /// Ce que le voile annonce, et qui dépend de l'opération en cours.
   ///
@@ -544,6 +554,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+    // Le panneau du texte d'origine prend 384 px à droite d'un corps dont la
+    // colonne gauche en prend déjà 336 : sous ce seuil, l'éditeur n'aurait
+    // plus la place, et le texte s'ouvre dans une fenêtre.
+    final originalPanelFits =
+        MediaQuery.sizeOf(context).width >= _originalPanelMinWindowWidth;
 
     return recipeAsync.when(
       loading: () =>
@@ -598,7 +613,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         final titleLines =
             2 +
             (recipe.bookTitre != null ? 1 : 0) +
-            (ownerName != null ? 1 : 0);
+            (ownerName != null ? 1 : 0) +
+            (recipe.isTranslated ? 1 : 0);
         const lineHeight = 20.0;
         const verticalPadding = 16.0;
 
@@ -684,6 +700,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       ),
                     ],
                   ),
+                TranslatedFromLabel(
+                  recipe: recipe,
+                  onTap: originalPanelFits
+                      ? () => setState(() => _showOriginalPanel = true)
+                      : null,
+                ),
               ],
             ),
             actions: [
@@ -692,6 +714,18 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 sourceFileName: recipe.sourceFileName,
                 additionalSourceFileUrls: recipe.additionalSourceFileUrls,
               ),
+              if (recipe.isTranslated && originalPanelFits)
+                IconButton(
+                  icon: const Icon(Icons.translate),
+                  isSelected: _showOriginalPanel,
+                  tooltip: _showOriginalPanel
+                      ? "Masquer le texte d'origine"
+                      : "Afficher le texte d'origine",
+                  onPressed: () =>
+                      setState(() => _showOriginalPanel = !_showOriginalPanel),
+                )
+              else
+                OriginalTextButton(recipe: recipe),
               if (isOwner) ...[
                 IconButton(
                   icon: _aiRefining
@@ -788,11 +822,35 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 FidelityBanner(recipe: recipe),
                 Expanded(
                   child: isWide
-                      ? DraftReviewWideBody(
-                          recipe: recipe,
-                          isOwner: isOwner,
-                          isAdmin: isAdmin,
-                          data: _formData(recipe),
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: DraftReviewWideBody(
+                                recipe: recipe,
+                                isOwner: isOwner,
+                                isAdmin: isAdmin,
+                                data: _formData(recipe),
+                              ),
+                            ),
+                            if (recipe.isTranslated &&
+                                originalPanelFits &&
+                                _showOriginalPanel) ...[
+                              const VerticalDivider(width: 24),
+                              SizedBox(
+                                width: 360,
+                                child: OriginalTextView(
+                                  recipeId: recipe.id,
+                                  langue: recipe.langueOrigine!,
+                                  hasSourceFile:
+                                      (recipe.sourceFileUrl ?? '').isNotEmpty,
+                                  onClose: () => setState(
+                                    () => _showOriginalPanel = false,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         )
                       : DraftReviewNarrowBody(
                           recipe: recipe,

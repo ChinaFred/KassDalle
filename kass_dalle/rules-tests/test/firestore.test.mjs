@@ -130,7 +130,12 @@ beforeEach(async () => {
     },
     "recipes/validated-private-other/annotations/a1": { uid: OTHER, text: "note privée" },
     "recipes/validated/annotations/mine": { uid: READER, text: "ma note" },
-    "recipe_ratings/r1": { user_id: READER, recipe_id: "validated", rating: 4 },
+    "recipe_ratings/r1": {
+      user_id: READER,
+      recipe_id: "validated",
+      rating: 4,
+      updated_at: new Date(),
+    },
     "recipe_ratings/r-other": { user_id: OTHER, recipe_id: "validated", rating: 3 },
     "recipe_ratings/r-other-private": {
       user_id: OTHER,
@@ -138,6 +143,8 @@ beforeEach(async () => {
       rating: 5,
     },
     "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
+    "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
+    "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
     "groups/g1": { owner_id: READER, member_ids: [READER] },
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
@@ -956,6 +963,32 @@ describe("recipes — ranger dans ses propres livres", () => {
   });
 });
 
+describe("recipes — texte d'origine d'une traduction", () => {
+  it("un lecteur lit le texte d'origine d'une recette visible", async () => {
+    await assertSucceeds(db("reader").doc("recipes/validated/origine/texte").get());
+  });
+
+  it("un lecteur ne lit pas le texte d'origine d'une recette privée d'autrui", async () => {
+    await assertFails(db("reader").doc("recipes/validated-private-other/origine/texte").get());
+  });
+
+  it("un compte en attente ne lit pas le texte d'origine", async () => {
+    await assertFails(db("pending").doc("recipes/validated/origine/texte").get());
+  });
+
+  it("un administrateur ne réécrit pas le texte d'origine", async () => {
+    await assertFails(
+      db("admin").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
+    );
+  });
+
+  it("un éditeur ne crée pas de texte d'origine", async () => {
+    await assertFails(
+      db("editor").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
+    );
+  });
+});
+
 describe("recipes — annotations", () => {
   it("un lecteur annote à son nom", async () => {
     await assertSucceeds(
@@ -1033,19 +1066,128 @@ describe("recipe_ratings — confidentialité", () => {
     await assertFails(db("reader").doc("recipe_ratings/r-other-private").get());
   });
 
+  // La fiche d'une recette liste les notes de la famille par une requête sur
+  // `recipe_id` : la règle doit pouvoir la prouver sans lire chaque note.
+  it("un lecteur liste les notes d'une recette visible", async () => {
+    await assertSucceeds(
+      db("reader").collection("recipe_ratings").where("recipe_id", "==", "validated").get(),
+    );
+  });
+
+  it("un lecteur ne liste pas les notes d'une recette privée d'autrui", async () => {
+    await assertFails(
+      db("reader")
+        .collection("recipe_ratings")
+        .where("recipe_id", "==", "validated-private-other")
+        .get(),
+    );
+  });
+
+  it("note : une valeur non entière est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: "x", updated_at: new Date() }),
+    );
+  });
+
+  it("note : une valeur au-delà de 10 est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: 11, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une mise à jour sous 0 est refusée", async () => {
+    await assertFails(
+      db("reader").doc("recipe_ratings/r1").update({ rating: -1, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une note sans date est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
+    );
+  });
+
+  it("note : un champ inconnu est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({
+        user_id: READER,
+        recipe_id: "validated",
+        rating: 2,
+        updated_at: new Date(),
+        extra: true,
+      }),
+    );
+  });
+
+  it("note : un identifiant autre que {uid}_{recipeId} est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/autre-id")
+        .set({ user_id: READER, recipe_id: "validated", rating: 10, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une ancienne note sans date se remplace par une note complète", async () => {
+    await seedDocs(env, {
+      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+    });
+    await assertSucceeds(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: 6, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une ancienne note sans date se supprime", async () => {
+    await seedDocs(env, {
+      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+    });
+    await assertSucceeds(db("reader").doc(`recipe_ratings/${READER}_validated`).delete());
+  });
+
+  it("un compte révoqué ne modifie ni ne supprime sa note", async () => {
+    await seedDocs(env, {
+      "recipe_ratings/r-revoked": {
+        user_id: PERSONAS.revokedStaleToken.uid,
+        recipe_id: "validated",
+        rating: 4,
+        updated_at: new Date(),
+      },
+    });
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("recipe_ratings/r-revoked")
+        .update({ rating: 5, updated_at: new Date() }),
+    );
+    await assertFails(db("revokedStaleToken").doc("recipe_ratings/r-revoked").delete());
+  });
+
   it("un lecteur ne note pas la recette privée d'autrui", async () => {
     await assertFails(
       db("reader")
-        .doc("recipe_ratings/new")
-        .set({ user_id: READER, recipe_id: "validated-private-other", rating: 2 }),
+        .doc(`recipe_ratings/${READER}_validated-private-other`)
+        .set({
+          user_id: READER,
+          recipe_id: "validated-private-other",
+          rating: 2,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("un lecteur note une recette visible", async () => {
     await assertSucceeds(
       db("reader")
-        .doc("recipe_ratings/new")
-        .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
     );
   });
 
@@ -1065,7 +1207,9 @@ describe("recipe_ratings — confidentialité", () => {
 describe("champs propriétaire", () => {
   it("un lecteur ne note pas au nom d'un autre", async () => {
     await assertFails(
-      db("reader").doc("recipe_ratings/new").set({ user_id: OTHER, recipe_id: "validated" }),
+      db("reader")
+        .doc(`recipe_ratings/${OTHER}_validated`)
+        .set({ user_id: OTHER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
     );
   });
 

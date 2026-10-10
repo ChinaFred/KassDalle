@@ -29,6 +29,7 @@ String featureProcess(String key) => kFeatureProcess[key] ?? 'Autres';
 const kFeatureProcess = <String, String>{
   'transcription_page': 'Numérisation d\'un livre',
   'recipe_tagging': 'Numérisation d\'un livre',
+  'recipe_translation': 'Numérisation d\'un livre',
   'scan_extraction': 'Numérisation d\'un livre',
   'document_extraction': 'Numérisation d\'un livre',
   'classify_page': 'Numérisation d\'un livre',
@@ -122,6 +123,13 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Balise les étapes transcrites en CookLang et sépare chaque ligne '
         'd\'ingrédient en quantité, aliment et note explicative.',
+  ),
+  'recipe_translation': FeatureInfo(
+    label: 'Traduction d\'une recette étrangère',
+    description:
+        'Traduit en français une recette transcrite dans une autre langue et '
+        'convertit ses mesures en unités métriques. Appelé seulement quand la '
+        'langue détectée n\'est pas le français.',
   ),
   'scan_extraction': FeatureInfo(
     label: 'Extraction de recettes',
