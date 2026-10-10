@@ -40,7 +40,9 @@ n'est stocké.
 modification : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun champ en plus. Tous
 les membres décodent maintenant les notes d'une recette : un compte pouvait écrire `rating: "x"`
 et faire échouer l'affichage chez tous. Une note illisible déjà en base est rapportée et écartée
-côté client. Cinq tests de règles couvrent ces refus.
+côté client. La création exige l'identifiant `{uid}_{recipeId}` : un compte pouvait créer
+plusieurs notes sous d'autres identifiants et peser plusieurs fois dans la moyenne. Un compte
+révoqué ne modifie ni ne supprime plus sa note. Neuf tests de règles couvrent ces cas.
 
 **Corrections.** Un échec d'enregistrement ou de suppression d'une note s'affiche désormais
 (message d'erreur) et est rapporté par `ErrorReportService` ; il passait inaperçu. Le libellé

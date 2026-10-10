@@ -107,7 +107,7 @@ class RecipeRatingRepository {
   /// Charge toutes les notes d'un utilisateur en une seule requête.
   Future<List<RecipeRating>> getAllForUser(String userId) async {
     final snap = await _col.where('user_id', isEqualTo: userId).get();
-    return snap.docs.map((d) => RecipeRating.fromFirestore(d.data())).toList();
+    return snap.docs.map(_decodeOrNull).nonNulls.toList();
   }
 
   /// Supprime la note. Un échec est rapporté puis relancé.

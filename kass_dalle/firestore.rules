@@ -405,14 +405,17 @@ service cloud.firestore {
         || canReadRecipe(recipeDoc(resource.data.recipe_id)));
       allow create: if isApproved() && request.resource.data.user_id == request.auth.uid
         && canReadRecipe(recipeDoc(request.resource.data.recipe_id))
+        && ratingId == request.auth.uid + '_' + request.resource.data.recipe_id
         && isValidRating(request.resource.data);
       // `user_id` et `recipe_id` sont figés : l'identifiant du document les
-      // contient tous les deux.
-      allow update: if (isOwner(resource.data.user_id) || isAdmin())
+      // contient tous les deux, et la création le vérifie. Une note par
+      // membre et par recette : un doublon compterait deux fois dans la
+      // moyenne de la famille.
+      allow update: if isApproved() && (isOwner(resource.data.user_id) || isAdmin())
         && request.resource.data.user_id == resource.data.user_id
         && request.resource.data.get('recipe_id', null) == resource.data.get('recipe_id', null)
         && isValidRating(request.resource.data);
-      allow delete: if isOwner(resource.data.user_id) || isAdmin();
+      allow delete: if isApproved() && (isOwner(resource.data.user_id) || isAdmin());
     }
 
     // Groupes familiaux

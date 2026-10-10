@@ -1058,7 +1058,7 @@ describe("recipe_ratings — confidentialité", () => {
   it("note : une valeur non entière est refusée", async () => {
     await assertFails(
       db("reader")
-        .doc("recipe_ratings/new")
+        .doc(`recipe_ratings/${READER}_validated`)
         .set({ user_id: READER, recipe_id: "validated", rating: "x", updated_at: new Date() }),
     );
   });
@@ -1066,7 +1066,7 @@ describe("recipe_ratings — confidentialité", () => {
   it("note : une valeur au-delà de 10 est refusée", async () => {
     await assertFails(
       db("reader")
-        .doc("recipe_ratings/new")
+        .doc(`recipe_ratings/${READER}_validated`)
         .set({ user_id: READER, recipe_id: "validated", rating: 11, updated_at: new Date() }),
     );
   });
@@ -1080,14 +1080,16 @@ describe("recipe_ratings — confidentialité", () => {
   it("note : une note sans date est refusée", async () => {
     await assertFails(
       db("reader")
-        .doc("recipe_ratings/new")
+        .doc(`recipe_ratings/${READER}_validated`)
         .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
     );
   });
 
   it("note : un champ inconnu est refusé", async () => {
     await assertFails(
-      db("reader").doc("recipe_ratings/new").set({
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({
         user_id: READER,
         recipe_id: "validated",
         rating: 2,
@@ -1097,18 +1099,66 @@ describe("recipe_ratings — confidentialité", () => {
     );
   });
 
+  it("note : un identifiant autre que {uid}_{recipeId} est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/autre-id")
+        .set({ user_id: READER, recipe_id: "validated", rating: 10, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une ancienne note sans date se remplace par une note complète", async () => {
+    await seedDocs(env, {
+      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+    });
+    await assertSucceeds(
+      db("reader")
+        .doc(`recipe_ratings/${READER}_validated`)
+        .set({ user_id: READER, recipe_id: "validated", rating: 6, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une ancienne note sans date se supprime", async () => {
+    await seedDocs(env, {
+      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+    });
+    await assertSucceeds(db("reader").doc(`recipe_ratings/${READER}_validated`).delete());
+  });
+
+  it("un compte révoqué ne modifie ni ne supprime sa note", async () => {
+    await seedDocs(env, {
+      "recipe_ratings/r-revoked": {
+        user_id: PERSONAS.revokedStaleToken.uid,
+        recipe_id: "validated",
+        rating: 4,
+        updated_at: new Date(),
+      },
+    });
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("recipe_ratings/r-revoked")
+        .update({ rating: 5, updated_at: new Date() }),
+    );
+    await assertFails(db("revokedStaleToken").doc("recipe_ratings/r-revoked").delete());
+  });
+
   it("un lecteur ne note pas la recette privée d'autrui", async () => {
     await assertFails(
       db("reader")
-        .doc("recipe_ratings/new")
-        .set({ user_id: READER, recipe_id: "validated-private-other", rating: 2 }),
+        .doc(`recipe_ratings/${READER}_validated-private-other`)
+        .set({
+          user_id: READER,
+          recipe_id: "validated-private-other",
+          rating: 2,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("un lecteur note une recette visible", async () => {
     await assertSucceeds(
       db("reader")
-        .doc("recipe_ratings/new")
+        .doc(`recipe_ratings/${READER}_validated`)
         .set({ user_id: READER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
     );
   });
@@ -1129,7 +1179,9 @@ describe("recipe_ratings — confidentialité", () => {
 describe("champs propriétaire", () => {
   it("un lecteur ne note pas au nom d'un autre", async () => {
     await assertFails(
-      db("reader").doc("recipe_ratings/new").set({ user_id: OTHER, recipe_id: "validated" }),
+      db("reader")
+        .doc(`recipe_ratings/${OTHER}_validated`)
+        .set({ user_id: OTHER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
     );
   });
 
