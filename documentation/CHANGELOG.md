@@ -36,6 +36,12 @@ la recette. Le planning ne tient toujours compte que de ma note.
 vérifient. Le filtre par groupe et la moyenne sont calculés côté client (`FamilyRatings`), rien
 n'est stocké.
 
+**Règle.** `recipe_ratings` exige désormais une note bien formée à la création comme à la
+modification : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun champ en plus. Tous
+les membres décodent maintenant les notes d'une recette : un compte pouvait écrire `rating: "x"`
+et faire échouer l'affichage chez tous. Une note illisible déjà en base est rapportée et écartée
+côté client. Cinq tests de règles couvrent ces refus.
+
 **Corrections.** Un échec d'enregistrement ou de suppression d'une note s'affiche désormais
 (message d'erreur) et est rapporté par `ErrorReportService` ; il passait inaperçu. Le libellé
 « Communaute » prend son accent. Le bouton « Supprimer » de la note prend la couleur d'erreur du

@@ -130,7 +130,12 @@ beforeEach(async () => {
     },
     "recipes/validated-private-other/annotations/a1": { uid: OTHER, text: "note privée" },
     "recipes/validated/annotations/mine": { uid: READER, text: "ma note" },
-    "recipe_ratings/r1": { user_id: READER, recipe_id: "validated", rating: 4 },
+    "recipe_ratings/r1": {
+      user_id: READER,
+      recipe_id: "validated",
+      rating: 4,
+      updated_at: new Date(),
+    },
     "recipe_ratings/r-other": { user_id: OTHER, recipe_id: "validated", rating: 3 },
     "recipe_ratings/r-other-private": {
       user_id: OTHER,
@@ -1050,6 +1055,48 @@ describe("recipe_ratings — confidentialité", () => {
     );
   });
 
+  it("note : une valeur non entière est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/new")
+        .set({ user_id: READER, recipe_id: "validated", rating: "x", updated_at: new Date() }),
+    );
+  });
+
+  it("note : une valeur au-delà de 10 est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/new")
+        .set({ user_id: READER, recipe_id: "validated", rating: 11, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une mise à jour sous 0 est refusée", async () => {
+    await assertFails(
+      db("reader").doc("recipe_ratings/r1").update({ rating: -1, updated_at: new Date() }),
+    );
+  });
+
+  it("note : une note sans date est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipe_ratings/new")
+        .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
+    );
+  });
+
+  it("note : un champ inconnu est refusé", async () => {
+    await assertFails(
+      db("reader").doc("recipe_ratings/new").set({
+        user_id: READER,
+        recipe_id: "validated",
+        rating: 2,
+        updated_at: new Date(),
+        extra: true,
+      }),
+    );
+  });
+
   it("un lecteur ne note pas la recette privée d'autrui", async () => {
     await assertFails(
       db("reader")
@@ -1062,7 +1109,7 @@ describe("recipe_ratings — confidentialité", () => {
     await assertSucceeds(
       db("reader")
         .doc("recipe_ratings/new")
-        .set({ user_id: READER, recipe_id: "validated", rating: 2 }),
+        .set({ user_id: READER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
     );
   });
 

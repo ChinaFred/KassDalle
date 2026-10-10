@@ -7,6 +7,8 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
+import '../../groups/presentation/group_providers.dart';
 
 /// Badge compact affichant la note de l'utilisateur (ex : ★ 8).
 /// Appuyez dessus pour ouvrir le sélecteur de note.
@@ -432,7 +434,9 @@ Future<bool> _saveRating(
     return true;
   } catch (e) {
     if (context.mounted) {
-      context.showErrorSnackBar('Note non enregistrée : $e');
+      context.showErrorSnackBar(
+        'Note non enregistrée — ${shortErrorMessage(e)}',
+      );
     }
     return false;
   }
@@ -452,7 +456,7 @@ Future<bool> _deleteRating(
     return true;
   } catch (e) {
     if (context.mounted) {
-      context.showErrorSnackBar('Note non supprimée : $e');
+      context.showErrorSnackBar('Note non supprimée — ${shortErrorMessage(e)}');
     }
     return false;
   }
@@ -520,7 +524,10 @@ class _FamilyRatingsSection extends ConsumerWidget {
         error: e,
         compact: true,
         title: 'Notes de la famille indisponibles',
-        onRetry: () => ref.invalidate(recipeRatingsProvider(recipeId)),
+        onRetry: () {
+          ref.invalidate(recipeRatingsProvider(recipeId));
+          ref.invalidate(myGroupsProvider);
+        },
       ),
       data: (family) {
         final average = family.average;
@@ -549,7 +556,7 @@ class _FamilyRatingsSection extends ConsumerWidget {
             ),
             title: Semantics(
               label:
-                  'Moyenne de la famille : ${avg.replaceAll(',', '.')} sur 10, '
+                  'Moyenne de la famille : $avg sur 10, '
                   '$count $notes',
               excludeSemantics: true,
               child: Text(

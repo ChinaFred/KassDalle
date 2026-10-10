@@ -39,11 +39,7 @@ class RecipeRatingRepository {
     return _col
         .where('recipe_id', isEqualTo: recipeId)
         .snapshots()
-        .map(
-          (snap) => snap.docs
-              .map((d) => RecipeRating.fromFirestore(d.data()))
-              .toList(),
-        )
+        .map((snap) => snap.docs.map(_decodeOrNull).nonNulls.toList())
         .transform(
           StreamTransformer<
             List<RecipeRating>,
@@ -62,6 +58,24 @@ class RecipeRatingRepository {
             },
           ),
         );
+  }
+
+  /// Une note illisible (écrite avant la validation des règles) est
+  /// rapportée et écartée : elle ne doit pas masquer celles des autres.
+  RecipeRating? _decodeOrNull(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    try {
+      return RecipeRating.fromFirestore(d.data());
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'recipes.rating_decode',
+          error: e,
+          stackTrace: st,
+          context: {'rating_id': d.id},
+        ),
+      );
+      return null;
+    }
   }
 
   /// Enregistre ou met à jour la note. Un échec est rapporté puis relancé :
