@@ -394,16 +394,28 @@ service cloud.firestore {
     // Notes de recettes (recipe_ratings) — même confidentialité que la
     // recette notée, lue par `get()` sur `recipe_id`.
     match /recipe_ratings/{ratingId} {
+      // Forme d'une note. Toute la famille décode les notes d'une recette :
+      // une seule note mal formée ferait échouer l'affichage chez tous.
+      function isValidRating(data) {
+        return data.keys().hasOnly(['user_id', 'recipe_id', 'rating', 'updated_at'])
+          && data.rating is int && data.rating >= 0 && data.rating <= 10
+          && data.updated_at is timestamp;
+      }
       allow read: if isApproved() && (isOwner(resource.data.user_id)
         || canReadRecipe(recipeDoc(resource.data.recipe_id)));
       allow create: if isApproved() && request.resource.data.user_id == request.auth.uid
-        && canReadRecipe(recipeDoc(request.resource.data.recipe_id));
+        && canReadRecipe(recipeDoc(request.resource.data.recipe_id))
+        && ratingId == request.auth.uid + '_' + request.resource.data.recipe_id
+        && isValidRating(request.resource.data);
       // `user_id` et `recipe_id` sont figés : l'identifiant du document les
-      // contient tous les deux.
-      allow update: if (isOwner(resource.data.user_id) || isAdmin())
+      // contient tous les deux, et la création le vérifie. Une note par
+      // membre et par recette : un doublon compterait deux fois dans la
+      // moyenne de la famille.
+      allow update: if isApproved() && (isOwner(resource.data.user_id) || isAdmin())
         && request.resource.data.user_id == resource.data.user_id
-        && request.resource.data.get('recipe_id', null) == resource.data.get('recipe_id', null);
-      allow delete: if isOwner(resource.data.user_id) || isAdmin();
+        && request.resource.data.get('recipe_id', null) == resource.data.get('recipe_id', null)
+        && isValidRating(request.resource.data);
+      allow delete: if isApproved() && (isOwner(resource.data.user_id) || isAdmin());
     }
 
     // Groupes familiaux

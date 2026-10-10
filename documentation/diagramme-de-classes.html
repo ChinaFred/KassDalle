@@ -430,7 +430,24 @@ classDiagram
     +String userId
     +String recipeId
     +int rating
+    +DateTime updatedAt
     +docId(userId, recipeId) String$
+  }
+
+  class FamilyRatings {
+    &lt;&lt;dérivée, non stockée&gt;&gt;
+    +List~MemberRating~ others
+    +int? mine
+    +count int
+    +average double?
+    +from(ratings, myUid, memberIds, nameOf) FamilyRatings$
+  }
+
+  class MemberRating {
+    +String userId
+    +String name
+    +int rating
+    +DateTime updatedAt
   }
 
   class PlannedMeal {
@@ -479,6 +496,8 @@ classDiagram
   Book "0..1" --&gt; "0..*" Recipe : bookId
   Recipe "1" --&gt; "0..*" Annotation : recipeId
   Recipe "1" --&gt; "0..*" RecipeRating : recipeId
+  FamilyRatings ..> RecipeRating : lit
+  FamilyRatings "1" *-- "0..*" MemberRating : others
   Recipe "0..1" --&gt; "0..*" PlannedMeal : recipeId
   ProcessingJob "1" --&gt; "0..*" Recipe : createdRecipeIds
   ProcessingJob "1" --&gt; "0..1" Book : createdBookId

@@ -945,6 +945,21 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
 donne, pas à la recette.
 
+| Champ | Type | Description |
+|---|---|---|
+| `user_id` | `String` | Auteur de la note, figé |
+| `recipe_id` | `String` | Recette notée, figée |
+| `rating` | `int` | De 0 à 10 ; 0 est une vraie note |
+| `updated_at` | `Timestamp` | Dernière modification |
+
+La fiche recette lit toutes les notes d'une recette par `where recipe_id ==`
+(`RecipeRatingRepository.watchAllForRecipe`) ; la règle de lecture prouve cette requête par
+son `get()` sur `recipe_id`, et `rules-tests` le vérifie. Le filtre par groupe se fait côté
+client (`familyRatingsProvider`, `FamilyRatings.from`) : ne restent que les notes des membres
+de `groupMemberIdsProvider` dont le profil public existe, plus la mienne. La moyenne est
+dérivée à l'affichage et n'est stockée nulle part. Aucun index composite : le tri par date se
+fait côté client. Le planning ne lit que la note de l'utilisateur (`getAllForUser`).
+
 ---
 
 ### 3.10 Référentiels nutrition — `nutrition_ingredients`, `nutrition_units`
@@ -1497,7 +1512,7 @@ service cloud.firestore {
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` et `backfillUserProfilesFn` |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
-| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire ; modification et suppression par l'auteur ou un admin, `user_id` et `recipe_id` figés |
+| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe | création à son nom, soi seul membre ; modification et suppression par le propriétaire ou un admin, `owner_id` figé |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |

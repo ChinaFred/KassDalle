@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.15 — fonctionnel
+
+#### Fiche recette : les notes de la famille
+
+**Ce que voit l'utilisateur.** Sous « Ma note », une ligne repliée « Famille : 7 / 10 · 2 notes »
+donne la moyenne et le nombre de notes. Dépliée, elle liste chaque membre avec son nom, la date
+et sa note. Seules comptent les notes des membres qui partagent un groupe avec moi, plus la
+mienne. Un membre sorti de mes groupes ou dont le compte est supprimé disparaît de la liste et de
+la moyenne. Au moment de noter, un rappel dit que la note est visible des membres qui ont accès à
+la recette. Le planning ne tient toujours compte que de ma note.
+
+**Technique.** `RecipeRatingRepository.watchAllForRecipe` lit les notes par
+`where recipe_id ==`. La règle existante prouve cette requête ; deux tests de `rules-tests` le
+vérifient. Le filtre par groupe et la moyenne sont calculés côté client (`FamilyRatings`), rien
+n'est stocké.
+
+**Règle.** `recipe_ratings` exige désormais une note bien formée à la création comme à la
+modification : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun champ en plus. Tous
+les membres décodent maintenant les notes d'une recette : un compte pouvait écrire `rating: "x"`
+et faire échouer l'affichage chez tous. Une note illisible déjà en base est rapportée et écartée
+côté client. La création exige l'identifiant `{uid}_{recipeId}` : un compte pouvait créer
+plusieurs notes sous d'autres identifiants et peser plusieurs fois dans la moyenne. Un compte
+révoqué ne modifie ni ne supprime plus sa note. Neuf tests de règles couvrent ces cas.
+
+**Corrections.** Un échec d'enregistrement ou de suppression d'une note s'affiche désormais
+(message d'erreur) et est rapporté par `ErrorReportService` ; il passait inaperçu. Le libellé
+« Communaute » prend son accent. Le bouton « Supprimer » de la note prend la couleur d'erreur du
+thème.
+
 ### v0.23.14 — fonctionnel
 
 #### Profils publics : le compte d'un membre ne se lit plus que par lui et par un administrateur
