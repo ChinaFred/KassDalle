@@ -145,11 +145,11 @@ beforeEach(async () => {
     "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
     "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
     "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
-    "groups/g1": { owner_id: READER, member_ids: [READER] },
+    "groups/g1": { name: "Famille", owner_id: READER, member_ids: [READER] },
     // La famille : lecteur, autre lecteur et éditeur partagent un groupe.
     // `stranger` n'en partage aucun. La portée est ce qu'écrit
     // `syncGroupReach` à partir des groupes.
-    "groups/famille": { owner_id: OTHER, member_ids: [OTHER, READER, EDITOR] },
+    "groups/famille": { name: "Famille", owner_id: OTHER, member_ids: [OTHER, READER, EDITOR] },
     "group_reach/reader": { uids: [EDITOR, OTHER] },
     "group_reach/other-reader": { uids: [EDITOR, READER] },
     "group_reach/editor": { uids: [OTHER, READER] },
@@ -1225,7 +1225,7 @@ describe("champs propriétaire", () => {
     await assertSucceeds(
       db("reader")
         .doc("groups/new")
-        .set({ owner_id: READER, member_ids: [READER] }),
+        .set({ name: "Famille", owner_id: READER, member_ids: [READER] }),
     );
   });
 
@@ -1233,7 +1233,7 @@ describe("champs propriétaire", () => {
     await assertFails(
       db("reader")
         .doc("groups/new")
-        .set({ owner_id: OTHER, member_ids: [OTHER] }),
+        .set({ name: "Famille", owner_id: OTHER, member_ids: [OTHER] }),
     );
   });
 
@@ -1891,7 +1891,7 @@ describe("groupes — cloisonnement des lectures", () => {
     // Le lecteur quitte la famille : `syncGroupReach` vide sa portée et
     // retire son uid de celle des autres.
     await seedDocs(env, {
-      "groups/famille": { owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+      "groups/famille": { name: "Famille", owner_id: OTHER, member_ids: [OTHER, EDITOR] },
       "group_reach/reader": { uids: [] },
       "group_reach/other-reader": { uids: [EDITOR] },
       "group_reach/editor": { uids: [OTHER] },
@@ -1963,7 +1963,7 @@ describe("groupes — invitations", () => {
   const STRANGER = PERSONAS.stranger.uid;
   const invite = () =>
     seedDocs(env, {
-      "groups/g1": { owner_id: READER, member_ids: [READER], invited_ids: [STRANGER] },
+      "groups/g1": { name: "Famille", owner_id: READER, member_ids: [READER], invited_ids: [STRANGER] },
     });
 
   it("le propriétaire invite un compte", async () => {
@@ -1986,7 +1986,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("reader")
         .doc("groups/new")
-        .set({ owner_id: READER, member_ids: [READER], invited_ids: [OTHER] }),
+        .set({ name: "Famille", owner_id: READER, member_ids: [READER], invited_ids: [OTHER] }),
     );
   });
 
@@ -2096,6 +2096,22 @@ describe("groupes — invitations", () => {
         .doc("groups/famille")
         .update({ member_ids: [READER, EDITOR] }),
     );
+  });
+
+  it("le nom d'un groupe compte 60 caractères au plus", async () => {
+    await assertSucceeds(db("reader").doc("groups/g1").update({ name: "a".repeat(60) }));
+    await assertFails(db("reader").doc("groups/g1").update({ name: "a".repeat(61) }));
+    await assertFails(
+      db("reader")
+        .doc("groups/new")
+        .set({ name: "a".repeat(61), owner_id: READER, member_ids: [READER] }),
+    );
+  });
+
+  it("un groupe compte 50 invitations en attente au plus", async () => {
+    const many = (n) => Array.from({ length: n }, (_, i) => `invite-${i}`);
+    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: many(50) }));
+    await assertFails(db("reader").doc("groups/g1").update({ invited_ids: many(51) }));
   });
 
   it("le propriétaire retire un membre", async () => {

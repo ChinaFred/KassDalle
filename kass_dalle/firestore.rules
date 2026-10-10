@@ -505,6 +505,15 @@ service cloud.firestore {
         return [request.auth.uid].toSet();
       }
 
+      /// Nom borné à 60 caractères, et 50 invitations en attente au plus.
+      /// Chaque invité lit le groupe : sans borne, un compte poussait un
+      /// texte de taille quelconque chez tous ceux qu'il invitait (revue
+      /// sécurité v0.23.17).
+      function boundedGroup(data) {
+        return data.name is string && data.name.size() <= 60
+          && data.get('invited_ids', []).size() <= 50;
+      }
+
       /// Le propriétaire (ou un administrateur) gère le groupe sans y faire
       /// entrer personne : `member_ids` ne peut que perdre des comptes, le
       /// propriétaire y reste, et une invitation ne vise pas un compte déjà
@@ -512,6 +521,7 @@ service cloud.firestore {
       function isManagement() {
         return (isOwner(resource.data.owner_id) || isAdmin())
           && onlyTouches(['name', 'member_ids', 'invited_ids'])
+          && boundedGroup(request.resource.data)
           && oldMembers().hasAll(newMembers())
           && newMembers().hasAll([resource.data.owner_id])
           && !newInvited().hasAny(newMembers());
@@ -545,7 +555,8 @@ service cloud.firestore {
       allow create: if isApproved()
         && request.resource.data.owner_id == request.auth.uid
         && request.resource.data.member_ids == [request.auth.uid]
-        && request.resource.data.get('invited_ids', []).size() == 0;
+        && request.resource.data.get('invited_ids', []).size() == 0
+        && boundedGroup(request.resource.data);
       // `owner_id` est figé : changer de propriétaire n'est pas un parcours de
       // l'application, et un groupe offert à un autre compte lui en
       // attribuerait la gestion sans son accord.

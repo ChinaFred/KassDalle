@@ -29,6 +29,13 @@ describe("membersOf", () => {
     assert.deepEqual(membersOf({ owner_id: 42, member_ids: "a" }), []);
     assert.deepEqual(membersOf({ owner_id: "  ", member_ids: [null, "", 3, " x "] }), ["x"]);
   });
+
+  test("un identifiant inutilisable comme document est écarté", () => {
+    assert.deepEqual(
+      membersOf({ owner_id: "o", member_ids: ["a/b", "x".repeat(129), "x".repeat(128)] }),
+      ["o", "x".repeat(128)],
+    );
+  });
 });
 
 describe("reachFromGroups", () => {

@@ -810,6 +810,8 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
       title: const Text('Créer un groupe familial'),
       content: TextField(
         controller: _controller,
+        // Les règles Firestore refusent un nom de plus de 60 caractères.
+        maxLength: 60,
         autofocus: true,
         decoration: const InputDecoration(
           labelText: 'Nom du groupe',
@@ -888,6 +890,8 @@ class _RenameGroupDialogState extends ConsumerState<_RenameGroupDialog> {
       title: const Text('Renommer le groupe'),
       content: TextField(
         controller: _controller,
+        // Les règles Firestore refusent un nom de plus de 60 caractères.
+        maxLength: 60,
         autofocus: true,
         decoration: const InputDecoration(labelText: 'Nouveau nom'),
         onSubmitted: (_) => _save(context),

@@ -1638,6 +1638,17 @@ requête Firestore directe le contournait.
 Coût : une lecture facturée de plus par requête ou par lecture de document d'autrui (la portée),
 pas par document rendu.
 
+**Délai connu.** Entre l'écriture qui retire un membre et la fin de `syncGroupReach` (démarrage
+à froid et transaction, quelques secondes), le membre sorti lit encore. Si le déclencheur
+échoue, ce délai dure jusqu'à la tentative qui réussit (`retry: true`). Un écouteur
+`snapshots()` déjà ouvert n'est pas forcément réévalué quand seule la portée change : le client
+de l'application en ouvre de nouveaux dès que sa portée change (`RecipeViewer` change), mais un
+client modifié pourrait garder l'ancien jusqu'à la prochaine écriture du document écouté.
+
+**Bornes d'un groupe.** Le nom compte 60 caractères au plus, et 50 invitations au plus
+attendent une réponse (`boundedGroup`) : chaque invité lit le groupe, et sans borne un compte
+poussait un texte de taille quelconque chez tous ceux qu'il invitait.
+
 **Une règle n'est pas un filtre.** Firestore refuse une requête entière dès que ses filtres ne
 suffisent pas à prouver que chaque résultat possible est lisible. Les requêtes du client sur
 `recipes` et `books` portent donc `created_by == uid` (le sien), ou `is_private == false` avec
@@ -1921,11 +1932,11 @@ brouillons **partagés** des membres de ses groupes (relecture), sans pouvoir le
 Depuis la v0.23.17, tout ce qui est partagé ne se lit que par les membres des groupes du
 créateur (suite « groupes — cloisonnement des lectures »).
 
-**Comptes au 2026-10-10 (v0.23.17)** : 377 tests attendus, aucun `todo` — 321 avant la v0.23.15,
-11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16, 40 par la v0.23.17
+**Comptes au 2026-10-10 (v0.23.17)** : 379 tests attendus, aucun `todo` — 321 avant la v0.23.15,
+11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16, 42 par la v0.23.17
 (cloisonnement par groupe, portée `group_reach`, invitations). La CI confirme le compte.
 
-- Firestore : 309 tests attendus, aucun `todo`.
+- Firestore : 311 tests attendus, aucun `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
 
 La v0.23.16 ajoute 5 tests sur `recipes/{id}/origine/texte` : un lecteur lit le texte d'origine
