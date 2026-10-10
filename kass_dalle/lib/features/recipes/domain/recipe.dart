@@ -1,5 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
+
 import '../../../core/services/cooklang_parser.dart'
     show extractPageType, ingredientKey, parsePageTypeLabel;
+import 'meal_role.dart';
 import 'recipe_origin.dart';
 
 export 'recipe_origin.dart';
@@ -286,6 +289,23 @@ class RecipeTags {
   /// légume, nommés simplement. Vide pour tout autre rôle.
   final List<String> suggestedSides;
 
+  /// Protéine principale d'un plat ou d'un accompagnement (`boeuf`,
+  /// `volaille`, `vegetarien`…), posée par le modèle avec le rôle ou par le
+  /// backfill « Protéine et féculent des plats ». Lue par la présélection du
+  /// planning. Valeurs décidées par `functions/src/gemini/mealRole.ts`,
+  /// reprises dans `meal_role.dart` pour l'affichage.
+  final String? mainProtein;
+
+  /// Féculent principal (`pates`, `riz`, `pommes_de_terre`, `aucun`…).
+  final String? mainStarch;
+
+  /// Quand le modèle a examiné la protéine et le féculent
+  /// (`main_ingredients_checked_at`), même pour une réponse hors liste. Le
+  /// backfill « Protéine et féculent des plats » saute une recette qui le
+  /// porte. Gardé ici pour qu'une carte `tags` réécrite en bloc ne l'efface
+  /// pas : la recette serait sinon requestionnée et refacturée.
+  final DateTime? mainIngredientsCheckedAt;
+
   const RecipeTags({
     this.themes = const [],
     this.cuisines = const [],
@@ -298,6 +318,9 @@ class RecipeTags {
     this.mealRole,
     this.contains = const [],
     this.suggestedSides = const [],
+    this.mainProtein,
+    this.mainStarch,
+    this.mainIngredientsCheckedAt,
   });
 
   factory RecipeTags.fromMap(Map<String, dynamic> data) {
@@ -313,7 +336,21 @@ class RecipeTags {
       mealRole: data['meal_role'] as String?,
       contains: List<String>.from(data['contains'] as List? ?? []),
       suggestedSides: List<String>.from(data['suggested_sides'] as List? ?? []),
+      // Lecture tolérante : un type inattendu vaut « non renseigné ».
+      mainProtein: _stringOrNull(data['main_protein']),
+      mainStarch: _stringOrNull(data['main_starch']),
+      mainIngredientsCheckedAt: _dateOrNull(
+        data['main_ingredients_checked_at'],
+      ),
     );
+  }
+
+  static String? _stringOrNull(Object? v) => v is String ? v : null;
+
+  static DateTime? _dateOrNull(Object? v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    return null;
   }
 
   Map<String, dynamic> toMap() {
@@ -336,12 +373,24 @@ class RecipeTags {
         'meal_role': mealRole,
         'contains': contains,
         'suggested_sides': suggestedSides,
+        // Même règle : écrits seulement quand ils sont connus. Une carte
+        // réécrite en bloc depuis un objet lu en base les garde ; sans ces
+        // deux lignes, toute modification d'une recette les effaçait.
+        'main_protein': ?mainProtein,
+        'main_starch': ?mainStarch,
+        'main_ingredients_checked_at': ?mainIngredientsCheckedAt,
       },
     };
   }
 
   /// Vrai quand la recette a été classée : rôle connu.
   bool get hasMealRole => mealRole != null && mealRole!.isNotEmpty;
+
+  /// Vrai quand la protéine et le féculent valent pour ce rôle : plat ou
+  /// accompagnement. Une valeur restée d'un ancien rôle n'est ni affichée ni
+  /// envoyée au planning.
+  bool get carriesMainIngredients =>
+      kRolesWithMainIngredients.contains(mealRole);
 
   RecipeTags copyWith({
     List<String>? themes,
@@ -355,6 +404,9 @@ class RecipeTags {
     String? mealRole,
     List<String>? contains,
     List<String>? suggestedSides,
+    String? mainProtein,
+    String? mainStarch,
+    DateTime? mainIngredientsCheckedAt,
   }) {
     return RecipeTags(
       themes: themes ?? this.themes,
@@ -368,6 +420,10 @@ class RecipeTags {
       mealRole: mealRole ?? this.mealRole,
       contains: contains ?? this.contains,
       suggestedSides: suggestedSides ?? this.suggestedSides,
+      mainProtein: mainProtein ?? this.mainProtein,
+      mainStarch: mainStarch ?? this.mainStarch,
+      mainIngredientsCheckedAt:
+          mainIngredientsCheckedAt ?? this.mainIngredientsCheckedAt,
     );
   }
 }

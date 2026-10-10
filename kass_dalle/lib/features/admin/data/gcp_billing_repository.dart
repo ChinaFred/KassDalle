@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
+import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
 const String _functionsRegion = 'europe-west1';
@@ -376,6 +377,29 @@ class GcpBillingRepository {
     );
 
     return RecipeRolesBackfillReport.fromMap(
+      Map<String, dynamic>.from(raw as Map),
+      finishedAt: DateTime.now(),
+    );
+  }
+
+  /// Protéine et féculent principaux des plats et accompagnements qui n'en
+  /// ont pas. Un appel de modèle par recette concernée ; rien d'autre n'est
+  /// réécrit. Réentrante, reprise sur point de contrôle : relancer tant que
+  /// le résultat indique « incomplet ».
+  Future<RecipeProteinBackfillReport> backfillRecipeProtein({
+    double maxMinutes = 8,
+    int maxRecipes = 40,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final dynamic raw = await _callViaSdk('backfillRecipeProteinFn', {
+      'maxMinutes': maxMinutes,
+      'maxRecipes': maxRecipes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    }, timeout: const Duration(minutes: 9));
+
+    return RecipeProteinBackfillReport.fromMap(
       Map<String, dynamic>.from(raw as Map),
       finishedAt: DateTime.now(),
     );

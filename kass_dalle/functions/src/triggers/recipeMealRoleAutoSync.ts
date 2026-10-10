@@ -19,6 +19,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { recipeBudgetUserId } from "../ai/budget";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
+import { mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 
@@ -33,7 +34,12 @@ function asStrings(value: unknown): string[] {
 }
 
 /**
- * Pose `tags.meal_role` (et `contains`, `suggested_sides`) si absent.
+ * Pose `tags.meal_role` (et `contains`, `suggested_sides`, `main_protein`,
+ * `main_starch`) si le rôle est absent. La protéine et le féculent viennent du
+ * même appel ; ils ne déclenchent jamais un appel à eux seuls : une recette
+ * classée sans eux est reprise par le backfill « Protéine et féculent des
+ * plats », et un déclencheur qui rappellerait le modèle tant qu'ils manquent
+ * le rappellerait à chaque écho de sa propre écriture.
  *
  * Un seul appel de modèle, sur le rôle seul — comme le backfill, les types de
  * plat déjà connus ne sont pas redemandés. Si le modèle ne sait pas classer la
@@ -85,12 +91,22 @@ export async function syncRecipeMealRole(args: {
       return;
     }
 
-    await getFirestore().collection(COLL_RECIPES).doc(recipeId).update({
-      "tags.meal_role": fields.mealRole,
-      "tags.contains": fields.contains,
-      "tags.suggested_sides": fields.suggestedSides,
-      "tags.roles_tagged_at": FieldValue.serverTimestamp(),
-    });
+    const patch = mainIngredientsPatch(tags, fields);
+    await getFirestore()
+      .collection(COLL_RECIPES)
+      .doc(recipeId)
+      .update({
+        "tags.meal_role": fields.mealRole,
+        "tags.contains": fields.contains,
+        "tags.suggested_sides": fields.suggestedSides,
+        // Une valeur posée à la main avant le classement n'est pas remplacée.
+        ...(patch.main_protein ? { "tags.main_protein": patch.main_protein } : {}),
+        ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),
+        ...(fields.mainIngredientsChecked
+          ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
+          : {}),
+        "tags.roles_tagged_at": FieldValue.serverTimestamp(),
+      });
   } catch (e) {
     await logError({
       message: "syncRecipeMealRole: échec de la classification",

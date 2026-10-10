@@ -17,7 +17,13 @@ import { logAiText, logError, logWarn } from "../logging";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
-import { parseMealRoleFields, type MealComponent, type MealRole } from "./mealRole";
+import {
+  parseMealRoleFields,
+  type MainProtein,
+  type MainStarch,
+  type MealComponent,
+  type MealRole,
+} from "./mealRole";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
 
@@ -172,6 +178,11 @@ export interface TaggedRecipe {
   mealRole: MealRole | null;
   contains: MealComponent[];
   suggestedSides: string[];
+  /** Protéine et féculent principaux d'un plat ou d'un accompagnement ; `null` sinon. */
+  mainProtein: MainProtein | null;
+  mainStarch: MainStarch | null;
+  /** Le modèle a répondu sur la protéine et le féculent (`parseMainProteinStarch`). */
+  mainIngredientsChecked: boolean;
 }
 
 /**

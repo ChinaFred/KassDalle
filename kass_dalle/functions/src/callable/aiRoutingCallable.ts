@@ -224,6 +224,11 @@ export const ROUTABLE_FEATURES: Array<{
     group: "Planning",
   },
   {
+    id: "backfill_recipe_protein",
+    label: "Protéine et féculent des plats (backfill)",
+    group: "Planning",
+  },
+  {
     id: "inline_meal_role_classification",
     label: "Rôle des recettes dans un repas (à l'écriture)",
     group: "Planning",

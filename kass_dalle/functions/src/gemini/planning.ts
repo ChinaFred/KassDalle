@@ -9,6 +9,7 @@ import { BudgetExceededError } from "../ai/budget";
 import { estimateAiCostUsd, type AiModelPricing } from "../ai/pricing";
 import { textPart, type AiProvider, type ModelCallContext } from "../ai/types";
 import { logError, logInfo, logWarn } from "../logging";
+import { parseMainProtein, parseMainStarch, type MainProtein, type MainStarch } from "./mealRole";
 
 export interface RecipeConceptInput {
   slotDate: string;
@@ -69,6 +70,14 @@ export interface PlanningRecipeSummary {
    * pour une recette pas encore classée.
    */
   mealRole?: string | null;
+  /**
+   * Protéine et féculent principaux (`tags.main_protein`, `tags.main_starch`),
+   * envoyés par le client pour un plat ou un accompagnement. Donnée non fiable :
+   * relue par `parseMainProtein` / `parseMainStarch`, une valeur hors liste vaut
+   * absente.
+   */
+  mainProtein?: string | null;
+  mainStarch?: string | null;
   /**
    * Parts pour lesquelles la recette est écrite. Sert à dire qu'un repas sera
    * redimensionné (`resizeOf`) ; rien n'est écrit dans la recette.
@@ -465,6 +474,8 @@ export const REHEAT_BONUS = 2;
 export const PROTEIN_REPEAT_FACTOR = 0.6;
 /** Protéines distinctes visées dans la tête de liste d'un créneau. */
 export const MIN_DISTINCT_PROTEINS = 3;
+/** Facteur d'un plat dont le féculent est celui d'un créneau voisin. */
+export const STARCH_REPEAT_FACTOR = 0.5;
 /** Repos qui oblige à commencer la veille. */
 export const REST_EVE_MINUTES = 240;
 /** Note personnelle jusqu'à laquelle une recette n'est plus proposée. */
@@ -577,9 +588,12 @@ function normalize(text: string): string {
   return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
-/** Avant les tags `main_protein` (lot 3), la protéine se lit dans `dishTypes`. */
-export type ProteinKey =
-  "viande" | "volaille" | "poisson" | "fruits_de_mer" | "vegetarien" | "inconnue";
+/**
+ * La protéine d'une recette : le tag `main_protein` quand il est posé, sinon
+ * l'indice lu dans `dishTypes` — qui ne distingue pas les viandes entre elles
+ * (« viande »). Sans indice : « inconnue ».
+ */
+export type ProteinKey = MainProtein | "viande" | "inconnue";
 
 /** Ordre de lecture : le plus précis d'abord (volaille avant viande). */
 const PROTEIN_MARKERS: Array<[ProteinKey, string[]]> = [
@@ -599,7 +613,9 @@ const PROTEIN_MARKERS: Array<[ProteinKey, string[]]> = [
   ],
 ];
 
-export function proteinOf(r: Pick<PlanningRecipeSummary, "dishTypes">): ProteinKey {
+export function proteinOf(r: Pick<PlanningRecipeSummary, "dishTypes" | "mainProtein">): ProteinKey {
+  const tagged = parseMainProtein(r.mainProtein);
+  if (tagged) return tagged;
   const bag = normalize((r.dishTypes ?? []).join(" | "));
   if (!bag) return "inconnue";
   for (const [key, markers] of PROTEIN_MARKERS) {
@@ -609,6 +625,11 @@ export function proteinOf(r: Pick<PlanningRecipeSummary, "dishTypes">): ProteinK
 }
 
 const PROTEIN_LABELS: Record<ProteinKey, string> = {
+  boeuf: "bœuf",
+  porc: "porc",
+  agneau: "agneau",
+  oeuf: "œufs",
+  legumineuses: "légumineuses",
   viande: "viande",
   volaille: "volaille",
   poisson: "poisson",
@@ -616,6 +637,31 @@ const PROTEIN_LABELS: Record<ProteinKey, string> = {
   vegetarien: "végétarien",
   inconnue: "",
 };
+
+const STARCH_LABELS: Record<MainStarch, string> = {
+  pates: "pâtes",
+  riz: "riz",
+  pommes_de_terre: "pommes de terre",
+  semoule: "semoule",
+  pain: "pain",
+  aucun: "aucun",
+};
+
+/** Le féculent principal (`main_starch`), ou `null` s'il n'est pas posé. */
+export function starchOf(r: Pick<PlanningRecipeSummary, "mainStarch">): MainStarch | null {
+  return parseMainStarch(r.mainStarch);
+}
+
+/**
+ * Vrai si le féculent du candidat est celui d'un créneau voisin. « aucun » et
+ * un féculent inconnu ne se répètent jamais.
+ */
+export function isStarchRepeat(
+  starch: MainStarch | null,
+  neighbours: ReadonlyArray<MainStarch | null>,
+): boolean {
+  return starch != null && starch !== "aucun" && neighbours.includes(starch);
+}
 
 const REHEAT_MARKERS = [
   "soupe",
@@ -813,13 +859,16 @@ export function candidateWeight(args: {
   rating?: number | null;
   /** Facteur de refus (`refusalFactor`), 1 sans refus. */
   refusalFactor?: number;
+  /** Même féculent qu'un créneau voisin (`isStarchRepeat`). */
+  starchRepeat?: boolean;
 }): number {
   return (
     freshnessScore(args.daysSinceServed) *
     (args.reheatSlot && args.reheatFriendly ? REHEAT_BONUS : 1) *
     Math.pow(PROTEIN_REPEAT_FACTOR, Math.max(0, args.proteinRepeats)) *
     ratingFactor(args.rating) *
-    (args.refusalFactor ?? 1)
+    (args.refusalFactor ?? 1) *
+    (args.starchRepeat ? STARCH_REPEAT_FACTOR : 1)
   );
 }
 
@@ -861,6 +910,12 @@ export function spreadProteins(
   }
   for (let i = 0; i < ordered.length && chosen.size < k; i++) chosen.add(i);
   return [...ordered.filter((_, i) => chosen.has(i)), ...ordered.filter((_, i) => !chosen.has(i))];
+}
+
+/** YYYY-MM-DD décalé de `days` jours (UTC). */
+function shiftDate(date: string, days: number): string {
+  const t = Date.parse(`${date.slice(0, 10)}T00:00:00Z`) + days * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
 }
 
 function daysBetween(from: string, to: string): number {
@@ -1015,7 +1070,24 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     if (p !== "inconnue") proteinCounts.set(p, (proteinCounts.get(p) ?? 0) + 1);
   }
   const reserved = new Set<string>();
-  const contexts = slotContexts(input)
+  const allContexts = slotContexts(input);
+  // Féculents posés par date : les recettes déjà assignées, puis le premier
+  // plat classé de chaque créneau traité. Lus la veille et le lendemain.
+  const starchesByDate = new Map<string, Array<MainStarch | null>>();
+  const noteStarch = (date: string, starch: MainStarch | null) => {
+    if (starch == null) return;
+    starchesByDate.set(date, [...(starchesByDate.get(date) ?? []), starch]);
+  };
+  for (const a of input.alreadyAssigned ?? []) {
+    const ctx = allContexts[a.slot];
+    const r = corpusById.get(a.recipeId);
+    if (ctx && r) noteStarch(ctx.date, starchOf(r));
+  }
+  const neighbourStarches = (date: string): Array<MainStarch | null> => [
+    ...(starchesByDate.get(shiftDate(date, -1)) ?? []),
+    ...(starchesByDate.get(shiftDate(date, 1)) ?? []),
+  ];
+  const contexts = allContexts
     .filter((c) => !assigned.has(c.slot))
     .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.slot - b.slot));
 
@@ -1052,9 +1124,11 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
       const last = lastServed.get(r.id);
       return last ? Math.max(0, daysBetween(last, ctx.date)) : null;
     };
+    const neighbours = role === "main" ? neighbourStarches(ctx.date) : [];
     const weightOf = (r: PlanningRecipeSummary) => {
       const p = proteinOf(r);
       return candidateWeight({
+        starchRepeat: isStarchRepeat(starchOf(r), neighbours),
         daysSinceServed: daysOf(r),
         reheatSlot: ctx.kind === "reheat",
         reheatFriendly: isReheatFriendly(r),
@@ -1072,6 +1146,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
         : [...fresh, ...shared];
     const head = list.slice(0, headSize);
     for (const r of head) reserved.add(r.id);
+    if (role === "main" && list.length > 0) noteStarch(ctx.date, starchOf(list[0]));
     return {
       list: list.slice(0, Math.max(depth, headSize)).map((r) => {
         const repeat = isRepeat(r);
@@ -1379,6 +1454,10 @@ function describeCandidate(r: PlanningRecipeSummary): string {
   if (r.cookTime) attrs.push(`${r.cookTime} min cuisson`);
   if (r.restTime) attrs.push(`${formatRepos(r.restTime)} de repos avant de servir`);
   if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type : ${r.dishTypes.join(", ")}`);
+  const protein = parseMainProtein(r.mainProtein);
+  if (protein) attrs.push(`protéine : ${PROTEIN_LABELS[protein]}`);
+  const starch = starchOf(r);
+  if (starch) attrs.push(`féculent : ${STARCH_LABELS[starch]}`);
   if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine : ${r.cuisines.join(", ")}`);
   if (r.mainIngredients && r.mainIngredients.length > 0) {
     attrs.push(`ingrédients : ${r.mainIngredients.slice(0, 6).join(", ")}`);

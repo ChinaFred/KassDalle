@@ -1,4 +1,20 @@
 {
   "_comment": "Rôles d'une recette dans un repas. Décidés par functions/src/gemini/mealRole.ts (MEAL_ROLES), repris par lib/features/recipes/domain/meal_role.dart pour la liste déroulante et l'affichage. Même ordre des deux côtés.",
-  "roles": ["plat", "accompagnement", "entree", "dessert", "snack"]
+  "roles": ["plat", "accompagnement", "entree", "dessert", "snack"],
+  "_main_ingredients_comment": "Protéine et féculent principaux d'un plat ou d'un accompagnement (tags.main_protein, tags.main_starch). Décidés par functions/src/gemini/mealRole.ts (MAIN_PROTEINS, MAIN_STARCHES), qui seul lit la réponse du modèle ; repris par meal_role.dart pour l'affichage dans « Catégorisation ». Même ordre des deux côtés. Une valeur hors liste est lue comme absente.",
+  "main_proteins": [
+    "boeuf",
+    "porc",
+    "volaille",
+    "agneau",
+    "poisson",
+    "fruits_de_mer",
+    "oeuf",
+    "vegetarien",
+    "legumineuses"
+  ],
+  "main_starches": ["pates", "riz", "pommes_de_terre", "semoule", "pain", "aucun"],
+  "roles_with_main_ingredients": ["plat", "accompagnement"],
+  "_unsafe_keys_comment": "Réponses du modèle qui portent le nom d'une propriété héritée d'un objet JavaScript. Lues comme hors liste (null, ou rien pour contains) par parseMealRole, parseMealContains, parseMainProtein et parseMainStarch. Serveur seul : le client ne lit jamais une réponse du modèle.",
+  "unsafe_keys": ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]
 }

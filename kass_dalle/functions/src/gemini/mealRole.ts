@@ -10,7 +10,10 @@
  *  - `meal_role` — plat, accompagnement, entrée, dessert ou snack ;
  *  - `contains` — protéine, féculent, légume : ce que la recette apporte déjà ;
  *  - `suggested_sides` — pour un plat qui manque de féculent ou de légume,
- *    les accompagnements classiques, nommés simplement.
+ *    les accompagnements classiques, nommés simplement ;
+ *  - `main_protein`, `main_starch` — pour un plat ou un accompagnement, la
+ *    protéine et le féculent principaux, que la présélection du planning lit
+ *    pour varier le cycle (`proteinOf`, `starchOf` dans `planning.ts`).
  *
  * Au modèle la reconnaissance, une fois par recette ; au programme la
  * composition, à chaque planning. Ce module porte ce qu'on demande au modèle
@@ -26,7 +29,51 @@ export type MealRole = (typeof MEAL_ROLES)[number];
 export const MEAL_COMPONENTS = ["proteine", "feculent", "legume"] as const;
 export type MealComponent = (typeof MEAL_COMPONENTS)[number];
 
-export interface MealRoleFields {
+/**
+ * Protéine principale d'un plat ou d'un accompagnement. Même ordre que
+ * `main_proteins` dans `test-fixtures/meal_roles.json` : le client les affiche.
+ */
+export const MAIN_PROTEINS = [
+  "boeuf",
+  "porc",
+  "volaille",
+  "agneau",
+  "poisson",
+  "fruits_de_mer",
+  "oeuf",
+  "vegetarien",
+  "legumineuses",
+] as const;
+export type MainProtein = (typeof MAIN_PROTEINS)[number];
+
+/** Féculent principal. « aucun » est une valeur : la recette n'en porte pas. */
+export const MAIN_STARCHES = [
+  "pates",
+  "riz",
+  "pommes_de_terre",
+  "semoule",
+  "pain",
+  "aucun",
+] as const;
+export type MainStarch = (typeof MAIN_STARCHES)[number];
+
+/** Seuls ces rôles portent une protéine et un féculent principaux. */
+export const ROLES_WITH_MAIN_INGREDIENTS: readonly MealRole[] = ["plat", "accompagnement"];
+
+export interface MainProteinStarch {
+  mainProtein: MainProtein | null;
+  mainStarch: MainStarch | null;
+  /**
+   * Vrai quand le modèle a répondu à la question : au moins une des deux clés
+   * porte une chaîne non vide, admise ou non. « veau » est une réponse — la
+   * recette est examinée et ne sera pas requestionnée. Deux chaînes vides ou
+   * des clés absentes ne sont pas une réponse. Les écrivains posent alors
+   * `tags.main_ingredients_checked_at`.
+   */
+  mainIngredientsChecked: boolean;
+}
+
+export interface MealRoleFields extends MainProteinStarch {
   mealRole: MealRole | null;
   contains: MealComponent[];
   suggestedSides: string[];
@@ -36,12 +83,42 @@ export const EMPTY_MEAL_ROLE_FIELDS: MealRoleFields = {
   mealRole: null,
   contains: [],
   suggestedSides: [],
+  mainProtein: null,
+  mainStarch: null,
+  mainIngredientsChecked: false,
 };
 
 /** Longueur maximale d'un nom d'accompagnement ; au-delà, c'est une phrase. */
 const MAX_SIDE_LENGTH = 40;
 /** Accompagnements gardés au plus : le programme n'en choisit qu'un par repas. */
 const MAX_SIDES = 4;
+
+/**
+ * La protéine et le féculent principaux, mot pour mot : dans le prompt du rôle
+ * et dans celui du backfill « Protéine et féculent des plats ».
+ *
+ * Une valeur hors liste est lue comme absente, jamais rangée dans une valeur
+ * voisine : le prompt demande donc de laisser vide ce qui ne rentre pas.
+ */
+export const MAIN_PROTEIN_STARCH_PROMPT = `"main_protein" = pour un "plat" ou un "accompagnement" seulement, la protéine principale, UNE valeur parmi :
+boeuf | porc | volaille | agneau | poisson | fruits_de_mer | oeuf | vegetarien | legumineuses
+- "volaille" : poulet, dinde, canard, pintade
+- "fruits_de_mer" : crevettes, moules, coquillages, calamars
+- "oeuf" : un plat dont les œufs sont la protéine principale (omelette, œufs cocotte)
+- "legumineuses" : lentilles, pois chiches, haricots secs au cœur du plat
+- "vegetarien" : ni viande, ni poisson, ni fruits de mer, ni œuf, ni légumineuses au cœur du plat
+- une viande absente de la liste (veau, lapin, gibier) : chaîne vide
+
+"main_starch" = pour un "plat" ou un "accompagnement" seulement, le féculent principal, UNE valeur parmi :
+pates | riz | pommes_de_terre | semoule | pain | aucun
+- "aucun" : la recette ne contient pas de féculent
+- un autre féculent (polenta, quinoa, pâte à tarte) : chaîne vide
+
+Pour une "entree", un "dessert" ou un "snack" : "main_protein" et "main_starch" vides.`;
+
+/** Les deux clés JSON de la protéine et du féculent. */
+export const MAIN_PROTEIN_STARCH_JSON_KEYS = `"main_protein": "<boeuf | porc | volaille | agneau | poisson | fruits_de_mer | oeuf | vegetarien | legumineuses>",
+  "main_starch": "<pates | riz | pommes_de_terre | semoule | pain | aucun>"`;
 
 /**
  * Ce qu'on demande au modèle, mot pour mot, partout où une recette se classe.
@@ -64,12 +141,15 @@ plat | accompagnement | entree | dessert | snack
 
 "suggested_sides" = pour un "plat" à qui il manque un féculent ou un légume, deux ou trois accompagnements
 classiques pour CE plat, en français, chacun en un nom court de garniture courante, sans quantité.
-Tableau vide pour un plat complet, un accompagnement, une entrée, un dessert ou un snack.`;
+Tableau vide pour un plat complet, un accompagnement, une entrée, un dessert ou un snack.
+
+${MAIN_PROTEIN_STARCH_PROMPT}`;
 
 /** Les clés JSON attendues, à recopier dans le format de sortie d'un prompt. */
 export const MEAL_ROLE_JSON_KEYS = `"meal_role": "<plat | accompagnement | entree | dessert | snack>",
   "contains": ["<proteine | feculent | legume>"],
-  "suggested_sides": ["<nom court d'une garniture courante>"]`;
+  "suggested_sides": ["<nom court d'une garniture courante>"],
+  ${MAIN_PROTEIN_STARCH_JSON_KEYS}`;
 
 /** Les signes diacritiques détachés par NFD (U+0300 à U+036F). */
 const COMBINING_MARKS = new RegExp(
@@ -127,10 +207,103 @@ const COMPONENT_ALIASES: Record<string, MealComponent> = {
   vegetables: "legume",
 };
 
+/** Nom du marqueur posé sous `tags` quand la recette a été examinée. */
+export const MAIN_INGREDIENTS_CHECKED_FIELD = "main_ingredients_checked_at";
+
+/**
+ * Ce que le backfill « Protéine et féculent des plats » écrit, sans le
+ * marqueur : seulement les champs absents de la recette. Une valeur déjà
+ * posée — à la main ou par un autre chemin — n'est jamais remplacée.
+ */
+export function mainIngredientsPatch(
+  existingTags: Record<string, unknown>,
+  fields: Pick<MainProteinStarch, "mainProtein" | "mainStarch">,
+): { main_protein?: MainProtein; main_starch?: MainStarch } {
+  const absent = (v: unknown) => typeof v !== "string" || v.trim().length === 0;
+  return {
+    ...(fields.mainProtein && absent(existingTags.main_protein)
+      ? { main_protein: fields.mainProtein }
+      : {}),
+    ...(fields.mainStarch && absent(existingTags.main_starch)
+      ? { main_starch: fields.mainStarch }
+      : {}),
+  };
+}
+
+/**
+ * Variantes d'écriture admises : accent, pluriel, ligature, espace au lieu du
+ * tiret bas. Aucun synonyme de sens (« poulet », « veau ») : une valeur
+ * voisine rangée par le code serait une valeur inventée.
+ */
+const PROTEIN_ALIASES: Record<string, MainProtein> = {
+  boeuf: "boeuf",
+  bœuf: "boeuf",
+  porc: "porc",
+  volaille: "volaille",
+  volailles: "volaille",
+  agneau: "agneau",
+  poisson: "poisson",
+  poissons: "poisson",
+  "fruits de mer": "fruits_de_mer",
+  oeuf: "oeuf",
+  oeufs: "oeuf",
+  œuf: "oeuf",
+  œufs: "oeuf",
+  vegetarien: "vegetarien",
+  legumineuses: "legumineuses",
+  legumineuse: "legumineuses",
+};
+
+const STARCH_ALIASES: Record<string, MainStarch> = {
+  pates: "pates",
+  pate: "pates",
+  riz: "riz",
+  "pommes de terre": "pommes_de_terre",
+  "pomme de terre": "pommes_de_terre",
+  semoule: "semoule",
+  pain: "pain",
+  aucun: "aucun",
+  aucune: "aucun",
+};
+
+/** La protéine principale, ou `null` hors liste. */
+export function parseMainProtein(value: unknown): MainProtein | null {
+  if (typeof value !== "string") return null;
+  return ownAlias(PROTEIN_ALIASES, normalizeRoleKey(value));
+}
+
+/** Le féculent principal, ou `null` hors liste. */
+export function parseMainStarch(value: unknown): MainStarch | null {
+  if (typeof value !== "string") return null;
+  return ownAlias(STARCH_ALIASES, normalizeRoleKey(value));
+}
+
+/**
+ * Les deux champs, sans regarder le rôle : pour le backfill, qui ne
+ * questionne que des recettes déjà rangées en plat ou en accompagnement.
+ */
+export function parseMainProteinStarch(json: Record<string, unknown>): MainProteinStarch {
+  const answered = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+  return {
+    mainProtein: parseMainProtein(json.main_protein),
+    mainStarch: parseMainStarch(json.main_starch),
+    mainIngredientsChecked: answered(json.main_protein) || answered(json.main_starch),
+  };
+}
+
+/**
+ * Lit une table d'alias sur ses propres clés seulement. Un accès direct
+ * `table[cle]` rendait `Object` pour « constructor » : une réponse du modèle
+ * devenait un rôle.
+ */
+function ownAlias<T>(table: Record<string, T>, key: string): T | null {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
+}
+
 /** Le rôle, ou `null` si la valeur n'est pas parmi celles admises. */
 export function parseMealRole(value: unknown): MealRole | null {
   if (typeof value !== "string") return null;
-  return ROLE_ALIASES[normalizeRoleKey(value)] ?? null;
+  return ownAlias(ROLE_ALIASES, normalizeRoleKey(value));
 }
 
 /** Les composants reconnus, dans l'ordre de `MEAL_COMPONENTS`, une fois chacun. */
@@ -139,7 +312,7 @@ export function parseMealContains(value: unknown): MealComponent[] {
   const found = new Set<MealComponent>();
   for (const v of value) {
     if (typeof v !== "string") continue;
-    const component = COMPONENT_ALIASES[normalizeRoleKey(v)];
+    const component = ownAlias(COMPONENT_ALIASES, normalizeRoleKey(v));
     if (component) found.add(component);
   }
   return MEAL_COMPONENTS.filter((c) => found.has(c));
@@ -170,15 +343,20 @@ export function parseSuggestedSides(value: unknown): string[] {
  * Lit les trois champs dans la réponse du modèle.
  *
  * Sans rôle reconnu, rien n'est gardé : un « contains » sans rôle ne dit pas
- * à quoi il s'applique. Les accompagnements n'ont de sens que pour un plat.
+ * à quoi il s'applique. Les accompagnements n'ont de sens que pour un plat ;
+ * la protéine et le féculent, que pour un plat ou un accompagnement.
  */
 export function parseMealRoleFields(json: Record<string, unknown>): MealRoleFields {
   const mealRole = parseMealRole(json.meal_role);
   if (mealRole == null) return { ...EMPTY_MEAL_ROLE_FIELDS };
+  const main = ROLES_WITH_MAIN_INGREDIENTS.includes(mealRole)
+    ? parseMainProteinStarch(json)
+    : { mainProtein: null, mainStarch: null, mainIngredientsChecked: false };
   return {
     mealRole,
     contains: parseMealContains(json.contains),
     suggestedSides: mealRole === "plat" ? parseSuggestedSides(json.suggested_sides) : [],
+    ...main,
   };
 }
 

@@ -28,6 +28,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
+import { mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
@@ -239,10 +240,17 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
               extra: { recipeId: doc.id, titre },
             });
           } else {
+            // Une protéine ou un féculent déjà posés ne sont pas remplacés.
+            const patch = mainIngredientsPatch(tags, fields);
             await doc.ref.update({
               "tags.meal_role": fields.mealRole,
               "tags.contains": fields.contains,
               "tags.suggested_sides": fields.suggestedSides,
+              ...(patch.main_protein ? { "tags.main_protein": patch.main_protein } : {}),
+              ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),
+              ...(fields.mainIngredientsChecked
+                ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
+                : {}),
               "tags.roles_tagged_at": FieldValue.serverTimestamp(),
             });
             counters.classees += 1;

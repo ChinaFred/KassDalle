@@ -535,6 +535,9 @@ class GeminiService {
       String? mealRole,
       List<String> contains,
       List<String> suggestedSides,
+      String? mainProtein,
+      String? mainStarch,
+      bool mainIngredientsChecked,
     })
   >
   suggestRecipeTags({required String titre, required String cooklang}) async {
@@ -546,6 +549,11 @@ class GeminiService {
     List<String> strings(String key) =>
         List<String>.from(map[key] as List? ?? []);
     final role = map['mealRole'] as String?;
+    String? nonEmpty(String key) {
+      final v = map[key];
+      return (v is String && v.isNotEmpty) ? v : null;
+    }
+
     return (
       cuisines: strings('cuisines'),
       dishTypes: strings('dishTypes'),
@@ -554,6 +562,10 @@ class GeminiService {
       mealRole: (role == null || role.isEmpty) ? null : role,
       contains: strings('contains'),
       suggestedSides: strings('suggestedSides'),
+      // Posés par le serveur pour un plat ou un accompagnement seulement.
+      mainProtein: nonEmpty('mainProtein'),
+      mainStarch: nonEmpty('mainStarch'),
+      mainIngredientsChecked: map['mainIngredientsChecked'] == true,
     );
   }
 

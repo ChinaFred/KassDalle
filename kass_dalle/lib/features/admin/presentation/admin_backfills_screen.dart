@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'admin_providers.dart';
 import 'billing_providers.dart';
+import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -261,6 +262,52 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Pose la protéine et le féculent principaux sur les plats et
+  /// accompagnements classés avant v0.23.24.
+  ///
+  /// La présélection du planning les lit pour varier les protéines et
+  /// alterner les féculents ; sans eux, elle retombe sur les types de plat.
+  /// Quarante recettes par passage.
+  Future<void> _runBackfillRecipeProtein() async {
+    final lastReport = ref.read(recipeProteinBackfillReportProvider).value;
+    final reste = lastReport == null ? '' : ' ${lastReport.restantesSentence}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Protéine et féculent des plats'),
+        content: Text(
+          'Demande au modèle, pour chaque plat ou accompagnement qui ne l\'a '
+          'pas encore, sa protéine principale (bœuf, volaille, poisson, '
+          'végétarien…) et son féculent principal (pâtes, riz, pommes de '
+          'terre…). Le planning s\'en sert pour varier les protéines et '
+          'alterner les féculents. Rien d\'autre n\'est modifié : ni le rôle, '
+          'ni les types de plat.\n\n'
+          'Un appel de modèle par recette, quarante recettes par passage. '
+          'Idempotent, avec reprise sur point de contrôle : relancez tant que '
+          'le résultat indique « incomplet ».$reste Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<RecipeProteinBackfillReport>(
+      label: 'Protéine et féculent des plats en cours...',
+      feature: 'admin_backfill_recipe_protein',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeProtein(),
+      format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
+    );
+  }
+
   Future<void> _runBackfillShoppingProducts() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -319,6 +366,26 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             : ' le ${DateFormat('dd/MM/yy HH:mm').format(at.toLocal())}';
         return '\n\nDernier passage$quand : ${r.classees} classée'
             '${r.classees > 1 ? 's' : ''}, ${r.echouees} en échec. '
+            '${r.restantesSentence}';
+      },
+      loading: () => '',
+      error: (_, _) => '\n\nDernier compte rendu illisible.',
+    );
+  }
+
+  /// Dernier compte rendu de « Protéine et féculent des plats ».
+  String _proteinReportLine(AsyncValue<RecipeProteinBackfillReport?> report) {
+    return report.when(
+      data: (r) {
+        if (r == null) return '';
+        final at = r.finishedAt;
+        final quand = at == null
+            ? ''
+            : ' le ${DateFormat('dd/MM/yy HH:mm').format(at.toLocal())}';
+        return '\n\nDernier passage$quand : ${r.traitees} traitée'
+            '${r.traitees > 1 ? 's' : ''}, ${r.ignorees} ignorée'
+            '${r.ignorees > 1 ? 's' : ''}, ${r.sansReponse} sans réponse, '
+            '${r.echouees} en échec. '
             '${r.restantesSentence}';
       },
       loading: () => '',
@@ -386,6 +453,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final rolesReport = ref.watch(recipeRolesBackfillReportProvider);
+    final proteinReport = ref.watch(recipeProteinBackfillReportProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backfills')),
@@ -473,6 +541,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'quarante par passage.'
                           '${_rolesReportLine(rolesReport)}',
                       onTap: _busy ? null : _runBackfillRecipeRoles,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.set_meal_outlined,
+                      title: 'Protéine et féculent des plats',
+                      subtitle:
+                          'Pose la protéine et le féculent principaux des plats '
+                          'et accompagnements qui n\'en ont pas. À lancer une '
+                          'fois après la v0.23.24. Un appel par recette, '
+                          'quarante par passage.'
+                          '${_proteinReportLine(proteinReport)}',
+                      onTap: _busy ? null : _runBackfillRecipeProtein,
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(

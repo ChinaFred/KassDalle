@@ -549,7 +549,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
-| `meal_roles.json` | vocabulaire des rôles dans un repas — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
+| `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur (section `unsafe_keys` : serveur seul) | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et dans la feuille de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et

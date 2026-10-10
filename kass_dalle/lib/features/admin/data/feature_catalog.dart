@@ -64,6 +64,7 @@ const kFeatureProcess = <String, String>{
   // compose un plat et son accompagnement. La reprise se lit donc à côté
   // des autres postes du planning, pas dans la rédaction.
   'backfill_recipe_roles': 'Planning et courses',
+  'backfill_recipe_protein': 'Planning et courses',
   'inline_meal_role_classification': 'Planning et courses',
   'search': 'Recherche',
   'upload_security_scan': 'Sécurité',
@@ -251,6 +252,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'accompagnement, entrée, dessert, snack —, ce qu\'elle apporte déjà '
         'et ses accompagnements classiques. Un appel par recette, lancé '
         'depuis Admin › Backfills.',
+  ),
+  'backfill_recipe_protein': FeatureInfo(
+    label: 'Protéine et féculent des plats (backfill)',
+    description:
+        'Pose la protéine principale et le féculent principal sur chaque '
+        'plat ou accompagnement existant qui n\'en a pas, pour que le '
+        'planning varie les protéines et alterne les féculents. Un appel par '
+        'recette, lancé depuis Admin › Backfills.',
   ),
   'inline_meal_role_classification': FeatureInfo(
     label: 'Rôle des recettes (à l\'écriture)',

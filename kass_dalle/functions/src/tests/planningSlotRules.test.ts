@@ -44,6 +44,7 @@ import {
   REFUSAL_REPEAT_THRESHOLD,
   REHEAT_BONUS,
   REST_EVE_MINUTES,
+  STARCH_REPEAT_FACTOR,
   buildPlanningPrompt,
   candidateWeight,
   codeJustification,
@@ -63,6 +64,8 @@ import {
   seededRng,
   slotContexts,
   spreadProteins,
+  starchOf,
+  isStarchRepeat,
   validateModelChoices,
   weightedOrder,
   DEFAULT_PLANNING_POLICY,
@@ -124,6 +127,8 @@ interface FxRecipe {
   dish_types?: string[];
   themes?: string[];
   meal_role?: string;
+  main_protein?: string;
+  main_starch?: string;
   portions?: number | null;
   rating?: number;
 }
@@ -146,7 +151,19 @@ interface FxRanking {
 
 interface PreselectionFixture {
   constants: Record<string, number>;
-  protein_of: Array<{ dish_types: string[]; expected: ProteinKey; why: string }>;
+  protein_of: Array<{
+    dish_types: string[];
+    main_protein?: string;
+    expected: ProteinKey;
+    why: string;
+  }>;
+  starch_of: Array<{ main_starch: string | null; expected: string | null; why: string }>;
+  starch_repeat: Array<{
+    candidate: string | null;
+    neighbours: string[];
+    expected: boolean;
+    why: string;
+  }>;
   reheat_friendly: Array<{
     dish_types: string[];
     themes: string[];
@@ -178,6 +195,7 @@ interface PreselectionFixture {
     protein_repeats: number;
     rating?: number;
     refusal_factor?: number;
+    starch_repeat?: boolean;
     expected: number;
     why: string;
   }>;
@@ -415,6 +433,8 @@ function summaryOf(r: FxRecipe): PlanningRecipeSummary {
     ...(r.dish_types ? { dishTypes: r.dish_types } : {}),
     ...(r.themes ? { themes: r.themes } : {}),
     ...(r.meal_role ? { mealRole: r.meal_role } : {}),
+    ...(r.main_protein ? { mainProtein: r.main_protein } : {}),
+    ...(r.main_starch ? { mainStarch: r.main_starch } : {}),
     ...(r.portions != null ? { portions: r.portions } : {}),
   };
 }
@@ -481,13 +501,36 @@ describe("présélection — constantes recopiées dans la fixture", () => {
     assert.equal(REFUSAL_REPEAT_FACTOR, c.refusal_repeat_factor);
     assert.equal(REFUSAL_MAX_ENTRIES, c.refusal_max_entries);
     assert.equal(REFUSAL_FUTURE_TOLERANCE_DAYS, c.refusal_future_tolerance_days);
+    assert.equal(STARCH_REPEAT_FACTOR, c.starch_repeat_factor);
   });
 });
 
 describe("présélection — protéine et réchauffage", () => {
   for (const c of fixture.protein_of) {
-    test(`${c.dish_types.join(", ") || "(vide)"} (${c.why})`, () => {
-      assert.equal(proteinOf({ dishTypes: c.dish_types }), c.expected);
+    test(`${c.main_protein ?? ""} ${c.dish_types.join(", ") || "(vide)"} (${c.why})`, () => {
+      assert.equal(
+        proteinOf({
+          dishTypes: c.dish_types,
+          ...(c.main_protein != null ? { mainProtein: c.main_protein } : {}),
+        }),
+        c.expected,
+      );
+    });
+  }
+  for (const c of fixture.starch_of) {
+    test(`féculent ${c.main_starch} (${c.why})`, () => {
+      assert.equal(starchOf({ mainStarch: c.main_starch }), c.expected);
+    });
+  }
+  for (const c of fixture.starch_repeat) {
+    test(`féculent répété : ${c.candidate} (${c.why})`, () => {
+      assert.equal(
+        isStarchRepeat(
+          starchOf({ mainStarch: c.candidate }),
+          c.neighbours.map((n) => starchOf({ mainStarch: n })),
+        ),
+        c.expected,
+      );
     });
   }
   for (const c of fixture.reheat_friendly) {
@@ -537,6 +580,7 @@ describe("présélection — note et poids", () => {
         proteinRepeats: c.protein_repeats,
         rating: c.rating ?? null,
         ...(c.refusal_factor != null ? { refusalFactor: c.refusal_factor } : {}),
+        ...(c.starch_repeat != null ? { starchRepeat: c.starch_repeat } : {}),
       });
       assert.ok(Math.abs(w - c.expected) < 1e-9, `${w} ≠ ${c.expected}`);
     });
@@ -728,6 +772,50 @@ describe("présélection — listes par créneau", () => {
       );
     });
   }
+
+  test("féculent de la veille : le premier plat du lendemain en change plus souvent", () => {
+    const plat = (id: string, starch: string): PlanningRecipeSummary => ({
+      id,
+      titre: id,
+      mealRole: "plat",
+      mainStarch: starch,
+    });
+    const share = (neighbourStarch: string) => {
+      const recipes = [
+        plat("r0", neighbourStarch),
+        plat("a1", "riz"),
+        plat("a2", "riz"),
+        plat("a3", "riz"),
+        plat("b1", "pates"),
+        plat("b2", "pates"),
+        plat("b3", "pates"),
+      ];
+      const input: PlanningInput = {
+        ...inputOf([{ date: "2026-10-12" }, { date: "2026-10-13" }], recipes),
+        alreadyAssigned: [{ slot: 0, recipeId: "r0" }],
+      };
+      let riz = 0;
+      const runs = 600;
+      for (let seed = 1; seed <= runs; seed++) {
+        const [ranking] = preselect({
+          input,
+          candidates: recipes,
+          recentExcluded: [],
+          lastServed: new Map(),
+          ratings: new Map(),
+          historyAvailable: true,
+          policy: readPlanningPolicy({ plats_per_slot: 3 }),
+          today: "2026-10-10",
+          rng: seededRng(seed),
+        });
+        if (ranking.plats[0].recipeId.startsWith("a")) riz++;
+      }
+      return riz / runs;
+    };
+    // Poids 0,5 contre 1 : environ un tiers de riz en tête, contre la moitié.
+    assert.ok(share("riz") < 0.42, `riz en tête : ${share("riz")}`);
+    assert.ok(share("semoule") > 0.42, `riz en tête sans voisin riz : ${share("semoule")}`);
+  });
 
   test("chaque candidat rendu passe les filtres durs du créneau", () => {
     const recipes: PlanningRecipeSummary[] = Array.from({ length: 40 }, (_, i) => ({
