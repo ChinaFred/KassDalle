@@ -389,6 +389,14 @@ service cloud.firestore {
           && request.resource.data.uid == resource.data.uid;
         allow delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
+
+      // Texte d'origine d'une recette traduite à l'import : lu avec les droits
+      // de la recette, écrit seulement par le serveur (`recipeProcessor`), et
+      // retiré avec elle par `onRecipeWritten`.
+      match /origine/{docId} {
+        allow read: if isApproved() && canReadRecipe(recipeDoc(recipeId));
+        allow write: if false;
+      }
     }
 
     // Notes de recettes (recipe_ratings) — même confidentialité que la

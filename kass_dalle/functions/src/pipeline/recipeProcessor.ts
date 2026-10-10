@@ -32,7 +32,15 @@ import {
   COLL_DEAD_LETTERS,
 } from "../config";
 import { logAiText, logError, logInfo, logWarn, newCorrelationId } from "../logging";
-import { transcribePage, type PageTranscription } from "../gemini/transcription";
+import {
+  needsTranslation,
+  transcribePage,
+  type PageTranscription,
+  type RecipeTranslationOrigin,
+  type TranscribedRecipe,
+} from "../gemini/transcription";
+import { translateRecipe } from "../gemini/translation";
+import { ORIGINAL_TEXT_DOC_ID, originalTextDocument, SUBCOLL_ORIGINAL_TEXT } from "./originalText";
 import {
   tagAndNormalize,
   TaggingTruncatedError,
@@ -98,6 +106,7 @@ type PipelineStep =
   | "import"
   | "image_decode"
   | "gemini_call"
+  | "translate"
   | "parse"
   | "design"
   | "tagging"
@@ -110,6 +119,7 @@ const STEP_ORDER: PipelineStep[] = [
   "import",
   "image_decode",
   "gemini_call",
+  "translate",
   "parse",
   "design",
   "tagging",
@@ -453,6 +463,42 @@ export const recipeProcessor = onTaskDispatched(
         return;
       }
 
+      // ── TRADUCTION d'une recette écrite dans une autre langue ─────────────
+      //
+      // La langue est lue par la transcription, sans appel de plus : une page
+      // française ne passe jamais ici. Une recette étrangère est traduite avant
+      // le balisage, et toute la suite travaille sur la traduction. Le point de
+      // reprise est réécrit avec elle : une relance après un balisage en échec
+      // ne la refait pas.
+      if (transcription.recettes.some(needsTranslation)) {
+        await jobRef.update({ current_step: "translate", updated_at: Timestamp.now() });
+        const recettes: TranscribedRecipe[] = [...transcription.recettes];
+        for (let i = 0; i < recettes.length; i++) {
+          if (!needsTranslation(recettes[i])) continue;
+          if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_translation");
+          recettes[i] = await translateRecipe(recettes[i], {
+            ...ctx,
+            feature: "recipe_translation",
+            moduleType: "IMPORT",
+          });
+          // Point de reprise après chaque recette : si la suivante échoue, la
+          // relance ne retraduit pas celle-ci.
+          transcription = { ...transcription, recettes: [...recettes] };
+          await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
+        }
+        logInfo({
+          message: "Recette(s) traduite(s) en français avant balisage",
+          moduleType: "IMPORT",
+          ...ctx,
+          extra: {
+            langues: recettes
+              .map((r) => r.traduction?.langue)
+              .filter((l): l is string => l != null),
+          },
+        });
+        await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
+      }
+
       // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
       await jobRef.update({ current_step: "parse", updated_at: Timestamp.now() });
       const bookId = job.book_id as string | undefined;
@@ -642,6 +688,7 @@ export const recipeProcessor = onTaskDispatched(
           ctx,
           fidelity,
           illustrationReport,
+          traduction: recette.traduction,
           onStep: async (step) => {
             await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
           },
@@ -865,6 +912,8 @@ async function saveDraft(args: {
   illustrationReport?: IllustrationReport;
   /** Instant limite de la normalisation ; absent = pas de normalisation. */
   normalizationDeadlineMs?: number;
+  /** La recette d'origine, quand celle-ci a été traduite. */
+  traduction?: RecipeTranslationOrigin;
 }): Promise<string> {
   const {
     cooklang,
@@ -1040,9 +1089,12 @@ async function saveDraft(args: {
 
   await args.onStep?.("save");
   const now = FieldValue.serverTimestamp();
-  await docRef.set({
+  const recipeData = {
     titre,
     langue: "fr",
+    // Posé seulement sur une recette traduite : son absence veut dire « écrite
+    // en français », et les recettes existantes n'ont rien à reprendre.
+    ...(args.traduction ? { langue_origine: args.traduction.langue } : {}),
     raw_cooklang: cooklang,
     draft_cooklang:
       pageType !== "recipe"
@@ -1114,7 +1166,23 @@ async function saveDraft(args: {
     // formaient un groupe de journaux à part, et leur coût sortait du total
     // du scan.
     scan_id: (args.ctx.scanId as string | undefined) ?? null,
-  });
+  };
+
+  // Le texte d'origine vit dans un sous-document, lu seulement quand on
+  // l'ouvre : la recette est lue dans toutes les listes, et n'a pas à porter
+  // une seconde copie de son contenu. Les deux écritures partent ensemble :
+  // une recette marquée traduite sans son original afficherait un lien vide.
+  if (args.traduction) {
+    const batch = getFirestore().batch();
+    batch.set(docRef, recipeData);
+    batch.set(
+      docRef.collection(SUBCOLL_ORIGINAL_TEXT).doc(ORIGINAL_TEXT_DOC_ID),
+      originalTextDocument(args.traduction, now),
+    );
+    await batch.commit();
+  } else {
+    await docRef.set(recipeData);
+  }
   return docRef.id;
 }
 

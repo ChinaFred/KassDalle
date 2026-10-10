@@ -143,6 +143,8 @@ beforeEach(async () => {
       rating: 5,
     },
     "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
+    "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
+    "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
     "groups/g1": { owner_id: READER, member_ids: [READER] },
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
@@ -957,6 +959,32 @@ describe("recipes — ranger dans ses propres livres", () => {
   it("une page déjà rangée chez un autre se détache", async () => {
     await assertSucceeds(
       db("reader").doc("recipes/reader-in-other-book").update({ book_id: null }),
+    );
+  });
+});
+
+describe("recipes — texte d'origine d'une traduction", () => {
+  it("un lecteur lit le texte d'origine d'une recette visible", async () => {
+    await assertSucceeds(db("reader").doc("recipes/validated/origine/texte").get());
+  });
+
+  it("un lecteur ne lit pas le texte d'origine d'une recette privée d'autrui", async () => {
+    await assertFails(db("reader").doc("recipes/validated-private-other/origine/texte").get());
+  });
+
+  it("un compte en attente ne lit pas le texte d'origine", async () => {
+    await assertFails(db("pending").doc("recipes/validated/origine/texte").get());
+  });
+
+  it("un administrateur ne réécrit pas le texte d'origine", async () => {
+    await assertFails(
+      db("admin").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
+    );
+  });
+
+  it("un éditeur ne crée pas de texte d'origine", async () => {
+    await assertFails(
+      db("editor").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
     );
   });
 });

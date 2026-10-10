@@ -24,6 +24,11 @@ String formatProcessingStep(String? raw) {
       return 'Préparation de l\'image…';
     case 'gemini_call':
       return 'Lecture de la page par l\'IA…';
+    case 'translate':
+      // Étape conditionnelle : seule une recette écrite dans une autre langue
+      // la traverse. Elle n'a pas de jalon dans le fil (`processing_trail`),
+      // qui retombe alors sur ce libellé.
+      return 'Traduction de la recette par l\'IA…';
     case 'parse':
       return 'Analyse de la recette…';
     case 'design':

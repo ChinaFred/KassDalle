@@ -177,6 +177,18 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
 
   Recopie la durée telle qu'elle est écrite : « une nuit » reste « une nuit ».
 
+- LANGUE de chaque recette ("langue") : le code ISO 639-1 en deux lettres
+  minuscules de la langue dans laquelle sont écrites ses ÉTAPES — "fr", "en",
+  "it", "ja"…
+
+  Ce sont les étapes qui décident, pas le titre ni les noms d'ingrédients. Une
+  recette française qui parle de « crumble », de « cheddar », de « wok » ou de
+  « cheesecake » est en "fr". Dans le doute, écris "fr".
+
+  Une recette écrite dans une autre langue se recopie DANS CETTE LANGUE, mot
+  pour mot, unités comprises : « 1 cup flour » reste « 1 cup flour ». Tu ne
+  traduis rien et tu ne convertis rien ; une autre étape s'en charge.
+
 ════ CONTRE-EXEMPLE — le défaut le plus grave ════
 
   Le livre écrit :
@@ -209,6 +221,7 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
   "recettes": [
     {
       "titre": "<titre de la recette, mot pour mot>",
+      "langue": "<code ISO 639-1 de la langue des étapes : fr, en, it…>",
       "introduction": "<le paragraphe d'ouverture de la recette, mot pour mot, ou null>",
       "lectures_incertaines": ["<mot douteux, suivi de sa position : (étape 3), (ingrédient 2), (titre de section)…>"],
       "inventaire": {

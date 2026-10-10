@@ -167,6 +167,7 @@ classDiagram
     +RecipeOrigin? origin
     +String? importVersion
     +bool isPrivate
+    +String? langueOrigine
     +String? fidelityLevel
     +List~FidelityFinding~ fidelityFindings
     +IllustrationReport? illustrationReport
@@ -175,6 +176,7 @@ classDiagram
     +DateTime updatedAt
     +DateTime? aiProcessedAt
     +bool fidelityRejected
+    +bool isTranslated
     +fromFirestore(id, data) Recipe$
     +toFirestore() Map
     +copyWith() Recipe
@@ -298,6 +300,11 @@ classDiagram
         <code>null</code> quand le balisage concorde avec la page, <code>avertissement</code> pour
         un écart mineur, <code>rupture</code> quand le balisage a été écarté
         (<code>fidelityRejected</code>).
+        <br><br>
+        <code>langueOrigine</code> (<code>langue_origine</code>) n'existe que sur une recette
+        traduite à l'import, et <code>isTranslated</code> en découle. Le serveur le pose ; le
+        client le lit et ne l'écrit jamais. Une copie ne le reprend pas, puisqu'elle n'emporte
+        pas le texte d'origine (<code>OriginalText</code>, section suivante).
       </figcaption>
     </figure>
 
@@ -522,11 +529,13 @@ classDiagram
   <section>
     <h2>Ce qui s'accroche à une recette</h2>
     <p class="sec-note">
-      Quatre familles d'objets vivent à côté de la recette sans l'alourdir. Deux sont produites
+      Cinq familles d'objets vivent à côté de la recette sans l'alourdir. Deux sont produites
       par un moteur d'IA et gardent la trace de qui les a produites — <code>provider</code>,
       <code>model</code>, <code>generatedAt</code> — parce qu'un conseil ne se relit pas de la
       même façon selon le moteur et la date qui l'ont rendu. Deux autres sont des comptes rendus
-      de traitement : elles ne servent qu'à la relecture d'un brouillon.
+      de traitement : elles ne servent qu'à la relecture d'un brouillon. La cinquième,
+      <code>OriginalText</code>, garde le texte d'une recette traduite tel que la page l'écrivait.
+      <span class="path">lib/features/recipes/domain/original_text.dart</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -599,11 +608,33 @@ classDiagram
     +List~String~ items
   }
 
+  class OriginalText {
+    +String langue
+    +String titre
+    +String? introduction
+    +List~OriginalTextSection~ ingredientSections
+    +List~OriginalTextSection~ stepSections
+    +List~OriginalTextNote~ notes
+    +fromMap(data) OriginalText$
+  }
+
+  class OriginalTextSection {
+    +String titre
+    +List~String~ lignes
+  }
+
+  class OriginalTextNote {
+    +String genre
+    +String texte
+  }
+
   PlatingAdvice "1" --> "0..*" PlatingStep
   PlatingAdvice --> PlatingComplexity
   StorageAdvice "1" --> "1" StorageWindow : refrigerateur
   StorageAdvice "1" --> "0..1" StorageWindow : congelateur
   StorageAdvice "1" --> "1" ReheatAdvice
+  OriginalText "1" *-- "0..*" OriginalTextSection
+  OriginalText "1" *-- "0..*" OriginalTextNote
 </pre>
       </div>
       <figcaption>
@@ -621,6 +652,13 @@ classDiagram
           brouillon.</b> Il est affiché par <code>FidelityBanner</code> sur le seul écran de
           relecture, et <b>effacé à la validation</b> : valider, c'est avoir relu et tranché.
           Le conserver reviendrait à garder un doute que plus personne ne peut lever.
+        </span>
+        <span class="expect">
+          <b><code>OriginalText</code> vit dans un sous-document,
+          <code>recipes/{id}/origine/texte</code></b>, écrit par le serveur dans le même lot que
+          la recette traduite et lu seulement à l'ouverture de la vue « Texte d'origine »
+          (<code>OriginalTextRepository</code>, <code>originalTextProvider</code>). Le client ne
+          l'écrit jamais ; il disparaît avec la recette.
         </span>
       </figcaption>
     </figure>
@@ -1330,6 +1368,12 @@ classDiagram
     -_generateAlternatives(...) Future
   }
 
+  class OriginalTextRepository {
+    -FirebaseFirestore _firestore
+    -ErrorReportService _errorReportService
+    +read(recipeId) Future~OriginalText~
+  }
+
   class ProcessingJobRepository {
     +createJob(job) Future~String~
     +updateJob(id, data) Future
@@ -1359,6 +1403,7 @@ classDiagram
   }
 
   RecipeRepository --&gt; ErrorReportService
+  OriginalTextRepository --&gt; ErrorReportService
   RecipeRepository --&gt; GeminiService : scanAndPromoteUpload
   RecipeRepository --&gt; CloudFunctions : normalizeRecipeReferentialsFn, computeRecipeNutritionFn
   GeminiService --&gt; CloudFunctions
@@ -1417,6 +1462,7 @@ classDiagram
           <tr><td><code>thumbnailUrls</code></td><td><code>thumbnail_urls</code></td><td>Vignettes WebP 400 px générées par le serveur, même ordre</td></tr>
           <tr><td><code>tags.dishTypes</code></td><td><code>tags.dish_types</code></td><td>Valeurs normalisées, liste fermée <code>kDishTypes</code></td></tr>
           <tr><td><code>tags.mealRole</code></td><td><code>tags.meal_role</code></td><td>Valeur de <code>kMealRoles</code>. Écrit avec <code>tags.contains</code> et <code>tags.suggested_sides</code>, et seulement s'il est connu : une écriture sans rôle n'efface pas celui qu'a posé l'import ou le backfill</td></tr>
+          <tr><td><code>langueOrigine</code></td><td><code>langue_origine</code></td><td>Posé par le pipeline sur une recette traduite seulement ; omis par <code>toFirestore</code>, jamais écrit par le client. Absent vaut « écrite en français »</td></tr>
           <tr><td><code>isPrivate</code></td><td><code>is_private</code></td><td>Recopié du livre par le serveur ; le client le relit et le réécrit tel quel. Absent vaut <code>false</code></td></tr>
           <tr><td><code>fidelityLevel</code> · <code>fidelityFindings</code></td><td><code>fidelity_level</code> · <code>fidelity_findings</code></td><td>Écrits par le pipeline d'import, effacés à la validation du brouillon</td></tr>
           <tr><td><code>illustrationReport</code></td><td><code>illustration_report</code></td><td>Écrit par le pipeline d'import ; lu par le client, jamais réécrit</td></tr>

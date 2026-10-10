@@ -29,7 +29,8 @@
 
 import { logInfo } from "../logging";
 import type { ModelCallContext } from "../ai/types";
-import { transcribeText } from "./transcription";
+import { needsTranslation, transcribeText } from "./transcription";
+import { translateRecipe } from "./translation";
 import { tagAndNormalize, type NormalizedIngredientLine } from "./tagging";
 import { checkFidelity, verbatimCooklang, type FidelityReport } from "./fidelity";
 
@@ -49,6 +50,8 @@ export interface TextExtraction {
    * que la seconde n'a pas été reprise, plutôt que de la découvrir absente.
    */
   recettesTrouvees: number;
+  /** Code ISO 639-1 de la langue du texte collé, quand il a été traduit. */
+  langueOrigine?: string;
 }
 
 /**
@@ -81,8 +84,15 @@ export async function extractRecipeFromText(
     },
   });
 
-  const recette = transcription.recettes[0];
-  if (!recette) return null;
+  const lue = transcription.recettes[0];
+  if (!lue) return null;
+
+  // Un texte collé dans une autre langue est traduit avant le balisage, comme
+  // une page scannée. Son original n'est pas conservé : la recette n'existe pas
+  // encore, et l'utilisateur garde le texte qu'il vient de coller.
+  const recette = needsTranslation(lue)
+    ? await translateRecipe(lue, { ...ctx, feature: "recipe_translation", moduleType: "IMPORT" })
+    : lue;
 
   // ── PASSE 2 : balisage et normalisation ─────────────────────────────────
   //
@@ -123,5 +133,6 @@ export async function extractRecipeFromText(
     dishTypes: tagged.dishTypes,
     fidelity,
     recettesTrouvees: transcription.recettes.length,
+    ...(recette.traduction ? { langueOrigine: recette.traduction.langue } : {}),
   };
 }

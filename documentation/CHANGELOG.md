@@ -20,6 +20,80 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.16 — fonctionnel
+
+#### Traduction des recettes étrangères à l'import
+
+**Ce que voit l'utilisateur.** Une recette importée dans une autre langue arrive en français,
+mesures converties en métrique. La fiche porte la mention « Traduit de l'anglais » (ou de la
+langue lue ; « Traduit d'une autre langue » hors d'une table d'une trentaine de langues) : sous
+le titre sur grand écran, dans la rangée d'actions sur téléphone. La mention ouvre la vue
+« Texte d'origine, avant traduction » ; sur grand écran, l'icône « Voir le texte d'origine
+(anglais) » aussi. La vue est une feuille à 90 % de la hauteur sur téléphone, une fenêtre de
+640 px sur grand écran. Elle suit le zoom de lecture, son texte se sélectionne, s'écrit de
+droite à gauche pour l'arabe, l'hébreu et le persan, et emploie les glyphes de sa langue. Elle
+affiche un état de chargement, un état d'erreur, et « Texte d'origine indisponible » quand le
+document manque. À la relecture d'un brouillon traduit, la même mention s'affiche, et sur grand
+écran un panneau de 360 px (« Afficher / Masquer le texte d'origine ») se place à côté de
+l'éditeur, à partir d'une fenêtre de 1 150 px de large. Tout lecteur de la recette voit la mention et le texte d'origine. Une recette non
+traduite ne change pas. Pendant l'import, la file affiche « Traduction de la recette par
+l'IA… », sans icône de plus dans la rangée d'étapes.
+
+**Texte collé.** « Mettre en forme avec l'IA » traduit aussi un texte étranger et l'annonce :
+« Traduit de l'anglais, mesures converties. Le texte collé reste consultable comme document
+original. » L'original n'est pas stocké une seconde fois : le texte collé reste le fichier
+source.
+
+**Transcription.** `TRANSCRIPTION_PROMPT` rend `langue` (ISO 639-1) pour chaque recette, lue sur
+les étapes ; dans le doute, `fr`. La transcription recopie dans la langue de la page et ne
+traduit rien. Une page française ne coûte aucun appel de plus.
+
+**Nouveau poste d'IA `recipe_translation`** (`functions/src/gemini/translation.ts`), groupe
+Import, processus « Numérisation d'un livre », inscrit dans `ROUTABLE_FEATURES`,
+`kFeatureCatalog` et `kFeatureProcess`. Appelé seulement quand la langue n'est pas `fr`, sur le
+JSON transcrit, sans image. Il traduit en français et convertit les mesures : solides en
+grammes, liquides en millilitres, °F en °C arrondis à 5, inch en cm, valeurs US par défaut, UK
+si la source est britannique ; un ingrédient sans équivalent garde son nom, suivi d'un
+équivalent entre parenthèses. `translationShapeMismatches` vérifie sans appel que la
+traduction garde les nombres de groupes, de lignes, d'étapes et de notes, et qu'aucun texte
+n'est vidé (titre, introduction, titre de groupe, ligne, étape, note ; les durées ne sont pas
+contrôlées). Sinon le job échoue (« Traduction impossible : … ») et reste relançable.
+
+**Pipeline.** `recipeProcessor` gagne l'étape `translate`, entre `gemini_call` et `parse` dans
+`STEP_ORDER`. Pour un livre entier, le plafond de l'import est vérifié avant chaque traduction.
+Le point de reprise est réécrit après chaque recette traduite : une relance ne retraduit pas. Balisage,
+contrôle de fidélité, tags et nutrition travaillent sur la traduction. Une page qui n'est pas
+une recette n'est pas traduite.
+
+**Firestore.** Champ `langue_origine` (ISO 639-1) sur `recipes/{id}`, posé seulement sur une
+recette traduite, jamais écrit par le client. Sous-document `recipes/{id}/origine/texte` :
+`langue`, `titre`, `introduction`, `portions`, `temps_preparation`, `temps_cuisson`,
+`temps_repos`, `sections_ingredients[{titre, lignes[]}]`, `sections_etapes[{titre, etapes[]}]`,
+`notes[{genre, texte}]`, `created_at`. Il est écrit dans le même lot que la recette, et
+`onRecipeWritten` le supprime avec elle. Règle : lecture si `isApproved()` et
+`canReadRecipe(recipeDoc(recipeId))`, écriture interdite, administrateur compris. Le texte
+d'origine n'est pas indexé par la recherche. Aucun backfill : une recette existante n'a pas de
+`langue_origine` et reste « écrite en français ».
+
+**Client.** `Recipe.langueOrigine` et `isTranslated` ; `toFirestore` omet le champ, une copie ne
+le reprend pas. `OriginalText`, `OriginalTextRepository` (`ErrorReportService`, feature
+`recipes.originalText.read`), `originalTextProvider`, `original_text_viewer.dart`, et la table
+`core/utils/language_names.dart`.
+
+**CSP.** `https://fonts.gstatic.com` rejoint `font-src` et `connect-src` de la
+`Content-Security-Policy-Report-Only` : CanvasKit y télécharge les polices de secours du
+japonais, de l'arabe et des autres écritures que ses polices embarquées ne couvrent pas.
+
+**Tests.** Cinq tests de règles sur `origine/texte` : 326 tests attendus, dont 258 Firestore.
+Ils n'ont pas tourné sur le PC (Java absent) ; la CI les rejoue. Côté Functions,
+`recipeTranslation.test.ts` ; côté Dart, `original_text_test.dart`.
+
+**Pas encore essayé sur un vrai livre.** Un test en direct avec un livre anglais est prévu.
+
+**Hors périmètre.** Traduire vers une autre langue que le français ; retraduire une recette
+existante ; forcer une traduction ; traduire une page qui n'est pas une recette (technique, note
+d'ingrédient).
+
 ### v0.23.15 — fonctionnel
 
 #### Fiche recette : les notes de la famille

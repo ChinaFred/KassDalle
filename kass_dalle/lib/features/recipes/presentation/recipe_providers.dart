@@ -2,11 +2,13 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../admin/data/nutrition_ingredients_repository.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../data/original_text_repository.dart';
 import '../data/plating_repository.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
 import '../data/storage_repository.dart';
+import '../domain/original_text.dart';
 import '../domain/plating_advice.dart';
 import '../domain/storage_advice.dart';
 import '../domain/family_ratings.dart';
@@ -272,6 +274,18 @@ final recipeByIdProvider = FutureProvider.autoDispose.family<Recipe?, String>((
 ) async {
   return ref.watch(recipeRepositoryProvider).getById(id);
 });
+
+final originalTextRepositoryProvider = Provider<OriginalTextRepository>(
+  (_) => OriginalTextRepository(),
+);
+
+/// Texte d'origine d'une recette traduite, lu à l'ouverture de la vue qui
+/// l'affiche et pas avant : la recette est lue dans toutes les listes, ce
+/// texte seulement à la demande.
+final originalTextProvider = FutureProvider.autoDispose
+    .family<OriginalText?, String>((ref, recipeId) {
+      return ref.watch(originalTextRepositoryProvider).read(recipeId);
+    });
 
 /// Notifier du scan upload.
 final scanUploadProvider = NotifierProvider<ScanUploadNotifier, ScanState>(

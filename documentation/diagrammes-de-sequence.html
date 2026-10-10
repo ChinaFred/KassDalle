@@ -179,12 +179,13 @@
   <section>
     <h2 id="import"><span class="n">01</span>Import d'une page de livre</h2>
     <p class="sec-note">
-      Deux appels de modèle pour le texte — transcrire, puis baliser. Pour les images, une case à
+      Deux appels de modèle pour le texte — transcrire, puis baliser — et un troisième, traduire,
+      pour une recette écrite dans une autre langue que le français. Pour les images, une case à
       cocher décide : décochée, un appel par page qui COMPTE ; cochée, la chaîne complète qui
       découpe et enregistre. Le client n'attend rien : il dépose un travail et écoute son avancement.
       <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
-      gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts,
-      illustrations/extract.ts</span>
+      gemini/transcription.ts, gemini/translation.ts, gemini/tagging.ts, gemini/fidelity.ts,
+      illustrations/extract.ts, pipeline/originalText.ts</span>
       <br/><b>La capture diffère selon la plateforme.</b> Sur mobile, le scanner du système —
       ML Kit sur Android, VisionKit sur iOS — cherche les coins sur le flux vidéo et rend des pages
       déjà cadrées ; jusqu'à vingt par session. Sur le web, ces API n'existent pas : l'atelier de
@@ -265,12 +266,30 @@ sequenceDiagram
 
   P->>G: PASSE 1 — transcribePage
   Note over P,G: un seul appel rend le TYPE de la page ET son contenu recopié<br/>classifier, extraire une recette, extraire un document : trois appels avant
-  G-->>P: JSON — raison, page_type, titre, page,<br/>sections d'ingrédients, sections d'étapes, notes
+  G-->>P: JSON — raison, page_type, titre, page,<br/>sections d'ingrédients, sections d'étapes, notes,<br/>langue de chaque recette (ISO 639-1, lue sur les étapes, fr dans le doute)
   P->>LOG: stage « transcription » — la page recopiée, avant tout balisage
 
   alt page sans contenu exploitable
     P->>J: status done, created_recipe_ids vide
   else page de recette
+    opt au moins une recette dont la langue n'est pas fr
+      P->>J: current_step translate
+      loop chaque recette étrangère
+        opt tranche d'un livre entier
+          P->>P: plafond de l'import vérifié avant l'appel
+        end
+        P->>G: TRADUCTION — translateRecipe, poste recipe_translation<br/>le JSON transcrit, sans image
+        G-->>P: le même JSON en français, mesures converties en métrique
+        P->>LOG: stage « traduction » — la réponse du modèle
+        P->>P: translationShapeMismatches — AUCUN appel
+        alt nombre de groupes, lignes, étapes ou notes différent, ou texte vidé
+          P->>LOG: erreur — traduction rejetée
+          Note over P: le job échoue « Traduction impossible : … »<br/>une nouvelle tentative repart de la transcription enregistrée
+        end
+      end
+      P->>J: transcription_checkpoint réécrit avec la traduction
+      Note over P,J: une relance après un balisage en échec ne retraduit pas<br/>balisage, fidélité, tags et nutrition lisent la traduction
+    end
     alt case « Extraire les illustrations » décochée
       loop chaque page du scan
         P->>G: pré-contrôle — combien d'images sur cette page ?
@@ -315,7 +334,11 @@ sequenceDiagram
       P->>G: normalizeRecipeReferentialsCore
       G-->>P: unités et identités canoniques
       P->>LOG: stage « enregistrement » — le texte écrit en base
-      P->>R: UNE SEULE écriture — texte, liste normalisée, notes
+      alt recette traduite
+        P->>R: un lot — la recette avec langue_origine,<br/>et origine/texte, la recette avant traduction
+      else recette en français
+        P->>R: UNE SEULE écriture — texte, liste normalisée, notes
+      end
       Note over R: la normalisation a lieu AVANT l'écriture<br/>le déclencheur ne part donc qu'une fois
       P->>J: created_recipe_ids
     end
@@ -349,6 +372,16 @@ sequenceDiagram
         Un <i>avertissement</i> — un titre de section raccourci, un ingrédient de trop — se
         journalise et laisse passer. Cent cinquante lignes de prompt demandaient la fidélité ;
         aucune ligne de code ne la constatait.
+      </figcaption>
+      <figcaption>
+        <b>La traduction n'a lieu que si la transcription l'a demandée.</b> La passe 1 rend la
+        langue de chaque recette, lue sur les étapes, sans appel de plus ; dans le doute, elle
+        écrit <code>fr</code> et rien n'est traduit. Une recette étrangère reçoit un appel
+        <code>recipe_translation</code> sur le JSON transcrit : texte en français, solides en
+        grammes, liquides en millilitres, °F en °C arrondis à 5, pouces en centimètres. Du code
+        compare ensuite la forme de la traduction à l'original. Un écart fait échouer le job,
+        relançable. La recette et son texte d'origine partent dans le même lot : une recette
+        marquée traduite a toujours son original.
       </figcaption>
       <figcaption>
         <b>La quarantaine est le seul chemin d'entrée d'un fichier.</b> Le client ne peut pas
@@ -2179,10 +2212,12 @@ sequenceDiagram
   <section>
     <h2 id="texte-colle"><span class="n">22</span>Import d'un texte collé</h2>
     <p class="sec-note">
-      La même chaîne que la page scannée : transcription, balisage, contrôle de fidélité. Seule
+      La même chaîne que la page scannée : transcription, traduction si le texte n'est pas en
+      français, balisage, contrôle de fidélité. Seule
       l'entrée de la passe 1 diffère — du texte au lieu d'une image.
       <span class="path">recipe_create_screen.dart → extractRecipeFromTextFn →
-      gemini/extractor.ts → gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts</span>
+      gemini/extractor.ts → gemini/transcription.ts, gemini/translation.ts, gemini/tagging.ts,
+      gemini/fidelity.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -2193,6 +2228,7 @@ sequenceDiagram
   participant E as Éditeur de recette
   participant FN as extractRecipeFromTextFn
   participant T1 as transcribeText
+  participant TR as translateRecipe
   participant T2 as tagAndNormalize
   participant CF as checkFidelity
   participant M as Moteur d'IA
@@ -2209,6 +2245,13 @@ sequenceDiagram
     FN-->>E: aucune recette dans ce texte
   end
 
+  opt langue de la recette ≠ fr
+    FN->>TR: poste recipe_translation, le même qu'un scan
+    TR->>M: le JSON transcrit
+    M-->>TR: le même JSON en français, mesures en métrique
+    TR->>TR: translationShapeMismatches — sinon « Traduction impossible : … »
+  end
+
   FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
   T2->>M: transforme la transcription en CookLang
   M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides)
@@ -2220,9 +2263,12 @@ sequenceDiagram
     CF-->>FN: balisage retenu, réserve affichée
   end
 
-  FN-->>E: cooklang, liste, tags, réserve, nombre de recettes trouvées
+  FN-->>E: cooklang, liste, tags, réserve, nombre de recettes trouvées,<br/>langue_origine si le texte a été traduit
+  opt texte traduit
+    E-->>U: « Traduit de l'anglais, mesures converties.<br/>Le texte collé reste consultable comme document original. »
+  end
   E->>ST: conserve le texte collé comme fichier source
-  Note over E,ST: le bouton « Voir l'original » apparaît ensuite,<br/>comme pour un scan
+  Note over E,ST: le bouton « Voir l'original » apparaît ensuite,<br/>comme pour un scan. Aucun sous-document origine/texte :<br/>le texte collé tient ce rôle
 </pre>
       </div>
       <figcaption>

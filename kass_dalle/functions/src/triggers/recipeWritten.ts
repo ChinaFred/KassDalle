@@ -14,7 +14,8 @@
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
+import { getFirestore } from "firebase-admin/firestore";
+import { ANTHROPIC_API_KEY, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { logError, newCorrelationId, qualify } from "../logging";
 import {
   ingredientsFingerprint,
@@ -22,6 +23,7 @@ import {
   type StoredIngredient,
 } from "./recipeIngredients";
 import { syncRecipePrivacy } from "./recipePrivacy";
+import { ORIGINAL_TEXT_DOC_ID, SUBCOLL_ORIGINAL_TEXT } from "../pipeline/originalText";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
@@ -39,7 +41,12 @@ export const onRecipeWritten = onDocumentWritten(
   },
   async (event) => {
     const after = event.data?.after;
-    if (!after?.exists) return; // suppression — ignorer
+    if (!after?.exists) {
+      // Suppression : seul le texte d'origine d'une recette traduite reste à
+      // retirer. Une sous-collection ne disparaît pas avec son document.
+      await deleteOriginalText(event.params.recipeId as string);
+      return;
+    }
 
     const data = after.data() as Record<string, unknown>;
     const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
@@ -189,4 +196,31 @@ export function resolvePageType(data: Record<string, unknown>): string {
   const cooklang = (data.raw_cooklang as string | undefined) ?? "";
   const match = /^>>\s*page_type\s*:\s*(.+)$/im.exec(cooklang);
   return match ? match[1].trim().toLowerCase() : "recipe";
+}
+
+/**
+ * Retire le texte d'origine d'une recette qu'on vient de supprimer.
+ *
+ * Sans condition sur `langue_origine` : le champ a pu être retiré avant la
+ * suppression, et supprimer un document absent ne fait rien. Best-effort : un
+ * échec laisse un document orphelin, que les règles ne laissent plus lire
+ * puisque la recette n'existe plus.
+ */
+async function deleteOriginalText(recipeId: string): Promise<void> {
+  try {
+    await getFirestore()
+      .collection(COLL_RECIPES)
+      .doc(recipeId)
+      .collection(SUBCOLL_ORIGINAL_TEXT)
+      .doc(ORIGINAL_TEXT_DOC_ID)
+      .delete();
+  } catch (err) {
+    await logError({
+      message: "Texte d'origine non supprimé avec sa recette",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      correlationId: newCorrelationId(),
+      extra: { recipeId },
+    });
+  }
 }
