@@ -38,6 +38,28 @@ List<RecipeTagSection> buildRecipeTagSections(RecipeTags tags) {
       ),
     );
   }
+  // Protéine et féculent : seulement pour un plat ou un accompagnement, les
+  // seuls rôles qui les portent.
+  if (tags.carriesMainIngredients) {
+    final protein = tags.mainProtein?.trim() ?? '';
+    if (protein.isNotEmpty) {
+      sections.add(
+        RecipeTagSection(
+          label: 'Protéine principale',
+          values: [mainProteinLabel(protein)],
+        ),
+      );
+    }
+    final starch = tags.mainStarch?.trim() ?? '';
+    if (starch.isNotEmpty) {
+      sections.add(
+        RecipeTagSection(
+          label: 'Féculent principal',
+          values: [mainStarchLabel(starch)],
+        ),
+      );
+    }
+  }
   return sections;
 }
 

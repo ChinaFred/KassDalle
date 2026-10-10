@@ -110,6 +110,12 @@ Map<String, dynamic> planningRecipeSummary(Recipe r) => {
   // Le rôle range la recette dans la bonne liste : plats, entrées,
   // desserts. Absent, elle est un plat.
   if (r.tags.hasMealRole) 'mealRole': r.tags.mealRole,
+  // Protéine et féculent : la présélection varie la protéine et alterne les
+  // féculents. Seulement pour un plat ou un accompagnement.
+  if (r.tags.carriesMainIngredients) ...{
+    'mainProtein': ?r.tags.mainProtein,
+    'mainStarch': ?r.tags.mainStarch,
+  },
   // Les parts de la recette : le serveur dit si le repas sera redimensionné.
   if (r.portions != null && r.portions! > 0) 'portions': r.portions,
 };

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/utils/recipe_tag_sections.dart';
 import 'package:kass_dalle/features/recipes/domain/meal_role.dart';
@@ -36,6 +37,102 @@ void main() {
       expect(mealRoleLabel('brunch'), 'brunch');
     },
   );
+
+  test('protéines, féculents et rôles qui les portent : mêmes listes que '
+      'côté serveur', () {
+    expect(kMainProteins, List<String>.from(fixture['main_proteins'] as List));
+    expect(kMainStarches, List<String>.from(fixture['main_starches'] as List));
+    expect(
+      kRolesWithMainIngredients,
+      List<String>.from(fixture['roles_with_main_ingredients'] as List),
+    );
+  });
+
+  test('chaque protéine et chaque féculent a un libellé français', () {
+    for (final p in kMainProteins) {
+      expect(mainProteinLabel(p), isNotEmpty);
+    }
+    for (final s in kMainStarches) {
+      expect(mainStarchLabel(s), isNotEmpty);
+    }
+    expect(mainProteinLabel('boeuf'), 'Bœuf');
+    expect(mainProteinLabel('fruits_de_mer'), 'Fruits de mer');
+    expect(mainStarchLabel('pommes_de_terre'), 'Pommes de terre');
+    expect(mainStarchLabel('aucun'), 'Sans féculent');
+    expect(mainProteinLabel('oeuf'), 'Œuf');
+    // Une valeur inconnue reste lisible telle quelle.
+    expect(mainProteinLabel('veau'), 'veau');
+  });
+
+  group('protéine et féculent dans la fiche', () {
+    test('un plat les affiche après son rôle', () {
+      final sections = buildRecipeTagSections(
+        const RecipeTags(
+          mealRole: 'plat',
+          mainProtein: 'volaille',
+          mainStarch: 'riz',
+        ),
+      );
+      expect(sections.map((s) => s.label), [
+        'Rôle dans un repas',
+        'Protéine principale',
+        'Féculent principal',
+      ]);
+      expect(sections[1].values, ['Volaille']);
+      expect(sections[2].values, ['Riz']);
+    });
+
+    test('un dessert ne les affiche pas, même restés d\'un ancien rôle', () {
+      final sections = buildRecipeTagSections(
+        const RecipeTags(
+          mealRole: 'dessert',
+          mainProtein: 'oeuf',
+          mainStarch: 'pain',
+        ),
+      );
+      expect(sections.map((s) => s.label), ['Rôle dans un repas']);
+    });
+
+    test('lus et réécrits avec la carte des tags', () {
+      final tags = RecipeTags.fromMap({
+        'meal_role': 'accompagnement',
+        'main_protein': 'vegetarien',
+        'main_starch': 'pommes_de_terre',
+      });
+      expect(tags.mainProtein, 'vegetarien');
+      expect(tags.mainStarch, 'pommes_de_terre');
+      final map = tags.toMap();
+      expect(map['main_protein'], 'vegetarien');
+      expect(map['main_starch'], 'pommes_de_terre');
+      // Lecture tolérante : un type inattendu vaut absent.
+      final bad = RecipeTags.fromMap({
+        'meal_role': 'plat',
+        'main_protein': 42,
+        'main_starch': ['riz'],
+        'main_ingredients_checked_at': 'hier',
+      });
+      expect(bad.mainProtein, isNull);
+      expect(bad.mainStarch, isNull);
+      expect(bad.mainIngredientsCheckedAt, isNull);
+      // Le marqueur d'examen survit à une carte réécrite en bloc.
+      final checked = RecipeTags.fromMap({
+        'meal_role': 'plat',
+        'main_ingredients_checked_at': Timestamp.fromDate(
+          DateTime(2026, 10, 10),
+        ),
+      });
+      expect(checked.mainIngredientsCheckedAt, DateTime(2026, 10, 10));
+      expect(
+        checked.toMap()['main_ingredients_checked_at'],
+        DateTime(2026, 10, 10),
+      );
+      // Absents : pas de clé, une écriture ne les efface pas.
+      expect(
+        const RecipeTags(mealRole: 'plat').toMap().containsKey('main_protein'),
+        isFalse,
+      );
+    });
+  });
 
   group('buildRecipeTagSections', () {
     test('le rôle s\'affiche en dernier, en français', () {

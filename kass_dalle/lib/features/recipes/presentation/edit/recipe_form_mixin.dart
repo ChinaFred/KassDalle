@@ -181,6 +181,13 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       mealRole: selectedMealRole,
       contains: aiClassifiedInSession ? suggestedContains : null,
       suggestedSides: aiClassifiedInSession ? suggestedSidesByAI : null,
+      // Même règle : la protéine et le féculent de la dernière suggestion,
+      // sinon ceux de la base.
+      mainProtein: aiClassifiedInSession ? suggestedMainProtein : null,
+      mainStarch: aiClassifiedInSession ? suggestedMainStarch : null,
+      mainIngredientsCheckedAt: aiClassifiedInSession
+          ? suggestedMainIngredientsCheckedAt
+          : null,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),
@@ -190,7 +197,8 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
     if (selectedMealRole != null) return tags;
     // « Non classé » : le rôle part, et ce qui en dépendait avec lui.
-    // `copyWith` ne sait pas effacer ; on reconstruit sans les trois champs,
+    // `copyWith` ne sait pas effacer ; on reconstruit sans les cinq champs
+    // (rôle, apports, accompagnements, protéine, féculent),
     // et `toMap` ne les écrit pas — une écriture de la carte entière les
     // retire, une écriture champ par champ passe par `clearMealRole`.
     return RecipeTags(
@@ -224,6 +232,12 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   bool aiClassifiedInSession = false;
   List<String> suggestedContains = const [];
   List<String> suggestedSidesByAI = const [];
+  String? suggestedMainProtein;
+  String? suggestedMainStarch;
+
+  /// Heure de la suggestion quand le modèle a répondu sur la protéine et le
+  /// féculent : le backfill ne requestionnera pas la recette.
+  DateTime? suggestedMainIngredientsCheckedAt;
 
   /// Suggère des tags (cuisine, type de plat, rôle dans un repas) via l'IA
   /// pour la recette dont le titre est [titre].
@@ -244,6 +258,11 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           aiClassifiedInSession = true;
           suggestedContains = result.contains;
           suggestedSidesByAI = result.suggestedSides;
+          suggestedMainProtein = result.mainProtein;
+          suggestedMainStarch = result.mainStarch;
+          suggestedMainIngredientsCheckedAt = result.mainIngredientsChecked
+              ? DateTime.now()
+              : null;
         });
       }
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');

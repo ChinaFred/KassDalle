@@ -259,7 +259,7 @@ flowchart LR
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
     i3(["Classer les résultats"])
-    i4(["Présélectionner les candidats&lt;br/&gt;filtres, fraîcheur, ma note, mes refus"])
+    i4(["Présélectionner les candidats&lt;br/&gt;filtres, fraîcheur, ma note, mes refus,&lt;br/&gt;protéines et féculents variés"])
     i5(["Composer le dressage de ce plat"])
     i6(["Calculer la fenêtre de conservation"])
     i7(["Proposer trois idées de repas"])
@@ -359,7 +359,10 @@ flowchart LR
         <b>Le planning présélectionne sans IA</b> : le serveur filtre les recettes (rôle, temps
         de préparation, repos, écartées, déjà au cycle, notées 3/10 ou moins par le lecteur),
         les classe par fraîcheur sur 90 jours et par la note du lecteur, puis tire 5 plats par
-        créneau. L'IA choisit parmi eux. Une génération coûte 0,50 € au plus, conceptions
+        créneau. Ces 5 plats couvrent au moins trois protéines quand le corpus le permet, et un plat
+        qui a le même féculent que la veille ou le lendemain a deux fois moins de chances d'être tiré.
+        La protéine et le féculent sont lus sur la recette ; une recette qui ne les porte pas
+        encore garde l'indice de son type de plat. L'IA choisit parmi eux. Une génération coûte 0,50 € au plus, conceptions
         comprises, et conçoit 2 recettes au plus. Si l'IA ne répond pas ou si un plafond est
         atteint, Kass'Dalle remplit les créneaux et un bandeau le dit.
         <b>« Autre suggestion » n'appelle aucun modèle</b> : elle pose la recette suivante de la
@@ -435,7 +438,7 @@ flowchart LR
     c2(["Dérouler le pipeline d'import"])
     c3(["Normaliser unités et ingrédients"])
     c4(["Lire le fichier, estimer le coût&lt;br/&gt;et fixer le plafond de l'import"])
-    c5(["Classer le rôle dans un repas"])
+    c5(["Classer le rôle dans un repas,&lt;br/&gt;la protéine et le féculent"])
     c6(["Traduire en français,&lt;br/&gt;mesures en métrique"])
     b19(["Comparer la traduction&lt;br/&gt;au texte d'origine"])
   end
@@ -502,7 +505,9 @@ flowchart LR
         <b>Le rôle dans un repas</b> se pose sans geste de l'utilisateur : la passe 2 de l'import
         le donne, et le serveur classe à l'écriture toute recette qui n'en a pas. Choisir
         « Non classé » dans le panneau de métadonnées le retire ; le serveur le redemande au
-        modèle à l'enregistrement.
+        modèle à l'enregistrement. Le même appel pose la protéine principale et le féculent
+        principal d'un plat ou d'un accompagnement, sans appel de plus ; une valeur hors liste
+        reste non renseignée.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
         transcription détecte sans appel de plus. Elle ajoute un appel (poste
         <code>recipe_translation</code>) à l'import d'une page ou à la mise en forme d'un texte
@@ -607,6 +612,7 @@ flowchart LR
   d17 -.->|"sinon : « tarifs en panne », appels enregistrés sans montant"| e4(["Écrire app_config/ai_pricing"])
   d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
   d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
+  d12 -.->|"Protéine et féculent des plats, une fois après le déploiement"| e7(["Poser protéine et féculent&lt;br/&gt;sur les plats qui n'en ont pas"])
 </pre>
       </div>
       <figcaption>
@@ -620,6 +626,11 @@ flowchart LR
         ne change qu'à l'enregistrement.
         <b>La qualité des données</b> compte quatre anomalies des référentiels nutrition et
         n'écrit rien : chaque échantillon ouvre l'écran du référentiel, où la correction se fait.
+        <b>« Protéine et féculent des plats »</b> est une reprise de Backfills : elle traite les
+        plats et accompagnements qu'elle n'a pas encore examinés, quarante par passage, et rend le
+        compte des recettes examinées, traitées, déjà traitées, ignorées, sans réponse et en échec. Elle ne réécrit ni le rôle dans un repas ni les
+        autres tags. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
+        base.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
         <span class="expect warn">

@@ -20,6 +20,41 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
+### v0.23.24 — fonctionnel
+
+#### Protéine et féculent des plats, lus par le planning
+
+Chaque plat et chaque accompagnement porte maintenant sa protéine principale (bœuf, porc,
+volaille, agneau, poisson, fruits de mer, œuf, végétarien, légumineuses) et son féculent
+principal (pâtes, riz, pommes de terre, semoule, pain, sans féculent). La fiche les affiche dans
+« Catégorisation ». Une entrée, un dessert ou un snack n'en reçoit pas.
+
+Le même appel de modèle que le rôle dans un repas les pose : import d'une page, « Suggérer
+les tags », classement d'une recette écrite sans rôle. Aucun appel de plus ; le prompt grossit
+d'environ 400 jetons. Une réponse hors liste est lue comme « non renseigné ».
+
+Le planning lit la protéine dans ce champ d'abord, puis dans les types de plat. La
+justification d'une proposition cite cette protéine. Un plat dont le féculent est celui de la
+veille ou du lendemain pèse moitié moins au tirage : deux soirs de riz de suite deviennent
+plus rares, sans être interdits.
+
+**À faire après le déploiement, une fois :** Admin › Backfills › « Protéine et féculent des
+plats ». La reprise traite les plats et accompagnements classés avant cette version, quarante
+par passage, un appel de modèle par recette (poste `backfill_recipe_protein`). Relancer tant
+que le compte rendu indique « incomplet ». Une recette examinée n'est plus requestionnée,
+même si la réponse était hors liste (« veau ») ; seule une recette sans réponse est reprise.
+Elle n'écrit que les valeurs absentes, et ne modifie ni le rôle, ni les apports, ni les types
+de plat.
+
+Côté technique : champs `tags.main_protein` et `tags.main_starch` (`String?`), marqueur
+`tags.main_ingredients_checked_at` (`Timestamp?`), callable
+`backfillRecipeProteinFn` (admin, point de reprise
+`app_config/recipe_protein_backfill_checkpoint`), fixtures `meal_roles.json` (vocabulaires)
+et `planning_slot_rules.json` (lecture de la protéine, féculent, facteur 0,5). Les tables d'alias du rôle, des apports,
+de la protéine et du féculent ne se lisent plus que sur leurs propres clés : une réponse
+« constructor » était lue comme un rôle. Pas encore de
+correction manuelle de ces deux valeurs dans le panneau de métadonnées.
+
 ### v0.23.23 — technique
 
 #### Deux backfills retirés : profils publics et portée des groupes

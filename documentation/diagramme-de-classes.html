@@ -208,6 +208,10 @@ classDiagram
     +String? mealRole
     +List~String~ contains
     +List~String~ suggestedSides
+    +String? mainProtein
+    +String? mainStarch
+    +DateTime? mainIngredientsCheckedAt
+    +bool carriesMainIngredients
   }
 
   class RecipeNutritionSnapshot {
@@ -290,7 +294,11 @@ classDiagram
         stockée dans <code>tags.meal_role</code>. Le serveur décide des valeurs
         (<code>MEAL_ROLES</code>, <code>functions/src/gemini/mealRole.ts</code>) ; la fixture
         <code>meal_roles.json</code> vérifie que les deux listes sont égales. <code>contains</code>
-        et <code>suggestedSides</code> n'existent qu'avec un rôle.
+        et <code>suggestedSides</code> n'existent qu'avec un rôle. <code>mainProtein</code>
+        (<code>kMainProteins</code>) et <code>mainStarch</code> (<code>kMainStarches</code>) ne valent
+        que pour un plat ou un accompagnement (<code>carriesMainIngredients</code>) ; mêmes listes
+        que <code>MAIN_PROTEINS</code> et <code>MAIN_STARCHES</code> côté serveur, verrouillées par
+        la même fixture.
         <br><br>
         <code>isPrivate</code> est la confidentialité du livre porteur. Le client la calcule
         depuis le livre à chaque écriture qui pose ou change le livre
@@ -1350,6 +1358,22 @@ classDiagram
     +fromMap(map, finishedAt) RecipeRolesBackfillReport$
   }
 
+  class RecipeProteinBackfillReport {
+    +DateTime? finishedAt
+    +int examinees
+    +int traitees
+    +int dejaTraitees
+    +int ignorees
+    +int sansReponse
+    +int echouees
+    +int? restantes
+    +bool completed
+    +bool stoppedByBudget
+    +bool stoppedByErrors
+    +bool stoppedByDeadline
+    +fromMap(map, finishedAt) RecipeProteinBackfillReport$
+  }
+
   class ProcessingJob
   class AiRoutingPolicy
 
@@ -1397,6 +1421,10 @@ classDiagram
           <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
           <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
           <code>last_report</code> de <code>app_config/recipe_roles_backfill_checkpoint</code>.
+          <b><code>RecipeProteinBackfillReport</code></b> est celui de
+          <code>backfillRecipeProteinFn</code> (examinées, traitées, déjà traitées, ignorées, sans
+          réponse, échecs, restantes), lu de la même façon dans
+          <code>app_config/recipe_protein_backfill_checkpoint</code>.
         </span>
       </figcaption>
     </figure>
@@ -1569,6 +1597,8 @@ classDiagram
           <tr><td><code>thumbnailUrls</code></td><td><code>thumbnail_urls</code></td><td>Vignettes WebP 400 px générées par le serveur, même ordre</td></tr>
           <tr><td><code>tags.dishTypes</code></td><td><code>tags.dish_types</code></td><td>Valeurs normalisées, liste fermée <code>kDishTypes</code></td></tr>
           <tr><td><code>tags.mealRole</code></td><td><code>tags.meal_role</code></td><td>Valeur de <code>kMealRoles</code>. Écrit avec <code>tags.contains</code> et <code>tags.suggested_sides</code>, et seulement s'il est connu : une écriture sans rôle n'efface pas celui qu'a posé l'import ou le backfill</td></tr>
+          <tr><td><code>tags.mainProtein</code> · <code>tags.mainStarch</code></td><td><code>tags.main_protein</code> · <code>tags.main_starch</code></td><td>Valeurs de <code>kMainProteins</code> et <code>kMainStarches</code>. Écrits par le serveur ; <code>toMap</code> ne les écrit que s'ils sont connus, et « Non classé » les retire avec le rôle. Lecture tolérante : un type inattendu vaut absent</td></tr>
+          <tr><td><code>tags.mainIngredientsCheckedAt</code></td><td><code>tags.main_ingredients_checked_at</code></td><td>Marqueur d'examen, relu et réécrit tel quel pour survivre à une carte <code>tags</code> réécrite en bloc</td></tr>
           <tr><td><code>langueOrigine</code></td><td><code>langue_origine</code></td><td>Posé par le pipeline sur une recette traduite seulement ; omis par <code>toFirestore</code>, jamais écrit par le client. Absent vaut « écrite en français »</td></tr>
           <tr><td><code>isPrivate</code></td><td><code>is_private</code></td><td>Recopié du livre par le serveur ; le client le relit et le réécrit tel quel. Absent vaut <code>false</code></td></tr>
           <tr><td><code>fidelityLevel</code> · <code>fidelityFindings</code></td><td><code>fidelity_level</code> · <code>fidelity_findings</code></td><td>Écrits par le pipeline d'import, effacés à la validation du brouillon</td></tr>

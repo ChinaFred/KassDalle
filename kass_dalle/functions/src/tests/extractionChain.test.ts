@@ -138,6 +138,9 @@ function taggedGravlax(over: Partial<ReturnType<typeof parseTagged>> = {}) {
     mealRole: null,
     contains: [],
     suggestedSides: [],
+    mainProtein: null,
+    mainStarch: null,
+    mainIngredientsChecked: false,
     ...over,
   };
 }

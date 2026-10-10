@@ -603,6 +603,9 @@ export const recipeProcessor = onTaskDispatched(
           mealRole: null,
           contains: [],
           suggestedSides: [],
+          mainProtein: null,
+          mainStarch: null,
+          mainIngredientsChecked: false,
           userId,
           bookId,
           bookTitre,
@@ -675,6 +678,9 @@ export const recipeProcessor = onTaskDispatched(
           mealRole: tagged.mealRole,
           contains: tagged.contains,
           suggestedSides: tagged.suggestedSides,
+          mainProtein: tagged.mainProtein,
+          mainStarch: tagged.mainStarch,
+          mainIngredientsChecked: tagged.mainIngredientsChecked,
           userId,
           bookId,
           bookTitre,
@@ -893,6 +899,11 @@ async function saveDraft(args: {
   mealRole: string | null;
   contains: string[];
   suggestedSides: string[];
+  /** Protéine et féculent principaux ; `null` hors plat et accompagnement, ou si le modèle n'a pas su. */
+  mainProtein: string | null;
+  mainStarch: string | null;
+  /** Le modèle a répondu : la recette est marquée examinée et le backfill la saute. */
+  mainIngredientsChecked: boolean;
   userId: string;
   bookId?: string;
   bookTitre?: string;
@@ -1121,6 +1132,13 @@ async function saveDraft(args: {
       meal_role: args.mealRole,
       contains: args.contains,
       suggested_sides: args.suggestedSides,
+      // Écrits seulement quand ils sont connus : le backfill « Protéine et
+      // féculent des plats » reprend les plats et accompagnements qui n'en ont pas.
+      ...(args.mainProtein ? { main_protein: args.mainProtein } : {}),
+      ...(args.mainStarch ? { main_starch: args.mainStarch } : {}),
+      ...(args.mainIngredientsChecked
+        ? { main_ingredients_checked_at: FieldValue.serverTimestamp() }
+        : {}),
     },
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,

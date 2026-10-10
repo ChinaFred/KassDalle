@@ -117,8 +117,8 @@ déploiement.
 
 **Deux prompts se mettent en cache, depuis le 28 septembre 2026** —
 `TRANSCRIPTION_PROMPT` (`gemini/transcription.ts` → `transcribePage`, ~2 900 jetons) et
-`TAGGING_PROMPT` (`gemini/tagging.ts` → `tagAndNormalize`, ~3 250 jetons, rôle du repas
-inclus) : les deux plus gros prompts du projet, sur les deux postes les plus appelés.
+`TAGGING_PROMPT` (`gemini/tagging.ts` → `tagAndNormalize`, ~3 600 jetons, rôle du repas,
+protéine et féculent inclus) : les deux plus gros prompts du projet, sur les deux postes les plus appelés.
 `textPart(texte, { cache: true })` marque le fragment ; `toAnthropicContent`
 (`ai/anthropic.ts`) pose `cache_control: { type: "ephemeral" }` sur le bloc correspondant —
 Anthropic met alors en cache tout ce qui précède ce bloc, lui compris, et le relit à un
@@ -801,16 +801,23 @@ documents déjà écrits, sans migration. Cas de test dans
 | `prep_time` | `int?` | Durée en minutes |
 | `cook_time` | `int?` | Durée en minutes |
 | `rest_time` | `int?` | Temps de repos en minutes — marinade, réfrigération, levée |
-| `meal_role` | `String?` | **Rôle dans un repas** : `plat` \| `accompagnement` \| `entree` \| `dessert` \| `snack`. Reconnu une fois par le modèle — passe 2 de l'import, suggestion de tags, `onRecipeWritten` à toute écriture d'une recette sans rôle, backfill « Rôle des recettes » — et lu par le programme pour composer un repas. Absent = pas encore classée. Modifiable par l'utilisateur dans la liste « Rôle dans un repas » du panneau de métadonnées (relecture d'un import, correction, création) ; « Non classé » retire les trois champs (`clearMealRole` dans `validateDraft`, carte entière dans `updateRecipe`). Les valeurs et la lecture de la réponse vivent dans `functions/src/gemini/mealRole.ts` ; `lib/features/recipes/domain/meal_role.dart` les reprend pour la liste et l'affichage, `test-fixtures/meal_roles.json` verrouille l'égalité |
+| `meal_role` | `String?` | **Rôle dans un repas** : `plat` \| `accompagnement` \| `entree` \| `dessert` \| `snack`. Reconnu une fois par le modèle — passe 2 de l'import, suggestion de tags, `onRecipeWritten` à toute écriture d'une recette sans rôle, backfill « Rôle des recettes » — et lu par le programme pour composer un repas. Absent = pas encore classée. Modifiable par l'utilisateur dans la liste « Rôle dans un repas » du panneau de métadonnées (relecture d'un import, correction, création) ; « Non classé » retire les trois champs, et `main_protein` et `main_starch` avec eux (`clearMealRole` dans `validateDraft`, carte entière dans `updateRecipe`). Les valeurs et la lecture de la réponse vivent dans `functions/src/gemini/mealRole.ts` ; `lib/features/recipes/domain/meal_role.dart` les reprend pour la liste et l'affichage, `test-fixtures/meal_roles.json` verrouille l'égalité |
 | `contains` | `List<String>` | Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`. Un plat à qui il manque l'un des deux derniers appelle un accompagnement (`needsSide`) |
 | `suggested_sides` | `List<String>` | Accompagnements classiques d'un plat, noms courts, quatre au plus ; vide pour les autres rôles. Le programme y choisit au moment du planning, jamais le modèle |
 | `roles_tagged_at` | `Timestamp?` | Quand le backfill a posé le rôle |
+| `main_protein` | `String?` | **Protéine principale** d'un plat ou d'un accompagnement : `boeuf` \| `porc` \| `volaille` \| `agneau` \| `poisson` \| `fruits_de_mer` \| `oeuf` \| `vegetarien` \| `legumineuses`. Rendue par le même appel que `meal_role` (`MEAL_ROLE_PROMPT`) — passe 2 de l'import, suggestion de tags, `onRecipeWritten`, backfill « Rôle des recettes » — ou par le backfill « Protéine et féculent des plats » pour les recettes classées avant v0.23.24. Une valeur hors liste est lue comme absente (`parseMainProtein`), jamais rangée dans une valeur voisine. Absente pour une entrée, un dessert ou un snack. Écrite seulement quand elle est connue. Lue par la présélection du planning (`proteinOf`) et affichée dans « Catégorisation » ; pas encore corrigeable dans le panneau de métadonnées |
+| `main_starch` | `String?` | **Féculent principal** : `pates` \| `riz` \| `pommes_de_terre` \| `semoule` \| `pain` \| `aucun`. Même origine, même règle de lecture (`parseMainStarch`), même affichage. Lu par la présélection pour alterner les féculents (`starchOf`) |
+| `main_ingredients_checked_at` | `Timestamp?` | **Marqueur d'examen** : le modèle a répondu sur la protéine et le féculent, même par une valeur hors liste (« veau ») qui laisse les champs vides. Posé par la passe 2 de l'import, `onRecipeWritten`, le backfill « Rôle des recettes », le backfill « Protéine et féculent des plats » (heure serveur) et « Suggérer les tags » (heure du client). Deux chaînes vides ou des clés absentes ne sont pas une réponse : pas de marqueur. Le backfill saute une recette marquée. `RecipeTags` le relit et le réécrit, pour qu'une carte `tags` réécrite en bloc ne l'efface pas ; « Non classé » le retire |
 
 **Le rôle survit aux réécritures de `tags`.** Côté client, `RecipeTags.toMap()` n'écrit
 les trois champs que si le rôle est connu, et `validateDraft` écrit `tags` champ par champ
 (`tags.themes`, `tags.cuisines`, …) au lieu de remplacer la carte : un brouillon validé depuis
 le formulaire, qui ne connaît pas le rôle, ne l'efface pas. Le pipeline d'import écrit
 `meal_role: null` quand la passe 2 n'a pas su ; le backfill repasse sur ces recettes.
+`main_protein` et `main_starch` suivent la même règle : `toMap()` ne les écrit que s'ils sont
+connus, une carte réécrite depuis un objet lu en base les garde, et « Non classé » les retire
+avec le rôle. Une valeur restée d'un ancien rôle (plat devenu dessert) n'est ni affichée ni
+envoyée au planning (`RecipeTags.carriesMainIngredients`).
 
 **Le rôle se pose aussi à l'écriture.** Trois chemins créent une recette sans rôle : une
 création manuelle sans clic « Suggérer », une recette de l'Explorer IA (`generateRecipeFn` ne
@@ -819,8 +826,12 @@ demande pas ce champ), une copie d'une recette non classée (`copyRecipeAsDraft`
 toute écriture d'une recette (`page_type` recette) dont `tags.meal_role` est vide, **avant** la
 garde des entrées : la classification n'attend pas un changement d'ingrédients. Un appel de
 modèle, poste `inline_meal_role_classification`, qui écrit `tags.meal_role`, `contains`,
-`suggested_sides` et `roles_tagged_at`. Si le modèle ne rend aucun rôle, rien n'est écrit et
-la prochaine écriture retente ; une erreur passe par `logError`.
+`suggested_sides` et `roles_tagged_at`, plus `main_protein` et `main_starch` quand le modèle
+les rend et qu'ils sont absents (`mainIngredientsPatch` : une valeur posée à la main n'est pas
+remplacée), et `main_ingredients_checked_at` dès qu'il a répondu. Si le modèle ne rend aucun rôle, rien n'est écrit et la prochaine écriture retente ;
+une erreur passe par `logError`. L'absence de `main_protein` seule ne déclenche aucun appel :
+une recette classée sans elle est reprise par le backfill, et un déclencheur qui rappellerait
+le modèle tant qu'elle manque le rappellerait à chaque écho de sa propre écriture.
 
 ---
 
@@ -1268,6 +1279,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
+| `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn` |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
@@ -1279,7 +1291,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn` et `backfillRecipeRolesFn` seulement. L'écran Admin › Backfills relit à l'ouverture celui du rôle des recettes (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran |
+| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn`, `backfillRecipeRolesFn` et `backfillRecipeProteinFn`. L'écran Admin › Backfills relit à l'ouverture ceux du rôle des recettes et de la protéine des plats (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran |
 
 ---
 
@@ -2351,6 +2363,7 @@ Deux réglages tiennent à ce que ces passes demandent :
 | `gemini/translation.ts` | `TRANSLATION_PROMPT` |
 | `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
 | `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
+| `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier et repris par le backfill « Protéine et féculent des plats » (`suggestMainProteinStarch`, `gemini/tagger.ts`) |
 
 **Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
 semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu'ils imposent :
@@ -2364,6 +2377,10 @@ semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu
   qu'un contexte (« pour la cuisson », « à volonté »).
 - **Aucun exemple rempli** dans un prompt qui n'en a pas besoin : le modèle recopiait la
   réponse d'exemple, sa valeur de confiance comprise.
+- **Une valeur hors liste est absente** : la protéine et le féculent se lisent en liste
+  blanche (`parseMainProtein`, `parseMainStarch`), variantes d'écriture seules (accent,
+  pluriel, ligature). « veau » ou « poulet » ne deviennent ni « boeuf » ni « volaille » ; le
+  prompt demande une chaîne vide pour ce qui n'entre pas dans la liste.
 - **Exiger une preuve vérifiable** plutôt qu'une justification — les trois mots réellement lus
   se contrôlent d'un coup d'œil, une justification non.
 
@@ -2395,9 +2412,15 @@ pénalité de refus.
    jours / 90 borné entre 0,1 et 1) × 2 pour un plat qui se réchauffe sur un créneau de
    réchauffage × 0,6 par répétition d'une protéine déjà au cycle × facteur de note (0,5 de 4
    à 6, 1,5 à partir de 8) × facteur de refus (`refusalFactor` : 0,5 si l'appelant a refusé
-   la recette dans les 21 derniers jours, 0,25 à partir de 3 refus ; jamais une exclusion).
-   La protéine se lit dans `dishTypes` (`proteinOf` : viande,
-   volaille, poisson, fruits de mer, végétarien, inconnue).
+   la recette dans les 21 derniers jours, 0,25 à partir de 3 refus ; jamais une exclusion)
+   × 0,5 si le féculent du plat est celui d'un créneau voisin (`STARCH_REPEAT_FACTOR`,
+   `isStarchRepeat` : veille ou lendemain, recette déjà assignée ou premier plat classé du
+   créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas).
+   La protéine se lit dans `mainProtein` d'abord (`proteinOf` : le tag `main_protein`, envoyé
+   par le client, relu en liste blanche), puis dans `dishTypes` en repli (viande, volaille,
+   poisson, fruits de mer, végétarien, inconnue). Le féculent se lit dans `mainStarch`
+   (`starchOf`). La justification produite par le code cite la protéine lue ; le prompt
+   décrit chaque candidat avec sa protéine et son féculent quand ils sont connus.
 3. **Tirage pondéré sans remise** (`weightedOrder`, Efraimidis–Spirakis, graine tirée par
    `crypto`) : deux générations ne rendent pas la même liste. Les recettes déjà en tête d'un
    autre créneau passent après les autres. La tête couvre au moins trois protéines quand la
@@ -3069,7 +3092,8 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
-| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` sans marqueur reçoit le marqueur seul, sans appel. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
@@ -3449,7 +3473,7 @@ Functions.
 | `meal_storage_rules.json` | seuils d'hygiène (constantes) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, paliers Vision — serveur seul | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
-| `meal_roles.json` | vocabulaire des rôles dans un repas | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
+| `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux, et des rôles qui portent ces deux derniers ; la section `unsafe_keys` (clés héritées du prototype) est serveur seul | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 
 ### Déploiement automatique (GitHub Actions)

@@ -308,7 +308,8 @@
     "refusal_repeat_threshold": 3,
     "refusal_repeat_factor": 0.25,
     "refusal_max_entries": 300,
-    "refusal_future_tolerance_days": 1
+    "refusal_future_tolerance_days": 1,
+    "starch_repeat_factor": 0.5
   },
   "protein_of": [
     {
@@ -334,7 +335,72 @@
       "expected": "volaille",
       "why": "volaille l'emporte sur viande, plus précis"
     },
-    { "dish_types": [], "expected": "inconnue", "why": "sans type" }
+    { "dish_types": [], "expected": "inconnue", "why": "sans type" },
+    {
+      "main_protein": "boeuf",
+      "dish_types": ["volaille"],
+      "expected": "boeuf",
+      "why": "le tag main_protein l'emporte sur dish_types"
+    },
+    {
+      "main_protein": "oeuf",
+      "dish_types": [],
+      "expected": "oeuf",
+      "why": "le tag seul suffit"
+    },
+    {
+      "main_protein": "legumineuses",
+      "dish_types": ["Végétarien"],
+      "expected": "legumineuses",
+      "why": "légumineuses : plus précis que végétarien"
+    },
+    {
+      "main_protein": "lapin",
+      "dish_types": ["volaille"],
+      "expected": "volaille",
+      "why": "valeur hors liste : ignorée, repli sur dish_types"
+    },
+    {
+      "main_protein": "",
+      "dish_types": ["poisson"],
+      "expected": "poisson",
+      "why": "tag vide : repli sur dish_types"
+    }
+  ],
+  "_starch_of_comment": "Féculent principal (tags.main_starch), lu tel que le client l'envoie. Hors liste ou absent : null, aucune pénalité. « aucun » est une valeur : deux plats sans féculent de suite ne sont pas pénalisés.",
+  "starch_of": [
+    { "main_starch": "riz", "expected": "riz", "why": "valeur admise" },
+    { "main_starch": "pommes_de_terre", "expected": "pommes_de_terre", "why": "clé à tiret bas" },
+    { "main_starch": "quinoa", "expected": null, "why": "hors liste : absent" },
+    { "main_starch": null, "expected": null, "why": "absent" },
+    { "main_starch": "aucun", "expected": "aucun", "why": "pas de féculent : une valeur" }
+  ],
+  "_starch_repeat_comment": "Alternance des féculents. Un plat dont le féculent (hors « aucun ») est celui d'un créneau voisin (veille ou lendemain : recette déjà assignée, ou premier plat classé du créneau précédent) pèse x0,5. Jamais une exclusion.",
+  "starch_repeat": [
+    {
+      "candidate": "riz",
+      "neighbours": ["riz"],
+      "expected": true,
+      "why": "même féculent que la veille"
+    },
+    {
+      "candidate": "pates",
+      "neighbours": ["riz", "semoule"],
+      "expected": false,
+      "why": "féculent différent des deux voisins"
+    },
+    {
+      "candidate": "aucun",
+      "neighbours": ["aucun"],
+      "expected": false,
+      "why": "« aucun » ne se répète pas"
+    },
+    {
+      "candidate": null,
+      "neighbours": ["riz"],
+      "expected": false,
+      "why": "féculent inconnu : pas de pénalité"
+    }
   ],
   "reheat_friendly": [
     {
@@ -586,6 +652,24 @@
       "refusal_factor": 0.25,
       "expected": 0.25,
       "why": "0,5 de fraîcheur x 2 de réchauffage x 0,25 de refus répétés"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "starch_repeat": true,
+      "expected": 0.5,
+      "why": "même féculent qu'un créneau voisin : divisé par deux"
+    },
+    {
+      "days": 45,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 1,
+      "starch_repeat": true,
+      "expected": 0.15,
+      "why": "0,5 de fraîcheur x 0,6 de protéine x 0,5 de féculent"
     }
   ],
   "weighted_order": [
@@ -909,6 +993,22 @@
   ],
   "_code_justification_comment": "Faits produits par le code, jamais par le modèle. Ordre : protéine, durée, note, dernier service, répétition, refus récent.",
   "code_justification": [
+    {
+      "recipe": { "id": "r", "prep": 35, "main_protein": "boeuf", "dish_types": ["volaille"] },
+      "slot": { "date": "2026-10-13", "max_prep": 40 },
+      "last_served": null,
+      "history": true,
+      "expected": "bœuf · 35 min, sous les 40 min du mardi · pas servie ces 3 derniers mois",
+      "why": "la protéine citée est celle du tag main_protein, pas celle de dish_types"
+    },
+    {
+      "recipe": { "id": "r", "main_protein": "legumineuses" },
+      "slot": { "date": "2026-10-13" },
+      "last_served": null,
+      "history": false,
+      "expected": "légumineuses",
+      "why": "libellé accentué"
+    },
     {
       "recipe": { "id": "r", "prep": 35, "dish_types": ["volaille"] },
       "slot": { "date": "2026-10-13", "max_prep": 40 },

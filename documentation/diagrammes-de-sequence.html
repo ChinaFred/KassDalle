@@ -724,8 +724,8 @@ sequenceDiagram
 
   opt tags.meal_role absent
     TR->>M: suggestMealRole (inline_meal_role_classification)
-    M-->>TR: rôle, contains, suggested_sides, ou aucun rôle
-    TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at
+    M-->>TR: rôle, contains, suggested_sides, main_protein, main_starch, ou aucun rôle
+    TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at,<br/>main_protein et main_starch s'ils sont connus
   end
 
   alt mise à jour sans changement d'entrée (ingrédients, portions, page_type, raw_cooklang)
@@ -945,8 +945,8 @@ sequenceDiagram
     FS-->>TR: onWrite recipes/id
     Note over CF,TR: generateRecipeFn ne demande pas le rôle dans un repas
     TR->>G: suggestMealRole (inline_meal_role_classification)
-    G-->>TR: rôle, contains, suggested_sides
-    TR->>FS: tags.meal_role, puis courses et nutrition (séquence 06)
+    G-->>TR: rôle, contains, suggested_sides, main_protein, main_starch
+    TR->>FS: tags.meal_role (et protéine, féculent), puis courses et nutrition (séquence 06)
   end
 </pre>
       </div>
@@ -1688,12 +1688,12 @@ sequenceDiagram
   B->>U: où chercher ? mes recettes, mes brouillons,<br/>la famille, inventer si rien ne convient
   U-->>B: périmètre choisi
   B->>FS: lit les repas de la fenêtre de variété
-  B->>SP: résumés de recettes (portions comprises), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
+  B->>SP: résumés de recettes (portions, mainProtein et mainStarch compris), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
   SP->>PL: applyRecentlyServed puis preselect
   PL->>PL: filtres durs : rôle, prépa max, repos, note ≤ 3, écartées, déjà au cycle
-  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>(×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
+  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
   PL-->>SP: listes classées par créneau (5 plats, 3 entrées, 3 desserts en tête, 15 plats gardés)
   SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées
   SP->>SP: coût plafond (grille en vigueur, taux de la facture)
@@ -1752,7 +1752,8 @@ sequenceDiagram
         choisit parmi eux ; ce qu'il rend hors liste est remplacé par le code et compté.
         <span class="expect">
           <b><code>planning_slot_rules.json</code> verrouille la présélection.</b> Filtres durs,
-          note de fraîcheur, note personnelle, tirage pondéré, répartition par protéine, lecture
+          note de fraîcheur, note personnelle, tirage pondéré, répartition par protéine, alternance
+          des féculents, lecture
           de la réponse, plafond de conceptions : testés par <code>gemini/planning.ts</code>
           uniquement. Le client ne note rien : il filtre la liste reçue.
         </span>
@@ -2325,7 +2326,7 @@ sequenceDiagram
 
   FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
   T2->>M: transforme la transcription en CookLang
-  M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides)
+  M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides,<br/>main_protein, main_starch)
 
   FN->>CF: compare passe 2 à passe 1 — aucun appel
   alt rupture

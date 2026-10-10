@@ -16,11 +16,18 @@ import path from "node:path";
 
 import {
   EMPTY_MEAL_ROLE_FIELDS,
+  MAIN_PROTEINS,
+  MAIN_STARCHES,
   MEAL_ROLES,
+  ROLES_WITH_MAIN_INGREDIENTS,
   needsSide,
   normalizeRoleKey,
   parseMealContains,
   parseMealRole,
+  mainIngredientsPatch,
+  parseMainProtein,
+  parseMainProteinStarch,
+  parseMainStarch,
   parseMealRoleFields,
   parseSuggestedSides,
 } from "../gemini/mealRole";
@@ -96,6 +103,43 @@ describe("accompagnements suggérés", () => {
   });
 });
 
+describe("protéine et féculent principaux", () => {
+  test("les valeurs admises passent, accent, casse et ligature compris", () => {
+    assert.equal(parseMainProtein("boeuf"), "boeuf");
+    assert.equal(parseMainProtein("Bœuf"), "boeuf");
+    assert.equal(parseMainProtein("Fruits de mer"), "fruits_de_mer");
+    assert.equal(parseMainProtein("œufs"), "oeuf");
+    assert.equal(parseMainProtein("Végétarien"), "vegetarien");
+    assert.equal(parseMainProtein("légumineuses"), "legumineuses");
+    assert.equal(parseMainStarch("Pâtes"), "pates");
+    assert.equal(parseMainStarch("pommes de terre"), "pommes_de_terre");
+    assert.equal(parseMainStarch("aucun"), "aucun");
+  });
+
+  test("une valeur hors liste ne se range pas dans une valeur voisine", () => {
+    assert.equal(parseMainProtein("veau"), null);
+    assert.equal(parseMainProtein("poulet"), null);
+    assert.equal(parseMainProtein("viande"), null);
+    assert.equal(parseMainStarch("quinoa"), null);
+    assert.equal(parseMainStarch("polenta"), null);
+    assert.equal(parseMainProtein(3), null);
+    assert.equal(parseMainStarch(undefined), null);
+  });
+
+  test("lecture sans rôle : pour le backfill, dont le rôle est déjà connu", () => {
+    assert.deepEqual(parseMainProteinStarch({ main_protein: "porc", main_starch: "riz" }), {
+      mainProtein: "porc",
+      mainStarch: "riz",
+      mainIngredientsChecked: true,
+    });
+    assert.deepEqual(parseMainProteinStarch({ main_protein: "veau" }), {
+      mainProtein: null,
+      mainStarch: null,
+      mainIngredientsChecked: true,
+    });
+  });
+});
+
 describe("lecture d'une réponse", () => {
   test("sans rôle reconnu, rien n'est gardé", () => {
     assert.deepEqual(
@@ -104,12 +148,23 @@ describe("lecture d'une réponse", () => {
     );
   });
 
-  test("un dessert ne porte pas d'accompagnement", () => {
-    assert.deepEqual(parseMealRoleFields({ meal_role: "dessert", suggested_sides: ["riz"] }), {
-      mealRole: "dessert",
-      contains: [],
-      suggestedSides: [],
-    });
+  test("un dessert ne porte ni accompagnement, ni protéine, ni féculent", () => {
+    assert.deepEqual(
+      parseMealRoleFields({
+        meal_role: "dessert",
+        suggested_sides: ["riz"],
+        main_protein: "oeuf",
+        main_starch: "pain",
+      }),
+      {
+        mealRole: "dessert",
+        contains: [],
+        suggestedSides: [],
+        mainProtein: null,
+        mainStarch: null,
+        mainIngredientsChecked: false,
+      },
+    );
   });
 
   test("un plat garde tout", () => {
@@ -118,9 +173,47 @@ describe("lecture d'une réponse", () => {
         meal_role: "Plat",
         contains: ["proteine"],
         suggested_sides: ["riz", "pommes vapeur"],
+        main_protein: "volaille",
+        main_starch: "aucun",
       }),
-      { mealRole: "plat", contains: ["proteine"], suggestedSides: ["riz", "pommes vapeur"] },
+      {
+        mealRole: "plat",
+        contains: ["proteine"],
+        suggestedSides: ["riz", "pommes vapeur"],
+        mainProtein: "volaille",
+        mainStarch: "aucun",
+        mainIngredientsChecked: true,
+      },
     );
+  });
+
+  test("un accompagnement garde protéine et féculent, pas de suggestion", () => {
+    assert.deepEqual(
+      parseMealRoleFields({
+        meal_role: "accompagnement",
+        contains: ["feculent"],
+        main_protein: "vegetarien",
+        main_starch: "pommes de terre",
+      }),
+      {
+        mealRole: "accompagnement",
+        contains: ["feculent"],
+        suggestedSides: [],
+        mainProtein: "vegetarien",
+        mainStarch: "pommes_de_terre",
+        mainIngredientsChecked: true,
+      },
+    );
+  });
+
+  test("une protéine hors liste est absente, le reste passe", () => {
+    const out = parseMealRoleFields({
+      meal_role: "plat",
+      main_protein: "veau",
+      main_starch: "riz",
+    });
+    assert.equal(out.mainProtein, null);
+    assert.equal(out.mainStarch, "riz");
   });
 });
 
@@ -151,6 +244,81 @@ describe("appelle un accompagnement", () => {
   });
 });
 
+describe("nom d'une propriété héritée", () => {
+  const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as { unsafe_keys: string[] };
+  for (const key of fixture.unsafe_keys) {
+    test(`« ${key} » est hors liste partout`, () => {
+      assert.equal(parseMealRole(key), null);
+      assert.deepEqual(parseMealContains([key]), []);
+      assert.equal(parseMainProtein(key), null);
+      assert.equal(parseMainStarch(key), null);
+    });
+  }
+});
+
+describe("protéine et féculent : la question a-t-elle reçu une réponse ?", () => {
+  test("une valeur hors liste est une réponse : la recette est examinée", () => {
+    const out = parseMealRoleFields({ meal_role: "plat", main_protein: "veau", main_starch: "" });
+    assert.equal(out.mainProtein, null);
+    assert.equal(out.mainIngredientsChecked, true);
+    assert.deepEqual(parseMainProteinStarch({ main_protein: "lapin", main_starch: "polenta" }), {
+      mainProtein: null,
+      mainStarch: null,
+      mainIngredientsChecked: true,
+    });
+  });
+
+  test("deux chaînes vides ou des clés absentes : pas de réponse", () => {
+    assert.equal(
+      parseMainProteinStarch({ main_protein: "", main_starch: " " }).mainIngredientsChecked,
+      false,
+    );
+    assert.equal(parseMainProteinStarch({}).mainIngredientsChecked, false);
+    assert.equal(parseMainProteinStarch({ main_protein: 3 }).mainIngredientsChecked, false);
+  });
+
+  test("un dessert n'est jamais marqué examiné", () => {
+    assert.equal(
+      parseMealRoleFields({ meal_role: "dessert", main_protein: "oeuf" }).mainIngredientsChecked,
+      false,
+    );
+  });
+});
+
+describe("backfill : seuls les champs absents sont écrits", () => {
+  test("recette vide : protéine et féculent", () => {
+    assert.deepEqual(mainIngredientsPatch({}, { mainProtein: "porc", mainStarch: "riz" }), {
+      main_protein: "porc",
+      main_starch: "riz",
+    });
+  });
+
+  test("féculent déjà posé à la main : gardé", () => {
+    assert.deepEqual(
+      mainIngredientsPatch(
+        { main_starch: "semoule" },
+        { mainProtein: "agneau", mainStarch: "riz" },
+      ),
+      { main_protein: "agneau" },
+    );
+  });
+
+  test("protéine déjà posée : gardée ; valeur vide en base : remplacée", () => {
+    assert.deepEqual(
+      mainIngredientsPatch(
+        { main_protein: "boeuf", main_starch: "" },
+        { mainProtein: "porc", mainStarch: "pates" },
+      ),
+      { main_starch: "pates" },
+    );
+  });
+
+  test("réponse hors liste : rien à écrire hors le marqueur", () => {
+    assert.deepEqual(mainIngredientsPatch({}, { mainProtein: null, mainStarch: null }), {});
+  });
+});
+
 describe("fixture partagée avec le client", () => {
   // Le client propose ces rôles dans une liste et les affiche en français ;
   // un rôle de plus ici sans son jumeau là-bas se choisirait au backfill et ne
@@ -159,5 +327,19 @@ describe("fixture partagée avec le client", () => {
     const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
     const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as { roles: string[] };
     assert.deepEqual([...MEAL_ROLES], fixture.roles);
+  });
+
+  // Le client affiche ces valeurs dans « Catégorisation » ; une clé de plus
+  // ici sans son libellé là-bas s'afficherait sous sa forme technique.
+  test("protéines, féculents et rôles qui les portent : mêmes listes que côté client", () => {
+    const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
+      main_proteins: string[];
+      main_starches: string[];
+      roles_with_main_ingredients: string[];
+    };
+    assert.deepEqual([...MAIN_PROTEINS], fixture.main_proteins);
+    assert.deepEqual([...MAIN_STARCHES], fixture.main_starches);
+    assert.deepEqual([...ROLES_WITH_MAIN_INGREDIENTS], fixture.roles_with_main_ingredients);
   });
 });

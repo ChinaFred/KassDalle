@@ -6,6 +6,7 @@ import '../data/currency_rate_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 import '../domain/data_quality_report.dart';
+import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
@@ -111,4 +112,13 @@ final recipeRolesBackfillReportProvider =
       return ref
           .watch(backfillReportsRepositoryProvider)
           .watchRecipeRolesReport();
+    });
+
+/// Dernier compte rendu du backfill « Protéine et féculent des plats », lu en
+/// continu depuis son point de contrôle. `null` tant qu'aucun passage n'a fini.
+final recipeProteinBackfillReportProvider =
+    StreamProvider.autoDispose<RecipeProteinBackfillReport?>((ref) {
+      return ref
+          .watch(backfillReportsRepositoryProvider)
+          .watchRecipeProteinReport();
     });
