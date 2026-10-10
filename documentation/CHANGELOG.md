@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
-### v0.23.19 — technique
+### v0.23.20 — technique
 
 #### Contrôle de version : deux titres permis, garde-fous signalés
 
