@@ -2163,3 +2163,56 @@ describe("planning_runs — écrites par le serveur seul", () => {
     await assertFails(db("admin").doc(own).delete());
   });
 });
+
+// ── users/{uid}/preferences/planning_refusals ────────────────────────────
+
+describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
+  const own = `users/${READER}/preferences/planning_refusals`;
+  const others = `users/${OTHER}/preferences/planning_refusals`;
+  const entry = () => ({ refused_at: new Date("2026-10-09T12:00:00Z"), count: 1 });
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [others]: { entries: { r1: entry() } },
+    });
+  });
+
+  it("le titulaire écrit, lit et efface ses refus", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(own)
+        .set({ entries: { r1: entry() }, updated_at: serverTimestamp() }),
+    );
+    await assertSucceeds(db("reader").doc(own).get());
+    await assertSucceeds(db("reader").doc(own).delete());
+  });
+
+  it("un autre compte ne lit, n'écrit ni n'efface les refus d'un autre", async () => {
+    await assertFails(db("reader").doc(others).get());
+    await assertFails(db("reader").doc(others).set({ entries: {} }));
+    await assertFails(db("reader").doc(others).delete());
+  });
+
+  it("un champ hors forme est refusé", async () => {
+    await assertFails(db("reader").doc(own).set({ entries: {}, role: "admin" }));
+    await assertFails(db("reader").doc(own).set({ entries: "x" }));
+    await assertFails(db("reader").doc(own).set({ entries: {}, updated_at: "hier" }));
+  });
+
+  it("plus de 300 entrées sont refusées", async () => {
+    const entries = {};
+    for (let i = 0; i < 301; i++) entries[`r${i}`] = entry();
+    await assertFails(db("reader").doc(own).set({ entries }));
+  });
+
+  it("un administrateur lit les refus d'un autre, sans y écrire une forme invalide", async () => {
+    await assertSucceeds(db("admin").doc(others).get());
+    await assertFails(db("admin").doc(others).set({ entries: "x" }));
+  });
+
+  it("les autres préférences du titulaire gardent leur règle", async () => {
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}/preferences/book_order`).set({ order: ["b1"] }),
+    );
+  });
+});

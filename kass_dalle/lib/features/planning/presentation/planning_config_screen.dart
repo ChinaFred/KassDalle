@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/presentation/auth_providers.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_refusals.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -546,6 +548,143 @@ class _CalendarSection extends StatelessWidget {
   }
 }
 
+/// « Plats refusés récemment » : combien de plats écartés pèsent moins dans
+/// les prochaines générations, et « Oublier mes refus ».
+class _RefusalsTile extends ConsumerStatefulWidget {
+  const _RefusalsTile();
+
+  @override
+  ConsumerState<_RefusalsTile> createState() => _RefusalsTileState();
+}
+
+class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
+  bool _clearing = false;
+
+  static String _plats(int n) => n > 1 ? '$n plats' : '$n plat';
+
+  Future<void> _confirmForget(int count) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Oublier vos refus ?'),
+        content: Text(
+          count > 1
+              ? 'Les $count plats que vous avez écartés pourront revenir dès '
+                    'la prochaine génération. Vos repas déjà planifiés ne '
+                    'changent pas.'
+              : 'Le plat que vous avez écarté pourra revenir dès la '
+                    'prochaine génération. Vos repas déjà planifiés ne '
+                    'changent pas.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Oublier'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _forget(count);
+  }
+
+  void _forgetFailed(int count) {
+    context.showErrorSnackBar(
+      'Les refus n\'ont pas été effacés.',
+      action: SnackBarAction(
+        label: 'Réessayer',
+        onPressed: () {
+          if (mounted) _forget(count);
+        },
+      ),
+    );
+  }
+
+  Future<void> _forget(int count) async {
+    // Même source que le compte du compteur (`planningActiveRefusalsProvider`).
+    final uid = ref.read(appUserProvider).value?.uid;
+    if (uid == null) {
+      reportUnexpectedError(
+        feature: 'planningConfigScreen.forgetRefusals',
+        error: StateError('Compte introuvable au moment d\'oublier les refus'),
+      );
+      _forgetFailed(count);
+      return;
+    }
+    setState(() => _clearing = true);
+    try {
+      await ref.read(planningRefusalsRepositoryProvider).clear(uid);
+      if (!mounted) return;
+      ref.invalidate(planningActiveRefusalsProvider);
+      context.showSuccessSnackBar(
+        count > 1
+            ? 'Refus oubliés : $count plats peuvent revenir.'
+            : 'Refus oublié : 1 plat peut revenir.',
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningConfigScreen.forgetRefusals',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+      );
+      if (!mounted) return;
+      _forgetFailed(count);
+    } finally {
+      if (mounted) setState(() => _clearing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final countAsync = ref.watch(planningActiveRefusalsProvider);
+    final String subtitle;
+    Widget? action;
+    if (_clearing) {
+      subtitle = 'Effacement…';
+    } else if (countAsync.isLoading) {
+      subtitle = 'Chargement…';
+    } else if (countAsync.hasError) {
+      subtitle = 'Liste des refus illisible';
+      action = TextButton(
+        onPressed: () => ref.invalidate(planningActiveRefusalsProvider),
+        child: const Text('Réessayer'),
+      );
+    } else {
+      final count = countAsync.value ?? 0;
+      if (count == 0) {
+        subtitle = 'Aucun plat refusé ces $kRefusalPenaltyDays derniers jours';
+      } else {
+        subtitle =
+            '${_plats(count)} proposé${count > 1 ? 's' : ''} moins souvent '
+            'pendant $kRefusalPenaltyDays jours';
+        action = TextButton(
+          onPressed: () => _confirmForget(count),
+          child: const Text('Oublier mes refus'),
+        );
+      }
+    }
+    // Le bouton sous le sous-titre, pas en `trailing` : à 200 % de taille de
+    // texte, un bouton à droite écrase le titre et le sous-titre.
+    return ListTile(
+      title: const Text('Plats refusés récemment'),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(subtitle),
+          if (action != null)
+            Align(alignment: AlignmentDirectional.centerStart, child: action),
+        ],
+      ),
+      isThreeLine: action != null,
+    );
+  }
+}
+
 class _GeneralSection extends StatelessWidget {
   final PlanningPreferences prefs;
   final ValueChanged<PlanningPreferences> onChanged;
@@ -639,6 +778,10 @@ class _GeneralSection extends StatelessWidget {
             ],
           ),
         ),
+        const Divider(height: 1),
+        // La mémoire des refus : une action immédiate, indépendante du
+        // bouton « Enregistrer ».
+        const _RefusalsTile(),
         const Divider(height: 1),
         ListTile(
           title: const Text('Début du cycle'),

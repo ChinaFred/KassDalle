@@ -1668,7 +1668,8 @@ sequenceDiagram
       suggestion » ne fait aucun appel de modèle. Les conceptions automatiques sont plafonnées
       par génération.
       <span class="path">batch_planning_screen.dart → suggestMealPlanFn → gemini/planning.ts ·
-      gemini/planningStore.ts → users/{uid}/planning_runs · planned_meals</span>
+      gemini/planningStore.ts → users/{uid}/planning_runs · planned_meals ·
+      users/{uid}/preferences/planning_refusals</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1688,11 +1689,11 @@ sequenceDiagram
   U-->>B: périmètre choisi
   B->>FS: lit les repas de la fenêtre de variété
   B->>SP: résumés de recettes (portions comprises), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
-  SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings (appelant seul)
-  FS-->>SP: politique, dernière date servie par recette, notes
+  SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
+  FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
   SP->>PL: applyRecentlyServed puis preselect
   PL->>PL: filtres durs : rôle, prépa max, repos, note ≤ 3, écartées, déjà au cycle
-  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
+  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>(×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
   PL-->>SP: listes classées par créneau (5 plats, 3 entrées, 3 desserts en tête, 15 plats gardés)
   SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées
   SP->>SP: coût plafond (grille en vigueur, taux de la facture)
@@ -1738,10 +1739,11 @@ sequenceDiagram
   alt rien à proposer
     B->>U: « Plus d'autre recette à proposer pour ce créneau. »<br/>Choisir une recette · Concevoir avec l'IA (sans runId)
   else
-    B->>B: recette posée, « Choisie par Kass'Dalle », l'ancienne écartée
+    B->>B: recette posée, « Choisie par Kass'Dalle », l'ancienne écartée<br/>(refus retenu si elle avait été proposée)
   end
   U->>B: Valider le planning
   B->>FS: planned_meals — recette, justification, choice_source
+  B->>FS: transaction preferences/planning_refusals — refus de la session,<br/>expirés retirés, count +1 ou remis à 1 (best-effort)
 </pre>
       </div>
       <figcaption>
@@ -1753,6 +1755,15 @@ sequenceDiagram
           note de fraîcheur, note personnelle, tirage pondéré, répartition par protéine, lecture
           de la réponse, plafond de conceptions : testés par <code>gemini/planning.ts</code>
           uniquement. Le client ne note rien : il filtre la liste reçue.
+        </span>
+        <span class="expect">
+          <b>Un refus pèse sur les générations suivantes, pour son auteur seul.</b> Une recette
+          proposée (IA, règles, conception) écartée par « Autre suggestion », « Changer la
+          recette » ou « Tout régénérer » entre dans
+          <code>users/{uid}/preferences/planning_refusals</code> à la validation du cycle, ou
+          au remplacement sur un repas déjà planifié. « Réessayer avec l'IA » et « Remettre à
+          blanc » ne comptent pas. La justification dit « refusée récemment » quand la pénalité
+          s'applique.
         </span>
         <span class="expect">
           <b>Une recette choisie par le code ne se présente pas comme un choix de l'IA.</b> Le

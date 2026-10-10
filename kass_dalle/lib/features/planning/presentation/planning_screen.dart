@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +16,7 @@ import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/calendar_event_description.dart';
 import '../domain/meal_candidates.dart';
 import '../domain/meal_choice_source.dart';
+import '../domain/planning_refusals.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_idea.dart';
 import '../domain/meal_recipe_location.dart';
@@ -133,6 +136,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       return null;
     }
     return current;
+  }
+
+  /// La recette remplacée sur [meal] compte comme un refus si elle avait été
+  /// proposée (IA, règles, conception) et non choisie à la main. Appelé par
+  /// « Autre suggestion », « Changer la recette » et la conception qui
+  /// remplace ; pas par « Remettre à blanc ». Jamais bloquant.
+  void _recordRefusal(PlannedMeal meal, String? newRecipeId) {
+    final ousted = _oustedBy(meal, newRecipeId);
+    final uid = ref.read(planningRepositoryProvider)?.uid;
+    if (ousted == null || uid == null) return;
+    if (!countsAsRefusal(meal.choiceSource)) return;
+    unawaited(
+      ref.read(planningRefusalsRepositoryProvider).record(uid, [ousted]),
+    );
   }
 
   /// Les accompagnements que le programme pose sur [recipe] — féculent et
@@ -317,6 +334,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
       components: _composeComponents(recipe),
       choiceSource: MealChoiceSource.manual,
     );
+    _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
   }
 
   Future<void> _changeTime(PlannedMeal meal) async {
@@ -667,6 +685,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         choiceSource: suggestion.source,
         justification: suggestion.justification,
       );
+      _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
       if (mounted) {
         context.showSuccessSnackBar('« ${recipe.titre} » proposée');
       }
@@ -766,6 +785,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         choiceSource: MealChoiceSource.concept,
         justification: suggestion.justification,
       );
+      _recordRefusal(meal, id);
       if (mounted) {
         context.showSuccessSnackBar(
           'Recette conçue et enregistrée dans vos brouillons',

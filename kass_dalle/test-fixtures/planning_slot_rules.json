@@ -1,5 +1,5 @@
 {
-  "_comment": "Règles de créneau du planning — serveur seul (functions/src/tests/planningSlotRules.test.ts). Un écart ne casse aucun écran : il laisse passer un dessert en plat, ou décale un jour de préparation. Ajouter le cas ici AVANT de corriger.",
+  "_comment": "Règles de créneau du planning — serveur (functions/src/tests/planningSlotRules.test.ts) ; le client rejoue les trois constantes de la mémoire des refus (refusal_penalty_days, refusal_max_entries, refusal_future_tolerance_days) et le prédicat d'activité d'un refus, cas actif / expiré de la section refusal_factor (test/planning_refusals_test.dart). Un écart ne casse aucun écran : il laisse passer un dessert en plat, ou décale un jour de préparation. Ajouter le cas ici AVANT de corriger.",
   "_meal_format_comment": "Le format d'un créneau (mealFormatOf) : ce qu'il demande autour du plat. Absent ou inconnu = plat seul — un format deviné vaudrait un dessert que personne n'a demandé. C'est le format qui décide d'un dessert, et plus un mot-clé lu dans une contrainte en prose.",
   "meal_format": [
     {
@@ -302,7 +302,13 @@
     "rating_low_factor": 0.5,
     "rating_high_min": 8,
     "rating_high_factor": 1.5,
-    "concept_run_ttl_hours": 6
+    "concept_run_ttl_hours": 6,
+    "refusal_penalty_days": 21,
+    "refusal_factor": 0.5,
+    "refusal_repeat_threshold": 3,
+    "refusal_repeat_factor": 0.25,
+    "refusal_max_entries": 300,
+    "refusal_future_tolerance_days": 1
   },
   "protein_of": [
     {
@@ -497,6 +503,21 @@
     { "rating": 10, "expected": 1.5, "why": "note maximale" },
     { "rating": 11, "expected": 1, "why": "hors bornes : ignorée" }
   ],
+  "_refusal_factor_comment": "Mémoire des refus (users/{uid}/preferences/planning_refusals). Âge du dernier refus en jours, nombre de refus. Une entrée de plus de 21 jours, ou datée de plus d'un jour dans le futur, est ignorée ; dans les 21 jours, poids x0,5, et x0,25 à partir de 3 refus. Jamais une exclusion. Le client rejoue refusal_penalty_days, refusal_max_entries, refusal_future_tolerance_days et l'activité de chaque cas (expected différent de 1 = actif) dans planning_refusals_test.dart : il élague le document à l'écriture et compte les refus actifs.",
+  "refusal_factor": [
+    { "age_days": null, "count": null, "expected": 1, "why": "jamais refusée : inchangé" },
+    { "age_days": 0, "count": 1, "expected": 0.5, "why": "refusée aujourd'hui : divisé par deux" },
+    { "age_days": 20, "count": 2, "expected": 0.5, "why": "deux refus dans les 21 jours : divisé par deux" },
+    { "age_days": 21, "count": 1, "expected": 0.5, "why": "21 jours pile : encore active" },
+    { "age_days": 21.5, "count": 1, "expected": 1, "why": "plus de 21 jours : ignorée" },
+    { "age_days": 3, "count": 3, "expected": 0.25, "why": "trois refus : pénalité doublée" },
+    { "age_days": 3, "count": 7, "expected": 0.25, "why": "au-delà de trois : pas plus fort, jamais exclue" },
+    { "age_days": 30, "count": 5, "expected": 1, "why": "refus répétés mais expirés : ignorée" },
+    { "age_days": 2, "count": 0, "expected": 0.5, "why": "compte illisible : un refus" },
+    { "age_days": -1, "count": 1, "expected": 0.5, "why": "un jour dans le futur au plus (horloge du téléphone) : active" },
+    { "age_days": -1.5, "count": 1, "expected": 1, "why": "plus d'un jour dans le futur : ignorée" },
+    { "age_days": -30, "count": 9, "expected": 1, "why": "date lointaine dans le futur : ignorée, elle ne pèserait jamais à expiration" }
+  ],
   "weight": [
     {
       "days": null,
@@ -547,6 +568,24 @@
       "rating": 5,
       "expected": 0.5,
       "why": "note moyenne : divisé par deux"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "refusal_factor": 0.5,
+      "expected": 0.5,
+      "why": "refusée récemment : divisé par deux"
+    },
+    {
+      "days": 45,
+      "reheat_slot": true,
+      "reheat_friendly": true,
+      "protein_repeats": 0,
+      "refusal_factor": 0.25,
+      "expected": 0.25,
+      "why": "0,5 de fraîcheur x 2 de réchauffage x 0,25 de refus répétés"
     }
   ],
   "weighted_order": [
@@ -697,6 +736,34 @@
       "why": "un plat reste au corpus sans être mal noté : la note ne se relâche pas, le créneau reste sans candidat"
     },
     {
+      "slots": [{ "date": "2026-10-12" }],
+      "recipes": [{ "id": "p1" }],
+      "refusals": { "p1": { "age_days": 2, "count": 5 } },
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          { "slot": 0, "plats": ["p1"], "repeat": [], "relaxed": [], "refused": ["p1"] }
+        ]
+      },
+      "why": "seule recette, refusée cinq fois : proposée quand même, jamais exclue, et le fait est dit"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }],
+      "recipes": [{ "id": "p1" }, { "id": "p2" }],
+      "refusals": { "p1": { "age_days": 25, "count": 4 }, "p2": { "age_days": 1, "count": 1 } },
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          { "slot": 0, "plats": ["p1", "p2"], "repeat": [], "relaxed": [], "refused": ["p2"] }
+        ]
+      },
+      "why": "refus expiré : plus rien n'est dit ; refus récent : dit"
+    },
+    {
       "slots": [{ "date": "2026-10-12", "dismissed": ["p1"] }],
       "recipes": [{ "id": "p1" }],
       "policy": {},
@@ -840,7 +907,7 @@
       "why": "réponse inexploitable : tout par le code"
     }
   ],
-  "_code_justification_comment": "Faits produits par le code, jamais par le modèle. Ordre : protéine, durée, note, dernier service, répétition.",
+  "_code_justification_comment": "Faits produits par le code, jamais par le modèle. Ordre : protéine, durée, note, dernier service, répétition, refus récent.",
   "code_justification": [
     {
       "recipe": { "id": "r", "prep": 35, "dish_types": ["volaille"] },
@@ -892,6 +959,24 @@
       "history": true,
       "expected": "servie aujourd'hui",
       "why": "servie le jour même : « aujourd'hui », jamais « il y a 0 jour »"
+    },
+    {
+      "recipe": { "id": "r", "prep": 20 },
+      "slot": { "date": "2026-10-13" },
+      "last_served": null,
+      "history": true,
+      "refused": true,
+      "expected": "20 min · pas servie ces 3 derniers mois · refusée récemment",
+      "why": "refus dans les 21 jours : dit en dernier"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-13" },
+      "last_served": null,
+      "history": false,
+      "refused": true,
+      "expected": "refusée récemment",
+      "why": "historique illisible : le refus se dit seul"
     }
   ],
   "resize": [

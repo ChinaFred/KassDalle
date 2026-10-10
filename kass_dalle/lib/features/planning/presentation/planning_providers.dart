@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_report_service.dart';
+import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../data/planning_refusals_repository.dart';
 import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
@@ -15,6 +17,7 @@ import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_refusals.dart';
 import '../domain/recipe_search_scope.dart';
 
 // ── Repository ─────────────────────────────────────────────────────────────────
@@ -480,4 +483,34 @@ final planningPreferencesOnceProvider =
 
 final planningAiServiceProvider = Provider<PlanningAiService>((ref) {
   return PlanningAiService(ref.watch(geminiServiceProvider));
+});
+
+// ── Mémoire des refus ─────────────────────────────────────────────────────────
+
+final planningRefusalsRepositoryProvider = Provider<PlanningRefusalsRepository>(
+  (ref) => PlanningRefusalsRepository(),
+);
+
+/// Nombre de plats refusés ces [kRefusalPenaltyDays] derniers jours, pour
+/// Préférences du planning. Lu une fois ; invalidé après « Oublier mes
+/// refus ».
+final planningActiveRefusalsProvider = FutureProvider.autoDispose<int>((
+  ref,
+) async {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return 0;
+  final repo = ref.watch(planningRefusalsRepositoryProvider);
+  try {
+    final refusals = await repo.load(uid);
+    return refusals.activeCount(repo.now());
+  } catch (e, stackTrace) {
+    // L'écran dit « Liste des refus illisible » ; le rapport garde la cause.
+    reportUnexpectedError(
+      feature: 'planning.loadRefusals',
+      error: e,
+      stackTrace: stackTrace,
+      userId: uid,
+    );
+    rethrow;
+  }
 });

@@ -4,7 +4,7 @@
  * `planning.ts` reste pur hors `callModel` : la présélection, la validation et
  * les décisions de plafond s'y testent sans Firestore. Ce module porte ce qui
  * touche la base — politique, historique des repas, notes personnelles,
- * document de génération — et rien d'autre.
+ * document de génération, mémoire des refus — et rien d'autre.
  *
  * Aucun SDK lourd : `firebase-admin/firestore` seul, déjà chargé par le reste
  * du bundle.
@@ -18,8 +18,10 @@ import {
   COLL_PLANNED_MEALS,
   COLL_PLANNING_RUNS,
   COLL_RECIPE_RATINGS,
+  COLL_USER_PREFERENCES,
   COLL_USERS,
   PLANNING_POLICY_DOC_ID,
+  PLANNING_REFUSALS_DOC_ID,
 } from "../config";
 import { getUsdToEurRate } from "../ai/budget";
 import { AiPricingUnavailableError, loadAiPricingTable } from "../ai/pricing";
@@ -33,10 +35,12 @@ import {
   planningConceptDecision,
   readPlanningPolicy,
   readRating,
+  readRefusals,
   type ConceptDenialReason,
   type PlanningPolicy,
   type PlanningSlotResult,
   type PlanningSuggestion,
+  type RefusalEntry,
 } from "./planning";
 
 /** Conservation d'un document de génération, par la politique TTL Firestore. */
@@ -156,6 +160,38 @@ export async function readUserRatings(args: {
     });
   }
   return ratings;
+}
+
+/**
+ * Refus actifs de l'appelant — les siens seulement, lus sous son compte.
+ *
+ * Le document est écrit par le client : `readRefusals` le lit comme une
+ * donnée non fiable. Une lecture en échec rend une carte vide : la génération
+ * continue sans pénalité de refus, et `logError` le trace.
+ */
+export async function readUserRefusals(args: {
+  uid: string;
+  nowMs: number;
+  correlationId?: string;
+}): Promise<Map<string, RefusalEntry>> {
+  try {
+    const snap = await getFirestore()
+      .collection(COLL_USERS)
+      .doc(args.uid)
+      .collection(COLL_USER_PREFERENCES)
+      .doc(PLANNING_REFUSALS_DOC_ID)
+      .get();
+    return snap.exists ? readRefusals(snap.data(), args.nowMs) : new Map();
+  } catch (err) {
+    await logError({
+      message: "Planning — mémoire des refus illisible, génération sans pénalité de refus",
+      correlationId: args.correlationId,
+      userId: args.uid,
+      feature: "planning",
+      errorDescription: err instanceof Error ? err.message : String(err),
+    });
+    return new Map();
+  }
 }
 
 /**

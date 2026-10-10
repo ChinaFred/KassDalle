@@ -253,12 +253,13 @@ flowchart LR
     a23(["Exporter vers Google Calendar"])
     a24(["Ajuster mes garnitures"])
     a27(["Demander une autre suggestion"])
+    a28(["Oublier mes refus"])
     a26(["Consulter le texte d'origine&lt;br/&gt;d'une recette traduite"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
     i3(["Classer les résultats"])
-    i4(["Présélectionner les candidats&lt;br/&gt;filtres, fraîcheur, ma note"])
+    i4(["Présélectionner les candidats&lt;br/&gt;filtres, fraîcheur, ma note, mes refus"])
     i5(["Composer le dressage de ce plat"])
     i6(["Calculer la fenêtre de conservation"])
     i7(["Proposer trois idées de repas"])
@@ -266,6 +267,7 @@ flowchart LR
     i9(["Choisir un plat parmi cinq candidats"])
     i10(["Remplir les créneaux sans l'IA"])
     i11(["Recalculer la portée des groupes"])
+    i12(["Retenir le plat refusé&lt;br/&gt;21 jours, sous mon compte"])
   end
 
   LEC --- a1
@@ -313,6 +315,11 @@ flowchart LR
   i10 -.->|"étend : IA muette ou plafond"| a12
   a12 -.->|"créneau sans candidat, 2 au plus"| i8
   a27 -.->|"liste épuisée"| i8
+  a27 -.->|"plat remplacé"| i12
+  a12 -.->|"Tout régénérer"| i12
+  i12 -.->|"chance ÷2, ÷4 dès 3 refus"| i4
+  a28 -.->|"étend : si refus"| a13
+  a28 -.->|"efface"| i12
   a11 -.->|"sa recette"| i5
   a14 -.->|"si absent, sa recette"| i6
   a19 -.->|"inclut"| i7
@@ -359,6 +366,13 @@ flowchart LR
         liste classée. Quand la liste est épuisée, seule « Concevoir avec l'IA » est facturée.
         Chaque plat affiche son origine : choisie par l'IA, par Kass'Dalle, par le lecteur, ou
         conçue par l'IA.
+        <b>Un plat refusé est proposé moins souvent pendant 21 jours</b> : sa chance est divisée
+        par deux, par quatre à partir de 3 refus. Il n'est jamais exclu et reste choisissable à la
+        main. Comptent comme refus « Autre suggestion », « Changer la recette » et « Tout
+        régénérer » ; « Réessayer avec l'IA » après une panne et « Remettre à blanc » n'en sont
+        pas. La mémoire des refus vit sous le compte du lecteur, jamais dans la recette
+        partagée : le refus d'un membre ne change rien pour les autres. « Oublier mes refus »,
+        dans les préférences du planning, l'efface après confirmation.
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
         appel d'IA. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
