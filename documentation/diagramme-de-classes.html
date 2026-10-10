@@ -380,8 +380,16 @@ classDiagram
     +String name
     +String ownerId
     +List~String~ memberIds
+    +List~String~ invitedIds
     +isOwner(uid) bool
     +isMember(uid) bool
+    +isInvited(uid) bool
+  }
+
+  class GroupReach {
+    &lt;&lt;document Firestore, serveur seul&gt;&gt;
+    +List~String~ uids
+    +Timestamp updatedAt
   }
 
   class Book {
@@ -499,6 +507,9 @@ classDiagram
   AppUser "1" --&gt; "1" UserRole
   AppUser "1" --&gt; "0..1" UserProfile : user_profiles/uid
   AppUser "1..*" --o "0..*" FamilyGroup : memberIds
+  AppUser "0..*" --o "0..*" FamilyGroup : invitedIds
+  AppUser "1" --&gt; "0..1" GroupReach : group_reach/uid
+  FamilyGroup ..> GroupReach : syncGroupReach recalcule
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
   Book "0..1" --&gt; "0..*" Recipe : bookId
@@ -517,6 +528,14 @@ classDiagram
         Trois livres système sont reconnus par leur tag interne — <b>Mes créations Kass'Dalle</b>,
         <b>Mes recettes libres</b>, <b>Mes recettes secrètes</b> — et portent une couverture par
         défaut au lieu d'une image téléversée.
+        <b>Un invité n'est pas membre</b> (v0.23.19) : son uid vit dans <code>invitedIds</code>
+        jusqu'à ce qu'il accepte, et passe alors dans <code>memberIds</code>. <b>GroupReach</b> n'a
+        pas de classe Dart : c'est le document <code>group_reach/{uid}</code>, les autres comptes
+        avec qui l'utilisateur partage un groupe, que le serveur seul écrit. Le client le lit en
+        <code>Set&lt;String&gt;</code> (<code>GroupRepository.watchReach</code>) et en tire
+        <code>RecipeViewer.groupPeers</code>, les comptes nommés dans ses requêtes
+        <code>created_by in</code> ; les règles Firestore le relisent pour laisser lire un
+        <code>Book</code> ou une <code>Recipe</code> non privé d'un autre compte.
       </figcaption>
     </figure>
 

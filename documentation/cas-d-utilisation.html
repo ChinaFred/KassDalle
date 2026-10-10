@@ -146,8 +146,11 @@
           <tr><th>Peut…</th><th>pending</th><th>reader</th><th>editor</th><th>admin</th></tr>
         </thead>
         <tbody>
-          <tr><td>Lire les recettes et livres accessibles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire ses livres et recettes, et ceux, non privés, des comptes qui partagent au moins un groupe avec soi — annotations, notes et texte d'origine compris. Un compte hors de ses groupes ne lit rien de soi, et réciproquement</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui, tout</td></tr>
           <tr><td>Lire le livre ou la recette <b>privé</b> d'autrui, ses annotations et ses notes</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Créer un groupe, inviter une personne dans son groupe, annuler l'invitation, retirer un membre — le propriétaire seul, qui reste membre</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Accepter ou refuser une invitation reçue, quitter un groupe dont on n'est pas propriétaire</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Ajouter directement un membre à un groupe, sans son acceptation</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -157,6 +160,7 @@
           <tr><td>Créer des livres, modifier et supprimer les siens (couverture comprise)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer le livre ou la recette d'autrui, changer sa couverture ou ses illustrations — l'écran de modification ouvert par un lien le dit avant toute saisie</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ranger une recette dans le livre d'un autre membre (création, déplacement, import)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Relire en lecture seule les brouillons partagés des membres de ses groupes — tous pour l'admin</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Valider ou supprimer le brouillon d'un autre membre (la relecture et la copie restent ouvertes)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Supprimer son livre — les pages ajoutées par d'autres membres sont conservées et deviennent leurs recettes libres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>) — réservé à l'éditeur et à l'admin, imposé par les règles Firestore ; un lecteur qui ouvre <span class="path">/scan</span> voit que l'import lui est fermé</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -182,6 +186,17 @@
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
       d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
       et l'<code>admin</code>.
+    </span>
+    <span class="expect">
+      <b>Un groupe familial est un lieu de partage</b> (v0.23.19). Un livre ou une recette non
+      privé d'un autre compte ne se lit que si ce compte partage au moins un groupe avec le
+      lecteur ; ses annotations, ses notes et son texte d'origine suivent la recette. Les règles
+      Firestore l'imposent (<code>sharesGroupWith</code>, <code>canReadRecipe</code>) en lisant
+      <code>group_reach/{lecteur}</code>, que le serveur seul écrit. On n'entre dans un groupe
+      qu'en acceptant une invitation : sans cela, ajouter un inconnu à son propre groupe suffisait
+      pour lire ses livres. Un membre qui sort d'un groupe est traité comme un compte supprimé :
+      il ne lit plus les livres du groupe, et le groupe ne lit plus les siens ; il garde ses
+      propres documents. L'<code>admin</code> lit tout.
     </span>
     <span class="expect warn">
       <code>pending</code> n'est pas un rôle diminué, c'est l'absence de rôle : ni lecture, ni
@@ -225,7 +240,9 @@ flowchart LR
     a12(["Planifier toute une semaine"])
     a13(["Régler mes contraintes de planning"])
     a14(["Savoir comment conserver un plat"])
-    a15(["Créer ou rejoindre un groupe familial"])
+    a15(["Créer un groupe familial et y inviter"])
+    a30(["Accepter ou refuser une invitation"])
+    a31(["Quitter un groupe"])
     a16(["Régler mes préférences"])
     a17(["Gérer mon compte et mon nom affiché"])
     a18(["Suivre l'avancement de mes imports"])
@@ -248,6 +265,7 @@ flowchart LR
     i8(["Rédiger une recette conçue par l'IA"])
     i9(["Choisir un plat parmi cinq candidats"])
     i10(["Remplir les créneaux sans l'IA"])
+    i11(["Recalculer la portée des groupes"])
   end
 
   LEC --- a1
@@ -262,6 +280,8 @@ flowchart LR
   LEC --- a12
   LEC --- a13
   LEC --- a15
+  LEC --- a30
+  LEC --- a31
   LEC --- a16
   LEC --- a17
   LEC --- a18
@@ -297,6 +317,8 @@ flowchart LR
   a14 -.->|"si absent, sa recette"| i6
   a19 -.->|"inclut"| i7
   a19 -.->|"idée retenue"| i8
+  a30 -.->|"Accepter"| i11
+  a31 -.->|"inclut"| i11
   i1 --- GEM
   i3 --- GEM
   i9 --- GEM
@@ -342,6 +364,18 @@ flowchart LR
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
         la mention « Traduit de l'… ». Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
+        <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
+        propriétaire cherche une personne par son nom (« Rechercher une personne à inviter… ») et
+        l'invite (« Inviter dans le groupe ») ; il peut annuler tant que l'invitation attend
+        (« Invitations en attente (n) »). L'invité voit un badge sur le chip de son compte et sur
+        « Groupes familiaux » dans le menu, puis « Invitations reçues » en tête de l'écran Groupes.
+        « Accepter » demande une confirmation, « Rejoindre « X » ? », qui dit que les membres
+        verront ses livres et recettes non privés et lui les leurs. « Refuser » part sans
+        confirmation. Un membre autre que le propriétaire peut quitter le groupe ; le propriétaire
+        en reste membre. Accepter, quitter ou être retiré change la portée des groupes,
+        recalculée par le serveur (<code>syncGroupReach</code>) sans appel d'IA : la bibliothèque,
+        la recherche et le planning suivent. Les membres ajoutés directement avant la v0.23.19
+        restent membres.
       </figcaption>
     </figure>
   </section>
@@ -463,8 +497,8 @@ flowchart LR
         <b>Un lot ne valide pas ce que personne n'a relu</b> : un brouillon avec une réserve de
         fidélité, ou vide, reste de côté.
         <span class="expect">
-          <b>Le groupe familial a quitté ce diagramme</b> : le créer, le rejoindre et le quitter
-          sont ouverts au <code>reader</code>, qui peut aussi en être le propriétaire. Il figure
+          <b>Le groupe familial a quitté ce diagramme</b> : le créer, y inviter, accepter
+          une invitation et le quitter sont ouverts au <code>reader</code>, qui peut aussi en être le propriétaire. Il figure
           désormais dans « Cuisiner ».
         </span>
         <b>La normalisation des référentiels est le point de passage obligé de toute écriture</b> :
@@ -574,6 +608,9 @@ flowchart LR
         n'écrit rien : chaque échantillon ouvre l'écran du référentiel, où la correction se fait.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
+        <b>« Calculer la portée des groupes »</b>, dans Backfills, se lance une fois juste après le
+        déploiement de la v0.23.19 : jusque-là, aucun compte ne lit les livres et recettes de sa
+        famille.
         <span class="expect warn">
           <b>Le bac à sable ne figure pas ici, et c'est voulu.</b>
           <span class="path">/admin/sandbox</span> existe et n'est ouvert qu'aux administrateurs,
@@ -606,7 +643,7 @@ flowchart LR
           <tr>
             <td>Firestore Security Rules</td>
             <td><code>request.auth.token.role</code>, repli sur <code>get(users/{uid}).role</code> ; révocation toujours relue sur le document</td>
-            <td>Chaque lecture et chaque écriture de document. Tout ce qui est partagé passe par <code>isApproved()</code></td>
+            <td>Chaque lecture et chaque écriture de document. Tout ce qui est partagé passe par <code>isApproved()</code>. Un livre ou une recette non privé d'un autre compte ne se lit que s'il partage un groupe avec le lecteur (<code>sharesGroupWith</code>, une lecture de <code>group_reach/{lecteur}</code>) ; annotations, notes et texte d'origine suivent la recette par <code>canReadRecipe</code></td>
           </tr>
           <tr>
             <td>Storage Security Rules</td>

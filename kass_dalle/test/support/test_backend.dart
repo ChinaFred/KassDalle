@@ -13,6 +13,7 @@ import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/books/domain/book.dart';
 import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
+import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
@@ -67,6 +68,9 @@ class TestBackend {
     // évite d'ouvrir des flux Firestore sans rapport.
     groupMemberIdsProvider.overrideWith(
       (ref) => const AsyncValue.data(<String>{}),
+    ),
+    myInvitationsProvider.overrideWith(
+      (ref) => Stream.value(const <FamilyGroup>[]),
     ),
     // Le planning et la file de traitement lisent Firestore par des chemins qui
     // leur sont propres ; on les neutralise pour isoler l'écran testé.

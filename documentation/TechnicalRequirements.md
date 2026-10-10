@@ -873,17 +873,52 @@ Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
 | `name` | `String` | Nom du groupe (ex : "Famille Dupont") |
 | `owner_id` | `String` | UID du créateur/propriétaire |
 | `member_ids` | `List<String>` | UIDs de tous les membres (propriétaire inclus) |
+| `invited_ids` | `List<String>?` | UIDs des comptes invités qui n'ont pas encore répondu (v0.23.19). Un invité n'est pas membre : il lit le groupe, rien de ses livres. Absent sur les groupes antérieurs : vaut liste vide |
 | `created_at` | `Timestamp` | Date de création |
+
+**Entrer dans un groupe se fait de son propre chef** (v0.23.19). Être membre ouvre la lecture des
+livres et recettes non privés des autres membres, dans les deux sens. Le propriétaire invite
+(`inviteMember` : `invited_ids` reçoit l'uid), l'invité accepte (`acceptInvitation` : une seule
+écriture qui retire l'uid de `invited_ids` et l'ajoute à `member_ids`) ou refuse
+(`withdrawInvitation`, la même écriture que l'annulation par le propriétaire). Avant, le
+propriétaire écrivait `member_ids` directement : n'importe quel compte créait un groupe, y
+ajoutait un inconnu, et lisait ses livres. Les membres ajoutés ainsi avant la v0.23.19 restent
+membres.
 
 **Requêtes clés :**
 - `where('member_ids', arrayContains: uid)` → groupes de l'utilisateur
-- Visibilité cross-utilisateur : union des `member_ids` de tous mes groupes → `whereIn created_by` sur `books` et `recipes`
+- `where('invited_ids', arrayContains: uid)` → invitations reçues (`watchMyInvitations`, badge du menu compte)
+- Visibilité cross-utilisateur : la portée `group_reach/{uid}` (§3.5 bis) → `whereIn created_by` sur `books` et `recipes`. Le client part de la portée et non de l'union des `member_ids` : un membre que les groupes viennent de recevoir n'est lisible qu'une fois `syncGroupReach` passé, et le nommer plus tôt ferait refuser la requête entière
 - **Toute lecture portant sur autrui écarte le privé** : `where('is_private', isEqualTo: false)` s'ajoute à la requête, et non au filtrage client. `watchValidatedBooksByOwners`, `watchUnattachedByOwners`, `watchDraftsByOwners`, `getFamilyValidatedRecipes` et le volet familial de la recherche l'appliquent. Le corpus de recherche part en **deux requêtes** — les miennes sans filtre, celles de la famille avec — parce qu'un appel unique mêlant les deux publics ne peut appliquer qu'une règle, et applique donc la plus permissive.
 
 > **Le partage nominatif n'existe plus.** `books.shared_with` et son index ont été
 > retirés : `shareBook`/`unshareBook` n'avaient jamais eu d'écran pour les appeler,
 > et `watchSharedBooks` rendait donc toujours une liste vide. Un livre est partagé
 > avec les membres de ses groupes, ou privé. Il n'y a pas de troisième état.
+
+---
+
+### 3.5 bis Collection `group_reach` — la portée des groupes
+
+Un document par compte : les **autres** comptes avec qui il partage au moins un groupe.
+Les règles Firestore le relisent pour décider si un livre ou une recette partagé d'un autre
+compte est lisible (§4, `sharesGroupWith`). Elles ne peuvent pas parcourir `groups` pour
+répondre à cette question ; la portée la leur donne en une lecture.
+
+| Champ | Type | Description |
+|---|---|---|
+| `uids` | `List<String>` | UIDs des comptes qui partagent un groupe avec le titulaire, sans lui, triés, sans doublon. Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id` |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Qui l'écrit :** le serveur seul. `syncGroupReach`, déclencheur sur `groups/{groupId}`, recalcule
+la portée de chaque compte présent avant ou après l'écriture, dans une transaction qui relit
+tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`). Un renommage ne déclenche
+rien. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
+Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée périmée laisserait
+un membre sorti lire encore les livres du groupe. `backfillGroupReachFn` (§7.10) sème le fonds.
+
+**Qui le lit :** son titulaire (`GroupRepository.watchReach`, d'où le client tire ses requêtes)
+et un administrateur.
 
 ---
 
@@ -1172,7 +1207,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 jour où la politique en vigueur a été recopiée dans une première configuration.
 Elle empêche cette configuration de revenir après une suppression volontaire.
 
-Six documents de plus ne décident rien : ce sont les **points de reprise** des
+Sept documents de plus ne décident rien : ce sont les **points de reprise** des
 backfills (§7.10). Le serveur les écrit via `setBackfillCursor`
 (`callable/_backfillCursor.ts`). Aucun code client ne les écrit, mais les règles
 Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
@@ -1183,6 +1218,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn` |
+| `group_reach_backfill_checkpoint` | `backfillGroupReachFn` |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1479,12 +1515,25 @@ service cloud.firestore {
       return request.resource.data.get('created_by', null)
         == resource.data.get('created_by', null);
     }
-    // Un brouillon partagé reste lisible par un éditeur (relecture).
+    // ── Cloisonnement par groupe familial (v0.23.19) ─────────────────────
+    // Un document partagé d'un autre compte ne se lit que si ce compte
+    // partage un groupe avec moi. `group_reach/{moi}.uids` porte la liste,
+    // tenue par `syncGroupReach`. Sans document de portée : rien des autres.
+    function sharesGroupWith(ownerUid) {
+      return ownerUid is string
+        && exists(/databases/$(database)/documents/group_reach/$(request.auth.uid))
+        && ownerUid in get(/databases/$(database)/documents/group_reach/$(request.auth.uid))
+             .data.get('uids', []);
+    }
+    function isSharedWithMe(data) {
+      return isSharedDoc(data) && sharesGroupWith(data.get('created_by', null));
+    }
+    // Un brouillon partagé reste lisible par un éditeur de mes groupes.
     function canReadRecipe(data) {
       return isApproved() && (
-        (isSharedDoc(data) && (data.review_status == 'validated' || isEditor()))
-        || isCreator(data)
-        || isAdmin());
+        isCreator(data)
+        || isAdmin()
+        || ((data.review_status == 'validated' || isEditor()) && isSharedWithMe(data)));
     }
     function recipeDoc(recipeId) {
       return get(/databases/$(database)/documents/recipes/$(recipeId)).data;
@@ -1514,7 +1563,7 @@ service cloud.firestore {
       }
 
       allow read: if isApproved()
-        && (isSharedDoc(resource.data) || isCreator(resource.data) || isAdmin());
+        && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && keepsSystemTags();
@@ -1592,12 +1641,13 @@ service cloud.firestore {
 | Collection | Lecture | Écriture |
 |---|---|---|
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` et `backfillUserProfilesFn` |
+| `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` et `backfillGroupReachFn` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
-| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
-| `groups` | membres du groupe | création à son nom, soi seul membre ; modification et suppression par le propriétaire ou un admin, `owner_id` figé |
+| `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
+| `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
@@ -1613,12 +1663,51 @@ service cloud.firestore {
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
 
+**Un groupe familial est un lieu de partage** (décision de l'utilisateur, 2026-10-10, v0.23.19).
+Un livre ou une recette non privé d'un autre compte ne se lit que si ce compte partage au moins
+un groupe avec le lecteur : `sharesGroupWith`, une lecture de `group_reach/{lecteur}`. Il en va de
+même des annotations et des notes, qui suivent la recette par `canReadRecipe`. La relecture des
+brouillons partagés par un éditeur est limitée de la même façon. Un compte hors de mes groupes
+ne lit rien de moi, et je ne lis rien de lui. Un membre sorti d'un groupe est traité comme un
+compte supprimé : dès que `syncGroupReach` a réécrit les portées, il ne lit plus les livres du
+groupe, et le groupe ne lit plus les siens. Il garde ses propres documents. L'administrateur lit
+tout, comme avant. On n'entre dans un groupe qu'en acceptant une invitation (§3.5) : sans cela,
+le cloisonnement se contournait en ajoutant n'importe quel compte à son propre groupe. Le
+cloisonnement existait déjà côté client (`groupMemberIdsProvider`) ; une
+requête Firestore directe le contournait.
+
+Coût : une lecture facturée de plus par requête ou par lecture de document d'autrui (la portée),
+pas par document rendu.
+
+**Délai connu.** Entre l'écriture qui retire un membre et la fin de `syncGroupReach` (démarrage
+à froid et transaction, quelques secondes), le membre sorti lit encore. Si le déclencheur
+échoue, ce délai dure jusqu'à la tentative qui réussit (`retry: true`). Un écouteur
+`snapshots()` déjà ouvert n'est pas forcément réévalué quand seule la portée change : le client
+de l'application en ouvre de nouveaux dès que sa portée change (`RecipeViewer` change), mais un
+client modifié pourrait garder l'ancien jusqu'à la prochaine écriture du document écouté.
+
+**Décisions de l'utilisateur sur les cas limites (2026-10-10).** Les membres ajoutés sans leur
+accord avant la v0.23.19 restent membres. Une annotation ou une note posée sur une recette se lit
+par qui lit la recette, même si son auteur ne partage aucun groupe avec le lecteur : elle porte
+sur la recette, et un filtre par auteur rendrait les requêtes du client improuvables. La
+couverture « Recette libre » reste dans le profil public (`user_profiles`).
+
+**Bornes d'un groupe.** Le nom compte 60 caractères au plus, et 50 invitations au plus
+attendent une réponse (`boundedGroup`) : chaque invité lit le groupe, et sans borne un compte
+poussait un texte de taille quelconque chez tous ceux qu'il invitait.
+
 **Une règle n'est pas un filtre.** Firestore refuse une requête entière dès que ses filtres ne
 suffisent pas à prouver que chaque résultat possible est lisible. Les requêtes du client sur
-`recipes` et `books` portent donc `is_private == false` (contenu partagé) ou
-`created_by == uid` (le sien) ; hors administrateur, `RecipeRepository` scinde une requête par
-livre ou par statut en ces deux requêtes et fusionne les résultats sans doublon
-(`RecipeViewer`, `_visibleQueries`). Un lecteur ne relit que ses propres brouillons. Une requête
+`recipes` et `books` portent donc `created_by == uid` (le sien), ou `is_private == false` avec
+`created_by in` des comptes de la portée (contenu partagé de mes groupes) ; hors administrateur,
+`RecipeRepository` scinde une requête par livre ou par statut en ces requêtes et fusionne les
+résultats sans doublon (`RecipeViewer.groupPeers`, `_visibleQueries`). Firestore borne une requête
+à 30 disjonctions : les comptes partent par lots de 30, de 15 pour les brouillons, dont la
+requête porte déjà `review_status in [draft, inReview]`. Une valeur de `created_by in` hors de la
+portée fait refuser la requête entière. Les requêtes par propriétaires
+(`watchValidatedBooksByOwners`, `watchUnattachedByOwners`, `watchDraftsByOwners`,
+`getAllByOwners`, `getFamilyValidatedRecipes`) prennent leurs comptes dans la portée et restent
+prouvables ; elles s'arrêtent aux 30 premiers. Un lecteur ne relit que ses propres brouillons. Une requête
 par identifiants (`FieldPath.documentId whereIn`, planning) est évaluée document par document :
 une recette devenue privée fait refuser le lot, que `PlanningRepository.getRecipesByIds` relit
 alors recette par recette en écartant celles qui sont refusées. Un document sans `is_private`
@@ -1886,13 +1975,16 @@ est une anomalie de relecture.
 La décision de propriété est en vigueur depuis la v0.23.8 : une recette ou un livre privé ne se
 lit que par son créateur et l'administrateur ; chacun ne modifie que ses propres recettes et
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
-brouillons **partagés** d'autrui (relecture), sans pouvoir les modifier.
+brouillons **partagés** des membres de ses groupes (relecture), sans pouvoir les modifier.
+Depuis la v0.23.19, tout ce qui est partagé ne se lit que par les membres des groupes du
+créateur (suite « groupes — cloisonnement des lectures »).
 
-**Comptes au 2026-10-10 (v0.23.18)** : 342 tests attendus, aucun `todo` — 321 avant la v0.23.15,
+**Comptes au 2026-10-10 (v0.23.19)** : 384 tests attendus, aucun `todo` — 321 avant la v0.23.15,
 11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16 (texte d'origine), 5 par la
-v0.23.18 (planning). La CI confirme le compte.
+v0.23.18 (planning), 42 par la v0.23.19 (cloisonnement par groupe, portée `group_reach`,
+invitations). La CI confirme le compte.
 
-- Firestore : 274 tests attendus, aucun `todo`.
+- Firestore : 316 tests attendus, aucun `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
 
 La v0.23.16 ajoute 5 tests sur `recipes/{id}/origine/texte` : un lecteur lit le texte d'origine
@@ -2901,6 +2993,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillUserProfilesFn` | `admin` | crée, met à jour ou retire le profil public `user_profiles/{uid}` de chaque compte, d'après `users/{uid}`, par `syncPublicProfile` (la fonction du déclencheur `syncUserClaims`). Un profil déjà conforme n'est pas réécrit ; un compte en attente n'a pas de profil. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/user_profiles_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.14 : jusque-là, les noms des autres membres s'affichent « Membre » |
+| `backfillGroupReachFn` | `admin` | calcule la portée `group_reach/{uid}` de chaque compte de `users`, d'après tous les groupes lus une fois, par `syncReachFor` (la fonction transactionnelle du déclencheur `syncGroupReach`). Une portée déjà juste n'est pas réécrite. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/group_reach_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.19 : jusque-là, personne ne lit les livres et recettes de sa famille |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
@@ -3677,7 +3770,7 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 

@@ -14,8 +14,13 @@ import '../support/test_backend.dart';
 void main() {
   late TestBackend backend;
 
-  const lecteur = RecipeViewer(uid: 'uid-test');
-  const editeur = RecipeViewer(uid: 'uid-test', canEdit: true);
+  // `uid-autre` partage un groupe avec le lecteur ; `uid-etranger`, aucun.
+  const lecteur = RecipeViewer(uid: 'uid-test', groupPeers: ['uid-autre']);
+  const editeur = RecipeViewer(
+    uid: 'uid-test',
+    canEdit: true,
+    groupPeers: ['uid-autre'],
+  );
   const admin = RecipeViewer(uid: 'uid-admin', isAdmin: true, canEdit: true);
 
   setUp(() => backend = TestBackend());
@@ -90,7 +95,7 @@ void main() {
     // administrateur, la lecture d'un livre se scinde entre recettes
     // partagées et recettes du lecteur, fusionnées sans doublon.
     test(
-      'lecteur : les partagées et ses privées, pas les privées des autres',
+      'lecteur : ses recettes et les partagées de ses groupes, rien d\'autre',
       () async {
         await backend.seedRecipe(
           testRecipe(id: 'partagee', bookId: 'book-1', createdBy: 'uid-autre'),
@@ -105,6 +110,13 @@ void main() {
             bookId: 'book-1',
             createdBy: 'uid-autre',
             isPrivate: true,
+          ),
+        );
+        await backend.seedRecipe(
+          testRecipe(
+            id: 'hors-groupe',
+            bookId: 'book-1',
+            createdBy: 'uid-etranger',
           ),
         );
 
@@ -182,8 +194,50 @@ void main() {
     });
   });
 
+  // Firestore borne une requête à 30 disjonctions : au-delà de 30 comptes
+  // dans les groupes (15 pour les brouillons, qui portent déjà un `in` à deux
+  // valeurs), la requête partagée se découpe en lots.
+  group('groupes de plus de 30 comptes', () {
+    final peers = [for (var i = 0; i < 40; i++) 'uid-membre-$i'];
+
+    test('un livre montre la recette du 40e compte', () async {
+      await backend.seedRecipe(
+        testRecipe(id: 'loin', bookId: 'book-1', createdBy: 'uid-membre-39'),
+      );
+
+      final pages = await backend.recipes
+          .watchByBook(
+            'book-1',
+            RecipeViewer(uid: 'uid-test', groupPeers: peers),
+          )
+          .first;
+
+      expect(pages.map((r) => r.id), ['loin']);
+    });
+
+    test('un éditeur relit le brouillon du 20e compte', () async {
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'brouillon-loin',
+          bookId: 'book-1',
+          createdBy: 'uid-membre-19',
+          reviewStatus: ReviewStatus.inReview,
+        ),
+      );
+
+      final drafts = await backend.recipes
+          .watchDraftsByBook(
+            'book-1',
+            RecipeViewer(uid: 'uid-test', canEdit: true, groupPeers: peers),
+          )
+          .first;
+
+      expect(drafts.map((r) => r.id), ['brouillon-loin']);
+    });
+  });
+
   group('countInBook', () {
-    test('lecteur : partagées et ses privées, sans double compte', () async {
+    test('lecteur : les siennes et les partagées de ses groupes', () async {
       await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
       await backend.seedRecipe(
         testRecipe(id: 'partagee', bookId: 'book-1', createdBy: 'uid-autre'),
@@ -200,8 +254,16 @@ void main() {
         ),
       );
 
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'hors-groupe',
+          bookId: 'book-1',
+          createdBy: 'uid-etranger',
+        ),
+      );
+
       expect(await backend.recipes.countInBook('book-1', lecteur), 3);
-      expect(await backend.recipes.countInBook('book-1', admin), 4);
+      expect(await backend.recipes.countInBook('book-1', admin), 5);
     });
   });
 
@@ -454,6 +516,13 @@ void main() {
       await backend.seedRecipe(testRecipe(id: 'a-moi', bookId: 'book-1'));
       await backend.seedRecipe(
         testRecipe(id: 'autre', bookId: 'book-1', createdBy: 'uid-autre'),
+      );
+      await backend.seedRecipe(
+        testRecipe(
+          id: 'hors-groupe',
+          bookId: 'book-1',
+          createdBy: 'uid-etranger',
+        ),
       );
 
       expect(await backend.recipes.countOthersInBook('book-1', editeur), 1);
