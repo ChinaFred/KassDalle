@@ -26,7 +26,44 @@ import {
   mealFormatOf,
   planningRoleOf,
   partitionByRole,
+  CONCEPT_RUN_TTL_MS,
+  FRESHNESS_FLOOR,
+  HISTORY_DAYS,
+  MIN_DISTINCT_PROTEINS,
+  PROTEIN_REPEAT_FACTOR,
+  RATING_EXCLUDE_MAX,
+  RATING_HIGH_FACTOR,
+  RATING_HIGH_MIN,
+  RATING_LOW_FACTOR,
+  RATING_LOW_MAX,
+  REHEAT_BONUS,
+  REST_EVE_MINUTES,
+  buildPlanningPrompt,
+  candidateWeight,
+  codeJustification,
+  freshnessScore,
+  hardFilterReason,
+  isReheatFriendly,
+  needsModel,
+  planningConceptDecision,
+  preselect,
+  proteinOf,
+  ratingFactor,
+  readPlanningPolicy,
+  resizeOf,
+  seededRng,
+  slotContexts,
+  spreadProteins,
+  validateModelChoices,
+  weightedOrder,
+  DEFAULT_PLANNING_POLICY,
+  type DayConstraint,
+  type PlanningInput,
   type PlanningRecipeSummary,
+  type CandidateRole,
+  type ProteinKey,
+  type RankedCandidate,
+  type SlotRanking,
 } from "../gemini/planning";
 
 const FIXTURE = path.join(__dirname, "..", "..", "..", "test-fixtures", "planning_slot_rules.json");
@@ -68,7 +105,147 @@ interface Fixture {
   }>;
 }
 
-const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as Fixture;
+/** Recette telle que la fixture l'écrit (snake_case). */
+interface FxRecipe {
+  id: string;
+  titre?: string;
+  prep?: number;
+  rest?: number;
+  dish_types?: string[];
+  themes?: string[];
+  meal_role?: string;
+  portions?: number | null;
+  rating?: number;
+}
+
+/** Créneau tel que la fixture l'écrit. */
+interface FxSlot {
+  date: string;
+  max_prep?: number;
+  format?: string;
+  target?: number;
+  dismissed?: string[];
+}
+
+interface FxRanking {
+  slot: number;
+  plats?: string[];
+  entrees?: string[];
+  desserts?: string[];
+}
+
+interface PreselectionFixture {
+  constants: Record<string, number>;
+  protein_of: Array<{ dish_types: string[]; expected: ProteinKey; why: string }>;
+  reheat_friendly: Array<{
+    dish_types: string[];
+    themes: string[];
+    expected: boolean;
+    why: string;
+  }>;
+  hard_filter: Array<{
+    recipe: FxRecipe;
+    slot: FxSlot;
+    role: CandidateRole;
+    today: string;
+    rating?: number;
+    in_cycle?: string[];
+    expected: string | null;
+    why: string;
+  }>;
+  freshness: Array<{ days: number | null; expected: number; why: string }>;
+  rating_factor: Array<{ rating: number | null; expected: number; why: string }>;
+  weight: Array<{
+    days: number | null;
+    reheat_slot: boolean;
+    reheat_friendly: boolean;
+    protein_repeats: number;
+    rating?: number;
+    expected: number;
+    why: string;
+  }>;
+  weighted_order: Array<{
+    seed: number;
+    weights: Record<string, number>;
+    expected_last?: string;
+    expected_order?: string[];
+    why: string;
+  }>;
+  spread_proteins: Array<{
+    ordered: Array<[string, ProteinKey]>;
+    k: number;
+    min_distinct: number;
+    expected: string[];
+    why: string;
+  }>;
+  preselect: Array<{
+    slots: FxSlot[];
+    recipes: FxRecipe[];
+    already_assigned?: Array<{ slot: number; recipe_id: string }>;
+    served?: Array<{ recipe_id: string; date: string }>;
+    ratings?: Record<string, number>;
+    policy: Record<string, unknown>;
+    seed: number;
+    today: string;
+    expected: {
+      heads_disjoint?: boolean;
+      head_sizes?: number[];
+      slots?: Array<{
+        slot: number;
+        plats: string[];
+        entrees?: string[];
+        desserts?: string[];
+        repeat: string[];
+        relaxed: string[];
+      }>;
+    };
+    why: string;
+  }>;
+  validate_choice: Array<{
+    slots: FxSlot[];
+    rankings: FxRanking[];
+    raw: unknown;
+    expected: Array<Record<string, unknown>>;
+    rejected: number;
+    why: string;
+  }>;
+  code_justification: Array<{
+    recipe: FxRecipe;
+    slot: FxSlot;
+    last_served: string | null;
+    history: boolean;
+    rating?: number;
+    repeat?: boolean;
+    expected: string;
+    why: string;
+  }>;
+  resize: Array<{
+    portions: number | null;
+    target: number | null;
+    expected: { resized: boolean; reason?: string };
+    why: string;
+  }>;
+  policy: Array<{
+    raw: Record<string, unknown> | null;
+    expected: Record<string, number>;
+    why: string;
+  }>;
+  concept_decision: Array<{
+    run: {
+      created_at_ms: number;
+      concepts_max: number;
+      concepts_used: number;
+      cost_usd: number;
+      cost_cap_usd: number | null;
+    } | null;
+    now_ms: number;
+    estimate_usd: number | null;
+    expected: string | null;
+    why: string;
+  }>;
+}
+
+const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as Fixture & PreselectionFixture;
 
 describe("format d'un créneau", () => {
   test("la fixture partagée est non vide", () => {
@@ -195,5 +372,475 @@ describe("fenêtre de variété : recettes servies avant le cycle", () => {
       corpus.map((r) => r.id),
       ["a", "b"],
     );
+  });
+});
+
+// ── Présélection ─────────────────────────────────────────────────────────────
+
+/** Recette de la fixture (snake_case) → résumé du planning. */
+function summaryOf(r: FxRecipe): PlanningRecipeSummary {
+  return {
+    id: r.id,
+    titre: r.titre ?? `Recette ${r.id}`,
+    ...(r.prep != null ? { prepTime: r.prep } : {}),
+    ...(r.rest != null ? { restTime: r.rest } : {}),
+    ...(r.dish_types ? { dishTypes: r.dish_types } : {}),
+    ...(r.themes ? { themes: r.themes } : {}),
+    ...(r.meal_role ? { mealRole: r.meal_role } : {}),
+    ...(r.portions != null ? { portions: r.portions } : {}),
+  };
+}
+
+/** Créneaux de la fixture → entrée de planning. */
+function inputOf(
+  slots: FxSlot[],
+  recipes: PlanningRecipeSummary[],
+  extra: {
+    already_assigned?: Array<{ slot: number; recipe_id: string }>;
+    served?: Array<{ recipe_id: string; date: string }>;
+  } = {},
+): PlanningInput {
+  const slotConstraints: Array<DayConstraint | null> = slots.map((s) =>
+    s.max_prep != null || s.format != null || s.target != null
+      ? {
+          ...(s.max_prep != null ? { maxPrepMinutes: s.max_prep } : {}),
+          ...(s.format != null ? { mealFormat: s.format } : {}),
+          ...(s.target != null ? { targetPortions: s.target } : {}),
+        }
+      : null,
+  );
+  return {
+    recipes,
+    slotDates: slots.map((s) => s.date),
+    dailyConstraints: {},
+    slotConstraints,
+    globalConstraints: "",
+    slotDismissed: slots.map((s) => s.dismissed ?? null),
+    ...(extra.already_assigned
+      ? {
+          alreadyAssigned: extra.already_assigned.map((a) => ({
+            slot: a.slot,
+            recipeId: a.recipe_id,
+          })),
+        }
+      : {}),
+    ...(extra.served
+      ? {
+          recentlyServed: extra.served.map((m) => ({ recipeId: m.recipe_id, date: m.date })),
+        }
+      : {}),
+  };
+}
+
+describe("présélection — constantes recopiées dans la fixture", () => {
+  test("mêmes valeurs des deux côtés", () => {
+    const c = fixture.constants;
+    assert.equal(HISTORY_DAYS, c.history_days);
+    assert.equal(FRESHNESS_FLOOR, c.freshness_floor);
+    assert.equal(REHEAT_BONUS, c.reheat_bonus);
+    assert.equal(PROTEIN_REPEAT_FACTOR, c.protein_repeat_factor);
+    assert.equal(MIN_DISTINCT_PROTEINS, c.min_distinct_proteins);
+    assert.equal(REST_EVE_MINUTES, c.rest_eve_minutes);
+    assert.equal(RATING_EXCLUDE_MAX, c.rating_exclude_max);
+    assert.equal(RATING_LOW_MAX, c.rating_low_max);
+    assert.equal(RATING_LOW_FACTOR, c.rating_low_factor);
+    assert.equal(RATING_HIGH_MIN, c.rating_high_min);
+    assert.equal(RATING_HIGH_FACTOR, c.rating_high_factor);
+    assert.equal(CONCEPT_RUN_TTL_MS, c.concept_run_ttl_hours * 3_600_000);
+  });
+});
+
+describe("présélection — protéine et réchauffage", () => {
+  for (const c of fixture.protein_of) {
+    test(`${c.dish_types.join(", ") || "(vide)"} (${c.why})`, () => {
+      assert.equal(proteinOf({ dishTypes: c.dish_types }), c.expected);
+    });
+  }
+  for (const c of fixture.reheat_friendly) {
+    test(`réchauffage : ${[...c.dish_types, ...c.themes].join(", ")} (${c.why})`, () => {
+      assert.equal(isReheatFriendly({ dishTypes: c.dish_types, themes: c.themes }), c.expected);
+    });
+  }
+});
+
+describe("présélection — filtres durs", () => {
+  for (const c of fixture.hard_filter) {
+    test(c.why, () => {
+      const input = inputOf([c.slot], [summaryOf(c.recipe)]);
+      const ctx = slotContexts(input)[0];
+      const ratings = new Map<string, number>(
+        c.rating != null ? [[c.recipe.id as string, c.rating as number]] : [],
+      );
+      assert.equal(
+        hardFilterReason(summaryOf(c.recipe), ctx, c.role, {
+          inCycle: new Set(c.in_cycle ?? []),
+          today: c.today,
+          ratings,
+        }),
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("présélection — note et poids", () => {
+  for (const c of fixture.freshness) {
+    test(`fraîcheur ${c.days} (${c.why})`, () => {
+      assert.equal(freshnessScore(c.days), c.expected);
+    });
+  }
+  for (const c of fixture.rating_factor) {
+    test(`note ${c.rating} (${c.why})`, () => {
+      assert.equal(ratingFactor(c.rating), c.expected);
+    });
+  }
+  for (const c of fixture.weight) {
+    test(`poids (${c.why})`, () => {
+      const w = candidateWeight({
+        daysSinceServed: c.days,
+        reheatSlot: c.reheat_slot,
+        reheatFriendly: c.reheat_friendly,
+        proteinRepeats: c.protein_repeats,
+        rating: c.rating ?? null,
+      });
+      assert.ok(Math.abs(w - c.expected) < 1e-9, `${w} ≠ ${c.expected}`);
+    });
+  }
+});
+
+describe("présélection — tirage pondéré", () => {
+  for (const c of fixture.weighted_order) {
+    test(c.why, () => {
+      const items = Object.keys(c.weights);
+      const out = weightedOrder(items, (k) => c.weights[k], seededRng(c.seed));
+      if (c.expected_last) assert.equal(out[out.length - 1], c.expected_last);
+      if (c.expected_order) assert.deepEqual(out, c.expected_order);
+    });
+  }
+
+  test("même graine, même ordre ; deux graines, deux ordres", () => {
+    const items = Array.from({ length: 20 }, (_, i) => `r${i}`);
+    const a = weightedOrder(items, () => 1, seededRng(3));
+    const b = weightedOrder(items, () => 1, seededRng(3));
+    const c = weightedOrder(items, () => 1, seededRng(4));
+    assert.deepEqual(a, b);
+    assert.notDeepEqual(a, c);
+  });
+
+  test("un poids 2 sort en tête environ deux fois plus souvent qu'un poids 1", () => {
+    const rng = seededRng(2026);
+    let heavy = 0;
+    const runs = 2000;
+    for (let i = 0; i < runs; i++) {
+      if (weightedOrder(["lourd", "léger"], (k) => (k === "lourd" ? 2 : 1), rng)[0] === "lourd") {
+        heavy++;
+      }
+    }
+    // Probabilité attendue : 2 / 3.
+    assert.ok(Math.abs(heavy / runs - 2 / 3) < 0.05, `${heavy} sur ${runs}`);
+  });
+});
+
+describe("présélection — répartition par protéine", () => {
+  for (const c of fixture.spread_proteins) {
+    test(c.why, () => {
+      const proteins = new Map<string, ProteinKey>(
+        (c.ordered as Array<[string, ProteinKey]>).map(([id, p]) => [id, p]),
+      );
+      const typesOf = (p: ProteinKey) =>
+        p === "inconnue" ? [] : [p === "viande" ? "boeuf" : p.replace(/_/g, " ")];
+      const ordered = (c.ordered as Array<[string, ProteinKey]>).map(([id, p]) => ({
+        id,
+        titre: id,
+        dishTypes: typesOf(p),
+      }));
+      for (const r of ordered) assert.equal(proteinOf(r), proteins.get(r.id));
+      assert.deepEqual(
+        spreadProteins(ordered, c.k, c.min_distinct).map((r) => r.id),
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("présélection — listes par créneau", () => {
+  for (const c of fixture.preselect) {
+    test(c.why, () => {
+      const recipes = c.recipes.map(summaryOf);
+      const input = inputOf(c.slots, recipes, c);
+      const served = c.served ?? [];
+      const slotsToFill = Math.max(
+        1,
+        input.slotDates.length - (input.alreadyAssigned?.length ?? 0),
+      );
+      const window = applyRecentlyServed(recipes, input.recentlyServed ?? [], slotsToFill);
+      const out = preselect({
+        input,
+        candidates: window.candidates,
+        recentExcluded: recipes.filter((r) => window.excludedIds.includes(r.id)),
+        lastServed: new Map(served.map((m) => [m.recipe_id as string, m.date as string])),
+        ratings: new Map(Object.entries((c.ratings ?? {}) as Record<string, number>)),
+        historyAvailable: true,
+        policy: readPlanningPolicy(c.policy),
+        today: c.today,
+        rng: seededRng(c.seed),
+      });
+      const head = (list: RankedCandidate[], n: number) =>
+        list
+          .slice(0, n)
+          .map((x) => x.recipeId)
+          .sort();
+      if (c.expected.heads_disjoint) {
+        const heads = out.map((r) => head(r.plats, r.sent.plats));
+        assert.deepEqual(
+          heads.map((h) => h.length),
+          c.expected.head_sizes,
+        );
+        const all = heads.flat();
+        assert.equal(new Set(all).size, all.length, "têtes disjointes");
+      }
+      for (const want of c.expected.slots ?? []) {
+        const got = out.find((r) => r.slot === want.slot);
+        assert.ok(got, `créneau ${want.slot} classé`);
+        assert.deepEqual(head(got.plats, got.sent.plats), want.plats);
+        if (want.desserts) assert.deepEqual(head(got.desserts, got.sent.desserts), want.desserts);
+        if (want.entrees) assert.deepEqual(head(got.entrees, got.sent.entrees), want.entrees);
+        assert.deepEqual(
+          got.plats
+            .filter((x) => x.repeat)
+            .map((x) => x.recipeId)
+            .sort(),
+          want.repeat,
+        );
+        assert.deepEqual(got.relaxed, want.relaxed);
+      }
+      assert.ok(
+        out.every((r) => !(input.alreadyAssigned ?? []).some((a) => a.slot === r.slot)),
+        "un créneau déjà assigné n'a pas de liste",
+      );
+    });
+  }
+
+  test("chaque candidat rendu passe les filtres durs du créneau", () => {
+    const recipes: PlanningRecipeSummary[] = Array.from({ length: 40 }, (_, i) => ({
+      id: `r${i}`,
+      titre: `Recette ${i}`,
+      prepTime: (i % 6) * 10,
+      mealRole: i % 7 === 0 ? "dessert" : i % 5 === 0 ? "entree" : "plat",
+      dishTypes: [["volaille"], ["poisson"], ["boeuf"], ["vegan"], []][i % 5],
+    }));
+    const slots = [
+      { date: "2026-10-12", max_prep: 30, format: "entree_plat_dessert" },
+      { date: "2026-10-13", max_prep: 20 },
+      { date: "2026-10-14", format: "leger" },
+    ];
+    const input = inputOf(slots, recipes);
+    const out = preselect({
+      input,
+      candidates: recipes,
+      recentExcluded: [],
+      lastServed: new Map(),
+      ratings: new Map(),
+      historyAvailable: true,
+      policy: DEFAULT_PLANNING_POLICY,
+      today: "2026-10-10",
+      rng: seededRng(9),
+    });
+    const contexts = slotContexts(input);
+    const byId = new Map(recipes.map((r) => [r.id, r]));
+    for (const r of out) {
+      const ctx = contexts[r.slot];
+      const check = (list: RankedCandidate[], role: "main" | "starter" | "dessert") => {
+        for (const c of list) {
+          assert.equal(
+            hardFilterReason(byId.get(c.recipeId)!, ctx, role, {
+              inCycle: new Set(),
+              today: "2026-10-10",
+            }),
+            null,
+            `${c.recipeId} sur le créneau ${r.slot}`,
+          );
+        }
+      };
+      check(r.plats, "main");
+      check(r.entrees, "starter");
+      check(r.desserts, "dessert");
+    }
+  });
+});
+
+/** Classement de la fixture : tout ce qui est listé part au modèle. */
+function rankingOf(r: FxRanking): SlotRanking {
+  const cand = (ids: string[] | undefined): RankedCandidate[] =>
+    (ids ?? []).map((id) => ({ recipeId: id, why: `faits ${id}` }));
+  return {
+    slot: r.slot,
+    plats: cand(r.plats),
+    entrees: cand(r.entrees),
+    desserts: cand(r.desserts),
+    sent: {
+      plats: (r.plats ?? []).length,
+      entrees: (r.entrees ?? []).length,
+      desserts: (r.desserts ?? []).length,
+    },
+    relaxed: [],
+  };
+}
+
+describe("lecture des choix du modèle", () => {
+  for (const c of fixture.validate_choice) {
+    test(c.why, () => {
+      const rankings = c.rankings.map(rankingOf);
+      const ids = new Set(rankings.flatMap((r) => [...r.plats, ...r.entrees, ...r.desserts]));
+      const recipes = [...ids].map((x) => ({ id: x.recipeId, titre: x.recipeId }));
+      const input = inputOf(c.slots, recipes);
+      const out = validateModelChoices({
+        raw: c.raw,
+        rankings,
+        input,
+        corpusById: new Map(recipes.map((r) => [r.id, r])),
+      });
+      assert.equal(out.rejected, c.rejected);
+      assert.deepEqual(
+        out.slots.map((s) => ({
+          slot: s.slot,
+          recipe_id: s.recipeId,
+          source: s.source,
+          ...(s.starterId ? { starter_id: s.starterId } : {}),
+          ...(s.dessertId ? { dessert_id: s.dessertId } : {}),
+        })),
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("justification produite par le code", () => {
+  for (const c of fixture.code_justification) {
+    test(c.why, () => {
+      const r = summaryOf(c.recipe);
+      const ctx = slotContexts(inputOf([c.slot], [r]))[0];
+      assert.equal(
+        codeJustification(r, ctx, {
+          lastServed: c.last_served,
+          historyAvailable: c.history,
+          rating: c.rating ?? null,
+          repeat: c.repeat ?? false,
+        }),
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("redimensionnement calculé", () => {
+  for (const c of fixture.resize) {
+    test(c.why, () => {
+      const out = resizeOf({ portions: c.portions }, { targetPortions: c.target });
+      assert.equal(out.resized, c.expected.resized);
+      if (c.expected.reason) assert.equal(out.resizeReason, c.expected.reason);
+      else assert.equal(out.resizeReason, undefined);
+    });
+  }
+});
+
+describe("politique de présélection", () => {
+  for (const c of fixture.policy) {
+    test(c.why, () => {
+      const p = readPlanningPolicy(c.raw);
+      assert.deepEqual(
+        {
+          plats_per_slot: p.platsPerSlot,
+          starters_per_slot: p.startersPerSlot,
+          desserts_per_slot: p.dessertsPerSlot,
+          ranked_depth: p.rankedDepth,
+          concepts_per_generation: p.conceptsPerGeneration,
+          cost_cap_eur_per_generation: p.costCapEurPerGeneration,
+        },
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("plafond de conceptions par génération", () => {
+  for (const c of fixture.concept_decision) {
+    test(c.why, () => {
+      const run = c.run
+        ? {
+            createdAtMs: c.run.created_at_ms,
+            conceptsMax: c.run.concepts_max,
+            conceptsUsed: c.run.concepts_used,
+            costUsd: c.run.cost_usd,
+            costCapUsd: c.run.cost_cap_usd,
+          }
+        : null;
+      const out = planningConceptDecision({ run, nowMs: c.now_ms, estimateUsd: c.estimate_usd });
+      assert.equal(out.ok ? null : out.reason, c.expected);
+    });
+  }
+});
+
+describe("prompt compact", () => {
+  const recipes: PlanningRecipeSummary[] = Array.from({ length: 60 }, (_, i) => ({
+    id: `r${String(i).padStart(2, "0")}`,
+    titre: `Recette ${String(i).padStart(2, "0")}`,
+    mealRole: i < 40 ? "plat" : i < 50 ? "entree" : "dessert",
+  }));
+  const slots = Array.from({ length: 7 }, (_, i) => ({
+    date: `2026-10-${12 + i}`,
+    format: "entree_plat_dessert",
+  }));
+  const build = (seed: number) => {
+    const input = inputOf(slots, recipes);
+    const rng = seededRng(seed);
+    const rankings = preselect({
+      input,
+      candidates: recipes,
+      recentExcluded: [],
+      lastServed: new Map(),
+      ratings: new Map(),
+      historyAvailable: true,
+      policy: DEFAULT_PLANNING_POLICY,
+      today: "2026-10-10",
+      rng,
+    });
+    return buildPlanningPrompt({
+      input,
+      rankings,
+      sentSlots: new Set(rankings.filter(needsModel).map((r) => r.slot)),
+      corpusById: new Map(recipes.map((r) => [r.id, r])),
+      rng,
+    });
+  };
+
+  test("7 créneaux : au plus 35 plats, 21 entrées, 21 desserts, chacun décrit une fois", () => {
+    const { prompt, candidateIds } = build(1);
+    assert.equal(new Set(candidateIds).size, candidateIds.length);
+    assert.ok(candidateIds.length <= 35 + 21 + 21);
+    for (const id of candidateIds) {
+      const described = prompt.split("\n").filter((l) => l.startsWith(`${id} | `));
+      assert.equal(described.length, 1, `${id} décrit une fois`);
+    }
+    const platsLines = prompt.split("\n").filter((l) => l.trim().startsWith("PLATS :"));
+    assert.equal(platsLines.length, 7);
+    for (const l of platsLines) assert.ok(l.split(",").length <= 5);
+  });
+
+  test("le prompt ne pousse plus vers les plats familiaux et ne demande plus le redimensionnement", () => {
+    const { prompt } = build(1);
+    assert.ok(!prompt.includes("plat familial"));
+    assert.ok(!prompt.includes("resize_reason"));
+    assert.ok(!prompt.includes('"why"'));
+  });
+
+  test("l'ordre des recettes ne suit pas l'ordre du corpus", () => {
+    const sorted = (ids: string[]) => [...ids].sort();
+    let differs = false;
+    for (let seed = 1; seed <= 20 && !differs; seed++) {
+      const { candidateIds } = build(seed);
+      differs = candidateIds.some((id, i) => sorted(candidateIds)[i] !== id);
+    }
+    assert.ok(differs);
   });
 });

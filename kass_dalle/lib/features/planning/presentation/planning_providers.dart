@@ -11,6 +11,7 @@ import '../../books/data/book_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/recipe_picker_filter.dart';
+import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -144,7 +145,11 @@ class PlanningRepository {
     bool clearPortions = false,
     String? dismissRecipeId,
     List<MealComponent>? components,
+    MealChoiceSource? choiceSource,
+    String? justification,
+    bool clearChoice = false,
   }) async {
+    final why = justification?.trim() ?? '';
     final payload = <String, dynamic>{
       'recipe_id': recipeId,
       'recipe_titre': recipeTitre,
@@ -157,6 +162,11 @@ class PlanningRepository {
       // le repas. `null` laisse ceux en place ; une liste vide les retire.
       if (components != null)
         'components': [for (final c in components) c.toMap()],
+      // L'origine et les faits suivent le plat : un autre plat, une autre
+      // origine. Sans origine fournie, ni l'une ni les autres ne changent.
+      if (choiceSource != null) 'choice_source': choiceSource.value,
+      if (choiceSource != null)
+        'justification': why.isEmpty ? FieldValue.delete() : why,
     };
     // La recette remplacée reste écartée de ce repas : le prochain
     // « Suggérer » ne la verra pas dans ses candidats.
@@ -164,6 +174,11 @@ class PlanningRepository {
       payload['dismissed_recipe_ids'] = FieldValue.arrayUnion([
         dismissRecipeId,
       ]);
+    }
+    // Un repas vidé de sa recette perd aussi son origine et ses faits.
+    if (clearChoice) {
+      payload['choice_source'] = FieldValue.delete();
+      payload['justification'] = FieldValue.delete();
     }
     if (clearPortions) {
       payload['base_portions'] = FieldValue.delete();

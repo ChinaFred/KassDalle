@@ -18,6 +18,7 @@
 
 import type { RefineInput } from "../gemini/refiner";
 import type { SearchRecipesInput } from "../gemini/search";
+import { PLANNING_RUN_ID_PATTERN } from "../gemini/planning";
 import type {
   DayConstraint,
   PlanningInput,
@@ -25,6 +26,7 @@ import type {
   RecentlyServedMeal,
   RecipeConceptInput,
 } from "../gemini/planning";
+import { HttpsError } from "firebase-functions/v2/https";
 import {
   type AiInputSizes,
   CORPUS_MAX_ITEMS,
@@ -34,6 +36,18 @@ import {
   STRUCTURED_ITEM_MAX_CHARS,
   STRUCTURED_OBJECT_MAX_CHARS,
 } from "./_inputBounds";
+
+/** Créneaux d'une génération : un mois au plus. */
+export const PLANNING_SLOTS_MAX = 31;
+
+/** Une date de créneau commence par AAAA-MM-JJ (le client envoie un ISO 8601). */
+export const SLOT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}/;
+
+/** Recettes écartées d'un même créneau. */
+export const DISMISSED_PER_SLOT_MAX = 30;
+
+/** Longueur d'un identifiant de recette (Firestore : 20 caractères). */
+export const RECIPE_ID_MAX_CHARS = 128;
 
 /** Nombre de portions d'une recette : large, une recette de collectivité compte. */
 export const PORTIONS_MAX = 1_000;
@@ -122,13 +136,51 @@ export function readPlanningInput(
     maxItems: LIST_MAX_ITEMS,
     maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
   });
+  // Liste blanche : une autre valeur n'est pas « model » par défaut, elle est
+  // refusée — un mode deviné pourrait lancer un appel facturé.
+  const modeRaw = inputs.text(data.mode, { field: "mode", max: 10 });
+  if (modeRaw !== undefined && modeRaw !== "model" && modeRaw !== "code") {
+    throw new HttpsError("invalid-argument", "« mode » doit valoir « model » ou « code ».");
+  }
+  const mode = modeRaw as "model" | "code" | undefined;
+  const dismissedRaw = inputs.list<unknown>(data.slotDismissed, {
+    field: "slotDismissed",
+    maxItems: LIST_MAX_ITEMS,
+    maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
+  });
+  const slotDates = inputs.list<string>(data.slotDates, {
+    field: "slotDates",
+    maxItems: PLANNING_SLOTS_MAX,
+    maxItemChars: SHORT_TEXT_MAX_CHARS,
+    required: true,
+  });
+  // Une date de créneau commence par AAAA-MM-JJ : elle sert de clé de lecture
+  // de l'historique et de jour de semaine, jamais de texte libre.
+  for (const d of slotDates) {
+    if (typeof d !== "string" || !SLOT_DATE_PATTERN.test(d)) {
+      throw new HttpsError("invalid-argument", "« slotDates » attend des dates AAAA-MM-JJ.");
+    }
+  }
+  if (dismissedRaw !== undefined && dismissedRaw.length > slotDates.length) {
+    throw new HttpsError(
+      "invalid-argument",
+      "« slotDismissed » ne peut pas compter plus d'éléments que « slotDates ».",
+    );
+  }
+  // Chaque élément est une liste d'identifiants ; le reste devient `null`.
+  const slotDismissed = dismissedRaw?.map((item) => {
+    if (!Array.isArray(item)) return null;
+    const ids = item.filter((id): id is string => typeof id === "string");
+    if (ids.length > DISMISSED_PER_SLOT_MAX || ids.some((id) => id.length > RECIPE_ID_MAX_CHARS)) {
+      throw new HttpsError(
+        "invalid-argument",
+        `« slotDismissed » : ${DISMISSED_PER_SLOT_MAX} identifiants de ${RECIPE_ID_MAX_CHARS} caractères au plus par créneau.`,
+      );
+    }
+    return ids;
+  });
   return {
-    slotDates: inputs.list<string>(data.slotDates, {
-      field: "slotDates",
-      maxItems: LIST_MAX_ITEMS,
-      maxItemChars: SHORT_TEXT_MAX_CHARS,
-      required: true,
-    }),
+    slotDates,
     recipes:
       inputs.list<PlanningRecipeSummary>(data.recipes, {
         field: "recipes",
@@ -149,6 +201,8 @@ export function readPlanningInput(
     ...(batchCookingDay !== undefined ? { batchCookingDay } : {}),
     ...(alreadyAssigned !== undefined ? { alreadyAssigned } : {}),
     ...(recentlyServed !== undefined ? { recentlyServed } : {}),
+    ...(mode !== undefined ? { mode } : {}),
+    ...(slotDismissed !== undefined ? { slotDismissed } : {}),
   };
 }
 
@@ -170,6 +224,10 @@ export function readConceptInput(
     field: "requestedDish",
     maxChars: STRUCTURED_ITEM_MAX_CHARS,
   });
+  const runId = inputs.text(data.runId, { field: "runId", max: 64 });
+  if (runId !== undefined && !PLANNING_RUN_ID_PATTERN.test(runId)) {
+    throw new HttpsError("invalid-argument", "« runId » n'est pas un identifiant de génération.");
+  }
   return {
     slotDate: inputs.text(data.slotDate, {
       field: "slotDate",
@@ -184,5 +242,6 @@ export function readConceptInput(
     ...(dayConstraint !== undefined ? { dayConstraint } : {}),
     ...(alreadyPlanned !== undefined ? { alreadyPlanned } : {}),
     ...(requestedDish !== undefined ? { requestedDish } : {}),
+    ...(runId !== undefined ? { runId } : {}),
   };
 }

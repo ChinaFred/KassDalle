@@ -23,6 +23,35 @@ permissions:
 # deploy.yml : une étiquette se déplace, un SHA ne change pas de contenu.
 
 jobs:
+  version:
+    name: Version — numéro libre
+    runs-on: ubuntu-latest
+    # Le PC pousse sur master pendant que des PR attendent leur fusion. Deux
+    # livraisons qui passent toutes deux de 0.23.14 à 0.23.15 fusionnent sans
+    # conflit dans pubspec.yaml, et la seconde ne reconstruit pas l'APK. Voir
+    # .github/scripts/check-version.sh. Un lancement manuel n'a pas de base :
+    # le contrôle ne tourne que sur un push et une pull request.
+    if: github.event_name != 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # L'historique complet : le script compare chaque commit à son parent.
+          fetch-depth: 0
+
+      - name: Version supérieure à master
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            # La master du moment, pas la base figée à l'ouverture de la PR.
+            git fetch --quiet origin master
+            .github/scripts/check-version.sh FETCH_HEAD "$PR_HEAD"
+          else
+            .github/scripts/check-version.sh "$BEFORE" "$GITHUB_SHA"
+          fi
+
   flutter:
     name: Flutter — analyse et tests
     runs-on: ubuntu-latest

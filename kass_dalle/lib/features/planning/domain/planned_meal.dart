@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'meal_choice_source.dart';
 import 'meal_component.dart';
 
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
@@ -59,6 +60,11 @@ class PlannedMeal {
   /// par le modèle au moment du planning.
   final List<MealComponent> components;
 
+  /// Qui a choisi la recette : l'IA, les règles de Kass'Dalle, une
+  /// conception IA, ou l'utilisateur. `null` sur un repas antérieur à ce
+  /// champ : l'écran n'affiche alors pas de ligne d'origine.
+  final MealChoiceSource? choiceSource;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -76,6 +82,7 @@ class PlannedMeal {
     this.justification,
     this.dismissedRecipeIds = const [],
     this.components = const [],
+    this.choiceSource,
     required this.createdAt,
   });
 
@@ -102,6 +109,7 @@ class PlannedMeal {
         data['dismissed_recipe_ids'] as List? ?? const [],
       ),
       components: MealComponent.listFromFirestore(data['components']),
+      choiceSource: MealChoiceSource.fromValue(data['choice_source']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -123,6 +131,7 @@ class PlannedMeal {
       'dismissed_recipe_ids': dismissedRecipeIds,
     if (components.isNotEmpty)
       'components': [for (final c in components) c.toMap()],
+    if (choiceSource != null) 'choice_source': choiceSource!.value,
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

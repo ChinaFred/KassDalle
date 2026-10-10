@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-10
 
-### v0.23.17 — fonctionnel
+### v0.23.19 — fonctionnel
 
 #### Groupes familiaux : on ne lit que ce que partagent les membres de ses groupes, et on n'entre dans un groupe qu'en acceptant une invitation
 
@@ -49,6 +49,61 @@ sans ce filtre, Firestore refuse une requête que les règles ne peuvent plus pr
 
 **À lancer après le déploiement : Admin › Backfills › « Calculer la portée des groupes »**
 (`backfillGroupReachFn`), un passage. Jusque-là, personne ne voit les livres de sa famille.
+
+### v0.23.18 — fonctionnel
+
+#### Planning : le serveur choisit les candidats, « Autre suggestion » sans IA, coût borné
+
+**Ce que voit l'utilisateur.** Chaque repas proposé porte une ligne d'origine : « Choisie par
+l'IA », « Choisie par Kass'Dalle », « Conçue par l'IA » ou « Choisie par vous », suivie de faits
+vérifiables (« volaille · 35 min, sous les 40 min du mardi · pas servie ces 3 derniers mois »).
+Les phrases génériques de repli ont disparu, et le robot ne précède plus un choix fait à la main.
+« Autre suggestion » (icône de rotation), sur un créneau de Nouveau planning comme dans le menu
+d'un repas du planning (ex-« Suggestion IA »), prend la recette suivante sans appel d'IA.
+« Proposer une recette » fait de même sur un créneau vide. Quand la liste est épuisée, l'écran
+propose « Choisir une recette » ou « Concevoir avec l'IA ». Si l'IA ne répond pas, Kass'Dalle
+remplit le planning selon les contraintes, un bandeau le dit et propose « Réessayer avec l'IA ».
+Une génération qui coûterait plus de 0,50 € n'appelle pas l'IA et le dit. Deux recettes au plus
+sont conçues automatiquement par génération ; l'écran dit combien de créneaux restent vides.
+Une recette notée 3/10 ou moins n'est plus proposée ; une recette notée 8 ou plus l'est plus
+souvent. Le menu dit « Tout régénérer ».
+
+**Ce qui change dans le code.** `suggestMealPlanFn` présélectionne les candidats de chaque
+créneau (`gemini/planning.ts` : filtres durs, note de fraîcheur sur 90 jours de repas, note
+personnelle de l'appelant, tirage pondéré, trois protéines en tête de liste) et n'envoie plus
+que cinq plats par créneau au modèle, dans un prompt compact. Un choix du modèle hors liste est
+remplacé par le code et compté. Le redimensionnement se calcule. Nouveau mode `code` (sans
+appel de modèle), nouveaux champs `slotDismissed`, `runId`, `rankedCandidates`, `modelStatus`,
+`notice`, `conceptsRemaining`. `maxTokens` : 4 000 pour `planning`, 6 000 pour
+`planning_concept`. Nouvelle sous-collection `users/{uid}/planning_runs` (serveur seul, TTL
+180 jours), nouveau document de réglages `app_config/planning_policy` (valeurs par défaut dans
+le code), nouveau champ `planned_meals.choice_source`. La fixture `planning_slot_rules.json`
+verrouille la présélection.
+
+**Coûts.** Le prompt passe d'environ 25 000 à environ 5 000 jetons d'entrée pour 400
+recettes. « Autre suggestion » n'enregistre plus aucune ligne `ai_usage`. Les lignes du
+planning et des conceptions d'une génération portent `entity_type: planning_run` et
+`entity_id`. Aucun poste d'IA nouveau. Le plafond du jour atteint pendant une génération ne
+renvoie plus d'erreur : le code remplit, rien n'est facturé.
+
+**Après déploiement.** La politique TTL de `planning_runs.expires_at` s'active avec le
+déploiement des index Firestore. Aucun backfill : un repas antérieur n'a pas de ligne
+d'origine.
+
+### v0.23.17 — technique
+
+#### Un numéro de version par livraison
+
+Le PC pousse sur `master` pendant que des sessions cloud préparent leurs PR. Deux livraisons
+qui passaient toutes deux de 0.23.14 à 0.23.15 fusionnaient sans conflit dans `pubspec.yaml`,
+et le second déploiement conservait l'APK en ligne : ses changements n'arrivaient pas sur
+Android. Le script `.github/scripts/check-version.sh` vérifie trois points : une version
+changée dépasse celle de `master`, aucun autre commit de l'historique n'a introduit le même
+numéro, et ce fichier n'a qu'une entrée pour elle. Il tourne dans un nouveau job de la CI,
+« Version — numéro libre », qui bloque le déploiement s'il échoue. `CLAUDE.md` demande de le
+lancer à la main avant chaque push depuis le PC et avant chaque fusion de PR, après avoir
+intégré `origin/master`. Un `.gitattributes` garde les scripts `*.sh` en fins de ligne LF,
+pour que le `bash` de Git for Windows les lise.
 
 ### v0.23.16 — fonctionnel
 

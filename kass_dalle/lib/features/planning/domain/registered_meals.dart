@@ -50,6 +50,7 @@ String plannedMealContentKey(PlannedMeal meal) => jsonEncode([
   meal.justification,
   meal.dismissedRecipeIds,
   [for (final c in meal.components) c.toMap()],
+  meal.choiceSource?.value,
 ]);
 
 DateTime _dayOf(DateTime d) => DateTime(d.year, d.month, d.day);

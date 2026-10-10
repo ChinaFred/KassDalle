@@ -208,6 +208,17 @@ service cloud.firestore {
       match /preferences/{prefId} {
         allow read, write: if isOwner(uid) || isAdmin();
       }
+
+      // Générations de planning : journal des propositions, compteur des
+      // conceptions et coût cumulé d'une génération. Écrites par le serveur
+      // seul (`suggestMealPlanFn`, `generateRecipeConceptFn`) : le compteur
+      // borne les conceptions facturées, un client qui l'écrirait remettrait
+      // son plafond à zéro. Le titulaire ne les lit pas — l'écran n'en a pas
+      // besoin ; l'administrateur les lit pour l'audit des coûts.
+      match /planning_runs/{runId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
 
     // Profils publics : la part d'un compte que les autres membres voient.
@@ -508,7 +519,7 @@ service cloud.firestore {
       /// Nom borné à 60 caractères, et 50 invitations en attente au plus.
       /// Chaque invité lit le groupe : sans borne, un compte poussait un
       /// texte de taille quelconque chez tous ceux qu'il invitait (revue
-      /// sécurité v0.23.17).
+      /// sécurité v0.23.19).
       function boundedGroup(data) {
         return data.name is string && data.name.size() <= 60
           && data.get('invited_ids', []).size() <= 50;

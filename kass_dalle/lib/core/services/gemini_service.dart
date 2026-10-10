@@ -423,26 +423,10 @@ class GeminiService {
 
   /// Suggère un planning de repas via la Cloud Function `suggestMealPlanFn`.
   ///
-  /// Retourne des paires `(slot, recipeId, justification, resized, resizeReason, prepDate)` — le client résout les IDs.
-  Future<
-    ({
-      List<
-        ({
-          int slot,
-          String recipeId,
-          String? starterId,
-          String? dessertId,
-          String? justification,
-          bool resized,
-          String? resizeReason,
-          String? prepDate,
-        })
-      >
-      suggestions,
-      List<String> excludedRecentIds,
-    })
-  >
-  suggestMealPlan({
+  /// [mode] `model` (défaut) : présélection serveur puis un appel de modèle ;
+  /// `code` : présélection seule, sans appel de modèle ni coût. Le client
+  /// résout les identifiants rendus.
+  Future<MealPlanResponse> suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
     required List<String> slotDates,
     required Map<int, Map<String, dynamic>> dailyConstraints,
@@ -451,6 +435,8 @@ class GeminiService {
     List<Map<String, dynamic>> alreadyAssigned = const [],
     List<Map<String, dynamic>?>? slotConstraints,
     List<Map<String, dynamic>> recentlyServed = const [],
+    String? mode,
+    List<List<String>?>? slotDismissed,
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -463,28 +449,10 @@ class GeminiService {
       'batchCookingDay': ?batchCookingDay,
       if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,
       if (recentlyServed.isNotEmpty) 'recentlyServed': recentlyServed,
+      'mode': ?mode,
+      'slotDismissed': ?slotDismissed,
     });
-    final suggestions = (data as Map)['suggestions'] as List? ?? [];
-    final excluded = (data['excludedRecentIds'] as List? ?? const [])
-        .whereType<String>()
-        .toList(growable: false);
-    return (
-      suggestions: suggestions
-          .map(
-            (item) => (
-              slot: (item['slot'] as num).toInt(),
-              recipeId: item['recipeId'] as String? ?? '',
-              starterId: item['starterId'] as String?,
-              dessertId: item['dessertId'] as String?,
-              justification: item['justification'] as String?,
-              resized: item['resized'] as bool? ?? false,
-              resizeReason: item['resizeReason'] as String?,
-              prepDate: item['prepDate'] as String?,
-            ),
-          )
-          .toList(),
-      excludedRecentIds: excluded,
-    );
+    return MealPlanResponse.fromMap(data is Map ? data : const {});
   }
 
   /// Génère une recette de toutes pièces (conception IA) pour un slot donné.
@@ -497,6 +465,7 @@ class GeminiService {
     Map<String, dynamic>? dayConstraint,
     List<String> alreadyPlanned = const [],
     Map<String, dynamic>? requestedDish,
+    String? runId,
   }) async {
     final data = await _call('generateRecipeConceptFn', {
       'slotDate': slotDate,
@@ -504,6 +473,9 @@ class GeminiService {
       'dayConstraint': ?dayConstraint,
       'alreadyPlanned': alreadyPlanned,
       'requestedDish': ?requestedDish,
+      // Rattache la conception à sa génération : le serveur y applique le
+      // plafond de conceptions et de coût.
+      'runId': ?runId,
     });
     final map = data as Map;
     return (
@@ -671,6 +643,92 @@ class TextRecipeExtraction {
 }
 
 /// Exception levée quand un appel Callable Gemini échoue.
+/// Une suggestion de `suggestMealPlanFn`, telle que le serveur la rend.
+typedef MealPlanSlotDto = ({
+  int slot,
+  String recipeId,
+  String? starterId,
+  String? dessertId,
+  String? justification,
+  bool resized,
+  String? resizeReason,
+  String? prepDate,
+  String source,
+  bool repeat,
+});
+
+/// Réponse de `suggestMealPlanFn`.
+///
+/// Les champs ajoutés avec la présélection serveur (v0.23.18) sont lus avec
+/// des valeurs neutres : une réponse plus ancienne reste lisible.
+class MealPlanResponse {
+  final List<MealPlanSlotDto> suggestions;
+  final List<String> excludedRecentIds;
+
+  /// Génération à laquelle rattacher les conceptions ; `null` sans génération
+  /// enregistrée (mode `code`, ou écriture en échec côté serveur).
+  final String? runId;
+
+  /// `ok`, `partial`, `failed`, `budget` ou `skipped`.
+  final String modelStatus;
+
+  /// Phrase à afficher quand le modèle n'a pas choisi.
+  final String? notice;
+
+  /// Listes classées par créneau, brutes : `{slot, plats, entrees, desserts}`.
+  final List<Map<dynamic, dynamic>> rankedCandidates;
+
+  /// Conceptions encore permises pour cette génération.
+  final int conceptsRemaining;
+
+  const MealPlanResponse({
+    required this.suggestions,
+    required this.excludedRecentIds,
+    this.runId,
+    this.modelStatus = 'ok',
+    this.notice,
+    this.rankedCandidates = const [],
+    this.conceptsRemaining = 0,
+  });
+
+  factory MealPlanResponse.fromMap(Map<dynamic, dynamic> data) {
+    String? str(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final suggestions = <MealPlanSlotDto>[];
+    for (final item in data['suggestions'] as List? ?? const []) {
+      if (item is! Map) continue;
+      final slot = item['slot'];
+      final recipeId = item['recipeId'];
+      if (slot is! num || recipeId is! String) continue;
+      suggestions.add((
+        slot: slot.toInt(),
+        recipeId: recipeId,
+        starterId: str(item['starterId']),
+        dessertId: str(item['dessertId']),
+        justification: str(item['justification']),
+        resized: item['resized'] == true,
+        resizeReason: str(item['resizeReason']),
+        prepDate: str(item['prepDate']),
+        source: str(item['source']) ?? 'model',
+        repeat: item['repeat'] == true,
+      ));
+    }
+    final remaining = data['conceptsRemaining'];
+    return MealPlanResponse(
+      suggestions: suggestions,
+      excludedRecentIds: (data['excludedRecentIds'] as List? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+      runId: str(data['runId']),
+      modelStatus: str(data['modelStatus']) ?? 'ok',
+      notice: str(data['notice']),
+      rankedCandidates: (data['rankedCandidates'] as List? ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .toList(growable: false),
+      conceptsRemaining: remaining is num ? remaining.toInt() : 0,
+    );
+  }
+}
+
 class GeminiCallableException implements Exception {
   final String code;
   final String message;

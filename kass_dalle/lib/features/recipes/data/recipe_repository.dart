@@ -197,7 +197,7 @@ class RecipeRepository {
   // les siennes (`created_by == uid`), et les recettes partagées
   // (`is_private == false`) des comptes de ses groupes (`created_by in`, par
   // lots). Les règles ne laissent lire une recette partagée d'un autre que
-  // s'il partage un groupe avec le lecteur (`group_reach`, v0.23.17). Un
+  // s'il partage un groupe avec le lecteur (`group_reach`, v0.23.19). Un
   // lecteur ne relit pas les brouillons des autres : pour lui, une requête de
   // brouillons ne porte que sur les siens.
 

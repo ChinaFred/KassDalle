@@ -150,6 +150,83 @@ describe("readPlanningInput", () => {
       "slotDates",
     ]);
   });
+
+  test("mode : « model » et « code » admis, toute autre valeur refusée", () => {
+    assert.equal(
+      readPlanningInput({ ...planningBase, mode: "code" }, new AiInputSizes()).mode,
+      "code",
+    );
+    assert.equal(
+      readPlanningInput({ ...planningBase, mode: "model" }, new AiInputSizes()).mode,
+      "model",
+    );
+    assert.ok(!("mode" in readPlanningInput(planningBase, new AiInputSizes())));
+    assertInvalid(
+      () => readPlanningInput({ ...planningBase, mode: "free" }, new AiInputSizes()),
+      /mode/,
+    );
+    assertInvalid(
+      () => readPlanningInput({ ...planningBase, mode: 3 }, new AiInputSizes()),
+      /mode/,
+    );
+  });
+
+  test("slotDismissed : listes de chaînes gardées, le reste rendu nul", () => {
+    const out = readPlanningInput(
+      { ...planningBase, slotDismissed: [["r1", 4, "r2"], "x"] },
+      new AiInputSizes(),
+    );
+    assert.deepEqual(out.slotDismissed, [["r1", "r2"], null]);
+  });
+
+  test("slotDismissed : pas plus d'éléments que de créneaux", () => {
+    assertInvalid(
+      () => readPlanningInput({ ...planningBase, slotDismissed: [[], [], []] }, new AiInputSizes()),
+      /slotDismissed/,
+    );
+  });
+
+  test("slotDismissed : 30 identifiants courts au plus par créneau", () => {
+    assertInvalid(
+      () =>
+        readPlanningInput(
+          { ...planningBase, slotDismissed: [Array.from({ length: 31 }, (_, i) => `r${i}`)] },
+          new AiInputSizes(),
+        ),
+      /slotDismissed/,
+    );
+    assertInvalid(
+      () =>
+        readPlanningInput(
+          { ...planningBase, slotDismissed: [["x".repeat(129)]] },
+          new AiInputSizes(),
+        ),
+      /slotDismissed/,
+    );
+  });
+
+  test("slotDates : une date qui n'est pas AAAA-MM-JJ est refusée", () => {
+    assertInvalid(
+      () => readPlanningInput({ ...planningBase, slotDates: ["x"] }, new AiInputSizes()),
+      /slotDates/,
+    );
+    const out = readPlanningInput(
+      { ...planningBase, slotDates: ["2026-10-12T00:00:00.000"] },
+      new AiInputSizes(),
+    );
+    assert.deepEqual(out.slotDates, ["2026-10-12T00:00:00.000"]);
+  });
+
+  test("slotDates : 31 créneaux au plus", () => {
+    assertInvalid(
+      () =>
+        readPlanningInput(
+          { ...planningBase, slotDates: Array.from({ length: 32 }, () => "2026-10-12") },
+          new AiInputSizes(),
+        ),
+      /slotDates/,
+    );
+  });
 });
 
 describe("readSearchInput et readConceptInput", () => {
@@ -173,5 +250,17 @@ describe("readSearchInput et readConceptInput", () => {
       globalConstraints: "sans porc",
       requestedDish: { titre: "Soupe" },
     });
+  });
+
+  test("planning_concept : runId au bon format transmis, autre format refusé", () => {
+    const runId = `pr_${"a1".repeat(16)}`;
+    const out = readConceptInput({ slotDate: "2026-10-12", runId }, new AiInputSizes());
+    assert.equal(out.runId, runId);
+    for (const bad of ["pr_123", "../x", `pr_${"G".repeat(32)}`, `xx_${"a".repeat(32)}`]) {
+      assertInvalid(
+        () => readConceptInput({ slotDate: "2026-10-12", runId: bad }, new AiInputSizes()),
+        /runId/,
+      );
+    }
   });
 });

@@ -182,6 +182,24 @@ export const COLL_NUTRITION_UNITS = "nutrition_units";
  */
 export const COLL_AI_ROUTING_PRESETS = "ai_routing_presets";
 
+/**
+ * Générations de planning — `users/{uid}/planning_runs/{runId}`.
+ *
+ * Écrites par le serveur seul : journal des propositions d'une génération,
+ * compteur des conceptions rattachées et coût cumulé, pour le plafond par
+ * génération. Conservées 180 jours (politique TTL sur `expires_at`).
+ */
+export const COLL_PLANNING_RUNS = "planning_runs";
+
+/** Réglages de la présélection du planning — `app_config/planning_policy`. */
+export const PLANNING_POLICY_DOC_ID = "planning_policy";
+
+/** Notes personnelles des recettes — `recipe_ratings/{uid}_{recipeId}`. */
+export const COLL_RECIPE_RATINGS = "recipe_ratings";
+
+/** Repas planifiés — `planned_meals/{mealId}`, champ `uid`. */
+export const COLL_PLANNED_MEALS = "planned_meals";
+
 // ── Collections backup ───────────────────────────────────────────────────────
 export const COLL_BACKUP_RECIPES = "backup_recipes";
 export const COLL_BACKUP_BOOKS = "backup_books";

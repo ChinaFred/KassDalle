@@ -186,7 +186,8 @@ Côté Cloud Functions (Node 22, TypeScript) :
 firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
-│   └── preferences/{prefId}                       ← book_order, recipe_search_scope
+│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope
+│   └── planning_runs/{runId}                      ← générations de planning, serveur seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
@@ -872,16 +873,16 @@ Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
 | `name` | `String` | Nom du groupe (ex : "Famille Dupont") |
 | `owner_id` | `String` | UID du créateur/propriétaire |
 | `member_ids` | `List<String>` | UIDs de tous les membres (propriétaire inclus) |
-| `invited_ids` | `List<String>?` | UIDs des comptes invités qui n'ont pas encore répondu (v0.23.17). Un invité n'est pas membre : il lit le groupe, rien de ses livres. Absent sur les groupes antérieurs : vaut liste vide |
+| `invited_ids` | `List<String>?` | UIDs des comptes invités qui n'ont pas encore répondu (v0.23.19). Un invité n'est pas membre : il lit le groupe, rien de ses livres. Absent sur les groupes antérieurs : vaut liste vide |
 | `created_at` | `Timestamp` | Date de création |
 
-**Entrer dans un groupe se fait de son propre chef** (v0.23.17). Être membre ouvre la lecture des
+**Entrer dans un groupe se fait de son propre chef** (v0.23.19). Être membre ouvre la lecture des
 livres et recettes non privés des autres membres, dans les deux sens. Le propriétaire invite
 (`inviteMember` : `invited_ids` reçoit l'uid), l'invité accepte (`acceptInvitation` : une seule
 écriture qui retire l'uid de `invited_ids` et l'ajoute à `member_ids`) ou refuse
 (`withdrawInvitation`, la même écriture que l'annulation par le propriétaire). Avant, le
 propriétaire écrivait `member_ids` directement : n'importe quel compte créait un groupe, y
-ajoutait un inconnu, et lisait ses livres. Les membres ajoutés ainsi avant la v0.23.17 restent
+ajoutait un inconnu, et lisait ses livres. Les membres ajoutés ainsi avant la v0.23.19 restent
 membres.
 
 **Requêtes clés :**
@@ -984,8 +985,9 @@ partagée.
 | `base_portions` | `int?` | Parts de la recette d'origine |
 | `target_portions` | `int?` | Parts voulues ce jour-là — avec `base_portions`, c'est **tout** ce qu'il faut pour recalculer les quantités à l'affichage |
 | `prep_date` | `Timestamp?` | Jour de préparation, quand il diffère du jour du repas |
-| `justification` | `String?` | Pourquoi ce plat, ce jour-là — écrit par l'IA à la suggestion. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle. Sur la recette, il aurait menti au prochain qui la planifie |
+| `justification` | `String?` | Pourquoi ce plat, ce jour-là. Depuis v0.23.18, des **faits produits par le serveur** (`codeJustification`, `gemini/planning.ts`) : protéine lue dans les types de plat, durée sous la limite du jour, note personnelle ≥ 8, dernier service (« pas servie depuis 6 semaines »), « peu d'autres choix » quand un filtre s'est relâché — jamais un texte du modèle ; pour une recette conçue, la justification de la conception. Le client n'écrit plus de phrase générique de repli. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle. Sur la recette, il aurait menti au prochain qui la planifie |
 | `dismissed_recipe_ids` | `List<String>?` | Recettes écartées de ce repas — par « Changer la recette », « Vider le créneau », une nouvelle suggestion, et déjà pendant la composition d'un cycle. Le client les retire des candidats **avant** l'appel à l'IA : une consigne dans le prompt est un vœu, un candidat absent de la liste est une certitude. Elles appartiennent au repas, pas au profil : écarter un plat un mardi ne dit rien du samedi suivant. Ajoutées par `arrayUnion`, jamais retirées |
+| `choice_source` | `String?` | **Qui a choisi la recette** : `ai` (le modèle, parmi les candidats présélectionnés), `rules` (le code de Kass'Dalle, sans modèle : « Autre suggestion », panne du modèle, plafond), `concept` (recette conçue par l'IA), `manual` (l'utilisateur). Écrit à la validation d'un cycle et à chaque changement de recette depuis le planning ; « Remettre à blanc » le retire, avec `justification`. L'écran affiche la ligne d'origine « Choisie par l'IA » · « Choisie par Kass'Dalle » · « Conçue par l'IA » · « Choisie par vous », suivie de `justification`. Absent sur un repas antérieur à v0.23.18 : pas de ligne d'origine, et une `justification` « Sélection manuelle… » est lue comme `manual`. Aucun backfill |
 | `components` | `List<Map>?` | **Ce qui accompagne le plat.** Une entrée par composant : `role` (`accompagnement` \| `entree` \| `dessert`), soit `recipe_id` (une recette d'accompagnement), soit `staple_id` (une garniture), `label`, et pour une garniture la part **figée** au choix — `quantity_per_portion`, `unit`, `shopping_product`, `note` — plus `justification` (« le plat n'apporte pas de féculent : riz, accompagnement classique »). Le plat lui-même n'y figure pas, il reste dans `recipe_id`. Choisi par le **programme** (`side_chooser.dart` : ce que le plat n'apporte pas, ses accompagnements classiques, les garnitures visibles du compte, rotation sur les jours voisins), jamais par le modèle au moment du planning. L'**entrée** et le **dessert**, eux, viennent du même appel de planning que le plat, quand le format du jour (`meal_format`) en demande, parmi les recettes de ce rôle, une fois chacun dans le cycle (`starter_id`, `dessert_id`). Absent = aucun composant |
 | `created_at` | `Timestamp` | Création |
 
@@ -1005,7 +1007,39 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 | `default_meal_hour` · `default_meal_minute` | `int` | Heure par défaut d'un repas |
 | `default_calendar_duration_minutes` | `int` | Durée d'un événement Google Calendar, depuis tous les points d'export : le repas à table, jamais les temps de la recette (ceux-ci ne servent qu'au rappel et à `duration_minutes` du repas) |
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
-| `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien, et nomme au modèle celles qu'il a dû garder (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. |
+| `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
+
+---
+
+### 3.8 bis Sous-collection `users/{uid}/planning_runs` — les générations de planning
+
+Un document par génération (`suggestMealPlanFn` en mode `model`, y compris quand aucun créneau n'a demandé d'appel de modèle : un corpus vide avec conception IA cochée a besoin du `runId` pour borner ses conceptions), identifiant
+`pr_` + 32 hexadécimaux tiré par le serveur. **Écrit par le serveur seul** : il porte le
+compteur qui borne les conceptions facturées. Sert de journal des propositions (taux de
+répétition, concentration) et de plafond par génération. Conservé 180 jours par une
+politique TTL sur `expires_at` (`firestore.indexes.json` › `fieldOverrides`, active au
+déploiement des index).
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `created_at` · `expires_at` | `Timestamp` | heure serveur ; `created_at` + 180 jours |
+| `correlation_id` | `String` | fil des journaux de la génération |
+| `cycle_start` | `String` | `YYYY-MM-DD` du premier créneau |
+| `slots` | `int` | créneaux du cycle |
+| `corpus_size` · `candidates_sent` · `duration_ms` · `rejected_choices` | `int` | recettes reçues, candidats envoyés au modèle, durée, choix du modèle remplacés |
+| `history_available` | `bool` | l'historique des repas a été lu |
+| `model_status` | `String` | `ok` · `partial` · `failed` · `budget` · `skipped` |
+| `provider` · `model` | `String?` | moteur qui a répondu ; `null` sans appel |
+| `proposals` | `List<Map>` | `{slot, date, recipe_id, starter_id, dessert_id, source}` — `source` `model` ou `code` |
+| `concepts_max` | `int` | `concepts_per_generation` au moment de la génération |
+| `concepts_used` | `int` | incrémenté en transaction **avant** chaque conception rattachée (une conception en échec a pu être facturée) |
+| `cost_cap_usd` | `Number?` | plafond de la génération converti au taux de la facture ; `null` sans taux utilisable (le plafond en euros ne s'applique pas) |
+| `cost_usd` | `Number` | somme des coûts enregistrés (`recordedCostUsd`) de l'appel de planning et des conceptions |
+| `unpriced_calls` | `int` | appels sans montant (grille illisible) |
+
+Le coût d'une génération se relit aussi dans `ai_usage` : chaque ligne de l'appel de
+planning et des conceptions rattachées porte `entity_type: "planning_run"` et
+`entity_id: <runId>`. `ai_usage` reste la source d'audit ; `cost_usd` sert au plafond.
 
 ---
 
@@ -1028,6 +1062,11 @@ client (`familyRatingsProvider`, `FamilyRatings.from`) : ne restent que les note
 de `groupMemberIdsProvider` dont le profil public existe, plus la mienne. La moyenne est
 dérivée à l'affichage et n'est stockée nulle part. Aucun index composite : le tri par date se
 fait côté client. Le planning ne lit que la note de l'utilisateur (`getAllForUser`).
+
+Depuis v0.23.18, `suggestMealPlanFn` lit les notes **de l'appelant seul**
+(`where user_id == uid`, `readUserRatings`, `gemini/planningStore.ts`) : jamais celles des
+autres membres. Une note ≤ 3 exclut la recette des propositions (elle reste choisissable à la
+main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 
 ---
 
@@ -1161,6 +1200,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
 | `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
+| `planning_policy` | Présélection du planning : `plats_per_slot` (5, de 3 à 10), `starters_per_slot` et `desserts_per_slot` (3, de 1 à 10), `ranked_depth` (15, de `plats_per_slot` à 30 — profondeur de la liste gardée pour « Autre suggestion »), `concepts_per_generation` (2, de 0 à 7), `cost_cap_eur_per_generation` (0,50, de 0,05 à 5). Lu par `getPlanningPolicy` (cache 60 s), borné par `readPlanningPolicy` ; absent ou illisible : valeurs par défaut du code — ce sont des réglages, pas des prix. Aucun écran ne l'édite encore : il s'écrit depuis la console par un admin |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
 
 `ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
@@ -1475,7 +1515,7 @@ service cloud.firestore {
       return request.resource.data.get('created_by', null)
         == resource.data.get('created_by', null);
     }
-    // ── Cloisonnement par groupe familial (v0.23.17) ─────────────────────
+    // ── Cloisonnement par groupe familial (v0.23.19) ─────────────────────
     // Un document partagé d'un autre compte ne se lit que si ce compte
     // partage un groupe avec moi. `group_reach/{moi}.uids` porte la liste,
     // tenue par `syncGroupReach`. Sans document de portée : rien des autres.
@@ -1605,8 +1645,9 @@ service cloud.firestore {
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
+| `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
-| `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.17) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.17 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
+| `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
@@ -1622,7 +1663,7 @@ service cloud.firestore {
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
 
-**Un groupe familial est un lieu de partage** (décision de l'utilisateur, 2026-10-10, v0.23.17).
+**Un groupe familial est un lieu de partage** (décision de l'utilisateur, 2026-10-10, v0.23.19).
 Un livre ou une recette non privé d'un autre compte ne se lit que si ce compte partage au moins
 un groupe avec le lecteur : `sharesGroupWith`, une lecture de `group_reach/{lecteur}`. Il en va de
 même des annotations et des notes, qui suivent la recette par `canReadRecipe`. La relecture des
@@ -1646,7 +1687,7 @@ de l'application en ouvre de nouveaux dès que sa portée change (`RecipeViewer`
 client modifié pourrait garder l'ancien jusqu'à la prochaine écriture du document écouté.
 
 **Décisions de l'utilisateur sur les cas limites (2026-10-10).** Les membres ajoutés sans leur
-accord avant la v0.23.17 restent membres. Une annotation ou une note posée sur une recette se lit
+accord avant la v0.23.19 restent membres. Une annotation ou une note posée sur une recette se lit
 par qui lit la recette, même si son auteur ne partage aucun groupe avec le lecteur : elle porte
 sur la recette, et un filtre par auteur rendrait les requêtes du client improuvables. La
 couverture « Recette libre » reste dans le profil public (`user_profiles`).
@@ -1935,14 +1976,15 @@ La décision de propriété est en vigueur depuis la v0.23.8 : une recette ou un
 lit que par son créateur et l'administrateur ; chacun ne modifie que ses propres recettes et
 livres, éditeur compris ; l'administrateur agit comme le créateur. Un éditeur lit encore les
 brouillons **partagés** des membres de ses groupes (relecture), sans pouvoir les modifier.
-Depuis la v0.23.17, tout ce qui est partagé ne se lit que par les membres des groupes du
+Depuis la v0.23.19, tout ce qui est partagé ne se lit que par les membres des groupes du
 créateur (suite « groupes — cloisonnement des lectures »).
 
-**Comptes au 2026-10-10 (v0.23.17)** : 379 tests attendus, aucun `todo` — 321 avant la v0.23.15,
-11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16, 42 par la v0.23.17
-(cloisonnement par groupe, portée `group_reach`, invitations). La CI confirme le compte.
+**Comptes au 2026-10-10 (v0.23.19)** : 384 tests attendus, aucun `todo` — 321 avant la v0.23.15,
+11 ajoutés par la v0.23.15 (notes de la famille), 5 par la v0.23.16 (texte d'origine), 5 par la
+v0.23.18 (planning), 42 par la v0.23.19 (cloisonnement par groupe, portée `group_reach`,
+invitations). La CI confirme le compte.
 
-- Firestore : 311 tests attendus, aucun `todo`.
+- Firestore : 316 tests attendus, aucun `todo`.
 - Storage : 68 tests, 68 actifs, aucun `todo`.
 
 La v0.23.16 ajoute 5 tests sur `recipes/{id}/origine/texte` : un lecteur lit le texte d'origine
@@ -2257,6 +2299,107 @@ semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu
   réponse d'exemple, sa valeur de confiance comprise.
 - **Exiger une preuve vérifiable** plutôt qu'une justification — les trois mots réellement lus
   se contrôlent d'un coup d'œil, une justification non.
+
+### Le planning : présélection par le code, choix par le modèle
+
+Depuis v0.23.18, `suggestMealPlanFn` n'envoie plus tout le corpus au modèle. Le serveur
+choisit lui-même les candidats de chaque créneau, le modèle tranche entre eux, et le code
+relit sa réponse. Code : `gemini/planning.ts` (fonctions pures, fixture
+`planning_slot_rules.json`), `gemini/planningStore.ts` (lectures et écritures Firestore).
+
+**Entrée.** Les résumés de recettes envoyés par le client portent `portions` en plus. Deux
+champs nouveaux : `mode` (`model` par défaut ; `code` : présélection seule, aucun appel de
+modèle, aucune ligne `ai_usage`) et `slotDismissed` (écartés par créneau). Un `alreadyAssigned`
+de `slot` hors des dates de la demande (−1) désigne une recette posée ailleurs dans le cycle.
+Le serveur lit lui-même `app_config/planning_policy`, les `planned_meals` de l'appelant sur les
+90 jours qui précèdent le cycle (`readServedHistory`, index `uid` + `planned_at` existant) et
+ses `recipe_ratings` (`readUserRatings`). Une lecture en échec : `logError`, la génération
+continue sans historique (`historyAvailable: false`, aucun fait de service affirmé) ou sans
+note.
+
+**Présélection** (`preselect`), créneau par créneau dans l'ordre des dates :
+
+1. **Filtres durs** (`hardFilterReason`), dans l'ordre : rôle (`plat` ; entrée ou en-cas en
+   repas léger ; `entree` et `dessert` pour leurs listes), préparation au-delà du maximum du
+   jour (plat seulement ; durée absente : passe), repos ≥ 240 min si le créneau tombe
+   aujourd'hui ou avant, note personnelle ≤ 3, écartée du créneau, déjà au cycle.
+2. **Poids** (`candidateWeight`) = fraîcheur (1 si pas servie en 90 jours, sinon
+   jours / 90 borné entre 0,1 et 1) × 2 pour un plat qui se réchauffe sur un créneau de
+   réchauffage × 0,6 par répétition d'une protéine déjà au cycle × facteur de note (0,5 de 4
+   à 6, 1,5 à partir de 8). La protéine se lit dans `dishTypes` (`proteinOf` : viande,
+   volaille, poisson, fruits de mer, végétarien, inconnue).
+3. **Tirage pondéré sans remise** (`weightedOrder`, Efraimidis–Spirakis, graine tirée par
+   `crypto`) : deux générations ne rendent pas la même liste. Les recettes déjà en tête d'un
+   autre créneau passent après les autres. La tête couvre au moins trois protéines quand la
+   liste le permet (`spreadProteins`).
+4. **Relâchement** quand un créneau n'a aucun plat : « déjà au cycle », puis « fenêtre de
+   variété » ; la recette est alors marquée `repeat` et sa justification dit « peu d'autres
+   choix ». La note personnelle ne se relâche **que si tous les plats du corpus sont notés
+   ≤ 3**. Le rôle, la durée, le repos et les écartés ne se relâchent jamais : sans
+   candidat, le créneau reste vide.
+
+Têtes de liste : `plats_per_slot` plats (5), `starters_per_slot` entrées et
+`desserts_per_slot` desserts (3) si le format en demande. Liste gardée pour « Autre
+suggestion » : `ranked_depth` plats (15).
+
+**Prompt compact** (`buildPlanningPrompt`) : chaque candidat décrit une fois dans une
+section `RECETTES`, puis par créneau les identifiants proposés ; les deux listes sont
+mélangées. Un créneau sans choix à faire (un seul candidat partout) n'est pas envoyé. Le
+nombre de parts n'est plus une consigne : « les quantités sont recalculées à l'affichage ».
+Le modèle rend `[{slot, recipe_id, starter_id?, dessert_id?}]`, sans phrase. `maxTokens` :
+4 000 (`PLANNING_MAX_TOKENS`) ; sur Gemini, la sortie reste bornée par
+`thinking_budgets.planning`.
+
+**Lecture de la réponse** (`validateModelChoices`) : un identifiant hors de la tête du
+créneau, déjà pris, ou un créneau oublié est remplacé par le premier candidat libre de la
+liste (`source: "code"`, en évitant la protéine du créneau précédent) ; `rejected_choices`
+les compte, `logWarn` si > 0. Les justifications sont les faits du code (`codeJustification`) ;
+le redimensionnement est calculé (`resizeOf` : « Écrite pour 4 parts, servie pour 6. »),
+jamais demandé au modèle, et rien n'est écrit dans la recette.
+
+**Remplissage par le code** (`codeFill`) quand le modèle ne choisit pas :
+
+| Cas | Journal | `modelStatus` | Avis à l'écran (`notice`) |
+|---|---|---|---|
+| appel en erreur (repli compris), réponse vide ou illisible | `logError` | `failed` | « L'IA n'a pas répondu. Kass'Dalle a choisi les plats selon vos contraintes. » |
+| estimation au-delà du plafond de la génération | `logWarn` | `budget` | « Cette génération aurait coûté plus de 0,50 € en IA. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé. » |
+| plafond du jour atteint (`BudgetExceededError`) | `logWarn` | `budget` | « Votre plafond d'IA du jour est atteint. … Rien n'a été facturé. » — au lieu de l'erreur `resource-exhausted` d'avant |
+| mode `code`, ou aucun créneau avec un choix | `logInfo` | `skipped` | — |
+
+**Plafond par génération.** Avant l'appel, `ceilingEstimator` résout le moteur et le modèle
+du poste (`resolveCallTarget`, `ai/router.ts`, sans appel de fournisseur) et chiffre le coût
+plafond sur la grille en vigueur (`estimateCallCeilingUsd` : caractères / 3 en entrée,
+`maxTokens` en sortie, plus le plafond de raisonnement Gemini ou 8 192). Le plafond
+`cost_cap_eur_per_generation` est converti au taux de la facture (`getUsdToEurRate`). Grille
+illisible ou taux absent : pas d'estimation inventée, `logWarn`, le plafond en euros ne
+s'applique pas — le plafond de nombre de conceptions et le plafond du jour restent actifs.
+
+**Conceptions** (`generateRecipeConceptFn`, poste `planning_concept`, `maxTokens` 6 000).
+Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
+(transaction sur `users/{uid}/planning_runs/{runId}`) refuse une génération inconnue sous
+l'appelant (`not-found`), de plus de 6 heures, au compteur atteint, ou dont le coût cumulé
+plus l'estimation dépasserait le plafond (`resource-exhausted`, `details.reason`). Le
+compteur est incrémenté **avant** l'appel ; après, `addPlanningRunCost` ajoute le coût
+enregistré. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
+unitaire (« Concevoir avec l'IA » sur un créneau, idée retenue dans le sélecteur) : hors
+plafond de génération, borné par le plafond du jour.
+
+**Réponse de `suggestMealPlanFn`** : `runId` (`null` en mode `code` ou si le document n'a pas
+pu être écrit), `mode`, `modelStatus`, `notice`, `suggestions` (`slot`, `recipeId`,
+`starterId?`, `dessertId?`, `justification`, `resized`, `resizeReason?`, `prepDate?`,
+`source` `model` | `code`, `repeat?`), `rankedCandidates` (par créneau : `plats`, `entrees`,
+`desserts` — `{recipeId, why, repeat?, resizeReason?}` —, `relaxed`, `prepDate?`),
+`excludedRecentIds`, `conceptsRemaining`, `stats` (`corpus`, `candidatesSent`, `durationMs`,
+`rejectedChoices`, `historyAvailable`). Une réponse lue par un client antérieur reste
+compatible : `suggestions` et `excludedRecentIds` n'ont pas changé de forme.
+
+**Côté client.** « Autre suggestion » (Nouveau planning, et menu d'un repas du planning,
+ex-« Suggestion IA ») ne fait plus d'appel de modèle : il prend la recette suivante de la
+liste classée gardée en mémoire (`nextRankedCandidate`, `ranked_candidates.dart` — filtrage
+seulement : écartées, posées ailleurs, sorties du corpus), sinon il rappelle
+`suggestMealPlanFn` en mode `code` sur ce créneau. La liste d'un créneau est oubliée quand
+son format, sa préparation maximale ou son réchauffage changent. Les conceptions
+automatiques ne bouclent que sur `conceptsRemaining` créneaux et s'arrêtent au premier refus.
 
 ### Les réponses JSON
 
@@ -2679,8 +2822,8 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `searchRecipesFn` | `search` | `query` → 5 000 car., requis ; `recipes`, `ratedRecipes` → 5 000 éléments de 20 000 car. |
 | `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
-| `suggestMealPlanFn` | `planning` | `slotDates` → 500 éléments de 5 000 car., requis ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `batchCookingDay` → entier de 1 à 7 |
-| `generateRecipeConceptFn` | `planning_concept` | `slotDate` → 5 000 car., requis ; `globalConstraints` → 5 000 car. ; `dayConstraint`, `requestedDish` → 20 000 car. JSON ; `alreadyPlanned` → 500 éléments de 5 000 car. |
+| `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée |
+| `generateRecipeConceptFn` | `planning_concept` | `slotDate` → 5 000 car., requis ; `globalConstraints` → 5 000 car. ; `dayConstraint`, `requestedDish` → 20 000 car. JSON ; `alreadyPlanned` → 500 éléments de 5 000 car. ; `runId` → motif `^pr_[0-9a-f]{32}$`, sinon refusé |
 | `suggestMealIdeasFn` | `planning_meal_ideas` | règles propres au poste (voir ci-dessus) ; tailles relevées avant troncature : `prompt`, `previousTitles`, `globalConstraints` |
 | `consolidateShoppingListFn` | `shopping_list` | `ingredients` → 500 éléments de 20 000 car., requis et non vide |
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
@@ -2850,7 +2993,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillUserProfilesFn` | `admin` | crée, met à jour ou retire le profil public `user_profiles/{uid}` de chaque compte, d'après `users/{uid}`, par `syncPublicProfile` (la fonction du déclencheur `syncUserClaims`). Un profil déjà conforme n'est pas réécrit ; un compte en attente n'a pas de profil. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/user_profiles_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.14 : jusque-là, les noms des autres membres s'affichent « Membre » |
-| `backfillGroupReachFn` | `admin` | calcule la portée `group_reach/{uid}` de chaque compte de `users`, d'après tous les groupes lus une fois, par `syncReachFor` (la fonction transactionnelle du déclencheur `syncGroupReach`). Une portée déjà juste n'est pas réécrite. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/group_reach_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.17 : jusque-là, personne ne lit les livres et recettes de sa famille |
+| `backfillGroupReachFn` | `admin` | calcule la portée `group_reach/{uid}` de chaque compte de `users`, d'après tous les groupes lus une fois, par `syncReachFor` (la fonction transactionnelle du déclencheur `syncGroupReach`). Une portée déjà juste n'est pas réécrite. Sans appel de modèle, 2 000 comptes par appel par défaut, arrêt après trois échecs de suite. Point de reprise et compte rendu dans `app_config/group_reach_backfill_checkpoint`. À lancer une fois **juste après** le déploiement de la v0.23.19 : jusque-là, personne ne lit les livres et recettes de sa famille |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
@@ -3156,13 +3299,51 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
 précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Ses actions
 sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme celles de
-`deploy.yml`. Trois jobs, sur `ubuntu-latest` :
+`deploy.yml`. Quatre jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
+| Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
+
+#### Le contrôle de version
+
+Le PC pousse directement sur `master` pendant que des PR attendent leur fusion. Deux livraisons
+qui passent toutes deux de 0.23.14 à 0.23.15 écrivent la même ligne `version:` : Git les
+fusionne sans conflit, et le second déploiement conserve l'APK en ligne, dont la version n'est
+pas plus ancienne. `check-version.sh` détecte ce cas.
+
+Deux contrôles. Le premier porte sur tout l'historique de la tête : son nom de version (avant
+le `+`) ne doit avoir été introduit que par un seul commit ordinaire (`git log --full-history
+--no-merges -G'^version:'`). Il ne dépend pas de la plage poussée : après un push refusé pour
+doublon, un push suivant qui ne touche pas la version échoue encore, et une CI annulée par
+`cancel-in-progress` ne laisse pas passer son doublon. Un job rouge sur `master` se corrige
+par un commit qui passe à la version suivante.
+
+Le second compare la tête à la base, quand le changement touche la version : l'un de ses
+commits ordinaires modifie la ligne `version:` de `kass_dalle/pubspec.yaml` par rapport à son
+parent, ou la tête descend de la base sans en avoir la version (hausse faite dans un commit de
+fusion). Les commits de fusion ne comptent pas comme hausse : fusionner `master` dans une
+branche y apporte la version de `master` sans que la branche l'ait choisie. Le script échoue
+alors quand le nom de version n'est pas strictement supérieur à celui de la base. Dans tous
+les cas, `documentation/CHANGELOG.md` doit avoir une, et une seule, entrée `### v<nom>` pour la
+version de la tête : un rebase sur une hausse identique vide le changement de `pubspec.yaml`,
+et seul le `CHANGELOG.md` garde alors les deux entrées. `CLAUDE.md` demande d'intégrer
+`origin/master` par une fusion, jamais par un rebase. Une base
+introuvable (premier push, historique réécrit) saute ce second contrôle ; une tête
+introuvable fait échouer le script.
+
+Un script modifié par une PR s'exécute dans sa version modifiée, sur la PR puis sur le push de
+fusion : seule la relecture empêche d'affaiblir le contrôle. `.gitattributes` force les fins
+de ligne LF sur les `*.sh`, pour que le `bash` de Git for Windows les lise sur le PC.
+
+Le même script se lance à la main avant un push depuis le PC ou avant la fusion d'une PR :
+`bash .github/scripts/check-version.sh origin/master HEAD` (voir `CLAUDE.md`, « Un numéro de
+version par livraison »). La CI d'une PR ne se rejoue pas quand `master` avance : ce lancement
+manuel couvre l'intervalle, et le job du push sur `master` arrête le déploiement si un doublon
+passe quand même. `deploy.ps1` n'appelle pas le script : le lancer avant lui.
 
 Le déploiement automatique ne part qu'après une CI verte sur un push sur `master` : `deploy.yml`
 exige la conclusion `success` du workflow entier, donc un seul job en échec, celui des règles
@@ -3181,7 +3362,7 @@ Functions.
 | `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle, coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
-| `planning_slot_rules.json` | règles de créneau du planning — serveur seul | — | `gemini/planning.ts` |
+| `planning_slot_rules.json` | règles de créneau et présélection du planning — serveur seul | — | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, paliers Vision — serveur seul | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
