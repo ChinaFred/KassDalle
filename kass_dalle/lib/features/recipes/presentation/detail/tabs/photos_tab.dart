@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +5,7 @@ import '../../../../../core/theme/app_icon_size.dart';
 import '../../../../../core/widgets/app_states.dart';
 import '../../../domain/recipe.dart';
 import '../recipe_illustration_actions.dart';
+import '../../../../../core/widgets/app_network_image.dart';
 
 /// Onglet « Photos » : les illustrations de la recette, en grand.
 ///
@@ -168,7 +168,7 @@ class _PhotoTile extends StatelessWidget {
               color: theme.colorScheme.surfaceContainerHighest,
               child: InkWell(
                 onTap: onTap,
-                child: CachedNetworkImage(
+                child: AppNetworkImage(
                   imageUrl: url,
                   fit: BoxFit.cover,
                   placeholder: (_, _) => const Center(

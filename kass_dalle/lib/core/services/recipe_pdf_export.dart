@@ -17,6 +17,7 @@ import '../utils/recipe_portion_scaler.dart';
 import 'cooklang_parser.dart';
 import 'error_reporting.dart';
 import '../utils/recipe_tag_sections.dart';
+import '../utils/app_image_url.dart';
 
 // ── Couleurs thématiques ─────────────────────────────────────────────────────
 
@@ -400,7 +401,11 @@ Future<Uint8List> buildRecipePdfBytes(
 
 /// Télécharge les octets d'une image depuis son URL.
 /// Retourne null en cas d'échec (réseau, CORS, 4xx/5xx…).
+///
+/// Une URL hors du stockage de l'application n'est pas téléchargée
+/// (`isAppImageUrl`) : le PDF part sans elle, comme pour une image illisible.
 Future<Uint8List?> _fetchImageBytes(String url) async {
+  if (!isAppImageUrl(url)) return null;
   try {
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) return response.bodyBytes;

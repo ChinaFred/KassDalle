@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_editor_colors.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 class CooklangImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
@@ -129,17 +130,13 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          url,
+                        child: AppNetworkImage(
+                          imageUrl: url,
                           width: 80,
                           height: 80,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            width: 80,
-                            height: 80,
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.broken_image_outlined),
-                          ),
+                          errorWidget: (_, _, _) =>
+                              const AppImageFallback(width: 80, height: 80),
                         ),
                       ),
                     ),

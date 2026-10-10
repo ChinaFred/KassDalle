@@ -23,11 +23,18 @@ import {
   openBookFile,
   type BookMetadata,
 } from "../books/bookFile";
-import { BudgetExceededError } from "../ai/budget";
-import { effectiveImportLimitUsd, parseBudgetLimit, setImportCeiling } from "../ai/importBudget";
+import { BudgetExceededError, getUsdToEurRate } from "../ai/budget";
+import {
+  MAX_IMPORT_BUDGET_PER_WINDOW_EUR,
+  effectiveImportLimitUsd,
+  maxImportBudgetUsd,
+  parseBudgetLimit,
+  setImportCeiling,
+  usableRate,
+} from "../ai/importBudget";
 import { extractBookCover } from "../gemini/search";
 import type { BookWindowInfo } from "../gemini/promptsExtraction";
-import { logError, logInfo } from "../logging";
+import { logError, logInfo, logWarn } from "../logging";
 
 export interface BookImportContext {
   jobId: string;
@@ -172,18 +179,39 @@ export async function runBookImport(args: {
   // que la première tranche existe : chacune le relit avant son premier appel
   // d'IA. La valeur vient du client : elle ne fait que réduire le maximum que
   // fixe le serveur, et un job sans plafond reçoit ce maximum.
+  // Le maximum est fixé en euros : il se convertit avec le taux de la facture.
   const clientLimitUsd = parseBudgetLimit(job.budget_limit_usd);
+  const usdToEur = await getUsdToEurRate();
   const budgetLimitUsd = effectiveImportLimitUsd({
     clientLimitUsd,
     windows: opened.windows,
+    usdToEur,
   });
   if (ctx.scanId) {
+    if (usableRate(usdToEur) == null) {
+      // Aucun taux n'est inventé : le maximum s'applique en dollars, plus bas.
+      await logWarn({
+        message:
+          `Taux dollar → euro absent ou hors bornes (${usdToEur}) : maximum de ` +
+          `l'import appliqué en dollars ` +
+          `(${MAX_IMPORT_BUDGET_PER_WINDOW_EUR} $ par tranche au lieu de ` +
+          `${MAX_IMPORT_BUDGET_PER_WINDOW_EUR} €)`,
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: { windows: opened.windows, maxUsd: maxImportBudgetUsd(opened.windows, null) },
+      });
+    }
     await setImportCeiling({ scanId: ctx.scanId, userId, limitUsd: budgetLimitUsd });
     await logInfo({
       message: `Plafond de l'import posé : ${budgetLimitUsd} $`,
       moduleType: "IMPORT",
       ...ctx,
-      extra: { budgetLimitUsd, clientLimitUsd, capped: budgetLimitUsd !== clientLimitUsd },
+      extra: {
+        budgetLimitUsd,
+        clientLimitUsd,
+        usdToEur,
+        capped: budgetLimitUsd !== clientLimitUsd,
+      },
     });
   }
 

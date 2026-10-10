@@ -1,10 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/web_download.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 /// Bouton + visionneuse pour le fichier source (image ou PDF) d'une recette.
 ///
@@ -152,7 +152,7 @@ class SourceViewerButton extends StatelessWidget {
             minScale: 0.5,
             maxScale: 5,
             child: Center(
-              child: CachedNetworkImage(
+              child: AppNetworkImage(
                 imageUrl: url,
                 fit: BoxFit.contain,
                 placeholder: (_, _) =>

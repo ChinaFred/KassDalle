@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 // ── Visionneuse illustrations plein écran ─────────────────────────────────
 
@@ -48,7 +48,7 @@ class _IllustrationGalleryState extends State<IllustrationGallery> {
             itemBuilder: (_, i) => InteractiveViewer(
               minScale: 0.5,
               maxScale: 6,
-              child: CachedNetworkImage(
+              child: AppNetworkImage(
                 imageUrl: widget.urls[i],
                 fit: BoxFit.contain,
                 placeholder: (_, _) => const Center(

@@ -22,6 +22,7 @@ import '../fidelity_banner.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/presentation/stylus_pad_text_field.dart';
+import '../../../../core/utils/app_image_url.dart';
 
 /// Actions rangées derrière le menu « ⋮ » de la barre.
 ///
@@ -214,6 +215,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerMode = mode;
         _aiRefining = false;
       });
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) {
+        setState(() => _aiRefining = false);
+        context.showErrorSnackBar(e.message);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'draftReviewScreen.startEnhanceIllustration',
@@ -375,6 +382,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerMode = EnhancerMode.studio;
         _aiRefining = false;
       });
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) {
+        setState(() => _aiRefining = false);
+        context.showErrorSnackBar(e.message);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'draftReviewScreen.startExtractFromOriginal',
@@ -431,6 +444,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           );
         }
       }
+    } on ForeignImageUrl catch (e) {
+      // Déjà tracé par `DraftReviewService` : ici, seulement le dire.
+      if (mounted) context.showErrorSnackBar(e.message);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'draftReviewScreen.doExtractIllustrations',

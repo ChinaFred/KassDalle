@@ -27,11 +27,13 @@
  * lequel l'utilisateur dit qu'il accepte de dépenser davantage.
  *
  * Le plafond s'exprime en **dollars**, l'unité dans laquelle un coût est mesuré
- * et stocké. L'écran le montre en euros quand un taux est connu.
+ * et stocké. L'écran le montre en euros quand un taux est connu. Seul son
+ * maximum est fixé en euros, et converti au moment du calcul.
  */
 
 import { getFirestore, FieldValue, type Firestore } from "firebase-admin/firestore";
 
+import { MIN_PLAUSIBLE_RATE, MAX_PLAUSIBLE_RATE } from "../billing/currencyRate";
 import { COLL_SCAN_SPEND } from "../config";
 import { logInfo, logWarn } from "../logging";
 import { BudgetExceededError, getUsdToEurRate, type BudgetDenial } from "./budget";
@@ -50,23 +52,69 @@ export const DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD = 0.5;
 export const IMPORT_BUDGET_MARGIN = 1.5;
 
 /**
- * Plafond le plus haut qu'un import peut recevoir à son ouverture, par tranche.
+ * Plafond le plus haut qu'un import peut recevoir à son ouverture, par tranche,
+ * en **euros**.
  *
  * Le plafond est écrit par le client sur le job (`budget_limit_usd`). Sans
  * borne serveur, un client modifié posait un plafond d'un milliard de dollars,
  * ou n'en posait aucun : seul le plafond du jour restait (audit sécurité,
  * « Faible »). Le serveur fixe donc le maximum, et la valeur du client ne peut
- * que le réduire. Une décision, pas une mesure : quatre fois le défaut proposé
- * (`DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD`), soit douze à seize fois le coût
- * attendu d'une tranche. Une tranche arrêtée par ce plafond se relance, et la
- * relance ouvre un palier de plus (`raisedImportLimit`).
+ * que le réduire. Une décision, pas une mesure : quatre euros par tranche,
+ * fixés par l'utilisateur (v0.23.13). Une tranche arrêtée par ce plafond se
+ * relance, et la relance ouvre un palier de plus (`raisedImportLimit`).
+ *
+ * Le montant est en euros, les coûts sont mesurés en dollars : la conversion
+ * se fait au moment du calcul, avec le taux de la facture
+ * (`app_config/currency_rate`, `getUsdToEurRate`). Voir
+ * `maxImportBudgetPerWindowUsd` pour le cas sans taux.
  */
-export const MAX_IMPORT_BUDGET_PER_WINDOW_USD = 2;
+export const MAX_IMPORT_BUDGET_PER_WINDOW_EUR = 4;
 
-/** Le plafond maximal d'un import de `windows` tranches, en dollars entiers. */
-export function maxImportBudgetUsd(windows: number): number {
+/**
+ * Borne dure du maximum par tranche, en dollars, quel que soit le taux.
+ *
+ * Le taux est lu dans Firestore ; un taux faux mais plausible (0,1 € pour un
+ * dollar) porterait le maximum à 40 $ par tranche. Huit dollars couvrent
+ * 4 € tant qu'un euro vaut moins de deux dollars, et bornent le reste.
+ */
+export const MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD = 8;
+
+/**
+ * Le maximum par tranche, converti en dollars.
+ *
+ * Avec un taux plausible (entre `MIN_PLAUSIBLE_RATE` et `MAX_PLAUSIBLE_RATE`,
+ * les bornes de la réconciliation), `4 € / taux`, jamais au-delà de
+ * `MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD`. Sans taux, ou avec un taux hors de
+ * ces bornes, aucun taux n'est inventé : le nombre s'applique tel quel, en
+ * dollars — 4 $, l'unité d'origine des coûts. C'est le choix prudent tant
+ * qu'un dollar vaut moins qu'un euro (4 $ ≈ 3,50 € au taux de 2026) : le
+ * maximum baisse, il ne monte jamais au-delà de ce que l'utilisateur a fixé.
+ * L'appelant journalise ce cas (`bookImport.ts`).
+ */
+export function maxImportBudgetPerWindowUsd(usdToEur: number | null): number {
+  const rate = usableRate(usdToEur);
+  if (rate == null) return MAX_IMPORT_BUDGET_PER_WINDOW_EUR;
+  return Math.min(MAX_IMPORT_BUDGET_PER_WINDOW_EUR / rate, MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD);
+}
+
+/** Le taux, s'il est un nombre dans les bornes de vraisemblance ; `null` sinon. */
+export function usableRate(usdToEur: number | null): number | null {
+  if (usdToEur == null || !Number.isFinite(usdToEur)) return null;
+  return usdToEur >= MIN_PLAUSIBLE_RATE && usdToEur <= MAX_PLAUSIBLE_RATE ? usdToEur : null;
+}
+
+/**
+ * Le plafond maximal d'un import de `windows` tranches, en dollars.
+ *
+ * Arrondi au centime **inférieur** : arrondir au dollar supérieur dépassait le
+ * maximum en euros de près d'un dollar. Un dollar au moins, pour un fichier
+ * sans tranche.
+ */
+export function maxImportBudgetUsd(windows: number, usdToEur: number | null): number {
   const n = Number.isFinite(windows) && windows > 0 ? windows : 0;
-  return Math.max(1, Math.ceil(n * MAX_IMPORT_BUDGET_PER_WINDOW_USD));
+  const raw = n * maxImportBudgetPerWindowUsd(usdToEur);
+  // Le epsilon absorbe l'erreur binaire (4 / 0.8 * 10 = 49,999…).
+  return Math.max(1, Math.floor(raw * 100 + 1e-6) / 100);
 }
 
 /**
@@ -77,8 +125,10 @@ export function maxImportBudgetUsd(windows: number): number {
 export function effectiveImportLimitUsd(args: {
   clientLimitUsd: number | null;
   windows: number;
+  /** Taux euros par dollar, ou `null` : voir `maxImportBudgetPerWindowUsd`. */
+  usdToEur: number | null;
 }): number {
-  const max = maxImportBudgetUsd(args.windows);
+  const max = maxImportBudgetUsd(args.windows, args.usdToEur);
   return args.clientLimitUsd == null ? max : Math.min(args.clientLimitUsd, max);
 }
 
@@ -146,22 +196,25 @@ export function readScanSpend(data: Record<string, unknown> | undefined): ScanSp
 }
 
 /**
- * Plafond à proposer sur l'écran de confirmation, en dollars entiers.
+ * Plafond à proposer sur l'écran de confirmation, en dollars.
  *
  * L'estimation mesurée sur les imports passés, plus la moitié. Sans estimation,
  * `DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD` par tranche. Arrondi au dollar
  * supérieur, et un dollar au moins : un plafond proposé à trois centimes ne
- * laisserait pas passer la première tranche.
+ * laisserait pas passer la première tranche. Jamais au-dessus du maximum
+ * (`maxImportBudgetUsd`) : le serveur ramènerait la valeur au maximum sans le
+ * dire, et l'écran afficherait un plafond qui n'est pas celui appliqué.
  */
 export function suggestImportBudgetUsd(args: {
   windows: number;
   estimatedCostUsd: number | null;
+  usdToEur: number | null;
 }): number {
   const raw =
     args.estimatedCostUsd != null && args.estimatedCostUsd > 0
       ? args.estimatedCostUsd * IMPORT_BUDGET_MARGIN
       : Math.max(0, args.windows) * DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD;
-  return Math.max(1, Math.ceil(raw));
+  return Math.min(Math.max(1, Math.ceil(raw)), maxImportBudgetUsd(args.windows, args.usdToEur));
 }
 
 /** Un montant en dollars, ou en euros quand un taux est connu — « 12,40 € ». */

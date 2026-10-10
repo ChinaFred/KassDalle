@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +11,7 @@ import '../../../core/widgets/app_states.dart';
 import '../domain/moderation_entry.dart';
 import '../domain/moderation_labels.dart';
 import 'moderation_providers.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 /// Administration › Modération.
 ///
@@ -210,9 +210,26 @@ class _EntryCard extends ConsumerWidget {
                         )
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          child: CachedNetworkImage(
+                          child: AppNetworkImage(
                             imageUrl: url,
                             fit: BoxFit.cover,
+                            // Même fond que la branche sans URL : une adresse
+                            // hors de Kass'Dalle n'est pas chargée.
+                            errorWidget: (_, _, error) => ColoredBox(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              child: error is ForeignImageUrl
+                                  ? Tooltip(
+                                      message: 'Image hors de Kass\'Dalle',
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: theme.colorScheme.outline,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.broken_image_outlined,
+                                      color: theme.colorScheme.outline,
+                                    ),
+                            ),
                           ),
                         ),
                 ),

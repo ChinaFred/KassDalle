@@ -802,7 +802,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
-| `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_USD` (2 $) par tranche. La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
+| `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_EUR` (4 €) par tranche depuis v0.23.13, convertis en dollars au moment du calcul avec le taux de la facture (`app_config/currency_rate`, `getUsdToEurRate`), jamais plus de `MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD` (8 $) par tranche, et arrondis au centime inférieur. Sans taux, ou avec un taux hors des bornes de vraisemblance de la réconciliation (`MIN_PLAUSIBLE_RATE` 0,1 – `MAX_PLAUSIBLE_RATE` 10, `usableRate`), aucun taux n'est inventé : le maximum vaut 4 $ par tranche, valeur plus basse que 4 € tant qu'un dollar vaut moins qu'un euro, et `runBookImport` le journalise (`logWarn`). La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
 | `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
@@ -2527,12 +2527,20 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
    exclues (`book_window`), sinon un livre à soixante dollars compterait pour un scan — avec au
    moins 3 scans, sinon la mesure est `null`. Le plafond proposé (`suggestedBudgetUsd`,
    `suggestImportBudgetUsd`) est l'estimation plus la moitié, arrondie au dollar supérieur, ou
-   0,50 $ par tranche sans estimation : une décision, pas une mesure. Avec `discard: true`, la
+   0,50 $ par tranche sans estimation : une décision, pas une mesure. Il ne dépasse jamais le
+   maximum serveur (`maxImportBudgetUsd`). La réponse porte aussi, depuis v0.23.13, le maximum
+   (`maxBudgetUsd`), le maximum par tranche (`maxBudgetPerWindowUsd`) et le taux qui a servi
+   (`budgetUsdToEur`, `null` s'il est absent ou hors bornes). Avec ce taux, l'écran fait saisir
+   le plafond en euros (`BudgetCurrency`) et le convertit en dollars avant de l'écrire sur le
+   job ; sans lui, en dollars. Il affiche « maximum … » sous le champ et refuse un plafond plus
+   haut par « Au plus … (… par tranche) », montants lus dans la réponse, jamais en dur. Avec
+   `discard: true`, la
    fonction supprime le fichier — seul son propriétaire, et seulement sous
    `scans/{uid}/livres/`. Elle ne dépense rien.
 3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` avec `budget_limit_usd`, le
    plafond lu dans le champ de l'écran de confirmation : le bouton reste grisé sans montant
-   valide. `runBookImport` borne ce plafond côté serveur à 2 $ par tranche
+   valide. `runBookImport` borne ce plafond côté serveur à 4 € par tranche, convertis en dollars
+   au taux de la facture — 4 $ par tranche sans taux, journalisé —
    (`effectiveImportLimitUsd`) : la valeur du client ne peut que réduire ce maximum. Une tranche
    arrêtée par le plafond se relance, et la relance ouvre un palier de plus. `recipeProcessor`
    prend le relais (voir § 3.4 et `scan_spend`). Quitter l'écran avec un livre lu en attente
@@ -2764,14 +2772,58 @@ Ce qui en dépend : `img-src` limite les images à `'self'`, `data:`, `blob:`,
 Google). Les champs d'image d'une recette ou d'un livre (`image_urls`, `thumbnail_urls`,
 `url_couverture`) et les images insérées dans le texte d'une recette sont écrits par le
 client ; aucune règle Firestore ne contrôle leur hôte — une règle ne parcourt pas une liste, ni
-le texte CookLang. Une URL `https://` d'un autre hôte s'affiche donc sans modération, sur toutes
-les plateformes, tant que la CSP reste en rapport seul. Le serveur ne télécharge aucune de ces
+le texte CookLang. La CSP, en rapport seul, ne bloque aucune de ces URL ; c'est le filtre
+client ci-dessous qui les refuse, sur toutes les plateformes, photo de profil exceptée. Le serveur ne télécharge aucune de ces
 URL : pas de requête sortante vers une adresse fournie par un client.
 
-Suite proposée (audit sécurité 2026-10-09, « Faible ») : mesurer d'abord, en ajoutant une
-destination de rapport (petite fonction HTTP qui journalise par `logWarn`, ou service
-externe), puis basculer en mode bloquant une fois les rapports vides ; côté client, n'afficher
-une image réseau que si son hôte est le bucket du projet ou `googleusercontent.com`.
+**Filtre d'affichage côté client (v0.23.13).** L'application n'affiche que ses propres images,
+sur toutes les plateformes et indépendamment de la CSP. `isAppImageUrl`
+(`lib/core/utils/app_image_url.dart`) accepte trois formes, et elles seules :
+
+| Forme | Exemple |
+|---|---|
+| URL de téléchargement du bucket du projet | `https://firebasestorage.googleapis.com/v0/b/kassdale-6d948.firebasestorage.app/o/<chemin encodé>?…` |
+| URL publique du bucket du projet | `https://storage.googleapis.com/kassdale-6d948.firebasestorage.app/<chemin>` |
+| Les deux mêmes formes sur l'ancien bucket par défaut du projet | `kassdale-6d948.appspot.com` (`kLegacyAppStorageBucket`) : des documents anciens peuvent y pointer |
+| Émulateur Storage, en debug seulement | `http://localhost:9199/v0/b/<bucket du projet>/o/…` (aussi `127.0.0.1`, `10.0.2.2`) |
+
+Le bucket est lu dans `DefaultFirebaseOptions.web.storageBucket` (le même pour toutes les
+plateformes). Tout le reste est refusé : un autre bucket, un autre hôte, `http://`, un port ou
+des identifiants dans l'URL, un chemin qui ne désigne pas un objet, une URL illisible, `data:`,
+`blob:`, `file:`. Les assets embarqués (`assets/…`) s'affichent par `Image.asset` et ne passent
+pas par ce filtre.
+
+`AppNetworkImage` (`lib/core/widgets/app_network_image.dart`) est le seul point d'affichage
+d'une image réseau : même interface que `CachedNetworkImage`, réduite aux paramètres employés.
+Une URL refusée n'est jamais chargée : le widget appelle l'`errorWidget` de l'écran avec
+`ForeignImageUrl`, et l'écran affiche son image de repli habituelle ; sans `errorWidget`,
+`AppImageFallback` (fond `surfaceContainerHighest`, icône `broken_image_outlined`). Les éditeurs
+CookLang et Markdown y écrivent « Image extérieure : importez-la depuis la galerie » ; la file
+de modération montre la même vignette que pour une image sans URL, avec l'infobulle « Image
+hors de Kass'Dalle ». Une vignette refusée n'ouvre pas de visionneuse (pages de livre, visuel
+de dressage). Un refus d'affichage n'est pas une erreur et ne passe pas par
+`ErrorReportService`. Les points couverts : photos et illustrations d'une recette (en-tête,
+onglet Photos, galerie, étapes, aperçu CookLang, éditeurs CookLang et Markdown, feuille
+d'insertion), pages de livre, visuel de dressage, source d'un import, cartes d'illustration des
+brouillons et de la recherche, couvertures des livres (grille, validation, en-tête de liste),
+file de modération, `ImageActionCard`. L'export PDF ne télécharge pas une image refusée
+(`_fetchImageBytes`).
+
+**Téléchargements.** `refFromURL` accepte une URL de n'importe quel bucket. Tout téléchargement
+d'une image par le client passe donc d'abord par le filtre : `DraftReviewService.downloadImageBytes`
+et `extractAndUploadIllustrations` (`_requireAppImage`), `ImageActionCard._downloadBytes`. Un
+refus ne télécharge rien, est tracé par `ErrorReportService` (une donnée qui pointe ailleurs est
+une anomalie) et s'affiche : « Cette image ne vient pas de Kass'Dalle : elle n'est pas
+téléchargée. » (`ForeignImageUrl.message`, intercepté par `on ForeignImageUrl` dans
+`recipe_edit_screen.dart` et `draft_review_screen.dart`).
+
+Exception, décidée par l'utilisateur : la photo de profil (`photo_url`, `googleusercontent.com` pour un compte
+Google) reste affichée sans filtre, dans le menu du compte (`app_shell.dart`), l'écran Compte
+(`account_screen.dart`) et la liste des utilisateurs (`admin_screen.dart`).
+
+Suite proposée pour la CSP (audit sécurité 2026-10-09, « Faible ») : mesurer d'abord, en
+ajoutant une destination de rapport (petite fonction HTTP qui journalise par `logWarn`, ou
+service externe), puis basculer en mode bloquant une fois les rapports vides.
 
 ### Build et déploiement
 

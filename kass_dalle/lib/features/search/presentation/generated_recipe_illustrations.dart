@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +10,7 @@ import '../../moderation/data/image_moderation_service.dart';
 import '../../recipes/presentation/ai/ai_ui_copy.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
+import '../../../core/widgets/app_network_image.dart';
 
 /// Section photos d'une recette générée par l'IA, **avant** son enregistrement.
 ///
@@ -294,11 +294,20 @@ class _Thumbnail extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(
+          child: AppNetworkImage(
             imageUrl: url,
             width: 120,
             height: 120,
             fit: BoxFit.cover,
+            errorWidget: (context, _, _) => Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: Icon(Icons.broken_image_outlined)),
+            ),
           ),
         ),
         Positioned(

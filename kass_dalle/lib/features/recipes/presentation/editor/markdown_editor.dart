@@ -7,6 +7,7 @@ import 'cooklang_block_model.dart';
 import 'markdown_visual_editor.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MarkdownEditor
@@ -550,13 +551,14 @@ class _MarkdownPreview extends StatelessWidget {
 
             final img = ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                uri.toString(),
+              child: AppNetworkImage(
+                imageUrl: uri.toString(),
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  height: 80,
-                  color: Colors.grey.shade200,
-                  child: const Center(child: Icon(Icons.broken_image_outlined)),
+                errorWidget: (_, _, error) => AppImageFallback(
+                  height: error is ForeignImageUrl ? null : 80,
+                  message: error is ForeignImageUrl
+                      ? AppImageFallback.foreignInTextMessage
+                      : null,
                 ),
               ),
             );
@@ -717,17 +719,13 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          url,
+                        child: AppNetworkImage(
+                          imageUrl: url,
                           width: 80,
                           height: 80,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            width: 80,
-                            height: 80,
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.broken_image_outlined),
-                          ),
+                          errorWidget: (_, _, _) =>
+                              const AppImageFallback(width: 80, height: 80),
                         ),
                       ),
                     ),

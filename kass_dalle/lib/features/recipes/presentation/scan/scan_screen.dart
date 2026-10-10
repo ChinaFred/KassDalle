@@ -1051,12 +1051,19 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
 
   BookImportAnalysis get analysis => widget.analysis;
 
+  /// En euros quand le serveur a fourni un taux plausible, en dollars sinon.
+  late final BudgetCurrency _currency = BudgetCurrency.of(analysis);
+
   @override
   void initState() {
     super.initState();
     final suggested = analysis.suggestedBudgetUsd;
     _budget = TextEditingController(
-      text: suggested == null ? '' : formatBudgetInput(suggested),
+      text: suggested == null
+          ? ''
+          : formatBudgetInput(
+              _currency.suggestionFromUsd(suggested, analysis.maxBudgetUsd),
+            ),
     );
   }
 
@@ -1066,8 +1073,19 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
     super.dispose();
   }
 
-  /// Le plafond saisi, ou null tant qu'il n'est pas un montant valide.
+  /// Le plafond saisi, dans la devise du champ, ou null tant qu'il n'est pas
+  /// un montant valide.
   double? get _limit => parseBudgetInput(_budget.text);
+
+  /// Le plafond saisi, en dollars : ce que reçoit le serveur.
+  double? get _limitUsd {
+    final limit = _limit;
+    return limit == null ? null : _currency.toUsd(limit);
+  }
+
+  /// Un montant en dollars, écrit dans la devise du champ : « 45,45 € ».
+  String _amount(double usd) =>
+      '${formatBudgetInput(_currency.maxFromUsd(usd))} ${_currency.symbol}';
 
   String get _windowsLabel {
     final n = analysis.windows;
@@ -1083,9 +1101,10 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
           'importé, ou 3 pages scannées, pour le mesurer. Le plafond '
           'ci-dessous borne la dépense.';
     }
-    // Sans taux de change, le dollar est affiché tel quel : `formatMoney` ne
+    // Même devise que le champ Plafond : en euros seulement si le serveur a
+    // retenu un taux plausible, sinon le dollar tel quel. `formatMoney` ne
     // convertit jamais au hasard.
-    final rate = analysis.usdToEur ?? 0;
+    final rate = _currency.usdToEur ?? 0;
     final n = analysis.referenceScans;
     final basis = analysis.referenceKind == 'books'
         ? 'Mesuré sur vos $n dernier${n > 1 ? 's' : ''} livre'
@@ -1095,12 +1114,37 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
         '${formatMoney(perWindow, rate)} par import.';
   }
 
-  /// L'équivalent en euros du plafond saisi, quand un taux est connu.
+  /// Le maximum que le serveur appliquera, dans la devise du champ : en euros
+  /// quand le taux est connu (décision de l'utilisateur, v0.23.13 : tout
+  /// s'affiche et se saisit en euros). Sans taux, aucun taux n'est inventé :
+  /// les montants restent en dollars, et l'aide le dit.
   String? _budgetHelper() {
-    final limit = _limit;
-    final rate = analysis.usdToEur ?? 0;
-    if (limit == null || rate <= 0) return null;
-    return '≈ ${formatEur(limit * rate)}';
+    final max = analysis.maxBudgetUsd;
+    final parts = <String>[
+      if (max != null) 'maximum ${_amount(max)}',
+      if (!_currency.isEuro)
+        'taux de change indisponible : montants en dollars',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// Le message d'erreur du champ, ou null quand la saisie est acceptée.
+  ///
+  /// L'aide disparaît quand l'erreur s'affiche : le maximum et sa règle par
+  /// tranche figurent donc dans le message lui-même. Ils viennent du serveur,
+  /// jamais d'une constante de l'écran.
+  String? _budgetError() {
+    final limitUsd = _limitUsd;
+    if (limitUsd == null) return 'Indiquez un montant supérieur à zéro';
+    final max = analysis.maxBudgetUsd;
+    if (max != null && budgetExceedsMax(limitUsd, max)) {
+      final perWindow = analysis.maxBudgetPerWindowUsd;
+      final rule = perWindow == null
+          ? ''
+          : ' (${_amount(perWindow)} par tranche)';
+      return 'Au plus ${_amount(max)}$rule';
+    }
+    return null;
   }
 
   String _targetLine() {
@@ -1119,7 +1163,7 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final body = theme.textTheme.bodyMedium;
-    final limit = _limit;
+    final limitUsd = _limitUsd;
     final errorMessage = widget.errorMessage;
     return Card(
       child: Padding(
@@ -1172,11 +1216,11 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
                 ],
                 decoration: InputDecoration(
                   labelText: 'Plafond',
-                  suffixText: '\$',
+                  suffixText: _currency.symbol,
                   helperText: _budgetHelper(),
-                  errorText: limit == null
-                      ? 'Indiquez un montant supérieur à zéro'
-                      : null,
+                  helperMaxLines: 2,
+                  errorText: _budgetError(),
+                  errorMaxLines: 3,
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: (_) => setState(() {}),
@@ -1209,9 +1253,9 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
                 FilledButton.icon(
                   // Pas de plafond valide, pas d'import : c'est le montant que
                   // le serveur fera respecter.
-                  onPressed: limit == null
+                  onPressed: limitUsd == null || _budgetError() != null
                       ? null
-                      : () => widget.onConfirm(limit),
+                      : () => widget.onConfirm(limitUsd),
                   icon: const Icon(Icons.auto_awesome_outlined),
                   label: const Text('Lancer l\'import'),
                 ),

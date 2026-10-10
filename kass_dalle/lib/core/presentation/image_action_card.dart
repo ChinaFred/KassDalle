@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../services/error_report_service.dart';
 import 'image_enhancer_screen.dart';
 import '../theme/app_icon_size.dart';
+import '../widgets/app_network_image.dart';
+import '../utils/app_image_url.dart';
+import '../utils/context_extensions.dart';
 
 class ImageActionCard extends StatefulWidget {
   final String? imageUrl;
@@ -62,6 +64,21 @@ class _ImageActionCardState extends State<ImageActionCard> {
   final ErrorReportService _errorReportService = ErrorReportService();
 
   Future<Uint8List?> _downloadBytes(String url) async {
+    // `refFromURL` accepte n'importe quel bucket : une image hors du stockage
+    // de l'application n'est pas téléchargée.
+    if (!isAppImageUrl(url)) {
+      final refusal = ForeignImageUrl(url);
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'image_action_card_foreign_url',
+          error: refusal,
+          stackTrace: StackTrace.current,
+          context: {'url': url},
+        ),
+      );
+      if (mounted) context.showErrorSnackBar(refusal.message);
+      return null;
+    }
     try {
       return await FirebaseStorage.instance
           .refFromURL(url)
@@ -158,7 +175,7 @@ class _ImageActionCardState extends State<ImageActionCard> {
               child: hasImage
                   ? widget.imageBytes != null
                         ? Image.memory(widget.imageBytes!, fit: BoxFit.cover)
-                        : CachedNetworkImage(
+                        : AppNetworkImage(
                             imageUrl: imageUrl!,
                             fit: BoxFit.cover,
                             placeholder: (_, _) => Container(

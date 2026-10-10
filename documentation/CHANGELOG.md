@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-09
 
+### v0.23.13 — fonctionnel
+
+#### Plafond d'import en euros, tags système hors du formulaire, images de l'application seules
+
+**Plafond maximal d'un import de livre : 4 € par tranche.** Il valait 2 $ par tranche. Le
+maximum est désormais fixé en euros (`MAX_IMPORT_BUDGET_PER_WINDOW_EUR`) et converti en
+dollars au moment du calcul avec le taux de la facture (`app_config/currency_rate`), arrondi au
+centime inférieur, sans dépasser 8 $ par tranche. Sans taux, ou avec un taux hors des bornes de
+la réconciliation (0,1 à 10), aucun taux n'est inventé : le maximum vaut 4 $ par tranche, plus
+bas que 4 € tant qu'un dollar vaut moins qu'un euro, et `runBookImport` le journalise. L'écran
+de confirmation reçoit ce maximum, le maximum par tranche et le taux qui a servi : il fait
+saisir le plafond en euros quand le taux est connu (en dollars sinon), l'envoie en dollars,
+affiche le maximum sous le champ et refuse un plafond plus haut ; le plafond proposé ne le
+dépasse plus. Avant, un montant plus haut était ramené au maximum sans que l'écran le dise.
+
+**Tags système.** Le formulaire d'un livre refuse un tag qui commence par « __ » : taper
+`__libres`, `__kassdale_ia` ou `__secretes` faisait d'un livre ordinaire un livre système, que
+plus personne ne pouvait supprimer. Les règles Firestore ne changent pas.
+
+**Images.** L'application n'affiche que les images de son propre stockage. `isAppImageUrl`
+accepte les URL du bucket du projet et de son ancien bucket `appspot.com`
+(`firebasestorage.googleapis.com/v0/b/<bucket>/o/…`, `storage.googleapis.com/<bucket>/…`) et
+l'émulateur en debug ; `AppNetworkImage` remplace `CachedNetworkImage` et `Image.network` dans
+vingt fichiers d'écran, et affiche l'image de repli de l'écran pour toute autre URL, ou un repli
+neutre (icône d'image cassée). Une vignette refusée n'ouvre pas de visionneuse. L'export PDF,
+l'atelier de retouche et l'extraction d'illustrations ne téléchargent plus une image d'un autre
+bucket ou d'un autre hôte : `refFromURL` les acceptait. La photo de profil Google reste
+affichée : exception décidée par l'utilisateur.
+
 ### v0.23.12 — technique
 
 #### Failles faibles de l'audit sécurité : règles, plafond d'import, révocation, archives, CI

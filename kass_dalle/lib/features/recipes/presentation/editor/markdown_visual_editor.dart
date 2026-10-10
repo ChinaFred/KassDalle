@@ -1,5 +1,6 @@
 import '../../../../core/theme/app_icon_size.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/app_network_image.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Block model
@@ -660,14 +661,15 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               (imgPos == 'after' || imgPos.isEmpty ? 100.0 : 30.0);
           final imgWidget = ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: Image.network(
-              url,
+            child: AppNetworkImage(
+              imageUrl: url,
               fit: BoxFit.cover,
               filterQuality: FilterQuality.high,
-              errorBuilder: (_, _, _) => Container(
-                height: 60,
-                color: cs.surfaceContainerHighest,
-                child: const Center(child: Icon(Icons.broken_image_outlined)),
+              errorWidget: (_, _, error) => AppImageFallback(
+                height: error is ForeignImageUrl ? null : 60,
+                message: error is ForeignImageUrl
+                    ? AppImageFallback.foreignInTextMessage
+                    : null,
               ),
             ),
           );

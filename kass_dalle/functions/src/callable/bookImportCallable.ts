@@ -24,7 +24,12 @@ import {
   openBookFile,
 } from "../books/bookFile";
 import { referenceCostPerScan, referenceCostPerWindow } from "../books/importEstimate";
-import { suggestImportBudgetUsd } from "../ai/importBudget";
+import {
+  maxImportBudgetPerWindowUsd,
+  maxImportBudgetUsd,
+  suggestImportBudgetUsd,
+  usableRate,
+} from "../ai/importBudget";
 import { logError, logInfo, logWarn } from "../logging";
 import { isWellFormedObjectPath } from "../utils/storagePath";
 
@@ -129,7 +134,20 @@ export const analyzeBookFileFn = onCall(
         referenceScans: referenceKind === "books" ? bookReference.books : pageReference.scans,
         // Une décision, pas une mesure : le plafond proposé existe même sans
         // estimation, et l'utilisateur le règle sur l'écran.
-        suggestedBudgetUsd: suggestImportBudgetUsd({ windows: opened.windows, estimatedCostUsd }),
+        suggestedBudgetUsd: suggestImportBudgetUsd({
+          windows: opened.windows,
+          estimatedCostUsd,
+          usdToEur,
+        }),
+        // Le maximum que le serveur appliquera (4 € par tranche, convertis) :
+        // l'écran refuse un plafond plus haut au lieu de le voir réduit en silence.
+        maxBudgetUsd: maxImportBudgetUsd(opened.windows, usdToEur),
+        // Le taux qui a servi au maximum : le client saisit le plafond en euros
+        // avec lui, et en dollars quand il est absent ou hors bornes.
+        budgetUsdToEur: usableRate(usdToEur),
+        // Le maximum par tranche, en dollars : l'écran l'affiche au lieu d'une
+        // constante, et suit ainsi tout changement du serveur.
+        maxBudgetPerWindowUsd: maxImportBudgetPerWindowUsd(usdToEur),
         usdToEur,
       };
     } catch (err) {

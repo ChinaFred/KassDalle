@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:intl/intl.dart';
 
 /// Ce que le serveur a lu d'un livre avant son import.
@@ -19,6 +21,9 @@ class BookImportAnalysis {
     this.referenceScans = 0,
     this.referenceKind,
     this.suggestedBudgetUsd,
+    this.maxBudgetUsd,
+    this.maxBudgetPerWindowUsd,
+    this.budgetUsdToEur,
     this.usdToEur,
   });
 
@@ -58,6 +63,22 @@ class BookImportAnalysis {
   /// estimation n'est possible. L'utilisateur la lit et la règle.
   final double? suggestedBudgetUsd;
 
+  /// Plafond le plus haut que le serveur appliquera, en dollars : 4 € par
+  /// tranche, convertis au taux de la facture (4 $ par tranche sans taux).
+  ///
+  /// Absent d'une réponse d'avant v0.23.13 : l'écran ne borne alors pas la
+  /// saisie, et le serveur ramène le plafond au maximum.
+  final double? maxBudgetUsd;
+
+  /// Maximum par tranche, en dollars, tel que le serveur l'applique. L'écran
+  /// l'affiche plutôt que d'écrire « 4 € » en dur : un changement côté serveur
+  /// s'y reflète.
+  final double? maxBudgetPerWindowUsd;
+
+  /// Taux qui a servi au maximum : présent seulement s'il est plausible. Le
+  /// plafond se saisit alors en euros ; sans lui, en dollars.
+  final double? budgetUsdToEur;
+
   /// Taux dollar → euro relevé sur la facturation, ou null.
   final double? usdToEur;
 
@@ -75,6 +96,9 @@ class BookImportAnalysis {
       referenceScans: (map['referenceScans'] as num?)?.toInt() ?? 0,
       referenceKind: map['referenceKind'] as String?,
       suggestedBudgetUsd: (map['suggestedBudgetUsd'] as num?)?.toDouble(),
+      maxBudgetUsd: (map['maxBudgetUsd'] as num?)?.toDouble(),
+      maxBudgetPerWindowUsd: (map['maxBudgetPerWindowUsd'] as num?)?.toDouble(),
+      budgetUsdToEur: (map['budgetUsdToEur'] as num?)?.toDouble(),
       usdToEur: (map['usdToEur'] as num?)?.toDouble(),
     );
   }
@@ -112,6 +136,54 @@ double? parseBudgetInput(String text) {
   final value = double.tryParse(cleaned);
   if (value == null || !value.isFinite || value <= 0) return null;
   return value;
+}
+
+/// La devise dans laquelle le plafond d'un import se saisit et s'affiche.
+///
+/// En euros quand le serveur a fourni un taux plausible (`budgetUsdToEur`),
+/// en dollars sinon. Le serveur reçoit toujours des dollars : la conversion
+/// se fait ici, avec le même taux que celui du maximum.
+class BudgetCurrency {
+  const BudgetCurrency._(this.usdToEur);
+
+  factory BudgetCurrency.of(BookImportAnalysis analysis) {
+    final rate = analysis.budgetUsdToEur;
+    return BudgetCurrency._(rate != null && rate > 0 ? rate : null);
+  }
+
+  /// Taux euros par dollar, ou null : saisie en dollars.
+  final double? usdToEur;
+
+  bool get isEuro => usdToEur != null;
+
+  /// « € » ou « $ ».
+  String get symbol => isEuro ? '€' : '\$';
+
+  /// Un montant en dollars, dans la devise de saisie.
+  double fromUsd(double usd) => isEuro ? usd * usdToEur! : usd;
+
+  /// Un montant saisi, en dollars pour le serveur.
+  double toUsd(double amount) => isEuro ? amount / usdToEur! : amount;
+
+  /// Un maximum dans la devise de saisie, arrondi au centime inférieur : le
+  /// montant affiché ne dépasse jamais celui que le serveur appliquera.
+  double maxFromUsd(double usd) =>
+      (fromUsd(usd) * 100 + 1e-6).floorToDouble() / 100;
+
+  /// Le plafond proposé dans la devise de saisie : arrondi à l'unité
+  /// supérieure, sans dépasser le maximum.
+  double suggestionFromUsd(double usd, double? maxUsd) {
+    final value = fromUsd(usd).ceilToDouble();
+    return maxUsd == null ? value : math.min(value, maxFromUsd(maxUsd));
+  }
+}
+
+/// Le plafond saisi dépasse-t-il le maximum du serveur ?
+///
+/// Un centime de tolérance : le maximum est arrondi au centime, la saisie aussi.
+bool budgetExceedsMax(double limitUsd, double? maxUsd) {
+  if (maxUsd == null || maxUsd <= 0) return false;
+  return limitUsd > maxUsd + 0.005;
 }
 
 /// Le plafond proposé, tel qu'il s'écrit dans le champ : sans décimale inutile.

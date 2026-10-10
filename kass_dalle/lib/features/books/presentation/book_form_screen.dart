@@ -290,6 +290,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
       // ── Autres livres ───────────────────────────────────────────────────────
       final annee = int.tryParse(_anneeCtrl.text.trim());
+      // Un tag réservé (`__…`) est refusé par le validateur du champ.
       final tags = _tagsCtrl.text
           .split(',')
           .map((e) => e.trim())
@@ -572,9 +573,10 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               TextFormField(
                 controller: _tagsCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Tags (separes par des virgules)',
+                  labelText: 'Tags (séparés par des virgules)',
                   prefixIcon: Icon(Icons.sell_outlined),
                 ),
+                validator: Book.reservedTagError,
               ),
               if (existing?.sourceFileName != null) ...[
                 const SizedBox(height: 12),
