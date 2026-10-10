@@ -1645,6 +1645,12 @@ pas par document rendu.
 de l'application en ouvre de nouveaux dès que sa portée change (`RecipeViewer` change), mais un
 client modifié pourrait garder l'ancien jusqu'à la prochaine écriture du document écouté.
 
+**Décisions de l'utilisateur sur les cas limites (2026-10-10).** Les membres ajoutés sans leur
+accord avant la v0.23.17 restent membres. Une annotation ou une note posée sur une recette se lit
+par qui lit la recette, même si son auteur ne partage aucun groupe avec le lecteur : elle porte
+sur la recette, et un filtre par auteur rendrait les requêtes du client improuvables. La
+couverture « Recette libre » reste dans le profil public (`user_profiles`).
+
 **Bornes d'un groupe.** Le nom compte 60 caractères au plus, et 50 invitations au plus
 attendent une réponse (`boundedGroup`) : chaque invité lit le groupe, et sans borne un compte
 poussait un texte de taille quelconque chez tous ceux qu'il invitait.
