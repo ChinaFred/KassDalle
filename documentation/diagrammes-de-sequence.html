@@ -158,7 +158,7 @@
       <li><a href="#compte">Authentification et nomination d'un compte</a></li>
       <li><a href="#menus">Suggestion de menus</a></li>
       <li><a href="#courses">Liste de courses</a></li>
-      <li><a href="#groupe">Groupe familial</a></li>
+      <li><a href="#groupe">Groupe familial : inviter puis rejoindre</a></li>
       <li><a href="#budget">Plafond de dépense et alerte mensuelle</a></li>
       <li><a href="#reconciliation">Réconciliation mensuelle</a></li>
       <li><a href="#reprise">Reprise d'un job échoué</a></li>
@@ -1811,12 +1811,14 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="groupe"><span class="n">16</span>Groupe familial</h2>
+    <h2 id="groupe"><span class="n">16</span>Groupe familial : inviter puis rejoindre</h2>
     <p class="sec-note">
-      Un groupe ouvre la lecture des livres et recettes <b>validés et non privés</b> de ses
-      membres. Il n'existe pas de partage nominatif : un livre est partagé avec les membres de ses
-      groupes, ou privé.
-      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId}</span>
+      Un groupe ouvre la lecture des livres et recettes <b>non privés</b> de ses membres, dans les
+      deux sens. On n'y entre qu'en acceptant une invitation (v0.23.17). Les règles Firestore
+      vérifient que le créateur d'un livre ou d'une recette partage un groupe avec le lecteur, par
+      une lecture de <code>group_reach/{lecteur}</code>, que le serveur seul écrit. Il n'existe pas
+      de partage nominatif : un livre est partagé avec les membres de ses groupes, ou privé.
+      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId} → syncGroupReach → group_reach/{uid}</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1824,36 +1826,62 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   actor O as Propriétaire
-  actor M as Membre
+  actor I as Invité
   participant G as GroupsScreen
   participant R as GroupRepository
   participant FS as groups/{groupId}
   participant US as user_profiles
-  participant BL as Bibliothèque
+  participant SR as syncGroupReach
+  participant GR as group_reach/{uid}
+  participant BL as Bibliothèque, recherche, planning
 
   O->>G: Créer un groupe — nom libre
   G->>R: createGroup(nom, ownerUid)
-  R->>FS: owner_id, members[owner]
+  R->>FS: owner_id, member_ids [owner]
   Note over R,FS: un reader peut créer un groupe et en être propriétaire
+  FS-->>SR: onDocumentWritten
+  SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
-  O->>G: chercher un membre par nom
+  O->>G: Rechercher une personne à inviter…
   G->>US: searchUsers — lecture plafonnée à 200 profils publics
   US-->>G: candidats — nom seul, ni adresse ni rôle
-  Note over G,US: users/{uid} ne se lit que par son titulaire et un admin (v0.23.14)
-  O->>R: addMember(groupId, uid)
-  R->>FS: members += uid
-  FS-->>BL: le membre apparaît aussitôt dans les sections
-
-  M->>BL: ouvre la bibliothèque
-  BL->>BL: Mes livres + une section par membre
-  Note over BL: seuls les livres validés ET non privés des autres,<br/>chaque section repliable
-
-  alt le propriétaire retire
-    O->>R: removeMember
-  else un membre s'en va
-    M->>R: removeMember(soi-même)
+  O->>G: Inviter dans le groupe
+  G->>R: inviteMember(groupId, uid)
+  R->>FS: invited_ids += uid
+  Note over R,FS: les règles refusent qu'on écrive member_ids pour y ajouter quelqu'un
+  FS-->>SR: onDocumentWritten
+  SR->>SR: membres inchangés, aucune portée ne bouge
+  opt le propriétaire annule — Invitations en attente (n)
+    O->>R: withdrawInvitation(groupId, uid)
+    R->>FS: invited_ids -= uid
   end
-  R->>FS: members -= uid
+
+  FS-->>I: watchMyInvitations — badge sur le chip du compte<br/>et sur « Groupes familiaux » du menu
+  I->>G: ouvre Groupes — « Invitations reçues » en tête
+  alt Accepter
+    G->>I: « Rejoindre « X » ? » — les membres verront vos livres<br/>et recettes non privés, et vous les leurs
+    I->>G: Rejoindre
+    G->>R: acceptInvitation(groupId, uid)
+    R->>FS: une seule écriture — invited_ids -= uid, member_ids += uid
+    FS-->>SR: onDocumentWritten, retry: true
+    SR->>GR: transaction par compte présent avant ou après —<br/>relit ses groupes, réécrit uids
+    GR-->>BL: groupReachProvider → groupMemberIdsProvider → RecipeViewer.groupPeers
+    BL->>BL: is_private == false et created_by in [portée],<br/>lots de 30, 15 pour les brouillons
+    Note over BL: une valeur hors de la portée ferait refuser la requête entière :<br/>le client part de group_reach, pas de member_ids
+  else Refuser — sans confirmation
+    G->>R: withdrawInvitation(groupId, uid)
+    R->>FS: invited_ids -= uid
+  end
+
+  alt le propriétaire retire un membre
+    O->>R: removeMember(groupId, uid)
+  else un membre autre que le propriétaire quitte
+    I->>R: removeMember(groupId, soi-même)
+  end
+  R->>FS: member_ids -= uid
+  FS-->>SR: onDocumentWritten
+  SR->>GR: le sortant disparaît de la portée des membres,<br/>et les membres de la sienne
+  Note over GR,BL: traité comme un compte supprimé — il garde ses propres documents
 </pre>
       </div>
       <figcaption>

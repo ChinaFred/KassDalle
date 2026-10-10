@@ -7,7 +7,8 @@ class FamilyGroup {
   final List<String> memberIds;
 
   /// UIDs des comptes invités qui n'ont pas encore répondu. Un invité n'est
-  /// pas membre : il ne lit rien du groupe tant qu'il n'a pas accepté.
+  /// pas membre : il lit ce document pour décider, mais aucun livre ni
+  /// aucune recette du groupe tant qu'il n'a pas accepté.
   final List<String> invitedIds;
 
   final DateTime createdAt;
