@@ -26,8 +26,12 @@
 #    choisie. Le nom de <tête> doit alors être strictement supérieur à celui
 #    de <base>.
 #
-# Et dans tous les cas, CHANGELOG.md doit porter une, et une seule, entrée
-# « ### v<nom> » pour la version de <tête>.
+# Et dans tous les cas, CHANGELOG.md doit porter au moins une entrée
+# « ### v<nom> — fonctionnel » ou « ### v<nom> — technique » pour la version
+# de <tête>, au plus une de chaque type, et aucun autre titre « ### v<nom> ».
+# Quand il y en a deux, un seul commit ordinaire doit les avoir ajoutés :
+# deux livraisons au même numéro, intégrées par rebase, laissent un titre par
+# livraison, chacun ajouté par son propre commit.
 #
 set -euo pipefail
 
@@ -64,17 +68,45 @@ for commit in $pubspec_commits; do
 done
 count=$(echo "$introductions" | wc -w)
 if [ "$count" -gt 1 ]; then
-  echo "::error file=$pubspec::v$head_name a été introduite par $count commits ($introductions ) : deux livraisons portent ce numéro. Intégrer origin/master, qui porte peut-être déjà la correction ; si le doublon vient de ce changement, reprendre la version de master + 1 dans pubspec.yaml et dans le titre de l'entrée de CHANGELOG.md."
+  echo "::error file=$pubspec::v$head_name a été introduite par $count commits ($introductions ) : deux livraisons portent ce numéro. Intégrer origin/master, qui porte peut-être déjà la correction ; si le doublon vient de ce changement, reprendre la version de master + 1 dans pubspec.yaml et dans les titres de CHANGELOG.md pour cette version."
   status=1
 fi
 
-# Une seule entrée au CHANGELOG pour la version de la tête, toujours : un
-# rebase sur une hausse identique vide le changement de pubspec.yaml, mais
-# laisse deux entrées si le conflit du CHANGELOG les a gardées toutes deux.
-entries=$(git show "$head:$changelog" 2>/dev/null | grep -c "^### v$head_name " || true)
-if [ "$entries" != "1" ]; then
-  echo "::error file=$changelog::CHANGELOG.md porte $entries entrée(s) « ### v$head_name », il en faut une seule."
+# Les entrées du CHANGELOG pour la version de la tête, toujours : un rebase
+# sur une hausse identique vide le changement de pubspec.yaml, et seul le
+# CHANGELOG garde alors la trace des deux livraisons.
+prefix="### v$head_name "
+titles_at() {
+  git show "$1:$changelog" 2>/dev/null | tr -d '\r' | awk -v p="$prefix" 'index($0, p) == 1' || true
+}
+titles=$(titles_at "$head")
+entries=$(printf '%s' "$titles" | grep -c . || true)
+kinds=$(printf '%s\n' "$titles" | sed -n 's/^### v[^ ]* — \(fonctionnel\|technique\)[[:space:]]*$/\1/p')
+valid=$(printf '%s' "$kinds" | grep -c . || true)
+repeated=$(printf '%s\n' "$kinds" | grep . | sort | uniq -d || true)
+if [ "$entries" = "0" ]; then
+  echo "::error file=$changelog::CHANGELOG.md n'a aucune entrée « ### v$head_name — fonctionnel » ni « — technique »."
   status=1
+elif [ "$valid" != "$entries" ]; then
+  echo "::error file=$changelog::CHANGELOG.md porte un titre « ### v$head_name » qui ne se termine ni par « — fonctionnel » ni par « — technique »."
+  status=1
+elif [ -n "$repeated" ]; then
+  echo "::error file=$changelog::CHANGELOG.md porte deux titres « ### v$head_name — $repeated » : deux livraisons portent ce numéro. Reprendre la version de master + 1."
+  status=1
+elif [ "$entries" = "2" ]; then
+  adders=""
+  changelog_commits=$(git log --full-history --no-merges --format=%H -S"$prefix" "$head" -- "$changelog")
+  for commit in $changelog_commits; do
+    now=$(titles_at "$commit" | grep -c . || true)
+    before=$(titles_at "$commit^" | grep -c . || true)
+    if [ "$now" -gt "$before" ]; then
+      adders="$adders $(git rev-parse --short "$commit")"
+    fi
+  done
+  if [ "$(echo "$adders" | wc -w)" -gt 1 ]; then
+    echo "::error file=$changelog::Les deux titres « ### v$head_name » ont été ajoutés par des commits distincts ($adders ) : deux livraisons portent peut-être ce numéro. Reprendre la version de master + 1 ; s'il s'agit d'une seule livraison, ajouter les deux titres dans le même commit."
+    status=1
+  fi
 fi
 
 # 2. Hausse par rapport à la base.
@@ -99,7 +131,7 @@ if [ -z "$touched" ] && git merge-base --is-ancestor "$base" "$head" &&
 fi
 
 if [ -z "$touched" ]; then
-  [ "$status" = 0 ] && echo "Aucun commit ne change la version, v$head_name n'a qu'une origine et une entrée au CHANGELOG : correct."
+  [ "$status" = 0 ] && echo "Aucun commit ne change la version, v$head_name n'a qu'une origine, son entrée au CHANGELOG est correcte."
   exit "$status"
 fi
 
@@ -110,10 +142,10 @@ echo "Version changée par $touched : master v$base_raw, ce changement v$head_ra
 
 newest=$(printf '%s\n%s\n' "$base_name" "$head_name" | sort -V | tail -1)
 if [ "$head_name" = "$base_name" ] || [ "$newest" != "$head_name" ]; then
-  echo "::error file=$pubspec::La version v$head_name n'est pas supérieure à celle de master (v$base_name). Une autre livraison a pris ce numéro : reprendre v$base_name + 1 dans pubspec.yaml et dans le titre de l'entrée de CHANGELOG.md."
+  echo "::error file=$pubspec::La version v$head_name n'est pas supérieure à celle de master (v$base_name). Une autre livraison a pris ce numéro : reprendre v$base_name + 1 dans pubspec.yaml et dans les titres de CHANGELOG.md pour cette version."
   status=1
 fi
 
 
-[ "$status" = 0 ] && echo "v$head_name suit v$base_name, une entrée au CHANGELOG : correct."
+[ "$status" = 0 ] && echo "v$head_name suit v$base_name, entrée au CHANGELOG correcte."
 exit "$status"

@@ -51,6 +51,7 @@ import {
   isReheatFriendly,
   needsModel,
   planningConceptDecision,
+  conceptsAllowance,
   preselect,
   proteinOf,
   ratingFactor,
@@ -254,11 +255,19 @@ interface PreselectionFixture {
       concepts_max: number;
       concepts_used: number;
       cost_usd: number;
+      reserved_usd?: number;
       cost_cap_usd: number | null;
     } | null;
     now_ms: number;
     estimate_usd: number | null;
     expected: string | null;
+    why: string;
+  }>;
+  concepts_allowance: Array<{
+    policy_max: number;
+    slots: number;
+    filled: number;
+    expected: number;
     why: string;
   }>;
 }
@@ -869,11 +878,23 @@ describe("plafond de conceptions par génération", () => {
             conceptsMax: c.run.concepts_max,
             conceptsUsed: c.run.concepts_used,
             costUsd: c.run.cost_usd,
+            reservedUsd: c.run.reserved_usd ?? 0,
             costCapUsd: c.run.cost_cap_usd,
           }
         : null;
       const out = planningConceptDecision({ run, nowMs: c.now_ms, estimateUsd: c.estimate_usd });
       assert.equal(out.ok ? null : out.reason, c.expected);
+    });
+  }
+});
+
+describe("conceptions automatiques ouvertes par une génération", () => {
+  for (const c of fixture.concepts_allowance) {
+    test(c.why, () => {
+      assert.equal(
+        conceptsAllowance({ policyMax: c.policy_max, slots: c.slots, filled: c.filled }),
+        c.expected,
+      );
     });
   }
 });

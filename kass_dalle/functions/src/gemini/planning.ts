@@ -1275,7 +1275,26 @@ export interface PlanningRunState {
   conceptsMax: number;
   conceptsUsed: number;
   costUsd: number;
+  /**
+   * Coût estimé des conceptions réservées dont le coût réel n'est pas encore
+   * reporté. Sans lui, des conceptions lancées en parallèle voyaient toutes le
+   * même `costUsd` et passaient ensemble le plafond.
+   */
+  reservedUsd: number;
   costCapUsd: number | null;
+}
+
+/**
+ * Combien de conceptions automatiques une génération ouvre : le maximum de la
+ * politique, borné par le nombre de créneaux restés vides. Une génération qui
+ * a tout rempli n'en ouvre aucune.
+ */
+export function conceptsAllowance(args: {
+  policyMax: number;
+  slots: number;
+  filled: number;
+}): number {
+  return Math.max(0, Math.min(args.policyMax, args.slots - args.filled));
 }
 
 /**
@@ -1316,7 +1335,7 @@ export function planningConceptDecision(args: {
   if (
     run.costCapUsd != null &&
     args.estimateUsd != null &&
-    run.costUsd + args.estimateUsd > run.costCapUsd
+    run.costUsd + run.reservedUsd + args.estimateUsd > run.costCapUsd
   ) {
     return {
       ok: false,

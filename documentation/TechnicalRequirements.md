@@ -1031,10 +1031,11 @@ déploiement des index).
 | `model_status` | `String` | `ok` · `partial` · `failed` · `budget` · `skipped` |
 | `provider` · `model` | `String?` | moteur qui a répondu ; `null` sans appel |
 | `proposals` | `List<Map>` | `{slot, date, recipe_id, starter_id, dessert_id, source}` — `source` `model` ou `code` |
-| `concepts_max` | `int` | `concepts_per_generation` au moment de la génération |
+| `concepts_max` | `int` | conceptions automatiques ouvertes : `concepts_per_generation` au moment de la génération, borné par le nombre de créneaux restés vides (`conceptsAllowance`) — une génération qui a tout rempli n'en ouvre aucune |
 | `concepts_used` | `int` | incrémenté en transaction **avant** chaque conception rattachée (une conception en échec a pu être facturée) |
 | `cost_cap_usd` | `Number?` | plafond de la génération converti au taux de la facture ; `null` sans taux utilisable (le plafond en euros ne s'applique pas) |
 | `cost_usd` | `Number` | somme des coûts enregistrés (`recordedCostUsd`) de l'appel de planning et des conceptions |
+| `reserved_usd` | `Number` | coût estimé des conceptions réservées dont le coût réel n'est pas encore reporté : augmenté dans la transaction de réservation, diminué par `addPlanningRunCost`. Une conception en échec garde sa réservation, ce qui rend le plafond plus strict, jamais plus large |
 | `unpriced_calls` | `int` | appels sans montant (grille illisible) |
 
 Le coût d'une génération se relit aussi dans `ai_usage` : chaque ligne de l'appel de
@@ -2435,11 +2436,15 @@ s'applique pas — le plafond de nombre de conceptions et le plafond du jour res
 Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
 (transaction sur `users/{uid}/planning_runs/{runId}`) refuse une génération inconnue sous
 l'appelant (`not-found`), de plus de 6 heures, au compteur atteint, ou dont le coût cumulé
-plus l'estimation dépasserait le plafond (`resource-exhausted`, `details.reason`). Le
-compteur est incrémenté **avant** l'appel ; après, `addPlanningRunCost` ajoute le coût
-enregistré. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
+plus les réservations en cours plus l'estimation dépasserait le plafond
+(`resource-exhausted`, `details.reason`). Le compteur est incrémenté et l'estimation réservée
+(`reserved_usd`) **avant** l'appel, dans la même transaction : des conceptions lancées en
+parallèle se voient l'une l'autre. Après, `addPlanningRunCost` ajoute le coût enregistré et
+libère la réservation. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
 unitaire (« Concevoir avec l'IA » sur un créneau, idée retenue dans le sélecteur) : hors
-plafond de génération, borné par le plafond du jour.
+plafond de génération, borné par le plafond du jour. Le plafond de génération ne borne donc
+que les conceptions automatiques ; le total des conceptions, automatiques et manuelles, n'est
+borné que par le plafond du jour de chaque compte.
 
 **Réponse de `suggestMealPlanFn`** : `runId` (`null` en mode `code` ou si le document n'a pas
 pu être écrit), `mode`, `modelStatus`, `notice`, `suggestions` (`slot`, `recipeId`,
@@ -3387,15 +3392,23 @@ parent, ou la tête descend de la base sans en avoir la version (hausse faite da
 fusion). Les commits de fusion ne comptent pas comme hausse : fusionner `master` dans une
 branche y apporte la version de `master` sans que la branche l'ait choisie. Le script échoue
 alors quand le nom de version n'est pas strictement supérieur à celui de la base. Dans tous
-les cas, `documentation/CHANGELOG.md` doit avoir une, et une seule, entrée `### v<nom>` pour la
-version de la tête : un rebase sur une hausse identique vide le changement de `pubspec.yaml`,
-et seul le `CHANGELOG.md` garde alors les deux entrées. `CLAUDE.md` demande d'intégrer
+les cas, `documentation/CHANGELOG.md` doit avoir au moins un titre `### v<nom> — fonctionnel`
+ou `### v<nom> — technique` pour la version de la tête, au plus un de chaque type, et aucun
+autre titre `### v<nom>`. Deux titres doivent avoir été ajoutés par un seul commit ordinaire.
+Un rebase sur une hausse identique vide le changement de `pubspec.yaml`, et seul le
+`CHANGELOG.md` garde alors la trace des deux livraisons : deux titres du même type, ou deux
+titres ajoutés chacun par son commit. Une livraison qui ajoute son second titre dans un
+commit à part échoue aussi ; elle regroupe les deux titres dans un commit. `CLAUDE.md` demande d'intégrer
 `origin/master` par une fusion, jamais par un rebase. Une base
 introuvable (premier push, historique réécrit) saute ce second contrôle ; une tête
 introuvable fait échouer le script.
 
 Un script modifié par une PR s'exécute dans sa version modifiée, sur la PR puis sur le push de
-fusion : seule la relecture empêche d'affaiblir le contrôle. `.gitattributes` force les fins
+fusion : seule la relecture empêche d'affaiblir le contrôle. `relecteur-regles` signale tout
+diff qui touche `check-version.sh`, `ci.yml` ou `deploy.yml` (contrôle 14), et l'utilisateur
+décide avant la fusion. Un `CODEOWNERS` avec protection de branche a été écarté : il
+bloquerait les pushes directs du PC sur `master`, et les PR ouvertes sous le compte de
+l'utilisateur ne peuvent pas recevoir son approbation. `.gitattributes` force les fins
 de ligne LF sur les `*.sh`, pour que le `bash` de Git for Windows les lise sur le PC.
 
 Le même script se lance à la main avant un push depuis le PC ou avant la fusion d'une PR :

@@ -30,6 +30,7 @@ import { logError, logWarn } from "../logging";
 import {
   DEFAULT_PLANNING_POLICY,
   HISTORY_DAYS,
+  conceptsAllowance,
   estimateCallCeilingUsd,
   planningConceptDecision,
   readPlanningPolicy,
@@ -259,8 +260,9 @@ function runRef(uid: string, runId: string) {
 /**
  * Écrit le document de génération, une fois, après l'appel.
  *
- * Rend `false` en cas d'échec (`logError`) : la réponse part quand même, sans
- * `runId`, et le client ne lance alors aucune conception automatique.
+ * Rend le nombre de conceptions automatiques ouvertes, ou `null` en cas d'échec
+ * (`logError`) : la réponse part quand même, sans `runId`, et le client ne
+ * lance alors aucune conception automatique.
  */
 export async function writePlanningRun(args: {
   uid: string;
@@ -270,8 +272,13 @@ export async function writePlanningRun(args: {
   suggestion: PlanningSuggestion;
   policy: PlanningPolicy;
   costCapUsd: number | null;
-}): Promise<boolean> {
+}): Promise<number | null> {
   const { suggestion } = args;
+  const conceptsMax = conceptsAllowance({
+    policyMax: args.policy.conceptsPerGeneration,
+    slots: args.slotDates.length,
+    filled: new Set(suggestion.slots.map((s) => s.slot)).size,
+  });
   const now = new Date();
   const expires = new Date(now.getTime() + PLANNING_RUN_RETENTION_DAYS * 86_400_000);
   const proposal = (s: PlanningSlotResult) => ({
@@ -299,13 +306,14 @@ export async function writePlanningRun(args: {
       provider: suggestion.modelCall?.provider ?? null,
       model: suggestion.modelCall?.model ?? null,
       proposals: suggestion.slots.map(proposal),
-      concepts_max: args.policy.conceptsPerGeneration,
+      concepts_max: conceptsMax,
       concepts_used: 0,
+      reserved_usd: 0,
       cost_cap_usd: args.costCapUsd,
       cost_usd: typeof cost === "number" ? cost : 0,
       unpriced_calls: suggestion.modelCall && cost == null ? 1 : 0,
     });
-    return true;
+    return conceptsMax;
   } catch (err) {
     await logError({
       message: "Planning — document de génération non écrit, conceptions automatiques coupées",
@@ -315,7 +323,7 @@ export async function writePlanningRun(args: {
       errorDescription: err instanceof Error ? err.message : String(err),
       extra: { runId: args.runId },
     });
-    return false;
+    return null;
   }
 }
 
@@ -356,6 +364,7 @@ export async function reservePlanningConcept(args: {
           conceptsMax: num(data.concepts_max, 0),
           conceptsUsed: num(data.concepts_used, 0),
           costUsd: num(data.cost_usd, 0),
+          reservedUsd: num(data.reserved_usd, 0),
           costCapUsd: typeof data.cost_cap_usd === "number" ? data.cost_cap_usd : null,
         }
       : null;
@@ -365,24 +374,38 @@ export async function reservePlanningConcept(args: {
       estimateUsd: args.estimateUsd,
     });
     if (!decision.ok) throw new PlanningRunDenied(decision.reason, decision.message);
-    tx.update(ref, { concepts_used: FieldValue.increment(1) });
+    // Le coût estimé est réservé dans la même transaction : une conception
+    // lancée en parallèle le voit avant que le coût réel soit reporté.
+    tx.update(ref, {
+      concepts_used: FieldValue.increment(1),
+      ...(args.estimateUsd != null ? { reserved_usd: FieldValue.increment(args.estimateUsd) } : {}),
+    });
     return Math.max(0, (run?.conceptsMax ?? 0) - (run?.conceptsUsed ?? 0) - 1);
   });
 }
 
-/** Ajoute le coût d'une conception à sa génération. Best-effort, `logError` en échec. */
+/**
+ * Ajoute le coût d'une conception à sa génération et libère sa réservation.
+ * Best-effort, `logError` en échec : une réservation non libérée laisse le
+ * plafond plus strict, jamais plus large.
+ */
 export async function addPlanningRunCost(args: {
   uid: string;
   runId: string;
   costUsd: number | null | undefined;
+  /** Le coût estimé réservé par `reservePlanningConcept`, `null` sans estimation. */
+  reservedUsd: number | null;
   correlationId: string;
 }): Promise<void> {
   try {
-    await runRef(args.uid, args.runId).update(
-      typeof args.costUsd === "number"
+    await runRef(args.uid, args.runId).update({
+      ...(typeof args.costUsd === "number"
         ? { cost_usd: FieldValue.increment(args.costUsd) }
-        : { unpriced_calls: FieldValue.increment(1) },
-    );
+        : { unpriced_calls: FieldValue.increment(1) }),
+      ...(args.reservedUsd != null
+        ? { reserved_usd: FieldValue.increment(-args.reservedUsd) }
+        : {}),
+    });
   } catch (err) {
     await logError({
       message: "Planning — coût de la conception non reporté sur la génération",

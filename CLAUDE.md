@@ -324,14 +324,15 @@ Juste avant de pousser sur `master` (PC) ou de fusionner une PR (cloud) :
 1. `git fetch origin`, puis intégrer `origin/master` **par une fusion, jamais par un
    rebase** (`git pull --no-rebase` sur le PC, `git merge origin/master` dans la branche de
    la PR). Un rebase sur une hausse identique vide le changement de `pubspec.yaml`, et le
-   doublon ne se voit plus que dans le `CHANGELOG.md` ;
+   doublon ne se voit plus que dans le `CHANGELOG.md`, et plus du tout si la résolution du
+   conflit n'y garde qu'un des deux titres ;
 2. lancer `bash .github/scripts/check-version.sh origin/master HEAD` depuis la racine du
    dépôt — sur le PC, avec le `bash` de Git for Windows (Git Bash), pas celui de WSL. Il
    échoue si la version n'est pas supérieure à celle de `origin/master`, si un autre commit
-   a déjà introduit ce numéro, ou si le `CHANGELOG.md` n'a pas une et une seule entrée pour
-   elle ;
-3. s'il échoue : reprendre `version:` à celle de `origin/master` + 1, renommer l'entrée du
-   `CHANGELOG.md` et la remettre en tête, relancer les contrôles touchés par la fusion, puis
+   a déjà introduit ce numéro, ou si les titres du `CHANGELOG.md` pour elle sont absents, en
+   double, d'un autre type que « fonctionnel » ou « technique », ou ajoutés par deux commits ;
+3. s'il échoue : reprendre `version:` à celle de `origin/master` + 1, renommer les entrées
+   du `CHANGELOG.md` de cette version et les remettre en tête, relancer les contrôles touchés par la fusion, puis
    recommencer à l'étape 1.
 
 Jamais de `git push --force` sur `master`.
@@ -343,6 +344,11 @@ commits ont introduit le numéro de la tête de `master`, chaque push échoue, m
 correctif qui ne touche pas la version. **Un job « Version » rouge sur `master` se corrige
 par un commit qui passe à la version suivante**, avec son entrée de `CHANGELOG.md` qui
 décrit les deux livraisons.
+
+Le script se modifie comme le reste du dépôt, et une PR qui le change fait tourner sa propre
+version dans sa CI. `relecteur-regles` signale donc tout diff qui touche `check-version.sh`,
+`ci.yml` ou `deploy.yml` (contrôle 14) : la session principale le présente à l'utilisateur,
+qui décide, avant la fusion.
 
 `deploy.ps1`, l'outil de secours, n'appelle pas ce script : lancer l'étape 2 avant lui. Son
 commit relance la CI, et un job « Version » rouge à ce moment signale un doublon déjà en
@@ -356,7 +362,8 @@ ligne, à corriger comme ci-dessus.
 - `documentation/CHANGELOG.md` — ce qui a changé d'une version à l'autre. **Chaque version
   incrémentée y reçoit une entrée**, dans le commit qui change `version:` : un titre
   `### v0.x.y — fonctionnel` (ce que voit l'utilisateur) ou `— technique` (architecture,
-  données, déploiement), sous la date du jour en `## AAAA-MM-JJ`, la plus récente en tête.
+  données, déploiement), ou les deux quand la version porte les deux — ajoutés alors dans le
+  même commit, sous la date du jour en `## AAAA-MM-JJ`, la plus récente en tête.
   L'entrée dit ce qui change et pourquoi, en quelques phrases. Les deux specs ci-dessous
   décrivent l'état actuel ; l'historique ne vit qu'ici.
 - `documentation/FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès,
@@ -510,7 +517,7 @@ pas pour chaque travail.
 
 | Job | Étapes |
 |---|---|
-| Version | `check-version.sh` : une version changée doit dépasser celle de `master` ; dans tous les cas, la version de la tête n'a qu'une origine dans l'historique et une seule entrée au `CHANGELOG.md` |
+| Version | `check-version.sh` : une version changée doit dépasser celle de `master` ; dans tous les cas, la version de la tête n'a qu'une origine dans l'historique et une entrée au `CHANGELOG.md` (au plus une « fonctionnel » et une « technique », ajoutées dans le même commit) |
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 | Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |

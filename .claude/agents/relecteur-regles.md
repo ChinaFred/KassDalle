@@ -65,13 +65,19 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
     classes) contre le code.
 11. **Changelog.** Si `version:` change dans `kass_dalle/pubspec.yaml`, le même diff ajoute
     en tête de `documentation/CHANGELOG.md` une entrée `### v<version> — fonctionnel` ou
-    `— technique`, sans le numéro de build. Une version sans entrée, ou une entrée qui ne
+    `— technique`, ou les deux ajoutés dans le même commit, sans le numéro de build. Une version sans entrée, ou une entrée qui ne
     décrit pas le diff, est une anomalie.
 12. **Artefacts de build.** Rien sous `build/`, `Release/`, `.dart_tool/`, `node_modules/`.
 13. **Outillage.** Pour `.github/workflows/`, `.github/scripts/`, `.claude/` et `deploy.ps1` :
     chercher ce qui ferait un déploiement faux ou dangereux (déclencheur trop large, commit
     déployé, option destructive), ce qui bloquerait une session (hook qui sort en code 2,
     commande absente sous Windows), et tout écart entre la documentation et le script.
+14. **Garde-fous du déploiement.** Si le diff touche `.github/scripts/check-version.sh`,
+    `.github/workflows/ci.yml` ou `.github/workflows/deploy.yml`, ouvre le rapport par une
+    ligne `[garde-fou] fichier — ce qui change`, même sans anomalie. Une PR peut assouplir
+    le contrôle de version pour faire passer sa propre CI : l'utilisateur décide de ces
+    changements, la session principale les lui présente avant la fusion. Un contrôle
+    retiré ou affaibli (condition supprimée, `exit 0` ajouté, job sauté) est une anomalie.
 
 ## Vérifications automatiques
 
@@ -88,7 +94,8 @@ sans les avoir lancés.
 
 ## Le rapport
 
-Une ligne par anomalie, de la plus grave à la moins grave :
+Les lignes `[garde-fou]` du contrôle 14 d'abord. Puis une ligne par anomalie, de la plus
+grave à la moins grave :
 
 ```
 [règle] fichier:ligne — ce qui est fait — ce que la règle demande
