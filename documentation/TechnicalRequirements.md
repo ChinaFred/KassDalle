@@ -3948,10 +3948,10 @@ Le réglage se fait une fois, depuis le PC, avec le compte propriétaire du proj
 gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --versioning
 Set-Content -Path lifecycle.json -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
 gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file=lifecycle.json
-gcloud storage buckets describe gs://kassdale-6d948.firebasestorage.app --format="yaml(versioning,lifecycle_config)"
+gcloud storage buckets describe gs://kassdale-6d948.firebasestorage.app --format="yaml(versioning_enabled,lifecycle_config)"
 ```
 
-La dernière commande doit afficher `versioning: enabled: true` et la règle `Delete` sur
+La dernière commande doit afficher `versioning_enabled: true` et la règle `Delete` sur
 `daysSinceNoncurrentTime: 30`.
 
 **Récupérer un fichier.** Lister ses versions, puis recopier celle qu'on veut à sa place :
