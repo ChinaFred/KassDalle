@@ -97,8 +97,9 @@ class UrlImportForm extends ConsumerStatefulWidget {
 
   final bool fromManualEntry;
 
-  /// Adresse posée dans le champ à l'ouverture. Le champ ne prend alors pas
-  /// le focus : le clavier ne cache pas l'adresse à vérifier.
+  /// Adresse posée dans le champ à l'ouverture. Sur téléphone, le champ ne
+  /// prend alors pas le focus : le clavier ne cache pas l'adresse à vérifier.
+  /// Avec un clavier physique, il le prend, pour qu'Entrée envoie le lien.
   final String? initialUrl;
 
   @override
