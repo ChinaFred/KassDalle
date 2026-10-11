@@ -17,7 +17,8 @@
  * Hors du CookLang : l'estimation n'est pas ce que dit la recette, et une
  * durée lue — métadonnée `>> temps_preparation:` ou champ `tags.prep_time` —
  * garde toujours la priorité. Le client n'écrit jamais ce champ (règles
- * Firestore) ; c'est ce module qui l'efface quand les deux durées sont lues.
+ * Firestore) ; c'est ce module qui le vide (`prep` et `cook` à `null`, empreinte gardée)
+ * quand les deux durées sont lues.
  *
  * Pas de boucle : `estimated_times` n'entre pas dans l'empreinte des entrées
  * du déclencheur (`recipeTriggerInputsFingerprint`), et l'écho d'une
@@ -124,14 +125,19 @@ export function parseStoredEstimatedTimes(value: unknown): StoredEstimatedTimes 
 /** Ce que l'écriture d'une recette demande pour ses durées estimées. */
 export type EstimatedTimesDecision =
   | { kind: "none"; reason: "complete" | "up_to_date" | "pending" | "no_content" }
-  | { kind: "clear" }
+  | { kind: "clear"; fingerprint: string }
   | { kind: "estimate"; fingerprint: string };
 
 /**
  * Décide, sans rien lire d'autre que la recette.
  *
- * - Les deux durées sont lues : rien à estimer ; une estimation restée là est
- *   effacée (une durée saisie à la main remplace l'estimation).
+ * - Les deux durées sont lues : rien à estimer. Une estimation restée là
+ *   est vidée (`prep` et `cook` à `null`) en gardant l'empreinte du contenu
+ *   (une durée saisie à la main remplace l'estimation). Le champ n'est pas
+ *   supprimé : ajouter puis retirer une ligne `>> temps_cuisson:` ne change
+ *   pas l'empreinte, et ne relance donc pas un appel facturé à chaque
+ *   aller-retour. La durée retirée reste alors sans estimation, jusqu'à ce
+ *   que le texte de la recette change.
  * - Il en manque une : on estime, sauf si une estimation existe déjà pour ce
  *   contenu, ou si une réservation récente est en cours.
  */
@@ -140,9 +146,17 @@ export function decideEstimatedTimes(
   nowMs: number,
 ): EstimatedTimesDecision {
   const read = readRecipeDurations(data);
-  const hasField = data.estimated_times !== undefined;
   if (read.prep != null && read.cook != null) {
-    return hasField ? { kind: "clear" } : { kind: "none", reason: "complete" };
+    if (data.estimated_times === undefined) return { kind: "none", reason: "complete" };
+    const fingerprint = estimateFingerprint(data);
+    const stored = parseStoredEstimatedTimes(data.estimated_times);
+    const alreadyEmpty =
+      stored != null &&
+      stored.status === "done" &&
+      stored.fingerprint === fingerprint &&
+      stored.prep == null &&
+      stored.cook == null;
+    return alreadyEmpty ? { kind: "none", reason: "complete" } : { kind: "clear", fingerprint };
   }
   if (estimateContent(data).length === 0 && asString(data.titre).trim().length === 0) {
     return { kind: "none", reason: "no_content" };
@@ -181,7 +195,7 @@ export function doneEstimatedTimes(
 }
 
 /**
- * Pose ou efface `estimated_times`. Ne lève jamais : l'échec est journalisé,
+ * Pose ou vide `estimated_times`. Ne lève jamais : l'échec est journalisé,
  * et la réservation expirée laisse la recette à reprendre.
  */
 export async function syncRecipeEstimatedTimes(args: {
@@ -209,9 +223,13 @@ export async function syncRecipeEstimatedTimes(args: {
 
   if (first.kind === "clear") {
     try {
-      await recipeRef.update({ estimated_times: FieldValue.delete() });
+      // Vidée, pas supprimée : l'empreinte reste, pour qu'une durée retirée
+      // ensuite ne déclenche pas un nouvel appel sur le même contenu.
+      await recipeRef.update({
+        estimated_times: doneEstimatedTimes(first.fingerprint, { prep: null, cook: null }, data),
+      });
     } catch (err) {
-      await logFailure("syncRecipeEstimatedTimes: estimation non effacée", err);
+      await logFailure("syncRecipeEstimatedTimes: estimation non vidée", err);
     }
     return;
   }

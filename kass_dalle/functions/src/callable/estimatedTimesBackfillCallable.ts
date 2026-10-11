@@ -97,13 +97,21 @@ export interface BackfillEstimatedTimesResponse {
   ignorees: number;
   /** Pages qui ne sont pas des recettes. */
   horsRecette: number;
-  /** Lot en échec, ou écriture impossible : à reprendre au prochain passage. */
+  /**
+   * Lot en échec, ou écriture impossible. Le curseur avance quand même : une
+   * recette qui échoue toujours ne bloque pas le parcours. Elle est reprise
+   * au parcours suivant, qui repart du début une fois la collection
+   * parcourue — `completed` reste faux tant qu'un passage compte une erreur.
+   */
   enErreur: number;
   collectionParcourue: boolean;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
-  /** Vrai quand la collection a été parcourue en entier : le curseur est remis au début. */
+  /**
+   * Vrai quand la collection a été parcourue en entier sans erreur. Le
+   * curseur est remis au début dès qu'elle est parcourue, erreurs comprises.
+   */
   completed: boolean;
 }
 
@@ -332,45 +340,56 @@ export const backfillEstimatedTimesFn = onCall<BackfillEstimatedTimesRequest>(
   },
 );
 
-async function runBackfill(
-  db: FirebaseFirestore.Firestore,
-  ctx: AuthContext,
-  data: BackfillEstimatedTimesRequest | undefined,
-  response: BackfillEstimatedTimesResponse,
-): Promise<void> {
-  const maxMinutesRaw = Number(data?.maxMinutes ?? 8);
-  const maxMinutes = Number.isFinite(maxMinutesRaw) ? Math.max(1, Math.min(8.5, maxMinutesRaw)) : 8;
-  const deadline = Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS;
-  const maxRecipesRaw = Number(data?.maxRecipes ?? DEFAULT_MAX_RECIPES);
-  const maxRecipes = Number.isFinite(maxRecipesRaw)
-    ? Math.max(1, Math.min(400, Math.trunc(maxRecipesRaw)))
-    : DEFAULT_MAX_RECIPES;
-  const resumeFromCheckpoint = parseBoolean(data?.resumeFromCheckpoint, true);
-  const resetCheckpoint = parseBoolean(data?.resetCheckpoint, false);
+/** Une recette telle que le parcours la lit. */
+export interface ScannedDoc<T> {
+  id: string;
+  data: Record<string, unknown>;
+  /** Le candidat à soumettre, construit seulement si la recette en est un. */
+  toCandidate: () => T;
+}
 
-  // Le dernier document au-delà duquel rien n'est en attente. Une recette
-  // mise dans un lot n'est traitée qu'une fois le lot soumis : le curseur ne
-  // la dépasse pas avant. Un lot soumis en cours de page puis relu au
-  // passage suivant est ignoré (estimation à jour), sans nouvel appel.
-  let cursor = await getBackfillCursor({
-    db,
-    docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
-    resumeFromCheckpoint,
-    resetCheckpoint,
-  });
-
+/**
+ * Le parcours du backfill, sans Firestore ni modèle : `nextPage` lit la page
+ * qui suit un identifiant, `submit` soumet un lot d'un propriétaire et rend
+ * faux en cas d'échec. Rend le curseur à écrire (`null` : parcours complet).
+ *
+ * - Le curseur ne dépasse pas une recette mise dans un lot avant que ce lot
+ *   soit soumis ; il dépasse en revanche un lot en ÉCHEC (voir `enErreur`).
+ * - Le quota de recettes (`maxRecipes`) compte les recettes soumises et en
+ *   attente. Atteint, les groupes en attente sont soumis avant l'arrêt, si
+ *   le délai le permet : sans cela, vingt propriétaires de moins de huit
+ *   recettes rempliraient le quota sans qu'aucun lot parte, et le passage
+ *   n'avancerait jamais.
+ */
+export async function scanForEstimates<T>(args: {
+  startCursor: string | null;
+  pageSize: number;
+  nextPage: (after: string | null) => Promise<ScannedDoc<T>[]>;
+  submit: (owner: string, batch: T[]) => Promise<boolean>;
+  batchSize: number;
+  maxRecipes: number;
+  /** Faux quand il ne reste plus le temps de soumettre un lot. */
+  canSubmit: () => boolean;
+  /** Faux quand le délai du passage est dépassé. */
+  inTime: () => boolean;
+  now: () => number;
+  response: BackfillEstimatedTimesResponse;
+  onPageDone?: (cursor: string | null) => Promise<void>;
+}): Promise<string | null> {
+  const { response } = args;
+  let cursor = args.startCursor;
+  let lastSeen = args.startCursor;
   let submitted = 0;
   let consecutiveFailures = 0;
-  const batches = new OwnerBatches<Candidate>(TIME_ESTIMATE_BATCH_SIZE);
-  let lastSeen: string | null = cursor;
+  const batches = new OwnerBatches<T>(args.batchSize);
 
   /** Soumet un lot ; faux s'il faut s'arrêter. */
-  const flush = async (owner: string, batch: Candidate[]): Promise<boolean> => {
-    if (Date.now() + BATCH_MARGIN_MS > deadline) {
+  const flush = async (owner: string, batch: T[]): Promise<boolean> => {
+    if (!args.canSubmit()) {
       response.stoppedByDeadline = true;
       return false;
     }
-    const ok = await flushBatch(db, ctx, owner, batch, response);
+    const ok = await args.submit(owner, batch);
     submitted += batch.length;
     consecutiveFailures = ok ? 0 : consecutiveFailures + 1;
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
@@ -390,74 +409,121 @@ async function runBackfill(
   };
 
   pages: for (;;) {
-    let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
-    if (lastSeen) query = query.startAfter(lastSeen);
-    const page = await query.get();
-    if (page.empty) {
+    const page = await args.nextPage(lastSeen);
+    if (page.length === 0) {
       if (await flushAll()) response.collectionParcourue = true;
       break;
     }
 
-    for (const doc of page.docs) {
-      if (Date.now() > deadline) {
+    for (const doc of page) {
+      if (!args.inTime()) {
         response.stoppedByDeadline = true;
         break pages;
       }
-      if (submitted + batches.pending >= maxRecipes) {
+      if (submitted + batches.pending >= args.maxRecipes) {
         response.stoppedByBudget = true;
+        await flushAll();
         break pages;
       }
 
       response.examinees += 1;
       lastSeen = doc.id;
-      const recipe = doc.data() as Record<string, unknown>;
       // Une page sans `page_type` est une recette : le client n'écrit le
       // champ que pour les autres types.
-      const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+      const pageType = typeof doc.data.page_type === "string" ? doc.data.page_type : "recipe";
       if (pageType !== "recipe") {
         response.horsRecette += 1;
         if (batches.pending === 0) cursor = doc.id;
         continue;
       }
-
-      const decision = decideEstimatedTimes(recipe, Date.now());
-      if (decision.kind !== "estimate") {
+      if (decideEstimatedTimes(doc.data, args.now()).kind !== "estimate") {
         response.ignorees += 1;
         if (batches.pending === 0) cursor = doc.id;
         continue;
       }
 
-      const owner = recipeOwnerKey(recipe);
-      const candidate: Candidate = {
-        ref: doc.ref,
-        fingerprint: estimateFingerprint(recipe),
-        input: {
-          titre: typeof recipe.titre === "string" ? recipe.titre : "",
-          content: estimateContent(recipe),
-          portions: typeof recipe.portions === "number" ? recipe.portions : null,
-        },
-      };
-      const full = batches.add(owner, candidate);
+      const owner = recipeOwnerKey(doc.data);
+      const full = batches.add(owner, doc.toCandidate());
       if (full && !(await flush(owner, full))) break pages;
       if (batches.pending === 0) cursor = doc.id;
     }
 
     if (!(await flushAll())) break;
-    if (page.size < PAGE_SIZE) {
+    if (page.length < args.pageSize) {
       response.collectionParcourue = true;
       break;
     }
-
-    await setBackfillCursor({
-      db,
-      docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
-      lastDocId: cursor,
-      operation: FEATURE,
-      adminUid: ctx.userId,
-    });
+    await args.onPageDone?.(cursor);
   }
 
-  response.completed = response.collectionParcourue;
+  return response.collectionParcourue ? null : cursor;
+}
+
+async function runBackfill(
+  db: FirebaseFirestore.Firestore,
+  ctx: AuthContext,
+  data: BackfillEstimatedTimesRequest | undefined,
+  response: BackfillEstimatedTimesResponse,
+): Promise<void> {
+  const maxMinutesRaw = Number(data?.maxMinutes ?? 8);
+  const maxMinutes = Number.isFinite(maxMinutesRaw) ? Math.max(1, Math.min(8.5, maxMinutesRaw)) : 8;
+  const deadline = Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS;
+  const maxRecipes = boundedMaxRecipes(data?.maxRecipes);
+  const resumeFromCheckpoint = parseBoolean(data?.resumeFromCheckpoint, true);
+  const resetCheckpoint = parseBoolean(data?.resetCheckpoint, false);
+
+  const startCursor = await getBackfillCursor({
+    db,
+    docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
+    resumeFromCheckpoint,
+    resetCheckpoint,
+  });
+
+  const cursor = await scanForEstimates<Candidate>({
+    startCursor,
+    pageSize: PAGE_SIZE,
+    nextPage: async (after) => {
+      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
+      if (after) query = query.startAfter(after);
+      const page = await query.get();
+      return page.docs.map((doc) => {
+        const recipe = doc.data() as Record<string, unknown>;
+        return {
+          id: doc.id,
+          data: recipe,
+          toCandidate: () => ({
+            ref: doc.ref,
+            fingerprint: estimateFingerprint(recipe),
+            input: {
+              titre: typeof recipe.titre === "string" ? recipe.titre : "",
+              content: estimateContent(recipe),
+              portions: typeof recipe.portions === "number" ? recipe.portions : null,
+            },
+          }),
+        };
+      });
+    },
+    submit: (owner, batch) => flushBatch(db, ctx, owner, batch, response),
+    batchSize: TIME_ESTIMATE_BATCH_SIZE,
+    maxRecipes,
+    canSubmit: () => Date.now() + BATCH_MARGIN_MS <= deadline,
+    inTime: () => Date.now() <= deadline,
+    now: () => Date.now(),
+    response,
+    onPageDone: (pageCursor) =>
+      setBackfillCursor({
+        db,
+        docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
+        lastDocId: pageCursor,
+        operation: FEATURE,
+        adminUid: ctx.userId,
+      }),
+  });
+
+  // Terminé seulement si la collection a été parcourue SANS erreur : une
+  // recette en erreur sera reprise par le passage suivant, qui repart du
+  // début et ignore sans appel tout ce qui est déjà estimé.
+  response.completed = response.collectionParcourue && response.enErreur === 0;
 
   // Le curseur revient au début quand tout est passé. Sinon il retient le
   // dernier document traité : un lot non soumis sera relu au prochain
@@ -465,7 +531,7 @@ async function runBackfill(
   await setBackfillCursor({
     db,
     docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
-    lastDocId: response.collectionParcourue ? null : cursor,
+    lastDocId: cursor,
     operation: FEATURE,
     adminUid: ctx.userId,
     lastReport: { ...response },
@@ -479,4 +545,15 @@ async function runBackfill(
     feature: FEATURE,
     extra: { ...response, maxMinutes, maxRecipes },
   });
+}
+
+/**
+ * Recettes soumises par passage : un lot au moins, quatre cents au plus. En
+ * dessous d'un lot, aucun groupe n'atteindrait sa taille avant le quota.
+ */
+export function boundedMaxRecipes(raw: unknown): number {
+  const value = Number(raw ?? DEFAULT_MAX_RECIPES);
+  return Number.isFinite(value)
+    ? Math.max(TIME_ESTIMATE_BATCH_SIZE, Math.min(400, Math.trunc(value)))
+    : DEFAULT_MAX_RECIPES;
 }

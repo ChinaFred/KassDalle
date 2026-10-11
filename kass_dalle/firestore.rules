@@ -485,8 +485,8 @@ service cloud.firestore {
       // `estimated_times` (durées estimées par l'IA) s'écrit par le serveur
       // seul (`onRecipeWritten`, backfill « Durées estimées ») : ni posé à la
       // création, ni changé ni effacé par une mise à jour. Une durée saisie à
-      // la main le retire par le serveur, qui l'efface quand les deux durées
-      // sont lues.
+      // la main le retire par le serveur, qui le vide (prep et cook à null,
+      // empreinte gardée) quand les deux durées sont lues.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
         && bookCheck(true) && sourceUrlAccepted();

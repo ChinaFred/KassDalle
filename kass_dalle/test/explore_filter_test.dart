@@ -214,6 +214,18 @@ void main() {
         isNull,
       );
       expect(RecipeEstimatedTimes.fromMap('texte'), isNull);
+      // Champ vidé par le serveur (les deux durées sont lues) : aucune
+      // estimation, ni sur la fiche, ni dans Explorer.
+      final videe = RecipeEstimatedTimes.fromMap({
+        'status': 'done',
+        'fingerprint': 'f',
+        'prep': null,
+        'cook': null,
+      });
+      expect(videe, isNull);
+      final r = recipe('videe', estimated: videe);
+      expect(recipeTimes(r).isEstimated, isFalse);
+      expect(recipeShownEstimate(r), isNull);
     });
 
     test('une durée lue garde la priorité sur l\'estimation', () {

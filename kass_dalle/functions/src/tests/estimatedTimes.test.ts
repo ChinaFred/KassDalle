@@ -21,8 +21,13 @@ import {
 import {
   OwnerBatches,
   backfillLockHeld,
+  boundedMaxRecipes,
+  emptyEstimatedTimesResponse,
   recipeOwnerKey,
+  scanForEstimates,
+  type ScannedDoc,
 } from "../callable/estimatedTimesBackfillCallable";
+import { TIME_ESTIMATE_BATCH_SIZE } from "../gemini/timeEstimate";
 import {
   PENDING_TTL_MS,
   decideEstimatedTimes,
@@ -165,12 +170,42 @@ describe("décision du déclencheur", () => {
     assert.deepEqual(decision, { kind: "none", reason: "complete" });
   });
 
-  test("durées saisies à la main sur une recette estimée : l'estimation est effacée", () => {
+  test("durées saisies à la main sur une recette estimée : l'estimation est vidée", () => {
     const data = recette({
       tags: { prep_time: 10, cook_time: 20 },
       estimated_times: { status: "done", fingerprint: "abc", prep: 15, cook: 30 },
     });
-    assert.deepEqual(decideEstimatedTimes(data, NOW), { kind: "clear" });
+    assert.deepEqual(decideEstimatedTimes(data, NOW), {
+      kind: "clear",
+      fingerprint: estimateFingerprint(data),
+    });
+    // Le champ vidé garde l'empreinte, sans valeur.
+    const field = doneEstimatedTimes(estimateFingerprint(data), { prep: null, cook: null }, data);
+    assert.equal(field.status, "done");
+    assert.equal(field.prep, null);
+    assert.equal(field.cook, null);
+    // Son écho ne réécrit rien.
+    const echo = { ...data, estimated_times: { ...field, estimated_at: undefined } };
+    assert.deepEqual(decideEstimatedTimes(echo, NOW), { kind: "none", reason: "complete" });
+  });
+
+  test("ajouter puis retirer une ligne `>> temps_cuisson:` ne relance pas d'appel", () => {
+    const base = recette({ tags: { prep_time: 10 } });
+    const fingerprint = estimateFingerprint(base);
+    // Durée de cuisson ajoutée dans le texte : l'estimation est vidée.
+    const withCook = {
+      ...base,
+      raw_cooklang: `>> temps_cuisson: 30\n${String(base.raw_cooklang)}`,
+      estimated_times: { status: "done", fingerprint, prep: null, cook: 45 },
+    };
+    const cleared = decideEstimatedTimes(withCook, NOW);
+    assert.deepEqual(cleared, { kind: "clear", fingerprint });
+    // Ligne retirée : même empreinte, estimation vide déjà enregistrée.
+    const removed = {
+      ...base,
+      estimated_times: { status: "done", fingerprint, prep: null, cook: null },
+    };
+    assert.deepEqual(decideEstimatedTimes(removed, NOW), { kind: "none", reason: "up_to_date" });
   });
 
   test("l'écho de l'écriture de l'estimation ne rappelle pas le modèle", () => {
@@ -335,5 +370,107 @@ describe("backfill — un lot par propriétaire", () => {
     assert.equal(recipeOwnerKey({ created_by: "uid-1" }), "uid-1");
     assert.equal(recipeOwnerKey({ created_by: 42 }), "");
     assert.equal(recipeOwnerKey({}), "");
+  });
+});
+
+describe("backfill — parcours", () => {
+  /** Une recette sans durée, d'un propriétaire donné. */
+  function doc(id: string, owner: string): ScannedDoc<string> {
+    return {
+      id,
+      data: recette({ created_by: owner, raw_cooklang: `Recette ${id}, sans durée.` }),
+      toCandidate: () => id,
+    };
+  }
+
+  /** Pages servies à partir d'une liste triée d'identifiants. */
+  function pager(docs: ScannedDoc<string>[], pageSize: number) {
+    return async (after: string | null) => {
+      const start = after == null ? 0 : docs.findIndex((d) => d.id === after) + 1;
+      return docs.slice(start, start + pageSize);
+    };
+  }
+
+  test("le quota se règle sur un lot au moins", () => {
+    assert.equal(boundedMaxRecipes(1), TIME_ESTIMATE_BATCH_SIZE);
+    assert.equal(boundedMaxRecipes(10_000), 400);
+    assert.equal(boundedMaxRecipes("x"), 160);
+  });
+
+  test("vingt-cinq propriétaires de trois recettes : le passage avance quand même", async () => {
+    const docs: ScannedDoc<string>[] = [];
+    for (let o = 0; o < 25; o++) {
+      for (let r = 0; r < 3; r++) docs.push(doc(`r${String(o).padStart(2, "0")}-${r}`, `u${o}`));
+    }
+    const lots: Array<[string, string[]]> = [];
+    const response = emptyEstimatedTimesResponse();
+    const cursor = await scanForEstimates<string>({
+      startCursor: null,
+      pageSize: 100,
+      nextPage: pager(docs, 100),
+      submit: async (owner, batch) => {
+        lots.push([owner, batch]);
+        return true;
+      },
+      batchSize: 8,
+      maxRecipes: 16,
+      canSubmit: () => true,
+      inTime: () => true,
+      now: () => NOW,
+      response,
+    });
+    assert.equal(response.stoppedByBudget, true);
+    // Les groupes en attente sont partis avant l'arrêt.
+    assert.equal(
+      lots.reduce((n, [, b]) => n + b.length, 0),
+      16,
+    );
+    // Aucun lot ne mêle deux propriétaires.
+    for (const [owner, batch] of lots) {
+      for (const id of batch) assert.ok(id.startsWith(`r${owner.slice(1).padStart(2, "0")}-`));
+    }
+    // Le curseur a dépassé les recettes soumises.
+    assert.equal(cursor, docs[15].id);
+  });
+
+  test("un lot en échec ne bloque pas le parcours", async () => {
+    const docs = [doc("a1", "mauvais"), doc("b1", "bon"), doc("b2", "bon")];
+    const response = emptyEstimatedTimesResponse();
+    const cursor = await scanForEstimates<string>({
+      startCursor: null,
+      pageSize: 100,
+      nextPage: pager(docs, 100),
+      submit: async (owner) => owner !== "mauvais",
+      batchSize: 8,
+      maxRecipes: 160,
+      canSubmit: () => true,
+      inTime: () => true,
+      now: () => NOW,
+      response,
+    });
+    // Parcours complet malgré l'échec : le curseur revient au début, et le
+    // passage suivant reprendra la recette en erreur.
+    assert.equal(response.collectionParcourue, true);
+    assert.equal(cursor, null);
+  });
+
+  test("délai épuisé : un lot en attente n'est pas dépassé par le curseur", async () => {
+    const docs = [doc("a1", "u1"), doc("a2", "u1")];
+    const response = emptyEstimatedTimesResponse();
+    const cursor = await scanForEstimates<string>({
+      startCursor: null,
+      pageSize: 100,
+      nextPage: pager(docs, 100),
+      submit: async () => true,
+      batchSize: 8,
+      maxRecipes: 160,
+      canSubmit: () => false,
+      inTime: () => true,
+      now: () => NOW,
+      response,
+    });
+    assert.equal(response.stoppedByDeadline, true);
+    assert.equal(cursor, null);
+    assert.equal(response.collectionParcourue, false);
   });
 });

@@ -733,7 +733,7 @@ sequenceDiagram
     end
   and
     alt préparation et cuisson lues (tags ou métadonnées CookLang), estimated_times présent
-      TR->>FS: estimated_times effacé
+      TR->>FS: estimated_times vidé — done, empreinte, prep et cook à null<br/>(sauf s'il l'est déjà pour ce contenu)
     else une durée manque, aucune estimation ni réservation récente pour ce contenu
       TR->>FS: transaction — estimated_times status pending, empreinte, claim_id
       TR->>M: estimateRecipeTimes (time_estimate)
@@ -3197,7 +3197,7 @@ sequenceDiagram
   end
   F->>C: running_until = maintenant + 540 s, running_id
   F->>C: lit estimated_times_backfill_checkpoint
-  loop pages de 100 recettes, jusqu'au délai, 160 recettes ou 3 lots en échec
+  loop pages de 100 recettes, jusqu'au délai, au quota (160, 8 au moins) ou à 3 lots en échec de suite
     F->>FS: lit la page suivante
     loop chaque recette
       alt page_type autre que recipe
@@ -3215,15 +3215,18 @@ sequenceDiagram
             F->>FS: transaction — estimated_times done, si l'empreinte n'a pas changé,<br/>composante déjà lue dans la recette mise à null
           end
         else échec ou réponse illisible
-          F->>F: logError, lot en erreur
+          F->>F: logError, lot en erreur, le curseur le dépasse
         end
       end
     end
     F->>C: curseur
   end
+  opt quota atteint
+    F->>M: groupes en attente soumis, si le délai le permet
+  end
   F->>C: curseur (null si tout est parcouru), last_report
   F->>C: verrou levé (running_until null), s'il est toujours le sien
-  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur, completed
+  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur)
   S-->>A: compte rendu chiffré, « relancer » si incomplet
 </pre>
       </div>
@@ -3231,7 +3234,10 @@ sequenceDiagram
         <b>Relancer ne refacture rien.</b> Une recette déjà estimée pour son contenu est ignorée,
         une estimation à <code>null</code> (le modèle n'a pas su) aussi. Le curseur ne dépasse une
         recette mise dans un lot qu'une fois le lot soumis : un passage arrêté par le délai relit
-        ce lot au passage suivant.
+        ce lot au passage suivant. Un lot en <b>échec</b>, lui, est dépassé : une recette qui
+        échoue toujours ne bloque pas le parcours. Le compte rendu reste « incomplet » ; le
+        passage suivant repart du début et ne reprend, sans refacturer le reste, que les recettes
+        sans estimation.
         <span class="expect">
           <b>Un passage à la fois, un propriétaire par lot.</b> Le verrou daté empêche deux
           passages parallèles de facturer deux fois les mêmes recettes ; il expire seul au bout
