@@ -43,6 +43,7 @@ import {
   parseBoolean,
   setBackfillCursor,
 } from "./_backfillCursor";
+import { BackfillReview, shortErrorMessage, type BackfillReviewList } from "./_backfillReview";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -184,6 +185,8 @@ interface BackfillEnrichReferentialsResponse {
   stoppedByDeadline: boolean;
   /** Profils repris parce qu'ils portaient du sodium — mode `refreshSodium`. */
   refreshedIngredients: number;
+  /** Unités et ingrédients restés sans estimation, nommés, avec la raison. */
+  aRevoir: BackfillReviewList;
 }
 
 /**
@@ -923,6 +926,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     let remainingUnitsWithoutWeight = 0;
     let refreshedIngredients = 0;
     let stoppedByDeadline = false;
+    const review = new BackfillReview();
 
     await logInfo({
       message: "backfillEnrichReferentials: démarrage",
@@ -993,9 +997,24 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
             if (d && typeof d.grams_per_unit === "number" && d.grams_per_unit > 0) {
               enrichedUnits++;
               remainingUnitsWithoutWeight = Math.max(0, remainingUnitsWithoutWeight - 1);
+            } else {
+              review.add({
+                kind: "unit",
+                id: s.id,
+                label: s.id,
+                reason: "Poids non estimé par l'IA",
+              });
             }
           }
         } catch (err) {
+          for (const u of batch) {
+            review.add({
+              kind: "unit",
+              id: u.id,
+              label: u.id,
+              reason: `Lot en échec : ${shortErrorMessage(err)}`,
+            });
+          }
           await logFailure({
             operation: "backfillEnrichReferentials.units",
             correlationId,
@@ -1091,8 +1110,25 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
               enrichedIngredients++;
             }
             failedIngredients += pageTargets.length - estimated.size;
+            for (const t of pageTargets) {
+              if (estimated.has(t.id)) continue;
+              review.add({
+                kind: "ingredient",
+                id: t.id,
+                label: t.canonicalName,
+                reason: "Valeurs nutritionnelles introuvables",
+              });
+            }
           } catch (err) {
             failedIngredients += pageTargets.length;
+            for (const t of pageTargets) {
+              review.add({
+                kind: "ingredient",
+                id: t.id,
+                label: t.canonicalName,
+                reason: `Lot en échec : ${shortErrorMessage(err)}`,
+              });
+            }
             await logFailure({
               operation: "backfillEnrichReferentials.ingredients",
               correlationId,
@@ -1137,6 +1173,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         refreshSodium,
         completed,
         stoppedByDeadline,
+        aRevoir: review.toJSON(),
       },
     });
 
@@ -1150,6 +1187,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
       remainingUnitsWithoutWeight,
       completed,
       stoppedByDeadline,
+      aRevoir: review.toJSON(),
     };
   },
 );

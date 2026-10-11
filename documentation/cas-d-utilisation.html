@@ -669,7 +669,7 @@ flowchart LR
     d9(["Générer la réconciliation mensuelle"])
     d10(["Corriger le référentiel d'unités"])
     d11(["Corriger le référentiel d'ingrédients"])
-    d12(["Lancer un backfill"])
+    d12(["Lancer un backfill&lt;br/&gt;et revoir les éléments en erreur"])
     d13(["Définir la politique de sources nutrition"])
     d14(["Régler le plafond de dépense d'IA"])
     d15(["Lire la dépense par utilisateur et par service"])
@@ -761,6 +761,14 @@ flowchart LR
         estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
         chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
         est chiffré pour chaque phase : traités, ignorés, en erreur.
+        <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
+        un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
+        « Voir les N à revoir ». Il ouvre une liste — un ingrédient ou une recette par ligne, avec
+        la raison (« Pas de réponse de l'IA », « Recette incomplète : beurre, farine non
+        examinés »…). Une ligne ouvre l'ingrédient dans le référentiel ou la fiche de la recette ;
+        « Copier la liste » copie une ligne « nom — raison » par élément. Cent éléments au plus
+        sont listés, le total est toujours donné. Rien n'est conservé : la liste disparaît au
+        lancement d'un autre backfill ou à la fermeture de la bannière.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
         <span class="expect warn">

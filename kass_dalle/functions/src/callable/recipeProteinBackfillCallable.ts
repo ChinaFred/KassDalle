@@ -46,6 +46,12 @@ import { suggestMainProteinStarch } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import {
+  BackfillReview,
+  recipeReviewLabel,
+  shortErrorMessage,
+  type BackfillReviewList,
+} from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -95,6 +101,8 @@ interface BackfillProteinResponse {
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
   completed: boolean;
+  /** Recettes sans réponse ou en échec dans ce passage, nommées, avec la raison. */
+  aRevoir: BackfillReviewList;
 }
 
 function asStrings(value: unknown): string[] {
@@ -186,6 +194,7 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
     let stoppedByBudget = false;
     let stoppedByErrors = false;
     let consecutiveFailures = 0;
+    const review = new BackfillReview();
 
     pages: for (;;) {
       let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
@@ -247,6 +256,12 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
             counters.dejaTraitees += 1;
           } catch (e) {
             counters.echouees += 1;
+            review.add({
+              kind: "recipe",
+              id: doc.id,
+              label: recipeReviewLabel(doc.id, data),
+              reason: `Marqueur d'examen non écrit : ${shortErrorMessage(e)}`,
+            });
             await logError("Protéine et féculent des plats — marqueur non écrit", {
               correlationId: ctx.correlationId,
               userId: ctx.userId,
@@ -271,6 +286,12 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
             // Pas une erreur : le modèle n'a pas répondu. Rien n'est écrit, la
             // recette sera réexaminée au prochain tour complet.
             counters.sansReponse += 1;
+            review.add({
+              kind: "recipe",
+              id: doc.id,
+              label: recipeReviewLabel(doc.id, data),
+              reason: "Pas de réponse de l'IA",
+            });
             await logInfo({
               message: "Protéine et féculent des plats — pas de réponse du modèle",
               correlationId: ctx.correlationId,
@@ -295,6 +316,12 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
         } catch (e) {
           counters.echouees += 1;
           consecutiveFailures += 1;
+          review.add({
+            kind: "recipe",
+            id: doc.id,
+            label: recipeReviewLabel(doc.id, data),
+            reason: `Échec : ${shortErrorMessage(e)}`,
+          });
           await logError("Protéine et féculent des plats — échec sur une recette", {
             correlationId: ctx.correlationId,
             userId: ctx.userId,
@@ -330,6 +357,7 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
       stoppedByBudget,
       stoppedByErrors,
       completed: collectionParcourue,
+      aRevoir: review.toJSON(),
     };
 
     // Curseur remis au début quand tout est passé ; compte rendu posé à côté,

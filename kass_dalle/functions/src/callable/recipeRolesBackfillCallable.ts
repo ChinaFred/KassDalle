@@ -33,6 +33,12 @@ import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import {
+  BackfillReview,
+  recipeReviewLabel,
+  shortErrorMessage,
+  type BackfillReviewList,
+} from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -80,6 +86,8 @@ interface BackfillRolesResponse {
   stoppedByErrors: boolean;
   /** Vrai quand la collection a été parcourue en entier : le curseur est remis au début. */
   completed: boolean;
+  /** Recettes sans rôle ou en échec dans ce passage, nommées, avec la raison. */
+  aRevoir: BackfillReviewList;
 }
 
 function asStrings(value: unknown): string[] {
@@ -173,6 +181,7 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
     let stoppedByBudget = false;
     let stoppedByErrors = false;
     let consecutiveFailures = 0;
+    const review = new BackfillReview();
 
     pages: for (;;) {
       let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
@@ -231,6 +240,12 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
             // rôle et sera réexaminée ; le dire, sinon « sansRole » ne se
             // relie à aucune recette.
             counters.sansRole += 1;
+            review.add({
+              kind: "recipe",
+              id: doc.id,
+              label: recipeReviewLabel(doc.id, data),
+              reason: "L'IA n'a pas su classer la recette",
+            });
             await logInfo({
               message: "Rôle des recettes — le modèle n'a pas su classer une recette",
               correlationId: ctx.correlationId,
@@ -259,6 +274,12 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
         } catch (e) {
           counters.echouees += 1;
           consecutiveFailures += 1;
+          review.add({
+            kind: "recipe",
+            id: doc.id,
+            label: recipeReviewLabel(doc.id, data),
+            reason: `Échec : ${shortErrorMessage(e)}`,
+          });
           await logError("Rôle des recettes — échec sur une recette", {
             correlationId: ctx.correlationId,
             userId: ctx.userId,
@@ -294,6 +315,7 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
       stoppedByBudget,
       stoppedByErrors,
       completed: collectionParcourue,
+      aRevoir: review.toJSON(),
     };
 
     // Le curseur revient au début quand tout est passé : un rappel de la

@@ -632,6 +632,9 @@ orphelin : toute opération qui écrit **une fois** sur un ensemble de documents
 backfill, et vit dans **Admin › Backfills** (`admin_backfills_screen.dart`), avec les
 autres. C'est là que l'utilisateur va chercher ce genre de bouton, et c'est là qu'il
 attend une bannière de progression et un compte rendu chiffré (créés, ignorés, en erreur).
+Le compte rendu nomme aussi les éléments à revoir : chaque backfill renvoie `aRevoir` (liste
+plafonnée à 100 entrées, total compté au-delà), que l'écran ouvre dans une feuille « À revoir »
+avec un bouton « Copier la liste ». Un compteur d'erreurs sans noms ne dit pas quoi corriger.
 
 Un bouton de semis posé dans l'écran du référentiel lui-même a été livré une fois
 (garnitures simples, v0.22.58) : personne ne l'a trouvé, et la réponse « ouvrez

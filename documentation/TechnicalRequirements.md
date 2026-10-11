@@ -1400,7 +1400,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn`, `backfillRecipeRolesFn` et `backfillRecipeProteinFn`. L'écran Admin › Backfills relit à l'ouverture ceux du rôle des recettes et de la protéine des plats (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran |
+| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn`, `backfillRecipeRolesFn` et `backfillRecipeProteinFn`. L'écran Admin › Backfills relit à l'ouverture ceux du rôle des recettes et de la protéine des plats (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran. `backfillAllergensFn` écrit aussi le sien, dans `allergens_ingredients_backfill_checkpoint`. Le compte rendu recopie la liste `aRevoir` du passage (§7.10) |
 
 ---
 
@@ -3485,6 +3485,30 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
+
+**Liste « à revoir ».** Chaque reprise manuelle renvoie, en plus de ses compteurs, le champ
+`aRevoir: { items, total }` : les éléments que le passage n'a pas pu traiter, nommés. Une
+entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `recipe` ou
+`account` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
+`reason` la raison en français simple. Le collecteur commun, `callable/_backfillReview.ts`
+(`BackfillReview`), garde les cent premières entrées dans l'ordre de traitement ; `total`
+compte au-delà. La liste n'est pas stockée : elle vit dans la réponse du passage, et n'est
+recopiée que dans le `last_report` du point de reprise quand le backfill en écrit un (§3.13).
+
+| Reprise | Ce que la liste nomme |
+|---|---|
+| `backfillEnrichReferentialsFn` (et « Reprendre le sel ») | unités dont le poids n'a pas été estimé ou d'un lot en échec ; ingrédients sans valeurs nutritionnelles estimées (« Valeurs nutritionnelles introuvables ») ou d'un lot en échec |
+| `backfillNutritionFn` | recettes reprises encore incomplètes : erreur de la reprise, calcul en échec, ou ingrédients sans valeurs (`missing_ingredients`, cinq noms au plus) |
+| `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec |
+| `backfillRecipeProteinFn` | recettes sans réponse du modèle, en échec, ou dont le marqueur n'a pas pu être écrit |
+| `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
+| `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
+| `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'adresse ou l'uid |
+
+Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
+absent, il vaut `null` et l'écran n'affiche que les compteurs. Un backfill ajouté à Admin ›
+Backfills renvoie `aRevoir` par ce collecteur et se branche dans `_runBackfill` par le
+paramètre `failuresOf`.
 
 ### 7.11 Les échecs qui ne se rejouent pas
 
