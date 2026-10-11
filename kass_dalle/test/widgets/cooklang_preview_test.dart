@@ -22,6 +22,7 @@ void main() {
     Widget? topContent,
     Widget? bottomContent,
     VoidCallback? onCreateShoppingList,
+    Widget? ingredientsFooter,
   }) async {
     final ctrl = TextEditingController(text: cooklang);
     addTearDown(ctrl.dispose);
@@ -41,6 +42,7 @@ void main() {
             topContent: topContent,
             bottomContent: bottomContent,
             onCreateShoppingList: onCreateShoppingList,
+            ingredientsFooter: ingredientsFooter,
           ),
         ),
       ),
@@ -232,6 +234,22 @@ void main() {
 
       expect(find.text('Ingrédients'), findsOneWidget);
       expect(ingredientChip('200 g de farine'), findsNothing);
+    });
+
+    testWidgets('le pied de la liste suit le repli des ingrédients', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        'Mélanger la @farine{200%g}.',
+        ingredientsFooter: const Text('pied des ingrédients'),
+      );
+      expect(find.text('pied des ingrédients'), findsOneWidget);
+
+      await tester.tap(find.text('Ingrédients'));
+      await tester.pump();
+
+      expect(find.text('pied des ingrédients'), findsNothing);
     });
 
     testWidgets('replier Préparation masque les étapes', (tester) async {
