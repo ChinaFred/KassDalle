@@ -2446,6 +2446,8 @@ pénalité de refus.
    × 0,5 si le féculent du plat est celui d'un créneau voisin (`STARCH_REPEAT_FACTOR`,
    `isStarchRepeat` : veille ou lendemain, recette déjà assignée ou premier plat classé du
    créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas)
+   × 0,5 si la protéine du plat est celle d'un créneau voisin (`PROTEIN_NEIGHBOUR_FACTOR`,
+   `isProteinNeighbourRepeat` : même lecture que le féculent ; « inconnue » ne se répète pas)
    × 0,5 par répétition de sa famille de cuisine déjà au cycle (`CUISINE_REPEAT_FACTOR`,
    `cuisineRepeatsOf` : recettes déjà assignées et premier plat classé de chaque créneau
    traité). La famille se lit dans les étiquettes `cuisines` (`cuisineFamilyOf` : asiatique,

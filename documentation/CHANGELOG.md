@@ -22,7 +22,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ### v0.23.28 — fonctionnel
 
-#### Planning : variété des cuisines dans la présélection
+#### Planning : variété des cuisines et des protéines dans la présélection
 
 La présélection des plats tient compte de la cuisine. Chaque recette est rangée dans une
 famille d'après ses étiquettes de cuisine : asiatique, indienne, orientale, Amériques,
@@ -35,6 +35,12 @@ Jusqu'ici, seul le modèle d'IA lisait la cuisine, dans les préférences géné
 garantissait qu'une semaine ne compte pas quatre plats asiatiques. La règle est verrouillée par
 `planning_slot_rules.json` (sections `cuisine_of` et `cuisine_repeats`, constante
 `cuisine_repeat_factor`).
+
+La protéine de la veille et du lendemain compte aussi. Un plat dont la protéine est celle d'un
+jour voisin a deux fois moins de chances d'être tiré. Jusqu'ici, la pénalité de protéine ne
+comptait que les repas posés avant la génération. Deux poissons pouvaient donc se suivre, comme
+le cabillaud du vendredi et le fish and chips du samedi. Sections `protein_neighbour` et
+constante `protein_neighbour_factor` de la même fixture.
 
 ### v0.23.27 — fonctionnel
 

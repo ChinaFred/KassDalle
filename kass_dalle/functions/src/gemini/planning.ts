@@ -481,6 +481,8 @@ export const STARCH_REPEAT_FACTOR = 0.5;
  * posée dans le cycle. La cuisine française n'est jamais pénalisée.
  */
 export const CUISINE_REPEAT_FACTOR = 0.5;
+/** Facteur d'un plat dont la protéine est celle d'un créneau voisin. */
+export const PROTEIN_NEIGHBOUR_FACTOR = 0.5;
 /** Repos qui oblige à commencer la veille. */
 export const REST_EVE_MINUTES = 240;
 /** Note personnelle jusqu'à laquelle une recette n'est plus proposée. */
@@ -814,6 +816,17 @@ export function starchOf(r: Pick<PlanningRecipeSummary, "mainStarch">): MainStar
  * Vrai si le féculent du candidat est celui d'un créneau voisin. « aucun » et
  * un féculent inconnu ne se répètent jamais.
  */
+/**
+ * Vrai si la protéine [protein] est celle d'un créneau voisin (veille ou
+ * lendemain). « inconnue » ne se répète pas : elle ne dit rien.
+ */
+export function isProteinNeighbourRepeat(
+  protein: ProteinKey,
+  neighbours: ReadonlyArray<ProteinKey>,
+): boolean {
+  return protein !== "inconnue" && neighbours.includes(protein);
+}
+
 export function isStarchRepeat(
   starch: MainStarch | null,
   neighbours: ReadonlyArray<MainStarch | null>,
@@ -1021,6 +1034,8 @@ export function candidateWeight(args: {
   starchRepeat?: boolean;
   /** Fois où sa famille de cuisine est déjà posée (`cuisineRepeatsOf`). */
   cuisineRepeats?: number;
+  /** Même protéine qu'un créneau voisin (`isProteinNeighbourRepeat`). */
+  proteinNeighbour?: boolean;
 }): number {
   return (
     freshnessScore(args.daysSinceServed) *
@@ -1029,7 +1044,8 @@ export function candidateWeight(args: {
     ratingFactor(args.rating) *
     (args.refusalFactor ?? 1) *
     (args.starchRepeat ? STARCH_REPEAT_FACTOR : 1) *
-    Math.pow(CUISINE_REPEAT_FACTOR, Math.max(0, args.cuisineRepeats ?? 0))
+    Math.pow(CUISINE_REPEAT_FACTOR, Math.max(0, args.cuisineRepeats ?? 0)) *
+    (args.proteinNeighbour ? PROTEIN_NEIGHBOUR_FACTOR : 1)
   );
 }
 
@@ -1239,11 +1255,26 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     if (starch == null) return;
     starchesByDate.set(date, [...(starchesByDate.get(date) ?? []), starch]);
   };
+  // Protéines posées par date, de la même façon : sans elles, deux poissons
+  // pouvaient se suivre, la pénalité du cycle ne comptant que les recettes
+  // assignées avant la génération.
+  const proteinsByDate = new Map<string, ProteinKey[]>();
+  const noteProtein = (date: string, protein: ProteinKey) => {
+    if (protein === "inconnue") return;
+    proteinsByDate.set(date, [...(proteinsByDate.get(date) ?? []), protein]);
+  };
   for (const a of input.alreadyAssigned ?? []) {
     const ctx = allContexts[a.slot];
     const r = corpusById.get(a.recipeId);
-    if (ctx && r) noteStarch(ctx.date, starchOf(r));
+    if (ctx && r) {
+      noteStarch(ctx.date, starchOf(r));
+      noteProtein(ctx.date, proteinOf(r));
+    }
   }
+  const neighbourProteins = (date: string): ProteinKey[] => [
+    ...(proteinsByDate.get(shiftDate(date, -1)) ?? []),
+    ...(proteinsByDate.get(shiftDate(date, 1)) ?? []),
+  ];
   // Familles de cuisine posées dans le cycle : les recettes déjà assignées,
   // puis le premier plat classé de chaque créneau traité, comme les féculents.
   const cycleCuisines = new Map<CuisineFamily, number>();
@@ -1295,11 +1326,13 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
       return last ? Math.max(0, daysBetween(last, ctx.date)) : null;
     };
     const neighbours = role === "main" ? neighbourStarches(ctx.date) : [];
+    const proteinNeighbours = role === "main" ? neighbourProteins(ctx.date) : [];
     const weightOf = (r: PlanningRecipeSummary) => {
       const p = proteinOf(r);
       return candidateWeight({
         starchRepeat: isStarchRepeat(starchOf(r), neighbours),
         cuisineRepeats: role === "main" ? cuisineRepeatsOf(cuisineFamilyOf(r), cycleCuisines) : 0,
+        proteinNeighbour: isProteinNeighbourRepeat(p, proteinNeighbours),
         daysSinceServed: daysOf(r),
         reheatSlot: ctx.kind === "reheat",
         reheatFriendly: isReheatFriendly(r),
@@ -1319,6 +1352,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     for (const r of head) reserved.add(r.id);
     if (role === "main" && list.length > 0) {
       noteStarch(ctx.date, starchOf(list[0]));
+      noteProtein(ctx.date, proteinOf(list[0]));
       noteCuisine(cuisineFamilyOf(list[0]));
     }
     return {

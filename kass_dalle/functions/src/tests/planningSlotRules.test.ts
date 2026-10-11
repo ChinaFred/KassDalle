@@ -46,6 +46,7 @@ import {
   REST_EVE_MINUTES,
   STARCH_REPEAT_FACTOR,
   CUISINE_REPEAT_FACTOR,
+  PROTEIN_NEIGHBOUR_FACTOR,
   buildPlanningPrompt,
   candidateWeight,
   codeJustification,
@@ -68,6 +69,7 @@ import {
   starchOf,
   isStarchRepeat,
   cuisineFamilyOf,
+  isProteinNeighbourRepeat,
   cuisineRepeatsOf,
   type CuisineFamily,
   validateModelChoices,
@@ -168,6 +170,12 @@ interface PreselectionFixture {
     expected: boolean;
     why: string;
   }>;
+  protein_neighbour: Array<{
+    candidate: ProteinKey;
+    neighbours: ProteinKey[];
+    expected: boolean;
+    why: string;
+  }>;
   cuisine_of: Array<{ cuisines: string[]; expected: CuisineFamily; why: string }>;
   cuisine_repeats: Array<{
     candidate: string[];
@@ -208,6 +216,7 @@ interface PreselectionFixture {
     refusal_factor?: number;
     starch_repeat?: boolean;
     cuisine_repeats?: number;
+    protein_neighbour?: boolean;
     expected: number;
     why: string;
   }>;
@@ -515,6 +524,7 @@ describe("présélection — constantes recopiées dans la fixture", () => {
     assert.equal(REFUSAL_FUTURE_TOLERANCE_DAYS, c.refusal_future_tolerance_days);
     assert.equal(STARCH_REPEAT_FACTOR, c.starch_repeat_factor);
     assert.equal(CUISINE_REPEAT_FACTOR, c.cuisine_repeat_factor);
+    assert.equal(PROTEIN_NEIGHBOUR_FACTOR, c.protein_neighbour_factor);
   });
 });
 
@@ -544,6 +554,11 @@ describe("présélection — protéine et réchauffage", () => {
         ),
         c.expected,
       );
+    });
+  }
+  for (const c of fixture.protein_neighbour) {
+    test(`protéine voisine : ${c.candidate} (${c.why})`, () => {
+      assert.equal(isProteinNeighbourRepeat(c.candidate, c.neighbours), c.expected);
     });
   }
   for (const c of fixture.cuisine_of) {
@@ -611,6 +626,7 @@ describe("présélection — note et poids", () => {
         ...(c.refusal_factor != null ? { refusalFactor: c.refusal_factor } : {}),
         ...(c.starch_repeat != null ? { starchRepeat: c.starch_repeat } : {}),
         ...(c.cuisine_repeats != null ? { cuisineRepeats: c.cuisine_repeats } : {}),
+        ...(c.protein_neighbour != null ? { proteinNeighbour: c.protein_neighbour } : {}),
       });
       assert.ok(Math.abs(w - c.expected) < 1e-9, `${w} ≠ ${c.expected}`);
     });
@@ -845,6 +861,53 @@ describe("présélection — listes par créneau", () => {
     // Poids 0,5 contre 1 : environ un tiers de riz en tête, contre la moitié.
     assert.ok(share("riz") < 0.42, `riz en tête : ${share("riz")}`);
     assert.ok(share("semoule") > 0.42, `riz en tête sans voisin riz : ${share("semoule")}`);
+  });
+
+  test("protéine de la veille : le premier plat du lendemain en change plus souvent", () => {
+    const plat = (id: string, protein: string): PlanningRecipeSummary => ({
+      id,
+      titre: id,
+      mealRole: "plat",
+      mainProtein: protein,
+    });
+    const share = (assignedProtein: string, assignedDate: string) => {
+      const recipes = [
+        plat("r0", assignedProtein),
+        plat("a1", "poisson"),
+        plat("a2", "poisson"),
+        plat("a3", "poisson"),
+        plat("b1", "volaille"),
+        plat("b2", "boeuf"),
+        plat("b3", "porc"),
+      ];
+      const input: PlanningInput = {
+        ...inputOf([{ date: assignedDate }, { date: "2026-10-17" }], recipes),
+        alreadyAssigned: [{ slot: 0, recipeId: "r0" }],
+      };
+      let fish = 0;
+      const runs = 600;
+      for (let seed = 1; seed <= runs; seed++) {
+        const [ranking] = preselect({
+          input,
+          candidates: recipes,
+          recentExcluded: [],
+          lastServed: new Map(),
+          ratings: new Map(),
+          historyAvailable: true,
+          policy: readPlanningPolicy({ plats_per_slot: 3 }),
+          today: "2026-10-10",
+          rng: seededRng(seed),
+        });
+        if (ranking.plats[0].recipeId.startsWith("a")) fish++;
+      }
+      return fish / runs;
+    };
+    // Poisson la veille : x0,6 (cycle) x0,5 (voisin). Poisson cinq jours avant :
+    // x0,6 seulement. Le poisson revient moins souvent le lendemain.
+    assert.ok(
+      share("poisson", "2026-10-16") < share("poisson", "2026-10-12") - 0.08,
+      "le voisin pèse en plus du cycle",
+    );
   });
 
   test("cuisine étrangère déjà dans le cycle : elle revient moins souvent en tête", () => {

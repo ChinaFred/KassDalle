@@ -310,7 +310,8 @@
     "refusal_max_entries": 300,
     "refusal_future_tolerance_days": 1,
     "starch_repeat_factor": 0.5,
-    "cuisine_repeat_factor": 0.5
+    "cuisine_repeat_factor": 0.5,
+    "protein_neighbour_factor": 0.5
   },
   "protein_of": [
     {
@@ -401,6 +402,39 @@
       "neighbours": ["riz"],
       "expected": false,
       "why": "féculent inconnu : pas de pénalité"
+    }
+  ],
+  "_protein_neighbour_comment": "Alternance des protéines d'un jour à l'autre. Un plat dont la protéine (hors « inconnue ») est celle d'un créneau voisin (veille ou lendemain : recette déjà assignée, ou premier plat classé du créneau précédent) pèse x0,5, comme le féculent. S'ajoute à la pénalité de répétition dans le cycle. Jamais une exclusion.",
+  "protein_neighbour": [
+    {
+      "candidate": "poisson",
+      "neighbours": ["poisson"],
+      "expected": true,
+      "why": "poisson la veille : pénalisé"
+    },
+    {
+      "candidate": "poisson",
+      "neighbours": ["volaille", "boeuf"],
+      "expected": false,
+      "why": "protéine différente des deux voisins"
+    },
+    {
+      "candidate": "porc",
+      "neighbours": ["boeuf"],
+      "expected": false,
+      "why": "deux viandes différentes ne se répètent pas"
+    },
+    {
+      "candidate": "inconnue",
+      "neighbours": ["inconnue"],
+      "expected": false,
+      "why": "protéine inconnue : pas de pénalité"
+    },
+    {
+      "candidate": "vegetarien",
+      "neighbours": ["vegetarien"],
+      "expected": true,
+      "why": "végétarien la veille : pénalisé aussi"
     }
   ],
   "_cuisine_of_comment": "Variété des cuisines. La famille d'un plat se lit dans ses étiquettes `cuisines` : asiatique, indienne, orientale, ameriques, africaine, italienne, europeenne, francaise, ou inconnue. Une famille étrangère l'emporte sur l'européenne, qui l'emporte sur la française : un plat « française, japonaise » compte comme asiatique. Chaque fois que sa famille est déjà posée dans le cycle (recette assignée, ou premier plat classé d'un créneau précédent), un plat pèse x0,5. La cuisine française et une cuisine inconnue ne sont jamais pénalisées : la française reste la cuisine de tous les jours. Jamais une exclusion.",
@@ -805,6 +839,15 @@
       "cuisine_repeats": 2,
       "expected": 0.25,
       "why": "même famille de cuisine deux fois dans le cycle : x0,5 x0,5"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 1,
+      "protein_neighbour": true,
+      "expected": 0.3,
+      "why": "poisson déjà au cycle, et la veille : x0,6 x0,5"
     }
   ],
   "weighted_order": [
