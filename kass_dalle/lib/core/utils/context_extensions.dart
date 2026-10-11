@@ -23,6 +23,9 @@ extension AppSnackBar on BuildContext {
   }
 
   /// Affiche un SnackBar de succès : fond secondaire, coche, durée courte.
+  ///
+  /// Avec une [action], il reste cinq secondes : deux ne laissent pas le temps
+  /// de lire le message puis d'atteindre le bouton.
   void showSuccessSnackBar(String message, {SnackBarAction? action}) {
     final scheme = Theme.of(this).colorScheme;
     _showTinted(
@@ -30,7 +33,7 @@ extension AppSnackBar on BuildContext {
       icon: Icons.check_circle_outline,
       background: scheme.secondaryContainer,
       foreground: scheme.onSecondaryContainer,
-      duration: const Duration(seconds: 2),
+      duration: Duration(seconds: action == null ? 2 : 5),
       action: action,
     );
   }

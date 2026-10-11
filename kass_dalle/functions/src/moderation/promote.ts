@@ -7,7 +7,7 @@
  * écrivaient jusque-là en direct.
  */
 
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { getDownloadURL, getStorage } from "firebase-admin/storage";
 
 import { COLL_BOOKS, COLL_RECIPES } from "../config";
@@ -327,4 +327,46 @@ export async function quarantineToRejected(args: {
   }
 
   return rejectedPath;
+}
+
+/**
+ * Rattache une image approuvée à la recette qu'elle illustre, quand elle a été
+ * envoyée avec `attach_on_approval`.
+ *
+ * Seul l'import d'une recette depuis un lien pose ce drapeau : la photo du
+ * site part en modération APRÈS l'écriture du brouillon. Approuvée tout de
+ * suite, elle rejoint `image_urls` aussitôt ; mise en attente, elle le rejoint
+ * quand un administrateur l'approuve ou qu'une relance de l'analyse l'accepte.
+ * Sans ce rattachement, une photo approuvée plus tard resterait publiée sans
+ * que la recette la montre.
+ *
+ * Best-effort : une recette supprimée entre-temps n'a rien à recevoir, et
+ * l'échec est journalisé.
+ */
+export async function attachApprovedIllustration(args: {
+  attachOnApproval: unknown;
+  targetKind: unknown;
+  ownerId: unknown;
+  url: string | null;
+  correlationId: string;
+  moderationId: string;
+}): Promise<boolean> {
+  if (args.attachOnApproval !== true || !args.url) return false;
+  if (args.targetKind !== "recipe_illustration" || !isValidDocumentId(args.ownerId)) return false;
+  try {
+    await getFirestore()
+      .collection(COLL_RECIPES)
+      .doc(args.ownerId)
+      .update({ image_urls: FieldValue.arrayUnion(args.url), updated_at: Timestamp.now() });
+    return true;
+  } catch (err) {
+    await logError({
+      message: "Photo approuvée non rattachée à sa recette",
+      moduleType: "MODERATION",
+      correlationId: args.correlationId,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { recipeId: args.ownerId, moderationId: args.moderationId },
+    });
+    return false;
+  }
 }

@@ -608,7 +608,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   ///
   /// Verrouillé sur « Mes Recettes Secrètes », et sur lui seul. Ce livre est le
   /// refuge : s'il peut redevenir public d'une case décochée, il cesse d'en
-  /// être un. Les deux autres livres système basculent librement.
+  /// être un. Les autres livres système basculent librement — « Mes recettes
+  /// du web » naît privé, et son propriétaire peut le partager.
   Widget _buildPrivacyTile(Book? existing) {
     final locked = existing?.isSecretesBook == true;
     final colors = Theme.of(context).colorScheme;

@@ -12,6 +12,7 @@ import '../nutrition_details_section.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
 import 'community_summary.dart';
+import 'prepare_tab.dart' show recipeTopContent;
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
@@ -83,9 +84,12 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
     // l'avance est la première chose à savoir quand on ouvre le plat qu'on
     // cuisine pour un autre jour. La recette elle-même vient juste après ;
     // nutrition, dressage et communauté la suivent, dans cet ordre.
-    final topContent = prepContext != null && prepContext.isAhead
-        ? MealPrepBanner(recipeId: widget.recipeId, prepContext: prepContext)
-        : null;
+    final topContent = recipeTopContent(
+      recipe: recipe,
+      banner: prepContext != null && prepContext.isAhead
+          ? MealPrepBanner(recipeId: widget.recipeId, prepContext: prepContext)
+          : null,
+    );
 
     final preview = CooklangPreview(
       ctrl: widget.ctrl,

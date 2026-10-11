@@ -17,6 +17,9 @@ enum RecipeOrigin {
 
   /// Une copie de travail d'une recette existante.
   copy,
+
+  /// Une recette importée depuis un lien vers une page web.
+  web,
 }
 
 /// Sous-titre de l'écran de relecture d'un brouillon.
@@ -28,6 +31,7 @@ String draftOriginLabel(RecipeOrigin? origin) => switch (origin) {
   RecipeOrigin.ai => 'Brouillon conçu par l\'IA',
   RecipeOrigin.manual => 'Brouillon saisi à la main',
   RecipeOrigin.copy => 'Copie de travail - l\'originale reste intacte',
+  RecipeOrigin.web => 'Brouillon importé depuis une page web',
   null => 'Brouillon d\'origine non renseignée',
 };
 

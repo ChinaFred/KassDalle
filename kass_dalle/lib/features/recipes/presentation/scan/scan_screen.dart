@@ -21,6 +21,7 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../admin/presentation/costs_format.dart';
 import '../../data/book_import_analysis.dart';
+import '../url_import/url_import_dialog.dart';
 
 /// L'écran d'import d'une recette ou d'un livre.
 ///
@@ -463,6 +464,14 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                       onPressed: () => context.go(_manualEntryRoute()),
                       icon: const Icon(Icons.edit_note_outlined),
                       label: const Text('Saisie manuelle (texte à coller)'),
+                    ),
+                    // Quatrième voie : une page web. L'écran est réservé aux
+                    // éditeurs et administrateurs, comme l'import.
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => showUrlImportDialog(context),
+                      icon: const Icon(Icons.link),
+                      label: const Text('Importer depuis un lien'),
                     ),
                   ],
                 ],

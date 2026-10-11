@@ -44,6 +44,8 @@ const Map<String, String> kLogTreatmentLabels = {
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'backfill_ai_pricing': 'Correction de la grille tarifaire',
   'text_extraction': 'Extraction du texte d\'une page',
+  'url_import': 'Import d\'une recette depuis un lien',
+  'url_import_quota': 'Compteur des imports par lien',
   'polish_markdown': 'Mise au propre d\'un document',
   'polish_cooklang': 'Mise au propre d\'une recette',
   'refine': 'Correction d\'une recette',

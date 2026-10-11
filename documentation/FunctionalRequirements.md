@@ -50,8 +50,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 | Rôle | Accès |
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
-| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Peut annoter. |
-| **Reader** | Consultation, annotation, notation, planning, export PDF. **Crée, modifie et valide ses propres recettes** : `firestore.rules` autorise la création et la mise à jour par le créateur, quel que soit son rôle. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. **Il n'importe pas** : l'import d'une recette ou d'un livre (`/scan`) lance des appels d'IA facturés et reste réservé à l'Editor et à l'Admin. Les boutons d'import lui sont masqués ; s'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6). Peut annoter. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Crée, modifie et valide ses propres recettes** : `firestore.rules` autorise la création et la mise à jour par le créateur, quel que soit son rôle. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. **Il n'importe pas** : l'import d'une recette ou d'un livre (`/scan`) et l'import d'une recette depuis un lien (4.6) lancent des appels d'IA facturés et restent réservés à l'Editor et à l'Admin. Les boutons d'import lui sont masqués, icône lien d'Explorer et bouton « Lien » de la saisie manuelle compris ; s'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
@@ -84,7 +84,7 @@ Un écran dédié (Web / Desktop / Mobile) permet à l'Admin de :
    - Année de publication (optionnel)
    - Langue principale des recettes (liste déroulante)
    - Tags/thèmes associés au livre (ex : Terroir belge, Pâtisserie)
-     Les tags qui commencent par « __ » sont réservés aux livres système (`__libres`, `__kassdale_ia`, `__secretes`) : le formulaire refuse l'enregistrement avec le message « Les tags qui commencent par « __ » sont réservés ».
+     Les tags qui commencent par « __ » sont réservés aux livres système (`__libres`, `__kassdale_ia`, `__secretes`, `__web`) : le formulaire refuse l'enregistrement avec le message « Les tags qui commencent par « __ » sont réservés ».
 3. Il peut scanner ou importer une photo de la couverture (mobile : caméra ou galerie ; web/desktop : import de fichier).
 4. Le livre est enregistré et apparaît dans la bibliothèque.
 
@@ -176,6 +176,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - **Un texte collé dans une autre langue est traduit**, comme une page scannée (4.2). L'écran l'annonce : « Traduit de l'anglais, mesures converties. Le texte collé reste consultable comme document original. » Le texte d'origine n'est pas stocké une seconde fois avec la recette : le texte collé, conservé comme fichier source, en tient lieu.
 - **Le texte original collé est automatiquement conservé** : il est uploadé sur Firebase Storage et attaché à la recette comme fichier source. Le bouton de téléchargement de l'original apparaît ensuite dans l'en-tête de la recette, comme pour un scan.
 - Si l'IA n'est pas utilisée (saisie CookLang directe), aucun fichier source n'est attaché.
+- Un bouton **« Lien »** ouvre l'import d'une recette depuis une adresse web (4.6). Il n'est proposé qu'à l'Editor et à l'Admin.
 
 ---
 
@@ -195,6 +196,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
    - **Instructions** : étapes numérotées, avec mise en valeur des ingrédients et du matériel (rendu Cooklang interactif).
    - **Taille du texte** : sur l'APK Android en présentation étendue, deux boutons de la barre — réduire, agrandir — zooment l'onglet *Préparer* (ingrédients, étapes, puces) par paliers : 100, 125, 150, 175 et 200 %. Le zoom s'ajoute à la taille de police du système, il ne la remplace pas. Il est mémorisé sur l'appareil (`SharedPreferences`, clé `recipe_text_zoom`), pas dans le compte : il dépend de l'écran et de la distance de lecture, pas de la personne. Les autres onglets, la barre et les feuilles ouvertes depuis la fiche gardent leur taille.
    - **Document original** : bouton "Voir l'original" (icône scanner) toujours visible dans la barre d'actions. Ouvre l'image en plein écran zoomable ou le PDF dans le navigateur.
+   - **Source** : une recette importée depuis un lien (4.6) affiche « Source : <site> », le nom du site, en lien vers la page d'origine. L'adresse complète s'affiche aussi et se copie. Tout lecteur de la recette la voit. Une recette sans source n'affiche rien. La source est posée par l'import et ne se saisit pas à la main. La copie d'une recette importée garde sa source.
    - **Recette traduite** : une recette traduite à l'import porte la mention « Traduit de l'anglais » (ou de la langue lue ; « Traduit d'une autre langue » pour une langue absente de la table d'une trentaine de langues). Sur grand écran, la mention suit le livre et sa page, sur la même ligne sous le titre, et une icône de traduction « Voir le texte d'origine (anglais) » s'ajoute à la barre d'actions. Sur téléphone, la mention se place dans la rangée d'actions et sert de bouton. Les deux ouvrent la vue **« Texte d'origine, avant traduction »** : une feuille à 90 % de la hauteur sur téléphone, une fenêtre de 640 px de large sur grand écran. Elle montre titre, chapeau, ingrédients, étapes et notes tels que la page les écrivait. Le texte se sélectionne, suit le zoom de lecture de la recette, s'écrit de droite à gauche pour l'arabe, l'hébreu et le persan, et emploie les glyphes de sa langue. La vue affiche un état de chargement, un état d'erreur, et « Texte d'origine indisponible » quand le document manque. Tout lecteur de la recette la voit. Une recette non traduite ne montre rien de tout cela. Le texte d'origine n'entre pas dans la recherche. Une copie de la recette n'emporte ni la mention ni le texte d'origine.
    - **Photos** : sur grand écran, un onglet **Photos** — placé après Communauté — montre les illustrations de la recette en grille, ouvre chacune en plein écran, et laisse un éditeur en ajouter ou en supprimer. Elles restent aussi visibles en vignettes dans le bandeau de l'onglet Préparer, et en vignettes sur mobile, qui n'a pas d'onglets.
    - **Annotations** : section en bas de fiche pour consulter et ajouter des notes personnelles.
@@ -230,6 +232,44 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 
 ---
 
+### 4.6 Import d'une Recette depuis un Lien (tous les clients)
+
+**Qui :** Editor ou Admin. Le Reader n'importe pas : les points d'entrée lui sont masqués.
+
+**Points d'entrée.** Trois boutons ouvrent le même parcours :
+- l'icône lien de la barre d'**Explorer** (5.5) ;
+- le bouton placé sous « Saisie manuelle » dans l'écran **Import** (`/scan`) ;
+- le bouton **« Lien »** de l'éditeur de la saisie manuelle (`/recipes/new`).
+
+**Étape 1 — Coller l'adresse.** L'utilisateur colle l'adresse d'une page web. Avant tout envoi, trois contrôles ont lieu :
+- **Adresse valide et publique.** Une adresse mal formée, ou qui ne désigne pas une page publique sur internet, est refusée avec un message. Rien n'est lancé.
+- **Plafond de 10 imports par lien par jour et par compte.** Pour le compte fondateur, ce plafond est multiplié, comme ses autres plafonds d'IA. L'écran affiche le nombre d'imports restants du jour. Plafond atteint : l'import est refusé, et l'écran dit qu'il sera de nouveau possible le lendemain.
+- **Doublon dans ses propres recettes.** Si l'une de ses recettes vient déjà de cette adresse — comparée après normalisation de l'adresse —, l'écran le dit et propose deux choix : ouvrir la recette existante, ou importer quand même. Les recettes des autres membres ne comptent pas.
+
+**Étape 2 — Traitement en tâche de fond.** L'import est asynchrone, comme un scan (4.2). Un traitement apparaît dans « Brouillons & Traitements » (5.4) et l'utilisateur peut continuer à se servir de l'application. Le serveur :
+1. lit la page ;
+2. cherche d'abord les données structurées de recette que la page publie (format schema.org/Recipe). Cette lecture se fait sans IA. La recette trouvée est ensuite mise en forme en CookLang ;
+3. à défaut de données structurées, envoie le texte de la page dans la même chaîne que le texte collé (4.3) : transcription, balisage, contrôle de fidélité ;
+4. traduit la recette en français, mesures en métrique, si la page n'est pas en français (même règle qu'en 4.2) ;
+5. si la page porte plusieurs recettes, ne garde que la première. La tuile du traitement dans « Brouillons & Traitements » le dit : « N recettes trouvées sur la page : seule la première a été reprise. »
+
+**Échecs affichés sur la tuile du traitement.** Chaque cas a son message et ses actions :
+- **Le site bloque la lecture.** La tuile propose « Ouvrir la page » et « Coller le texte ». « Coller le texte » ouvre la saisie manuelle (4.3) vide, avec l'adresse de la page rappelée en haut de l'écran.
+- **La page ne contient pas de recette**, ou une recette trop longue pour être reprise. Rien n'est créé. La tuile propose « Ouvrir la page » et « Coller le texte ».
+- **La page n'existe pas ou plus.** La tuile propose « Ouvrir la page ».
+- **Le lien est refusé** (adresse non publique). Aucune action.
+- **Délai dépassé**, ou incident sans cause précise. La tuile propose « Relancer ». Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports. Après deux relances, la tuile le dit et propose « Ouvrir la page » et « Coller le texte » à la place.
+
+**Étape 3 — Le brouillon.** La recette arrive en **brouillon** (`draft`), à relire et valider comme les autres (4.2, étape 4) :
+- Elle est rangée dans le livre **« Mes recettes du web »**, créé automatiquement au premier import par lien de l'utilisateur. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.
+- La photo principale de la page est reprise comme illustration, après modération (5.11). Tant que la modération n'a pas rendu son verdict, la recette est créée sans photo ; la photo s'ajoute quand la modération l'accepte. Refusée, elle ne s'ajoute jamais.
+- Le texte de la page est joint comme document original : « Voir l'original » l'ouvre, comme pour un texte collé.
+- La recette garde l'adresse de la page comme **source**, affichée sur la fiche (4.4).
+
+**Coût.** La lecture des données structurées n'appelle aucun modèle ; la mise en forme qui suit est facturée. Une page sans données structurées est facturée comme un texte collé. La traduction, quand elle a lieu, et la modération de la photo s'ajoutent. Chaque appel compte dans le plafond quotidien d'IA du compte, en plus du plafond de 10 imports par lien.
+
+---
+
 ## 5. Modules Fonctionnels
 
 ### 5.1 Module Bibliothèque (tous les clients)
@@ -250,7 +290,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 
 ### 5.2 Module Scan (caméra : mobile et web — import de fichier : partout)
 
-- Accès caméra natif sur mobile, `getUserMedia` sur le web ; l'import de fichier (photo, PDF, DOCX, texte collé) est disponible sur les quatre plateformes.
+- Accès caméra natif sur mobile, `getUserMedia` sur le web ; l'import de fichier (photo, PDF, DOCX, texte collé) et l'import depuis un lien (4.6) sont disponibles sur les quatre plateformes. Le bouton d'import par lien est placé sous « Saisie manuelle ».
 - **Sur mobile, toute prise de vue passe par le scanner du système.** Android expose
   ML Kit Document Scanner, iOS expose VisionKit : les deux cherchent les coins sur le flux vidéo,
   avec un modèle entraîné, et rendent une image déjà cadrée et redressée. Cela vaut pour les pages
@@ -343,7 +383,7 @@ privait le titre de la place dont il manquait.
 
 ### 5.5 Module Recherche (tous les clients)
 
-Écran dédié `/search`. **Ce n'est pas une recherche plein texte.** La bibliothèque
+Écran dédié `/search`, intitulé **Explorer**. Pour l'Editor et l'Admin, une icône lien de sa barre ouvre l'import d'une recette depuis un lien (4.6). **Ce n'est pas une recherche plein texte.** La bibliothèque
 n'est pas interrogée par mots-clés : les recettes accessibles sont résumées, envoyées
 au moteur, et c'est lui qui décide lesquelles répondent à la demande.
 
@@ -658,7 +698,7 @@ déjà transmise continue de fonctionner.
 | Entrée dans un groupe | On n'entre dans un groupe qu'en acceptant une invitation de son propriétaire. Personne n'ajoute directement un membre : sans cette règle, ajouter un inconnu à son propre groupe suffisait pour lire ses livres. |
 | Validation exclusive | Seul le propriétaire d'un brouillon peut le valider ou le supprimer. Cette règle est enforced à la fois dans l'UI (boutons masqués) et dans le dépôt (vérification Firestore avant écriture). |
 | Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
-| Import réservé | Importer une recette ou un livre (`/scan`), et relancer un import, est réservé à l'Editor et à l'Admin. Les règles Firestore refusent le traitement créé ou relancé par un Reader. Joindre un fichier source à sa propre recette reste permis au Reader. |
+| Import réservé | Importer une recette ou un livre (`/scan`), importer une recette depuis un lien (4.6), et relancer un import, est réservé à l'Editor et à l'Admin. Les règles Firestore refusent le traitement créé ou relancé par un Reader. Joindre un fichier source à sa propre recette reste permis au Reader. |
 | Annotations non modifiables par autrui | Un Reader ou un Editor ne peut modifier/supprimer que ses propres annotations ; un Admin peut toutes les modifier. |
 | On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
 | Suppression d'un livre | Le créateur ne supprime ou ne détache que ses recettes ; un Admin agit sur toutes, et la boîte le lui dit (« pour tous leurs auteurs »). La boîte s'ouvre aussitôt et annonce les pages ajoutées par d'autres membres (« Au moins 2 pages ajoutées par d'autres membres seront conservées » ; sans chiffre pour un livre privé), et le message de fin dit ce qui reste. À la suppression, le serveur détache ces pages : aucune ne garde le lien vers un livre disparu, et celles d'un livre privé restent privées. Un échec affiche « La suppression du livre a échoué. Réessayez. » |
@@ -670,7 +710,7 @@ déjà transmise continue de fonctionner.
 | Privé = créateur seul | Un livre ou une recette privé ne se lit que par son créateur et un Admin, y compris ses annotations et ses notes. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
 | Toute recette a un livre | Il n'y a plus de recette orpheline : sans choix, elle rejoint « Mes recettes libres » ; conçue par l'IA, elle rejoint « Mes créations Kass'Dalle ». La règle est posée à l'entonnoir de création, pas dans un écran. |
-| Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle » et « Mes recettes secrètes » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. |
+| Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle », « Mes recettes secrètes » et « Mes recettes du web » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. « Mes recettes du web » est créé au premier import par lien (4.6) et reste privé à son propriétaire. |
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
 | Une contrainte d'ensemble se donne à chaque appel | Le choix parmi les recettes existantes se fait en un seul appel pour tout le cycle. La **conception** d'une recette, elle, se fait un créneau à la fois. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque conception voit ce que le cycle contient déjà. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
@@ -687,7 +727,7 @@ déjà transmise continue de fonctionner.
 ### Livré
 - Authentification Google, sas d'entrée `pending`, rôles et révocation
 - CRUD livres et recettes, groupes familiaux
-- Import (photo, PDF, DOCX, texte collé) → CookLang, par un pipeline asynchrone
+- Import (photo, PDF, DOCX, texte collé, lien vers une page web) → CookLang, par un pipeline asynchrone ; la source d'une recette importée depuis un lien s'affiche sur sa fiche
 - Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre

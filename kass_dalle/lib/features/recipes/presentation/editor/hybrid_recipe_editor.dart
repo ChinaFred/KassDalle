@@ -42,6 +42,12 @@ class HybridRecipeEditor extends StatefulWidget {
   /// Shows a progress indicator on the AI button when true.
   final bool aiProcessing;
 
+  /// Bouton « Lien » : ouvre l'import d'une recette depuis une page web.
+  ///
+  /// Fourni par l'écran de création seulement, et seulement à un éditeur ou
+  /// un administrateur. Null : pas de bouton.
+  final VoidCallback? onImportFromUrl;
+
   /// Callback pour uploader une image depuis la galerie dans l'éditeur visuel.
   /// Transmis à [CooklangVisualEditor] → [_ImageInsertSheet].
   final Future<String?> Function(Uint8List bytes, String fileName)?
@@ -63,6 +69,7 @@ class HybridRecipeEditor extends StatefulWidget {
     this.onProcessWithAI,
     this.aiTooltip = 'Améliorer la recette avec l\'IA',
     this.aiProcessing = false,
+    this.onImportFromUrl,
     this.onUploadImage,
     this.startInPreview = false,
   });
@@ -214,12 +221,11 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                         ? widget.onProcessWithAI
                         : null,
                     style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.symmetric(
                         horizontal: compact ? 10 : 12,
                         vertical: 4,
                       ),
-                      minimumSize: const Size(36, 36),
+                      minimumSize: const Size(48, 48),
                       textStyle: const TextStyle(fontSize: 13),
                     ),
                     child: widget.aiProcessing
@@ -243,6 +249,35 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                           ),
                   ),
                 ),
+
+              // ── Import depuis un lien ─────────────────────────────────────────
+              if (widget.onImportFromUrl != null) ...[
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Importer depuis un lien',
+                  child: OutlinedButton(
+                    onPressed: widget.enabled ? widget.onImportFromUrl : null,
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 10 : 12,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(48, 48),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.link, size: AppIconSize.inline),
+                        if (!compact) ...[
+                          const SizedBox(width: 6),
+                          const Text('Lien'),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               // ── Help button ──────────────────────────────────────────────────
               if (widget.showHelp)

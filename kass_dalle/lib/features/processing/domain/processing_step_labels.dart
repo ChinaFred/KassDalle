@@ -20,6 +20,8 @@ String formatProcessingStep(String? raw) {
       return 'En attente…';
     case 'import':
       return 'Téléchargement du fichier…';
+    case 'fetch':
+      return 'Lecture de la page web…';
     case 'image_decode':
       return 'Préparation de l\'image…';
     case 'gemini_call':

@@ -28,6 +28,7 @@ import {
 import { resolveImageOrigin, sha256Hex, type ImageOrigin } from "./origin";
 import {
   assertTargetOwnership,
+  attachApprovedIllustration,
   pinnedGeneration,
   quarantineToRejected,
   promoteImage,
@@ -55,6 +56,12 @@ export interface ModerationItem {
   ownerId: string | null;
   contentType: string;
   origin: ImageOrigin;
+  /**
+   * Ajouter l'image à `image_urls` de la recette (`recipe_illustration`) dès
+   * qu'elle est approuvée, tout de suite ou plus tard. Posé par l'import d'une
+   * recette depuis un lien seulement — voir `attachApprovedIllustration`.
+   */
+  attachOnApproval?: boolean;
 }
 
 export interface ItemOutcome {
@@ -271,11 +278,21 @@ export async function moderateAndPromote(args: {
       correlation_id: correlationId,
       published_url: publishedUrl,
       rejected_path: rejectedPath,
+      attach_on_approval: item.attachOnApproval === true,
       created_at: FieldValue.serverTimestamp(),
       decided_at: FieldValue.serverTimestamp(),
       reviewed_by: null,
       reviewed_at: null,
       review_note: null,
+    });
+
+    await attachApprovedIllustration({
+      attachOnApproval: item.attachOnApproval === true,
+      targetKind: item.targetKind,
+      ownerId: item.ownerId,
+      url: publishedUrl,
+      correlationId,
+      moderationId: docRef.id,
     });
 
     outcomes.push({

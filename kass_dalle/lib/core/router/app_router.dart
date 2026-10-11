@@ -264,6 +264,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => RecipeCreateScreen(
                   initialBookId: state.uri.queryParameters['bookId'],
                   initialBookTitre: state.uri.queryParameters['bookTitre'],
+                  // Rappel de la page d'un import par lien qui a échoué :
+                  // affichée, jamais enregistrée sur la recette.
+                  sourceUrl: state.uri.queryParameters['sourceUrl'],
                 ),
               ),
               GoRoute(

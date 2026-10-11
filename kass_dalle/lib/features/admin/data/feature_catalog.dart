@@ -40,6 +40,11 @@ const kFeatureProcess = <String, String>{
   'detect_main_photo': 'Numérisation d\'un livre',
   'book_cover': 'Numérisation d\'un livre',
   'text_extraction': 'Rédaction d\'une recette',
+  // Import d'une recette depuis un lien : balisage, et lecture d'une page sans
+  // données structurées. Rangés avec la saisie de texte : c'est le même
+  // processus — une recette qui n'existe sur aucune page de livre.
+  'url_import': 'Rédaction d\'une recette',
+  'url_import_fallback': 'Rédaction d\'une recette',
   'generate': 'Rédaction d\'une recette',
   'refine': 'Rédaction d\'une recette',
   'polish_cooklang': 'Rédaction d\'une recette',
@@ -143,6 +148,19 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Convertit un texte brut collé ou dicté en recette CookLang '
         'structurée avec balisage des ingrédients et des étapes.',
+  ),
+  'url_import': FeatureInfo(
+    label: 'Import par lien : balisage',
+    description:
+        'Balise en CookLang une recette lue sur une page web (données '
+        'structurées de la page, ou texte transcrit) et sépare chaque ligne '
+        'd\'ingrédient en quantité, aliment et note.',
+  ),
+  'url_import_fallback': FeatureInfo(
+    label: 'Import par lien : lecture d\'une page sans données structurées',
+    description:
+        'Recopie la recette du texte principal d\'une page web qui ne publie '
+        'pas de données schema.org/Recipe. Appelé seulement dans ce cas.',
   ),
   'detect_illustrations': FeatureInfo(
     label: 'Détection illustrations',

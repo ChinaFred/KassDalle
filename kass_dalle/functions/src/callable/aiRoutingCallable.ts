@@ -170,6 +170,15 @@ export const ROUTABLE_FEATURES: Array<{
   { id: "recipe_translation", label: "Traduction d'une recette étrangère", group: "Import" },
   { id: "text_extraction", label: "Extraction depuis un texte libre", group: "Import" },
   { id: "book_cover", label: "Lecture d'une couverture de livre", group: "Import" },
+  // Import d'une recette depuis un lien. Deux postes, parce que deux appels :
+  // le balisage (même prompt que `recipe_tagging`) et, pour une page sans
+  // données structurées, la transcription de son texte principal.
+  { id: "url_import", label: "Import par lien : balisage", group: "Import" },
+  {
+    id: "url_import_fallback",
+    label: "Import par lien : lecture d'une page sans données structurées",
+    group: "Import",
+  },
 
   // ── Illustrations d'une page importée ─────────────────────────────────────
   //

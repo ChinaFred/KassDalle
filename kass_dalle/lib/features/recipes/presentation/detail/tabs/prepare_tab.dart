@@ -7,6 +7,7 @@ import '../../../domain/recipe.dart';
 import '../../cooklang_preview.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
+import '../../url_import/recipe_source_link.dart';
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
@@ -14,6 +15,23 @@ import '../../../../planning/presentation/schedule_recipe_sheet.dart';
 /// Onglet « Préparer » : illustrations, ingrédients et étapes de la recette.
 ///
 /// Extrait de recipe_detail_screen.dart.
+
+/// Ce qui précède la recette : le repas préparé à l'avance, puis la page
+/// d'origine d'une recette importée depuis un lien. `null` quand il n'y a ni
+/// l'un ni l'autre.
+Widget? recipeTopContent({required Recipe recipe, Widget? banner}) {
+  final sourceUrl = recipe.sourceUrl;
+  final hasSource = sourceUrl != null && sourceUrl.isNotEmpty;
+  if (!hasSource) return banner;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      ?banner,
+      RecipeSourceLink(url: sourceUrl, site: recipe.sourceSite),
+    ],
+  );
+}
 
 class PrepareTab extends ConsumerStatefulWidget {
   final String recipeId;
@@ -79,12 +97,15 @@ class PrepareTabState extends ConsumerState<PrepareTab>
             children: [
               CooklangPreview(
                 ctrl: widget.ctrl,
-                topContent: prepContext != null && prepContext.isAhead
-                    ? MealPrepBanner(
-                        recipeId: widget.recipeId,
-                        prepContext: prepContext,
-                      )
-                    : null,
+                topContent: recipeTopContent(
+                  recipe: recipe,
+                  banner: prepContext != null && prepContext.isAhead
+                      ? MealPrepBanner(
+                          recipeId: widget.recipeId,
+                          prepContext: prepContext,
+                        )
+                      : null,
+                ),
                 overrideIngredients: recipe.ingredients,
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,

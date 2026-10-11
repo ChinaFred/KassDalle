@@ -168,6 +168,8 @@ classDiagram
     +String? importVersion
     +bool isPrivate
     +String? langueOrigine
+    +String? sourceUrl
+    +String? sourceSite
     +String? fidelityLevel
     +List~FidelityFinding~ fidelityFindings
     +IllustrationReport? illustrationReport
@@ -414,6 +416,7 @@ classDiagram
     +List~String~ tags
     +BookReviewStatus reviewStatus
     +bool isPrivate
+    +bool isWebBook
     +bool isSystemBook
   }
 
@@ -438,8 +441,34 @@ classDiagram
     +String? createdBookId
     +String? errorMessage
     +String? scanId
+    +String? sourceUrl
+    +UrlImportErrorCode? errorCode
+    +int? recettesTrouvees
+    +int urlRetryCount
     +bool isActive
   }
+
+  class UrlImportResult {
+    &lt;&lt;réponse d'importRecipeFromUrlFn&gt;&gt;
+    +UrlImportStatus status
+    +String? jobId
+    +String? recipeId
+    +String? titre
+    +int? limit
+    +int? remaining
+  }
+
+  class UrlImportErrorCode {
+    &lt;&lt;enumeration&gt;&gt;
+    pageBlocked
+    pageNotFound
+    noRecipe
+    timeout
+    urlRefused
+  }
+
+  ProcessingJob --> UrlImportErrorCode : errorCode
+  UrlImportResult ..> ProcessingJob : jobId
 
   class Annotation {
     +String id

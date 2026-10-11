@@ -1476,6 +1476,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       'cancel_requested': false,
       'created_recipe_ids': [],
       'created_book_id': null,
+      // Un import par lien compte ses relances : les règles en admettent deux,
+      // chacune incrémentant le compteur de un exactement.
+      if (job.type == ProcessingJobType.recipeUrlImport)
+        'url_retry_count': job.urlRetryCount + 1,
     });
   }
 

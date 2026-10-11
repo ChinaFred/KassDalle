@@ -8,6 +8,8 @@ import 'search_providers.dart';
 import 'search_widgets.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
+import '../../auth/presentation/auth_providers.dart';
+import '../../recipes/presentation/url_import/url_import_dialog.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -82,7 +84,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Explorer')),
+      appBar: AppBar(
+        title: const Text('Explorer'),
+        actions: [
+          // Importer coûte des appels d'IA : éditeurs et administrateurs.
+          if (ref.watch(canEditProvider))
+            IconButton(
+              tooltip: 'Importer depuis un lien',
+              icon: const Icon(Icons.link),
+              onPressed: () => showUrlImportDialog(context),
+            ),
+        ],
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

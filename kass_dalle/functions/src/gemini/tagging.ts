@@ -365,10 +365,15 @@ export function parseTagged(json: Record<string, unknown>): TaggedRecipe {
  *
  * Un seul appel rend le texte balisé, la liste, et les tags — ces derniers
  * coûtaient un appel séparé pour une question à laquelle le texte répond déjà.
+ *
+ * `feature` nomme le poste de coût : `recipe_tagging` pour une page ou un texte
+ * collé, `url_import` pour une recette lue sur une page web — même prompt, mais
+ * un poste à part pour que l'import par lien se lise seul dans la comptabilité.
  */
 export async function tagAndNormalize(
   recipe: TranscribedRecipe,
   ctx: ModelCallContext,
+  feature = "recipe_tagging",
 ): Promise<TaggedRecipe> {
   const transcription = renderTranscriptionForTagging(recipe);
   // Deux blocs, pas un seul texte concaténé : Anthropic ne met en cache
@@ -390,7 +395,7 @@ export async function tagAndNormalize(
     call: (effort) =>
       callModel({
         parts,
-        ctx: { ...ctx, feature: "recipe_tagging", timeoutMs: 3 * 60 * 1000, effort },
+        ctx: { ...ctx, feature, timeoutMs: 3 * 60 * 1000, effort },
         maxTokens: TAGGING_MAX_TOKENS,
       }),
     onTruncated: (effort, truncated) =>
@@ -411,7 +416,7 @@ export async function tagAndNormalize(
     stage: "balisage",
     text,
     message: "Recette balisée et liste normalisée",
-    feature: "recipe_tagging",
+    feature,
     provider: result.provider,
     model: result.model,
     moduleType: "IMPORT",

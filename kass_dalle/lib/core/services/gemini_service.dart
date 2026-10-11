@@ -20,6 +20,7 @@ import 'package:http/http.dart' as http;
 import 'error_report_service.dart';
 import '../../features/recipes/data/book_import_analysis.dart';
 import '../../features/recipes/domain/recipe.dart';
+import '../../features/recipes/domain/url_import.dart';
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
@@ -611,6 +612,28 @@ class GeminiService {
       'storagePath': storagePath,
       'discard': true,
     });
+  }
+
+  /// Demande l'import d'une recette depuis un lien.
+  ///
+  /// Le serveur vérifie le rôle, l'adresse, le doublon et le plafond du jour,
+  /// puis crée le job : la recette arrive en brouillon, plus tard. [force]
+  /// passe outre le doublon (« Importer quand même »).
+  Future<UrlImportResult> importRecipeFromUrl(
+    String url, {
+    bool force = false,
+  }) async {
+    final data = await _call('importRecipeFromUrlFn', {
+      'url': url,
+      'force': force,
+    });
+    return UrlImportResult.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// Le compteur d'imports par lien du jour.
+  Future<UrlImportQuota> getUrlImportQuota() async {
+    final data = await _call('getUrlImportQuotaFn', const <String, dynamic>{});
+    return UrlImportQuota.fromMap(Map<String, dynamic>.from(data as Map));
   }
 }
 
