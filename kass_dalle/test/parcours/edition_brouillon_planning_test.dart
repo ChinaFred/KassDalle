@@ -281,6 +281,22 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('un appui long déplie le mois et commence une période libre', (
+      tester,
+    ) async {
+      await pumpPlanningWith(tester, TestBackend(), const Size(360, 800));
+
+      await tester.longPress(find.text('${DateTime.now().day}').first);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Annuler'), findsOneWidget);
+      expect(find.text('préparation'), findsOneWidget);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(find.text('Annuler'), findsNothing);
+    });
+
     testWidgets('le planning se tire pour se rafraîchir', (tester) async {
       final backend = TestBackend();
 

@@ -172,4 +172,57 @@ void main() {
       expect(weeks.first.start, DateTime(2026, 5, 1));
     });
   });
+
+  group('période libre', () {
+    test('longueur, jours et décalage', () {
+      final p = PlanningPeriod(DateTime(2026, 9, 28), DateTime(2026, 10, 5));
+      expect(p.length, 8);
+      expect(p.days.first, DateTime(2026, 9, 28));
+      expect(p.days.last, DateTime(2026, 10, 5));
+      expect(
+        p.next,
+        PlanningPeriod(DateTime(2026, 10, 6), DateTime(2026, 10, 13)),
+      );
+      expect(p.previous.end, DateTime(2026, 9, 27));
+    });
+
+    test('un changement d\'heure ne retire pas de jour', () {
+      // Passage à l'heure d'hiver le dimanche 25 octobre 2026.
+      final p = PlanningPeriod(DateTime(2026, 10, 23), DateTime(2026, 10, 29));
+      expect(p.length, 7);
+      expect(p.days.length, 7);
+    });
+
+    test('une semaine vaut la période de mêmes bornes', () {
+      final week = PlanningWeek(DateTime(2026, 10, 9));
+      expect(
+        week,
+        PlanningPeriod(DateTime(2026, 10, 9), DateTime(2026, 10, 15)),
+      );
+      expect(week.length, 7);
+    });
+
+    test('between remet les bornes dans l\'ordre', () {
+      expect(
+        PlanningPeriod.between(DateTime(2026, 10, 14), DateTime(2026, 10, 9)),
+        PlanningPeriod(DateTime(2026, 10, 9), DateTime(2026, 10, 14)),
+      );
+    });
+
+    test('lignes du calendrier qui portent une période', () {
+      final rows = calendarRowsFor(
+        PlanningPeriod(DateTime(2026, 10, 9), DateTime(2026, 10, 15)),
+      );
+      expect(rows.map((r) => r.start), [
+        DateTime(2026, 10, 5),
+        DateTime(2026, 10, 12),
+      ]);
+      expect(
+        calendarRowsFor(
+          PlanningPeriod(DateTime(2026, 10, 12), DateTime(2026, 10, 18)),
+        ).length,
+        1,
+      );
+    });
+  });
 }

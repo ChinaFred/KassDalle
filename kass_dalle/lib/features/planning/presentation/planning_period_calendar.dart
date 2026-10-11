@@ -4,25 +4,28 @@ import 'package:intl/intl.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_week.dart';
 
-/// Le calendrier du planning : il choisit la semaine que l'écran affiche.
+/// Le calendrier du planning : il choisit la période que l'écran affiche.
 ///
-/// Ses colonnes partent du jour de démarrage du cycle — « V S D L M M J » pour
-/// un cycle du vendredi. Une ligne de la grille est donc une semaine de
-/// planning entière, et un appui sur n'importe quel jour la sélectionne d'un
-/// coup. Une grille du lundi au dimanche coupait la semaine en deux lignes.
+/// La grille est un calendrier habituel, du lundi au dimanche. La période
+/// choisie y est surlignée d'une bande continue, qui passe d'une ligne à
+/// l'autre quand elle chevauche deux semaines — du vendredi au jeudi, par
+/// exemple.
 ///
-/// Replié, il ne montre que les sept jours de la semaine choisie ; déplié, le
-/// mois entier. Sur un téléphone il s'ouvre replié : la liste des repas en
-/// dessous est ce qu'on lit.
+/// Un appui sur un jour choisit la période par défaut qui le contient : sept
+/// jours à partir du jour de démarrage du cycle. Un appui long commence une
+/// période libre, que l'appui suivant termine. Rien n'est stocké : la période
+/// et le mois sont des positions de lecture.
 ///
-/// Rien n'est stocké : la semaine et le mois sont des positions de lecture.
-/// Les pastilles se lisent dans des champs stockés — recette posée ou non,
-/// date de préparation ou non — et ne rejouent aucune règle de créneau.
+/// Replié, il ne montre que les lignes qui contiennent la période ; déplié, le
+/// mois entier. Les pastilles se lisent dans des champs stockés — recette
+/// posée ou non, date de préparation ou non — et ne rejouent aucune règle de
+/// créneau.
 class PlanningPeriodCalendar extends StatelessWidget {
-  /// Semaine choisie, affichée sous le calendrier.
-  final PlanningWeek period;
+  /// Période choisie, affichée sous le calendrier.
+  final PlanningPeriod period;
 
-  /// Jour de démarrage du cycle, 1 = lundi … 7 = dimanche.
+  /// Jour de démarrage du cycle, 1 = lundi … 7 = dimanche : il fixe la période
+  /// par défaut.
   final int cycleStartDay;
 
   /// Tous les repas connus ; le calendrier les range lui-même par jour.
@@ -39,16 +42,33 @@ class PlanningPeriodCalendar extends StatelessWidget {
   /// ressemblerait à un mois sans repas.
   final DateTime earliestDay;
 
-  final ValueChanged<PlanningWeek> onSelectPeriod;
+  final ValueChanged<PlanningPeriod> onSelectPeriod;
   final ValueChanged<DateTime> onMonthChanged;
 
-  /// Appui sur un jour du bandeau replié. Null : l'appui choisit la semaine,
-  /// comme dans la grille.
+  /// Appui sur un jour de la période, calendrier replié : la liste y descend.
+  /// Null : l'appui choisit la période par défaut, comme ailleurs.
   final ValueChanged<DateTime>? onTapDay;
 
   /// Plie ou déplie le calendrier. Null : il reste dans son état, sans
   /// bouton — c'est le cas du grand écran, où le mois est toujours affiché.
   final VoidCallback? onToggleExpanded;
+
+  /// Premier jour d'une période libre en cours de choix, ou null.
+  final DateTime? rangeStart;
+
+  /// Appui long sur un jour : il devient le début d'une période libre.
+  final ValueChanged<DateTime> onRangeStart;
+
+  /// Abandon de la période libre en cours de choix.
+  final VoidCallback onRangeCancel;
+
+  /// Fin touchée trop loin du début : plus de [PlanningPeriod.maxLength]
+  /// jours. Rien n'est appliqué, le choix reste en cours.
+  final VoidCallback onRangeTooLong;
+
+  /// Ouvre le sélecteur de dates. Affiché sous la grille quand il est donné —
+  /// sur grand écran, où il n'y a pas de menu ⋮.
+  final VoidCallback? onChooseDates;
 
   /// L'instant courant, injectable par les tests ; sinon l'horloge.
   final DateTime? now;
@@ -63,8 +83,13 @@ class PlanningPeriodCalendar extends StatelessWidget {
     required this.earliestDay,
     required this.onSelectPeriod,
     required this.onMonthChanged,
+    required this.onRangeStart,
+    required this.onRangeCancel,
+    required this.onRangeTooLong,
+    this.rangeStart,
     this.onTapDay,
     this.onToggleExpanded,
+    this.onChooseDates,
     this.now,
   });
 
@@ -75,13 +100,31 @@ class PlanningPeriodCalendar extends StatelessWidget {
   static DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
   static DateTime monthOf(DateTime d) => DateTime(d.year, d.month);
 
-  /// « Cette semaine », « Semaine prochaine », « Semaine dernière », ou la
-  /// date de début pour les autres.
+  /// Vrai si [period] est la période par défaut qui commence à son premier
+  /// jour : une semaine qui part du jour de démarrage du cycle.
+  static bool isDefault(PlanningPeriod period, {required int cycleStartDay}) =>
+      period == planningWeekOf(period.start, cycleStartDay: cycleStartDay);
+
+  /// Titre d'une période par défaut : « Cette semaine », « Semaine
+  /// prochaine », « Semaine dernière », ou la date de début. Pour une période
+  /// libre : « Du ven. 9 au mer. 14 oct. ».
   static String periodTitle(
-    PlanningWeek period, {
+    PlanningPeriod period, {
     required DateTime today,
     required int cycleStartDay,
   }) {
+    if (!isDefault(period, cycleStartDay: cycleStartDay)) {
+      if (period.length == 1) {
+        return DateFormat('EEE d MMM', 'fr').format(period.start);
+      }
+      final sameMonth = period.start.month == period.end.month;
+      final start = DateFormat(
+        sameMonth ? 'EEE d' : 'EEE d MMM',
+        'fr',
+      ).format(period.start);
+      final end = DateFormat('EEE d MMM', 'fr').format(period.end);
+      return 'Du $start au $end';
+    }
     final current = planningWeekOf(today, cycleStartDay: cycleStartDay);
     if (period == current) return 'Cette semaine';
     if (period == current.next) return 'Semaine prochaine';
@@ -89,8 +132,11 @@ class PlanningPeriodCalendar extends StatelessWidget {
     return 'Semaine du ${DateFormat('d MMMM', 'fr').format(period.start)}';
   }
 
-  /// « ven. 9 – jeu. 15 oct. », le mois répété quand la semaine en change.
-  static String periodRange(PlanningWeek period) {
+  /// « ven. 9 – jeu. 15 oct. », le mois répété quand la période en change.
+  static String periodRange(PlanningPeriod period) {
+    if (period.length == 1) {
+      return DateFormat('EEE d MMM', 'fr').format(period.start);
+    }
     final sameMonth = period.start.month == period.end.month;
     final start = DateFormat(
       sameMonth ? 'EEE d' : 'EEE d MMM',
@@ -98,6 +144,39 @@ class PlanningPeriodCalendar extends StatelessWidget {
     ).format(period.start);
     final end = DateFormat('EEE d MMM', 'fr').format(period.end);
     return '$start – $end';
+  }
+
+  /// « 1 jour », « 6 jours ».
+  static String lengthLabel(PlanningPeriod period) =>
+      period.length == 1 ? '1 jour' : '${period.length} jours';
+
+  /// Termine une période libre sur [day] : la période va du début choisi à
+  /// ce jour, dans l'ordre où ils tombent.
+  void _finishRange(DateTime day) {
+    final chosen = PlanningPeriod.between(rangeStart!, day);
+    if (chosen.length > PlanningPeriod.maxLength) {
+      onRangeTooLong();
+      return;
+    }
+    onSelectPeriod(chosen);
+  }
+
+  void _onTap(DateTime day) {
+    if (rangeStart != null) {
+      _finishRange(day);
+    } else if (!expanded && onTapDay != null && period.contains(day)) {
+      onTapDay!(day);
+    } else {
+      onSelectPeriod(planningWeekOf(day, cycleStartDay: cycleStartDay));
+    }
+  }
+
+  String _tapHint(DateTime day) {
+    if (rangeStart != null) return 'Finir la période ici';
+    if (!expanded && onTapDay != null && period.contains(day)) {
+      return 'Afficher ce jour';
+    }
+    return 'Choisir la semaine';
   }
 
   @override
@@ -115,9 +194,10 @@ class PlanningPeriodCalendar extends StatelessWidget {
       }
     }
 
-    final weeks = expanded
-        ? planningWeeksCovering(month, cycleStartDay: cycleStartDay)
-        : [period];
+    final rows = expanded
+        ? planningWeeksCovering(month, cycleStartDay: DateTime.monday)
+        : calendarRowsFor(period);
+    final firstLoadedDay = monthOf(earliestDay);
 
     final grid = LayoutBuilder(
       builder: (context, constraints) {
@@ -125,31 +205,44 @@ class PlanningPeriodCalendar extends StatelessWidget {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _WeekdayInitials(cycleStartDay: cycleStartDay, cell: cell),
-            for (final week in weeks)
-              _WeekRow(
-                week: week,
-                cell: cell,
-                // Replié, le bandeau EST la semaine choisie : la surligner
-                // n'apprendrait rien.
-                isSelected: expanded && week == period,
-                month: expanded ? month : null,
-                today: today,
-                byDay: byDay,
-                prepByDay: prepByDay,
-                firstLoadedDay: monthOf(earliestDay),
-                tapHint: !expanded && onTapDay != null
-                    ? 'Afficher ce jour'
-                    : 'Choisir cette semaine',
-                onTapDay: (day) {
-                  if (!expanded && onTapDay != null) {
-                    onTapDay!(day);
-                  } else {
-                    onSelectPeriod(
-                      planningWeekOf(day, cycleStartDay: cycleStartDay),
-                    );
-                  }
-                },
+            _WeekdayInitials(cell: cell),
+            for (final row in rows)
+              Center(
+                child: SizedBox(
+                  width: cell * 7,
+                  height: cell,
+                  child: Row(
+                    children: [
+                      for (final day in row.days)
+                        SizedBox(
+                          width: cell,
+                          child: _DayCell(
+                            day: day,
+                            size: cell,
+                            meals: byDay[day] ?? const [],
+                            prepCount: prepByDay[day] ?? 0,
+                            isToday: day == today,
+                            inPeriod: period.contains(day),
+                            isPeriodStart: day == period.start,
+                            isPeriodEnd: day == period.end,
+                            isRangeStart: day == rangeStart,
+                            isPast: day.isBefore(today),
+                            outsideMonth:
+                                expanded &&
+                                (day.month != month.month ||
+                                    day.year != month.year),
+                            tapHint: _tapHint(day),
+                            onTap: day.isBefore(firstLoadedDay)
+                                ? null
+                                : () => _onTap(day),
+                            onLongPress: day.isBefore(firstLoadedDay)
+                                ? null
+                                : () => onRangeStart(day),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
           ],
         );
@@ -169,14 +262,22 @@ class PlanningPeriodCalendar extends StatelessWidget {
             month: month,
             today: today,
             earliestDay: earliestDay,
-            onSelectPeriod: onSelectPeriod,
+            choosing: rangeStart != null,
+            onSelectPeriod: (p) {
+              if (rangeStart != null) onRangeCancel();
+              onSelectPeriod(p);
+            },
             onMonthChanged: onMonthChanged,
             onToggleExpanded: onToggleExpanded,
           ),
-          if (expanded)
+          if (rangeStart != null)
+            _RangeBanner(start: rangeStart!, onCancel: onRangeCancel),
+          if (expanded || rangeStart != null)
             grid
           else
-            // Un balayage du bandeau passe à la semaine voisine.
+            // Un balayage du bandeau passe à la période voisine, de même
+            // longueur. Il est coupé pendant le choix d'une période libre : un
+            // geste raté y perdrait le début choisi.
             GestureDetector(
               behavior: HitTestBehavior.translucent,
               onHorizontalDragEnd: (details) {
@@ -189,7 +290,20 @@ class PlanningPeriodCalendar extends StatelessWidget {
               },
               child: grid,
             ),
-          if (expanded) const PlanningCalendarLegend(),
+          if (expanded)
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const PlanningCalendarLegend(),
+                if (onChooseDates != null)
+                  TextButton.icon(
+                    onPressed: onChooseDates,
+                    icon: const Icon(Icons.date_range_outlined),
+                    label: const Text('Choisir des dates…'),
+                  ),
+              ],
+            ),
           const SizedBox(height: 4),
         ],
       ),
@@ -197,15 +311,16 @@ class PlanningPeriodCalendar extends StatelessWidget {
   }
 }
 
-/// La ligne de titre : flèches, semaine ou mois lu, retour à aujourd'hui.
+/// La ligne de titre : flèches, période ou mois lu, retour à aujourd'hui.
 class _Header extends StatelessWidget {
-  final PlanningWeek period;
+  final PlanningPeriod period;
   final int cycleStartDay;
   final bool expanded;
   final DateTime month;
   final DateTime today;
   final DateTime earliestDay;
-  final ValueChanged<PlanningWeek> onSelectPeriod;
+  final bool choosing;
+  final ValueChanged<PlanningPeriod> onSelectPeriod;
   final ValueChanged<DateTime> onMonthChanged;
   final VoidCallback? onToggleExpanded;
 
@@ -216,6 +331,7 @@ class _Header extends StatelessWidget {
     required this.month,
     required this.today,
     required this.earliestDay,
+    required this.choosing,
     required this.onSelectPeriod,
     required this.onMonthChanged,
     required this.onToggleExpanded,
@@ -226,19 +342,29 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
+    final isDefault = PlanningPeriodCalendar.isDefault(
+      period,
+      cycleStartDay: cycleStartDay,
+    );
     final todayPeriod = planningWeekOf(today, cycleStartDay: cycleStartDay);
     final atToday =
+        !choosing &&
         period == todayPeriod &&
         (!expanded ||
             PlanningPeriodCalendar.monthOf(month) ==
                 PlanningPeriodCalendar.monthOf(today));
+
+    // Pendant le choix d'une période libre, le calendrier est déplié et les
+    // flèches changent de mois : la fin peut tomber le mois suivant.
+    final byMonth = expanded || choosing;
 
     final VoidCallback? back;
     final VoidCallback forward;
     final String backTip;
     final String forwardTip;
     final String title;
-    if (expanded) {
+    final String subtitle;
+    if (byMonth) {
       final canGoBack = PlanningPeriodCalendar.monthOf(
         month,
       ).isAfter(PlanningPeriodCalendar.monthOf(earliestDay));
@@ -252,19 +378,29 @@ class _Header extends StatelessWidget {
       forwardTip = 'Mois suivant';
       final label = DateFormat('MMMM yyyy', 'fr').format(month);
       title = '${label[0].toUpperCase()}${label.substring(1)}';
+      subtitle = isDefault
+          ? PlanningPeriodCalendar.periodRange(period)
+          : '${PlanningPeriodCalendar.periodRange(period)} · '
+                '${PlanningPeriodCalendar.lengthLabel(period)}';
     } else {
       final canGoBack = period.start.isAfter(earliestDay);
       back = canGoBack ? () => onSelectPeriod(period.previous) : null;
       forward = () => onSelectPeriod(period.next);
+      final unit = isDefault ? 'Semaine' : 'Période';
       backTip = canGoBack
-          ? 'Semaine précédente'
+          ? '$unit précédente'
           : 'L\'historique du planning s\'arrête ici';
-      forwardTip = 'Semaine suivante';
+      forwardTip = '$unit suivante';
       title = PlanningPeriodCalendar.periodTitle(
         period,
         today: today,
         cycleStartDay: cycleStartDay,
       );
+      // Le titre d'une période libre dit déjà ses dates : la seconde ligne
+      // donne sa longueur.
+      subtitle = isDefault
+          ? PlanningPeriodCalendar.periodRange(period)
+          : PlanningPeriodCalendar.lengthLabel(period);
     }
 
     final titleBlock = Column(
@@ -280,7 +416,7 @@ class _Header extends StatelessWidget {
           ),
         ),
         Text(
-          PlanningPeriodCalendar.periodRange(period),
+          subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(
@@ -298,9 +434,12 @@ class _Header extends StatelessWidget {
           onPressed: back,
         ),
         Expanded(
-          child: onToggleExpanded == null
+          child: onToggleExpanded == null || choosing
               ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   child: titleBlock,
                 )
               : Semantics(
@@ -355,12 +494,51 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// Les initiales des jours, dans l'ordre du cycle.
+/// Le bandeau du choix d'une période libre : où il a commencé, et comment en
+/// sortir.
+class _RangeBanner extends StatelessWidget {
+  final DateTime start;
+  final VoidCallback onCancel;
+
+  const _RangeBanner({required this.start, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                'Du ${DateFormat('EEE d MMM', 'fr').format(start)} — '
+                'touchez le dernier jour',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ),
+          TextButton(onPressed: onCancel, child: const Text('Annuler')),
+        ],
+      ),
+    );
+  }
+}
+
+/// Les initiales des jours, du lundi au dimanche.
 class _WeekdayInitials extends StatelessWidget {
-  final int cycleStartDay;
   final double cell;
 
-  const _WeekdayInitials({required this.cycleStartDay, required this.cell});
+  const _WeekdayInitials({required this.cell});
 
   static const _initials = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
@@ -373,17 +551,15 @@ class _WeekdayInitials extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            for (var i = 0; i < 7; i++)
+            for (final initial in _initials)
               SizedBox(
                 width: cell,
                 child: Center(
                   child: Text(
-                    _initials[(cycleStartDay - 1 + i) % 7],
+                    initial,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
-                      // Le premier jour du cycle se lit en gras : c'est là
-                      // que la semaine commence.
-                      fontWeight: i == 0 ? FontWeight.w800 : FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -395,97 +571,23 @@ class _WeekdayInitials extends StatelessWidget {
   }
 }
 
-/// Une ligne de la grille : une semaine de planning.
-class _WeekRow extends StatelessWidget {
-  final PlanningWeek week;
-  final double cell;
-  final bool isSelected;
-
-  /// Mois affiché ; les jours d'un autre mois s'affichent atténués. Null dans
-  /// le bandeau replié, où aucun jour n'est hors mois.
-  final DateTime? month;
-  final DateTime today;
-  final Map<DateTime, List<PlannedMeal>> byDay;
-  final Map<DateTime, int> prepByDay;
-
-  /// Premier jour dont les repas sont lus. Avant lui, une case ne répond
-  /// pas : sa semaine dirait « Rien de prévu » faute de lecture.
-  final DateTime firstLoadedDay;
-  final String tapHint;
-  final ValueChanged<DateTime> onTapDay;
-
-  const _WeekRow({
-    required this.week,
-    required this.cell,
-    required this.isSelected,
-    required this.month,
-    required this.today,
-    required this.byDay,
-    required this.prepByDay,
-    required this.firstLoadedDay,
-    required this.tapHint,
-    required this.onTapDay,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final rangeLabel =
-        'semaine du ${DateFormat('d MMMM', 'fr').format(week.start)} '
-        'au ${DateFormat('d MMMM', 'fr').format(week.end)}';
-    return Center(
-      child: Container(
-        width: cell * 7,
-        height: cell,
-        decoration: isSelected
-            ? BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(cell / 2),
-              )
-            : null,
-        child: Row(
-          children: [
-            for (final day in week.days)
-              SizedBox(
-                width: cell,
-                child: _DayCell(
-                  day: day,
-                  size: cell,
-                  meals: byDay[day] ?? const [],
-                  prepCount: prepByDay[day] ?? 0,
-                  isToday: day == today,
-                  inSelectedWeek: isSelected,
-                  isPast: day.isBefore(today),
-                  outsideMonth:
-                      month != null &&
-                      (day.month != month!.month || day.year != month!.year),
-                  weekLabel: rangeLabel,
-                  tapHint: tapHint,
-                  onTap: day.isBefore(firstLoadedDay)
-                      ? null
-                      : () => onTapDay(day),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Une case de jour : le numéro, puis les pastilles.
+/// Une case de jour : la bande de la période en fond, le numéro, puis les
+/// pastilles.
 class _DayCell extends StatelessWidget {
   final DateTime day;
   final double size;
   final List<PlannedMeal> meals;
   final int prepCount;
   final bool isToday;
-  final bool inSelectedWeek;
+  final bool inPeriod;
+  final bool isPeriodStart;
+  final bool isPeriodEnd;
+  final bool isRangeStart;
   final bool isPast;
   final bool outsideMonth;
-  final String weekLabel;
   final String tapHint;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   const _DayCell({
     required this.day,
@@ -493,12 +595,15 @@ class _DayCell extends StatelessWidget {
     required this.meals,
     required this.prepCount,
     required this.isToday,
-    required this.inSelectedWeek,
+    required this.inPeriod,
+    required this.isPeriodStart,
+    required this.isPeriodEnd,
+    required this.isRangeStart,
     required this.isPast,
     required this.outsideMonth,
-    required this.weekLabel,
     required this.tapHint,
     required this.onTap,
+    required this.onLongPress,
   });
 
   @override
@@ -506,9 +611,15 @@ class _DayCell extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    final base = inSelectedWeek ? scheme.onPrimaryContainer : scheme.onSurface;
+    final base = isRangeStart
+        ? scheme.onPrimary
+        : inPeriod
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
     final Color numberColor;
-    if (isToday) {
+    if (isRangeStart) {
+      numberColor = scheme.onPrimary;
+    } else if (isToday) {
       numberColor = scheme.primary;
     } else if (outsideMonth) {
       numberColor = base.withValues(alpha: 0.35);
@@ -540,61 +651,89 @@ class _DayCell extends StatelessWidget {
         ? (prepCount > 0 ? 'jour de préparation' : 'aucun repas')
         : '${meals.length} repas';
 
+    // La bande : arrondie au premier et au dernier jour de la période,
+    // coupée droite au changement de ligne pour se lire d'un seul tenant.
+    final radius = Radius.circular(size / 2);
+    final band = inPeriod
+        ? BoxDecoration(
+            color: scheme.primaryContainer,
+            borderRadius: BorderRadius.horizontal(
+              left: isPeriodStart ? radius : Radius.zero,
+              right: isPeriodEnd ? radius : Radius.zero,
+            ),
+          )
+        : null;
+
+    final BoxDecoration? mark;
+    if (isRangeStart) {
+      mark = BoxDecoration(shape: BoxShape.circle, color: scheme.primary);
+    } else if (isToday) {
+      mark = BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: scheme.primary, width: 1.5),
+      );
+    } else {
+      mark = null;
+    }
+
     return Semantics(
       button: true,
-      selected: inSelectedWeek,
+      selected: inPeriod,
       label: DateFormat('EEEE d MMMM', 'fr').format(day),
-      value: '$mealsLabel, $weekLabel',
+      value: inPeriod ? '$mealsLabel, dans la période choisie' : mealsLabel,
       onTapHint: onTap == null ? null : tapHint,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Container(
-          margin: EdgeInsets.all(size * 0.08),
-          decoration: isToday
-              ? BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: scheme.primary, width: 1.5),
-                )
-              : null,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '${day.day}',
-                  softWrap: false,
-                  maxLines: 1,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    height: 1.1,
-                    color: numberColor,
-                    fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
+      onLongPressHint: onLongPress == null ? null : 'Commencer une période ici',
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: size * 0.06),
+        decoration: band,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          customBorder: const CircleBorder(),
+          child: Container(
+            margin: EdgeInsets.all(size * 0.04),
+            decoration: mark,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${day.day}',
+                    softWrap: false,
+                    maxLines: 1,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      height: 1.1,
+                      color: numberColor,
+                      fontWeight: isToday || isRangeStart
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(
-                height: dotSize + 2,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ...dots,
-                    if (meals.length > 3)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 2),
-                        child: Text(
-                          '+${meals.length - 3}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: dotSize * 1.6,
-                            height: 1,
-                            color: scheme.onSurfaceVariant,
+                SizedBox(
+                  height: dotSize + 2,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ...dots,
+                      if (meals.length > 3)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2),
+                          child: Text(
+                            '+${meals.length - 3}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: dotSize * 1.6,
+                              height: 1,
+                              color: scheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

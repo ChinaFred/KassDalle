@@ -13,24 +13,54 @@ library;
 
 import 'planned_meal.dart';
 
-/// Sept jours, du [start] inclus au sixième jour suivant.
-class PlanningWeek {
+/// Une période de lecture du planning : des jours consécutifs, du [start] au
+/// [end] inclus.
+///
+/// La période par défaut est une [PlanningWeek]. Une période libre — du
+/// vendredi au mercredi, ou deux semaines à partir d'un lundi — se choisit
+/// dans le calendrier et n'est pas stockée : elle disparaît à la fermeture de
+/// l'écran.
+class PlanningPeriod {
   /// Premier jour, à minuit heure locale.
   final DateTime start;
 
-  PlanningWeek(DateTime start)
-    : start = DateTime(start.year, start.month, start.day);
+  /// Dernier jour inclus, à minuit heure locale.
+  final DateTime end;
 
-  /// Dernier jour inclus.
-  DateTime get end => _dayPlus(6);
+  /// Longueur maximale d'une période libre. Au-delà, la liste des jours
+  /// devient trop longue à lire.
+  static const maxLength = 31;
 
-  /// Les sept jours, dans l'ordre.
-  List<DateTime> get days => List.generate(7, _dayPlus);
+  PlanningPeriod(DateTime start, DateTime end)
+    : start = DateTime(start.year, start.month, start.day),
+      end = DateTime(end.year, end.month, end.day),
+      assert(!end.isBefore(start));
 
-  PlanningWeek get next => PlanningWeek(_dayPlus(7));
-  PlanningWeek get previous => PlanningWeek(_dayPlus(-7));
+  /// La période qui va de [a] à [b], dans l'ordre où elles tombent.
+  factory PlanningPeriod.between(DateTime a, DateTime b) =>
+      b.isBefore(a) ? PlanningPeriod(b, a) : PlanningPeriod(a, b);
 
-  /// Vrai si [day] tombe dans la semaine, quelle que soit son heure.
+  /// Nombre de jours, bornes comprises. Le calcul passe par UTC : un
+  /// changement d'heure ne retire pas de jour.
+  int get length =>
+      DateTime.utc(
+        end.year,
+        end.month,
+        end.day,
+      ).difference(DateTime.utc(start.year, start.month, start.day)).inDays +
+      1;
+
+  /// Les jours, dans l'ordre.
+  List<DateTime> get days => List.generate(length, _dayPlus);
+
+  /// La période de même longueur qui suit, ou qui précède.
+  PlanningPeriod get next => shifted(length);
+  PlanningPeriod get previous => shifted(-length);
+
+  PlanningPeriod shifted(int days) =>
+      PlanningPeriod(_dayPlus(days), _dayPlus(length - 1 + days));
+
+  /// Vrai si [day] tombe dans la période, quelle que soit son heure.
   bool contains(DateTime day) {
     final d = DateTime(day.year, day.month, day.day);
     return !d.isBefore(start) && !d.isAfter(end);
@@ -42,13 +72,25 @@ class PlanningWeek {
 
   @override
   bool operator ==(Object other) =>
-      other is PlanningWeek && other.start == start;
+      other is PlanningPeriod && other.start == start && other.end == end;
 
   @override
-  int get hashCode => start.hashCode;
+  int get hashCode => Object.hash(start, end);
 
   @override
-  String toString() => 'PlanningWeek(${start.toIso8601String()})';
+  String toString() =>
+      'PlanningPeriod(${start.toIso8601String()} → ${end.toIso8601String()})';
+}
+
+/// Sept jours, du [start] inclus au sixième jour suivant.
+class PlanningWeek extends PlanningPeriod {
+  PlanningWeek(DateTime start)
+    : super(start, DateTime(start.year, start.month, start.day + 6));
+
+  @override
+  PlanningWeek get next => PlanningWeek(_dayPlus(7));
+  @override
+  PlanningWeek get previous => PlanningWeek(_dayPlus(-7));
 }
 
 /// La semaine contenant [day], pour un cycle qui démarre le [cycleStartDay]
@@ -63,11 +105,11 @@ PlanningWeek planningWeekOf(DateTime day, {required int cycleStartDay}) {
 ///
 /// Seuls comptent ceux qui restent à cuisiner : le jour même compte, quelle
 /// que soit l'heure du repas. Avec une [week], on ne garde que les repas de
-/// cette semaine ; sans elle, toutes les semaines à venir.
+/// cette période ; sans elle, toutes les semaines à venir.
 List<PlannedMeal> mealsToShop(
   Iterable<PlannedMeal> meals, {
   required DateTime today,
-  PlanningWeek? week,
+  PlanningPeriod? week,
 }) {
   final firstDay = DateTime(today.year, today.month, today.day);
   return [
@@ -81,9 +123,8 @@ List<PlannedMeal> mealsToShop(
 /// Les semaines qui couvrent [month], dans l'ordre : une ligne du calendrier
 /// chacune.
 ///
-/// La première contient le 1er du mois, la dernière son dernier jour. Comme
-/// une semaine part du [cycleStartDay], la grille s'aligne sur le cycle : une
-/// ligne est une semaine de planning entière, jamais deux moitiés.
+/// La première contient le 1er du mois, la dernière son dernier jour. Le
+/// calendrier les demande à partir du lundi.
 List<PlanningWeek> planningWeeksCovering(
   DateTime month, {
   required int cycleStartDay,
@@ -98,4 +139,17 @@ List<PlanningWeek> planningWeeksCovering(
     weeks.add(w);
   }
   return weeks;
+}
+
+/// Les lignes du calendrier, du lundi au dimanche, qui contiennent [period].
+List<PlanningWeek> calendarRowsFor(PlanningPeriod period) {
+  final rows = <PlanningWeek>[];
+  for (
+    var w = planningWeekOf(period.start, cycleStartDay: DateTime.monday);
+    !w.start.isAfter(period.end);
+    w = w.next
+  ) {
+    rows.add(w);
+  }
+  return rows;
 }

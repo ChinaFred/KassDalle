@@ -18,6 +18,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-11
+
+### v0.23.27 — fonctionnel
+
+#### Planning : calendrier du lundi au dimanche et période libre
+
+Le calendrier du planning revient à une grille habituelle, du lundi au dimanche. La période
+choisie y est surlignée d'une bande continue. Une semaine du vendredi au jeudi occupe la fin
+d'une ligne et le début de la suivante. Le jour courant reste entouré.
+
+Un appui sur un jour choisit toujours la semaine du cycle qui le contient. Une période libre se
+choisit par un appui long sur le premier jour, puis un appui sur le dernier, ou par « Choisir
+des dates… ». Exemples : du vendredi au mercredi, ou deux semaines à partir d'un lundi. Une
+période libre dure 31 jours au plus. Elle n'est pas retenue : chaque ouverture revient à la
+semaine en cours. La liste des jours et la liste de courses suivent la période choisie.
+« Nouveau planning » reste calé sur le prochain cycle.
+
+Replié sur téléphone, le calendrier montre les lignes qui contiennent la période : deux lignes
+pour une semaine du vendredi au jeudi, contre une seule en v0.23.26.
+
 ## 2026-10-10
 
 ### v0.23.26 — fonctionnel
