@@ -197,8 +197,9 @@ describe("bornes et pages piégées", () => {
     assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
   });
 
-  test("balise méta géante sans attribut : lecture en temps linéaire", () => {
-    const trap = `<meta ${"a".repeat(8_180)}>`.repeat(375);
+  test("balises méta sans attribut : lecture en temps linéaire", () => {
+    const trap =
+      `<meta ${"a".repeat(8_180)}>`.repeat(375) + `<meta ${"a".repeat(1_020)}>`.repeat(2_900);
     const started = Date.now();
     parseRecipePage(trap, "https://a.fr/");
     assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);

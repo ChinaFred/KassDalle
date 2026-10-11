@@ -581,11 +581,14 @@ const ATTRIBUTES_MAX_CHARS = 1_024;
 /** Attributs d'une balise ouvrante, clés en minuscules. */
 function attributesOf(tag: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  // Une balise ouvrante utile tient en quelques centaines de caractères. Au-delà,
-  // l'expression revient en arrière sur chaque position : borner la balise garde
-  // le temps de lecture linéaire sur une page piégée.
+  // Une balise ouvrante utile tient en quelques centaines de caractères : on la
+  // borne. Le nom d'attribut ne démarre qu'en début de mot et se lit d'un bloc
+  // (groupe atomique émulé) : sans `=` derrière, l'expression ne revient pas en
+  // arrière lettre par lettre, et la lecture reste linéaire sur une page piégée.
   const head = tag.slice(0, ATTRIBUTES_MAX_CHARS);
-  for (const m of head.matchAll(/([a-z_:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+  for (const m of head.matchAll(
+    /(?<![a-z_:-])(?=([a-z_:-]+))\1\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+  )) {
     attrs[m[1].toLowerCase()] = decodeEntities(m[3] ?? m[4] ?? m[5] ?? "");
   }
   return attrs;
