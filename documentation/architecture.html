@@ -583,8 +583,10 @@ flowchart TB
         Les deux workflows n'ont que le droit <code>contents: read</code>, et leurs actions sont
         épinglées par SHA de commit, version en commentaire.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
-        hebdomadaire (14 semaines), réglées dans Google Cloud et non par ce workflow :
-        <span class="path">TechnicalRequirements.md</span>, « Sauvegardes de Firestore ».
+        hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
+        ou supprimées. Les deux se règlent dans Google Cloud, et non par ce workflow :
+        <span class="path">TechnicalRequirements.md</span>, « Sauvegardes de Firestore » et
+        « Versions des fichiers de Storage ».
       </figcaption>
     </figure>
   </section>
