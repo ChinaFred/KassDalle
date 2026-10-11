@@ -137,7 +137,7 @@ export type EstimatedTimesDecision =
  *   supprimé : ajouter puis retirer une ligne `>> temps_cuisson:` ne change
  *   pas l'empreinte, et ne relance donc pas un appel facturé à chaque
  *   aller-retour. La durée retirée reste alors sans estimation, jusqu'à ce
- *   que le texte de la recette change.
+ *   que le texte ou le titre de la recette change.
  * - Il en manque une : on estime, sauf si une estimation existe déjà pour ce
  *   contenu, ou si une réservation récente est en cours.
  */

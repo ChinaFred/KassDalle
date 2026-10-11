@@ -499,6 +499,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 'hors recette=${r['horsRecette']}, '
                 'en erreur=${r['enErreur']}'
                 '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+                '${(r['enErreur'] ?? 0) > 0 ? ' (recettes en erreur : voir les rapports d\'erreurs avant de relancer)' : ''}'
                 '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint)' : ''}'
                 '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
                 '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
