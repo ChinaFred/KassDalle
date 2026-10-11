@@ -207,6 +207,7 @@ firestore/
 ├── ai_usage_monthly/{AAAA-MM}/
 ├── ai_daily_spend/{uid}_{AAAA-MM-JJ}/
 ├── scan_spend/{scanId}/                           ← compteur et plafond d'un import de livre
+├── url_import_daily/{uid}_{AAAA-MM-JJ}/           ← compteur du plafond d'imports par lien
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
@@ -317,13 +318,29 @@ pour que deux comptes sans profil restent distincts.
 | `url_couverture` | `String?` | URL Firebase Storage vers la photo de couverture |
 | `tags` | `List<String>` | Étiquettes libres (ex : `pâtisserie`, `terroir belge`) |
 | `review_status` | `String` | Enum : `draft` \| `validated` |
-| `is_private` | `bool` | Livre réservé à son créateur. Basculé depuis le formulaire de livre ; verrouillé à `true` sur « Mes Recettes Secrètes » (`__secretes`). `onBookWritten` recopie la valeur sur toutes les recettes du livre |
+| `is_private` | `bool` | Livre réservé à son créateur. Basculé depuis le formulaire de livre ; verrouillé à `true` sur « Mes Recettes Secrètes » (`__secretes`). « Mes recettes du web » (`__web`) est créé à `true` et reste basculable. `onBookWritten` recopie la valeur sur toutes les recettes du livre |
 | `created_by` | `String` | UID de l'utilisateur créateur |
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp` | Date de dernière modification |
 | `source_file_url` | `String?` | URL du fichier source IA |
 | `source_file_name` | `String?` | Nom du fichier source |
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
+
+**Les quatre livres système** se reconnaissent à un tag interne (préfixe `__`, refusé dans le
+formulaire de livre) : « Mes créations Kass'Dalle » (`__kassdale_ia`), « Mes recettes libres »
+(`__libres`), « Mes Recettes Secrètes » (`__secretes`) et « Mes recettes du web » (`__web`). Ils
+se renomment mais ne se suppriment pas : `BookRepository.deleteBook` refuse, et les règles
+Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Les trois premiers sont créés par le
+client (`ensureSystemBooks`). « Mes recettes du web » est créé **par le serveur**, au premier
+import par lien (`findOrCreateWebBook`, `pipeline/urlImport.ts`) : identifiant déterministe
+`books/web_{uid}` (deux imports simultanés ne créent pas deux livres), `is_private: true`, auteur
+« Kass'Dalle », sans couverture : aucun des trois visuels des autres livres système ne lui
+correspond. Le client ne peut créer ni un livre d'identifiant `web_…`, ni un livre portant le
+tag `__web` (règles, §4) : sans cela, un éditeur créait `books/web_{uid d'un autre}`, public et à
+son nom, et les brouillons importés de l'autre compte y tombaient. Le serveur vérifie en plus le
+document trouvé (`isOwnWebBook` : `created_by` du compte et tag `__web`) ; un document étranger
+n'est jamais réutilisé, l'incident est journalisé (`logError`) et le livre du compte est
+cherché par son tag, sinon créé sous un identifiant aléatoire.
 
 ---
 
@@ -369,7 +386,9 @@ Document principal d'une recette.
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
-| `origin` | `String?` | Ce qui a écrit le document la première fois : `scan` (`recipeProcessor`), `ai` (conception pour le planning, Explorer), `manual` (saisie, texte collé compris), `copy` (copie de travail). Écrit par celui qui crée le document, jamais déduit du livre porteur. Absent sur les documents antérieurs au champ : l'écran de relecture déduit alors `copy` d'une recette source, `scan` d'un fichier source, et n'affirme rien sinon — il disait « issu d'un scan » à toute recette conçue par l'IA |
+| `source_url` | `String?` | Adresse de la page web d'une recette importée depuis un lien, **normalisée** (`normalizeUrl`, `web/urlGuard.ts` : sans fragment ni paramètres de suivi `utm_*`, `fbclid`…, paramètres triés, hôte en minuscules, sans barre finale). Écrite par `recipeProcessor` ; c'est la valeur que `importRecipeFromUrlFn` compare pour le doublon (`created_by` + `source_url`, deux égalités servies sans index composite). Le client ne la saisit jamais ; il la réécrit telle quelle à une mise à jour et la recopie sur une **copie** (`copyRecipeAsDraft`, décision du 11 octobre 2026). Les règles refusent toute autre écriture (`sourceUrlAccepted`, `!changes('source_url')`, §4) ; une copie n'est acceptée que si la recette copiée est lisible par l'appelant (`canReadRecipe`). Absent sur toute autre recette |
+| `source_site` | `String?` | Nom du site de `source_url` (« marmiton.org » : hôte en minuscules, sans `www.`), écrit par `recipeProcessor` à côté de l'adresse (`siteName`, `web/urlGuard.ts`). Le client l'affiche tel quel (« Source : marmiton.org ») et ne le calcule pas : la règle n'existe qu'au serveur. Mêmes règles d'écriture que `source_url` (recopie sur une copie à l'identique, jamais modifié) |
+| `origin` | `String?` | Ce qui a écrit le document la première fois : `scan` (`recipeProcessor`), `web` (`recipeProcessor`, import depuis un lien), `ai` (conception pour le planning, Explorer), `manual` (saisie, texte collé compris), `copy` (copie de travail). Écrit par celui qui crée le document, jamais déduit du livre porteur. Absent sur les documents antérieurs au champ : l'écran de relecture déduit alors `copy` d'une recette source, `scan` d'un fichier source, et n'affirme rien sinon — il disait « issu d'un scan » à toute recette conçue par l'IA |
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
@@ -898,12 +917,12 @@ le modèle tant qu'elle manque le rappellerait à chaque écho de sa propre écr
 
 ### 3.4 Collection `processing_jobs`
 
-Jobs de traitement asynchrone pour scans recettes/livres.
+Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 
 | Champ | Type | Description |
 |---|---|---|
 | `id` | `String` | ID auto-généré Firestore |
-| `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` |
+| `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` \| `recipeUrlImport`. Le dernier n'est créé que par `importRecipeFromUrlFn` : les règles refusent sa création par le client |
 | `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` \| `rejected` |
 | `created_by` | `String` | UID du demandeur |
 | `created_at` | `Timestamp` | Date de creation |
@@ -919,18 +938,34 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
-| `current_step` | `String?` | Étape courante du traitement IA. `translate` (« Traduction de la recette par l'IA… ») n'apparaît que pour une recette écrite dans une autre langue, entre `gemini_call` et `parse` ; elle n'a pas de jalon dans `processing_trail` |
+| `current_step` | `String?` | Étape courante du traitement IA. `fetch` (« Lecture de la page web… ») n'existe que pour `recipeUrlImport`. `translate` (« Traduction de la recette par l'IA… ») n'apparaît que pour une recette écrite dans une autre langue, entre `gemini_call` et `parse` ; elle n'a pas de jalon dans `processing_trail` |
 | `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites. **À la création, la valeur du client n'est pas crue telle quelle** (v0.23.12, `dispatchScanId`) : un `bookDocumentScan` reçoit toujours un identifiant tiré par le serveur, et un autre job reçoit un identifiant neuf si `scan_spend/{scan_id}` appartient déjà à un autre compte (`user_id`). Sans cela, un éditeur qui reprenait le `scan_id` d'un import d'autrui relevait son plafond et y imputait ses dépenses. Le client ne peut plus changer ce champ ensuite (règles) |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
 | `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_EUR` (4 €) par tranche depuis v0.23.13, convertis en dollars au moment du calcul avec le taux de la facture (`app_config/currency_rate`, `getUsdToEurRate`), jamais plus de `MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD` (8 $) par tranche, et arrondis au centime inférieur. Sans taux, ou avec un taux hors des bornes de vraisemblance de la réconciliation (`MIN_PLAUSIBLE_RATE` 0,1 – `MAX_PLAUSIBLE_RATE` 10, `usableRate`), aucun taux n'est inventé : le maximum vaut 4 $ par tranche, valeur plus basse que 4 € tant qu'un dollar vaut moins qu'un euro, et `runBookImport` le journalise (`logWarn`). La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
+| `source_url` | `String?` | **Posé par `importRecipeFromUrlFn`** sur un job `recipeUrlImport` : l'adresse normalisée de la page. `file_url` vaut alors `""`, `file_name` le nom du site, `mime_type` `text/html`, `book_titre` « Mes recettes du web » et `book_id` `null` jusqu'à l'écriture du brouillon. Le client ne peut pas le changer (règles : une relance ne touche que les champs de relance) |
+| `error_code` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` en échec : `page_blocked` (401, 402, 403, 429, 451), `page_not_found` (404, 410), `no_recipe`, `timeout` (délai, réseau, 5xx), `url_refused` (adresse non publique, plus de 3 redirections, contenu non HTML, page de plus de 3 Mo). La tuile de la file choisit ses actions sur ce code. Effacé au début de chaque tentative |
+| `recettes_trouvees` | `Number?` | **Posé par le serveur** sur un `recipeUrlImport` : nombre de recettes trouvées sur la page. Une seule est reprise ; au-delà d'une, la tuile le dit |
+| `photo_status` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` terminé : `attached`, `held` (modération en attente), `refused`, `none` (pas de photo sur la page), `failed` (récupération ou conversion en échec, journalisée) |
+| `url_retry_count` | `Number?` | Sur un `recipeUrlImport` : relances faites depuis la file. **Écrit par le client** à chaque relance (`retryJob`), qui doit l'incrémenter d'exactement un ; les règles n'admettent la relance que d'un job en `error` dont `error_code` vaut `timeout` ou est absent (incident du pipeline, annulation), et deux fois au plus (`urlRelaunchAllowed`). Une annulation le laisse inchangé (`retryCountUnchanged`) : sinon chaque annulation le remettrait à zéro et la borne de deux ne tiendrait plus. Un job terminé ou refusé par le site ne se relance pas : chaque relance relance le pipeline facturé, hors du plafond quotidien compté par la callable |
+| `forced_duplicate` | `Boolean?` | Sur un `recipeUrlImport` : l'utilisateur a choisi « Importer quand même » malgré une recette existante de même `source_url` |
 | `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Réécrit après chaque recette étrangère traduite : une relance ne retraduit pas les recettes déjà traduites. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
 
 **Découpage** (`books/bookFile.ts`). PDF : `pdf-lib` (chargé à la demande), fenêtres de 3 pages + 1 page de contexte (`planWindows`) ; une tranche de plus de 12 Mo est coupée en deux, chaque moitié gardant son contexte, parce que le fichier part en base64 dans une requête plafonnée à 20 Mo chez Gemini. EPUB et Word : texte extrait par du code (OPF + XHTML pour l'EPUB, `docxToPlainText` pour Word), fenêtres d'environ 6 000 caractères + 1 500 de contexte, un paragraphe n'étant jamais coupé (`planTextWindows`). La ligne `BOOK_WINDOW_CONTEXT_MARKER` sépare le texte à transcrire du contexte. Mesuré sur un PDF synthétique de 190 Mo et 300 pages : ouverture 0,14 s, découpage en 100 tranches 0,3 s, pic de mémoire 462 Mo (`recipeProcessor` passe à 2 GiB).
+
+**`recipeUrlImport` ne télécharge aucun fichier.** `recipeProcessor` l'aiguille, après
+`assertJobTargetBook`, sur `prepareUrlImport` (`pipeline/urlImport.ts`) : lecture protégée de la
+page (`fetch`), données structurées `schema.org/Recipe` projetées sans modèle ou, à défaut,
+texte principal transcrit (`gemini_call`, poste `url_import_fallback`), traduction si besoin
+(`translate`), balisage (`tagging`, poste `url_import`). Puis `findOrCreateWebBook`, le texte de
+la page déposé comme document original (`scans/{uid}/web_{jobId}_page_web_{site}.txt`,
+`source_file_url` / `source_file_name` de la recette), `saveDraft` (`origin: "web"`,
+`source_url`, normalisation `normalize` puis `save`), et enfin la photo (`design`,
+`attachWebPhoto`). Détail au §6, « Import d'une recette depuis un lien ».
 
 **Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
 
@@ -1417,6 +1452,12 @@ pourquoi.
 
 ### 3.14 Le reste
 
+- `url_import_daily/{uid}_{AAAA-MM-JJ}` : le compteur du plafond d'imports par lien (`uid`,
+  `day`, `count`, `updated_at`), jour UTC comme `ai_daily_spend`. Incrémenté par
+  `importRecipeFromUrlFn` dans la même transaction que la création du job, relu par
+  `getUrlImportQuotaFn`. Une relance depuis la file ne le consomme pas ; elle est bornée par les
+règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
+  seules ; le titulaire et l'administrateur le lisent.
 - `image_moderation/{moderationId}` : décrit en tête de ce document, section *Spécification
   technique — Modération des images*.
 - `users/{uid}/nutrition_portion_overrides/{recipeId}` : le nombre de portions choisi par
@@ -1449,6 +1490,11 @@ gs://{bucket}/
 ├── users/{uid}/…           ← couverture « Recette libre », écriture serveur uniquement
 └── rejected/{uid}/…        ← images refusées, LECTURE ADMIN uniquement
 ```
+
+L'import par lien écrit deux fichiers avec l'Admin SDK : le texte de la page sous
+`scans/{uid}/web_{jobId}_page_web_{site}.txt`, et la photo du site convertie en JPEG sous
+`quarantine/{uid}/web_{jobId}.jpg`, d'où la modération la promeut vers
+`recipes/{recipeId}/illus_{horodatage}.jpg`.
 
 Le fichier atterrit en quarantaine, le serveur l'inspecte (extension, type MIME, signature
 binaire, taille), la modération le juge, et lui seul le promeut dans un dossier publié. Les
@@ -1684,12 +1730,14 @@ service cloud.firestore {
 
     // Collection books
     match /books/{bookId} {
-      // Les trois livres système se reconnaissent à leur tag interne. Ils se
+      // Les quatre livres système se reconnaissent à leur tag interne. Ils se
       // renomment, mais ne se suppriment pas : ce sont les destinations par
-      // défaut des recettes sans livre et des créations de l'IA. Les perdre
-      // laisserait la règle « toute recette a un livre » sans issue.
+      // défaut des recettes sans livre, des créations de l'IA et des recettes
+      // importées depuis un lien (« Mes recettes du web », `__web`, créé par
+      // le serveur). Les perdre laisserait la règle « toute recette a un
+      // livre » sans issue.
       function systemTags() {
-        return ['__libres', '__kassdale_ia', '__secretes'];
+        return ['__libres', '__kassdale_ia', '__secretes', '__web'];
       }
 
       function isSystemBook(data) {
@@ -1707,7 +1755,11 @@ service cloud.firestore {
 
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
-      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      // « Mes recettes du web » est créé par le serveur seul (`web_{uid}`).
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
+        && !bookId.matches('web_.*')
+        && !(request.resource.data.get('tags', []) is list
+             && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && keepsSystemTags();
       allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
@@ -1736,11 +1788,25 @@ service cloud.firestore {
       function changes(field) {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
       }
+      // `source_url`, `source_site` : écrits par le serveur ; le client ne les
+      // pose qu'en recopiant ceux d'une recette copiée qu'il peut lire.
+      function sourceUrlAccepted() {
+        let url = request.resource.data.get('source_url', null);
+        let site = request.resource.data.get('source_site', null);
+        let from = request.resource.data.get('source_recipe_id', null);
+        return (url == null && site == null)
+          || (from is string && from != '' && !from.matches('.*/.*')
+              && exists(/databases/$(database)/documents/recipes/$(from))
+              && canReadRecipe(get(/databases/$(database)/documents/recipes/$(from)).data)
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_url', null) == url
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site);
+      }
 
       allow read: if canReadRecipe(resource.data);
       allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
-        && bookCheck(true);
+        && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && !changes('source_url') && !changes('source_site')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -1791,7 +1857,7 @@ service cloud.firestore {
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
-| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
+| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
@@ -1802,6 +1868,7 @@ service cloud.firestore {
 | `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
 | `ai_usage` · `ai_daily_spend` | admin, ou le compte concerné | **serveur seul** — un client pouvait autrefois y inscrire des dépenses imaginaires que la réconciliation aurait présentées comme réelles |
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
+| `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
@@ -1873,8 +1940,8 @@ v0.23.8) ; l'administrateur partout. À la création, et à toute mise à jour q
 `book_id`, `bookCheck(true)` exige que le livre existe et que son `created_by` soit l'appelant.
 Les pages d'autrui déjà rangées dans un livre y restent, sans migration : une mise à jour qui
 ne change pas `book_id` n'est pas contrôlée sur la propriété. Les livres système (« Mes
-recettes libres », « Mes créations Kass'Dalle », « Mes Recettes Secrètes ») appartiennent à
-leur utilisateur. Le sélecteur de livre ne propose que les livres de l'utilisateur, tous les
+recettes libres », « Mes créations Kass'Dalle », « Mes Recettes Secrètes », « Mes recettes du
+web ») appartiennent à leur utilisateur. Le sélecteur de livre ne propose que les livres de l'utilisateur, tous les
 livres pour un administrateur (`targetBooksProvider`). Le pipeline d'import écrit par l'Admin
 SDK, hors règles, dans le `book_id` posé sur le job : `assertJobTargetBook`
 (`pipeline/targetBook.ts`) le vérifie au début de `recipeProcessor` — livre de l'importateur, ou
@@ -2109,6 +2176,16 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
   production : une requête qui perd son filtre `is_private` ou `created_by` y échoue, même sur
   une collection vide.
+- L'import par lien a ses tests : « Mes recettes du web » (`__web`) ne se supprime pas et garde
+  son tag ; un éditeur ne crée ni `books/web_{autre uid}` ni un livre tagué `__web`, mais crée
+  toujours « Mes recettes libres » ; `source_url` et `source_site` ne se posent pas à la
+  création, sauf recopiés à l'identique depuis une recette copiée **lisible** (une recette
+  privée d'un autre est refusée), et ne se modifient ni ne s'effacent, administrateur compris ;
+  un éditeur ne crée pas de job `recipeUrlImport` et ne change pas la source d'un job en le
+  relançant ; un import terminé ne se remet pas en file ni ne s'annule, un délai dépassé se
+  relance avec `url_retry_count` + 1, pas au-delà de deux, pas sans compteur, et un import
+  refusé par le site ne se relance pas ; une annulation ne remet pas le compteur de relances à zéro ; `url_import_daily` se lit par son titulaire et ne
+  s'écrit pas depuis le client.
 
 **Convention `todo`.** Une faille relevée et encore ouverte a son test, écrit avec l'attendu
 corrigé et marqué `{ todo: "faille ouverte, audit 2026-10-09" }` (constante `OPEN_FLAW`). Sous
@@ -2335,9 +2412,9 @@ Ce qui compte ici, c'est ce que chaque passe demande au moteur :
 
 | Passe | Fichier | Poste | Entrée | Sortie |
 |---|---|---|---|---|
-| 1 — transcription | `gemini/transcription.ts` | `transcription_page` (scan) ou `text_extraction` (texte collé) | l'image, ou le texte | **du JSON** — type de page, inventaire déclaré, sections d'ingrédients, sections d'étapes, notes, chapeau, `langue` de chaque recette |
+| 1 — transcription | `gemini/transcription.ts` | `transcription_page` (scan), `text_extraction` (texte collé) ou `url_import_fallback` (page web sans données structurées ; une page qui en porte n'a pas de passe 1) | l'image, ou le texte | **du JSON** — type de page, inventaire déclaré, sections d'ingrédients, sections d'étapes, notes, chapeau, `langue` de chaque recette |
 | 1 bis — traduction, si `langue` ≠ `fr` | `gemini/translation.ts` | `recipe_translation` (scan et texte collé) | le JSON de la passe 1, **jamais l'image** | le même JSON, en français, mesures en métrique |
-| 2 — balisage | `gemini/tagging.ts` | `recipe_tagging` | la transcription, **jamais l'image** | **du CookLang**, plus la liste normalisée, les cuisines et les types de plat |
+| 2 — balisage | `gemini/tagging.ts` | `recipe_tagging`, ou `url_import` pour une page web | la transcription, **jamais l'image** | **du CookLang**, plus la liste normalisée, les cuisines et les types de plat |
 
 Un seul appel faisait autrefois les deux, et rendait du CookLang directement. Il perdait la
 transcription au profit de la mise en forme : ingrédients fusionnés, précisions déplacées,
@@ -2419,6 +2496,113 @@ Deux réglages tiennent à ce que ces passes demandent :
   mêmes appels.
 - **`maxTokens: 24 000`** sur la transcription, qui ne résume rien. C'est ce plafond qui
   impose le streaming côté Claude (chapitre 1).
+
+### Import d'une recette depuis un lien
+
+Un éditeur ou un administrateur colle l'adresse d'une page de recette. La recette arrive en
+brouillon dans « Mes recettes du web », par le pipeline asynchrone de tout import.
+
+**Entrée : `importRecipeFromUrlFn`** (`callable/urlImportCallable.ts`, `requireEditor`, 30 s).
+Dans l'ordre, avant toute dépense :
+
+1. **Adresse** (`parseImportUrl`, `web/urlGuard.ts`) : `http` ou `https`, 2 048 caractères au
+   plus, sans identifiants (`user:pass@`), port 80, 443, 8080 ou 8443, nom d'hôte non interne
+   (`localhost`, `*.localhost`, `metadata.google.internal`, `*.internal`, `*.local`, nom sans
+   point), IP littérale publique. Puis **résolution DNS** (`assertPublicHost`) : une seule adresse
+   non publique suffit à refuser. Réponses `invalid_url` (ce n'est pas un lien web) ou `refused`
+   (hôte refusé), journalisées en `WARNING`.
+2. **Doublon** : une recette du compte de même `source_url` normalisée → `duplicate` avec son
+   identifiant et son titre, sauf `force: true` (« Importer quand même »).
+3. **Plafond du jour** : `URL_IMPORT_DAILY_LIMIT` = 10 imports par compte et par jour UTC,
+   multiplié par `budgetMultiplierFor` (×100 pour le fondateur, `FOUNDER_DAILY_BUDGET_MULTIPLIER`).
+   Compteur `url_import_daily/{uid}_{jour}`, lu et incrémenté **dans la même transaction** que la
+   création du job : deux demandes simultanées ne dépassent pas le plafond. Atteint →
+   `quota_exceeded` avec `limit`.
+4. **Job** `recipeUrlImport` (`queued`, `source_url`, `scan_id` tiré par le serveur) → `queued`
+   avec `jobId` et `remaining`.
+
+`getUrlImportQuotaFn` (`requireEditor`) rend `{limit, used, remaining}` pour la boîte du client.
+Les issues attendues sont des réponses, pas des `HttpsError` : le client les affiche sans
+rapport d'erreur.
+
+**Lecture de la page** (`web/safeFetch.ts`), dans `recipeProcessor` via `prepareUrlImport`.
+L'adresse est revérifiée : un job relancé ne repasse pas par la callable. La requête part sur
+`node:http` / `node:https`, pas sur `fetch` : `fetch` résout le nom lui-même après le contrôle,
+et un DNS qui répondrait « public » puis `169.254.169.254` passerait entre les deux. Ici la
+résolution du socket **est** le contrôle (`guardedLookup`) : toute adresse non publique
+(boucle locale, privées RFC 1918, lien local dont `169.254.169.254`, CGNAT `100.64.0.0/10`,
+IPv6 ULA `fc00::/7`, lien local `fe80::/10`, IPv4 mappée ou NAT64 vers une adresse privée,
+NAT64 local `64:ff9b:1::/48`, SIIT `::ffff:0:0:0/96`, Teredo `2001:0::/32`, 6to4 `2002::/16`,
+multidiffusion, documentation) fait échouer la connexion. Trois redirections au plus, chacune
+revérifiée ; 10 s en tout ; 3 Mo après décompression (gzip, deflate, brotli) ; `text/html` ou
+`application/xhtml+xml` exigé ; User-Agent `KassDalle-RecipeImport/1.0`. Aucune dépendance de
+plus : modules natifs de Node.
+
+**Le flux décompressé suit la requête.** `decodedStream` détruit le décompresseur dès que la
+réponse échoue ou se ferme avant sa fin : un délai dépassé fait échouer la lecture aussitôt,
+au lieu d'attendre la fin des 540 s de la tâche.
+
+**Extraction** (`web/recipePage.ts`, pur, testé sur des pages réduites dans
+`functions/src/tests/fixtures/web/`). Tout le découpage du HTML se fait par `indexOf`, en un
+passage : une expression de la forme `<tag[\s\S]*?</tag>` ou `<[^>]*>` repart de chaque `<`
+quand la balise n'est jamais fermée, et trois mégaoctets de `<script` sans `</script>`
+rendaient la lecture quadratique. Une balise ouvrante de plus de 8 Ko n'est pas lue, et ses attributs ne sont lus que sur
+ses 1 024 premiers caractères (`ATTRIBUTES_MAX_CHARS`), avec un nom d'attribut qui ne démarre
+qu'en début de mot et se lit d'un bloc : la lecture des attributs reste linéaire ; un
+élément jamais fermé arrête la lecture ou emporte la suite.
+
+- **Données structurées** d'abord : chaque bloc `<script type="application/ld+json">`, `@graph`,
+  tableaux et `ItemList` compris. Une recette `schema.org/Recipe` **complète** (un titre, au
+  moins un ingrédient, au moins une étape — `HowToStep`, `HowToSection`, texte multiligne) est
+  **projetée sans modèle** dans la forme de la transcription (`projectJsonLdRecipe`), si elle
+  tient dans `JSON_LD_BOUNDS` — 60 000 caractères au total, 200 ingrédients, 150 étapes,
+  2 000 caractères par ligne. Au-delà, le job finit en `no_recipe`, sans appel de modèle : lignes
+  d'ingrédients telles quelles, sections d'étapes, `recipeYield` → portions, durées ISO 8601 →
+  « 1 h 30 min », langue de `inLanguage` sinon `<html lang>`. Un bloc JSON illisible est
+  journalisé (`WARNING`) et ignoré.
+- **Sinon, le texte principal** de la page (`extractMainText` : `<article>`, sinon `<main>`,
+  sinon `<body>`, sans scripts, styles, menus, en-tête, pied, formulaires ; 60 000 caractères au
+  plus) suit la chaîne du texte collé : `transcribeText` avec le poste **`url_import_fallback`**.
+  Moins de 80 caractères, ou aucune recette transcrite : `no_recipe`.
+- Plusieurs recettes : la première est reprise, le nombre part dans `recettes_trouvees`.
+
+Puis, comme pour un scan : traduction si la langue n'est pas le français
+(`recipe_translation`), balisage par `tagAndNormalize` avec le poste **`url_import`** (même
+prompt que `recipe_tagging`), contrôle de fidélité, **bornes des ingrédients**
+(`boundIngredients` : 200 lignes au plus, nom ≤ 120 caractères, unité ≤ 40, lignes écartées
+journalisées en `WARNING`), écriture par `saveDraft` avec `origin: "web"`, `source_url` et
+`source_site`, dans le livre système « Mes recettes du web »
+(`findOrCreateWebBook`). Le texte principal de la page (ou, à défaut, la recette projetée) est
+joint comme document original, précédé de l'adresse et de la date de lecture.
+
+**Photo** (`attachWebPhoto`), **après** l'écriture : l'image de la recette JSON-LD, sinon
+`og:image`, récupérée par le même garde (`image/*`, 8 Mo, 10 s), décodée par `sharp` (importé à
+la demande) avec `limitInputPixels: 40 000 000` et `failOn: "error"`, son format vérifié par
+`metadata()` (JPEG, PNG, WebP, AVIF/HEIF, GIF ; SVG refusé), convertie en JPEG 1 600 px au plus — la modération n'accepte que JPEG et PNG, et la
+conversion retire les métadonnées —, déposée en quarantaine, puis
+`moderateAndPromote` vers `recipe_illustration` avec `attachOnApproval`. Approuvée : ajoutée à
+`image_urls`. En attente : la recette est créée sans photo, et la photo la rejoint quand
+`reviewModeratedImageFn` ou `retryPendingModerationFn` l'approuve (`attachApprovedIllustration`,
+champ `attach_on_approval` de `image_moderation`). Refusée ou en échec : recette sans photo,
+sans échec du job, incident journalisé. La modération est comptée sous son poste habituel,
+`image_moderation`.
+
+**Postes de coût.** `url_import` (balisage) et `url_import_fallback` (transcription d'une page
+sans données structurées), inscrits dans `ROUTABLE_FEATURES` (groupe « Import ») et dans
+`kFeatureCatalog` / `kFeatureProcess` (« Rédaction d'une recette »). Une page à données
+structurées coûte **un** appel de modèle (le balisage), plus la traduction le cas échéant ; une
+page sans données en coûte deux. Le plafond quotidien d'IA (`ai_daily_spend`) s'applique en
+plus, comme à tout appel.
+
+**Échecs**, codés sur le job (`error_code`) et en dead letter (`failure_reason: url_{code}`) :
+`page_blocked`, `page_not_found`, `no_recipe` et `url_refused` ne se rejouent pas ; `timeout`
+(délai, réseau, 5xx) suit la reprise Cloud Tasks. Chaque échec passe par `logError`. Depuis la
+file, l'utilisateur relance un `timeout` ou un échec sans code, deux fois au plus
+(`url_retry_count`, §3.4) ; une relance ne consomme pas d'import du plafond quotidien.
+
+**Ce qui n'est pas borné ici.** Les imports par scan et par texte collé écrivent dans
+`nutrition_ingredients` sans les bornes de `boundIngredients` : leur texte vient de
+l'utilisateur, pas d'un tiers. La borne ne vaut que pour l'import par lien.
 
 ### Où vivent les prompts
 
@@ -2989,6 +3173,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | Callable | Relevé (`feature`) | Champ → borne |
 |---|---|---|
 | `extractRecipeFromTextFn` | `text_extraction` | `text` → 200 000 car., requis |
+| `importRecipeFromUrlFn` | — (aucun appel de modèle) | `url` → 2 048 car., requis, lu par `parseImportUrl` (forme et hôte, §6) ; le texte de la page transmis au modèle est borné à 60 000 car. par `extractMainText` |
 | `polishCooklangFn` | `polish_cooklang` | `cooklang` → 100 000 car., requis |
 | `polishMarkdownFn` | `polish_markdown` | `markdown` → 100 000 car., requis ; `instruction` → 5 000 car. |
 | `refineRecipeFn` | `refine` | `instruction` → 5 000 car., requis ; `currentCooklang` → 100 000 car., requis ; `currentTitre` → 5 000 car. ; `currentIngredients` → 500 éléments de 20 000 car. ; `currentTags` → 100 000 car. JSON ; `currentPortions` → nombre de 0 à 1 000 |
@@ -3063,7 +3248,10 @@ de dépense atteint (`budget_exceeded`), un livre illisible (`book_file_unreadab
 balisage coupé à tous les efforts (`tagging_truncated`), un livre cible qui n'appartient
 pas au créateur du job (`foreign_book`), et un fichier source hors du dossier du créateur du
 job (`forbidden_source_path`), un DOCX joint à un import de recette au-delà des bornes de
-lecture (`archive_limit_exceeded`, `ZipLimitError`). Un livre EPUB ou Word au-delà des bornes
+lecture (`archive_limit_exceeded`, `ZipLimitError`). Un import par lien bloqué par le site, sans
+recette, introuvable ou à une adresse refusée (`UrlImportError` non rejouable) y part aussi,
+sous `url_page_blocked`, `url_no_recipe`, `url_page_not_found` ou `url_url_refused` ; un délai
+dépassé (`url_timeout`) suit la reprise normale. Un livre EPUB ou Word au-delà des bornes
 finit en `book_file_unreadable` : `openBookFile` transforme l'erreur en `BookFileError`. `foreign_book` et `forbidden_source_path` sont contrôlés avant tout téléchargement et
 tout appel de modèle. Le refus `concurrency` du plafond ne concerne pas le pipeline : il ne
 vise que les appels déclenchés par un utilisateur (§6).
@@ -3082,10 +3270,10 @@ refusés (`StoragePathRefusedError`).
 
 | Champ | Valeurs |
 |---|---|
-| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `archive_limit_exceeded`, `pipeline_error` |
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `archive_limit_exceeded`, `url_page_blocked`, `url_page_not_found`, `url_no_recipe`, `url_url_refused`, `url_timeout`, `pipeline_error` |
 | `last_error` | le message de l'exception |
 | `retry_count` | le nombre de tentatives consommées |
-| `file_path` | le fichier téléversé, pour pouvoir rejouer |
+| `file_path` | le fichier téléversé, pour pouvoir rejouer ; l'adresse de la page pour un import par lien |
 | `correlation_id`, `user_id` | le fil et le compte |
 
 Le job passe alors en `status: "error"` avec son `error_message`, et le processeur **retourne
@@ -3185,6 +3373,9 @@ code, et une réimplémentation doit la reproduire :
 | Aucune recette sur la page | Aucun brouillon créé ; le job se termine proprement plutôt que d'écrire une recette vide |
 | Timeout / erreur réseau | Retry Cloud Tasks, backoff 10 s → 300 s, trois tentatives, puis dead letter |
 | Plafond de dépense atteint | Refus **avant** l'appel, dead letter immédiate |
+| Page web bloquée (401, 402, 403, 429, 451), introuvable, sans recette, ou adresse refusée (import par lien) | `UrlImportError` non rejouable : dead letter dès la première tentative, `error_code` lisible sur le job |
+| Recette JSON-LD au-delà des bornes (60 000 car., 200 ingrédients, 150 étapes, 2 000 car. par ligne) | `no_recipe`, aucun appel de modèle |
+| Adresse d'import non publique, à la callable ou à la connexion | `parseImportUrl` / `assertPublicHost` refusent avant la requête ; `guardedLookup` refuse au moment de la connexion. Aucun octet n'est envoyé |
 | Livre cible d'un autre membre (import) | `assertJobTargetBook` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: foreign_book` |
 | Fichier source hors de `scans/{created_by}/` (import) | `resolveJobSourcePath` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: forbidden_source_path` |
 | Image à relire hors des dossiers publiés (amélioration d'illustration, visuel de dressage précédent) | `downloadStorageBytes` n'admet que `illustrations/` et `recipes/` : `permission-denied` avant tout téléchargement |
@@ -4046,7 +4237,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/books/new` | `BookFormScreen` | `editor` |
 | `/books/:bookId/edit` | `BookFormScreen` | `editor` |
 | `/recipes` | `RecipeListScreen` | `reader` |
-| `/recipes/new` | `RecipeCreateScreen` | `reader` — chacun crée les siennes |
+| `/recipes/new` | `RecipeCreateScreen` | `reader` — chacun crée les siennes. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
 | `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
 | `/recipes/:recipeId/edit` | `RecipeEditScreen` | `reader` sur les siennes, `editor` sur celles d'autrui |
 | `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
@@ -4253,6 +4444,7 @@ Un refus porte sur le lot entier, renvoyé en `permission-denied`, sans analyse 
 | `published_url` | `string?` | posé à la promotion |
 | `rejected_path` | `string?` | image conservée après un refus, sous `rejected/{uid}/` — `null` si le déplacement a échoué |
 | `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
+| `attach_on_approval` | `bool` | posé à `true` par l'import par lien seulement (`attachWebPhoto`) : à l'approbation — immédiate, par un administrateur (`reviewModeratedImageFn`) ou par une relance (`retryPendingModerationFn`) —, `attachApprovedIllustration` ajoute `published_url` à `image_urls` de la recette `owner_id` (`recipe_illustration`). Une recette supprimée entre-temps est journalisée et ignorée. `false` partout ailleurs : une image envoyée par le client et mise en attente ne s'attache pas d'elle-même |
 
 `status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
 un humain qui n'aurait rien à lire. Il se relance ; il ne se devine pas.

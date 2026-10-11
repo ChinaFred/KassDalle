@@ -165,6 +165,15 @@ export const COLL_AI_DAILY_SPEND = "ai_daily_spend";
  * ne le borne pas pour le fondateur, ce document oui.
  */
 export const COLL_SCAN_SPEND = "scan_spend";
+
+/**
+ * Imports par lien du jour, par compte — `{uid}_{AAAA-MM-JJ}` (jour UTC).
+ *
+ * Compteur du plafond quotidien d'`importRecipeFromUrlFn`. Même découpage que
+ * `ai_daily_spend` : le jour suivant écrit ailleurs, aucune remise à zéro.
+ * Écrit par les Functions seulement.
+ */
+export const COLL_URL_IMPORT_DAILY = "url_import_daily";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 /**

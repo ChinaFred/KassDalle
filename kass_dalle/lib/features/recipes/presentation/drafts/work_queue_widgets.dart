@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/web_download.dart';
@@ -12,6 +13,7 @@ import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_trail_row.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
+import '../url_import/recipe_source_link.dart' show openExternalPage;
 import '../../../../core/theme/app_icon_size.dart';
 
 // ── Mode de filtre (public car utilisé par le screen) ─────────────────────────
@@ -339,7 +341,10 @@ class QueueJobTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasError = (job.errorMessage ?? '').isNotEmpty;
-    final primaryAction = _primaryActionForStatus(job.status);
+    final urlFailure = job.status == ProcessingJobStatus.error
+        ? urlImportFailureFor(job)
+        : null;
+    final primaryAction = _primaryActionForStatus(job.status, urlFailure);
 
     final subtitle = [
       _labelType(job.type),
@@ -396,7 +401,22 @@ class QueueJobTile extends StatelessWidget {
               ),
             ],
           ),
-          if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
+          if (urlFailure != null)
+            UrlImportFailurePanel(
+              job: job,
+              failure: urlFailure,
+              onRetry: onRetry,
+              showActions: !isSelecting,
+            )
+          else if (hasError)
+            _ErrorBadge(errorMessage: job.errorMessage!),
+          if (job.status == ProcessingJobStatus.done &&
+              (job.recettesTrouvees ?? 0) > 1)
+            Text(
+              '${job.recettesTrouvees} recettes trouvées sur la page : '
+              'seule la première a été reprise.',
+              style: theme.textTheme.bodySmall,
+            ),
           if (job.errorId != null) _ErrorIdChip(errorId: job.errorId!),
         ],
       ),
@@ -542,7 +562,10 @@ class QueueJobTile extends StatelessWidget {
     return _TeinteDeTraitement(status: job.status, child: contenu);
   }
 
-  _PrimaryJobAction? _primaryActionForStatus(ProcessingJobStatus status) {
+  _PrimaryJobAction? _primaryActionForStatus(
+    ProcessingJobStatus status,
+    UrlImportFailure? urlFailure,
+  ) {
     switch (status) {
       case ProcessingJobStatus.queued:
       case ProcessingJobStatus.processing:
@@ -555,7 +578,9 @@ class QueueJobTile extends StatelessWidget {
         );
       case ProcessingJobStatus.error:
       case ProcessingJobStatus.rejected:
-        if (onRetry == null) return null;
+        // Un import par lien en échec porte ses actions dans son panneau,
+        // « Relancer » compris quand il a un sens : pas de doublon à droite.
+        if (onRetry == null || urlFailure != null) return null;
         return _PrimaryJobAction(
           icon: Icons.refresh,
           label: 'Relancer',
@@ -571,12 +596,14 @@ class QueueJobTile extends StatelessWidget {
     ProcessingJobType.recipeScan => Icons.receipt_long_outlined,
     ProcessingJobType.bookCoverScan => Icons.photo_camera_outlined,
     ProcessingJobType.bookDocumentScan => Icons.auto_stories_outlined,
+    ProcessingJobType.recipeUrlImport => Icons.link,
   };
 
   String _labelType(ProcessingJobType type) => switch (type) {
     ProcessingJobType.recipeScan => 'Scan recette',
     ProcessingJobType.bookCoverScan => 'Scan couverture',
     ProcessingJobType.bookDocumentScan => 'Scan livre',
+    ProcessingJobType.recipeUrlImport => 'Lien web',
   };
 
   String _formatDate(DateTime dt) {
@@ -934,6 +961,142 @@ class _DraftStatusChip extends StatelessWidget {
       labelStyle: TextStyle(color: fg, fontSize: 11),
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+// ── Échec d'un import par lien ────────────────────────────────────────────────
+
+/// Ce que la tuile dit d'un import par lien en échec, et ce qu'elle propose.
+class UrlImportFailure {
+  const UrlImportFailure({
+    required this.message,
+    this.offerOpenPage = false,
+    this.offerPasteText = false,
+    this.retryable = false,
+  });
+
+  final String message;
+  final bool offerOpenPage;
+  final bool offerPasteText;
+
+  /// « Relancer » a un sens : l'échec était passager.
+  final bool retryable;
+}
+
+/// L'échec d'un import par lien, lu sur son code ; `null` pour un autre job.
+///
+/// Un job sans code (incident du pipeline, plafond d'IA, annulation) garde le
+/// message brut ; « Relancer » y reste offert dans les deux relances que les
+/// règles admettent.
+UrlImportFailure? urlImportFailureFor(ProcessingJob job) {
+  if (job.type != ProcessingJobType.recipeUrlImport) return null;
+  final canRetry = job.urlRetryCount < ProcessingJob.maxUrlRetries;
+  return switch (job.errorCode) {
+    UrlImportErrorCode.pageBlocked => const UrlImportFailure(
+      message:
+          'Ce site ne laisse pas Kass\'Dalle lire la page. Ouvrez-la, '
+          'copiez la recette et collez le texte.',
+      offerOpenPage: true,
+      offerPasteText: true,
+    ),
+    UrlImportErrorCode.noRecipe => const UrlImportFailure(
+      message: 'Aucune recette trouvée sur cette page.',
+      offerOpenPage: true,
+      offerPasteText: true,
+    ),
+    UrlImportErrorCode.timeout => UrlImportFailure(
+      message: job.urlRetryCount >= ProcessingJob.maxUrlRetries
+          ? 'La page n\'a pas répondu à temps, après deux relances.'
+          : 'La page n\'a pas répondu à temps.',
+      offerOpenPage: job.urlRetryCount >= ProcessingJob.maxUrlRetries,
+      offerPasteText: job.urlRetryCount >= ProcessingJob.maxUrlRetries,
+      retryable: job.urlRetryCount < ProcessingJob.maxUrlRetries,
+    ),
+    UrlImportErrorCode.pageNotFound => const UrlImportFailure(
+      message: 'Cette page n\'existe pas ou plus sur le site.',
+      offerOpenPage: true,
+    ),
+    UrlImportErrorCode.urlRefused => const UrlImportFailure(
+      message:
+          'Ce lien ne peut pas être importé. Seules les pages web publiques '
+          'sont acceptées.',
+    ),
+    null => UrlImportFailure(
+      message: (job.errorMessage ?? '').isNotEmpty
+          ? job.errorMessage!
+          : 'L\'import n\'a pas abouti.',
+      offerOpenPage: true,
+      offerPasteText: !canRetry,
+      retryable: canRetry,
+    ),
+  };
+}
+
+/// Le message d'échec d'un import par lien et ses actions.
+///
+/// « Supprimer » reste dans le menu de la tuile. En mode sélection, seules les
+/// cases comptent : les boutons sont masqués.
+class UrlImportFailurePanel extends StatelessWidget {
+  const UrlImportFailurePanel({
+    super.key,
+    required this.job,
+    required this.failure,
+    required this.onRetry,
+    this.showActions = true,
+  });
+
+  final ProcessingJob job;
+  final UrlImportFailure failure;
+  final VoidCallback? onRetry;
+  final bool showActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sourceUrl = job.sourceUrl;
+    final actions = <Widget>[
+      if (failure.offerOpenPage && sourceUrl != null)
+        TextButton.icon(
+          onPressed: () => openExternalPage(
+            context,
+            sourceUrl,
+            feature: 'workQueue.urlImport.openPage',
+          ),
+          icon: const Icon(Icons.open_in_new, size: AppIconSize.inline),
+          label: const Text('Ouvrir la page'),
+        ),
+      if (failure.offerPasteText)
+        TextButton.icon(
+          onPressed: () => context.push(
+            sourceUrl == null
+                ? '/recipes/new'
+                : '/recipes/new?sourceUrl=${Uri.encodeQueryComponent(sourceUrl)}',
+          ),
+          icon: const Icon(Icons.edit_note_outlined, size: AppIconSize.inline),
+          label: const Text('Coller le texte'),
+        ),
+      if (failure.retryable && onRetry != null)
+        TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh, size: AppIconSize.inline),
+          label: const Text('Relancer'),
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 4),
+        Text(
+          failure.message,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.error,
+          ),
+        ),
+        if (showActions && actions.isNotEmpty)
+          Wrap(spacing: 4, children: actions),
+      ],
     );
   }
 }

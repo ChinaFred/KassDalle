@@ -347,16 +347,18 @@ service cloud.firestore {
 
     // Collection books
     match /books/{bookId} {
-      // Les trois livres système se reconnaissent à leur tag interne. Ils se
+      // Les quatre livres système se reconnaissent à leur tag interne. Ils se
       // renomment — c'est le titre que l'utilisateur voit — mais ne se
       // suppriment pas : ce sont les destinations par défaut des recettes sans
-      // livre et des créations de l'IA. Les perdre laisserait des recettes
+      // livre, des créations de l'IA et des recettes importées depuis un lien
+      // (« Mes recettes du web », `__web`, créé par le serveur au premier
+      // import). Les perdre laisserait des recettes
       // sans porteur, et la règle « toute recette a un livre » sans issue.
       //
       // La garde vit aussi dans l'écran et dans le repository ; ici seulement,
       // elle ne se contourne pas.
       function systemTags() {
-        return ['__libres', '__kassdale_ia', '__secretes'];
+        return ['__libres', '__kassdale_ia', '__secretes', '__web'];
       }
 
       function isSystemBook(data) {
@@ -378,7 +380,14 @@ service cloud.firestore {
 
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
-      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      // « Mes recettes du web » est créé par le serveur seul, sous `web_{uid}`.
+      // Un client qui créait `web_{uid d'un autre}`, public, à son nom, y
+      // faisait tomber les brouillons importés de cet autre compte. Les trois
+      // autres livres système restent créés par le client (`ensureSystemBooks`).
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
+        && !bookId.matches('web_.*')
+        && !(request.resource.data.get('tags', []) is list
+             && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && keepsSystemTags();
       allow delete: if isEditor() && (isCreator(resource.data) || isAdmin())
@@ -424,15 +433,38 @@ service cloud.firestore {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
       }
 
+      // Adresse de la page d'origine d'une recette importée depuis un lien.
+      // Le serveur l'écrit (`recipeProcessor`) ; le client ne la pose qu'en
+      // recopiant celle de la recette qu'il copie (`source_recipe_id`) — c'est
+      // elle que le contrôle du doublon compare. Une adresse inventée ferait
+      // refuser à tort l'import d'une page jamais importée.
+      //
+      // La recette copiée doit aussi être lisible par l'appelant : sans cela,
+      // une adresse se vérifiait contre une recette privée d'autrui, et la
+      // création confirmait ou infirmait ce qu'elle contient. `source_site`, le
+      // nom du site écrit à côté, suit la même règle.
+      function sourceUrlAccepted() {
+        let url = request.resource.data.get('source_url', null);
+        let site = request.resource.data.get('source_site', null);
+        let from = request.resource.data.get('source_recipe_id', null);
+        return (url == null && site == null)
+          || (from is string && from != '' && !from.matches('.*/.*')
+              && exists(/databases/$(database)/documents/recipes/$(from))
+              && canReadRecipe(get(/databases/$(database)/documents/recipes/$(from)).data)
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_url', null) == url
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site);
+      }
+
       allow read: if canReadRecipe(resource.data);
 
       // Création : tout compte nommé, toujours à son propre nom — éditeur et
       // administrateur compris. Le serveur (Admin SDK) écrit hors de ces règles.
       allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
-        && bookCheck(true);
+        && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && !changes('source_url') && !changes('source_site')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -685,8 +717,37 @@ service cloud.firestore {
       function touchesOnlyRetryOrCancelFields() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'error_message', 'current_step', 'cancel_requested',
-          'created_recipe_ids', 'created_book_id', 'updated_at'
+          'created_recipe_ids', 'created_book_id', 'updated_at', 'url_retry_count'
         ]);
+      }
+
+      // Import par lien : chaque relance relance le pipeline facturé, hors du
+      // plafond quotidien que la callable a compté une fois. Elle n'est donc
+      // admise que sur un job en erreur passagère — délai dépassé, ou échec
+      // sans code (incident du pipeline, annulation) —, et deux fois au plus :
+      // le client incrémente `url_retry_count` d'exactement un, la règle borne
+      // à 2. Un job terminé ou refusé par le site ne se relance pas.
+      function isUrlImport() {
+        return resource.data.get('type', 'recipeScan') == 'recipeUrlImport';
+      }
+      // Annuler un import par lien n'a de sens qu'en file ou en cours : annuler
+      // un job terminé le ferait passer en erreur, donc relançable.
+      function urlJobInFlight() {
+        return resource.data.get('status', '') in ['queued', 'processing'];
+      }
+      // Une annulation ne touche pas au compteur de relances : sinon chaque
+      // annulation le remettrait à zéro et la borne de 2 ne tiendrait plus.
+      function retryCountUnchanged() {
+        return request.resource.data.get('url_retry_count', 0)
+          == resource.data.get('url_retry_count', 0);
+      }
+      function urlRelaunchAllowed() {
+        let code = resource.data.get('error_code', null);
+        let before = resource.data.get('url_retry_count', 0);
+        return resource.data.get('status', '') == 'error'
+          && (code == null || code == 'timeout')
+          && request.resource.data.get('url_retry_count', 0) == before + 1
+          && before + 1 <= 2;
       }
 
       // Un job se lit par son créateur et par un administrateur. L'éditeur
@@ -698,7 +759,12 @@ service cloud.firestore {
       // Un job déclenche le pipeline (jobDispatcher), donc des appels d'IA
       // facturés : l'import est réservé aux éditeurs et aux administrateurs.
       // Un lecteur n'importe pas. Le job est toujours créé à son propre nom.
-      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid;
+      //
+      // Un import depuis un lien (`recipeUrlImport`) n'est créé que par
+      // `importRecipeFromUrlFn`, qui vérifie l'adresse, le doublon et le
+      // plafond du jour. Écrit par le client, il les contournerait tous.
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.get('type', 'recipeScan') != 'recipeUrlImport';
       // Une relance remet le job en `queued`, et jobDispatcher relance alors le
       // pipeline facturé : elle suit le droit de création. Le propriétaire qui
       // n'est plus éditeur (job créé avant ce droit, compte rétrogradé) garde
@@ -712,7 +778,9 @@ service cloud.firestore {
       }
 
       allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
-                                     && (isEditor() || isExactCancel()));
+                                     && ((isExactCancel() && retryCountUnchanged()
+                                          && (!isUrlImport() || urlJobInFlight()))
+                                         || (isEditor() && (!isUrlImport() || urlRelaunchAllowed()))));
       allow delete: if isAdmin();
     }
 
@@ -732,6 +800,14 @@ service cloud.firestore {
     // appel. Écrite par les Cloud Functions au moment où le coût est connu ;
     // ouverte au client, elle laisserait remettre son propre compteur à zéro.
     match /ai_daily_spend/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Imports par lien du jour, par compte — le compteur du plafond quotidien
+    // d'`importRecipeFromUrlFn`. Écrit par les Cloud Functions ; ouvert au
+    // client, il laisserait remettre son propre compteur à zéro.
+    match /url_import_daily/{docId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
       allow write: if false;
     }

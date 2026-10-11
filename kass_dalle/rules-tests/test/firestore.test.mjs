@@ -67,6 +67,12 @@ beforeEach(async () => {
       tags: [],
     },
     "books/system": { title: "Recettes libres", created_by: EDITOR, tags: ["__libres"] },
+    "books/web_editor": {
+      title: "Mes recettes du web",
+      created_by: EDITOR,
+      tags: ["__web"],
+      is_private: true,
+    },
     "books/public-reader": {
       title: "Mon livre partagé",
       created_by: READER,
@@ -114,6 +120,22 @@ beforeEach(async () => {
     },
     "recipes/legacy-no-flag": { title: "Ancienne", created_by: OTHER, review_status: "validated" },
     "recipes/draft-reader": { title: "Mon brouillon", created_by: READER, review_status: "draft" },
+    "recipes/web-reader": {
+      title: "Quiche",
+      created_by: READER,
+      review_status: "draft",
+      origin: "web",
+      source_url: "https://www.site.fr/quiche",
+      source_site: "site.fr",
+    },
+    "recipes/web-other-private": {
+      title: "Secret du web",
+      created_by: OTHER,
+      review_status: "validated",
+      is_private: true,
+      source_url: "https://secret.example/recette",
+      source_site: "secret.example",
+    },
     "recipes/in-public-book": {
       title: "Soupe",
       book_id: "public-other",
@@ -159,10 +181,37 @@ beforeEach(async () => {
     "app_config/nutrition_policy": { mode: "strict" },
     "processing_jobs/job-reader": { created_by: READER, status: "processing" },
     "processing_jobs/job-editor": { created_by: EDITOR, status: "error" },
+    "processing_jobs/url-done": { created_by: EDITOR, status: "done", type: "recipeUrlImport" },
+    "processing_jobs/url-timeout": {
+      created_by: EDITOR,
+      status: "error",
+      type: "recipeUrlImport",
+      error_code: "timeout",
+    },
+    "processing_jobs/url-timeout-2": {
+      created_by: EDITOR,
+      status: "error",
+      type: "recipeUrlImport",
+      error_code: "timeout",
+      url_retry_count: 2,
+    },
+    "processing_jobs/url-processing": {
+      created_by: EDITOR,
+      status: "processing",
+      type: "recipeUrlImport",
+      url_retry_count: 1,
+    },
+    "processing_jobs/url-blocked": {
+      created_by: EDITOR,
+      status: "error",
+      type: "recipeUrlImport",
+      error_code: "page_blocked",
+    },
     "planned_meals/m1": { uid: READER, date: "2026-10-09" },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
+    "url_import_daily/editor_2026-10-11": { uid: EDITOR, day: "2026-10-11", count: 3 },
     "nutrition_ingredients/farine": { name: "farine", kcal: 364, shopping_product: "farine" },
     "users/founder": PERSONAS.founder.doc,
     "user_profiles/other-reader": { display_name: "Autre Lecteur", preferred_name: null },
@@ -633,6 +682,38 @@ describe("books", () => {
     );
   });
 
+  it("« Mes recettes du web » est un livre système : il ne se supprime pas", async () => {
+    await assertFails(db("editor").doc("books/web_editor").delete());
+  });
+
+  it("un éditeur ne crée pas le livre web d'un autre compte (web_<uid>)", async () => {
+    await assertFails(
+      db("editor")
+        .doc(`books/web_${OTHER}`)
+        .set({ title: "Mes recettes du web", created_by: EDITOR, is_private: false }),
+    );
+  });
+
+  it("un éditeur ne crée pas de livre portant le tag __web", async () => {
+    await assertFails(
+      db("editor")
+        .doc("books/piege")
+        .set({ title: "x", created_by: EDITOR, tags: ["__web"], is_private: false }),
+    );
+  });
+
+  it("les autres livres système restent créés par le client", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("books/libres-neuf")
+        .set({ title: "Mes recettes libres", created_by: EDITOR, tags: ["__libres"] }),
+    );
+  });
+
+  it("« Mes recettes du web » garde son tag", async () => {
+    await assertFails(db("editor").doc("books/web_editor").update({ tags: ["web"] }));
+  });
+
   it("un livre ordinaire change ses tags librement", async () => {
     await assertSucceeds(db("editor").doc("books/public").update({ tags: ["été"] }));
   });
@@ -792,6 +873,98 @@ describe("recipes — écriture", () => {
 
 // Une recette prend la confidentialité de son livre, à toute écriture qui pose
 // ou change son livre ou sa confidentialité.
+describe("recipes — adresse de la page d'origine (source_url)", () => {
+  it("un lecteur ne crée pas de recette avec une adresse inventée", async () => {
+    await assertFails(
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_url: "https://www.site.fr/autre",
+      }),
+    );
+  });
+
+  it("une copie recopie l'adresse et le site de la recette copiée", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_recipe_id: "web-reader",
+        source_url: "https://www.site.fr/quiche",
+        source_site: "site.fr",
+      }),
+    );
+  });
+
+  it("une copie ne pose pas un autre nom de site", async () => {
+    await assertFails(
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_recipe_id: "web-reader",
+        source_url: "https://www.site.fr/quiche",
+        source_site: "autre.fr",
+      }),
+    );
+  });
+
+  it("l'adresse ne se vérifie pas contre une recette privée d'un autre", async () => {
+    await assertFails(
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_recipe_id: "web-other-private",
+        source_url: "https://secret.example/recette",
+        source_site: "secret.example",
+      }),
+    );
+  });
+
+  it("le propriétaire ne modifie pas le nom du site", async () => {
+    await assertFails(db("reader").doc("recipes/web-reader").update({ source_site: "x.fr" }));
+  });
+
+  it("une copie ne change pas l'adresse au passage", async () => {
+    await assertFails(
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_recipe_id: "web-reader",
+        source_url: "https://www.site.fr/autre",
+      }),
+    );
+  });
+
+  it("le propriétaire ne modifie pas l'adresse", async () => {
+    await assertFails(
+      db("reader").doc("recipes/web-reader").update({ source_url: "https://autre.fr/x" }),
+    );
+  });
+
+  it("le propriétaire n'efface pas l'adresse", async () => {
+    await assertFails(db("reader").doc("recipes/web-reader").update({ source_url: deleteField() }));
+  });
+
+  it("une édition qui réécrit la même adresse passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/web-reader")
+        .update({ title: "Quiche lorraine", source_url: "https://www.site.fr/quiche" }),
+    );
+  });
+
+  it("l'administrateur non plus ne pose pas une adresse", async () => {
+    await assertFails(
+      db("admin").doc("recipes/draft-reader").update({ source_url: "https://a.fr/x" }),
+    );
+  });
+});
+
 describe("recipes — confidentialité suivant le livre", () => {
   const draft = (extra) => ({ title: "x", created_by: READER, review_status: "draft", ...extra });
 
@@ -1478,6 +1651,30 @@ describe("collections de coût — écriture serveur seule", () => {
   });
 });
 
+// ── url_import_daily ─────────────────────────────────────────────────────
+
+describe("url_import_daily", () => {
+  it("le titulaire lit son compteur", async () => {
+    await assertSucceeds(db("editor").doc("url_import_daily/editor_2026-10-11").get());
+  });
+
+  it("un autre compte ne le lit pas", async () => {
+    await assertFails(db("reader").doc("url_import_daily/editor_2026-10-11").get());
+  });
+
+  it("le titulaire ne remet pas son compteur à zéro", async () => {
+    await assertFails(
+      db("editor").doc("url_import_daily/editor_2026-10-11").update({ count: 0 }),
+    );
+  });
+
+  it("personne ne crée de compteur depuis le client", async () => {
+    await assertFails(
+      db("admin").doc("url_import_daily/admin_2026-10-11").set({ uid: "admin", count: 0 }),
+    );
+  });
+});
+
 // ── processing_jobs ──────────────────────────────────────────────────────
 
 describe("processing_jobs", () => {
@@ -1496,6 +1693,83 @@ describe("processing_jobs", () => {
   it("un éditeur ne crée pas de job au nom d'un autre", async () => {
     await assertFails(
       db("editor").doc("processing_jobs/new").set({ created_by: READER, status: "queued" }),
+    );
+  });
+
+  it("un éditeur ne crée pas lui-même un import par lien", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/new").set({
+        created_by: EDITOR,
+        status: "queued",
+        type: "recipeUrlImport",
+        source_url: "http://169.254.169.254/",
+      }),
+    );
+  });
+
+  it("un éditeur ne relance pas un job en changeant sa source", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/job-editor")
+        .update({ status: "queued", source_url: "http://10.0.0.1/" }),
+    );
+  });
+
+  it("un import par lien terminé ne se remet pas en file", async () => {
+    await assertFails(db("editor").doc("processing_jobs/url-done").update({ status: "queued" }));
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-done")
+        .update({ status: "queued", url_retry_count: 1 }),
+    );
+  });
+
+  it("un import par lien terminé ne s'annule pas (annuler le rendrait relançable)", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-done")
+        .update({ status: "error", cancel_requested: true }),
+    );
+  });
+
+  it("un import par lien en délai dépassé se relance en comptant la relance", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("processing_jobs/url-timeout")
+        .update({ status: "queued", error_message: null, url_retry_count: 1 }),
+    );
+  });
+
+  it("une relance d'import par lien sans compteur est refusée", async () => {
+    await assertFails(db("editor").doc("processing_jobs/url-timeout").update({ status: "queued" }));
+  });
+
+  it("au-delà de deux relances, l'import par lien ne se relance plus", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-timeout-2")
+        .update({ status: "queued", url_retry_count: 3 }),
+    );
+  });
+
+  it("une annulation ne remet pas le compteur de relances à zéro", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-processing")
+        .update({ status: "error", cancel_requested: true, url_retry_count: 0 }),
+    );
+    await assertSucceeds(
+      db("editor")
+        .doc("processing_jobs/url-processing")
+        .update({ status: "error", cancel_requested: true }),
+    );
+  });
+
+  it("un import refusé par le site ne se relance pas", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-blocked")
+        .update({ status: "queued", url_retry_count: 1 }),
     );
   });
 

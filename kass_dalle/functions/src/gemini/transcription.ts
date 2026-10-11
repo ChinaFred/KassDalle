@@ -350,10 +350,15 @@ export async function transcribePage(
  * Le poste de coût reste `text_extraction` : c'est le même travail, vu du
  * comptable — convertir un texte libre en recette — et lui donner un nouveau
  * nom aurait fait disparaître le poste des mois déjà comptabilisés.
+ *
+ * `feature` vaut `url_import_fallback` pour le texte principal d'une page web
+ * sans données structurées : même travail, poste à part, pour que le coût de
+ * l'import par lien se lise seul.
  */
 export async function transcribeText(
   freeText: string,
   ctx: ModelCallContext,
+  feature = "text_extraction",
 ): Promise<PageTranscription> {
   const result = await callModel({
     parts: [
@@ -361,14 +366,17 @@ export async function transcribeText(
     ],
     // Même soin que pour une page : c'est la passe qui décide de ce qui est
     // recopié et de ce qui est perdu.
-    ctx: { ...ctx, feature: "text_extraction", timeoutMs: 2 * 60 * 1000, effort: "high" },
+    ctx: { ...ctx, feature, timeoutMs: 2 * 60 * 1000, effort: "high" },
     maxTokens: TRANSCRIPTION_MAX_TOKENS,
   });
 
   return lireTranscription(result, {
     ctx,
-    feature: "text_extraction",
-    message: "Texte collé recopié par le modèle, avant tout balisage",
+    feature,
+    message:
+      feature === "text_extraction"
+        ? "Texte collé recopié par le modèle, avant tout balisage"
+        : "Texte de la page web recopié par le modèle, avant tout balisage",
     extra: { longueurTexte: freeText.length },
     echec: "La transcription du texte n'a pas pu être lue.",
   });

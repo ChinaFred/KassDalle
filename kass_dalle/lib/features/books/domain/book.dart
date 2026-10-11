@@ -9,6 +9,9 @@ class Book {
   static const tagLibres = '__libres';
   static const tagSecretes = '__secretes';
 
+  /// « Mes recettes du web » : créé par le serveur au premier import par lien.
+  static const tagWeb = '__web';
+
   /// Préfixe des tags internes : il est réservé aux livres système.
   static const reservedTagPrefix = '__';
 
@@ -66,7 +69,9 @@ class Book {
   bool get isKassDalleBook => tags.contains(tagKassdalle);
   bool get isLibresBook => tags.contains(tagLibres);
   bool get isSecretesBook => tags.contains(tagSecretes);
-  bool get isSystemBook => isKassDalleBook || isLibresBook || isSecretesBook;
+  bool get isWebBook => tags.contains(tagWeb);
+  bool get isSystemBook =>
+      isKassDalleBook || isLibresBook || isSecretesBook || isWebBook;
 
   /// Asset image par défaut pour ce livre système (null si livre normal).
   String? get defaultCoverAsset {

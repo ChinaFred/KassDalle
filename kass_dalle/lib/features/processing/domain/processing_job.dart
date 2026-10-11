@@ -1,4 +1,39 @@
-enum ProcessingJobType { recipeScan, bookCoverScan, bookDocumentScan }
+enum ProcessingJobType {
+  recipeScan,
+  bookCoverScan,
+  bookDocumentScan,
+
+  /// Import d'une recette depuis un lien. Créé par le serveur seulement
+  /// (`importRecipeFromUrlFn`), jamais par le client.
+  recipeUrlImport,
+}
+
+/// Code d'échec d'un import par lien (`error_code`), écrit par le serveur.
+enum UrlImportErrorCode {
+  /// Le site refuse la lecture (403, page payante…).
+  pageBlocked,
+
+  /// 404 ou 410.
+  pageNotFound,
+
+  /// La page ne contient aucune recette.
+  noRecipe,
+
+  /// Délai dépassé, réseau, erreur du site.
+  timeout,
+
+  /// Adresse refusée par le serveur.
+  urlRefused,
+}
+
+UrlImportErrorCode? urlImportErrorCodeFrom(Object? raw) => switch (raw) {
+  'page_blocked' => UrlImportErrorCode.pageBlocked,
+  'page_not_found' => UrlImportErrorCode.pageNotFound,
+  'no_recipe' => UrlImportErrorCode.noRecipe,
+  'timeout' => UrlImportErrorCode.timeout,
+  'url_refused' => UrlImportErrorCode.urlRefused,
+  _ => null,
+};
 
 enum ProcessingJobStatus { queued, processing, done, error, rejected }
 
@@ -67,6 +102,22 @@ class ProcessingJob {
   /// décider : c'est le serveur qui arrête.
   final double? budgetLimitUsd;
 
+  /// Adresse de la page, pour un import par lien. Écrite par le serveur.
+  final String? sourceUrl;
+
+  /// Code d'échec d'un import par lien, quand il a échoué.
+  final UrlImportErrorCode? errorCode;
+
+  /// Combien de recettes la page contenait ; une seule est reprise.
+  final int? recettesTrouvees;
+
+  /// Relances d'un import par lien déjà faites. Les règles Firestore en
+  /// admettent [maxUrlRetries] au plus, chacune incrémentant ce compteur de un.
+  final int urlRetryCount;
+
+  /// Relances admises pour un import par lien (règle `urlRelaunchAllowed`).
+  static const maxUrlRetries = 2;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -89,6 +140,10 @@ class ProcessingJob {
     this.scanId,
     this.titre,
     this.budgetLimitUsd,
+    this.sourceUrl,
+    this.errorCode,
+    this.recettesTrouvees,
+    this.urlRetryCount = 0,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -124,6 +179,10 @@ class ProcessingJob {
       scanId: data['scan_id'] as String?,
       titre: data['titre'] as String?,
       budgetLimitUsd: (data['budget_limit_usd'] as num?)?.toDouble(),
+      sourceUrl: data['source_url'] as String?,
+      errorCode: urlImportErrorCodeFrom(data['error_code']),
+      recettesTrouvees: (data['recettes_trouvees'] as num?)?.toInt(),
+      urlRetryCount: (data['url_retry_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -184,6 +243,10 @@ class ProcessingJob {
       scanId: scanId,
       titre: titre,
       budgetLimitUsd: budgetLimitUsd,
+      sourceUrl: sourceUrl,
+      errorCode: errorCode,
+      recettesTrouvees: recettesTrouvees,
+      urlRetryCount: urlRetryCount,
     );
   }
 

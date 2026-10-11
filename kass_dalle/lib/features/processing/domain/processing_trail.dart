@@ -48,6 +48,19 @@ List<ProcessingStep> trailFor(ProcessingJobType type) {
       // balisage, ni enrichissement d'ingrédients.
       return const [envoi, lecture, ecriture];
 
+    case ProcessingJobType.recipeUrlImport:
+      // Une page web : lue, lue par l'IA seulement quand elle n'a pas de
+      // données structurées (le jalon est alors sauté), balisée, enrichie,
+      // enregistrée, puis sa photo passe en modération.
+      return const [
+        ProcessingStep('fetch', Icons.language_outlined, 'Page'),
+        lecture,
+        ProcessingStep('tagging', Icons.sell_outlined, 'Balisage'),
+        ProcessingStep('normalize', Icons.science_outlined, 'Ingrédients'),
+        ecriture,
+        ProcessingStep('design', Icons.photo_outlined, 'Photo'),
+      ];
+
     case ProcessingJobType.recipeScan:
     case ProcessingJobType.bookDocumentScan:
       return const [

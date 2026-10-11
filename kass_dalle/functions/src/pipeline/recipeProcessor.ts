@@ -72,6 +72,15 @@ import { ZipLimitError } from "../utils/boundedZip";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
+  URL_IMPORT_JOB_TYPE,
+  URL_IMPORT_MESSAGES,
+  UrlImportError,
+  attachWebPhoto,
+  findOrCreateWebBook,
+  prepareUrlImport,
+  uploadOriginalText,
+} from "./urlImport";
+import {
   extractTitle,
   extractPortions,
   extractPageNumber,
@@ -104,6 +113,8 @@ interface ProcessorPayload {
 type PipelineStep =
   | "queued"
   | "import"
+  // Lecture d'une page web — import par lien seulement.
+  | "fetch"
   | "image_decode"
   | "gemini_call"
   | "translate"
@@ -117,6 +128,7 @@ type PipelineStep =
 const STEP_ORDER: PipelineStep[] = [
   "queued",
   "import",
+  "fetch",
   "image_decode",
   "gemini_call",
   "translate",
@@ -239,11 +251,107 @@ export const recipeProcessor = onTaskDispatched(
         updated_at: Timestamp.now(),
         attempt_count: attempt + 1,
         correlation_id: correlationId,
+        // Le code d'un échec précédent ne doit pas rester affiché pendant la
+        // nouvelle tentative.
+        error_code: FieldValue.delete(),
       });
 
       // Le livre cible doit appartenir à l'importateur (ou l'importateur être
       // administrateur) : l'écriture qui suit se fait hors règles.
       await assertJobTargetBook(job.book_id, (job.created_by as string | undefined) ?? userId);
+
+      // ── Import depuis un lien ─────────────────────────────────────────────
+      //
+      // Aucun fichier à télécharger : la source est une page web. La lecture,
+      // la projection et le balisage vivent dans `urlImport.ts` ; l'écriture
+      // passe par `saveDraft`, comme pour tout import.
+      if (jobType === URL_IMPORT_JOB_TYPE) {
+        const owner = (job.created_by as string | undefined) ?? userId;
+        const prepared = await prepareUrlImport({
+          sourceUrl: job.source_url,
+          ctx,
+          onStep: async (step, fields) => {
+            await jobRef.update({
+              current_step: step,
+              ...(fields ?? {}),
+              updated_at: Timestamp.now(),
+            });
+          },
+        });
+        const book = await findOrCreateWebBook(owner, ctx);
+        const original = await uploadOriginalText({
+          uid: owner,
+          jobId,
+          site: prepared.parsed.site,
+          text: prepared.originalText,
+        });
+        const id = await saveDraft({
+          cooklang: prepared.cooklang,
+          pageType: "recipe",
+          ingredients: prepared.tagged.ingredients,
+          cuisines: prepared.tagged.cuisines,
+          dishTypes: prepared.tagged.dishTypes,
+          mealRole: prepared.tagged.mealRole,
+          contains: prepared.tagged.contains,
+          suggestedSides: prepared.tagged.suggestedSides,
+          mainProtein: prepared.tagged.mainProtein,
+          mainStarch: prepared.tagged.mainStarch,
+          mainIngredientsChecked: prepared.tagged.mainIngredientsChecked,
+          userId: owner,
+          bookId: book.id,
+          bookTitre: book.titre,
+          illustrationUrls: [],
+          thumbnailUrls: [],
+          correlationId,
+          sourceFileUrl: original.url,
+          sourceFileName: original.name,
+          additionalSourceFileUrls: [],
+          apiKey,
+          ctx,
+          fidelity: prepared.fidelity,
+          traduction: prepared.recette.traduction,
+          origin: "web",
+          sourceUrl: prepared.parsed.normalized,
+          sourceSite: prepared.parsed.site,
+          onStep: async (step) => {
+            await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
+          },
+          normalizationDeadlineMs: start + 420_000,
+        });
+        await jobRef.update({
+          created_recipe_ids: [id],
+          book_id: book.id,
+          book_titre: book.titre,
+          current_step: "design",
+          updated_at: Timestamp.now(),
+        });
+        // Après l'écriture : la photo s'attache à une recette qui existe, et
+        // une photo refusée ou injoignable ne fait pas échouer l'import.
+        const photo = await attachWebPhoto({ imageUrl: prepared.imageUrl, recipeId: id, ctx });
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "done",
+          current_step: "done",
+          created_recipe_ids: [id],
+          photo_status: photo,
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+        logInfo({
+          message: "Import depuis un lien terminé",
+          moduleType: "IMPORT",
+          executionTimeMs: elapsed,
+          ...ctx,
+          extra: {
+            recipeId: id,
+            site: prepared.parsed.site,
+            path: prepared.path,
+            recettesTrouvees: prepared.recettesTrouvees,
+            photo,
+          },
+        });
+        return;
+      }
 
       // ── IMPORT ────────────────────────────────────────────────────────────
       const fileUrl = job.file_url as string;
@@ -750,6 +858,10 @@ export const recipeProcessor = onTaskDispatched(
       // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
       // chaque tentative la retéléchargerait pour la refuser au même endroit.
       const isZipLimit = err instanceof ZipLimitError;
+      // Un import par lien : un échec lisible (page bloquée, sans recette,
+      // adresse refusée) ne se rejoue pas ; un délai dépassé, si.
+      const urlError = err instanceof UrlImportError ? err : null;
+      const isFinalUrlError = urlError != null && !urlError.retryable;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -782,6 +894,7 @@ export const recipeProcessor = onTaskDispatched(
           isForeignBook,
           isForbiddenSource,
           isZipLimit,
+          urlErrorCode: urlError?.code ?? null,
         },
       });
 
@@ -797,7 +910,8 @@ export const recipeProcessor = onTaskDispatched(
         isTruncatedTagging ||
         isForeignBook ||
         isForbiddenSource ||
-        isZipLimit
+        isZipLimit ||
+        isFinalUrlError
       ) {
         await moveToDeadLetter({
           jobId,
@@ -815,16 +929,22 @@ export const recipeProcessor = onTaskDispatched(
                     ? "forbidden_source_path"
                     : isZipLimit
                       ? "archive_limit_exceeded"
-                      : isQuota
-                        ? "quota_exceeded"
-                        : "pipeline_error",
+                      : urlError
+                        ? `url_${urlError.code}`
+                        : isQuota
+                          ? "quota_exceeded"
+                          : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
-          filePath: (job.file_url as string | undefined) ?? "",
+          filePath:
+            (job.file_url as string | undefined) || (job.source_url as string | undefined) || "",
         });
         await jobRef.update({
           status: "error",
-          error_message: message,
+          // Un import par lien porte un message lisible et son code : la tuile
+          // du client choisit ses actions sur le code.
+          error_message: urlError ? URL_IMPORT_MESSAGES[urlError.code] : message,
+          ...(urlError ? { error_code: urlError.code } : {}),
           created_book_id: createdBookId,
           updated_at: Timestamp.now(),
         });
@@ -925,6 +1045,12 @@ async function saveDraft(args: {
   normalizationDeadlineMs?: number;
   /** La recette d'origine, quand celle-ci a été traduite. */
   traduction?: RecipeTranslationOrigin;
+  /** Ce qui a écrit le document : `scan` par défaut, `web` pour un import par lien. */
+  origin?: "scan" | "web";
+  /** Adresse normalisée de la page d'origine — import par lien seulement. */
+  sourceUrl?: string;
+  /** Nom du site de cette page (« marmiton.org »), affiché par le client. */
+  sourceSite?: string;
 }): Promise<string> {
   const {
     cooklang,
@@ -1155,7 +1281,11 @@ async function saveDraft(args: {
     review_status: "draft",
     // Ce qui a écrit ce document : l'écran de relecture le dit au lecteur,
     // sans le déduire du livre porteur ni du fichier source.
-    origin: "scan",
+    origin: args.origin ?? "scan",
+    // Écrit seulement par l'import par lien ; le client ne le pose jamais
+    // (règles Firestore), sauf en recopiant celui de la recette copiée.
+    ...(args.sourceUrl ? { source_url: args.sourceUrl } : {}),
+    ...(args.sourceSite ? { source_site: args.sourceSite } : {}),
     // Ce que le contrôle de fidélité a constaté, sur la recette elle-même :
     // un écart doit se voir depuis l'écran de relecture, pas seulement dans
     // les journaux d'un import déjà oublié.

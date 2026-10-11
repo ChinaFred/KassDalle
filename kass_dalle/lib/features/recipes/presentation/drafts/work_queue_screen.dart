@@ -540,8 +540,11 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final retryableJobs = selectedJobs
         .where(
           (i) =>
-              i.job.status == ProcessingJobStatus.error ||
-              i.job.status == ProcessingJobStatus.rejected,
+              (i.job.status == ProcessingJobStatus.error ||
+                  i.job.status == ProcessingJobStatus.rejected) &&
+              // Un import par lien ne se relance que si son échec le permet
+              // (règles Firestore : délai dépassé ou incident, deux fois).
+              (urlImportFailureFor(i.job)?.retryable ?? true),
         )
         .map((i) => i.job)
         .toList();

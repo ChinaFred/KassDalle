@@ -173,6 +173,7 @@
       <li><a href="#livre-prive">Confidentialité d'un livre</a></li>
       <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
+      <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
     </ol>
   </nav>
 
@@ -2990,6 +2991,120 @@ sequenceDiagram
           <b>Un lancement manuel n'est accepté que sur <code>master</code>.</b> Un échec après les
           Functions laisse les Functions neuves avec le web précédent : relancer le workflow une
           fois la cause corrigée.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="lien-web"><span class="n">31</span>Import d'une recette depuis un lien</h2>
+    <p class="sec-note">
+      Un éditeur ou un administrateur colle l'adresse d'une page. La callable contrôle et met en
+      file ; le pipeline d'import lit la page, la balise et écrit le brouillon dans « Mes recettes
+      du web ». La photo du site passe par la modération après l'écriture.
+      <span class="path">url_import_dialog.dart → importRecipeFromUrlFn → jobDispatcher →
+      recipeProcessor → pipeline/urlImport.ts → web/safeFetch.ts, web/recipePage.ts,
+      gemini/transcription.ts, gemini/tagging.ts → saveDraft → moderateAndPromote</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant D as Boîte « Importer depuis un lien »
+  participant QF as getUrlImportQuotaFn
+  participant FN as importRecipeFromUrlFn
+  participant FS as Firestore
+  participant JD as jobDispatcher
+  participant RP as recipeProcessor
+  participant W as Site web
+  participant M as Moteur d'IA
+  participant MOD as moderateAndPromote
+
+  D->>QF: à l'ouverture
+  QF->>FS: url_import_daily{uid}_{jour}
+  QF-->>D: limit, used, remaining — « Il vous reste N imports »
+  alt remaining = 0
+    D-->>U: message de plafond, « Coller le texte » à la place d'« Importer »
+  end
+  U->>D: colle l'adresse, « Importer »
+  D->>FN: url, force?
+  FN->>FN: requireEditor("url_import")
+  FN->>FN: parseImportUrl — http(s), ≤ 2 048 car., sans identifiants, hôte non interne
+  FN->>FN: assertPublicHost — toutes les adresses DNS publiques
+  alt adresse mal formée ou refusée
+    FN-->>D: invalid_url / refused
+  end
+  Note over D: pendant l'envoi, la boîte ne se ferme pas
+  FN->>FS: recipes où created_by = moi et source_url = adresse normalisée
+  alt déjà importée et pas force
+    FN-->>D: duplicate (id, titre) — « Ouvrir la recette » / « Importer quand même »
+  end
+  FN->>FS: transaction — url_import_daily{uid}_{jour} < 10 × multiplicateur ?
+  alt plafond atteint
+    FN-->>D: quota_exceeded — « Coller le texte à la place »
+  else
+    FN->>FS: compteur + 1, processing_jobs (recipeUrlImport, queued)
+    FN-->>D: queued, restants
+    D-->>U: « Lien envoyé… » — action « Voir » → /drafts
+  end
+
+  FS-->>JD: entrée en queued
+  JD->>RP: Cloud Tasks
+  RP->>RP: adresse revérifiée (un job relancé ne repasse pas par la callable)
+  RP->>W: GET — lookup filtré au connect, ≤ 3 redirections revérifiées, 10 s, 3 Mo, text/html
+  alt 401/402/403/429/451, 404, adresse refusée
+    RP->>FS: error_code page_blocked / page_not_found / url_refused — dead letter
+  else délai, réseau, 5xx
+    RP->>RP: retry Cloud Tasks (timeout)
+  end
+  W-->>RP: HTML
+  opt JSON-LD hors bornes (60 000 car., 200 ingrédients, 150 étapes, 2 000 car. par ligne)
+    RP->>FS: error_code no_recipe — dead letter, sans appel de modèle
+  end
+  alt JSON-LD schema.org/Recipe complet
+    RP->>RP: projection sans modèle (HowToSection, ISO 8601, recipeYield)
+  else
+    RP->>M: transcribeText du texte principal — poste url_import_fallback
+    M-->>RP: recettes transcrites (aucune → no_recipe)
+  end
+  opt langue ≠ fr
+    RP->>M: translateRecipe — recipe_translation
+  end
+  RP->>M: tagAndNormalize — poste url_import
+  M-->>RP: CookLang, ingrédients, tags
+  RP->>FS: books/web_{uid} (créé au premier import, privé, tag __web ;<br/>un document web_{uid} étranger au compte n'est jamais réutilisé)
+  RP->>FS: texte de la page → scans/{uid}/…txt (document original)
+  RP->>FS: saveDraft — origin web, source_url, source_site, review_status draft<br/>(au plus 200 ingrédients, nom ≤ 120 car., unité ≤ 40 car.)
+  RP->>W: photo (JSON-LD, sinon og:image) — même garde, image/*, 8 Mo
+  RP->>RP: sharp — 40 Mpx au plus, format jpeg/png/webp/avif/gif (SVG refusé)
+  RP->>MOD: JPEG en quarantaine, recipe_illustration, attachOnApproval
+  alt approuvée
+    MOD->>FS: image_urls += url
+  else en attente
+    Note over MOD,FS: ajoutée à l'approbation (revue admin ou relance)
+  else refusée ou en échec
+    Note over RP: recette sans photo, job terminé
+  end
+  RP->>FS: job done, recettes_trouvees, photo_status
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux postes, parce que deux appels.</b> <code>url_import</code> compte le balisage,
+        <code>url_import_fallback</code> la lecture d'une page sans données structurées. Une page
+        qui publie sa recette en <code>schema.org/Recipe</code> coûte un appel de modèle, la
+        traduction mise à part.
+        <span class="expect">
+          <b>Le garde SSRF vit à la connexion.</b> La requête part sur <code>node:http(s)</code>
+          avec une résolution filtrée : un DNS qui changerait de réponse entre le contrôle et la
+          connexion ne mène pas à une adresse privée.
+        </span>
+        <span class="expect">
+          <b>Le plafond et le job partent dans la même transaction.</b> Deux demandes simultanées
+          ne dépassent pas dix imports. Une relance depuis la file ne consomme pas d'import ;
+          les règles Firestore la limitent à deux, sur un échec passager seulement
+          (<code>url_retry_count</code>).
         </span>
       </figcaption>
     </figure>

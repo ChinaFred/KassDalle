@@ -19,6 +19,9 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../auth/presentation/auth_providers.dart';
+import '../url_import/recipe_source_link.dart';
+import '../url_import/url_import_dialog.dart';
 
 /// Manual recipe creation screen (no AI/scan source).
 ///
@@ -33,10 +36,16 @@ class RecipeCreateScreen extends ConsumerStatefulWidget {
   final String? initialBookId;
   final String? initialBookTitre;
 
+  /// Page d'un import par lien qui a échoué, rappelée en haut de l'écran
+  /// pendant qu'on en recopie le texte. Affichée seulement : elle n'est pas
+  /// enregistrée sur la recette.
+  final String? sourceUrl;
+
   const RecipeCreateScreen({
     super.key,
     this.initialBookId,
     this.initialBookTitre,
+    this.sourceUrl,
   });
 
   @override
@@ -336,6 +345,11 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     }
   }
 
+  /// Le bouton « Lien » de l'éditeur : éditeurs et administrateurs seulement.
+  VoidCallback? _importFromUrlCallback() => ref.watch(canEditProvider)
+      ? () => showUrlImportDialog(context, fromManualEntry: true)
+      : null;
+
   @override
   Widget build(BuildContext context) {
     final isWide =
@@ -367,7 +381,18 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: isWide ? _buildWide() : _buildNarrow(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if ((widget.sourceUrl ?? '').isNotEmpty)
+              RecipeSourceLink(
+                url: widget.sourceUrl!,
+                prefix: 'Page à recopier : ',
+                compact: !isWide,
+              ),
+            Expanded(child: isWide ? _buildWide() : _buildNarrow()),
+          ],
+        ),
       ),
     );
 
@@ -436,6 +461,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                         onProcessWithAI: _processWithAI,
                         aiTooltip: RecipeAiUiCopy.cooklangTransformTooltip,
                         aiProcessing: _aiProcessing,
+                        onImportFromUrl: _importFromUrlCallback(),
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
                           overrideIngredients: formIngredients,
@@ -509,6 +535,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                   onProcessWithAI: _processWithAI,
                   aiTooltip: RecipeAiUiCopy.cooklangTransformTooltip,
                   aiProcessing: _aiProcessing,
+                  onImportFromUrl: _importFromUrlCallback(),
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,
                     overrideIngredients: formIngredients,

@@ -33,6 +33,7 @@ import {
 import { clientDeclaredOrigin } from "../moderation/origin";
 import {
   TargetNotOwned,
+  attachApprovedIllustration,
   quarantineToRejected,
   isTargetKind,
   isValidDocumentId,
@@ -246,6 +247,15 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     review_note: note.length > 0 ? note : null,
   });
 
+  await attachApprovedIllustration({
+    attachOnApproval: doc.attach_on_approval,
+    targetKind: doc.target_kind,
+    ownerId: doc.owner_id,
+    url: publishedUrl,
+    correlationId: ctx.correlationId,
+    moderationId,
+  });
+
   await logInfo({
     message: `Décision d'administration : ${decision === "approve" ? "publiée" : "refusée"}`,
     moduleType: "MODERATION",
@@ -348,6 +358,14 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
         published_url: publishedUrl,
         rejected_path: rejectedPath,
         decided_at: FieldValue.serverTimestamp(),
+      });
+      await attachApprovedIllustration({
+        attachOnApproval: data.attach_on_approval,
+        targetKind: data.target_kind,
+        ownerId: data.owner_id,
+        url: publishedUrl,
+        correlationId: ctx.correlationId,
+        moderationId: doc.id,
       });
       relaunched += 1;
     } catch (err) {

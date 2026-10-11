@@ -699,6 +699,10 @@ class RecipeRepository {
       updatedAt: now,
       sourceRecipeId: recipe.id,
       origin: RecipeOrigin.copy,
+      // La copie d'une recette importée garde l'adresse de la page : elle dit
+      // d'où vient le texte, quelle que soit la copie.
+      sourceUrl: recipe.sourceUrl,
+      sourceSite: recipe.sourceSite,
     );
     return createRecipe(copy);
   }

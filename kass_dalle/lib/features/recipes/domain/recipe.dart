@@ -759,6 +759,19 @@ class Recipe {
   /// ne le reprend pas, puisqu'elle n'emporte pas le texte d'origine.
   final String? langueOrigine;
 
+  /// Adresse de la page web d'où vient la recette, pour une recette importée
+  /// depuis un lien. `null` sinon.
+  ///
+  /// Posée par le serveur à l'import. Le client ne la saisit jamais ; il la
+  /// recopie seulement sur une copie de la recette (les règles Firestore
+  /// vérifient qu'elle est celle de la recette copiée) et la réécrit telle
+  /// quelle à une mise à jour.
+  final String? sourceUrl;
+
+  /// Nom du site de [sourceUrl] (« marmiton.org »), écrit par le serveur à
+  /// côté de l'adresse. Mêmes règles d'écriture que [sourceUrl].
+  final String? sourceSite;
+
   /// Vrai quand la recette a été traduite à l'import.
   bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
 
@@ -812,6 +825,8 @@ class Recipe {
     this.illustrationReport,
     this.isPrivate = false,
     this.langueOrigine,
+    this.sourceUrl,
+    this.sourceSite,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -883,6 +898,8 @@ class Recipe {
       ),
       isPrivate: data['is_private'] as bool? ?? false,
       langueOrigine: data['langue_origine'] as String?,
+      sourceUrl: data['source_url'] as String?,
+      sourceSite: data['source_site'] as String?,
     );
   }
 
@@ -916,6 +933,10 @@ class Recipe {
       'import_version': ?importVersion,
       if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
       if (origin != null) 'origin': origin!.name,
+      // Réécrite telle qu'elle a été lue, ou recopiée sur une copie : jamais
+      // posée ni changée ici (règles Firestore).
+      if (sourceUrl != null) 'source_url': sourceUrl,
+      if (sourceSite != null) 'source_site': sourceSite,
       if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
       if (fidelityFindings.isNotEmpty)
         'fidelity_findings': fidelityFindings.map((f) => f.toMap()).toList(),
@@ -952,6 +973,8 @@ class Recipe {
     RecipeNutritionSnapshot? nutrition,
     String? sourceRecipeId,
     RecipeOrigin? origin,
+    String? sourceUrl,
+    String? sourceSite,
   }) {
     return Recipe(
       id: id,
@@ -995,6 +1018,8 @@ class Recipe {
       isPrivate: isPrivate,
       // La langue d'origine suit la recette : une édition ne la retraduit pas.
       langueOrigine: langueOrigine,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+      sourceSite: sourceSite ?? this.sourceSite,
     );
   }
 }
