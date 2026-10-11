@@ -259,7 +259,10 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 - **La page ne contient pas de recette**, ou une recette trop longue pour être reprise. Rien n'est créé. La tuile propose « Ouvrir la page » et « Coller le texte ».
 - **La page n'existe pas ou plus.** La tuile propose « Ouvrir la page ».
 - **Le lien est refusé** (adresse non publique). Aucune action.
-- **Délai dépassé**, ou incident sans cause précise. La tuile propose « Relancer ». Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports. Après deux relances, la tuile le dit et propose « Ouvrir la page » et « Coller le texte » à la place.
+- **Délai dépassé.** La tuile propose « Relancer ». Après deux relances, la tuile le dit et propose « Ouvrir la page » et « Coller le texte » à la place.
+- **Incident sans cause précise.** La tuile affiche le message d'erreur et propose « Ouvrir la page » et « Relancer ». Après deux relances, « Coller le texte » remplace « Relancer ».
+
+Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports.
 
 **Étape 3 — Le brouillon.** La recette arrive en **brouillon** (`draft`), à relire et valider comme les autres (4.2, étape 4) :
 - Elle est rangée dans le livre **« Mes recettes du web »**, créé automatiquement au premier import par lien de l'utilisateur. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.

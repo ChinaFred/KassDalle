@@ -3060,7 +3060,7 @@ sequenceDiagram
     RP->>RP: retry Cloud Tasks (timeout)
   end
   W-->>RP: HTML
-  opt JSON-LD hors bornes (60 000 car., 200 ingrédients, 150 étapes)
+  opt JSON-LD hors bornes (60 000 car., 200 ingrédients, 150 étapes, 2 000 car. par ligne)
     RP->>FS: error_code no_recipe — dead letter, sans appel de modèle
   end
   alt JSON-LD schema.org/Recipe complet
