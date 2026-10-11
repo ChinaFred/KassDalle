@@ -20,6 +20,22 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.28 — fonctionnel
+
+#### Planning : variété des cuisines dans la présélection
+
+La présélection des plats tient compte de la cuisine. Chaque recette est rangée dans une
+famille d'après ses étiquettes de cuisine : asiatique, indienne, orientale, Amériques,
+africaine, italienne, européenne ou française. Un plat d'une famille étrangère déjà prévue dans
+la semaine a deux fois moins de chances d'être tiré, et quatre fois moins à la troisième.
+La cuisine française n'est jamais pénalisée, ce qui lui donne l'avantage sur la semaine. Une
+recette sans étiquette de cuisine ne l'est pas non plus.
+
+Jusqu'ici, seul le modèle d'IA lisait la cuisine, dans les préférences générales. Rien ne
+garantissait qu'une semaine ne compte pas quatre plats asiatiques. La règle est verrouillée par
+`planning_slot_rules.json` (sections `cuisine_of` et `cuisine_repeats`, constante
+`cuisine_repeat_factor`).
+
 ### v0.23.27 — fonctionnel
 
 #### Planning : calendrier du lundi au dimanche et période libre

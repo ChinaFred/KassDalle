@@ -476,6 +476,11 @@ export const PROTEIN_REPEAT_FACTOR = 0.6;
 export const MIN_DISTINCT_PROTEINS = 3;
 /** Facteur d'un plat dont le féculent est celui d'un créneau voisin. */
 export const STARCH_REPEAT_FACTOR = 0.5;
+/**
+ * Facteur appliqué par répétition d'une famille de cuisine étrangère déjà
+ * posée dans le cycle. La cuisine française n'est jamais pénalisée.
+ */
+export const CUISINE_REPEAT_FACTOR = 0.5;
 /** Repos qui oblige à commencer la veille. */
 export const REST_EVE_MINUTES = 240;
 /** Note personnelle jusqu'à laquelle une recette n'est plus proposée. */
@@ -646,6 +651,153 @@ const STARCH_LABELS: Record<MainStarch, string> = {
   pain: "pain",
   aucun: "aucun",
 };
+
+/**
+ * Famille de cuisine d'un plat, lue dans ses étiquettes `cuisines`. Assez
+ * large pour que « japonaise » et « thaïlandaise » se répètent, assez fine
+ * pour que l'italienne, la plus fréquente après la française, ait la sienne.
+ */
+export type CuisineFamily =
+  | "asiatique"
+  | "indienne"
+  | "orientale"
+  | "ameriques"
+  | "africaine"
+  | "italienne"
+  | "europeenne"
+  | "francaise"
+  | "inconnue";
+
+/**
+ * Ordre de lecture : les familles étrangères d'abord, puis l'italienne,
+ * l'européenne et la française. Un plat « française, japonaise » compte comme
+ * asiatique : c'est ce qui se répète qu'on veut voir.
+ */
+const CUISINE_MARKERS: Array<[CuisineFamily, string[]]> = [
+  [
+    "asiatique",
+    [
+      "asiat",
+      "extreme-orient",
+      "chinois",
+      "japonais",
+      "thai",
+      "vietnam",
+      "core",
+      "indonesi",
+      "malais",
+      "philippin",
+      "cambodg",
+      "khmer",
+      "laotien",
+      "singapour",
+      "cantonais",
+      "sichuan",
+    ],
+  ],
+  ["indienne", ["indien", "pakistan", "sri lank", "nepal", "bangla", "tamoul"]],
+  [
+    "orientale",
+    [
+      "orient",
+      "maghreb",
+      "marocain",
+      "tunisien",
+      "algerien",
+      "libanais",
+      "turc",
+      "turqu",
+      "syrien",
+      "israel",
+      "iranien",
+      "persan",
+      "egyptien",
+    ],
+  ],
+  [
+    "ameriques",
+    [
+      "mexicain",
+      "tex-mex",
+      "americain",
+      "bresilien",
+      "peruvien",
+      "argentin",
+      "cajun",
+      "caraib",
+      "caribeen",
+      "antillais",
+      "creole",
+      "cubain",
+      "latino",
+    ],
+  ],
+  ["africaine", ["afric", "senegal", "ethiopi", "ivoir", "camerou", "malien"]],
+  ["italienne", ["italien", "sicilien", "toscan"]],
+  [
+    "europeenne",
+    [
+      "europe",
+      "mediterran",
+      "grec",
+      "espagnol",
+      "portugais",
+      "allemand",
+      "belge",
+      "suisse",
+      "anglais",
+      "britannique",
+      "irlandais",
+      "scandinave",
+      "suedois",
+      "polonais",
+      "hongrois",
+      "autrichien",
+      "russe",
+    ],
+  ],
+  [
+    "francaise",
+    [
+      "franc",
+      "provenc",
+      "alsac",
+      "lyonnais",
+      "breton",
+      "basque",
+      "normand",
+      "savoyard",
+      "bourguign",
+      "nicois",
+      "corse",
+      "auvergn",
+      "sud-ouest",
+      "terroir",
+    ],
+  ],
+];
+
+export function cuisineFamilyOf(r: Pick<PlanningRecipeSummary, "cuisines">): CuisineFamily {
+  const bag = normalize((r.cuisines ?? []).join(" | "));
+  if (!bag) return "inconnue";
+  for (const [family, markers] of CUISINE_MARKERS) {
+    if (markers.some((m) => bag.includes(m))) return family;
+  }
+  return "inconnue";
+}
+
+/**
+ * Fois où la famille [family] est déjà posée dans le cycle. La cuisine
+ * française et une cuisine inconnue ne se comptent jamais : la première est
+ * la cuisine de tous les jours, la seconde ne dit rien.
+ */
+export function cuisineRepeatsOf(
+  family: CuisineFamily,
+  cycleFamilies: ReadonlyArray<CuisineFamily>,
+): number {
+  if (family === "francaise" || family === "inconnue") return 0;
+  return cycleFamilies.filter((f) => f === family).length;
+}
 
 /** Le féculent principal (`main_starch`), ou `null` s'il n'est pas posé. */
 export function starchOf(r: Pick<PlanningRecipeSummary, "mainStarch">): MainStarch | null {
@@ -861,6 +1013,8 @@ export function candidateWeight(args: {
   refusalFactor?: number;
   /** Même féculent qu'un créneau voisin (`isStarchRepeat`). */
   starchRepeat?: boolean;
+  /** Fois où sa famille de cuisine est déjà posée (`cuisineRepeatsOf`). */
+  cuisineRepeats?: number;
 }): number {
   return (
     freshnessScore(args.daysSinceServed) *
@@ -868,7 +1022,8 @@ export function candidateWeight(args: {
     Math.pow(PROTEIN_REPEAT_FACTOR, Math.max(0, args.proteinRepeats)) *
     ratingFactor(args.rating) *
     (args.refusalFactor ?? 1) *
-    (args.starchRepeat ? STARCH_REPEAT_FACTOR : 1)
+    (args.starchRepeat ? STARCH_REPEAT_FACTOR : 1) *
+    Math.pow(CUISINE_REPEAT_FACTOR, Math.max(0, args.cuisineRepeats ?? 0))
   );
 }
 
@@ -1083,6 +1238,13 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     const r = corpusById.get(a.recipeId);
     if (ctx && r) noteStarch(ctx.date, starchOf(r));
   }
+  // Familles de cuisine posées dans le cycle : les recettes déjà assignées,
+  // puis le premier plat classé de chaque créneau traité, comme les féculents.
+  const cycleCuisines: CuisineFamily[] = [];
+  for (const id of inCycle) {
+    const r = corpusById.get(id);
+    if (r) cycleCuisines.push(cuisineFamilyOf(r));
+  }
   const neighbourStarches = (date: string): Array<MainStarch | null> => [
     ...(starchesByDate.get(shiftDate(date, -1)) ?? []),
     ...(starchesByDate.get(shiftDate(date, 1)) ?? []),
@@ -1129,6 +1291,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
       const p = proteinOf(r);
       return candidateWeight({
         starchRepeat: isStarchRepeat(starchOf(r), neighbours),
+        cuisineRepeats: role === "main" ? cuisineRepeatsOf(cuisineFamilyOf(r), cycleCuisines) : 0,
         daysSinceServed: daysOf(r),
         reheatSlot: ctx.kind === "reheat",
         reheatFriendly: isReheatFriendly(r),
@@ -1146,7 +1309,10 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
         : [...fresh, ...shared];
     const head = list.slice(0, headSize);
     for (const r of head) reserved.add(r.id);
-    if (role === "main" && list.length > 0) noteStarch(ctx.date, starchOf(list[0]));
+    if (role === "main" && list.length > 0) {
+      noteStarch(ctx.date, starchOf(list[0]));
+      cycleCuisines.push(cuisineFamilyOf(list[0]));
+    }
     return {
       list: list.slice(0, Math.max(depth, headSize)).map((r) => {
         const repeat = isRepeat(r);

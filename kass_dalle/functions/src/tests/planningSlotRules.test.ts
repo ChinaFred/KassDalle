@@ -45,6 +45,7 @@ import {
   REHEAT_BONUS,
   REST_EVE_MINUTES,
   STARCH_REPEAT_FACTOR,
+  CUISINE_REPEAT_FACTOR,
   buildPlanningPrompt,
   candidateWeight,
   codeJustification,
@@ -66,6 +67,9 @@ import {
   spreadProteins,
   starchOf,
   isStarchRepeat,
+  cuisineFamilyOf,
+  cuisineRepeatsOf,
+  type CuisineFamily,
   validateModelChoices,
   weightedOrder,
   DEFAULT_PLANNING_POLICY,
@@ -164,6 +168,13 @@ interface PreselectionFixture {
     expected: boolean;
     why: string;
   }>;
+  cuisine_of: Array<{ cuisines: string[]; expected: CuisineFamily; why: string }>;
+  cuisine_repeats: Array<{
+    candidate: string[];
+    in_cycle: string[][];
+    expected: number;
+    why: string;
+  }>;
   reheat_friendly: Array<{
     dish_types: string[];
     themes: string[];
@@ -196,6 +207,7 @@ interface PreselectionFixture {
     rating?: number;
     refusal_factor?: number;
     starch_repeat?: boolean;
+    cuisine_repeats?: number;
     expected: number;
     why: string;
   }>;
@@ -502,6 +514,7 @@ describe("présélection — constantes recopiées dans la fixture", () => {
     assert.equal(REFUSAL_MAX_ENTRIES, c.refusal_max_entries);
     assert.equal(REFUSAL_FUTURE_TOLERANCE_DAYS, c.refusal_future_tolerance_days);
     assert.equal(STARCH_REPEAT_FACTOR, c.starch_repeat_factor);
+    assert.equal(CUISINE_REPEAT_FACTOR, c.cuisine_repeat_factor);
   });
 });
 
@@ -528,6 +541,22 @@ describe("présélection — protéine et réchauffage", () => {
         isStarchRepeat(
           starchOf({ mainStarch: c.candidate }),
           c.neighbours.map((n) => starchOf({ mainStarch: n })),
+        ),
+        c.expected,
+      );
+    });
+  }
+  for (const c of fixture.cuisine_of) {
+    test(`cuisine ${c.cuisines.join(", ") || "(vide)"} (${c.why})`, () => {
+      assert.equal(cuisineFamilyOf({ cuisines: c.cuisines }), c.expected);
+    });
+  }
+  for (const c of fixture.cuisine_repeats) {
+    test(`cuisine répétée : ${c.candidate.join(", ") || "(vide)"} (${c.why})`, () => {
+      assert.equal(
+        cuisineRepeatsOf(
+          cuisineFamilyOf({ cuisines: c.candidate }),
+          c.in_cycle.map((cuisines) => cuisineFamilyOf({ cuisines })),
         ),
         c.expected,
       );
@@ -581,6 +610,7 @@ describe("présélection — note et poids", () => {
         rating: c.rating ?? null,
         ...(c.refusal_factor != null ? { refusalFactor: c.refusal_factor } : {}),
         ...(c.starch_repeat != null ? { starchRepeat: c.starch_repeat } : {}),
+        ...(c.cuisine_repeats != null ? { cuisineRepeats: c.cuisine_repeats } : {}),
       });
       assert.ok(Math.abs(w - c.expected) < 1e-9, `${w} ≠ ${c.expected}`);
     });
@@ -815,6 +845,52 @@ describe("présélection — listes par créneau", () => {
     // Poids 0,5 contre 1 : environ un tiers de riz en tête, contre la moitié.
     assert.ok(share("riz") < 0.42, `riz en tête : ${share("riz")}`);
     assert.ok(share("semoule") > 0.42, `riz en tête sans voisin riz : ${share("semoule")}`);
+  });
+
+  test("cuisine étrangère déjà dans le cycle : elle revient moins souvent en tête", () => {
+    const plat = (id: string, cuisine: string): PlanningRecipeSummary => ({
+      id,
+      titre: id,
+      mealRole: "plat",
+      cuisines: [cuisine],
+    });
+    const share = (assignedCuisine: string, otherCuisine: string) => {
+      const recipes = [
+        plat("r0", assignedCuisine),
+        plat("a1", "japonaise"),
+        plat("a2", "chinoise"),
+        plat("a3", "thaïlandaise"),
+        plat("b1", otherCuisine),
+        plat("b2", otherCuisine),
+        plat("b3", otherCuisine),
+      ];
+      const input: PlanningInput = {
+        ...inputOf([{ date: "2026-10-12" }, { date: "2026-10-16" }], recipes),
+        alreadyAssigned: [{ slot: 0, recipeId: "r0" }],
+      };
+      let asian = 0;
+      const runs = 600;
+      for (let seed = 1; seed <= runs; seed++) {
+        const [ranking] = preselect({
+          input,
+          candidates: recipes,
+          recentExcluded: [],
+          lastServed: new Map(),
+          ratings: new Map(),
+          historyAvailable: true,
+          policy: readPlanningPolicy({ plats_per_slot: 3 }),
+          today: "2026-10-10",
+          rng: seededRng(seed),
+        });
+        if (ranking.plats[0].recipeId.startsWith("a")) asian++;
+      }
+      return asian / runs;
+    };
+    // Poids 0,5 contre 1 : environ un tiers d'asiatique en tête, contre la moitié.
+    assert.ok(share("vietnamienne", "mexicaine") < 0.42, "asiatique pénalisée");
+    assert.ok(share("française", "mexicaine") > 0.42, "aucune asiatique au cycle");
+    // La française n'est jamais pénalisée, même déjà posée.
+    assert.ok(share("française", "française") > 0.42, "française jamais pénalisée");
   });
 
   test("chaque candidat rendu passe les filtres durs du créneau", () => {

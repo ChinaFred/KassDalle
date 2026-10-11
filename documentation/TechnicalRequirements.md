@@ -2445,7 +2445,13 @@ pénalité de refus.
    la recette dans les 21 derniers jours, 0,25 à partir de 3 refus ; jamais une exclusion)
    × 0,5 si le féculent du plat est celui d'un créneau voisin (`STARCH_REPEAT_FACTOR`,
    `isStarchRepeat` : veille ou lendemain, recette déjà assignée ou premier plat classé du
-   créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas).
+   créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas)
+   × 0,5 par répétition de sa famille de cuisine déjà au cycle (`CUISINE_REPEAT_FACTOR`,
+   `cuisineRepeatsOf` : recettes déjà assignées et premier plat classé de chaque créneau
+   traité). La famille se lit dans les étiquettes `cuisines` (`cuisineFamilyOf` : asiatique,
+   indienne, orientale, Amériques, africaine, italienne, européenne, française, inconnue ;
+   une famille étrangère l'emporte sur l'européenne, qui l'emporte sur la française). La
+   cuisine française et une cuisine inconnue ne sont jamais pénalisées.
    La protéine se lit dans `mainProtein` d'abord (`proteinOf` : le tag `main_protein`, envoyé
    par le client, relu en liste blanche), puis dans `dishTypes` en repli (viande, volaille,
    poisson, fruits de mer, végétarien, inconnue). Le féculent se lit dans `mainStarch`

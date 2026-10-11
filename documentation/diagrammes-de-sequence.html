@@ -1693,7 +1693,7 @@ sequenceDiagram
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
   SP->>PL: applyRecentlyServed puis preselect
   PL->>PL: filtres durs : rôle, prépa max, repos, note ≤ 3, écartées, déjà au cycle
-  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
+  PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5)<br/>× cuisine étrangère déjà au cycle (×0,5 par répétition, française jamais)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
   PL-->>SP: listes classées par créneau (5 plats, 3 entrées, 3 desserts en tête, 15 plats gardés)
   SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées
   SP->>SP: coût plafond (grille en vigueur, taux de la facture)
