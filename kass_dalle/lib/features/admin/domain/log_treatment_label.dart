@@ -167,6 +167,7 @@ const Map<String, String> kLogTreatmentDetails = {
   'entrees-modifiees': 'Portions, type de page ou texte modifiés',
   'rattrapage-planifie': 'Rattrapage planifié',
   'allergenes': 'Allergènes de la recette',
+  'durees-estimees': 'Durées estimées par l\'IA',
   'backfill-demande': 'Reprise demandée depuis l\'écran',
   // Causes d\'avant la garde sur les entrées : le déclencheur se réveillait
   // sur ses propres écritures, et disait alors qu\'il n\'avait rien à faire.

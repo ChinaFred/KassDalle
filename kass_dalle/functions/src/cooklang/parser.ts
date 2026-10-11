@@ -300,6 +300,37 @@ export function extractTags(cooklang: string): CookLangTags {
   };
 }
 
+/** Une durée lue dans un champ : un nombre strictement positif. */
+function positiveMinutes(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Durées LUES d'une recette, composante par composante : le champ `tags`
+ * (`prep_time`, `cook_time`, strictement positifs) d'abord, puis les
+ * métadonnées des textes CookLang dans l'ordre donné (brouillon, puis texte
+ * validé), avec les alias de `extractTags`.
+ *
+ * Jumeau de `readDurations` dans `lib/core/services/cooklang_parser.dart`,
+ * asservi par `test-fixtures/cooklang_parsing.json` (section
+ * `readDurations`). Le serveur décide ce qu'il estime, le client ce qu'il
+ * affiche et filtre : ils doivent voir les mêmes durées lues.
+ */
+export function readDurations(
+  tags: { prep_time?: unknown; cook_time?: unknown },
+  cooklangs: ReadonlyArray<string | null | undefined>,
+): { prep: number | null; cook: number | null } {
+  let prep = positiveMinutes(tags.prep_time);
+  let cook = positiveMinutes(tags.cook_time);
+  for (const cooklang of cooklangs) {
+    if (!cooklang || (prep != null && cook != null)) continue;
+    const meta = extractTags(cooklang);
+    prep ??= positiveMinutes(meta.prepTime);
+    cook ??= positiveMinutes(meta.cookTime);
+  }
+  return { prep, cook };
+}
+
 /**
  * Interprète un libellé de type de page, d'où qu'il vienne : champ Firestore
  * `page_type` ou métadonnée CookLang `>> page_type:`.

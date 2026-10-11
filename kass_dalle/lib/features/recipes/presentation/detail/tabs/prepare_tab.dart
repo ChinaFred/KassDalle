@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../../auth/presentation/auth_providers.dart';
 import '../../../domain/recipe.dart';
+import '../../../domain/recipe_filter.dart' show recipeShownEstimate;
 import '../../cooklang_preview.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
@@ -108,6 +109,7 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                       : null,
                 ),
                 overrideIngredients: recipe.ingredients,
+                estimatedTimes: recipeShownEstimate(recipe),
                 ingredientsFooter: recipe.allergens == null
                     ? null
                     : RecipeAllergensBlock(allergens: recipe.allergens!),

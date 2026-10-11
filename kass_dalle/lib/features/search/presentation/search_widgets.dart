@@ -5,6 +5,7 @@ import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
+import '../domain/explore_facets.dart';
 import '../domain/search_models.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -15,14 +16,7 @@ import '../../../core/theme/app_icon_size.dart';
 class SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
 
-  /// Temps total affiché (« 45 min »). Par défaut préparation + cuisson.
-  final int? Function(Recipe) totalMinutesOf;
-
-  const SearchResultTile({
-    super.key,
-    required this.result,
-    this.totalMinutesOf = recipeTotalMinutes,
-  });
+  const SearchResultTile({super.key, required this.result});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +24,10 @@ class SearchResultTile extends StatelessWidget {
     final reason = result.reason;
     final theme = Theme.of(context);
     final isDraft = recipe.reviewStatus != ReviewStatus.validated;
-    final minutes = totalMinutesOf(recipe);
+    // Temps total affiché : durées lues, et l'estimation de l'IA pour une
+    // durée absente, signalée « ≈ …, estimé ». La tuile l'affiche quel que
+    // soit l'interrupteur du filtre : c'est une information, pas un choix.
+    final times = recipeTimes(recipe);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -109,9 +106,12 @@ class SearchResultTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (minutes != null) ...[
+                    if (times.total case final minutes?) ...[
                       const SizedBox(height: 4),
-                      _DurationLine(minutes: minutes),
+                      _DurationLine(
+                        minutes: minutes,
+                        estimated: times.isEstimated,
+                      ),
                     ],
                     // Raison : seulement pour une recette choisie par l'IA.
                     if (reason != null) ...[
@@ -382,10 +382,12 @@ class GeneratedRecipePlaceholderTile extends StatelessWidget {
   }
 }
 
-/// « ⏱ 45 min » : le temps total d'une recette.
+/// « ⏱ 45 min » : le temps total d'une recette. « ⏱ ≈ 45 min, estimé »
+/// quand une composante vient de l'estimation de l'IA.
 class _DurationLine extends StatelessWidget {
   final int minutes;
-  const _DurationLine({required this.minutes});
+  final bool estimated;
+  const _DurationLine({required this.minutes, this.estimated = false});
 
   @override
   Widget build(BuildContext context) {
@@ -397,9 +399,9 @@ class _DurationLine extends StatelessWidget {
         Icon(Icons.timer_outlined, size: AppIconSize.inline, color: color),
         const SizedBox(width: 4),
         Text(
-          durationLabel(minutes),
+          exploreDurationText(minutes, estimated: estimated),
           style: theme.textTheme.bodySmall?.copyWith(color: color),
-          semanticsLabel: 'Temps total : ${durationLabel(minutes)}',
+          semanticsLabel: exploreDurationSpoken(minutes, estimated: estimated),
         ),
       ],
     );

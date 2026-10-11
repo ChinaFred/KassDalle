@@ -481,12 +481,19 @@ service cloud.firestore {
       // existantes restent les siennes : la mise à jour et la suppression
       // ci-dessous ne demandent que d'en être le créateur. Le serveur (Admin
       // SDK) écrit hors de ces règles.
+      //
+      // `estimated_times` (durées estimées par l'IA) s'écrit par le serveur
+      // seul (`onRecipeWritten`, backfill « Durées estimées ») : ni posé à la
+      // création, ni changé ni effacé par une mise à jour. Une durée saisie à
+      // la main le retire par le serveur, qui le vide (prep et cook à null,
+      // empreinte gardée) quand les deux durées sont lues.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
+        && !('estimated_times' in request.resource.data)
         && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
-        && !changes('source_url') && !changes('source_site')
+        && !changes('source_url') && !changes('source_site') && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());

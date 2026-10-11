@@ -52,6 +52,11 @@ const kFeatureProcess = <String, String>{
   'add_sections': 'Rédaction d\'une recette',
   'classify_dish_types': 'Rédaction d\'une recette',
   'suggest_tags': 'Rédaction d\'une recette',
+  // Durées absentes d'une recette, estimées pour le filtre « Temps total »
+  // et le tri « Plus rapides » d'Explorer. Des métadonnées de la recette :
+  // rangées avec la rédaction.
+  'time_estimate': 'Rédaction d\'une recette',
+  'backfill_time_estimate_batch': 'Rédaction d\'une recette',
   'web_search_query': 'Rédaction d\'une recette',
   'enhance_illustration': 'Images',
   'plating_coach': 'Dressage',
@@ -266,6 +271,20 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Suggère un plan de repas hebdomadaire équilibré à partir '
         'des recettes disponibles dans le livre.',
+  ),
+  'time_estimate': FeatureInfo(
+    label: 'Durées estimées d\'une recette (à l\'écriture)',
+    description:
+        'Estime la préparation et la cuisson d\'une recette qui n\'en donne '
+        'pas, depuis le déclencheur Firestore `onRecipeWritten`. Un appel par '
+        'contenu de recette ; une durée lue dans la recette garde la priorité.',
+  ),
+  'backfill_time_estimate_batch': FeatureInfo(
+    label: 'Durées estimées des recettes (backfill)',
+    description:
+        'Estime la préparation et la cuisson des recettes existantes qui '
+        'n\'en donnent pas, huit recettes par appel, lancé depuis Admin › '
+        'Backfills.',
   ),
   'backfill_recipe_roles': FeatureInfo(
     label: 'Rôle des recettes (backfill)',

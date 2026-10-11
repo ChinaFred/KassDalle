@@ -7,7 +7,9 @@
 /// lue sous son compte.
 library;
 
+import '../../../core/services/cooklang_parser.dart' show readDurations;
 import '../../../core/utils/ingredient_name.dart';
+import 'estimated_times.dart';
 import 'recipe.dart';
 
 /// Les recettes qu'on peut poser sur un repas : les pages de type recette.
@@ -28,16 +30,90 @@ String foldSearchText(String value) => stripAccentsPreservingWords(
   value.toLowerCase(),
 ).replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
 
-/// Temps total d'une recette : préparation + cuisson, en minutes.
+/// Temps total d'une recette : préparation + cuisson, en minutes, durées
+/// lues seules (`tags`, puis métadonnées CookLang).
 ///
 /// Le repos (marinade, levée) n'y entre pas : il s'affiche à part. Une seule
 /// des deux valeurs connue suffit ; aucune des deux, la recette est « sans
 /// durée » (`null`).
-int? recipeTotalMinutes(Recipe recipe) {
-  final prep = recipe.tags.prepTime;
-  final cook = recipe.tags.cookTime;
-  if (prep == null && cook == null) return null;
-  return (prep ?? 0) + (cook ?? 0);
+int? recipeTotalMinutes(Recipe recipe) =>
+    recipeTimes(recipe, includeEstimated: false).total;
+
+/// Temps total, une durée estimée par l'IA comblant une durée absente.
+int? recipeTotalMinutesWithEstimates(Recipe recipe) =>
+    recipeTimes(recipe).total;
+
+/// Les durées d'une recette, et lesquelles viennent de l'estimation.
+class RecipeTimes {
+  final int? prep;
+  final int? cook;
+  final bool prepEstimated;
+  final bool cookEstimated;
+
+  const RecipeTimes({
+    this.prep,
+    this.cook,
+    this.prepEstimated = false,
+    this.cookEstimated = false,
+  });
+
+  /// Préparation + cuisson ; `null` quand aucune des deux n'est connue.
+  int? get total =>
+      prep == null && cook == null ? null : (prep ?? 0) + (cook ?? 0);
+
+  /// Vrai quand au moins une composante du total est estimée.
+  bool get isEstimated => prepEstimated || cookEstimated;
+}
+
+/// L'estimation à afficher sur la fiche : seulement les durées que la
+/// recette ne donne pas, ni dans `tags` ni dans son texte CookLang. `null`
+/// quand il n'y a rien à afficher.
+RecipeEstimatedTimes? recipeShownEstimate(Recipe recipe) {
+  final times = recipeTimes(recipe);
+  if (!times.isEstimated) return null;
+  return RecipeEstimatedTimes(
+    prep: times.prepEstimated ? times.prep : null,
+    cook: times.cookEstimated ? times.cook : null,
+  );
+}
+
+/// Durées lues d'une recette, mémorisées par instance : le tri « Plus
+/// rapides » les relit à chaque comparaison, et la lecture des métadonnées
+/// parcourt le texte.
+final _readDurationsCache = Expando<_ReadDurations>('readDurations');
+
+class _ReadDurations {
+  final int? prep;
+  final int? cook;
+  const _ReadDurations(this.prep, this.cook);
+}
+
+_ReadDurations _readDurationsOf(Recipe recipe) =>
+    _readDurationsCache[recipe] ??= () {
+      final read = readDurations(
+        prepTime: recipe.tags.prepTime,
+        cookTime: recipe.tags.cookTime,
+        cooklangs: [recipe.draftCooklang, recipe.rawCooklang],
+      );
+      return _ReadDurations(read.prep, read.cook);
+    }();
+
+/// Durées d'une recette, composante par composante : la durée lue d'abord
+/// (`tags.prep_time` / `cook_time`, puis les métadonnées CookLang du
+/// brouillon et du texte validé — `readDurations`, même règle que le
+/// serveur), l'estimation de l'IA (`estimated_times`) à défaut, si
+/// [includeEstimated].
+RecipeTimes recipeTimes(Recipe recipe, {bool includeEstimated = true}) {
+  final read = _readDurationsOf(recipe);
+  final estimate = includeEstimated ? recipe.estimatedTimes : null;
+  final prepEstimated = read.prep == null && estimate?.prep != null;
+  final cookEstimated = read.cook == null && estimate?.cook != null;
+  return RecipeTimes(
+    prep: read.prep ?? (prepEstimated ? estimate!.prep : null),
+    cook: read.cook ?? (cookEstimated ? estimate!.cook : null),
+    prepEstimated: prepEstimated,
+    cookEstimated: cookEstimated,
+  );
 }
 
 /// Calories par portion, calculées à l'affichage (`totaux / parts`).
@@ -116,6 +192,16 @@ String durationLabel(int minutes) {
   return rest == 0 ? '$hours h' : '$hours h ${rest.toString().padLeft(2, '0')}';
 }
 
+/// Une durée telle qu'un lecteur d'écran la dit : « 20 minutes »,
+/// « 1 heure 30 », « 2 heures ».
+String spokenDuration(int minutes) {
+  if (minutes < 60) return '$minutes minute${minutes > 1 ? 's' : ''}';
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  final h = '$hours heure${hours > 1 ? 's' : ''}';
+  return rest == 0 ? h : '$h $rest';
+}
+
 /// Le filtre : des ensembles de clés cochées et des seuils.
 ///
 /// Dans une dimension, une recette convient si elle porte l'une des valeurs
@@ -147,6 +233,12 @@ class RecipeFilter {
   final int? minRating;
   final int? maxCaloriesPerPortion;
 
+  /// « Compter les durées estimées » : une durée estimée par l'IA comble une
+  /// durée absente dans le filtre « Temps total » et le tri « Plus rapides ».
+  /// Coché par défaut. Ce n'est pas une valeur cochée : il ne compte pas
+  /// dans « Filtres · N ».
+  final bool countEstimatedTimes;
+
   const RecipeFilter({
     this.dishTypes = const {},
     this.cuisines = const {},
@@ -162,6 +254,7 @@ class RecipeFilter {
     this.maxTotalMinutes,
     this.minRating,
     this.maxCaloriesPerPortion,
+    this.countEstimatedTimes = true,
   });
 
   static const none = RecipeFilter();
@@ -194,6 +287,11 @@ class RecipeFilter {
 
   bool get isEmpty => activeDimensions.isEmpty;
 
+  /// Toutes les valeurs décochées, réglage « Compter les durées estimées »
+  /// gardé : « Effacer tout » retire des choix, pas une préférence.
+  RecipeFilter get cleared =>
+      RecipeFilter(countEstimatedTimes: countEstimatedTimes);
+
   /// Nombre de valeurs cochées, pour « Filtres · N ».
   int get count =>
       RecipeFilterDimension.values.fold(0, (sum, d) => sum + keysOf(d).length);
@@ -213,6 +311,7 @@ class RecipeFilter {
     int? Function()? maxTotalMinutes,
     int? Function()? minRating,
     int? Function()? maxCaloriesPerPortion,
+    bool? countEstimatedTimes,
   }) => RecipeFilter(
     dishTypes: dishTypes ?? this.dishTypes,
     cuisines: cuisines ?? this.cuisines,
@@ -232,6 +331,7 @@ class RecipeFilter {
     maxCaloriesPerPortion: maxCaloriesPerPortion != null
         ? maxCaloriesPerPortion()
         : this.maxCaloriesPerPortion,
+    countEstimatedTimes: countEstimatedTimes ?? this.countEstimatedTimes,
   );
 
   /// Coche ou décoche [key] dans [dimension]. Pour un seuil, la même valeur
@@ -414,6 +514,7 @@ class RecipeFilter {
     'max_total_minutes': maxTotalMinutes,
     'min_rating': minRating,
     'max_kcal_per_portion': maxCaloriesPerPortion,
+    'count_estimated_times': countEstimatedTimes,
   };
 
   /// Lit un filtre enregistré. Une valeur mal formée est ignorée, pas
@@ -445,6 +546,10 @@ class RecipeFilter {
       maxTotalMinutes: positive('max_total_minutes'),
       minRating: positive('min_rating'),
       maxCaloriesPerPortion: positive('max_kcal_per_portion'),
+      // Absent ou illisible : coché, la valeur par défaut.
+      countEstimatedTimes: data['count_estimated_times'] is bool
+          ? data['count_estimated_times'] as bool
+          : true,
     );
   }
 
@@ -455,6 +560,7 @@ class RecipeFilter {
       final keys = keysOf(d).toList()..sort();
       if (keys.isNotEmpty) parts.add('${d.name}=${keys.join(',')}');
     }
+    if (!countEstimatedTimes) parts.add('estimated=off');
     return parts.join(';');
   }
 }
@@ -464,14 +570,26 @@ class RecipeFilterContext {
   /// Notes du lecteur (sur 10), par identifiant de recette.
   final Map<String, int> myRatings;
 
-  /// Temps total d'une recette. Par défaut [recipeTotalMinutes] ; une durée
-  /// estimée (lot 3) se branche ici sans toucher au filtre.
+  /// Temps total d'une recette. Par défaut [recipeTotalMinutes], durées lues
+  /// seules : le sélecteur du planning n'emploie pas l'estimation.
   final int? Function(Recipe) totalMinutesOf;
 
   const RecipeFilterContext({
     this.myRatings = const {},
     this.totalMinutesOf = recipeTotalMinutes,
   });
+
+  /// Le contexte d'Explorer : l'estimation comble une durée absente quand
+  /// [RecipeFilter.countEstimatedTimes] est coché.
+  factory RecipeFilterContext.forFilter(
+    RecipeFilter filter, {
+    Map<String, int> myRatings = const {},
+  }) => RecipeFilterContext(
+    myRatings: myRatings,
+    totalMinutesOf: filter.countEstimatedTimes
+        ? recipeTotalMinutesWithEstimates
+        : recipeTotalMinutes,
+  );
 
   static const empty = RecipeFilterContext();
 }
@@ -523,9 +641,15 @@ class RecipeFilterOutcome {
   /// les deux lignes.
   final Map<RecipeFilterDimension, int> missingData;
 
+  /// « Compter les durées estimées » décoché : recettes sans durée lue,
+  /// écartées par « Temps total », que leur durée estimée aurait retenues.
+  /// Comptées ici et non dans [missingData].
+  final int estimatedTimeExcluded;
+
   const RecipeFilterOutcome({
     required this.recipes,
     this.missingData = const {},
+    this.estimatedTimeExcluded = 0,
   });
 }
 
@@ -539,6 +663,7 @@ RecipeFilterOutcome applyRecipeFilter(
 }) {
   final kept = <Recipe>[];
   final missing = <RecipeFilterDimension, int>{};
+  var estimatedExcluded = 0;
   final active = filter.activeDimensions.toList(growable: false);
   for (final recipe in corpus) {
     if (!matchesRecipeQuery(recipe, query)) continue;
@@ -558,14 +683,32 @@ RecipeFilterOutcome applyRecipeFilter(
     if (mismatch) continue;
     if (lacking.isNotEmpty) {
       for (final d in lacking) {
-        missing[d] = (missing[d] ?? 0) + 1;
+        if (d == RecipeFilterDimension.totalTime &&
+            _keptByEstimate(recipe, filter)) {
+          estimatedExcluded++;
+        } else {
+          missing[d] = (missing[d] ?? 0) + 1;
+        }
       }
       continue;
     }
     kept.add(recipe);
   }
   kept.sort(recipeComparator(sort, context));
-  return RecipeFilterOutcome(recipes: kept, missingData: missing);
+  return RecipeFilterOutcome(
+    recipes: kept,
+    missingData: missing,
+    estimatedTimeExcluded: estimatedExcluded,
+  );
+}
+
+/// Vrai quand [recipe], écartée faute de durée lue, aurait été retenue par
+/// sa durée estimée — interrupteur « Compter les durées estimées » décoché.
+bool _keptByEstimate(Recipe recipe, RecipeFilter filter) {
+  if (filter.countEstimatedTimes) return false;
+  final estimated = recipeTotalMinutesWithEstimates(recipe);
+  final max = filter.maxTotalMinutes;
+  return estimated != null && max != null && estimated <= max;
 }
 
 /// Ordre d'un tri. Les recettes sans la donnée du tri vont en fin de liste,

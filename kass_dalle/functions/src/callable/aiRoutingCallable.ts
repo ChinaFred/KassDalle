@@ -242,6 +242,16 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Rôle des recettes dans un repas (à l'écriture)",
     group: "Planning",
   },
+  {
+    id: "time_estimate",
+    label: "Durées estimées d'une recette (à l'écriture)",
+    group: "Rédaction",
+  },
+  {
+    id: "backfill_time_estimate_batch",
+    label: "Durées estimées des recettes (backfill)",
+    group: "Rédaction",
+  },
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
   {
     id: "storage_advice",

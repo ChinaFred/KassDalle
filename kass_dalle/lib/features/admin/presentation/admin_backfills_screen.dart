@@ -487,6 +487,60 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Durées estimées : la préparation et la cuisson des recettes qui n'en
+  /// donnent pas, estimées par le modèle pour le filtre « Temps total » et le
+  /// tri « Plus rapides » d'Explorer.
+  Future<void> _runBackfillEstimatedTimes() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Durées estimées'),
+        content: const Text(
+          'Demande au modèle la durée de préparation et de cuisson des '
+          'recettes qui n\'en donnent pas : un appel pour huit recettes, cent '
+          'soixante recettes au plus par passage. Une durée lue dans la '
+          'recette n\'est jamais remplacée, et une recette déjà estimée pour '
+          'son contenu n\'est ni redemandée ni refacturée.\n\n'
+          'Reprise sur point de contrôle : relancez tant que le résultat '
+          'indique « incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<BackfillCounts>(
+      title: 'Durées estimées',
+      label: 'Durées estimées en cours...',
+      failuresOf: (r) => r.failures,
+      feature: 'admin_backfill_estimated_times',
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).backfillEstimatedTimes(),
+      format: (r) => (r['dejaEnCours'] ?? 0) == 1
+          ? 'Un passage est déjà en cours : rien n\'a été lancé. Relancez '
+                'quand il sera terminé.'
+          : 'Recettes : estimées=${r['estimees']}, '
+                'sans estimation du modèle=${r['sansEstimation']}, '
+                'ignorées (durées lues ou déjà estimées)=${r['ignorees']}, '
+                'hors recette=${r['horsRecette']}, '
+                'en erreur=${r['enErreur']}'
+                '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+                '${(r['enErreur'] ?? 0) > 0 ? ' (recettes en erreur : voir la liste à revoir avant de relancer)' : ''}'
+                '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint)' : ''}'
+                '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
+                '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
+    );
+  }
+
   /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
   /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
   String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
@@ -720,6 +774,19 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'recettes sans appel. À relancer après une '
                           'correction d\'un ingrédient.',
                       onTap: _busy ? null : _runBackfillAllergens,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.timer_outlined,
+                      title: 'Durées estimées',
+                      subtitle:
+                          'Estime par IA la préparation et la cuisson des '
+                          'recettes qui n\'en donnent pas, huit par appel. '
+                          'Une durée lue dans la recette n\'est jamais '
+                          'remplacée. À lancer une fois après la mise en '
+                          'service ; les recettes écrites ensuite sont '
+                          'estimées à l\'écriture.',
+                      onTap: _busy ? null : _runBackfillEstimatedTimes,
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(

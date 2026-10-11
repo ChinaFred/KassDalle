@@ -174,6 +174,7 @@
       <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
+      <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
     </ol>
   </nav>
 
@@ -724,10 +725,21 @@ sequenceDiagram
     TR-->>FS: sortie
   end
 
-  opt tags.meal_role absent
-    TR->>M: suggestMealRole (inline_meal_role_classification)
-    M-->>TR: rôle, contains, suggested_sides, main_protein, main_starch, ou aucun rôle
-    TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at,<br/>main_protein et main_starch s'ils sont connus
+  par rôle et durées, en parallèle
+    opt tags.meal_role absent
+      TR->>M: suggestMealRole (inline_meal_role_classification)
+      M-->>TR: rôle, contains, suggested_sides, main_protein, main_starch, ou aucun rôle
+      TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at,<br/>main_protein et main_starch s'ils sont connus
+    end
+  and
+    alt préparation et cuisson lues (tags ou métadonnées CookLang), estimated_times présent
+      TR->>FS: estimated_times vidé — done, empreinte, prep et cook à null<br/>(sauf s'il l'est déjà pour ce contenu)
+    else une durée manque, aucune estimation ni réservation récente pour ce contenu
+      TR->>FS: transaction — estimated_times status pending, empreinte, claim_id
+      TR->>M: estimateRecipeTimes (time_estimate)
+      M-->>TR: prep_minutes, cook_minutes (1..1440, sinon null)
+      TR->>FS: transaction — estimated_times status done, prep, cook,<br/>si la réservation est toujours la sienne
+    end
   end
 
   alt mise à jour sans changement d'entrée (ingrédients, portions, page_type, raw_cooklang)
@@ -809,6 +821,14 @@ sequenceDiagram
         aucun rôle, rien n'est écrit, et la prochaine écriture retente.
       </figcaption>
       <figcaption>
+        <b>Les durées estimées passent aussi avant la garde.</b> Une recette sans préparation ou
+        sans cuisson reçoit <code>estimated_times</code>, un appel par empreinte de contenu
+        (titre et texte sans les lignes <code>&gt;&gt;</code>). La réservation (<code>pending</code>)
+        empêche les échos du rôle et de la nutrition de rappeler le modèle pendant l'appel ; elle
+        expire après dix minutes si l'appel échoue. <code>estimated_times</code> n'est pas une
+        entrée de la garde : son écriture ne relance rien.
+      </figcaption>
+      <figcaption>
         <b>Les allergènes se déduisent en dernier.</b> Le modèle juge chaque ingrédient du
         référentiel une seule fois, juste après sa création par la nutrition (poste
         <code>allergens_auto</code>) ; l'examen ne crée jamais de document, et n'écrase jamais
@@ -879,9 +899,9 @@ sequenceDiagram
   C->>RR: getAllByOwners famille, excludePrivate
   C->>RA: getAllForUser uid
   C-->>S: recettes et notes du lecteur
-  S->>F: texte vide, filtres, tri
-  F-->>S: N recettes, recettes écartées faute de donnée
-  S-->>U: liste, compteur, lignes « sans … écartées »
+  S->>F: texte vide, filtres, tri,<br/>contexte forFilter (durées estimées comptées si l'interrupteur est coché)
+  F-->>S: N recettes, recettes écartées faute de donnée,<br/>recettes à durée estimée écartées (interrupteur décoché)
+  S-->>U: liste (« ⏱ ≈ 45 min, estimé »), compteur, lignes « sans … écartées »
 
   loop à chaque frappe ou filtre
     U->>S: texte, puce
@@ -3141,6 +3161,92 @@ sequenceDiagram
           ne dépassent pas dix imports. Une relance depuis la file ne consomme pas d'import ;
           les règles Firestore la limitent à deux, sur un échec passager seulement
           (<code>url_retry_count</code>).
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="durees-estimees"><span class="n">32</span>Backfill « Durées estimées »</h2>
+    <p class="sec-note">
+      Les recettes écrites avant les durées estimées n'en ont pas. L'administrateur les reprend
+      depuis Admin › Backfills ; les recettes écrites ensuite sont estimées par
+      <code>onRecipeWritten</code> (séquence 06).
+      <span class="path">admin_backfills_screen.dart:_runBackfillEstimatedTimes →
+      GcpBillingRepository.backfillEstimatedTimes → callable/estimatedTimesBackfillCallable.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant S as AdminBackfillsScreen
+  participant F as backfillEstimatedTimesFn
+  participant C as app_config
+  participant FS as recipes
+  participant M as Modèle (Gemini ou Claude)
+
+  A->>S: « Durées estimées », puis Lancer
+  S->>F: maxMinutes 8, reprise sur point de contrôle
+  F->>F: requireAdmin
+  F->>C: transaction — running_until encore valide ?
+  alt un autre passage tient le verrou
+    F-->>S: dejaEnCours, rien de lancé
+    S-->>A: « Un passage est déjà en cours »
+  end
+  F->>C: running_until = maintenant + 540 s, running_id
+  F->>C: lit estimated_times_backfill_checkpoint
+  loop pages de 100 recettes, jusqu'au délai, au quota (160, 8 au moins) ou à 3 lots en échec de suite
+    F->>FS: lit la page suivante
+    loop chaque recette
+      alt page_type autre que recipe
+        F->>F: hors recette
+      else durées lues, ou estimation à jour, ou réservation récente
+        F->>F: ignorée, aucun appel
+      else une durée manque
+        F->>F: ajoutée au lot de son propriétaire (created_by)
+      end
+      opt lot de 8 recettes d'un même propriétaire, ou fin de page
+        F->>M: estimateRecipeTimes (backfill_time_estimate_batch)
+        alt réponse lue
+          M-->>F: prep_minutes, cook_minutes par recette
+          loop chaque recette du lot
+            F->>FS: transaction — estimated_times done, si l'empreinte n'a pas changé,<br/>composante déjà lue dans la recette mise à null
+            opt pas de réponse, aucune durée estimée, ou écriture refusée
+              F->>F: recette ajoutée à la liste à revoir
+            end
+          end
+        else échec ou réponse illisible
+          F->>F: logError, lot en erreur, recettes ajoutées à la liste à revoir,<br/>le curseur le dépasse
+        end
+      end
+    end
+    F->>C: curseur
+  end
+  opt quota atteint
+    F->>M: groupes en attente soumis, si le délai le permet
+  end
+  F->>C: curseur (null si tout est parcouru), last_report
+  F->>C: verrou levé (running_until null), s'il est toujours le sien
+  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur), aRevoir (titre et raison)
+  S-->>A: compte rendu chiffré, « relancer » si incomplet,<br/>« Voir les N à revoir » ouvre la feuille, une ligne ouvre la fiche
+</pre>
+      </div>
+      <figcaption>
+        <b>Relancer ne refacture rien.</b> Une recette déjà estimée pour son contenu est ignorée,
+        une estimation à <code>null</code> (le modèle n'a pas su) aussi. Le curseur ne dépasse une
+        recette mise dans un lot qu'une fois le lot soumis : un passage arrêté par le délai relit
+        ce lot au passage suivant. Un lot en <b>échec</b>, lui, est dépassé : une recette qui
+        échoue toujours ne bloque pas le parcours. Le compte rendu reste « incomplet » ; le
+        passage suivant repart du début et ne reprend, sans refacturer le reste, que les recettes
+        sans estimation.
+        <span class="expect">
+          <b>Un passage à la fois, un propriétaire par lot.</b> Le verrou daté empêche deux
+          passages parallèles de facturer deux fois les mêmes recettes ; il expire seul au bout
+          du délai de la fonction. Un lot ne réunit que des recettes d'un même
+          <code>created_by</code> : le texte saisi par un compte ne partage jamais un prompt avec
+          celui d'un autre.
         </span>
       </figcaption>
     </figure>

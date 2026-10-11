@@ -67,6 +67,37 @@ void main() {
       expect(c.failures!.total, 3);
     });
 
+    test('le compte rendu des durées estimées porte aRevoir', () {
+      final c = BackfillCounts.fromMap({
+        'dejaEnCours': false,
+        'estimees': 5,
+        'sansEstimation': 1,
+        'enErreur': 1,
+        'completed': false,
+        'aRevoir': {
+          'items': [
+            {
+              'kind': 'recipe',
+              'id': 'r1',
+              'label': 'Tarte',
+              'reason': 'L\'IA n\'a estimé aucune durée',
+            },
+            {
+              'kind': 'recipe',
+              'id': 'r2',
+              'label': 'Gratin',
+              'reason': 'Lot en échec : délai dépassé',
+            },
+          ],
+          'total': 2,
+        },
+      });
+      expect(c['estimees'], 5);
+      expect(c['dejaEnCours'], 0);
+      expect(c.failures!.items.map((i) => i.id), ['r1', 'r2']);
+      expect(c.failures!.items.first.reason, 'L\'IA n\'a estimé aucune durée');
+    });
+
     test('le compte rendu du rôle des recettes porte aRevoir', () {
       final r = RecipeRolesBackfillReport.fromMap({
         'aRevoir': {

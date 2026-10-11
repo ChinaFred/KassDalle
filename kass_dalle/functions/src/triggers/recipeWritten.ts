@@ -10,7 +10,8 @@
  * Les gardes communes (suppression, type de page, empreinte des ingrédients)
  * sont évaluées une fois ici, puis les traitements partent ensemble. Ils
  * restent indépendants : l'échec de l'un ne prive pas la recette des autres.
- * Le rôle dans un repas échappe à la garde d'empreinte : voir plus bas.
+ * Le rôle dans un repas et les durées estimées échappent à la garde
+ * d'empreinte : voir plus bas.
  * Les allergènes de la recette se déduisent en dernier, une fois les
  * ingrédients neufs examinés par la chaîne nutrition.
  */
@@ -30,6 +31,7 @@ import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
 import { recipeAllergensMissing, syncRecipeAllergens } from "./recipeAllergensSync";
+import { syncRecipeEstimatedTimes } from "./recipeEstimatedTimes";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -92,12 +94,28 @@ export const onRecipeWritten = onDocumentWritten(
     // — et aucune de ces trois écritures ne touche les ENTRÉES que la garde
     // ci-dessous protège. La classer ici, avant cette garde, évite qu'une
     // recette reste sans rôle tant que personne n'a changé ses ingrédients.
-    await syncRecipeMealRole({
-      recipeId: after.id,
-      data,
-      correlationId: newCorrelationId(qualify("ecriture_recette", "role_repas")),
-      scanId,
-    });
+    //
+    // Durées estimées : même place, pour la même raison. Une recette sans
+    // durée n'a pas besoin qu'un ingrédient change pour en recevoir une, et
+    // une durée saisie à la main doit retirer l'estimation. La décision ne
+    // lit que la recette ; l'appel de modèle n'a lieu que si une durée manque
+    // et qu'aucune estimation n'existe pour ce contenu (voir
+    // `recipeEstimatedTimes.ts`). Les deux traitements partent ensemble : ils
+    // n'écrivent pas les mêmes champs.
+    await Promise.all([
+      syncRecipeMealRole({
+        recipeId: after.id,
+        data,
+        correlationId: newCorrelationId(qualify("ecriture_recette", "role_repas")),
+        scanId,
+      }),
+      syncRecipeEstimatedTimes({
+        recipeRef: after.ref,
+        data,
+        correlationId: newCorrelationId(qualify("ecriture_recette", "durees_estimees")),
+        scanId,
+      }),
+    ]);
 
     // ── La garde des recalculs coûteux, et il n'y en a plus d'autre ──────────
     //

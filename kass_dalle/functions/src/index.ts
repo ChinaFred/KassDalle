@@ -123,6 +123,7 @@ export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillRecipeProteinFn } from "./callable/recipeProteinBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
+export { backfillEstimatedTimesFn } from "./callable/estimatedTimesBackfillCallable";
 export { backfillPlanningDefaultsFn } from "./callable/planningDefaultsBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`

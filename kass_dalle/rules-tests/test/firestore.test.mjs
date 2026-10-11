@@ -2589,6 +2589,70 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
   });
 });
 
+// ── recipes — durées estimées (estimated_times) ─────────────────────────
+//
+// Écrites par le serveur seul (`onRecipeWritten`, backfill « Durées
+// estimées »). Le client ne les pose pas, ne les change pas et ne les efface
+// pas — administrateur compris. Une durée saisie à la main les retire par le
+// serveur.
+describe("recipes — durées estimées (estimated_times)", () => {
+  const estimate = { status: "done", fingerprint: "f", prep: 20, cook: 30 };
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "recipes/estimated-reader": {
+        title: "Gratin",
+        created_by: READER,
+        review_status: "draft",
+        estimated_times: estimate,
+      },
+    });
+  });
+
+  it("un éditeur ne crée pas de recette avec une estimation", async () => {
+    await assertFails(
+      db("editor").doc("recipes/new").set({
+        title: "x",
+        created_by: EDITOR,
+        review_status: "draft",
+        estimated_times: estimate,
+      }),
+    );
+  });
+
+  it("le propriétaire ne pose pas d'estimation", async () => {
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({ estimated_times: estimate }),
+    );
+  });
+
+  it("le propriétaire ne change pas l'estimation", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/estimated-reader")
+        .update({ estimated_times: { ...estimate, prep: 5 } }),
+    );
+  });
+
+  it("le propriétaire n'efface pas l'estimation", async () => {
+    await assertFails(
+      db("reader").doc("recipes/estimated-reader").update({ estimated_times: deleteField() }),
+    );
+  });
+
+  it("l'administrateur non plus", async () => {
+    await assertFails(
+      db("admin").doc("recipes/estimated-reader").update({ estimated_times: deleteField() }),
+    );
+  });
+
+  it("une édition qui ne touche pas l'estimation passe", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/estimated-reader").update({ title: "Gratin dauphinois" }),
+    );
+  });
+});
+
 // ── users/{uid}/preferences/explore_filters ──────────────────────────────
 //
 // Filtres, sources et tri de l'écran Explorer : une préférence de lecteur,
@@ -2626,6 +2690,19 @@ describe("users/{uid}/preferences/explore_filters — forme", () => {
       db("reader")
         .doc(path)
         .set({ sources: Array.from({ length: 11 }, (_, i) => `s${i}`) }),
+    );
+  });
+
+  it("l'interrupteur « Compter les durées estimées » s'enregistre dans les filtres", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(path)
+        .set({
+          sources: ["mine"],
+          sort: "fastest",
+          filters: { max_total_minutes: 30, count_estimated_times: false },
+          updated_at: serverTimestamp(),
+        }),
     );
   });
 
