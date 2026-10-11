@@ -11,6 +11,8 @@
  * sont évaluées une fois ici, puis les traitements partent ensemble. Ils
  * restent indépendants : l'échec de l'un ne prive pas la recette des autres.
  * Le rôle dans un repas échappe à la garde d'empreinte : voir plus bas.
+ * Les allergènes de la recette se déduisent en dernier, une fois les
+ * ingrédients neufs examinés par la chaîne nutrition.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -27,6 +29,7 @@ import { ORIGINAL_TEXT_DOC_ID, SUBCOLL_ORIGINAL_TEXT } from "../pipeline/origina
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
+import { recipeAllergensMissing, syncRecipeAllergens } from "./recipeAllergensSync";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -112,10 +115,24 @@ export const onRecipeWritten = onDocumentWritten(
     //
     // Une création n'a pas de `before` : elle passe toujours.
     const isCreation = !event.data?.before?.exists;
+    const allergensMissing = recipeAllergensMissing(data);
     if (
       !isCreation &&
       recipeTriggerInputsFingerprint(data) === recipeTriggerInputsFingerprint(beforeData)
     ) {
+      // Allergènes : une recette antérieure au champ le reçoit à sa prochaine
+      // écriture, quelle qu'elle soit. Sans appel de modèle — cette branche
+      // reçoit aussi les échos d'un calcul en cours, qui examine déjà les
+      // ingrédients (voir `recipeAllergensSync.ts`). Une fois le champ posé,
+      // l'écho de cette écriture-ci ne repasse plus par ici.
+      if (allergensMissing) {
+        await syncRecipeAllergens({
+          recipeRef: after.ref,
+          data,
+          correlationId: newCorrelationId(qualify("ecriture_recette", "allergenes")),
+          scanId,
+        });
+      }
       return;
     }
 
@@ -176,6 +193,15 @@ export const onRecipeWritten = onDocumentWritten(
         extra: { recipeId: after.id },
       });
     });
+
+    // Allergènes : APRÈS la nutrition, qui vient de créer les documents des
+    // ingrédients neufs et de les faire examiner (`allergens_auto`). Ce qui
+    // suit n'appelle aucun modèle : l'union des jugements du référentiel. Une
+    // modification des portions ou du texte seuls ne change rien aux
+    // allergènes d'une recette qui les porte déjà.
+    if (isCreation || ingredientsChanged || allergensMissing) {
+      await syncRecipeAllergens({ recipeRef: after.ref, data, correlationId, scanId });
+    }
   },
 );
 

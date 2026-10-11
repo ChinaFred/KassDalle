@@ -1592,6 +1592,25 @@ describe("référentiels", () => {
     );
   });
 
+  it("un administrateur corrige les allergènes d'un ingrédient", async () => {
+    await assertSucceeds(
+      db("admin").doc("nutrition_ingredients/farine").update({
+        allergens: ["gluten"],
+        allergens_source: "admin",
+        allergens_at: 1,
+        updated_at: 1,
+      }),
+    );
+  });
+
+  it("un éditeur ne corrige pas les allergènes d'un ingrédient", async () => {
+    await assertFails(
+      db("editor")
+        .doc("nutrition_ingredients/farine")
+        .update({ allergens: [], allergens_source: "admin", allergens_at: 1 }),
+    );
+  });
+
   it("un administrateur ne réécrit pas les valeurs nutritionnelles", async () => {
     await assertFails(db("admin").doc("nutrition_ingredients/farine").update({ kcal: 0 }));
   });

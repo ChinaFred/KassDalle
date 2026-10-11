@@ -1,0 +1,19 @@
+{
+  "_comment": "Les quatorze allergènes majeurs de l'annexe II du règlement INCO (UE n° 1169/2011), dans l'ordre du règlement. Clés décidées par functions/src/nutrition/allergens.ts (ALLERGEN_KEYS), qui seul lit la réponse du modèle et calcule le champ `allergens` d'une recette ; reprises par lib/features/recipes/domain/allergens.dart (kAllergenKeys, kAllergenLabels) pour l'affichage sur la fiche recette et la correction dans Admin › Référentiels › Ingrédients. Même ordre et mêmes libellés des deux côtés.",
+  "allergens": [
+    { "key": "gluten", "label": "Gluten" },
+    { "key": "crustaces", "label": "Crustacés" },
+    { "key": "oeuf", "label": "Œuf" },
+    { "key": "poisson", "label": "Poisson" },
+    { "key": "arachide", "label": "Arachide" },
+    { "key": "soja", "label": "Soja" },
+    { "key": "lait", "label": "Lait" },
+    { "key": "fruits_a_coque", "label": "Fruits à coque" },
+    { "key": "celeri", "label": "Céleri" },
+    { "key": "moutarde", "label": "Moutarde" },
+    { "key": "sesame", "label": "Sésame" },
+    { "key": "sulfites", "label": "Sulfites" },
+    { "key": "lupin", "label": "Lupin" },
+    { "key": "mollusques", "label": "Mollusques" }
+  ]
+}

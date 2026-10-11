@@ -801,12 +801,13 @@ service cloud.firestore {
     // reste réservée aux Cloud Functions (Admin SDK, hors de ces règles).
     match /nutrition_ingredients/{ingredientId} {
       allow read: if isApproved();
-      // Le référentiel s'écrit côté serveur. Une seule exception : le produit
-      // acheté, corrigé à la main par un administrateur depuis Admin ›
-      // Référentiels › Ingrédients — ces champs-là, et eux seuls.
+      // Le référentiel s'écrit côté serveur. Deux exceptions : le produit
+      // acheté et les allergènes, corrigés à la main par un administrateur
+      // depuis Admin › Référentiels › Ingrédients — ces champs-là, et eux seuls.
       allow update: if isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'shopping_product', 'shopping_product_source', 'updated_at'
+          'shopping_product', 'shopping_product_source',
+          'allergens', 'allergens_source', 'allergens_at', 'updated_at'
         ]);
       allow create, delete: if false;
     }

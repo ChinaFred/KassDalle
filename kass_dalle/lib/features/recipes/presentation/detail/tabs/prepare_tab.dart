@@ -10,6 +10,7 @@ import '../shopping_list_sheet.dart';
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
+import '../recipe_allergens_block.dart';
 
 /// Onglet « Préparer » : illustrations, ingrédients et étapes de la recette.
 ///
@@ -86,6 +87,9 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                       )
                     : null,
                 overrideIngredients: recipe.ingredients,
+                ingredientsFooter: recipe.allergens == null
+                    ? null
+                    : RecipeAllergensBlock(allergens: recipe.allergens!),
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,
                 onSelectedPortionsChanged: widget.onSelectedPortionsChanged,

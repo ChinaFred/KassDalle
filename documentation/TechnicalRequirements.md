@@ -362,6 +362,7 @@ Document principal d'une recette.
 | `shopping_products` | `List<Map>` | Produits d'achat `{name, qty, unit}`, écrits par `onRecipeWritten` (`deriveShoppingProducts`, fixture `shopping_products.json`). **Une entrée par produit et famille d'unité** : kilo et grammes s'additionnent (`1,5 kg`), litre, centilitre et millilitre aussi ; un comptage et un poids restent deux entrées sous le même nom — le client les affiche sur une ligne, « 2 kg + 6 pommes de terre ». Le nom est le `shopping_product` du référentiel quand il existe (« beurre » pour « beurre fondu »), sinon la première orthographe lue. Absent tant qu'aucun calcul n'a eu lieu ; *Admin › Backfills › Recalculer les produits d'achat* le refait sur tout le fonds sans appel de modèle |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
+| `allergens` | `Map?` | Allergènes majeurs de la recette — les 14 de l'annexe II INCO — **déduits sans appel de modèle** des `allergens` du référentiel (§3.10). Écrit par le serveur seul (`onRecipeWritten` → `syncRecipeAllergens`, et le backfill « Allergènes des ingrédients et des recettes ») — par convention du client : comme pour `nutrition`, les règles de `recipes` ne restreignent pas les champs qu'un créateur écrit ; le client le lit (`Recipe.allergens`, `RecipeAllergens`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour partielle le laisse en place, une copie ne le reprend pas. Absent tant qu'aucun calcul n'a eu lieu — la fiche n'affiche alors rien. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
 | `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie |
@@ -401,6 +402,36 @@ nouveau document, un champ de moins, et un appel serveur en moins à chaque coup
 
 Le nombre de parts retenu par un lecteur vit sous lui, dans
 `users/{uid}/nutrition_portion_overrides/{recipeId}`.
+
+#### Détail du champ `allergens` (Map imbriqué)
+
+| Clé | Type | Rôle |
+|---|---|---|
+| `present` | `List<String>` | Clés présentes, triées dans l'ordre du règlement, sans doublon : `gluten`, `crustaces`, `oeuf`, `poisson`, `arachide`, `soja`, `lait`, `fruits_a_coque`, `celeri`, `moutarde`, `sesame`, `sulfites`, `lupin`, `mollusques` (fixture `allergens.json`) |
+| `complete` | `bool` | `false` dès qu'un ingrédient de la recette n'a pas encore été examiné, et pour une recette sans ingrédient nommé : « aucun allergène » ne se déduit pas d'une liste vide |
+| `by_ingredient` | `Map<String, List<String>>` | Pour chaque clé de `present`, les noms d'ingrédients en cause, tels que la recette les écrit |
+| `computed_at` | `Timestamp` | Date du calcul |
+
+Pas de liste des ingrédients non examinés, ni de « traces » : la fiche dit seulement si
+l'analyse est incomplète. L'identité d'un ingrédient est celle de la nutrition et du produit
+acheté (`buildIngredientLookupIds`, du plus précis au plus général) : le premier document du
+référentiel qui **porte** le champ décide, même vide. Le calcul (`computeRecipeAllergens`,
+`nutrition/allergens.ts`) est serveur seul ; le client ne reprend que les clés et leurs
+libellés (`features/recipes/domain/allergens.dart`).
+
+**Quand il s'écrit.** `onRecipeWritten` le recalcule dans deux cas, et l'écrit seulement si le
+résultat a changé (transaction sur la recette, ingrédients relus au moment d'écrire) :
+
+- à la création, quand les ingrédients changent, ou quand le champ manque alors qu'une
+  autre entrée a changé : **après** `syncRecipeNutrition`, qui vient de créer les documents
+  des ingrédients neufs et de les faire examiner par le modèle (poste `allergens_auto`) ;
+- quand le champ manque et qu'aucune entrée n'a changé (recette antérieure au champ, écho
+  d'une écriture du déclencheur pendant un calcul en cours) : tout de suite, avec ce que le
+  référentiel sait déjà, **sans appel de modèle** — un écho ne refacture pas les ingrédients
+  qu'un premier passage est en train d'examiner.
+
+`allergens` n'est pas une entrée du déclencheur (`recipeTriggerInputsFingerprint`) : l'écho
+de son écriture trouve le champ présent et les entrées inchangées, et s'arrête.
 
 #### Détail du champ `plating_advice` (Map imbriqué)
 
@@ -1177,8 +1208,10 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `usual_portion_g` | `num?` | Grammes qu'une recette pour quatre personnes emploie d'ordinaire de cet ingrédient quand elle **n'écrit ni nombre ni unité** (« roquette », « parmesan pour râper dessus »). Estimée par l'IA (poste `estimate_usual_portions`, `aiEnrichment.ts`), une seule fois dans la vie de l'ingrédient, jamais redemandée tant qu'elle est renseignée — une correction à la main est donc conservée. Bornée à 500 g. Lue par `resolveWeighingInput` (TypeScript et Dart, fixture `unit_to_grams.json`, section `usual_portion`) : elle ne sert que sur une ligne nue, après la pincée d'un assaisonnement et après toute unité écrite. Reprise pour le passé par la reprise de la nutrition (*Admin › Backfills*), qui repasse par `syncRecipeNutrition` |
 | `usual_portion_source` · `usual_portion_at` | `String?` · `Timestamp?` | `ai_estimated` ; date de l'estimation |
 | `usual_portion_attempt_at` | `Timestamp?` | Dernière tentative sans réponse exploitable : la question n'est reposée qu'après vingt-quatre heures |
-| `shopping_product` | `String?` | Le produit qu'on achète, sur la liste de courses : « beurre » pour `beurre_fondu`, « œuf » pour `jaune_d_oeuf`. **Absent** : jamais examiné. **Vide** : le nom est déjà le produit. Posé automatiquement à l'import pour un ingrédient neuf (`recipeNutritionAutoSync.ts`, poste `shopping_product_alias_auto`), rattrapé pour le passé par le backfill « Produit acheté des ingrédients » (mode `aliases` de `backfillShoppingFn`, poste `backfill_shopping_aliases`), passé au complet puis retiré le 5 octobre 2026, corrigé à la main depuis *Admin › Référentiels › Ingrédients* — la seule écriture du référentiel ouverte au client, à un administrateur, sur ce champ et sa source. Les deux passes automatiques partagent la même résolution (`shoppingAliases.ts`) : quand le produit proposé par le modèle correspond à un ingrédient déjà connu du référentiel, son orthographe exacte est reprise plutôt qu'une variante inventée — « beurre fondu » ne crée pas un second « Beurre » qui ne fusionnerait pas avec l'existant. Lu par `onRecipeWritten` quand il compose `shopping_products` |
+| `shopping_product` | `String?` | Le produit qu'on achète, sur la liste de courses : « beurre » pour `beurre_fondu`, « œuf » pour `jaune_d_oeuf`. **Absent** : jamais examiné. **Vide** : le nom est déjà le produit. Posé automatiquement à l'import pour un ingrédient neuf (`recipeNutritionAutoSync.ts`, poste `shopping_product_alias_auto`), rattrapé pour le passé par le backfill « Produit acheté des ingrédients » (mode `aliases` de `backfillShoppingFn`, poste `backfill_shopping_aliases`), passé au complet puis retiré le 5 octobre 2026, corrigé à la main depuis *Admin › Référentiels › Ingrédients* — l'une des deux écritures du référentiel ouvertes au client, à un administrateur, avec les allergènes. Les deux passes automatiques partagent la même résolution (`shoppingAliases.ts`) : quand le produit proposé par le modèle correspond à un ingrédient déjà connu du référentiel, son orthographe exacte est reprise plutôt qu'une variante inventée — « beurre fondu » ne crée pas un second « Beurre » qui ne fusionnerait pas avec l'existant. Lu par `onRecipeWritten` quand il compose `shopping_products` |
 | `shopping_product_source` | `String?` | `ai_estimated` \| `admin` |
+| `allergens` | `String[]?` | Allergènes majeurs de l'ingrédient, clés de la liste de l'annexe II INCO (fixture `allergens.json`). **Absent** : jamais examiné. **Vide** : examiné, aucun. Posé par le modèle (`allergenExamination.ts`, lots de quarante, schéma JSON fermé) pour un ingrédient de la recette pas encore examiné, juste après sa création par `syncRecipeNutrition` (poste `allergens_auto`), ou par le backfill « Allergènes des ingrédients et des recettes » (poste `backfill_allergens`). **Jamais redemandé** une fois posé, et **jamais écrasé** par le modèle : l'écriture est conditionnelle, dans une transaction. L'examen ne **crée** jamais de document : un document créé avec ce seul champ ferait échouer le `create` de la nutrition, qui ne poserait plus ni `canonical_name`, ni `per100g`, ni le produit acheté. Corrigé à la main depuis *Admin › Référentiels › Ingrédients* ; les recettes ne le reprennent qu'au backfill ou à la prochaine modification de leurs ingrédients |
+| `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
@@ -1310,6 +1343,8 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn` |
+| `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel, et compte rendu du dernier passage (`last_report`) |
+| `allergens_recipes_backfill_checkpoint` | `backfillAllergensFn` — curseur du recalcul des recettes |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
@@ -1761,7 +1796,7 @@ service cloud.firestore {
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
-| `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source` et `updated_at`. Création et suppression refusées au client |
+| `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
 | `meal_staples` | `isApproved()` | admin — les retouches de chacun vivent sous `users/{uid}/preferences/meal_staples`, jamais ici |
 | `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
@@ -2393,6 +2428,7 @@ Deux réglages tiennent à ce que ces passes demandent :
 | `gemini/translation.ts` | `TRANSLATION_PROMPT` |
 | `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
 | `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
+| `nutrition/allergenExamination.ts` | `buildAllergenPrompt` — les allergènes majeurs d'un lot de quarante ingrédients du référentiel. Les quatorze clés de l'annexe II INCO et leurs exemples viennent de `nutrition/allergens.ts` (`ALLERGEN_KEYS`, `ALLERGEN_LABELS`, `ALLERGEN_EXAMPLES`). Règles : en cas de doute, signaler ; un produit composé se juge sur sa forme du commerce habituelle (pâte feuilletée → gluten et lait, sauce soja → soja et gluten, bouillon cube → céleri et gluten, chocolat noir → lait, vin et vinaigre de vin → sulfites) ; beurre, ghee, crème → lait ; avoine → gluten ; pas de traces. Schéma JSON fermé `{ingredients: [{id, allergens: [enum des 14]}]}`, lu par `parseAllergenBatchAnswer` : une forme inattendue fait échouer le lot entier (rien n'est posé, `logError`), une clé hors liste est écartée et journalisée (`logWarn`). Deux postes : `allergens_auto` (à l'écriture d'une recette, dans `syncRecipeNutrition`, en parallèle du produit acheté) et `backfill_allergens` (Admin › Backfills), tous deux dans le groupe « Nutrition » du routage et « Valeurs nutritionnelles » du catalogue comptable |
 | `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier et repris par le backfill « Protéine et féculent des plats » (`suggestMainProteinStarch`, `gemini/tagger.ts`) |
 
 **Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
@@ -3116,7 +3152,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler) et quatre reprises manuelles. Aucune n'est
+Trois tâches planifiées (Cloud Scheduler) et sept reprises manuelles. Aucune n'est
 déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlationId`.
 
 | Fonction | Cadence | Ce qu'elle fait |
@@ -3130,6 +3166,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
+| `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
@@ -3514,6 +3551,7 @@ Functions.
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux, et des rôles qui portent ces deux derniers ; la section `unsafe_keys` (clés héritées du prototype) est serveur seul | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
+| `allergens.json` | les quatorze allergènes majeurs (annexe II INCO) : clés dans l'ordre du règlement et libellés — valeurs seules ; le calcul du champ `allergens` d'une recette est serveur seul | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
 ### Déploiement automatique (GitHub Actions)
 

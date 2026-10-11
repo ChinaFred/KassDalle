@@ -37,6 +37,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'ecriture_livre': 'Après écriture d\'un livre',
   'rattrapage_nutrition': 'Rattrapage quotidien de la nutrition',
   'backfill_nutrition': 'Reprise de la nutrition demandée',
+  'backfill_allergens': 'Reprise des allergènes',
   'backfill_recipe_privacy': 'Reprise de la confidentialité des recettes',
   'book_privacy_backfill': 'Reprise de la confidentialité des livres',
   'user_profiles_backfill': 'Reprise des profils publics',
@@ -162,6 +163,7 @@ const Map<String, String> kLogTreatmentDetails = {
   'ingredients-modifies': 'Ingrédients modifiés',
   'entrees-modifiees': 'Portions, type de page ou texte modifiés',
   'rattrapage-planifie': 'Rattrapage planifié',
+  'allergenes': 'Allergènes de la recette',
   'backfill-demande': 'Reprise demandée depuis l\'écran',
   // Causes d\'avant la garde sur les entrées : le déclencheur se réveillait
   // sur ses propres écritures, et disait alors qu\'il n\'avait rien à faire.

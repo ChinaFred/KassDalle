@@ -68,6 +68,10 @@ class CooklangPreview extends StatefulWidget {
   final int minPortions;
   final int maxPortions;
 
+  /// Contenu facultatif rendu sous la liste des ingrédients, et seulement
+  /// quand la section est dépliée — les allergènes sur la fiche recette.
+  final Widget? ingredientsFooter;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -87,6 +91,7 @@ class CooklangPreview extends StatefulWidget {
     this.onSelectedPortionsChanged,
     this.minPortions = 1,
     this.maxPortions = 99,
+    this.ingredientsFooter,
   });
 
   @override
@@ -234,6 +239,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             if (_ingredientsExpanded) ...[
               const SizedBox(height: 8),
               CooklangIngredientsList(ingredients: scaledDisplayIngredients),
+              ?widget.ingredientsFooter,
               // Le bloc « À savoir sur les ingrédients » a été retiré : les
               // notes se lisent maintenant dans la puce, sous l'ingrédient.
               // Les répéter en dessous obligeait à les lire deux fois.

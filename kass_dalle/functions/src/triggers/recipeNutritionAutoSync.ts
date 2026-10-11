@@ -41,6 +41,7 @@ import {
   resolveShoppingProductsWithAI,
   type ShoppingAliasCandidate,
 } from "../nutrition/shoppingAliases";
+import { examineIngredientAllergens } from "../nutrition/allergenExamination";
 
 import type { StoredIngredient } from "./recipeIngredients";
 
@@ -51,6 +52,13 @@ import type { StoredIngredient } from "./recipeIngredients";
  * apparaît aussi dans `ROUTABLE_FEATURES` et `kFeatureCatalog`/`kFeatureProcess`.
  */
 const SHOPPING_ALIAS_AUTO_FEATURE = "shopping_product_alias_auto";
+
+/**
+ * Poste de coût des allergènes d'un ingrédient pas encore examiné, posés ici
+ * même — à distinguer de `backfill_allergens`, qui rattrape le passé. Même
+ * règle des trois endroits que le produit acheté.
+ */
+const ALLERGENS_AUTO_FEATURE = "allergens_auto";
 
 type NormalizedIngredientInput = UnitResolvedIngredient;
 
@@ -356,6 +364,19 @@ export async function syncRecipeNutrition(args: {
       }
     }
 
+    // Allergènes des ingrédients de la recette pas encore examinés — neufs ou
+    // antérieurs au champ. Ici, et pas avant : le document du référentiel
+    // vient d'être créé juste au-dessus, et l'examen ne crée jamais de
+    // document (voir `allergenExamination.ts`). En parallèle du produit
+    // acheté, qui interroge le modèle au même moment : le délai du
+    // déclencheur n'en souffre pas. Ne lève jamais ; `onRecipeWritten`
+    // déduit ensuite le champ de la recette, sans appel.
+    const allergensExamination = examineIngredientAllergens({
+      ids: [...aliasesByCanonical.keys()],
+      ctx: { correlationId, userId, scanId, feature: ALLERGENS_AUTO_FEATURE },
+      extra: { recipeId: after.id },
+    });
+
     // Produit acheté des ingrédients neufs — un appel de modèle, pour eux
     // seuls. « Beurre fondu » n'a pas encore de lien vers « beurre » dans le
     // référentiel ; sans cette passe, ce lien n'existerait qu'après un
@@ -403,6 +424,8 @@ export async function syncRecipeNutrition(args: {
         });
       }
     }
+
+    const allergensReport = await allergensExamination;
 
     // Enrichissement per100g de TOUS les ingrédients de la recette qui n'en ont
     // pas. Ce traitement plafonnait à douze parce qu'il dépensait un appel
@@ -477,6 +500,7 @@ export async function syncRecipeNutrition(args: {
         unknownUnitsCount: unknownUnits.size,
         enriched,
         failedEnrichment,
+        allergens: allergensReport,
       },
     });
   } catch (err) {

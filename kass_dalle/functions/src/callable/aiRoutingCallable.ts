@@ -332,6 +332,16 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Huile absorbée à la friture",
     group: "Nutrition",
   },
+  {
+    id: "allergens_auto",
+    label: "Allergènes d'un ingrédient (à l'écriture d'une recette)",
+    group: "Nutrition",
+  },
+  {
+    id: "backfill_allergens",
+    label: "Allergènes des ingrédients (backfill)",
+    group: "Nutrition",
+  },
 
   // ── Modération ────────────────────────────────────────────────────────────
   // Un seul moteur admis aujourd'hui. Le poste figure quand même ici : le
