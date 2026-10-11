@@ -45,11 +45,11 @@ void main() {
     expect(exportReport(exported: 1, empty: 0, failed: 0), '1 livre exporté');
     expect(
       exportReport(exported: 8, empty: 2, failed: 1),
-      '8 livres exportés, 2 vides ignorés, 1 en erreur',
+      '8 livres exportés, 2 sans page validée, 1 en erreur',
     );
     expect(
       exportReport(exported: 3, empty: 1, failed: 0),
-      '3 livres exportés, 1 vide ignoré',
+      '3 livres exportés, 1 sans page validée',
     );
   });
 }

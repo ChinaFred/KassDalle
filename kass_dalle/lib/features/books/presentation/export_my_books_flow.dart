@@ -15,13 +15,35 @@ import 'delete_book_flow.dart';
 ///
 /// Un livre sans page validée est ignoré. Un livre dont le PDF échoue est
 /// signalé et compté, sans arrêter les autres. Le compte rendu final donne
-/// les trois nombres : exportés, vides, en erreur.
+/// les trois nombres : exportés, sans page validée, en erreur.
+///
+/// Un seul export à la fois : « Annuler » ferme la fenêtre avant la fin du
+/// livre en cours, et l'icône redevient cliquable pendant ce temps.
 Future<void> exportMyBooksAsZip({
   required BuildContext context,
   required WidgetRef ref,
   required List<Book> books,
 }) async {
   if (books.isEmpty) return;
+  if (_exportRunning) {
+    context.showSnackBar('Un export de vos livres est déjà en cours.');
+    return;
+  }
+  _exportRunning = true;
+  try {
+    await _exportMyBooksAsZip(context: context, ref: ref, books: books);
+  } finally {
+    _exportRunning = false;
+  }
+}
+
+bool _exportRunning = false;
+
+Future<void> _exportMyBooksAsZip({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<Book> books,
+}) async {
   final viewer = ref.read(recipeViewerProvider);
   if (viewer == null) {
     context.showErrorSnackBar(kAccountNotLoadedMessage);
@@ -154,11 +176,21 @@ Future<void> exportMyBooksAsZip({
       zipBookPdfs(pdfs),
       libraryArchiveFilename(DateTime.now()),
     );
-    if (!saved || !context.mounted) return;
-    context.showSnackBar(
-      exportReport(exported: pdfs.length, empty: empty, failed: failed),
-      duration: const Duration(seconds: 8),
+    if (!context.mounted) return;
+    if (!saved) {
+      context.showSnackBar('Export annulé.');
+      return;
+    }
+    final report = exportReport(
+      exported: pdfs.length,
+      empty: empty,
+      failed: failed,
     );
+    if (failed > 0) {
+      context.showErrorSnackBar(report);
+    } else {
+      context.showSuccessSnackBar(report);
+    }
   } catch (e, stackTrace) {
     reportUnexpectedError(
       feature: 'bookListScreen.exportMyBooks.save',
@@ -166,11 +198,11 @@ Future<void> exportMyBooksAsZip({
       stackTrace: stackTrace,
     );
     if (!context.mounted) return;
-    context.showErrorSnackBar('Erreur à l\'enregistrement de l\'archive : $e');
+    context.showErrorSnackBar('L\'archive n\'a pas pu être enregistrée.');
   }
 }
 
-/// Compte rendu de l'export : « 8 livres exportés, 2 vides ignorés, 1 en erreur ».
+/// Compte rendu de l'export : « 8 livres exportés, 2 sans page validée, 1 en erreur ».
 String exportReport({
   required int exported,
   required int empty,
@@ -178,7 +210,7 @@ String exportReport({
 }) {
   final parts = [
     exported == 1 ? '1 livre exporté' : '$exported livres exportés',
-    if (empty > 0) empty == 1 ? '1 vide ignoré' : '$empty vides ignorés',
+    if (empty > 0) '$empty sans page validée',
     if (failed > 0) '$failed en erreur',
   ];
   return parts.join(', ');

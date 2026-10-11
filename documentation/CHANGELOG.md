@@ -28,9 +28,9 @@ Une icône PDF dans la barre de la Bibliothèque exporte en une opération tous 
 livres dont l'utilisateur est le créateur. Chaque livre donne son propre PDF, au
 même format que l'export d'un livre, et les PDF sont réunis dans un seul fichier
 `Bibliotheque_AAAA-MM-JJ.zip`. Un ZIP évite une rafale de téléchargements dans le
-navigateur et une feuille de partage par livre sur mobile. Les livres vides sont
+navigateur et une feuille de partage par livre sur mobile. Les livres sans page validée sont
 ignorés, un livre en échec n'arrête pas les autres, et le compte rendu donne les
-nombres de livres exportés, vides et en erreur.
+nombres de livres exportés, sans page validée et en erreur.
 
 ### v0.23.28 — fonctionnel
 
