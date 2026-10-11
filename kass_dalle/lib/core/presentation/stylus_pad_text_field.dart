@@ -56,6 +56,7 @@ class StylusPadTextField extends StatefulWidget {
     this.autofocus = false,
     this.enabled = true,
     this.textInputAction,
+    this.focusNode,
     this.onChanged,
     this.onSubmitted,
     this.padTitle,
@@ -70,6 +71,9 @@ class StylusPadTextField extends StatefulWidget {
   final bool autofocus;
   final bool enabled;
   final TextInputAction? textInputAction;
+
+  /// Focus du champ, pour le donner par programme (Ctrl+K dans l'Explorer).
+  final FocusNode? focusNode;
 
   /// Appelé pour une saisie dans le champ comme dans le pavé.
   final ValueChanged<String>? onChanged;
@@ -147,6 +151,7 @@ class _StylusPadTextFieldState extends State<StylusPadTextField> {
       onPointerDown: _onPointerDown,
       child: TextField(
         controller: widget.controller,
+        focusNode: widget.focusNode,
         decoration: widget.decoration,
         maxLines: widget.maxLines,
         minLines: widget.minLines,

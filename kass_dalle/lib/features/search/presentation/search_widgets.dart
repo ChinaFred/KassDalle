@@ -3,22 +3,34 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/domain/recipe_filter.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/search_models.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 // ── Tuile résultat de recherche ───────────────────────────────────────────────
 
+/// Une recette de la bibliothèque. Avec une raison, c'est une recette choisie
+/// par l'IA ; sans, une recette retenue par le filtre local.
 class SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
 
-  const SearchResultTile({super.key, required this.result});
+  /// Temps total affiché (« 45 min »). Par défaut préparation + cuisson.
+  final int? Function(Recipe) totalMinutesOf;
+
+  const SearchResultTile({
+    super.key,
+    required this.result,
+    this.totalMinutesOf = recipeTotalMinutes,
+  });
 
   @override
   Widget build(BuildContext context) {
     final recipe = result.recipe;
+    final reason = result.reason;
     final theme = Theme.of(context);
     final isDraft = recipe.reviewStatus != ReviewStatus.validated;
+    final minutes = totalMinutesOf(recipe);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -75,6 +87,10 @@ class SearchResultTile extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(left: 4),
                             child: Chip(
+                              avatar: const Icon(
+                                Icons.edit_note,
+                                size: AppIconSize.inline,
+                              ),
                               label: const Text('Brouillon'),
                               labelStyle: theme.textTheme.labelSmall,
                               visualDensity: VisualDensity.compact,
@@ -93,31 +109,37 @@ class SearchResultTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 6),
-                    // Raison
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Ce qui vient d'une machine porte l'icône de la
-                        // machine : cette raison est écrite par l'IA, elle ne
-                        // se demande pas.
-                        Icon(
-                          Icons.smart_toy_outlined,
-                          size: AppIconSize.inline,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            result.reason,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontStyle: FontStyle.italic,
+                    if (minutes != null) ...[
+                      const SizedBox(height: 4),
+                      _DurationLine(minutes: minutes),
+                    ],
+                    // Raison : seulement pour une recette choisie par l'IA.
+                    if (reason != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Ce qui vient d'une machine porte l'icône de la
+                          // machine : cette raison est écrite par l'IA.
+                          Icon(
+                            Icons.smart_toy_outlined,
+                            size: AppIconSize.inline,
+                            color: theme.colorScheme.primary,
+                            semanticLabel: 'Raison donnée par l\'IA',
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              reason,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                     // Tags
                     if (recipe.tags.themes.isNotEmpty ||
                         recipe.tags.cuisines.isNotEmpty) ...[
@@ -186,10 +208,14 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
   final GeneratedRecipeSuggestion suggestion;
   final VoidCallback onTap;
 
+  /// Vrai une fois l'idée enregistrée en brouillon.
+  final bool saved;
+
   const GeneratedRecipeSuggestionTile({
     super.key,
     required this.suggestion,
     required this.onTap,
+    this.saved = false,
   });
 
   @override
@@ -214,9 +240,10 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  Icons.smart_toy_outlined,
+                  Icons.auto_awesome,
                   size: AppIconSize.small,
                   color: theme.colorScheme.onSecondaryContainer,
+                  semanticLabel: 'Créée par l\'IA',
                 ),
               ),
               const SizedBox(width: 12),
@@ -235,6 +262,32 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
                           ),
                         ),
                         _TagChip(label: suggestion.variantLabel),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Chip(
+                          avatar: Icon(
+                            saved ? Icons.edit_note : Icons.auto_awesome,
+                            size: AppIconSize.inline,
+                          ),
+                          label: Text(
+                            saved
+                                ? 'Brouillon enregistré'
+                                : 'Pas encore enregistrée',
+                          ),
+                          labelStyle: theme.textTheme.labelSmall,
+                          backgroundColor: theme.colorScheme.secondaryContainer,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        if (recipeTotalMinutes(recipe) case final m?)
+                          _DurationLine(minutes: m),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -273,68 +326,82 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
   }
 }
 
-class WebSearchSuggestionTile extends StatelessWidget {
-  final WebSearchSuggestion suggestion;
-  final VoidCallback onTap;
-
-  const WebSearchSuggestionTile({
-    super.key,
-    required this.suggestion,
-    required this.onTap,
-  });
+/// Tuile d'attente d'une idée en cours de rédaction.
+class GeneratedRecipePlaceholderTile extends StatelessWidget {
+  const GeneratedRecipePlaceholderTile({super.key});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.public_outlined,
-                    size: AppIconSize.small,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Chercher sur le web',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(suggestion.query, style: theme.textTheme.bodyMedium),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: onTap,
-              icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
-              label: const Text('Ouvrir Google'),
-            ),
-          ],
+    Widget bar(double widthFactor) => FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(4),
         ),
       ),
+    );
+    // Les barres grises ne disent rien à qui écoute l'écran : une phrase.
+    return Semantics(
+      label: 'Recette en cours de rédaction',
+      excludeSemantics: true,
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.auto_awesome,
+                  size: AppIconSize.small,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [bar(0.6), const SizedBox(height: 8), bar(0.9)],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// « ⏱ 45 min » : le temps total d'une recette.
+class _DurationLine extends StatelessWidget {
+  final int minutes;
+  const _DurationLine({required this.minutes});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.timer_outlined, size: AppIconSize.inline, color: color),
+        const SizedBox(width: 4),
+        Text(
+          durationLabel(minutes),
+          style: theme.textTheme.bodySmall?.copyWith(color: color),
+          semanticsLabel: 'Temps total : ${durationLabel(minutes)}',
+        ),
+      ],
     );
   }
 }

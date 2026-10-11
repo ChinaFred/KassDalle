@@ -73,6 +73,12 @@ beforeEach(async () => {
       tags: ["__web"],
       is_private: true,
     },
+    "books/private-editor": {
+      title: "Carnet de l'éditeur",
+      created_by: EDITOR,
+      is_private: true,
+      tags: [],
+    },
     "books/public-reader": {
       title: "Mon livre partagé",
       created_by: READER,
@@ -123,6 +129,14 @@ beforeEach(async () => {
     "recipes/web-reader": {
       title: "Quiche",
       created_by: READER,
+      review_status: "draft",
+      origin: "web",
+      source_url: "https://www.site.fr/quiche",
+      source_site: "site.fr",
+    },
+    "recipes/web-editor": {
+      title: "Quiche",
+      created_by: EDITOR,
       review_status: "draft",
       origin: "web",
       source_url: "https://www.site.fr/quiche",
@@ -694,6 +708,14 @@ describe("books", () => {
     );
   });
 
+  it("un éditeur ne crée pas le livre web de repli d'un autre compte (web2_<uid>)", async () => {
+    await assertFails(
+      db("editor")
+        .doc(`books/web2_${OTHER}`)
+        .set({ title: "Mes recettes du web", created_by: EDITOR, is_private: false }),
+    );
+  });
+
   it("un éditeur ne crée pas de livre portant le tag __web", async () => {
     await assertFails(
       db("editor")
@@ -714,8 +736,9 @@ describe("books", () => {
     await assertFails(db("editor").doc("books/web_editor").update({ tags: ["web"] }));
   });
 
-  // `ensureWebBookCover` pose la couverture côté client : le créateur doit
-  // pouvoir écrire `url_couverture` sur le livre créé par le serveur.
+  // `_ensureWebBookCover` (appelée par `ensureSystemBooks`) pose la couverture
+  // côté client : le créateur doit pouvoir écrire `url_couverture` sur le
+  // livre créé par le serveur.
   it("le créateur pose la couverture de « Mes recettes du web »", async () => {
     await assertSucceeds(
       db("editor")
@@ -794,17 +817,47 @@ describe("recipes — lecture", () => {
 });
 
 describe("recipes — écriture", () => {
-  it("un lecteur crée son brouillon à son nom", async () => {
-    await assertSucceeds(
+  // Le lecteur ne crée aucune recette (refonte de l'écran Explorer, lot 2) :
+  // ni saisie, ni copie, ni création par l'IA, ni import. Ses recettes
+  // existantes restent les siennes : il les modifie et les supprime.
+  it("un lecteur ne crée pas de recette, même à son nom", async () => {
+    await assertFails(
       db("reader")
         .doc("recipes/new")
         .set({ title: "x", created_by: READER, review_status: "draft" }),
     );
   });
 
-  it("un lecteur ne crée pas de recette au nom d'un autre", async () => {
+  it("un lecteur ne crée pas de copie d'une recette", async () => {
     await assertFails(
-      db("reader")
+      db("reader").doc("recipes/new").set({
+        title: "x",
+        created_by: READER,
+        review_status: "draft",
+        source_recipe_id: "validated",
+      }),
+    );
+  });
+
+  it("un éditeur crée son brouillon à son nom", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("recipes/new")
+        .set({ title: "x", created_by: EDITOR, review_status: "draft" }),
+    );
+  });
+
+  it("un administrateur crée son brouillon à son nom", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc("recipes/new")
+        .set({ title: "x", created_by: PERSONAS.admin.uid, review_status: "draft" }),
+    );
+  });
+
+  it("un éditeur ne crée pas de recette au nom d'un autre", async () => {
+    await assertFails(
+      db("editor")
         .doc("recipes/new")
         .set({ title: "x", created_by: OTHER, review_status: "draft" }),
     );
@@ -828,14 +881,6 @@ describe("recipes — écriture", () => {
 
   it("un lecteur ne supprime pas la recette d'un autre", async () => {
     await assertFails(db("reader").doc("recipes/validated").delete());
-  });
-
-  it("un éditeur ne crée pas de recette au nom d'un autre", async () => {
-    await assertFails(
-      db("editor")
-        .doc("recipes/new")
-        .set({ title: "x", created_by: OTHER, review_status: "draft" }),
-    );
   });
 
   it("un lecteur ne vide pas created_by de sa recette", async () => {
@@ -892,11 +937,11 @@ describe("recipes — écriture", () => {
 // Une recette prend la confidentialité de son livre, à toute écriture qui pose
 // ou change son livre ou sa confidentialité.
 describe("recipes — adresse de la page d'origine (source_url)", () => {
-  it("un lecteur ne crée pas de recette avec une adresse inventée", async () => {
+  it("un éditeur ne crée pas de recette avec une adresse inventée", async () => {
     await assertFails(
-      db("reader").doc("recipes/new").set({
+      db("editor").doc("recipes/new").set({
         title: "x",
-        created_by: READER,
+        created_by: EDITOR,
         review_status: "draft",
         source_url: "https://www.site.fr/autre",
       }),
@@ -905,11 +950,11 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("une copie recopie l'adresse et le site de la recette copiée", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/new").set({
+      db("editor").doc("recipes/new").set({
         title: "x",
-        created_by: READER,
+        created_by: EDITOR,
         review_status: "draft",
-        source_recipe_id: "web-reader",
+        source_recipe_id: "web-editor",
         source_url: "https://www.site.fr/quiche",
         source_site: "site.fr",
       }),
@@ -918,11 +963,11 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("une copie ne pose pas un autre nom de site", async () => {
     await assertFails(
-      db("reader").doc("recipes/new").set({
+      db("editor").doc("recipes/new").set({
         title: "x",
-        created_by: READER,
+        created_by: EDITOR,
         review_status: "draft",
-        source_recipe_id: "web-reader",
+        source_recipe_id: "web-editor",
         source_url: "https://www.site.fr/quiche",
         source_site: "autre.fr",
       }),
@@ -931,9 +976,9 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("l'adresse ne se vérifie pas contre une recette privée d'un autre", async () => {
     await assertFails(
-      db("reader").doc("recipes/new").set({
+      db("editor").doc("recipes/new").set({
         title: "x",
-        created_by: READER,
+        created_by: EDITOR,
         review_status: "draft",
         source_recipe_id: "web-other-private",
         source_url: "https://secret.example/recette",
@@ -948,11 +993,11 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("une copie ne change pas l'adresse au passage", async () => {
     await assertFails(
-      db("reader").doc("recipes/new").set({
+      db("editor").doc("recipes/new").set({
         title: "x",
-        created_by: READER,
+        created_by: EDITOR,
         review_status: "draft",
-        source_recipe_id: "web-reader",
+        source_recipe_id: "web-editor",
         source_url: "https://www.site.fr/autre",
       }),
     );
@@ -984,45 +1029,45 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 });
 
 describe("recipes — confidentialité suivant le livre", () => {
-  const draft = (extra) => ({ title: "x", created_by: READER, review_status: "draft", ...extra });
+  const draftE = (extra) => ({ title: "x", created_by: EDITOR, review_status: "draft", ...extra });
 
   it("création dans son livre privé avec is_private:false : refusée", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "private-reader", is_private: false })),
+        .set(draftE({ book_id: "private-editor", is_private: false })),
     );
   });
 
   it("création dans son livre privé sans is_private : refusée", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "private-reader" })),
+        .set(draftE({ book_id: "private-editor" })),
     );
   });
 
   it("création dans son livre privé avec is_private:true : acceptée", async () => {
     await assertSucceeds(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "private-reader", is_private: true })),
+        .set(draftE({ book_id: "private-editor", is_private: true })),
     );
   });
 
   it("création dans son livre partagé avec is_private:false : acceptée", async () => {
     await assertSucceeds(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "public-reader", is_private: false })),
+        .set(draftE({ book_id: "public", is_private: false })),
     );
   });
 
   it("création dans un livre partagé avec is_private:true : refusée", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "public-reader", is_private: true })),
+        .set(draftE({ book_id: "public", is_private: true })),
     );
   });
 
@@ -1054,26 +1099,26 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("book_id contenant « / » : refusé", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "private-reader/x", is_private: false })),
+        .set(draftE({ book_id: "private-editor/x", is_private: false })),
     );
   });
 
   // Le livre doit exister (option A, v0.23.8).
   it("création avec un book_id inexistant : refusée", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "aucun-livre", is_private: false })),
+        .set(draftE({ book_id: "aucun-livre", is_private: false })),
     );
   });
 
   it("création sans livre avec is_private:true : acceptée", async () => {
     await assertSucceeds(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ is_private: true })),
+        .set(draftE({ is_private: true })),
     );
   });
 
@@ -1101,21 +1146,21 @@ describe("recipes — confidentialité suivant le livre", () => {
 // propres livres ; l'administrateur partout. Une page déjà rangée chez un
 // autre y reste.
 describe("recipes — ranger dans ses propres livres", () => {
-  const draft = (extra) => ({ title: "x", created_by: READER, review_status: "draft", ...extra });
+  const draftE = (extra) => ({ title: "x", created_by: EDITOR, review_status: "draft", ...extra });
 
   it("book_id qui n'est ni nul ni une chaîne : refusé", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: 42 })),
+        .set(draftE({ book_id: 42 })),
     );
   });
 
-  it("un lecteur ne crée pas de recette dans le livre d'un autre", async () => {
+  it("un éditeur ne crée pas de recette dans le livre d'un autre", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("recipes/new")
-        .set(draft({ book_id: "public-other", is_private: false })),
+        .set(draftE({ book_id: "public-other", is_private: false })),
     );
   });
 
@@ -2541,5 +2586,81 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
     await assertSucceeds(
       db("reader").doc(`users/${READER}/preferences/book_order`).set({ order: ["b1"] }),
     );
+  });
+});
+
+// ── users/{uid}/preferences/explore_filters ──────────────────────────────
+//
+// Filtres, sources et tri de l'écran Explorer : une préférence de lecteur,
+// écrite et relue par son seul titulaire. Le lecteur, qui ne crée pas de
+// recette, garde la liste et ses filtres.
+describe("users/{uid}/preferences/explore_filters", () => {
+  const prefs = {
+    sources: ["mine", "family"],
+    sort: "best_rated",
+    filters: { dish_types: ["plat"], max_total_minutes: 30 },
+  };
+
+  it("un lecteur enregistre et relit ses filtres", async () => {
+    const path = `users/${READER}/preferences/explore_filters`;
+    await assertSucceeds(db("reader").doc(path).set(prefs));
+    await assertSucceeds(db("reader").doc(path).get());
+  });
+
+  it("personne d'autre ne lit ni n'écrit les filtres d'un compte", async () => {
+    const path = `users/${OTHER}/preferences/explore_filters`;
+    await assertFails(db("reader").doc(path).set(prefs));
+    await assertFails(db("reader").doc(path).get());
+  });
+});
+
+describe("users/{uid}/preferences/explore_filters — forme", () => {
+  const path = `users/${READER}/preferences/explore_filters`;
+
+  it("une clé inconnue est refusée", async () => {
+    await assertFails(db("reader").doc(path).set({ sort: "title", notes: "texte libre" }));
+  });
+
+  it("des sources hors bornes sont refusées", async () => {
+    await assertFails(
+      db("reader")
+        .doc(path)
+        .set({ sources: Array.from({ length: 11 }, (_, i) => `s${i}`) }),
+    );
+  });
+
+  it("des filtres qui ne sont pas une carte sont refusés", async () => {
+    await assertFails(db("reader").doc(path).set({ filters: ["plat"] }));
+  });
+
+  it("l'aller-retour normal est accepté", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(path)
+        .set({
+          sources: ["mine", "family"],
+          sort: "best_rated",
+          filters: { dish_types: ["plat"], max_total_minutes: 30 },
+          updated_at: serverTimestamp(),
+        }),
+    );
+    await assertSucceeds(db("reader").doc(path).get());
+  });
+
+  it("un administrateur lit les filtres d'un autre", async () => {
+    await assertSucceeds(db("admin").doc(`users/${OTHER}/preferences/explore_filters`).get());
+  });
+});
+
+describe("users/{uid}/preferences/explore_filters — bornes", () => {
+  const path = `users/${READER}/preferences/explore_filters`;
+
+  it("un tri de 33 caractères est refusé", async () => {
+    await assertFails(db("reader").doc(path).set({ sort: "a".repeat(33) }));
+  });
+
+  it("des filtres à 21 clés sont refusés", async () => {
+    const filters = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`f${i}`, []]));
+    await assertFails(db("reader").doc(path).set({ filters }));
   });
 });

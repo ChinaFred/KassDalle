@@ -20,6 +20,42 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.35 — fonctionnel
+
+#### Explorer : filtrer sans IA, demander à l'IA sur un bouton
+
+Explorer affiche la liste des recettes dès l'ouverture. Le champ « Titre, ingrédient,
+envie… » filtre sur l'appareil à chaque frappe, sans appel d'IA. Quatorze filtres
+s'ajoutent, avec le nombre de recettes derrière chaque valeur : type de plat, temps total,
+cuisine, rôle dans le repas, protéine, féculent, difficulté, thème, sans l'ingrédient,
+sans allergène, livre, auteur, note minimale et calories par portion. Une recette sans la
+donnée filtrée est écartée, et l'écran dit combien. Le tri et les filtres sont gardés
+d'une visite à l'autre.
+
+« Demander à l'IA » et « Imaginer 3 recettes » ne partent que sur un bouton.
+« Chercher sur Google » n'appelle plus l'IA. Les recettes imaginées par l'IA, dans
+Explorer comme dans le planning, s'enregistrent en brouillon. Quitter avec des idées non
+enregistrées demande confirmation.
+
+Le lecteur ne crée plus de recette : ni saisie, ni copie, ni création par l'IA, ni
+import. Il garde la liste, les filtres et Google, et modifie ses recettes existantes.
+
+Le livre « Mes recettes du web » est créé avec les autres livres système, à l'ouverture
+de la bibliothèque, au lieu d'attendre le premier import par lien.
+
+### v0.23.35 — technique
+
+#### Filtre partagé, préférences d'Explorer et création réservée
+
+`RecipePickerFilter` du planning devient `RecipeFilter` dans `features/recipes/domain/`,
+partagé par Explorer et le sélecteur du planning. Les préférences d'Explorer vivent sous
+`users/{uid}/preferences/explore_filters`, de forme bornée par les règles. La règle de
+création de `recipes` passe à `isEditor()`. `searchRecipesFn`, `generateRecipeFn`,
+`extractRecipeFromTextFn`, `generateRecipeConceptFn` et `suggestMealIdeasFn` passent en
+`requireEditor`. `generateWebSearchQueryFn` est retirée ; le poste `web_search_query` sort
+du routage et reste au catalogue. Nouvelle callable `ensureWebBookFn` ; les règles
+refusent au client tout livre `web…_`, et le repli serveur s'écrit sous `web2_{uid}`.
+
 ### v0.23.34 — fonctionnel
 
 #### Couverture de « Mes recettes du web »

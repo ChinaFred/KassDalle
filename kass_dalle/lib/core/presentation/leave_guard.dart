@@ -33,6 +33,16 @@ class LeaveGuardNotifier extends Notifier<LeaveGuard?> {
     if (!ref.mounted) return;
     if (state == guard) state = null;
   }
+
+  /// Remet [previous] en place si [guard] est toujours celui en place.
+  ///
+  /// Pour un écran poussé par-dessus un écran qui avait déjà son garde (une
+  /// idée de l'IA ouverte depuis l'Explorer) : en se fermant, il rend la main
+  /// au garde de l'écran du dessous au lieu de le laisser sans garde.
+  void restoreIf(LeaveGuard guard, LeaveGuard? previous) {
+    if (!ref.mounted) return;
+    if (state == guard) state = previous;
+  }
 }
 
 final leaveGuardProvider = NotifierProvider<LeaveGuardNotifier, LeaveGuard?>(

@@ -325,7 +325,8 @@ export function isOwnWebBook(data: Record<string, unknown> | undefined, uid: str
 }
 
 /**
- * Le livre système « Mes recettes du web » du compte, créé au premier import.
+ * Le livre système « Mes recettes du web » du compte, créé avec les autres
+ * livres système (`ensureWebBookFn`) ou, à défaut, au premier import.
  *
  * Identifiant déterministe (`web_{uid}`) : deux imports simultanés ne créent
  * pas deux livres. Privé à son propriétaire, et marqué du tag `__web` qui le
@@ -336,11 +337,11 @@ export function isOwnWebBook(data: Record<string, unknown> | undefined, uid: str
  * créé pour y faire tomber les brouillons, public — n'est jamais réutilisé.
  * Les règles refusent désormais cette création au client ; si le document
  * existe quand même, le livre du compte est cherché par son tag, sinon créé
- * sous un identifiant aléatoire, et l'incident est journalisé.
+ * sous `web2_{uid}` en transaction, et l'incident est journalisé une fois.
  */
 export async function findOrCreateWebBook(
   uid: string,
-  ctx?: Ctx,
+  ctx?: Pick<Ctx, "userId" | "correlationId"> & Partial<Ctx>,
 ): Promise<{ id: string; titre: string }> {
   const db = getFirestore();
   const ref = db.collection(COLL_BOOKS).doc(`web_${uid}`);
@@ -356,11 +357,9 @@ export async function findOrCreateWebBook(
   });
   if (outcome) return outcome;
 
-  await logError({
-    message: `Livre web_${uid} existant mais étranger au compte : non réutilisé`,
-    moduleType: "IMPORT",
-    ...(ctx ?? { userId: uid }),
-  });
+  // `web_{uid}` est occupé par un document étranger au compte. Le livre du
+  // compte est d'abord cherché par son tag (repli déjà créé, éventuellement
+  // sous un identifiant aléatoire par une version précédente).
   const byTag = await db
     .collection(COLL_BOOKS)
     .where("created_by", "==", uid)
@@ -372,9 +371,40 @@ export async function findOrCreateWebBook(
     const titre = doc.get("titre");
     return { id: doc.id, titre: typeof titre === "string" && titre ? titre : WEB_BOOK_TITLE };
   }
-  const fresh = db.collection(COLL_BOOKS).doc();
-  await fresh.set(webBookDocument(uid));
-  return { id: fresh.id, titre: WEB_BOOK_TITLE };
+
+  // Sinon, repli sous un second identifiant déterministe, créé en transaction :
+  // deux appels simultanés ne créent pas deux livres. Les règles refusent au
+  // client tout identifiant `web…_` (`web_`, `web2_`).
+  const fallbackRef = db.collection(COLL_BOOKS).doc(`web2_${uid}`);
+  const fallback = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(fallbackRef);
+    if (snap.exists) {
+      if (!isOwnWebBook(snap.data(), uid)) return "foreign" as const;
+      const titre = snap.get("titre");
+      return {
+        created: false,
+        id: fallbackRef.id,
+        titre: typeof titre === "string" && titre ? titre : WEB_BOOK_TITLE,
+      };
+    }
+    tx.create(fallbackRef, webBookDocument(uid));
+    return { created: true, id: fallbackRef.id, titre: WEB_BOOK_TITLE };
+  });
+  if (fallback === "foreign") {
+    const message = `Livres web_${uid} et web2_${uid} étrangers au compte : aucun livre web`;
+    await logError({ message, moduleType: "IMPORT", ...(ctx ?? { userId: uid }) });
+    throw new Error(message);
+  }
+  if (fallback.created) {
+    // Un seul journal, au moment où le repli est créé : les appels suivants
+    // retrouvent le livre par son tag sans rien journaliser.
+    await logError({
+      message: `Livre web_${uid} existant mais étranger au compte : repli web2_${uid} créé`,
+      moduleType: "IMPORT",
+      ...(ctx ?? { userId: uid }),
+    });
+  }
+  return { id: fallback.id, titre: fallback.titre };
 }
 
 function webBookDocument(uid: string): Record<string, unknown> {

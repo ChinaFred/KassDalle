@@ -47,6 +47,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'text_extraction': 'Extraction du texte d\'une page',
   'url_import': 'Import d\'une recette depuis un lien',
   'url_import_quota': 'Compteur des imports par lien',
+  'web_book_ensure': 'Création du livre « Mes recettes du web »',
   'polish_markdown': 'Mise au propre d\'un document',
   'polish_cooklang': 'Mise au propre d\'une recette',
   'refine': 'Correction d\'une recette',

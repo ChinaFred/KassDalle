@@ -797,7 +797,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   ],
                 ),
                 const SizedBox(width: 8),
-              ] else
+              ] else if (ref.watch(canEditProvider))
+                // Copier crée une recette : pas pour un lecteur.
                 IconButton(
                   icon: const Icon(Icons.copy_outlined),
                   tooltip: 'Copier comme mon brouillon',
