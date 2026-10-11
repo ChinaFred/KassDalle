@@ -46,11 +46,43 @@ void main() {
       );
     });
 
+    test(
+      'une recette traduite gagne le jalon Traduction, avant l\'analyse',
+      () {
+        // `recipeProcessor.ts` écrit `translate` puis `parse` : la traduction
+        // passe avant. Le champ `translated` du job ajoute le jalon.
+        expect(
+          trailFor(
+            ProcessingJobType.recipeScan,
+            translated: true,
+          ).map((e) => e.code).toList(),
+          [
+            'import',
+            'gemini_call',
+            'translate',
+            'parse',
+            'design',
+            'tagging',
+            'normalize',
+            'save',
+          ],
+        );
+        // Une couverture ne se traduit jamais.
+        expect(
+          trailFor(
+            ProcessingJobType.bookCoverScan,
+            translated: true,
+          ).map((e) => e.code).toList(),
+          ['import', 'gemini_call', 'save'],
+        );
+      },
+    );
+
     test('chaque étape porte un libellé court, sur une seule ligne', () {
       // C'est tout l'objet du fil : la phrase complète se coupait une lettre
       // par ligne sur un téléphone étroit à grande échelle de police.
       for (final type in ProcessingJobType.values) {
-        for (final etape in trailFor(type)) {
+        for (final etape in trailFor(type, translated: true)) {
           expect(etape.shortLabel, isNotEmpty);
           expect(
             etape.shortLabel.contains(' '),
@@ -80,6 +112,13 @@ void main() {
       expect(stepIndexIn(fil, 'Extraction du texte…'), isNull);
       expect(stepIndexIn(fil, null), isNull);
       expect(stepIndexIn(fil, '  '), isNull);
+    });
+
+    test('l\'étape translate a un jalon quand le job est traduit', () {
+      // Sans jalon, la ligne perdait toutes ses icônes pendant la traduction.
+      final fil = trailFor(ProcessingJobType.recipeScan, translated: true);
+      expect(stepIndexIn(fil, 'translate'), 2);
+      expect(stepIndexIn(fil, 'parse'), 3);
     });
 
     test('queued et done n\'ont pas de jalon', () {

@@ -192,7 +192,32 @@ void main() {
     test('fil d’étapes et libellé de lecture', () {
       expect(
         trailFor(ProcessingJobType.recipeUrlImport).map((s) => s.code).toList(),
-        ['fetch', 'gemini_call', 'tagging', 'normalize', 'save', 'design'],
+        [
+          'fetch',
+          'gemini_call',
+          'parse',
+          'tagging',
+          'normalize',
+          'save',
+          'design',
+        ],
+      );
+      // `urlImport.ts` traduit après l'analyse.
+      expect(
+        trailFor(
+          ProcessingJobType.recipeUrlImport,
+          translated: true,
+        ).map((s) => s.code).toList(),
+        [
+          'fetch',
+          'gemini_call',
+          'parse',
+          'translate',
+          'tagging',
+          'normalize',
+          'save',
+          'design',
+        ],
       );
       expect(formatProcessingStep('fetch'), 'Lecture de la page web…');
     });

@@ -111,6 +111,11 @@ class ProcessingJob {
   /// Combien de recettes la page contenait ; une seule est reprise.
   final int? recettesTrouvees;
 
+  /// Vrai dès que le serveur a commencé à traduire la recette. Posé avec
+  /// `current_step: "translate"` et jamais retiré : le fil d'icônes garde le
+  /// jalon « Traduction » après l'étape. Le client ne l'écrit jamais.
+  final bool translated;
+
   /// Relances d'un import par lien déjà faites. Les règles Firestore en
   /// admettent [maxUrlRetries] au plus, chacune incrémentant ce compteur de un.
   final int urlRetryCount;
@@ -144,6 +149,7 @@ class ProcessingJob {
     this.errorCode,
     this.recettesTrouvees,
     this.urlRetryCount = 0,
+    this.translated = false,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -183,6 +189,7 @@ class ProcessingJob {
       errorCode: urlImportErrorCodeFrom(data['error_code']),
       recettesTrouvees: (data['recettes_trouvees'] as num?)?.toInt(),
       urlRetryCount: (data['url_retry_count'] as num?)?.toInt() ?? 0,
+      translated: data['translated'] == true,
     );
   }
 
@@ -247,6 +254,7 @@ class ProcessingJob {
       errorCode: errorCode,
       recettesTrouvees: recettesTrouvees,
       urlRetryCount: urlRetryCount,
+      translated: translated,
     );
   }
 
