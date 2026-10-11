@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
-### v0.23.34 — fonctionnel
+### v0.23.35 — fonctionnel
 
 #### Le fil d'icônes garde ses icônes pendant une traduction
 
@@ -34,11 +34,32 @@ garde le fil d'avant.
 Le fil d'un import par lien gagne aussi le jalon « Analyse » : le serveur écrit cette étape,
 et la ligne perdait ses icônes pendant ce temps.
 
-### v0.23.34 — technique
+### v0.23.35 — technique
 
 Nouveau champ `processing_jobs.translated` (`Boolean?`), posé à `true` par le serveur dans la
 même écriture que `current_step: "translate"` et jamais retiré. Aucune écriture
 supplémentaire. Le client le lit pour ajouter le jalon (`trailFor(type, translated:)`).
+
+### v0.23.34 — fonctionnel
+
+#### Couverture de « Mes recettes du web »
+
+Le livre « Mes recettes du web » reçoit sa couverture, l'image `FromTheWeb.png`. Le serveur
+crée ce livre sans couverture au premier import par lien. L'application la pose à l'ouverture
+suivante de la bibliothèque, comme pour les trois autres livres système. En attendant, la
+liste affiche déjà cette image.
+
+### v0.23.34 — technique
+
+#### Versions des fichiers de Storage, empreinte de la nouvelle couverture
+
+`TechnicalRequirements.md` décrit le versionnage du bucket Storage : une version remplacée ou
+supprimée reste récupérable 30 jours, puis une règle de cycle de vie la supprime. Les sauvegardes
+de Firestore ne couvraient pas les photos ni les scans. La section donne les commandes `gcloud`
+à lancer une fois depuis le PC, et la récupération d'un fichier.
+
+L'empreinte SHA-256 de `FromTheWeb.png` rejoint `BUNDLED_ASSET_SHA256` (`moderation/origin.ts`) :
+la couverture passe la modération comme les trois autres images livrées avec l'application.
 
 ### v0.23.33 — fonctionnel
 

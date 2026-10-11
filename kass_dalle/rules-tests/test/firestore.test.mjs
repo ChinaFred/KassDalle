@@ -714,6 +714,24 @@ describe("books", () => {
     await assertFails(db("editor").doc("books/web_editor").update({ tags: ["web"] }));
   });
 
+  // `ensureWebBookCover` pose la couverture côté client : le créateur doit
+  // pouvoir écrire `url_couverture` sur le livre créé par le serveur.
+  it("le créateur pose la couverture de « Mes recettes du web »", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("books/web_editor")
+        .update({ url_couverture: "https://example.com/c.png", updated_at: serverTimestamp() }),
+    );
+  });
+
+  it("un autre compte ne pose pas la couverture de « Mes recettes du web »", async () => {
+    await assertFails(
+      db("reader")
+        .doc("books/web_editor")
+        .update({ url_couverture: "https://example.com/c.png", updated_at: serverTimestamp() }),
+    );
+  });
+
   it("un livre ordinaire change ses tags librement", async () => {
     await assertSucceeds(db("editor").doc("books/public").update({ tags: ["été"] }));
   });

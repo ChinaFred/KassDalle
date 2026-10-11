@@ -372,6 +372,38 @@ class BookRepository {
     return (id: id, titre: titre);
   }
 
+  /// Pose la couverture `assets/FromTheWeb.png` sur « Mes recettes du web »
+  /// quand le livre existe sans couverture.
+  ///
+  /// Le livre est créé par le serveur (`urlImport.ts`, `web_{uid}`), sans
+  /// couverture : les règles interdisent au client de le créer, mais son
+  /// créateur peut le modifier. Rien n'est fait tant qu'aucun import par lien
+  /// n'a eu lieu.
+  Future<void> ensureWebBookCover(String uid) async {
+    try {
+      final byTag = await _col
+          .where('created_by', isEqualTo: uid)
+          .where('tags', arrayContains: Book.tagWeb)
+          .limit(1)
+          .get();
+      if (byTag.docs.isEmpty) return;
+      final doc = byTag.docs.first;
+      final cover = doc.data()['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        await _uploadAssetCover('assets/FromTheWeb.png', doc.id);
+      }
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_ensure_web_book_cover',
+          error: e,
+          stackTrace: st,
+          context: {'uid': uid},
+        ),
+      );
+    }
+  }
+
   /// Migration : attache toutes les recettes sans livre de [uid] au livre
   /// "Mes recettes libres" [libresBookId].
   /// Rattache au livre des recettes libres celles qui n'ont pas de livre.
@@ -442,7 +474,8 @@ class BookRepository {
     }
   }
 
-  /// Initialise les trois livres système pour [uid] et migre les recettes libres.
+  /// Initialise les livres système pour [uid], pose la couverture de « Mes
+  /// recettes du web » s'il existe, et migre les recettes libres.
   /// À appeler au démarrage / ouverture de la bibliothèque.
   Future<void> ensureSystemBooks(String uid, String displayName) async {
     try {
@@ -464,6 +497,9 @@ class BookRepository {
       );
       // 4. Livre "Mes Recettes Secrètes"
       unawaited(findOrCreateSecretesBook(uid, displayName));
+      // 5. Livre "Mes recettes du web" : couverture seulement, il est créé
+      //    par le serveur au premier import par lien.
+      unawaited(ensureWebBookCover(uid));
     } catch (e, st) {
       unawaited(
         _errorReportService.reportError(
