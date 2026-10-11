@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,8 +34,10 @@ import 'meal_staples_providers.dart';
 import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/presentation/leave_guard.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/widgets/app_shortcuts.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
@@ -155,6 +158,21 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   final Set<String> _storageReservedRecipeIds = {};
   final Set<int> _storageLoadingSlots = {};
 
+  /// Le cycle vient d'être validé, ou l'utilisateur a renoncé à le valider :
+  /// l'écran se quitte sans question.
+  bool _validated = false;
+
+  /// Garde de sortie : la question posée avant de quitter un cycle composé
+  /// mais pas validé. Un seul objet, pour que la navigation puisse le
+  /// reconnaître quand elle le retire.
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+  bool _leaveGuardSet = false;
+
+  /// Les consignes du cycle sont dépliées (téléphone). Gardé ici : la liste
+  /// recrée le pli quand il sort de l'écran puis y revient.
+  bool _cycleConstraintsExpanded = false;
+
   TimeOfDay get _defaultTime => TimeOfDay(
     hour: _prefs?.defaultMealHour ?? 19,
     minute: _prefs?.defaultMealMinute ?? 0,
@@ -176,11 +194,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   @override
   void initState() {
     super.initState();
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
 
   @override
   void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
     _globalConstraintsCtrl.dispose();
     super.dispose();
   }
@@ -1093,6 +1116,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 : '$planned, ajoutés au calendrier ✓',
           );
         }
+        // Le cycle est enregistré : le garde de sortie n'a plus rien à
+        // protéger.
+        _validated = true;
         context.pop();
       }
     } catch (e, stackTrace) {
@@ -2182,7 +2208,6 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   Widget _buildScaffold(PlanningPreferences prefs) {
     final effectivePrefs = _prefs ?? prefs;
-    final theme = Theme.of(context);
     final assignedCount = _slots.values.where((r) => r != null).length;
     final totalSlots = _slotDates.length;
     // Ce que « Valider » écrira : les repas déjà au planning et restés tels
@@ -2192,8 +2217,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     ).toWrite.length;
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+    _syncLeaveGuard(writeCount > 0 && !_validated);
+    final canValidate = writeCount > 0 && !_saving;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text('Nouveau planning'),
         centerTitle: false,
@@ -2211,10 +2238,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             tooltip: 'Reprendre une semaine passée',
             onPressed: _recipesLoaded && !_generating ? _replayPastWeek : null,
           ),
-          // Sur grand écran, la même action vit en bas, sous forme de bouton
-          // nommé, au-dessus de « Valider ». Une icône seule dans un coin
-          // n'apprend pas ce qu'elle fait, et c'est pourtant l'action
-          // principale de l'écran : sans elle, il n'y a rien à valider.
+          // Sur grand écran, la même action vit dans le panneau de gauche,
+          // sous forme de bouton nommé, au-dessus de « Valider ». Une icône
+          // seule dans un coin n'apprend pas ce qu'elle fait, et c'est
+          // pourtant l'action principale de l'écran.
           if (!isWide) ...[
             if (_generating)
               const Padding(
@@ -2236,231 +2263,226 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           ],
         ],
       ),
-      body: Column(
-        children: [
-          // En-tête avec infos du cycle
-          Container(
-            color: theme.colorScheme.surfaceContainerHighest,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
+      body: isWide
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  Icons.calendar_month_outlined,
-                  size: AppIconSize.small,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _slotDates.isEmpty
-                        ? 'Chargement…'
-                        : 'Cycle du ${DateFormat('d MMM', 'fr').format(_slotDates.first)}'
-                              ' au ${DateFormat('d MMM', 'fr').format(_slotDates.last)}',
-                    style: theme.textTheme.bodyMedium,
+                SizedBox(
+                  width: 320,
+                  child: _buildSidePanel(
+                    assignedCount: assignedCount,
+                    totalSlots: totalSlots,
+                    writeCount: writeCount,
                   ),
                 ),
-                Text(
-                  '$assignedCount / $totalSlots repas assignés',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: _buildSlotGrid(effectivePrefs)),
+              ],
+            )
+          : Column(
+              children: [
+                _buildCycleBanner(assignedCount, totalSlots),
+                ?_buildNotice(),
+                Expanded(child: _buildSlotList(effectivePrefs)),
               ],
             ),
-          ),
-          if (_notice != null)
-            PlanningNoticeBanner(
-              message: _notice!,
-              actionLabel: _noticeRetry ? 'Réessayer avec l\'IA' : null,
-              onAction: _noticeRetry && !_generating ? _retryWithAI : null,
-              onClose: () => setState(() {
-                _notice = null;
-                _noticeRetry = false;
-              }),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: StylusPadTextField(
-              controller: _globalConstraintsCtrl,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Contrainte locale du cycle',
-                hintText:
-                    'Ex: pas de dessert, varier protéines, utiliser les restes',
-                border: OutlineInputBorder(),
+      // Sur grand écran, « Valider » vit au pied du panneau de gauche.
+      bottomNavigationBar: isWide
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: _buildValidateButton(writeCount),
               ),
             ),
+    );
+
+    // Ctrl+S valide le cycle, comme « Enregistrer » ailleurs. Le retour —
+    // bouton, geste, flèche de la barre — passe par PopScope ; la navigation
+    // du shell passe par le garde de sortie.
+    return PopScope(
+      canPop: writeCount == 0 || _validated,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        unawaited(_leaveAfterConfirmation());
+      },
+      child: AppShortcuts(
+        onSave: canValidate ? _validate : null,
+        child: scaffold,
+      ),
+    );
+  }
+
+  /// Pose ou retire le garde de sortie selon qu'il reste des repas à valider.
+  ///
+  /// Après le rendu : un provider ne se modifie pas pendant `build`.
+  void _syncLeaveGuard(bool dirty) {
+    if (dirty == _leaveGuardSet) return;
+    _leaveGuardSet = dirty;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (dirty) {
+        _leaveGuardNotifier.set(_leaveGuard);
+      } else {
+        _leaveGuardNotifier.clearIf(_leaveGuard);
+      }
+    });
+  }
+
+  /// Quitte l'écran si l'utilisateur renonce aux repas non validés.
+  Future<void> _leaveAfterConfirmation() async {
+    if (!await _confirmLeave() || !mounted) return;
+    _validated = true;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.planning);
+    }
+  }
+
+  /// La question posée avant de quitter un cycle composé mais pas validé.
+  ///
+  /// Vrai quand on peut partir : rien à valider, ou l'utilisateur renonce.
+  Future<bool> _confirmLeave() async {
+    if (_validated) return true;
+    final pending = _validationPlan(
+      ref.read(planningRepositoryProvider)?.uid ?? '',
+    ).toWrite.length;
+    if (pending == 0) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitter sans valider ?'),
+        content: Text(
+          pending == 1
+              ? 'Le repas composé sur cet écran n\'est pas enregistré au '
+                    'planning. Il sera perdu.'
+              : 'Les $pending repas composés sur cet écran ne sont pas '
+                    'enregistrés au planning. Ils seront perdus.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Rester'),
           ),
-          // Liste des slots
-          Expanded(
-            child: _slotDates.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount:
-                        _slotDates.length + 1, // +1 pour "Ajouter un jour"
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      if (index == _slotDates.length) {
-                        return ListTile(
-                          leading: const Icon(Icons.add_circle_outline),
-                          title: const Text('Ajouter un jour'),
-                          onTap: _addDay,
-                        );
-                      }
-                      return BatchSlotTile(
-                        index: index,
-                        date: _slotDates[index],
-                        recipe: _slots[index],
-                        savedToPlanning: _slotSavedMealIds.containsKey(index),
-                        constraintsReadOnly: _constraintsLocked,
-                        isBatchDay:
-                            effectivePrefs.batchCookingDay ==
-                            _slotDates[index].weekday,
-                        dayConstraint:
-                            _slotConstraints[index] ?? const DayConstraint(),
-                        slotTime: _slotTimes[index] ?? _defaultTime,
-                        isGenerating:
-                            _generatingSlot == index ||
-                            _conceivingSlots.contains(index),
-                        conceiving: _conceivingSlots.contains(index),
-                        justification: _slotJustifications[index],
-                        choiceSource: _slotSources[index],
-                        prepDate: _slotPrepDates[index],
-                        wasResized: _slotWasResized[index] ?? false,
-                        resizeReason: _slotResizeReasons[index],
-                        isGeneratedByAI: _slotIsGenerated[index] ?? false,
-                        storageAdvice: _storageAdviceFor(index),
-                        storageLoading: _storageLoadingSlots.contains(index),
-                        storageReserved: _storageReservedRecipeIds.contains(
-                          _slots[index]?.id,
-                        ),
-                        // Offert dès qu'une recette est posée : la conservation
-                        // se demande aussi pour un plat qu'on décide de garder
-                        // après coup, et l'exiger d'un créneau « réchauffage »
-                        // rendait la fonction introuvable sans jour de batch
-                        // cooking configuré.
-                        onGenerateStorageAdvice:
-                            (_slots[index]?.id.isNotEmpty ?? false)
-                            ? () => _generateStorageAdvice(index)
-                            : null,
-                        onAssign: () => _pickRecipeForSlot(index),
-                        onRemove: () => setState(() {
-                          _slots[index] = null;
-                          _slotSides.remove(index);
-                          _slotSideManual.remove(index);
-                          _slotStarters.remove(index);
-                          _slotDesserts.remove(index);
-                          _slotJustifications.remove(index);
-                          _slotPrepDates.remove(index);
-                          _slotWasResized.remove(index);
-                          _slotResizeReasons.remove(index);
-                          _slotIsGenerated.remove(index);
-                          _slotSources.remove(index);
-                        }),
-                        onDelete: () => _removeDay(index),
-                        onTimeChanged: (t) =>
-                            setState(() => _slotTimes[index] = t),
-                        onMaxPrepChanged: (maxPrep) => setState(() {
-                          final current =
-                              _slotConstraints[index] ?? const DayConstraint();
-                          _slotConstraints[index] = current.copyWith(
-                            maxPrepMinutes: maxPrep,
-                          );
-                          // La liste classée ne vaut plus pour ce créneau.
-                          _slotRankings.remove(index);
-                        }),
-                        onTargetPortionsChanged: (targetPortions) =>
-                            setState(() {
-                              final current =
-                                  _slotConstraints[index] ??
-                                  const DayConstraint();
-                              _slotConstraints[index] = current.copyWith(
-                                targetPortions: targetPortions,
-                              );
-                            }),
-                        onReheatChanged: (isReheat) => setState(() {
-                          final current =
-                              _slotConstraints[index] ?? const DayConstraint();
-                          _slotConstraints[index] = current.copyWith(
-                            isBatchCooking: isReheat,
-                          );
-                          _slotRankings.remove(index);
-                        }),
-                        onNotesChanged: (notes) => setState(() {
-                          final current =
-                              _slotConstraints[index] ?? const DayConstraint();
-                          _slotConstraints[index] = current.copyWith(
-                            notes: notes,
-                          );
-                        }),
-                        onGenerateWithAI: _recipesLoaded
-                            ? () => _otherSuggestion(index)
-                            : null,
-                        onExportToCalendar: _slots[index] != null
-                            ? () => _exportSlotToCalendar(index)
-                            : null,
-                        onRecipeTap: _slots[index] != null
-                            ? () => _onRecipeTap(_slots[index]!, index)
-                            : null,
-                        side: _slotSides[index],
-                        onChangeSide: _slots[index] != null
-                            ? () => _changeSide(index)
-                            : null,
-                        onRemoveSide: _slotSides[index] != null
-                            ? () => _removeSide(index)
-                            : null,
-                        starter: _slotStarters[index],
-                        dessert: _slotDesserts[index],
-                        onChangeStarter: _slots[index] != null
-                            ? () =>
-                                  _changeCourse(index, MealComponentRole.entree)
-                            : null,
-                        onRemoveStarter: _slotStarters[index] != null
-                            ? () =>
-                                  _removeCourse(index, MealComponentRole.entree)
-                            : null,
-                        onChangeDessert: _slots[index] != null
-                            ? () => _changeCourse(
-                                index,
-                                MealComponentRole.dessert,
-                              )
-                            : null,
-                        onRemoveDessert: _slotDesserts[index] != null
-                            ? () => _removeCourse(
-                                index,
-                                MealComponentRole.dessert,
-                              )
-                            : null,
-                        // Le plat seul est le défaut : le choisir remet le
-                        // créneau à « pas réglé », il n'est jamais stocké.
-                        onFormatChanged: (f) => setState(() {
-                          final current =
-                              _slotConstraints[index] ?? const DayConstraint();
-                          _slotConstraints[index] =
-                              f == MealFormat.defaultFormat
-                              ? current.copyWith(clearMealFormat: true)
-                              : current.copyWith(mealFormat: f);
-                          _slotRankings.remove(index);
-                        }),
-                      );
-                    },
-                  ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitter sans valider'),
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            // Les deux boutons occupent la largeur, comme « Valider » le
-            // faisait seul : une colonne les aurait sinon rétrécis au contenu.
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (isWide) ...[
+    );
+    return leave ?? false;
+  }
+
+  /// « 16 → 22 oct. · 7/7 repas » : les bornes du cycle et son remplissage.
+  Widget _buildCycleBanner(int assignedCount, int totalSlots) {
+    final theme = Theme.of(context);
+    final String label;
+    if (_slotDates.isEmpty) {
+      label = 'Chargement…';
+    } else {
+      final first = _slotDates.first;
+      final last = _slotDates.last;
+      final sameMonth = first.year == last.year && first.month == last.month;
+      final from = DateFormat(sameMonth ? 'd' : 'd MMM', 'fr').format(first);
+      final to = DateFormat('d MMM', 'fr').format(last);
+      label = '$from → $to · $assignedCount/$totalSlots repas';
+    }
+    return Container(
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            Icons.calendar_month_outlined,
+            size: AppIconSize.small,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+        ],
+      ),
+    );
+  }
+
+  Widget? _buildNotice() {
+    if (_notice == null) return null;
+    return PlanningNoticeBanner(
+      message: _notice!,
+      actionLabel: _noticeRetry ? 'Réessayer avec l\'IA' : null,
+      onAction: _noticeRetry && !_generating ? _retryWithAI : null,
+      onClose: () => setState(() {
+        _notice = null;
+        _noticeRetry = false;
+      }),
+    );
+  }
+
+  /// Le champ des consignes du cycle, partagé par les deux dispositions.
+  Widget _buildGlobalConstraintsField({required int minLines}) {
+    return StylusPadTextField(
+      controller: _globalConstraintsCtrl,
+      minLines: minLines,
+      maxLines: 8,
+      decoration: const InputDecoration(
+        labelText: 'Consignes du cycle',
+        hintText: 'Ex: pas de dessert, varier protéines, utiliser les restes',
+        border: OutlineInputBorder(),
+      ),
+    );
+  }
+
+  Widget _buildValidateButton(int writeCount) {
+    final scheme = Theme.of(context).colorScheme;
+    return FilledButton.icon(
+      onPressed: (writeCount == 0 || _saving) ? null : _validate,
+      icon: _saving
+          ? SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: scheme.onPrimary,
+              ),
+            )
+          : const Icon(Icons.check_circle_outline),
+      label: Text('Valider le planning ($writeCount repas)'),
+    );
+  }
+
+  /// Panneau de gauche du grand écran : le cycle, l'avis, les consignes, et
+  /// au pied les deux actions de l'écran, toujours visibles.
+  Widget _buildSidePanel({
+    required int assignedCount,
+    required int totalSlots,
+    required int writeCount,
+  }) {
+    return SafeArea(
+      right: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCycleBanner(assignedCount, totalSlots),
+                  ?_buildNotice(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: _buildGlobalConstraintsField(minLines: 3),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 PlanWithAiButton(
                   generating: _generating,
                   enabled: _recipesLoaded,
@@ -2470,24 +2492,221 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                       _generateWithAI(replaceExisting: value == 1),
                 ),
                 const SizedBox(height: 8),
+                _buildValidateButton(writeCount),
               ],
-              FilledButton.icon(
-                onPressed: (writeCount == 0 || _saving) ? null : _validate,
-                icon: _saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.check_circle_outline),
-                label: Text('Valider le planning ($writeCount repas)'),
-              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Les consignes du cycle sur téléphone : repliées, elles laissent la place
+  /// aux créneaux, et le titre dit combien de règles elles portent.
+  Widget _buildConstraintsTile() {
+    return Card.outlined(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        // L'état ouvert vit dans l'écran, pas dans un PageStorageKey : la
+        // clé serait partagée avec le défilement du champ multiligne, qui y
+        // range un double.
+        initiallyExpanded: _cycleConstraintsExpanded,
+        onExpansionChanged: (open) => _cycleConstraintsExpanded = open,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        leading: const Icon(Icons.rule_outlined),
+        title: ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _globalConstraintsCtrl,
+          builder: (context, value, _) {
+            final rules = value.text
+                .split('\n')
+                .where((line) => line.trim().isNotEmpty)
+                .length;
+            final count = rules == 0
+                ? 'vide'
+                : '$rules règle${rules > 1 ? 's' : ''}';
+            return Text('Consignes du cycle · $count');
+          },
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [_buildGlobalConstraintsField(minLines: 3)],
+      ),
+    );
+  }
+
+  /// Téléphone : les consignes, les créneaux, puis « Ajouter un jour », dans
+  /// une seule liste qui défile.
+  Widget _buildSlotList(PlanningPreferences effectivePrefs) {
+    if (_slotDates.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      // +1 pour les consignes, +1 pour « Ajouter un jour ».
+      itemCount: _slotDates.length + 2,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        if (index == 0) return _buildConstraintsTile();
+        final slot = index - 1;
+        if (slot == _slotDates.length) {
+          return AddSlotDayCard(onPressed: _addDay);
+        }
+        return _buildSlotTile(slot, effectivePrefs);
+      },
+    );
+  }
+
+  /// Grand écran : les créneaux en colonnes sur toute la largeur, autant de
+  /// colonnes qu'il en faut pour qu'aucune carte ne dépasse
+  /// [kBatchSlotCardMaxWidth].
+  ///
+  /// Des colonnes indépendantes plutôt qu'une grille : une carte dépliée est
+  /// plus haute que ses voisines, et une grille à hauteur fixe la
+  /// tronquerait. L'ordre de lecture reste ligne par ligne : le créneau `i`
+  /// va dans la colonne `i % colonnes`.
+  Widget _buildSlotGrid(PlanningPreferences effectivePrefs) {
+    if (_slotDates.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    const gap = 12.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final usable = constraints.maxWidth - 2 * 16;
+        final columns = math.max(1, (usable / kBatchSlotCardMaxWidth).ceil());
+        final items = <Widget>[
+          for (var i = 0; i < _slotDates.length; i++)
+            _buildSlotTile(i, effectivePrefs),
+          AddSlotDayCard(onPressed: _addDay),
+        ];
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var c = 0; c < columns; c++) ...[
+                if (c > 0) const SizedBox(width: gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = c; i < items.length; i += columns) ...[
+                        if (i >= columns) const SizedBox(height: gap),
+                        items[i],
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
-        ),
-      ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSlotTile(int index, PlanningPreferences effectivePrefs) {
+    return BatchSlotTile(
+      // La date identifie le créneau : supprimer un jour ne fait pas passer
+      // l'état d'une carte (pli ouvert) à sa voisine.
+      key: ValueKey(_slotDates[index]),
+      index: index,
+      date: _slotDates[index],
+      recipe: _slots[index],
+      savedToPlanning: _slotSavedMealIds.containsKey(index),
+      constraintsReadOnly: _constraintsLocked,
+      isBatchDay: effectivePrefs.batchCookingDay == _slotDates[index].weekday,
+      dayConstraint: _slotConstraints[index] ?? const DayConstraint(),
+      slotTime: _slotTimes[index] ?? _defaultTime,
+      isGenerating:
+          _generatingSlot == index || _conceivingSlots.contains(index),
+      conceiving: _conceivingSlots.contains(index),
+      justification: _slotJustifications[index],
+      choiceSource: _slotSources[index],
+      prepDate: _slotPrepDates[index],
+      wasResized: _slotWasResized[index] ?? false,
+      resizeReason: _slotResizeReasons[index],
+      isGeneratedByAI: _slotIsGenerated[index] ?? false,
+      storageAdvice: _storageAdviceFor(index),
+      storageLoading: _storageLoadingSlots.contains(index),
+      storageReserved: _storageReservedRecipeIds.contains(_slots[index]?.id),
+      // Offert dès qu'une recette est posée : la conservation se demande
+      // aussi pour un plat qu'on décide de garder après coup, et l'exiger
+      // d'un créneau « réchauffage » rendait la fonction introuvable sans
+      // jour de préparation configuré.
+      onGenerateStorageAdvice: (_slots[index]?.id.isNotEmpty ?? false)
+          ? () => _generateStorageAdvice(index)
+          : null,
+      onAssign: () => _pickRecipeForSlot(index),
+      onRemove: () => setState(() {
+        _slots[index] = null;
+        _slotSides.remove(index);
+        _slotSideManual.remove(index);
+        _slotStarters.remove(index);
+        _slotDesserts.remove(index);
+        _slotJustifications.remove(index);
+        _slotPrepDates.remove(index);
+        _slotWasResized.remove(index);
+        _slotResizeReasons.remove(index);
+        _slotIsGenerated.remove(index);
+        _slotSources.remove(index);
+      }),
+      onDelete: () => _removeDay(index),
+      onTimeChanged: (t) => setState(() => _slotTimes[index] = t),
+      onMaxPrepChanged: (maxPrep) => setState(() {
+        final current = _slotConstraints[index] ?? const DayConstraint();
+        _slotConstraints[index] = current.copyWith(maxPrepMinutes: maxPrep);
+        // La liste classée ne vaut plus pour ce créneau.
+        _slotRankings.remove(index);
+      }),
+      onTargetPortionsChanged: (targetPortions) => setState(() {
+        final current = _slotConstraints[index] ?? const DayConstraint();
+        _slotConstraints[index] = current.copyWith(
+          targetPortions: targetPortions,
+        );
+      }),
+      onReheatChanged: (isReheat) => setState(() {
+        final current = _slotConstraints[index] ?? const DayConstraint();
+        _slotConstraints[index] = current.copyWith(isBatchCooking: isReheat);
+        _slotRankings.remove(index);
+      }),
+      onNotesChanged: (notes) => setState(() {
+        final current = _slotConstraints[index] ?? const DayConstraint();
+        _slotConstraints[index] = current.copyWith(notes: notes);
+      }),
+      onGenerateWithAI: _recipesLoaded ? () => _otherSuggestion(index) : null,
+      onExportToCalendar: _slots[index] != null
+          ? () => _exportSlotToCalendar(index)
+          : null,
+      onRecipeTap: _slots[index] != null
+          ? () => _onRecipeTap(_slots[index]!, index)
+          : null,
+      side: _slotSides[index],
+      onChangeSide: _slots[index] != null ? () => _changeSide(index) : null,
+      onRemoveSide: _slotSides[index] != null ? () => _removeSide(index) : null,
+      starter: _slotStarters[index],
+      dessert: _slotDesserts[index],
+      onChangeStarter: _slots[index] != null
+          ? () => _changeCourse(index, MealComponentRole.entree)
+          : null,
+      onRemoveStarter: _slotStarters[index] != null
+          ? () => _removeCourse(index, MealComponentRole.entree)
+          : null,
+      onChangeDessert: _slots[index] != null
+          ? () => _changeCourse(index, MealComponentRole.dessert)
+          : null,
+      onRemoveDessert: _slotDesserts[index] != null
+          ? () => _removeCourse(index, MealComponentRole.dessert)
+          : null,
+      // Le plat seul est le défaut : le choisir remet le créneau à « pas
+      // réglé », il n'est jamais stocké.
+      onFormatChanged: (f) => setState(() {
+        final current = _slotConstraints[index] ?? const DayConstraint();
+        _slotConstraints[index] = f == MealFormat.defaultFormat
+            ? current.copyWith(clearMealFormat: true)
+            : current.copyWith(mealFormat: f);
+        _slotRankings.remove(index);
+      }),
     );
   }
 

@@ -130,6 +130,9 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<MealFormat>(
+            // Un libellé long (« Entrée, plat et dessert ») se coupe au lieu
+            // de déborder du champ.
+            isExpanded: true,
             initialValue: widget.constraint.effectiveFormat,
             decoration: const InputDecoration(
               isDense: true,
@@ -175,8 +178,22 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
   }
 }
 
-/// Tuile représentant un slot de planning dans BatchPlanningScreen.
-class BatchSlotTile extends StatelessWidget {
+/// Largeur au-delà de laquelle la grille des créneaux ajoute une colonne.
+///
+/// Une carte plus large étire la ligne de lecture sans rien montrer de plus.
+const double kBatchSlotCardMaxWidth = 560;
+
+/// Actions du menu ⋮ d'un créneau.
+enum _SlotAction { assign, exportToCalendar, remove, delete }
+
+/// Carte d'un créneau de BatchPlanningScreen.
+///
+/// La carte montre toujours le jour, l'heure, la recette, une ligne de
+/// résumé (parts, durée, accompagnement, format) et les avertissements. Le
+/// reste — contraintes du jour, composants du repas, conservation, origine —
+/// vit dans un pli « Détails », déplié d'office quand le créneau porte un
+/// avertissement, replié sinon.
+class BatchSlotTile extends StatefulWidget {
   final int index;
   final DateTime date;
   final Recipe? recipe;
@@ -196,7 +213,8 @@ class BatchSlotTile extends StatelessWidget {
   /// Vrai pendant la conception d'une recette pour ce créneau.
   final bool conceiving;
 
-  /// Jour de préparation à l'avance (calculé depuis le batch cooking day).
+  /// Jour de préparation à l'avance (calculé depuis le jour de préparation
+  /// des préférences).
   final DateTime? prepDate;
 
   /// True si la proposition associée au slot a été redimensionnée/ajustée.
@@ -308,10 +326,155 @@ class BatchSlotTile extends StatelessWidget {
     required this.onFormatChanged,
   });
 
+  /// L'entrée manque alors que le format en demande une.
+  bool get missingStarter =>
+      recipe != null &&
+      dayConstraint.effectiveFormat.wantsStarter &&
+      starter == null;
+
+  /// Le dessert manque alors que le format en demande un.
+  bool get missingDessert =>
+      recipe != null &&
+      dayConstraint.effectiveFormat.wantsDessert &&
+      dessert == null;
+
+  /// Le créneau porte un avertissement : un composant à choisir, ou un plat
+  /// à préparer un autre jour que celui où on le mange.
+  bool get hasWarning => missingStarter || missingDessert || prepDate != null;
+
+  @override
+  State<BatchSlotTile> createState() => _BatchSlotTileState();
+}
+
+class _BatchSlotTileState extends State<BatchSlotTile> {
+  /// Le pli « Détails » est ouvert.
+  late bool _expanded;
+
+  /// L'utilisateur a ouvert ou fermé le pli lui-même : la carte ne le
+  /// rouvre ni ne le referme plus au gré des avertissements, tant que la
+  /// recette du créneau ne change pas.
+  bool _userToggled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.hasWarning;
+  }
+
+  @override
+  void didUpdateWidget(BatchSlotTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.recipe?.id != widget.recipe?.id ||
+        oldWidget.recipe?.titre != widget.recipe?.titre) {
+      _userToggled = false;
+    }
+    // Un avertissement apparu après une suggestion ouvre le pli, comme à la
+    // création de la carte ; un choix de l'utilisateur prime.
+    if (!_userToggled) _expanded = widget.hasWarning;
+  }
+
+  void _toggle() => setState(() {
+    _expanded = !_expanded;
+    _userToggled = true;
+  });
+
+  Future<void> _pickTime() async {
+    final t = await showTimePicker(
+      context: context,
+      initialTime: widget.slotTime,
+      helpText: 'Heure du repas',
+    );
+    if (mounted && t != null) widget.onTimeChanged(t);
+  }
+
+  // ── Menu ⋮ ─────────────────────────────────────────────────────────────
+
+  List<PopupMenuEntry<_SlotAction>> _menuItems(ThemeData theme) {
+    final w = widget;
+    final error = theme.colorScheme.error;
+    return [
+      PopupMenuItem(
+        value: _SlotAction.assign,
+        child: ListTile(
+          leading: Icon(
+            w.recipe != null ? Icons.swap_horiz_outlined : Icons.search,
+          ),
+          title: Text(
+            w.recipe != null ? 'Changer de recette' : 'Choisir une recette',
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: _SlotAction.exportToCalendar,
+        enabled: w.recipe != null && w.onExportToCalendar != null,
+        child: ListTile(
+          leading: const Icon(AppIcons.calendarExport),
+          title: Text(
+            w.savedToPlanning
+                ? 'Ajouter au calendrier et mettre à jour le planning'
+                : 'Ajouter au calendrier et au planning',
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: _SlotAction.remove,
+        enabled: w.recipe != null,
+        child: const ListTile(
+          leading: Icon(Icons.close),
+          title: Text('Retirer la recette'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: _SlotAction.delete,
+        child: ListTile(
+          leading: Icon(Icons.delete_outline, color: error),
+          title: Text('Supprimer ce jour', style: TextStyle(color: error)),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+    ];
+  }
+
+  void _onAction(_SlotAction action) {
+    switch (action) {
+      case _SlotAction.assign:
+        widget.onAssign();
+      case _SlotAction.exportToCalendar:
+        widget.onExportToCalendar?.call();
+      case _SlotAction.remove:
+        widget.onRemove();
+      case _SlotAction.delete:
+        widget.onDelete();
+    }
+  }
+
+  /// Le même menu, ouvert d'un clic droit sur la carte (desktop et web).
+  Future<void> _showContextMenu(Offset globalPosition) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final theme = Theme.of(context);
+    final action = await showMenu<_SlotAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & Size.zero,
+        Offset.zero & overlay.size,
+      ),
+      items: _menuItems(theme),
+    );
+    if (action != null && mounted) _onAction(action);
+  }
+
+  // ── Lignes ─────────────────────────────────────────────────────────────
+
   /// Une entrée ou un dessert, quand le format du créneau en demande : posé
   /// par la suggestion, changé ou retiré d'un appui. « À choisir » quand la
-  /// suggestion n'a rien rendu — un vide qui se voit vaut mieux qu'un vide
-  /// qui se devine.
+  /// suggestion n'a rien rendu : la ligne est alors un avertissement, affiché
+  /// hors du pli.
   Widget _buildCourseLine(
     ThemeData theme,
     MealComponentRole role,
@@ -319,50 +482,50 @@ class BatchSlotTile extends StatelessWidget {
     VoidCallback? onChange,
     VoidCallback? onRemove,
   ) {
-    final text = course == null
+    final missing = course == null;
+    final text = missing
         ? '${role.label} : à choisir'
         : '${role.label} : ${course.label}';
-    return Padding(
-      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
-      child: Row(
-        children: [
-          Icon(
-            role == MealComponentRole.entree
-                ? Icons.soup_kitchen_outlined
-                : Icons.cake_outlined,
-            size: AppIconSize.badge,
-            color: theme.colorScheme.onSurfaceVariant,
+    final color = missing
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurfaceVariant;
+    return Row(
+      children: [
+        Icon(
+          missing
+              ? Icons.warning_amber_outlined
+              : role == MealComponentRole.entree
+              ? Icons.soup_kitchen_outlined
+              : Icons.cake_outlined,
+          size: AppIconSize.inline,
+          color: color,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: missing ? FontWeight.w600 : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              text,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: course == null ? FontStyle.italic : null,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+        ),
+        if (onChange != null)
+          TextButton(
+            onPressed: onChange,
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            child: Text(missing ? 'Choisir' : 'Changer'),
           ),
-          if (onChange != null)
-            TextButton(
-              onPressed: onChange,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                textStyle: theme.textTheme.labelSmall,
-              ),
-              child: Text(course == null ? 'Choisir' : 'Changer'),
-            ),
-          if (course != null && onRemove != null)
-            IconButton(
-              icon: const Icon(Icons.close, size: AppIconSize.inline),
-              tooltip: 'Retirer',
-              visualDensity: VisualDensity.compact,
-              onPressed: onRemove,
-            ),
-        ],
-      ),
+        if (!missing && onRemove != null)
+          IconButton(
+            icon: const Icon(Icons.close, size: AppIconSize.inline),
+            tooltip: 'Retirer',
+            visualDensity: VisualDensity.compact,
+            onPressed: onRemove,
+          ),
+      ],
     );
   }
 
@@ -372,53 +535,47 @@ class BatchSlotTile extends StatelessWidget {
   /// féculent » — en infobulle : la ligne reste courte, la raison reste
   /// accessible.
   Widget _buildSideLine(ThemeData theme) {
-    final s = side;
+    final s = widget.side;
     final text = s == null
         ? 'Sans accompagnement'
         : 'Accompagnement : ${s.label}'
               '${s.quantityLabel != null ? ' · ${s.quantityLabel}' : ''}';
-    return Padding(
-      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
-      child: Row(
-        children: [
-          Icon(
-            Icons.rice_bowl_outlined,
-            size: AppIconSize.badge,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Tooltip(
-              message: s?.justification ?? '',
-              child: Text(
-                text,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontStyle: s == null ? FontStyle.italic : null,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return Row(
+      children: [
+        Icon(
+          Icons.rice_bowl_outlined,
+          size: AppIconSize.inline,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Tooltip(
+            message: s?.justification ?? '',
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: s == null ? FontStyle.italic : null,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (onChangeSide != null)
-            TextButton(
-              onPressed: onChangeSide,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                textStyle: theme.textTheme.labelSmall,
-              ),
-              child: Text(s == null ? 'Ajouter' : 'Changer'),
-            ),
-          if (s != null && onRemoveSide != null)
-            IconButton(
-              icon: const Icon(Icons.close, size: AppIconSize.inline),
-              tooltip: 'Retirer l\'accompagnement',
-              visualDensity: VisualDensity.compact,
-              onPressed: onRemoveSide,
-            ),
-        ],
-      ),
+        ),
+        if (widget.onChangeSide != null)
+          TextButton(
+            onPressed: widget.onChangeSide,
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            child: Text(s == null ? 'Ajouter' : 'Changer'),
+          ),
+        if (s != null && widget.onRemoveSide != null)
+          IconButton(
+            icon: const Icon(Icons.close, size: AppIconSize.inline),
+            tooltip: 'Retirer l\'accompagnement',
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.onRemoveSide,
+          ),
+      ],
     );
   }
 
@@ -427,27 +584,31 @@ class BatchSlotTile extends StatelessWidget {
   /// Aucun appel d'IA n'a lieu ici — ces règles se calculent, et doivent
   /// s'afficher même sur une recette qui n'a jamais reçu de conseil.
   Widget _buildComputedStorage(ThemeData theme, DateTime prep) {
-    final daysAhead = mealStorageDaysAhead(prepDate: prep, mealDate: date);
+    final daysAhead = mealStorageDaysAhead(
+      prepDate: prep,
+      mealDate: widget.date,
+    );
     final mode = mealStorageMode(daysAhead);
     final color = mode == MealStorageMode.freezer
         ? theme.colorScheme.tertiary
         : theme.colorScheme.primary;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
           mode == MealStorageMode.freezer
               ? Icons.ac_unit_outlined
               : Icons.kitchen_outlined,
-          size: AppIconSize.badge,
+          size: AppIconSize.inline,
           color: color,
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Expanded(
           child: Text(
             'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prep)} · '
             '${mealStorageInstruction(daysAhead)}',
-            style: theme.textTheme.labelSmall?.copyWith(
+            style: theme.textTheme.bodySmall?.copyWith(
               color: color,
               fontWeight: FontWeight.w600,
             ),
@@ -457,366 +618,426 @@ class BatchSlotTile extends StatelessWidget {
     );
   }
 
-  /// Ligne de conservation : consigne calculée quand le jour de préparation est
-  /// connu, puis le conseil propre au plat ou le bouton qui le demande.
-  Widget _buildStorageLine(ThemeData theme) {
-    final prep = prepDate;
-    final reheat = storageAdvice?.rechauffage;
+  /// Conseil de conservation propre au plat, ou le bouton qui le demande.
+  ///
+  /// La consigne calculée (« À préparer le … ») n'en fait pas partie : c'est
+  /// un avertissement, affiché hors du pli.
+  Widget? _buildStorageAdvice(ThemeData theme) {
+    final reheat = widget.storageAdvice?.rechauffage;
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    if (reheat != null && !reheat.isEmpty) {
+      return Text('Réchauffage : ${reheat.summary}', style: style);
+    }
+    if (widget.storageReserved) {
+      return Text(kStorageAdviceReservedMessage, style: style);
+    }
+    if (widget.onGenerateStorageAdvice != null) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: widget.storageLoading
+              ? null
+              : widget.onGenerateStorageAdvice,
+          icon: widget.storageLoading
+              ? const SizedBox.square(
+                  dimension: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.kitchen_outlined, size: AppIconSize.inline),
+          label: const Text('Conservation et réchauffage'),
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+        ),
+      );
+    }
+    return null;
+  }
 
-    return Padding(
-      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
-      child: Column(
+  /// Ligne de résumé, sous le titre : parts, durée, accompagnement, format.
+  String _summaryLine() {
+    final w = widget;
+    final c = w.dayConstraint;
+    final r = w.recipe;
+    final parts = <String>[];
+    final portions = c.targetPortions > 0 ? c.targetPortions : r?.portions;
+    if (portions != null && portions > 0) {
+      parts.add('$portions part${portions > 1 ? 's' : ''}');
+    }
+    if (r != null) {
+      final prep = r.tags.prepTime;
+      final cook = r.tags.cookTime;
+      if (prep != null || cook != null) {
+        parts.add('${(prep ?? 0) + (cook ?? 0)} min');
+      }
+    }
+    if (c.maxPrepMinutes > 0) parts.add('${c.maxPrepMinutes} min max');
+    final side = w.side;
+    if (r != null && side != null) parts.add(side.label);
+    final format = c.mealFormat;
+    if (format != null && format != MealFormat.defaultFormat) {
+      parts.add(format.label);
+    }
+    if (w.isBatchDay) parts.add('jour de préparation');
+    if (c.isBatchCooking && !w.isBatchDay) parts.add('réchauffage');
+    return parts.join(' · ');
+  }
+
+  // ── Construction ───────────────────────────────────────────────────────
+
+  Widget _buildTimeButton(ThemeData theme) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isToday = widget.date == today;
+    final t = widget.slotTime;
+    final timeStr =
+        '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}';
+    return Tooltip(
+      message: 'Changer l\'heure du repas',
+      child: TextButton(
+        onPressed: _pickTime,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(56, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              DateFormat('EEE d', 'fr').format(widget.date),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: isToday
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              timeStr,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTitle(ThemeData theme) {
+    final w = widget;
+    final recipe = w.recipe;
+    if (recipe == null) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // La consigne calculée n'a de sens que si l'on sait quel jour le plat
-          // est préparé. Sans jour de préparation, seul le conseil reste utile.
-          if (prep != null) _buildComputedStorage(theme, prep),
-          if (reheat != null && !reheat.isEmpty)
+          Text(
+            w.conceiving ? 'Conception en cours…' : 'À assigner',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          if (!w.conceiving)
             Padding(
-              padding: const EdgeInsets.only(top: 2, left: 17),
-              child: Text(
-                'Réchauffage : ${reheat.summary}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else if (storageReserved)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, left: 17),
-              child: Text(
-                kStorageAdviceReservedMessage,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else if (onGenerateStorageAdvice != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 9),
-              child: TextButton.icon(
-                onPressed: storageLoading ? null : onGenerateStorageAdvice,
-                icon: storageLoading
-                    ? const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(
-                        Icons.kitchen_outlined,
-                        size: AppIconSize.inline,
-                      ),
-                label: const Text('Conservation et réchauffage'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  textStyle: theme.textTheme.labelSmall,
-                ),
+              padding: const EdgeInsets.only(top: 4),
+              child: OutlinedButton.icon(
+                onPressed: w.onAssign,
+                icon: const Icon(Icons.search, size: AppIconSize.small),
+                label: const Text('Choisir une recette'),
               ),
             ),
         ],
+      );
+    }
+    final tappable = recipe.id.isNotEmpty && w.onRecipeTap != null;
+    return Row(
+      children: [
+        Flexible(
+          // InkWell : le survol se voit à la souris, l'appui ouvre la fiche.
+          child: InkWell(
+            onTap: tappable ? w.onRecipeTap : null,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+              child: Text(
+                recipe.titre,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: tappable ? theme.colorScheme.primary : null,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ),
+        if (w.isGeneratedByAI) ...[
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Recette conçue par l\'IA',
+            child: Icon(
+              Icons.smart_toy_outlined,
+              size: AppIconSize.inline,
+              color: theme.colorScheme.tertiary,
+            ),
+          ),
+        ],
+        if (w.savedToPlanning) ...[
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Déjà au planning',
+            child: Icon(
+              Icons.check_circle_outline,
+              size: AppIconSize.inline,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildActions(ThemeData theme) {
+    final w = widget;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (w.isGenerating)
+          const SizedBox.square(
+            dimension: 48,
+            child: Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (w.onGenerateWithAI != null)
+          // Sans IA : la recette suivante de la liste classée par le
+          // serveur. L'icône d'IA mentait sur ce geste.
+          IconButton(
+            icon: const Icon(Icons.autorenew),
+            tooltip: w.recipe != null
+                ? 'Autre suggestion'
+                : 'Proposer une recette',
+            onPressed: w.onGenerateWithAI,
+          ),
+        PopupMenuButton<_SlotAction>(
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'Plus d\'actions',
+          onSelected: _onAction,
+          itemBuilder: (_) => _menuItems(theme),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailsToggle(ThemeData theme) {
+    final dayLabel = DateFormat('EEEE d', 'fr').format(widget.date);
+    // Un nœud à part : sans `container`, le libellé se fondait dans celui
+    // de la carte entière.
+    return Semantics(
+      container: true,
+      button: true,
+      expanded: _expanded,
+      onTap: _toggle,
+      label:
+          'Détails du repas du $dayLabel, '
+          '${_expanded ? 'déplié' : 'replié'}',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: _toggle,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
+          child: Row(
+            children: [
+              Icon(
+                _expanded ? Icons.expand_less : Icons.expand_more,
+                size: AppIconSize.small,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Détails',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  List<Widget> _buildDetails(ThemeData theme) {
+    final w = widget;
+    final format = w.dayConstraint.effectiveFormat;
+    final storage = _buildStorageAdvice(theme);
+    final origin = w.recipe != null
+        ? MealOriginLine.maybe(source: w.choiceSource, facts: w.justification)
+        : null;
+    // Les contraintes du jour, puis le repas dans son ordre (l'entrée, le
+    // plat et son accompagnement, le dessert), puis la conservation, puis
+    // l'origine du choix. Un composant « à choisir » est déjà affiché hors
+    // du pli, comme avertissement.
+    return [
+      if (w.constraintsReadOnly)
+        _buildConstraintSummary(theme, w.dayConstraint)
+      else
+        SlotConstraintsEditor(
+          key: ValueKey('constraints-${w.index}'),
+          constraint: w.dayConstraint,
+          onMaxPrepChanged: w.onMaxPrepChanged,
+          onTargetPortionsChanged: w.onTargetPortionsChanged,
+          onReheatChanged: w.onReheatChanged,
+          onNotesChanged: w.onNotesChanged,
+          onFormatChanged: w.onFormatChanged,
+        ),
+      if (w.recipe != null) ...[
+        const SizedBox(height: 8),
+        if (format.wantsStarter && w.starter != null)
+          _buildCourseLine(
+            theme,
+            MealComponentRole.entree,
+            w.starter,
+            w.onChangeStarter,
+            w.onRemoveStarter,
+          ),
+        _buildSideLine(theme),
+        if (format.wantsDessert && w.dessert != null)
+          _buildCourseLine(
+            theme,
+            MealComponentRole.dessert,
+            w.dessert,
+            w.onChangeDessert,
+            w.onRemoveDessert,
+          ),
+      ],
+      if (storage != null) ...[const SizedBox(height: 4), storage],
+      if (origin != null) ...[const SizedBox(height: 6), origin],
+      // Le redimensionnement ne se lit que s'il a eu lieu : « Redimensionnée :
+      // non » sur chaque créneau n'apprenait rien.
+      if (w.recipe != null && w.wasResized) ...[
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.open_in_full_outlined,
+              size: AppIconSize.badge,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _resizeExplainability,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
+  String get _resizeExplainability {
+    final detail = (widget.resizeReason ?? '').trim();
+    if (detail.isEmpty) return 'Redimensionnée';
+    return 'Redimensionnée : $detail';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final isToday = date == today;
+    final w = widget;
+    final summary = _summaryLine();
+    final prep = w.prepDate;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          leading: GestureDetector(
-            onTap: () async {
-              final t = await showTimePicker(
-                context: context,
-                initialTime: slotTime,
-                helpText: 'Heure du repas',
-              );
-              if (context.mounted && t != null) onTimeChanged(t);
-            },
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  DateFormat('EEE', 'fr').format(date).toUpperCase(),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: isToday
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  DateFormat('d', 'fr').format(date),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: isToday ? theme.colorScheme.primary : null,
-                    fontWeight: isToday ? FontWeight.w700 : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          title: recipe != null
-              ? InkWell(
-                  onTap: (recipe!.id.isNotEmpty && onRecipeTap != null)
-                      ? onRecipeTap
-                      : null,
-                  borderRadius: BorderRadius.circular(4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          recipe!.titre,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            decoration:
-                                (recipe!.id.isNotEmpty && onRecipeTap != null)
-                                ? TextDecoration.underline
-                                : null,
-                          ),
-                        ),
-                      ),
-                      if (isGeneratedByAI) ...[
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: 'Recette conçue par l\'IA',
-                          child: Icon(
-                            Icons.smart_toy_outlined,
-                            size: AppIconSize.inline,
-                            color: Theme.of(context).colorScheme.tertiary,
-                          ),
-                        ),
-                      ],
-                      if (savedToPlanning) ...[
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: 'Déjà au planning',
-                          child: Icon(
-                            Icons.check_circle_outline,
-                            size: AppIconSize.inline,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                )
-              : Text(
-                  conceiving ? 'Conception en cours…' : 'À assigner',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-          subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay, slotTime),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
+    final warnings = <Widget>[
+      if (w.missingStarter)
+        _buildCourseLine(
+          theme,
+          MealComponentRole.entree,
+          null,
+          w.onChangeStarter,
+          null,
+        ),
+      if (w.missingDessert)
+        _buildCourseLine(
+          theme,
+          MealComponentRole.dessert,
+          null,
+          w.onChangeDessert,
+          null,
+        ),
+      if (prep != null) _buildComputedStorage(theme, prep),
+    ];
+
+    return GestureDetector(
+      // Clic droit : le même menu que ⋮, à l'endroit du clic.
+      onSecondaryTapDown: (details) => _showContextMenu(details.globalPosition),
+      child: Card.outlined(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (isGenerating)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (onGenerateWithAI != null)
-                // Sans IA : la recette suivante de la liste classée par le
-                // serveur. L'icône d'IA mentait sur ce geste.
-                IconButton(
-                  icon: const Icon(Icons.autorenew, size: AppIconSize.small),
-                  tooltip: recipe != null
-                      ? 'Autre suggestion'
-                      : 'Proposer une recette',
-                  onPressed: onGenerateWithAI,
-                ),
-              if (recipe != null) ...[
-                IconButton(
-                  icon: const Icon(
-                    AppIcons.calendarExport,
-                    size: AppIconSize.small,
-                  ),
-                  tooltip: savedToPlanning
-                      ? 'Ajouter au calendrier et mettre à jour le planning'
-                      : 'Ajouter au calendrier et au planning',
-                  onPressed: onExportToCalendar,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.swap_horiz_outlined),
-                  tooltip: 'Changer',
-                  onPressed: onAssign,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Retirer',
-                  onPressed: onRemove,
-                ),
-              ] else
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: 'Choisir une recette',
-                  onPressed: onAssign,
-                ),
-              IconButton(
-                icon: Icon(
-                  Icons.delete_outline,
-                  size: AppIconSize.small,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                tooltip: 'Supprimer ce jour',
-                onPressed: onDelete,
-              ),
-            ],
-          ),
-          onTap: recipe == null ? onAssign : null,
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
-          child: constraintsReadOnly
-              ? _buildConstraintSummary(theme, dayConstraint)
-              : SlotConstraintsEditor(
-                  key: ValueKey('constraints-$index'),
-                  constraint: dayConstraint,
-                  onMaxPrepChanged: onMaxPrepChanged,
-                  onTargetPortionsChanged: onTargetPortionsChanged,
-                  onReheatChanged: onReheatChanged,
-                  onNotesChanged: onNotesChanged,
-                  onFormatChanged: onFormatChanged,
-                ),
-        ),
-        // Ce qui accompagne le plat — choisi par le programme, changé d'un
-        // appui. Après les contraintes, avant la conservation : c'est du repas,
-        // pas de la logistique.
-        // Dans l'ordre du repas : l'entrée, le plat et son accompagnement, le
-        // dessert. L'entrée et le dessert n'apparaissent que si le format du
-        // créneau en demande.
-        if (recipe != null) ...[
-          if (dayConstraint.effectiveFormat.wantsStarter)
-            _buildCourseLine(
-              theme,
-              MealComponentRole.entree,
-              starter,
-              onChangeStarter,
-              onRemoveStarter,
-            ),
-          _buildSideLine(theme),
-          if (dayConstraint.effectiveFormat.wantsDessert)
-            _buildCourseLine(
-              theme,
-              MealComponentRole.dessert,
-              dessert,
-              onChangeDessert,
-              onRemoveDessert,
-            ),
-        ],
-        // Jour de préparation à l'avance, et ce que le plat devra supporter.
-        if (prepDate != null || onGenerateStorageAdvice != null)
-          _buildStorageLine(theme),
-        // Origine du choix, puis les faits qui le justifient, puis le
-        // redimensionnement.
-        if (recipe != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 72, right: 16, bottom: 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ?MealOriginLine.maybe(
-                  source: choiceSource,
-                  facts: justification,
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.open_in_full_outlined,
-                      size: AppIconSize.badge,
-                      color: theme.colorScheme.onSurfaceVariant,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTimeButton(theme),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _buildTitle(theme),
                     ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        _resizeExplainability,
-                        style: theme.textTheme.labelSmall?.copyWith(
+                  ),
+                  _buildActions(theme),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (summary.isNotEmpty)
+                      Text(
+                        summary,
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                    for (final warning in warnings) ...[
+                      const SizedBox(height: 4),
+                      warning,
+                    ],
+                    const SizedBox(height: 4),
+                    _buildDetailsToggle(theme),
+                    if (_expanded) ...[
+                      const SizedBox(height: 4),
+                      ..._buildDetails(theme),
+                      const SizedBox(height: 4),
+                    ],
                   ],
                 ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  String get _resizeExplainability {
-    if (!wasResized) return 'Redimensionnée : non';
-    final detail = (resizeReason ?? '').trim();
-    if (detail.isEmpty) return 'Redimensionnée : oui';
-    return 'Redimensionnée : oui ($detail)';
-  }
-
-  Widget _buildSubtitle(
-    ThemeData theme,
-    DayConstraint? constraint,
-    bool isBatchDay,
-    TimeOfDay time,
-  ) {
-    final timeStr =
-        '${time.hour.toString().padLeft(2, '0')}:'
-        '${time.minute.toString().padLeft(2, '0')}';
-
-    final parts = <String>[];
-    if (isBatchDay) parts.add('jour de batch cooking (repas normal)');
-    if (constraint != null && !constraint.isEmpty) {
-      if (constraint.maxPrepMinutes > 0) {
-        parts.add('max ${constraint.maxPrepMinutes}min');
-      }
-      if (constraint.targetPortions > 0) {
-        parts.add('${constraint.targetPortions} parts');
-      }
-      if (constraint.isBatchCooking && !isBatchDay) {
-        parts.add('réchauffage');
-      }
-    }
-    if (recipe != null) {
-      final prep = recipe!.tags.prepTime;
-      final cook = recipe!.tags.cookTime;
-      if (prep != null || cook != null) {
-        final times = <String>[];
-        if (prep != null) times.add('${prep}min prép');
-        if (cook != null) times.add('${cook}min cuisson');
-        parts.add(times.join(' + '));
-      }
-    }
-
-    return RichText(
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: timeStr,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (parts.isNotEmpty)
-            TextSpan(
-              text: '  ·  ${parts.join(' · ')}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
               ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -825,24 +1046,32 @@ class BatchSlotTile extends StatelessWidget {
     final chips = <Widget>[];
     if (constraint.maxPrepMinutes > 0) {
       chips.add(
-        _constraintChip(theme, 'Prépa max ${constraint.maxPrepMinutes} min'),
+        _constraintChip(theme, 'Prépa ${constraint.maxPrepMinutes} min max'),
       );
     }
     if (constraint.targetPortions > 0) {
       chips.add(_constraintChip(theme, '${constraint.targetPortions} parts'));
     }
-    chips.add(
-      _constraintChip(
-        theme,
-        constraint.isBatchCooking ? 'Réchauffage: oui' : 'Réchauffage: non',
-      ),
-    );
+    // Le réchauffage ne se lit que s'il est demandé : « Réchauffage: non »
+    // sur chaque créneau n'apprenait rien.
+    if (constraint.isBatchCooking) {
+      chips.add(_constraintChip(theme, 'Réchauffage'));
+    }
     // Le format ne se lit que s'il s'écarte du plat seul.
     if (constraint.mealFormat != null) {
       chips.add(_constraintChip(theme, constraint.mealFormat!.label));
     }
 
     final notes = constraint.notes.trim();
+    if (chips.isEmpty && notes.isEmpty) {
+      return Text(
+        'Aucune contrainte pour ce jour',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -874,6 +1103,26 @@ class BatchSlotTile extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
       ),
+    );
+  }
+}
+
+/// La dernière carte de la grille : ajoute un jour au cycle.
+class AddSlotDayCard extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const AddSlotDayCard({super.key, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(56),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      icon: const Icon(Icons.add_circle_outline),
+      label: const Text('Ajouter un jour'),
     );
   }
 }
