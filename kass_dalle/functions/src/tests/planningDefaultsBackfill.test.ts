@@ -27,6 +27,10 @@ describe("contraintes de variété par défaut", () => {
     assert.equal(mergedConstraints(once, TEXT), null);
     assert.equal(mergedConstraints(TEXT, TEXT), null);
   });
+  test("fusion trop longue pour la génération : rien n'est écrit", () => {
+    assert.equal(mergedConstraints("x".repeat(40), TEXT, 60), "too_long");
+    assert.equal(mergedConstraints("", "y".repeat(61), 60), "too_long");
+  });
   test("valeur qui n'est pas un texte : traitée comme vide", () => {
     assert.equal(mergedConstraints(42, TEXT), TEXT);
   });

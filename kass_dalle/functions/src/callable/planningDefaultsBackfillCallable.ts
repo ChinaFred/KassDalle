@@ -15,12 +15,15 @@
  * plus : pas de curseur, mais les mêmes bornes que les autres backfills.
  */
 
+import { createHash } from "node:crypto";
+
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_PLANNING_CONFIG, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { requireAdmin } from "./_auth";
+import { SHORT_TEXT_MAX_CHARS } from "./_inputBounds";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -52,6 +55,12 @@ export interface BackfillPlanningDefaultsResponse {
   dejaAJour: number;
   /** Compte de l'administrateur qui lance l'opération. */
   ignores: number;
+  /**
+   * Contraintes qui dépasseraient la longueur admise par la génération une
+   * fois le texte ajouté : laissées telles quelles, sinon le compte ne
+   * pourrait plus planifier.
+   */
+  tropLongs: number;
   echoues: number;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
@@ -61,13 +70,19 @@ export interface BackfillPlanningDefaultsResponse {
 
 /**
  * Ce qu'il faut écrire dans les contraintes [current] pour qu'elles portent
- * [text], ou `null` si elles le portent déjà. Pur, pour les tests.
+ * [text] : le texte fusionné, `null` si elles le portent déjà, ou
+ * `"too_long"` si la fusion dépasserait `maxLength` — la génération refuse
+ * au-delà, le compte ne pourrait plus planifier. Pur, pour les tests.
  */
-export function mergedConstraints(current: unknown, text: string): string | null {
+export function mergedConstraints(
+  current: unknown,
+  text: string,
+  maxLength: number = SHORT_TEXT_MAX_CHARS,
+): string | null | "too_long" {
   const existing = typeof current === "string" ? current.trim() : "";
-  if (existing.length === 0) return text;
-  if (existing.includes(text)) return null;
-  return `${existing}\n\n${text}`;
+  if (existing.includes(text) && existing.length > 0) return null;
+  const merged = existing.length === 0 ? text : `${existing}\n\n${text}`;
+  return merged.length > maxLength ? "too_long" : merged;
 }
 
 export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest>(
@@ -96,6 +111,7 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       completes: 0,
       dejaAJour: 0,
       ignores: 0,
+      tropLongs: 0,
       echoues: 0,
       stoppedByDeadline: false,
       stoppedByBudget: false,
@@ -134,8 +150,15 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
         response.dejaAJour += 1;
         continue;
       }
+      if (next === "too_long") {
+        response.tropLongs += 1;
+        continue;
+      }
       try {
-        await doc.ref.update({ global_constraints: next });
+        // Précondition sur la date d'écriture lue : si la personne enregistre
+        // ses préférences entre-temps, l'écriture échoue au lieu d'écraser
+        // son texte par l'ancien — relancer reprend le compte.
+        await doc.ref.update({ global_constraints: next }, { lastUpdateTime: doc.updateTime });
         if (typeof current === "string" && current.trim().length > 0) {
           response.completes += 1;
         } else {
@@ -168,7 +191,12 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: FEATURE,
-      extra: { ...response },
+      // Le texte posé chez les autres se retrouve : sa longueur et son empreinte.
+      extra: {
+        ...response,
+        textLength: text.length,
+        textSha256: createHash("sha256").update(text).digest("hex"),
+      },
     });
     return response;
   },
