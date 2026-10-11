@@ -808,7 +808,15 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'shopping_product', 'shopping_product_source',
           'allergens', 'allergens_source', 'allergens_at', 'updated_at'
-        ]);
+        ]) &&
+        // Une liste de 14 clés au plus, signée « admin » : une valeur qui
+        // n'est pas une liste remettrait l'ingrédient en « jamais examiné »,
+        // et une source « ai_estimated » masquerait la correction manuelle.
+        (!request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['allergens', 'allergens_source']) ||
+          (request.resource.data.allergens is list &&
+            request.resource.data.allergens.size() <= 14 &&
+            request.resource.data.allergens_source == 'admin'));
       allow create, delete: if false;
     }
 

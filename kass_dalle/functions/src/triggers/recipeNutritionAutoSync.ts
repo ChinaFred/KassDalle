@@ -371,9 +371,15 @@ export async function syncRecipeNutrition(args: {
     // acheté, qui interroge le modèle au même moment : le délai du
     // déclencheur n'en souffre pas. Ne lève jamais ; `onRecipeWritten`
     // déduit ensuite le champ de la recette, sans appel.
+    //
+    // Échéance de 120 s : l'enrichissement per100g attend la fin de cet
+    // examen avant de démarrer sa propre échéance, et le déclencheur n'a que
+    // 300 s. Une recette de plusieurs centaines d'ingrédients neufs garde ses
+    // derniers lots pour le backfill, au lieu de faire dépasser le délai.
     const allergensExamination = examineIngredientAllergens({
       ids: [...aliasesByCanonical.keys()],
       ctx: { correlationId, userId, scanId, feature: ALLERGENS_AUTO_FEATURE },
+      deadlineMs: Date.now() + 120_000,
       extra: { recipeId: after.id },
     });
 

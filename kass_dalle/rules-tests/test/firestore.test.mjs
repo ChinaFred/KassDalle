@@ -1603,6 +1603,22 @@ describe("référentiels", () => {
     );
   });
 
+  it("un administrateur n'écrit pas des allergènes qui ne sont pas une liste", async () => {
+    await assertFails(
+      db("admin")
+        .doc("nutrition_ingredients/farine")
+        .update({ allergens: "gluten", allergens_source: "admin", allergens_at: 1 }),
+    );
+  });
+
+  it("une correction de l'administrateur est signée « admin »", async () => {
+    await assertFails(
+      db("admin")
+        .doc("nutrition_ingredients/farine")
+        .update({ allergens: ["gluten"], allergens_source: "ai_estimated", allergens_at: 1 }),
+    );
+  });
+
   it("un éditeur ne corrige pas les allergènes d'un ingrédient", async () => {
     await assertFails(
       db("editor")
