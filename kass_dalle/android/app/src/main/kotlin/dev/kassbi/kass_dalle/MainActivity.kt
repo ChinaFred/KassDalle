@@ -3,6 +3,7 @@ package dev.kassbi.kass_dalle
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -18,6 +19,12 @@ import java.io.File
  *
  * Le téléchargement, lui, reste côté Dart : il a besoin de la progression pour
  * l'afficher, et rien dans une requête HTTP n'exige du natif.
+ *
+ * Un second canal reçoit « Partager vers Kass'Dalle » (filtre `ACTION_SEND`
+ * `text/plain` du manifeste) sans paquet tiers : le texte partagé est gardé en
+ * attente, rendu par `getInitialSharedText`, et poussé vers Dart par
+ * `onSharedText` quand l'application tourne déjà — voir
+ * `features/recipes/data/share_intent_source.dart`.
  */
 class MainActivity : FlutterActivity() {
 
@@ -26,7 +33,13 @@ class MainActivity : FlutterActivity() {
         const val AUTHORITY_SUFFIX = ".updateprovider"
         const val UPDATES_DIR = "updates"
         const val APK_MIME = "application/vnd.android.package-archive"
+        const val SHARE_CHANNEL = "dev.kassbi.kass_dalle/share"
     }
+
+    private var shareChannel: MethodChannel? = null
+
+    /** Le dernier partage reçu que Dart n'a pas encore pris. */
+    private var pendingSharedText: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -41,6 +54,73 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+            .also { channel ->
+                channel.setMethodCallHandler { call, result ->
+                    when (call.method) {
+                        "getInitialSharedText" -> {
+                            result.success(pendingSharedText)
+                            pendingSharedText = null
+                        }
+                        else -> result.notImplemented()
+                    }
+                }
+            }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        shareChannel?.setMethodCallHandler(null)
+        shareChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Une activité recréée (processus tué puis restauré) ou rouverte
+        // depuis les applications récentes reçoit à nouveau l'intention
+        // d'origine : le partage a déjà été traité, on ne le rejoue pas.
+        val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !fromHistory) {
+            sharedTextOf(intent)?.let { pendingSharedText = it }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val text = sharedTextOf(intent) ?: return
+        pendingSharedText = text
+        val channel = shareChannel ?: return
+        // Le texte reste en attente tant que Dart n'a pas confirmé l'avoir
+        // reçu : sans écouteur côté Dart, `getInitialSharedText` le rendra.
+        channel.invokeMethod(
+            "onSharedText",
+            text,
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    if (pendingSharedText == text) pendingSharedText = null
+                }
+
+                override fun error(code: String, message: String?, details: Any?) = Unit
+
+                override fun notImplemented() = Unit
+            },
+        )
+    }
+
+    /**
+     * Le texte d'un partage `ACTION_SEND` `text/plain` : `EXTRA_TEXT`, à défaut
+     * `EXTRA_SUBJECT`. Chaîne vide pour un partage sans texte lisible (l'écran
+     * dit alors qu'il ne contient pas d'adresse web) ; `null` pour toute autre
+     * intention.
+     */
+    private fun sharedTextOf(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        if (intent.type?.startsWith("text/plain") != true) return null
+        val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        if (!text.isNullOrBlank()) return text
+        return intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString() ?: ""
     }
 
     /**

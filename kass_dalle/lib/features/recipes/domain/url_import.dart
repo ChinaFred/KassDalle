@@ -93,3 +93,64 @@ bool looksLikeWebLink(String text) {
   if (uri == null) return false;
   return (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
 }
+
+/// Ponctuation collée à la fin d'une adresse dans un texte : « (voir
+/// https://site.fr/recette). » ne garde que l'adresse.
+final _trailingPunctuation = RegExp(r'''[.,;:!?)\]}»"'…]+$''');
+
+/// La première adresse web (http ou https) trouvée dans [text], ou `null`.
+///
+/// Un partage depuis un navigateur envoie souvent « Titre de la page
+/// https://… » ; le presse-papiers peut contenir une phrase entière.
+Uri? firstWebLink(String? text) {
+  if (text == null || text.isEmpty) return null;
+  for (final m in RegExp(
+    r'https?://[^\s<>"]+',
+    caseSensitive: false,
+  ).allMatches(text)) {
+    final candidate = m.group(0)!.replaceAll(_trailingPunctuation, '');
+    if (looksLikeWebLink(candidate)) return Uri.parse(candidate);
+  }
+  return null;
+}
+
+/// Une adresse lisible sur une ligne : le domaine sans « www. », puis le
+/// début du chemin, coupé à [maxLength] caractères avec « … ».
+///
+/// `https://www.marmiton.org/recettes/blanquette-de-veau.aspx` donne
+/// « marmiton.org/recettes/blanq… ».
+String shortLinkLabel(Uri uri, {int maxLength = 27}) {
+  final host = uri.host.startsWith('www.') ? uri.host.substring(4) : uri.host;
+  var path = uri.path;
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  final full = '$host$path';
+  return full.length <= maxLength ? full : '${full.substring(0, maxLength)}…';
+}
+
+/// Ce que l'application fait d'un texte reçu par « Partager vers
+/// Kass'Dalle ».
+enum SharedTextOutcome {
+  /// Éditeur ou administrateur, une adresse web : la boîte d'import s'ouvre,
+  /// adresse posée.
+  import,
+
+  /// Lecteur : l'import lui est fermé, quel que soit le texte.
+  editorsOnly,
+
+  /// Éditeur ou administrateur, aucune adresse web dans le texte.
+  noWebLink,
+}
+
+/// Décide du sort d'un partage reçu. [url] n'est rempli que pour
+/// [SharedTextOutcome.import].
+({SharedTextOutcome outcome, Uri? url}) resolveSharedText(
+  String text, {
+  required bool canEdit,
+}) {
+  if (!canEdit) return (outcome: SharedTextOutcome.editorsOnly, url: null);
+  final url = firstWebLink(text);
+  if (url == null) return (outcome: SharedTextOutcome.noWebLink, url: null);
+  return (outcome: SharedTextOutcome.import, url: url);
+}

@@ -868,9 +868,10 @@ sequenceDiagram
     <h2 id="recherche"><span class="n">07</span>Recherche de recettes — l'écran Explorer</h2>
     <p class="sec-note">
       L'écran charge les recettes des sources choisies, puis filtre sur l'appareil à chaque
-      frappe, sans IA. Le classement par l'IA ne part que sur « Demander à l'IA », pour un
-      éditeur ou un administrateur, avec comme corpus les recettes retenues par les filtres sans
-      le texte.
+      frappe, sans IA, en sections quand du texte est tapé. Le classement par l'IA ne part que
+      sur « Chercher avec l'IA », pour un éditeur ou un administrateur, avec comme corpus les
+      recettes retenues par les filtres sans le texte. Au retour de Google, un éditeur voit le
+      bandeau d'import.
       <span class="path">search_screen.dart, search_providers.dart (exploreCorpusProvider,
       AiRankingNotifier), recipes/domain/recipe_filter.dart</span>
     </p>
@@ -906,14 +907,16 @@ sequenceDiagram
   loop à chaque frappe ou filtre
     U->>S: texte, puce
     S->>F: texte, filtres, tri
-    F-->>S: liste filtrée
+    Note over F: mot tapé = début d'un mot ; petits ingrédients non lus ;<br/>section : titre, puis étiquettes, puis ingrédients principaux
+    F-->>S: sections triées, total, ingrédients cités (« Avec : … »)
+    S-->>U: « Dans le titre (N) », « Par cuisine, type ou thème (K) »,<br/>« Dans les ingrédients principaux (M) » repliée si N + K > 0
     opt filtre ou tri changé
       S->>P: apply
       P->>FS: set, une demi-seconde après le dernier changement
     end
   end
 
-  opt éditeur ou admin : « Demander à l'IA · N recettes », actif si N > 0 et aucun classement en cours
+  opt éditeur ou admin : « Chercher avec l'IA · N recettes », actif si N > 0 et aucun classement en cours
     alt champ vide
       S-->>U: focus, « Écrivez votre envie pour que l'IA cherche. »
     else texte présent
@@ -934,6 +937,18 @@ sequenceDiagram
 
   opt « Chercher sur Google »
     S-->>U: google.com/search?q=texte recette, sans appel d'IA
+    opt éditeur ou admin, Google ouvert
+      Note over S: retour attendu, en mémoire
+      U->>S: revient dans l'application (onResume)
+      alt Android ou Windows
+        S->>S: Clipboard.getData, première adresse http(s)
+        S-->>U: bandeau « Vous avez trouvé une recette ? Importez-la. »<br/>(en tête de liste sur téléphone, fixe sous le champ sur grand écran),<br/>« marmiton.org/recettes/blanq… » et « Importer ce lien », sinon « Coller le lien »
+      else web ou iOS
+        S-->>U: bandeau et « Coller le lien » (presse-papiers lu à l'appui)
+      end
+      U->>S: Importer ce lien ou Coller le lien
+      S-->>U: boîte « Importer depuis un lien », adresse posée (séquence 31)
+    end
   end
 </pre>
       </div>
@@ -3055,10 +3070,13 @@ sequenceDiagram
   <section>
     <h2 id="lien-web"><span class="n">31</span>Import d'une recette depuis un lien</h2>
     <p class="sec-note">
-      Un éditeur ou un administrateur colle l'adresse d'une page. La callable contrôle et met en
-      file ; le pipeline d'import lit la page, la balise et écrit le brouillon dans « Mes recettes
-      du web ». La photo du site passe par la modération après l'écriture.
-      <span class="path">url_import_dialog.dart → importRecipeFromUrlFn → jobDispatcher →
+      Un éditeur ou un administrateur colle l'adresse d'une page, ou la reçoit déjà posée : bandeau
+      d'Explorer au retour de Google (séquence 07), « Partager vers Kass'Dalle » sur Android. La
+      callable contrôle et met en file ; le pipeline d'import lit la page, la balise et écrit le
+      brouillon dans « Mes recettes du web ». La photo du site passe par la modération après
+      l'écriture.
+      <span class="path">shared_link_import_host.dart (partage Android) →
+      url_import_dialog.dart → importRecipeFromUrlFn → jobDispatcher →
       recipeProcessor → pipeline/urlImport.ts → web/safeFetch.ts, web/recipePage.ts,
       gemini/transcription.ts, gemini/tagging.ts → saveDraft → moderateAndPromote</span>
     </p>
@@ -3068,6 +3086,8 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   actor U as Éditeur
+  participant A as Android (partage)
+  participant H as SharedLinkImportHost
   participant D as Boîte « Importer depuis un lien »
   participant QF as getUrlImportQuotaFn
   participant FN as importRecipeFromUrlFn
@@ -3078,13 +3098,27 @@ sequenceDiagram
   participant M as Moteur d'IA
   participant MOD as moderateAndPromote
 
+  opt « Partager vers Kass'Dalle » depuis le navigateur
+    U->>A: Partager, Kass'Dalle
+    A->>H: ACTION_SEND text/plain (MainActivity, canal dev.kassbi.kass_dalle/share),<br/>gardé jusqu'à la connexion (pendingSharedTextProvider)
+    opt compte en lecture (appUserProvider) ou non connecté
+      Note over H: rien n'est pris, le texte attend le compte
+    end
+    alt lecteur
+      H-->>U: « Import réservé aux éditeurs »
+    else aucune adresse web dans le texte
+      H-->>U: « Ce partage ne contient pas d'adresse web. »
+    else éditeur ou admin
+      H->>D: showUrlImportDialog(initialUrl), par-dessus l'écran courant
+    end
+  end
   D->>QF: à l'ouverture
   QF->>FS: url_import_daily{uid}_{jour}
   QF-->>D: limit, used, remaining — « Il vous reste N imports »
   alt remaining = 0
     D-->>U: message de plafond, « Coller le texte » à la place d'« Importer »
   end
-  U->>D: colle l'adresse, « Importer »
+  U->>D: colle l'adresse, ou la vérifie si elle est posée, « Importer »
   D->>FN: url, force?
   FN->>FN: requireEditor("url_import")
   FN->>FN: parseImportUrl — http(s), ≤ 2 048 car., sans identifiants, hôte non interne

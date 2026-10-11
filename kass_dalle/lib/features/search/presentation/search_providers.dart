@@ -153,7 +153,7 @@ Map<String, String> buildRecipeSummary(Recipe recipe, {int? myRating}) {
   };
 }
 
-// ── « Demander à l'IA » : classement facturé ─────────────────────────────────
+// ── « Chercher avec l'IA » : classement facturé ──────────────────────────────
 
 /// La section « Choisies par l'IA ».
 ///

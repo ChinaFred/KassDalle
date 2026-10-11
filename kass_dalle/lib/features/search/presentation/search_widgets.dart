@@ -16,7 +16,15 @@ import '../../../core/theme/app_icon_size.dart';
 class SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
 
-  const SearchResultTile({super.key, required this.result});
+  /// Section « Dans les ingrédients principaux » : les ingrédients qui ont
+  /// fait retenir la recette, cités sur une ligne « Avec : … ».
+  final List<String> matchedIngredients;
+
+  const SearchResultTile({
+    super.key,
+    required this.result,
+    this.matchedIngredients = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +114,15 @@ class SearchResultTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (matchedIngredients.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        matchedIngredientsLine(matchedIngredients),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (times.total case final minutes?) ...[
                       const SizedBox(height: 4),
                       _DurationLine(
@@ -162,6 +179,62 @@ class SearchResultTile extends StatelessWidget {
               ),
               const Icon(Icons.chevron_right, size: AppIconSize.small),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// En-tête repliable d'une section de la recherche par texte : « Dans le
+/// titre (12) » et un chevron. Toute la ligne bascule la section, au doigt,
+/// à la souris ou au clavier (Entrée, Espace).
+class QuerySectionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final bool open;
+  final VoidCallback onToggle;
+
+  const QuerySectionHeader({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.open,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      button: true,
+      expanded: open,
+      child: Tooltip(
+        message: open ? 'Masquer' : 'Afficher',
+        child: InkWell(
+          onTap: onToggle,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$title ($count)',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    open ? Icons.expand_less : Icons.expand_more,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

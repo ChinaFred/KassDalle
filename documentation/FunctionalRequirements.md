@@ -50,8 +50,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 | Rôle | Accès |
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
-| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6). Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Demander à l'IA » et « Imaginer 3 recettes ». Peut annoter. |
-| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur Google » ; « Demander à l'IA » ne lui est pas proposé. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis le bandeau d'Explorer au retour de Google et par « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur Google » ; « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour de Google. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
@@ -238,10 +238,28 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 
 **Qui :** Editor ou Admin. Le Reader n'importe pas : les points d'entrée lui sont masqués.
 
-**Points d'entrée.** Trois boutons ouvrent le même parcours :
+**Points d'entrée.** Cinq chemins ouvrent la même boîte « Importer depuis un lien » :
 - « Importer depuis un lien », dans **Explorer** (5.5) ;
+- le **bandeau d'Explorer au retour de Google** (5.5) : « Vous avez trouvé une recette ?
+  Importez-la. » ;
+- **« Partager vers Kass'Dalle »**, sur Android : depuis le navigateur ou une autre
+  application, le menu de partage du téléphone propose Kass'Dalle ;
 - le bouton placé sous « Saisie manuelle » dans l'écran **Import** (`/scan`) ;
 - le bouton **« Lien »** de l'éditeur de la saisie manuelle (`/recipes/new`).
+
+**Partager vers Kass'Dalle (Android).** Le partage ouvre l'application, ou la ramène au
+premier plan, et la boîte s'ouvre par-dessus l'écran courant, avec la première adresse web
+du texte partagé déjà posée dans le champ. Rien ne part avant « Importer ». Sur téléphone,
+le champ n'a pas le focus, pour que le clavier ne cache pas l'adresse ; au bureau et sur le
+web en grand écran, il l'a, et Entrée envoie.
+- Utilisateur non connecté : la connexion d'abord, puis la boîte s'ouvre.
+- Partage reçu pendant le démarrage : il attend que le compte soit lu, puis la boîte (ou le
+  refus du Reader) s'affiche. Un Editor ne voit jamais le refus pendant ce temps.
+- Reader : une boîte « Import réservé aux éditeurs » dit « Importer une recette ou un livre
+  est réservé aux éditeurs et aux administrateurs. Demandez à un administrateur de vous
+  nommer éditeur. », avec « Fermer ».
+- Partage sans adresse web : le message « Ce partage ne contient pas d'adresse web. ».
+- iOS, le web et Windows ne reçoivent pas de partage.
 
 **Étape 1 — Coller l'adresse.** L'utilisateur colle l'adresse d'une page web. Avant tout envoi, trois contrôles ont lieu :
 - **Adresse valide et publique.** Une adresse mal formée, ou qui ne désigne pas une page publique sur internet, est refusée avec un message. Rien n'est lancé.
@@ -393,24 +411,50 @@ privait le titre de la place dont il manquait.
 
 Écran dédié `/search`, intitulé **Explorer**. Il sert d'abord à parcourir et filtrer la
 bibliothèque, sur l'appareil, sans IA. Quatre actions vont plus loin, chacune sur un bouton :
-« Demander à l'IA », « Imaginer 3 recettes », « Chercher sur Google » et « Importer depuis un
-lien » (4.6). Aucune ne part toute seule.
+« Chercher avec l'IA », « Imaginer 3 recettes », « Chercher sur Google » et « Importer depuis
+un lien » (4.6). Aucune ne part toute seule.
 
 | Action | Qui | Appel d'IA |
 |---|---|---|
 | Liste, champ de texte, filtres, tri | tous les rôles | aucun |
-| **Demander à l'IA** | Editor, Admin | un appel par appui |
+| **Chercher avec l'IA** | Editor, Admin | un appel par appui |
 | **Imaginer 3 recettes** | Editor, Admin | trois appels, plus un par doublon rejoué |
 | **Chercher sur Google** | tous les rôles | aucun |
-| **Importer depuis un lien** | Editor, Admin | voir 4.6 |
+| **Importer depuis un lien**, bandeau au retour de Google | Editor, Admin | voir 4.6 |
 
 **À l'ouverture**, l'écran montre la liste des recettes du périmètre : « Mes recettes »,
 « Ma famille », « Mes brouillons ». Rien n'est envoyé à l'IA.
 
 **Le champ « Titre, ingrédient, envie… » filtre la liste à chaque frappe**, sans IA. Il
-cherche dans le titre, les ingrédients et les étiquettes de la recette. Les accents et la
-casse ne comptent pas. Une recette reste dans la liste si elle contient tous les mots tapés,
-où qu'ils soient.
+cherche dans le titre, les étiquettes (cuisines, thèmes, occasions, types de plat) et les
+ingrédients principaux de la recette. Les accents et la casse ne comptent pas.
+
+- **Un mot tapé correspond au début d'un mot de la recette** : « blanq » trouve
+  « blanquette » ; « bla » ne trouve plus « sablé », où « bla » n'est pas au début d'un
+  mot. Tous les mots tapés doivent correspondre.
+- **Les petits ingrédients ne sont pas lus** : sel, poivre, épices et herbes dosés à la
+  pincée, huile, beurre, vinaigre, eau, persil, ciboulette, coriandre, basilic, menthe,
+  sucre, farine, ail, oignon — formes au pluriel et composées comprises (« huile d'olive »,
+  « gousse d'ail », « oignons »). « poivre blanc » n'est donc plus trouvé par « bla » : le
+  poivre est un petit ingrédient, lu seulement s'il est dans le titre. Un mot tapé qui en
+  nomme un n'est cherché que dans les titres, et une ligne grise le dit avec le mot tel
+  qu'il a été tapé : « « Sésame » n'est cherché que dans les titres. ». Le
+  filtre « Sans l'ingrédient » n'est pas concerné : il lit tous les ingrédients.
+- **Trois sections, dans cet ordre**, quand du texte est tapé. Une recette va dans la
+  première où tous les mots se trouvent :
+  1. **Dans le titre (N)** — tous les mots dans le titre ;
+  2. **Par cuisine, type ou thème (N)** — tous les mots dans le titre et les étiquettes,
+     sans être tous dans le titre (« coréen » : « Bibimbap », de cuisine coréenne) ;
+  3. **Dans les ingrédients principaux (N)** — un mot au moins n'est que dans les
+     ingrédients. Chaque ligne dit lequel : « Avec : lait de coco ». Cette section est
+     **repliée** quand l'une des deux premières a des résultats, ouverte sinon.
+
+  Une section vide n'a pas d'en-tête. Chaque en-tête se replie ou s'ouvre d'un appui, au
+  clavier comme au doigt ; cet état tient tant que le texte ne change pas et n'est pas
+  retenu. Le tri choisi s'applique dans chaque section ; l'ordre des sections ne change
+  pas. Le nombre « N recettes » compte toutes les sections, repliées comprises, comme
+  « Voir N recettes » de la feuille des filtres.
+- **Sans texte**, la liste est simple, sans section.
 
 **Les filtres.** Quatre sont visibles :
 
@@ -468,7 +512,7 @@ recettes sans durée en fin de liste), « Plus récentes », « Titre ».
 rangement de la bibliothèque. Il les retrouve à la prochaine ouverture, sur tout appareil. Le
 texte du champ n'est pas retenu. Rien n'est écrit dans les recettes.
 
-**Demander à l'IA** (Editor, Admin). Le bouton envoie la demande écrite dans le champ, avec
+**Chercher avec l'IA** (Editor, Admin). Le bouton envoie la demande écrite dans le champ, avec
 les recettes que retiennent les filtres. Le filtre du texte ne s'applique pas à cet envoi :
 le texte sert de demande. Chaque recette est résumée — identifiant, titre, livre, vingt
 premiers ingrédients de l'index, thèmes, cuisines, difficulté, statut — et le lot part dans
@@ -476,7 +520,8 @@ un seul appel.
 
 - Le moteur rend les identifiants retenus, classés par pertinence, chacun avec sa **raison**
   en une phrase. Ils s'affichent en tête de la liste, sous « Choisies par l'IA », la raison
-  sous le titre, marquée du robot (§6, « Deux icônes, deux sens »). Le reste de la liste suit.
+  sous le titre, marquée du robot (§6, « Deux icônes, deux sens »). Le reste de la liste suit,
+  sous « Vos recettes » sans texte, en sections avec du texte.
 - Quand rien ne correspond, le moteur rend une **reformulation** plutôt qu'une liste vide.
 - **Les notes du lecteur entrent dans la demande.** Les recettes qu'il a notées partent avec
   leur note sur 10, et le prompt donne la clé de lecture : 8 ou plus, il aime beaucoup ; 5 à
@@ -502,11 +547,26 @@ lui interdisant les titres déjà rendus ; si le doublon persiste, elle est aban
 **Chercher sur Google** (tous les rôles). Le bouton ouvre une recherche Google avec le texte
 du champ suivi du mot « recette ». Aucun appel d'IA : le texte n'est pas reformulé. Rien n'est téléchargé, rien n'est analysé.
 
-**Disposition.** Sur téléphone, une barre en bas porte « Demander à l'IA » et « Aller plus
+**Au retour de Google** (Editor, Admin), Explorer affiche un bandeau : « Vous avez trouvé une
+recette ? Importez-la. ». Sur téléphone, il est le premier élément de la liste des résultats
+et défile avec elle ; sur grand écran, il reste fixe sous le champ.
+- Sur Android et Windows, le presse-papiers est lu au retour. S'il contient une adresse web,
+  le bandeau la montre en abrégé (« marmiton.org/recettes/blanq… ») avec « Importer ce
+  lien » ; sinon il propose « Coller le lien ».
+- Sur le web et iOS, le presse-papiers n'est pas lu au retour : « Coller le lien » le lit au
+  moment de l'appui.
+- Le bouton ouvre la boîte « Importer depuis un lien » (4.6), adresse posée s'il y en a
+  une, champ vide sinon. Rien ne part avant « Importer ».
+- Le bandeau disparaît à la croix « Fermer », quand l'import est envoyé, ou en quittant
+  Explorer. « Annuler » dans la boîte le laisse. Une nouvelle recherche Google le réarme.
+  Google n'a pas pu s'ouvrir : pas de bandeau. Un Reader ne le voit jamais.
+
+**Disposition.** Sur téléphone, une barre en bas porte « Chercher avec l'IA » et « Aller plus
 loin », qui ouvre les autres actions. Sur grand écran, les filtres occupent un panneau à
-gauche et la liste le reste de la largeur. Un Reader ne voit ni « Demander à l'IA », ni
+gauche et la liste le reste de la largeur ; « Importer depuis un lien » est un bouton texte
+en fin de rangée des actions. Un Reader ne voit ni « Chercher avec l'IA », ni
 « Imaginer 3 recettes », ni « Importer depuis un lien », ni la source « Mes brouillons » : sa
-barre du bas porte directement « Chercher sur Google ». « Demander à l'IA » est inactif
+barre du bas porte directement « Chercher sur Google ». « Chercher avec l'IA » est inactif
 pendant un classement en cours et quand les filtres ne retiennent aucune recette ;
 « Imaginer 3 recettes » l'est pendant une rédaction en cours.
 
@@ -831,7 +891,7 @@ déjà transmise continue de fonctionner.
 | Création de recette réservée | Seuls l'Editor et l'Admin créent une recette, quel que soit le chemin : saisie manuelle, copie, recette conçue par l'IA (Explorer « Imaginer 3 recettes », planning « Générer avec l'IA », « Conception IA » et « Concevoir avec l'IA »), import. Les gestes sont masqués au Reader. Ses recettes existantes restent à lui : il les modifie, les valide et les supprime. |
 | Recette conçue par l'IA en brouillon | Une recette imaginée dans Explorer ou générée depuis le sélecteur du planning s'enregistre en brouillon dans « Mes créations Kass'Dalle ✨ ». Il en va de même pour la source « Conception IA » de Nouveau planning et pour « Concevoir avec l'IA ». Personne n'a encore relu ce que le modèle a écrit. |
 | Import réservé | Importer une recette ou un livre (`/scan`), importer une recette depuis un lien (4.6), et relancer un import, est réservé à l'Editor et à l'Admin. Les règles Firestore refusent le traitement créé ou relancé par un Reader. Joindre un fichier source à sa propre recette reste permis au Reader. |
-| Explorer filtre sans IA | La liste, le champ de texte, les filtres et le tri d'Explorer travaillent sur l'appareil, sans appel d'IA. Un appel n'a lieu que sur un bouton : « Demander à l'IA » ou « Imaginer 3 recettes », réservés à l'Editor et à l'Admin. Les filtres et le tri choisis sont une préférence du lecteur, sous son compte ; rien n'est écrit dans les recettes. |
+| Explorer filtre sans IA | La liste, le champ de texte, les filtres et le tri d'Explorer travaillent sur l'appareil, sans appel d'IA. Un appel n'a lieu que sur un bouton : « Chercher avec l'IA » ou « Imaginer 3 recettes », réservés à l'Editor et à l'Admin. Les filtres et le tri choisis sont une préférence du lecteur, sous son compte ; rien n'est écrit dans les recettes. |
 | Durée estimée, jamais confondue avec une durée lue | Une recette sans durée de préparation ou de cuisson reçoit une estimation de l'IA à son écriture, ou par le backfill « Durées estimées ». L'estimation vit à part du texte de la recette, est écrite par le serveur seul, et s'affiche toujours précédée de « ≈ ». Une durée donnée par la recette passe avant elle ; saisir la vraie durée retire l'estimation. Le planning et les courses n'emploient que les durées lues. |
 | Annotations non modifiables par autrui | Un Reader ou un Editor ne peut modifier/supprimer que ses propres annotations ; un Admin peut toutes les modifier. |
 | On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe pour un Editor ou un Admin. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
@@ -863,10 +923,11 @@ déjà transmise continue de fonctionner.
 - Authentification Google, sas d'entrée `pending`, rôles et révocation
 - CRUD livres et recettes, groupes familiaux
 - Import (photo, PDF, DOCX, texte collé, lien vers une page web) → CookLang, par un pipeline asynchrone ; la source d'une recette importée depuis un lien s'affiche sur sa fiche
+- Import d'un lien depuis le bandeau d'Explorer au retour de Google, et par « Partager vers Kass'Dalle » sur Android
 - Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
-- Explorer : liste filtrée sur l'appareil (texte, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Demander à l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur Google »
+- Explorer : liste filtrée sur l'appareil (texte rangé en sections — titre, cuisine, type ou thème, ingrédients principaux —, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Chercher avec l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur Google »
 - Durées estimées par l'IA pour les recettes qui n'en donnent pas : « ≈ » sur la fiche et dans la liste d'Explorer, comptées dans le filtre « Temps total » et le tri « Plus rapides » si le lecteur le veut
 - Annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation

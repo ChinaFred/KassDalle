@@ -186,6 +186,23 @@ String estimatedExcludedLine(int count) {
       'écartée${plural ? 's' : ''}';
 }
 
+/// « « sel » n'est cherché que dans les titres. » : mots tapés qui nomment
+/// un petit ingrédient, cherchés dans les titres seuls.
+String titleOnlyWordsLine(List<String> words) {
+  final quoted = words.map((w) => '« $w »').toList();
+  if (quoted.length == 1) {
+    return '${quoted.single} n\'est cherché que dans les titres.';
+  }
+  final list =
+      '${quoted.sublist(0, quoted.length - 1).join(', ')} et ${quoted.last}';
+  return '$list ne sont cherchés que dans les titres.';
+}
+
+/// « Avec : vin blanc » : les ingrédients qui ont fait retenir une recette
+/// de la section « Dans les ingrédients principaux ».
+String matchedIngredientsLine(List<String> ingredients) =>
+    'Avec : ${ingredients.join(', ')}';
+
 /// Temps total d'une tuile : « 45 min », ou « ≈ 45 min, estimé » quand une
 /// composante vient de l'estimation de l'IA.
 String exploreDurationText(int minutes, {required bool estimated}) =>

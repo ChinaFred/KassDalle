@@ -7,6 +7,7 @@ import '../data/plating_repository.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
+import '../data/share_intent_source.dart';
 import '../data/storage_repository.dart';
 import '../domain/original_text.dart';
 import '../domain/plating_advice.dart';
@@ -371,3 +372,39 @@ final familyRatingsProvider = Provider.autoDispose
         ),
       );
     });
+
+// ── « Partager vers Kass'Dalle » (Android) ───────────────────────────────────
+
+final shareIntentSourceProvider = Provider<ShareIntentSource>(
+  (ref) => ShareIntentSource(),
+);
+
+/// Le dernier texte partagé vers l'application et pas encore traité.
+///
+/// Écouté dès le démarrage (`KassDalleApp`) : un partage qui ouvre
+/// l'application avant la connexion attend ici que la session s'ouvre, puis
+/// le shell le traite (`SharedLinkImportHost`).
+final pendingSharedTextProvider =
+    NotifierProvider<PendingSharedTextNotifier, String?>(
+      PendingSharedTextNotifier.new,
+    );
+
+class PendingSharedTextNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    final subscription = ref
+        .watch(shareIntentSourceProvider)
+        .sharedTexts()
+        .listen((text) => state = text);
+    ref.onDispose(subscription.cancel);
+    return null;
+  }
+
+  /// Rend le texte en attente et le retire : un partage ne se traite qu'une
+  /// fois.
+  String? take() {
+    final text = state;
+    state = null;
+    return text;
+  }
+}

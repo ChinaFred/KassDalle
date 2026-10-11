@@ -159,6 +159,7 @@ l'objet attendu — jetons, `stop_reason` et blocs de contenu compris.
 | Navigation | go_router | `^17.2.3` |
 | Image (mobile) | `image_picker` + `image_cropper` | `^1.2.2` / `^12.2.1` |
 | Export PDF | `pdf` | `^3.11.1` |
+| Partage entrant (Android) | aucun paquet — `MethodChannel` `dev.kassbi.kass_dalle/share` de `MainActivity` | — (Android seul, §12) |
 | Parsing CookLang | implémentation maison, jumelée avec `functions/src/cooklang/` | — |
 | **IA côté client** | **aucune** — pas de SDK de fournisseur dans le binaire ni dans le bundle web | — |
 
@@ -2619,6 +2620,13 @@ Deux réglages tiennent à ce que ces passes demandent :
 Un éditeur ou un administrateur colle l'adresse d'une page de recette. La recette arrive en
 brouillon dans « Mes recettes du web », par le pipeline asynchrone de tout import.
 
+**Côté client**, une seule boîte : `showUrlImportDialog` (`url_import_dialog.dart`), qui rend
+`true` quand le lien est parti. Le paramètre `initialUrl` pose l'adresse dans le champ, sans
+lui donner le focus ; rien ne part avant « Importer ». Points d'entrée : « Importer depuis un
+lien » d'Explorer, de `/scan` et de la saisie manuelle ; le bandeau d'Explorer au retour de
+Google (§6, « L'écran Explorer : filtre local, IA sur demande ») ; « Partager vers Kass'Dalle » sur Android (§12,
+`SharedLinkImportHost`). Les deux derniers posent `initialUrl`.
+
 **Entrée : `importRecipeFromUrlFn`** (`callable/urlImportCallable.ts`, `requireEditor`, 30 s).
 Dans l'ordre, avant toute dépense :
 
@@ -2889,9 +2897,31 @@ recette secrète d'un autre membre n'entre jamais dans le corpus). Tout le reste
 l'appareil, sans appel de modèle (`features/recipes/domain/recipe_filter.dart`, partagé avec le
 sélecteur du planning) :
 
-- **Texte** (`matchesRecipeQuery`) : titre, `ingredients_index`, noms d'ingrédients, cuisines,
-  thèmes, occasions, types de plat ; minuscules, sans accents (`foldSearchText`) ; tous les mots
-  doivent être trouvés. Entrée ferme le clavier et ne lance rien.
+- **Texte** (`matchRecipeQuery`) : minuscules, sans accents (`foldSearchText`). Un mot tapé
+  correspond quand un mot du texte **commence** par lui (« bla » ne trouve plus « sablé ») ;
+  « poivre blanc » n'est plus trouvé non plus, car le poivre est un petit ingrédient, lu
+  seulement dans le titre ; tous les mots tapés doivent correspondre. La recette se range dans la
+  première section où tous les mots se trouvent (`RecipeQuerySection`) : `title` (titre),
+  `tags` (titre ∪ cuisines, thèmes, occasions, types de plat), `ingredients` (titre ∪
+  étiquettes ∪ noms d'ingrédients et `ingredients_index` hors petits ingrédients). Petits
+  ingrédients (`isSearchMinorIngredient`) : `NutritionQuantityConverter.isSeasoning`, lu sans
+  être modifié, plus `kSearchMinorIngredientWords` (huile, beurre, vinaigre, eau, persil,
+  ciboulette, coriandre, basilic, menthe, sucre, farine, ail, oignon), comparé au premier mot
+  du nom au singulier, après un mot de mesure (« gousse d' », « noix de », « filet d' »). Cette
+  liste est propre à la recherche, côté Dart seul : ce n'est pas une logique dupliquée, et le
+  filtre « Sans l'ingrédient » ne la lit pas. Un mot tapé qui nomme un petit ingrédient
+  (`titleOnlyQueryWords`) n'est cherché que dans le titre ; la ligne d'état le dit
+  (`titleOnlyWordsLine`), avec le mot tel que tapé (« « Sésame » n'est cherché que dans les
+  titres. ») — la forme repliée ne sert qu'à reconnaître le petit ingrédient et à écarter un
+  doublon. `applyRecipeFilter` trie chaque section avec le tri choisi, dans
+  l'ordre fixe des sections, et rend `RecipeFilterOutcome.sections` (vide sans texte),
+  `matchedIngredients` (« Avec : lait de coco » sur la tuile) et `recipes`, le total de toutes
+  les sections — compteur de l'écran et « Voir N recettes » de la feuille. À l'écran, chaque
+  section a un en-tête repliable (`QuerySectionHeader` : 48 px, `Semantics(button, expanded)`,
+  infobulle « Afficher » / « Masquer ») ; `ingredients` est repliée quand `title` ou `tags`
+  a des résultats. L'état ouvert/fermé vit dans l'état de l'écran et revient au défaut quand
+  le texte change. Sans texte, la liste est simple ; l'en-tête « Vos recettes » ne s'affiche
+  que sans texte. Entrée ferme le clavier et ne lance rien.
 - **Filtres** (`RecipeFilter`) : OU dans une dimension, ET entre les dimensions ; les exclusions
   (ingrédient, allergène) écartent une recette qui contient l'une OU l'autre valeur. Une recette
   sans donnée pour un filtre actif est écartée et comptée par dimension
@@ -2914,9 +2944,28 @@ L'IA ne part que sur un bouton, et jamais pour un `reader` :
 
 | Bouton | Callable | Poste | Garde | Ce qui part |
 |---|---|---|---|---|
-| « Demander à l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
+| « Chercher avec l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
 | « Imaginer 3 recettes » | `generateRecipeFn` ×3 (+ une relance par doublon) | `generate` | `requireEditor` | le texte du champ seul ; douze résumés du corpus et l'observation locale tirée des notes |
 | « Chercher sur Google » | — | — | — | aucun appel : `google.com/search?q=<texte> recette` (`googleRecipeSearchUri`) |
+
+**Retour de Google : bandeau d'import** (éditeur et admin). Quand `launchUrl` a ouvert Google,
+l'écran note en mémoire qu'un retour est attendu (`_awaitingGoogleReturn`). Au retour,
+`AppLifecycleListener.onResume` — le moteur web le déclenche aussi, sur `focus` et
+`visibilitychange` — affiche une carte `secondaryContainer`. Seule la phrase « Vous avez
+trouvé une recette ? Importez-la. » est en `Semantics(liveRegion: true)`, pas toute la carte.
+Sur téléphone, la carte est le premier élément défilant de la liste des résultats
+(`_ResultList.leading`) ; sur grand écran, elle reste fixe sous le champ, au-dessus des
+boutons. Sur Android
+et Windows (`PlatformUtils.isAndroidApp`, `isWindowsApp`), `Clipboard.getData` est lu au
+retour : la première adresse http(s) du texte (`firstWebLink`) s'affiche en abrégé
+(`shortLinkLabel` : domaine sans `www.`, début du chemin, 27 caractères puis « … ») avec
+« Importer ce lien ». Sur le web et iOS, « Coller le lien » lit le presse-papiers à l'appui.
+Le bouton ouvre `showUrlImportDialog(context, initialUrl:)` ; quand il est rempli, le champ
+n'a pas le focus sur téléphone (`PlatformUtils.isMobile`, ou web sous `wideBreakpoint`), et
+l'a au bureau et sur le web en grand écran, où Entrée envoie. Rien ne part avant « Importer ». La boîte rend `true` quand le lien est
+parti : le bandeau se retire ; « Annuler » le laisse. Une lecture du presse-papiers en échec
+est remontée (`reportUnexpectedError`, `searchScreen.importBanner.clipboard`) et la boîte
+s'ouvre vide. Rien n'est enregistré : le bandeau disparaît avec l'écran.
 
 Le poste `web_search_query` (`generateWebSearchQueryFn`, reformulation de la requête Google par
 le modèle) est retiré : la callable et son export sont supprimés, le poste quitte
@@ -2925,7 +2974,7 @@ comptabilisés. `getAiRoutingPolicyFn` le retire de la politique enregistrée à
 (`withoutRetiredFeatures`).
 
 Une réponse du classement arrivée après une nouvelle demande est ignorée
-(`AiRankingNotifier`). « Demander à l'IA » est inactif pendant un classement en cours et quand
+(`AiRankingNotifier`). « Chercher avec l'IA » est inactif pendant un classement en cours et quand
 les filtres ne retiennent aucune recette ; `rank` ne relance pas une demande identique déjà en
 cours. « Imaginer 3 recettes » est inactif pendant une rédaction, et `imagine` ne relance pas
 de second lot. Si le texte, les filtres ou les sources changent après la demande, la section
@@ -2951,8 +3000,8 @@ callables qui produisent une recette à enregistrer exigent `requireEditor` —
 ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points d'entrée
 (`canEditProvider`) : copie et « Améliorer avec l'IA » de la fiche, copie d'un brouillon,
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
-planning, « Demander à l'IA », « Imaginer 3 recettes » et « Importer depuis un lien » de
-l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
+planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien » et le
+bandeau d'import au retour de Google de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
 « Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
 
 ### Les réponses JSON
@@ -4298,6 +4347,7 @@ est nette dans le dépôt, et une réimplémentation ne doit pas prendre le seco
 | Élément | État |
 |---|---|
 | Permissions déclarées | `INTERNET`, `CAMERA` et `REQUEST_INSTALL_PACKAGES` dans `android/app/src/main/AndroidManifest.xml` |
+| Partage entrant | Filtre d'intention `ACTION_SEND` `text/plain` sur `MainActivity`, `launchMode="singleTop"`, canal `dev.kassbi.kass_dalle/share` — voir « Partager vers Kass'Dalle » ci-dessous |
 | Caméra | `<uses-feature android:name="android.hardware.camera.any" android:required="false" />` — l'absence de caméra n'empêche pas l'installation |
 | Configuration Firebase | `android/app/google-services.json`, présent |
 | Signature | `android/key.properties` et `signingConfigs.release` |
@@ -4306,6 +4356,55 @@ est nette dans le dépôt, et une réimplémentation ne doit pas prendre le seco
 | Icône | Adaptative — `mipmap-anydpi-v26/ic_launcher.xml`, fond `#6B7B3A` dans `values/colors.xml`, couches `drawable-*dpi/ic_launcher_foreground.png` |
 | Distribution | `app-release.apk` servi par le même déploiement Firebase Hosting, avec un `Content-Disposition: attachment` |
 | Mise à jour | L'application se met à jour elle-même — voir ci-dessous |
+
+#### Partager vers Kass'Dalle
+
+Depuis le navigateur ou une autre application, le menu de partage d'Android propose
+Kass'Dalle pour un texte. Le filtre d'intention `ACTION_SEND` / `text/plain` de
+`MainActivity` le déclare ; ni image ni fichier ne sont déclarés.
+
+Aucun paquet tiers ne reçoit le partage. `MainActivity` (Kotlin) lit l'intention
+`ACTION_SEND` de type `text/plain` dans `onCreate` et dans `onNewIntent` : `EXTRA_TEXT`, à
+défaut `EXTRA_SUBJECT`, chaîne vide si aucun des deux n'est lisible. Le texte est gardé en
+attente et exposé par le `MethodChannel` `dev.kassbi.kass_dalle/share` :
+
+| Méthode | Sens | Effet |
+|---|---|---|
+| `getInitialSharedText` | Dart → natif | rend le partage en attente (ou `null`) et l'efface |
+| `onSharedText` | natif → Dart | pousse un partage reçu par `onNewIntent` ; le texte reste en attente tant que Dart n'a pas répondu, et `getInitialSharedText` le rend sinon |
+
+`onCreate` ignore l'intention d'une activité restaurée (`savedInstanceState` non nul) ou
+rouverte depuis les applications récentes (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`) : le
+système y redonne l'intention d'origine, déjà traitée.
+
+`launchMode` reste `singleTop`. Un partage depuis une autre application crée une instance
+dans la tâche de l'expéditeur : `onCreate` lit le partage, et « Retour » ramène au
+navigateur. Quand Kass'Dalle est déjà au premier plan, le partage arrive par `onNewIntent`.
+`singleTask` fermerait à chaque partage les activités ouvertes par-dessus l'application
+(sélecteur d'images, connexion Google).
+
+Côté Dart, `ShareIntentSource` (`features/recipes/data/share_intent_source.dart`) écoute ce
+canal sur Android seulement (`PlatformUtils.isAndroidApp`) ; iOS, web et Windows ne reçoivent
+pas de partage, et le canal n'y est pas interrogé. Sur Android, toute erreur du canal —
+`MissingPluginException` comprise, qui signale un code natif absent ou renommé — est
+remontée par `reportUnexpectedError` sous `shareIntent.receive`. Le code natif n'ajoute
+aucune dépendance Gradle et suit la configuration de l'application (compileSdk de Flutter,
+AGP 8.11.1, Java 17).
+
+`pendingSharedTextProvider` (`recipe_providers.dart`) écoute la source dès le démarrage
+(`KassDalleApp`) et garde le dernier texte non traité. `SharedLinkImportHost`, posé dans
+`AppShell`, ne le prend (`take`) qu'une fois `appUserProvider` chargé avec un compte : tant
+que le compte se lit, ou que personne n'est connecté, le texte reste en attente. Il écoute
+`pendingSharedTextProvider` et `appUserProvider`, et traite le partage dès que les deux sont
+prêts. Le rôle se lit sur le compte chargé (`AppUser.canEdit`) ; `canEditProvider` vaut
+`false` pendant le chargement et refusait l'import à un éditeur. `resolveSharedText`
+(`url_import.dart`) décide :
+
+| Cas | Effet |
+|---|---|
+| `editor` ou `admin`, une adresse http(s) dans le texte (`firstWebLink`) | `showUrlImportDialog(initialUrl:)` par-dessus l'écran courant |
+| `reader` | `ImportReservedDialog` : « Import réservé aux éditeurs » |
+| aucune adresse web | `showErrorSnackBar` « Ce partage ne contient pas d'adresse web. » |
 
 #### Mise à jour hors magasin
 
@@ -4502,7 +4601,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts` | `WorkQueueScreen` | `reader` |
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
-| `/search` | `SearchScreen` | `reader` — liste, filtres locaux et « Chercher sur Google » ; « Demander à l'IA », « Imaginer 3 recettes » et « Importer depuis un lien » : `editor` |
+| `/search` | `SearchScreen` | `reader` — liste, filtres locaux et « Chercher sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien » et le bandeau d'import au retour de Google : `editor` |
 | `/planning` | `PlanningScreen` | `reader` |
 | `/planning/batch` | `BatchPlanningScreen` | `reader` |
 | `/planning/config` | `PlanningConfigScreen` | `reader` |

@@ -156,7 +156,7 @@
           <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur Google</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Demander à l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier, valider et supprimer ses propres recettes existantes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -168,6 +168,7 @@
           <tr><td>Supprimer son livre — les pages ajoutées par d'autres membres sont conservées et deviennent leurs recettes libres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>) — réservé à l'éditeur et à l'admin, imposé par les règles Firestore ; un lecteur qui ouvre <span class="path">/scan</span> voit que l'import lui est fermé</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une recette depuis un lien vers une page web — 10 imports par lien et par jour, plafond multiplié pour le fondateur ; le lecteur ne voit pas les boutons</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Importer depuis le bandeau d'Explorer au retour de Google, ou par « Partager vers Kass'Dalle » sur Android — un lecteur qui partage un lien voit « Import réservé aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -190,7 +191,7 @@
       <b>aucune</b> recette : ni saisie manuelle, ni copie, ni recette conçue par l'IA, ni
       import. Ses recettes existantes restent à lui : il les modifie, les valide et les
       supprime. Ce que le rôle <code>editor</code> ouvre en plus, c'est la création de
-      recettes, l'import, « Demander à l'IA » et « Imaginer 3 recettes » dans Explorer, la
+      recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
       création de livres et la relecture des brouillons partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
       d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
@@ -224,7 +225,7 @@
       Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
       la noter, composer les repas de la semaine et faire les courses. Tout compte nommé y a
       accès, sauf à ce qui crée une recette ou demande à l'IA de choisir dans Explorer :
-      « Demander à l'IA », « Imaginer 3 recettes », et dans le planning les idées de repas et
+      « Chercher avec l'IA », « Imaginer 3 recettes », et dans le planning les idées de repas et
       la conception d'une recette par l'IA. Ces cas sont réservés à l'éditeur et à
       l'administrateur.
     </p>
@@ -248,7 +249,7 @@ flowchart LR
     a25(["Voir les notes de la famille"])
     a8(["Filtrer la bibliothèque&lt;br/&gt;texte, filtres, tri, sans IA"])
     a32(["Chercher sur Google"])
-    a33(["Demander à l'IA"])
+    a33(["Chercher avec l'IA"])
     a34(["Imaginer 3 recettes"])
     a9(["Planifier un repas"])
     a10(["Exporter en PDF&lt;br/&gt;une recette, un livre ou tous mes livres"])
@@ -389,13 +390,18 @@ flowchart LR
         l'administrateur.
         <b>Explorer filtre sans IA.</b> À l'ouverture, il montre les recettes du périmètre
         — mes recettes, ma famille, mes brouillons. Le champ « Titre, ingrédient, envie… » et les
-        filtres réduisent la liste sur l'appareil, à chaque frappe, sans appel. Filtres et tri sont
+        filtres réduisent la liste sur l'appareil, à chaque frappe, sans appel. Un mot tapé
+        correspond au début d'un mot de la recette (« bla » ne trouve plus « sablé ») ; la liste se
+        range en trois sections — « Dans le titre », « Par cuisine, type ou thème », « Dans les
+        ingrédients principaux », cette dernière repliée quand une autre a des résultats. Les
+        petits ingrédients (sel, épices, huile, beurre, ail, oignon…) ne sont pas lus ; un mot tapé
+        qui en nomme un n'est cherché que dans les titres, et l'écran le dit. Filtres et tri sont
         une préférence du lecteur, enregistrée sous son compte. Une recette sans durée compte sa
         durée estimée par l'IA (« ⏱ ≈ 45 min, estimé ») dans « Temps total » et « Plus rapides »,
         tant que l'interrupteur « Compter les durées estimées » reste coché ; décoché, l'écran dit
         combien de recettes à durée estimée il écarte. « Chercher sur Google » ouvre une
         recherche avec le texte suivi du mot « recette », sans IA, pour tous les rôles.
-        <b>« Demander à l'IA »</b> part sur un bouton : la demande et les recettes que retiennent
+        <b>« Chercher avec l'IA »</b> part sur un bouton : la demande et les recettes que retiennent
         les filtres, sans le filtre du texte, en un appel. Les recettes choisies remontent en tête
         sous « Choisies par l'IA », chacune avec sa raison. Un texte ou un filtre modifié ensuite
         affiche « Recherche ou filtres modifiés depuis la demande. » avec « Relancer ».
@@ -518,6 +524,8 @@ flowchart LR
     c6(["Traduire en français,&lt;br/&gt;mesures en métrique"])
     b19(["Comparer la traduction&lt;br/&gt;au texte d'origine"])
     b21(["Importer une recette depuis un lien"])
+    b22(["Importer au retour de Google&lt;br/&gt;bandeau d'Explorer"])
+    b23(["Partager vers Kass'Dalle&lt;br/&gt;Android"])
     c7(["Contrôler l'adresse, le plafond du jour&lt;br/&gt;et le doublon dans mes recettes"])
     c8(["Lire les données schema.org/Recipe&lt;br/&gt;de la page, sans IA"])
     c9(["Modérer la photo de la page"])
@@ -532,6 +540,10 @@ flowchart LR
   EDI --- b21
   ADM --- b21
   b21 -.->|"inclut"| c7
+  EDI --- b22
+  EDI --- b23
+  b22 -.->|"étend : adresse posée, « Importer »"| b21
+  b23 -.->|"étend : adresse posée, « Importer »"| b21
   b21 -.->|"inclut"| c8
   c8 -.->|"sans données structurées : texte de la page"| c2
   b21 -.->|"en tâche de fond"| c2
@@ -613,8 +625,12 @@ flowchart LR
         collé. Le texte d'avant traduction d'une page importée est gardé à côté de la recette ;
         celui d'un texte collé reste le fichier source.
         <b>L'import depuis un lien</b> est réservé à l'<code>editor</code> et à
-        l'<code>admin</code>. Il part d'Explorer (« Importer depuis un lien »), de l'écran Import
-        ou du bouton « Lien » de la saisie manuelle. Avant l'envoi, l'adresse est contrôlée (valide, publique), le plafond de
+        l'<code>admin</code>. Il part d'Explorer (« Importer depuis un lien », ou le bandeau
+        « Vous avez trouvé une recette ? Importez-la. » au retour de Google), de l'écran Import,
+        du bouton « Lien » de la saisie manuelle, ou sur Android de « Partager vers Kass'Dalle »
+        depuis le navigateur. Le bandeau et le partage posent l'adresse dans la boîte ; rien ne
+        part avant « Importer ». Un lecteur qui partage un lien voit « Import réservé aux
+        éditeurs ». Avant l'envoi, l'adresse est contrôlée (valide, publique), le plafond de
         10 imports par lien et par jour est vérifié, et une recette déjà importée depuis la même
         adresse, normalisée, est signalée : l'utilisateur l'ouvre ou importe quand même. Le serveur lit
         d'abord les données schema.org/Recipe de la page, sans appel d'IA, puis met en forme ; à

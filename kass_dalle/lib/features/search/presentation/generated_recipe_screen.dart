@@ -592,7 +592,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                 IconButton.filled(
                   onPressed: _saving ? null : _refine,
                   icon: const Icon(Icons.send_rounded),
-                  tooltip: 'Demander à l\'IA',
+                  tooltip: 'Envoyer à l\'IA',
                 ),
               ],
             ),

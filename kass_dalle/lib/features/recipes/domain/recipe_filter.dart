@@ -9,6 +9,7 @@ library;
 
 import '../../../core/services/cooklang_parser.dart' show readDurations;
 import '../../../core/utils/ingredient_name.dart';
+import '../../../core/utils/nutrition_quantity_converter.dart';
 import 'estimated_times.dart';
 import 'recipe.dart';
 
@@ -611,30 +612,223 @@ enum RecipeSort {
   );
 }
 
-/// Vrai si tous les mots de [query] se trouvent dans la recette : titre,
-/// ingrédients, étiquettes (cuisines, thèmes, occasions, types de plat).
-/// Sans accents ni casse ; un mot peut n'être que le début d'un mot.
-bool matchesRecipeQuery(Recipe recipe, String query) {
-  final words = foldSearchText(query).split(' ').where((w) => w.isNotEmpty);
-  if (words.isEmpty) return true;
-  final haystack = foldSearchText(
-    [
-      recipe.titre,
-      ...recipe.ingredientsIndex,
-      ...recipe.ingredients.map((i) => i.name),
-      ...recipe.tags.cuisines,
-      ...recipe.tags.themes,
-      ...recipe.tags.occasions,
-      ...recipe.tags.dishTypes,
-    ].join(' '),
-  );
-  return words.every(haystack.contains);
+// ── Recherche par texte ──────────────────────────────────────────────────────
+
+/// Les sections de la recherche par texte, dans l'ordre de l'écran. Une
+/// recette va dans la première où tous les mots tapés se trouvent.
+enum RecipeQuerySection {
+  /// Tous les mots dans le titre.
+  title('Dans le titre'),
+
+  /// Tous les mots dans le titre et les étiquettes (cuisines, thèmes,
+  /// occasions, types de plat), sans être tous dans le titre.
+  tags('Par cuisine, type ou thème'),
+
+  /// Tous les mots dans le titre, les étiquettes et les ingrédients
+  /// principaux : les petits ingrédients n'y comptent pas.
+  ingredients('Dans les ingrédients principaux');
+
+  final String label;
+  const RecipeQuerySection(this.label);
+}
+
+/// Ce qui a fait retenir une recette par la recherche par texte.
+class RecipeQueryMatch {
+  final RecipeQuerySection section;
+
+  /// Section ingrédients : les ingrédients qui ont correspondu, tels
+  /// qu'écrits dans la recette (« vin blanc »). Vide ailleurs.
+  final List<String> ingredients;
+
+  const RecipeQueryMatch(this.section, {this.ingredients = const []});
+}
+
+/// Les petits ingrédients propres à la recherche : présents dans presque
+/// toutes les recettes, ils feraient sortir la moitié de la bibliothèque.
+/// Comparés au premier mot du nom replié, au singulier ou au pluriel.
+///
+/// S'y ajoutent les assaisonnements dosés à la pincée
+/// ([NutritionQuantityConverter.isSeasoning], lu sans être modifié). Cette
+/// liste ne sert qu'à la recherche par texte : le filtre « Sans
+/// l'ingrédient » et la nutrition ne la lisent pas.
+const kSearchMinorIngredientWords = {
+  'huile',
+  'beurre',
+  'vinaigre',
+  'eau',
+  'persil',
+  'ciboulette',
+  'coriandre',
+  'basilic',
+  'menthe',
+  'sucre',
+  'farine',
+  'ail',
+  'oignon',
+};
+
+/// Les mots de mesure qui précèdent un petit ingrédient : « gousse d'ail »,
+/// « noix de beurre », « filet d'huile d'olive ».
+const _measureWords = {
+  'gousse',
+  'brin',
+  'branche',
+  'botte',
+  'bouquet',
+  'feuille',
+  'tige',
+  'noix',
+  'noisette',
+  'filet',
+  'trait',
+  'pincee',
+  'cuillere',
+  'cuilleree',
+};
+
+/// Le mot replié au singulier : « oignons » → « oignon », « eaux » → « eau ».
+String _singular(String word) {
+  if (word.length > 3 && (word.endsWith('s') || word.endsWith('x'))) {
+    return word.substring(0, word.length - 1);
+  }
+  return word;
+}
+
+/// Vrai pour un petit ingrédient : un assaisonnement dosé à la pincée, ou un
+/// nom dont le premier mot — après une mesure comme « gousse d' » — est dans
+/// [kSearchMinorIngredientWords].
+bool isSearchMinorIngredient(String name) {
+  if (NutritionQuantityConverter.isSeasoning(name)) return true;
+  final words = foldSearchText(
+    name,
+  ).split(' ').where((w) => w.isNotEmpty).toList();
+  var i = 0;
+  while (i < words.length - 1 && _measureWords.contains(_singular(words[i]))) {
+    i++;
+    // « gousse d'ail », « noix de beurre », « filet d'huile ».
+    while (i < words.length - 1 && (words[i] == 'de' || words[i] == 'd')) {
+      i++;
+    }
+  }
+  return i < words.length &&
+      kSearchMinorIngredientWords.contains(_singular(words[i]));
+}
+
+/// Les mots tapés que la recherche ne cherche que dans les titres : ceux qui
+/// nomment un petit ingrédient (« sel », « ail »). Mots tels que tapés
+/// (« Sésame »), dans l'ordre de la saisie. La forme repliée ne sert qu'à
+/// reconnaître le petit ingrédient et à écarter un doublon (« Sésame
+/// sesame » ne cite que le premier).
+List<String> titleOnlyQueryWords(String query) {
+  final words = <String>[];
+  final seen = <String>{};
+  for (final typed in query.split(_typedWordSeparator)) {
+    final folded = foldSearchText(typed);
+    if (folded.isEmpty) continue;
+    // Un mot tapé qui se replie en plusieurs (cas d'un caractère que le
+    // repli découpe) : chaque partie, sous sa forme repliée.
+    final parts = folded.split(' ');
+    for (final part in parts) {
+      if (part.isEmpty || !seen.add(part)) continue;
+      if (_isMinorWord(part)) words.add(parts.length == 1 ? typed : part);
+    }
+  }
+  return words;
+}
+
+/// Ce qui sépare deux mots tapés : tout sauf une lettre (accentuée comprise)
+/// ou un chiffre — le même découpage que [foldSearchText], avant repli.
+final _typedWordSeparator = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+
+bool _isMinorWord(String word) =>
+    kSearchMinorIngredientWords.contains(_singular(word)) ||
+    NutritionQuantityConverter.isSeasoning(word);
+
+List<String> _queryWords(String query) =>
+    foldSearchText(query).split(' ').where((w) => w.isNotEmpty).toList();
+
+List<String> _wordsOf(Iterable<String> values) => [
+  for (final v in values)
+    ...foldSearchText(v).split(' ').where((w) => w.isNotEmpty),
+];
+
+/// Un mot tapé correspond quand un mot du texte commence par lui : « blanq »
+/// trouve « blanquette », « bla » ne trouve pas « sablé ».
+bool _hasWordStartingWith(List<String> words, String typed) =>
+    words.any((w) => w.startsWith(typed));
+
+/// La section où [recipe] se range pour [query], ou `null` si un mot tapé ne
+/// s'y trouve nulle part. Texte vide : `null` aussi — il n'y a pas de
+/// section sans texte, [applyRecipeFilter] garde alors tout.
+///
+/// Sans accents ni casse. Tous les mots tapés doivent correspondre. Un mot
+/// tapé qui nomme un petit ingrédient n'est cherché que dans le titre ; les
+/// petits ingrédients de la recette ne sont pas lus.
+RecipeQueryMatch? matchRecipeQuery(Recipe recipe, String query) {
+  final typed = _queryWords(query);
+  if (typed.isEmpty) return null;
+  final title = _wordsOf([recipe.titre]);
+  if (typed.every((w) => _hasWordStartingWith(title, w))) {
+    return const RecipeQueryMatch(RecipeQuerySection.title);
+  }
+  // Un petit ingrédient tapé et absent du titre : rien d'autre n'est lu.
+  if (typed.any((w) => _isMinorWord(w) && !_hasWordStartingWith(title, w))) {
+    return null;
+  }
+  final tags = _wordsOf([
+    ...recipe.tags.cuisines,
+    ...recipe.tags.themes,
+    ...recipe.tags.occasions,
+    ...recipe.tags.dishTypes,
+  ]);
+  final outsideTitle = typed
+      .where((w) => !_hasWordStartingWith(title, w))
+      .toList();
+  if (outsideTitle.every((w) => _hasWordStartingWith(tags, w))) {
+    return const RecipeQueryMatch(RecipeQuerySection.tags);
+  }
+  final remaining = outsideTitle
+      .where((w) => !_hasWordStartingWith(tags, w))
+      .toList();
+  // Les noms affichés d'abord, l'index ensuite : « Avec : » cite la recette
+  // telle qu'elle est écrite.
+  final seen = <String>{};
+  final ingredients = <String>[];
+  for (final name in [
+    ...recipe.ingredients.map((i) => i.name),
+    ...recipe.ingredientsIndex,
+  ]) {
+    final folded = foldSearchText(name);
+    if (folded.isEmpty || !seen.add(folded)) continue;
+    if (isSearchMinorIngredient(name)) continue;
+    ingredients.add(name.trim());
+  }
+  final cited = <String>[];
+  for (final w in remaining) {
+    final hit = ingredients.firstWhere(
+      (name) => _hasWordStartingWith(_wordsOf([name]), w),
+      orElse: () => '',
+    );
+    if (hit.isEmpty) return null;
+    if (!cited.contains(hit)) cited.add(hit);
+  }
+  return RecipeQueryMatch(RecipeQuerySection.ingredients, ingredients: cited);
 }
 
 /// Le résultat d'un filtrage : les recettes retenues, triées, et ce qui a
 /// été écarté faute de donnée.
 class RecipeFilterOutcome {
+  /// Toutes les recettes retenues. Avec du texte, dans l'ordre des sections
+  /// ([sections]), le tri appliqué dans chacune.
   final List<Recipe> recipes;
+
+  /// Avec du texte : les recettes de chaque section, triées, sections vides
+  /// absentes. Sans texte : vide — la liste est simple.
+  final Map<RecipeQuerySection, List<Recipe>> sections;
+
+  /// Section ingrédients : les ingrédients qui ont fait retenir chaque
+  /// recette, par identifiant.
+  final Map<String, List<String>> matchedIngredients;
 
   /// Recettes qui conviendraient à tout le reste mais n'ont pas de donnée
   /// pour cette dimension. Une recette sans durée ni calories compte dans
@@ -648,12 +842,19 @@ class RecipeFilterOutcome {
 
   const RecipeFilterOutcome({
     required this.recipes,
+    this.sections = const {},
+    this.matchedIngredients = const {},
     this.missingData = const {},
     this.estimatedTimeExcluded = 0,
   });
 }
 
 /// Applique la recherche texte, le filtre et le tri à [corpus].
+///
+/// Avec du texte, chaque recette retenue se range dans une section
+/// ([matchRecipeQuery]) ; le tri s'applique dans chaque section, et l'ordre
+/// des sections est fixe. Le total ([RecipeFilterOutcome.recipes]) compte
+/// toutes les sections.
 RecipeFilterOutcome applyRecipeFilter(
   Iterable<Recipe> corpus, {
   String query = '',
@@ -661,12 +862,15 @@ RecipeFilterOutcome applyRecipeFilter(
   RecipeFilterContext context = RecipeFilterContext.empty,
   RecipeSort sort = RecipeSort.bestRated,
 }) {
-  final kept = <Recipe>[];
+  final hasQuery = _queryWords(query).isNotEmpty;
+  final bySection = <RecipeQuerySection, List<Recipe>>{};
+  final matchedIngredients = <String, List<String>>{};
   final missing = <RecipeFilterDimension, int>{};
   var estimatedExcluded = 0;
   final active = filter.activeDimensions.toList(growable: false);
   for (final recipe in corpus) {
-    if (!matchesRecipeQuery(recipe, query)) continue;
+    final match = hasQuery ? matchRecipeQuery(recipe, query) : null;
+    if (hasQuery && match == null) continue;
     var mismatch = false;
     final lacking = <RecipeFilterDimension>[];
     for (final d in active) {
@@ -692,11 +896,27 @@ RecipeFilterOutcome applyRecipeFilter(
       }
       continue;
     }
-    kept.add(recipe);
+    // Sans texte, une seule liste : rangée sous « titre », rendue à plat.
+    final section = match?.section ?? RecipeQuerySection.title;
+    bySection.putIfAbsent(section, () => []).add(recipe);
+    if (match != null && match.ingredients.isNotEmpty) {
+      matchedIngredients[recipe.id] = match.ingredients;
+    }
   }
-  kept.sort(recipeComparator(sort, context));
+  final comparator = recipeComparator(sort, context);
+  final sections = <RecipeQuerySection, List<Recipe>>{};
+  final kept = <Recipe>[];
+  for (final section in RecipeQuerySection.values) {
+    final recipes = bySection[section];
+    if (recipes == null || recipes.isEmpty) continue;
+    recipes.sort(comparator);
+    sections[section] = List.unmodifiable(recipes);
+    kept.addAll(recipes);
+  }
   return RecipeFilterOutcome(
     recipes: kept,
+    sections: hasQuery ? sections : const {},
+    matchedIngredients: matchedIngredients,
     missingData: missing,
     estimatedTimeExcluded: estimatedExcluded,
   );
