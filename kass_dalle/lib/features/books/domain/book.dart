@@ -3,13 +3,19 @@ enum BookReviewStatus { draft, validated }
 // Sentinel pour copyWith nullable
 const _sentinel = Object();
 
+/// Couverture livrée avec l'application pour « Mes recettes du web ». Son
+/// empreinte figure dans `functions/src/moderation/origin.ts`.
+const webBookCoverAsset = 'assets/FromTheWeb.png';
+
 class Book {
   // ── Tags internes identifiant les livres système ───────────────────────────
   static const tagKassdalle = '__kassdale_ia';
   static const tagLibres = '__libres';
   static const tagSecretes = '__secretes';
 
-  /// « Mes recettes du web » : créé par le serveur au premier import par lien.
+  /// « Mes recettes du web » : créé par le serveur (`ensureWebBookFn`) à
+  /// l'ouverture de la bibliothèque, pour un éditeur ou un administrateur ; le
+  /// premier import par lien reste un filet s'il manque encore.
   static const tagWeb = '__web';
 
   /// Préfixe des tags internes : il est réservé aux livres système.
@@ -78,6 +84,7 @@ class Book {
     if (isKassDalleBook) return 'assets/mycreations.png';
     if (isLibresBook) return 'assets/opensource.png';
     if (isSecretesBook) return 'assets/Secret.png';
+    if (isWebBook) return webBookCoverAsset;
     return null;
   }
 

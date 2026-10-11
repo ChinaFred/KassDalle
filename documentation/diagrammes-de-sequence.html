@@ -845,76 +845,101 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="recherche"><span class="n">07</span>Recherche de recettes</h2>
+    <h2 id="recherche"><span class="n">07</span>Recherche de recettes — l'écran Explorer</h2>
     <p class="sec-note">
-      La recherche n'interroge pas Firestore par mots-clés : elle charge un corpus, en fabrique un
-      résumé compact, et demande à Gemini de le classer. Trois pistes sont explorées en parallèle.
-      <span class="path">search_providers.dart:SearchNotifier.explore</span>
+      L'écran charge les recettes des sources choisies, puis filtre sur l'appareil à chaque
+      frappe, sans IA. Le classement par l'IA ne part que sur « Demander à l'IA », pour un
+      éditeur ou un administrateur, avec comme corpus les recettes retenues par les filtres sans
+      le texte.
+      <span class="path">search_screen.dart, search_providers.dart (exploreCorpusProvider,
+      AiRankingNotifier), recipes/domain/recipe_filter.dart</span>
     </p>
     <figure class="fig">
       <div class="canvas">
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor U as Utilisateur
-  participant SN as SearchNotifier
+  actor U as Lecteur
+  participant S as SearchScreen
+  participant P as explorePreferencesProvider
+  participant FS as users/uid/preferences/explore_filters
+  participant C as exploreCorpusProvider
   participant RR as RecipeRepository
   participant RA as RecipeRatingRepository
-  participant GS as GeminiService
-  participant G as Gemini
+  participant F as applyRecipeFilter
+  participant AI as AiRankingNotifier
+  participant CF as searchRecipesFn
 
-  U->>SN: explore requête, périmètre, source
-  SN->>SN: état SearchLoading
+  U->>S: ouvre /search
+  S->>P: sources, filtres, tri
+  P->>FS: get
+  FS-->>P: préférence, ou valeurs par défaut
+  S->>C: corpus des sources
+  C->>RR: getAllByOwners moi, includeDrafts
+  C->>RR: getAllByOwners famille, excludePrivate
+  C->>RA: getAllForUser uid
+  C-->>S: recettes et notes du lecteur
+  S->>F: texte vide, filtres, tri
+  F-->>S: N recettes, recettes écartées faute de donnée
+  S-->>U: liste, compteur, lignes « sans … écartées »
 
-  SN->>RR: getAllByOwners uids, includeDrafts
-  RR-->>SN: recettes du périmètre, 30 propriétaires au plus
-  SN->>RA: getAllForUser uid
-  RA-->>SN: notes personnelles
-  SN->>SN: résumés compacts, titre, livre, 20 ingrédients, thèmes, cuisines, note
-  SN->>SN: preferenceInsight déduit des notes hautes et basses
-
-  par bibliothèque
-    SN->>GS: searchRecipes requête, résumés, résumés notés
-    GS->>G: classement sémantique
-    G-->>GS: identifiants, raisons, suggestion
-    GS-->>SN: résultats, réassociés aux objets Recipe par identifiant
-  and génération
-    SN->>GS: generateRecipe fois trois variantes
-    GS->>G: Fidèle, Rapide, Créative
-    G-->>GS: trois recettes CookLang
-    GS-->>SN: propositions
-  and web
-    SN->>GS: generateWebSearchQuery
-    GS->>G: reformulation
-    G-->>GS: requête optimisée
-    GS-->>SN: lien de recherche
+  loop à chaque frappe ou filtre
+    U->>S: texte, puce
+    S->>F: texte, filtres, tri
+    F-->>S: liste filtrée
+    opt filtre ou tri changé
+      S->>P: apply
+      P->>FS: set, une demi-seconde après le dernier changement
+    end
   end
 
-  SN->>SN: état SearchSuccess
-  SN-->>U: résultats de la bibliothèque, propositions IA, piste web
+  opt éditeur ou admin : « Demander à l'IA · N recettes », actif si N > 0 et aucun classement en cours
+    alt champ vide
+      S-->>U: focus, « Écrivez votre envie pour que l'IA cherche. »
+    else texte présent
+      S->>F: filtres sans le texte
+      F-->>S: corpus de N recettes
+      S->>AI: rank requête, corpus, notes
+      AI-->>S: section « Choisies par l'IA » en chargement
+      AI->>CF: query, résumés, résumés notés
+      Note over CF: requireEditor, poste search
+      CF-->>AI: identifiants, raisons, suggestion, preference_insight
+      AI->>AI: réassocie aux recettes du corpus, ignore une réponse périmée
+      AI-->>S: résultats en tête de liste
+      opt texte, filtres ou sources changés depuis
+        S-->>U: « Recherche ou filtres modifiés depuis la demande. » et Relancer
+      end
+    end
+  end
+
+  opt « Chercher sur Google »
+    S-->>U: google.com/search?q=texte recette, sans appel d'IA
+  end
 </pre>
       </div>
       <figcaption>
-        <b>Les trois pistes démarrent avant d'être attendues</b> : les <code>Future</code> sont
-        créés puis <code>await</code> les uns après les autres, donc ils s'exécutent
-        concurremment. Le périmètre — mes recettes, celles de la famille, brouillons compris ou
-        non — est choisi par l'utilisateur avant l'appel.
+        <b>La liste locale reste utilisable pendant le classement</b> : le chargement n'occupe que
+        la section de l'IA. Une erreur s'y affiche avec « Réessayer », qui relance la même
+        demande. Le lecteur (<code>reader</code>) n'a ni le bouton ni la callable : il garde la
+        liste, les filtres et Google.
       </figcaption>
     </figure>
     <span class="expect">
-      Un identifiant renvoyé par Gemini qui ne correspond à aucune recette du corpus est
-      <b>silencieusement écarté</b> : le résultat est reconstruit depuis les objets locaux, jamais
-      depuis le texte du modèle. Une hallucination d'identifiant ne peut donc pas produire une
-      fausse recette à l'écran.
+      Un identifiant renvoyé par le modèle qui ne correspond à aucune recette du corpus est
+      écarté : le résultat est reconstruit depuis les objets locaux, jamais depuis le texte du
+      modèle. Une hallucination d'identifiant ne peut donc pas produire une fausse recette à
+      l'écran.
     </span>
   </section>
 
   <section>
     <h2 id="generer"><span class="n">08</span>Génération d'une recette par IA</h2>
     <p class="sec-note">
-      Trois variantes sont demandées d'un coup. Le vrai travail est ensuite de les empêcher de se
-      ressembler.
-      <span class="path">search_providers.dart:_generateAlternatives, saveGeneratedRecipe</span>
+      « Imaginer 3 recettes », sur ce bouton seulement, pour un éditeur ou un administrateur : la
+      consigne est le texte du champ. Trois variantes sont demandées d'un coup ; le vrai travail
+      est ensuite de les empêcher de se ressembler.
+      <span class="path">search_providers.dart:AiIdeasNotifier (imagine, saveGeneratedRecipe),
+      generated_recipe_screen.dart</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -922,7 +947,7 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   actor U as Utilisateur
-  participant SN as SearchNotifier
+  participant SN as AiIdeasNotifier
   participant GS as GeminiService
   participant CF as generateRecipeFn
   participant G as Gemini
@@ -931,7 +956,8 @@ sequenceDiagram
   participant FS as recipes
   participant TR as onRecipeWritten
 
-  U->>SN: explore avec la source IA
+  U->>SN: imagine texte du champ
+  SN-->>U: section « Idées de l'IA », trois tuiles d'attente
 
   par trois variantes lancées ensemble
     SN->>GS: generateRecipe variante Fidèle, contexte de 12 recettes
@@ -941,7 +967,7 @@ sequenceDiagram
     SN->>GS: generateRecipe variante Créative
   end
   GS->>CF: trois appels callable, indépendants
-  Note over CF: chacun ouvre son propre fil<br/>generation_recette:fidele, :rapide, :creative
+  Note over CF: requireEditor ; chacun ouvre son propre fil<br/>generation_recette:fidele, :rapide, :creative
   CF->>G: prompt de création
   G-->>CF: titre, cooklang, ingrédients, tags, portions
   CF-->>GS: JSON
@@ -960,14 +986,15 @@ sequenceDiagram
   SN-->>U: propositions distinctes, avec leur justification
 
   opt l'utilisateur en garde une
-    U->>SN: saveGeneratedRecipe
+    U->>SN: Enregistrer en brouillon
     SN->>BR: findOrCreateKassDalleBook uid
     BR-->>SN: livre Mes créations Kass'Dalle
-    SN->>RR: createRecipe statut validated, rattachée au livre
+    SN->>RR: createRecipe statut draft, origin ai, rattachée au livre
     RR->>RR: normalisation des référentiels
     RR->>FS: add
     FS-->>SN: identifiant
-    SN-->>U: recette ajoutée à la bibliothèque
+    SN-->>U: « Brouillon enregistré », action Ouvrir vers /drafts/id
+    SN->>SN: markSaved idée, identifiant : l'idée ne retient plus la sortie,<br/>sa tuile ouvre désormais /drafts/id
     FS-->>TR: onWrite recipes/id
     Note over CF,TR: generateRecipeFn ne demande pas le rôle dans un repas
     TR->>G: suggestMealRole (inline_meal_role_classification)
@@ -983,9 +1010,15 @@ sequenceDiagram
       </figcaption>
     </figure>
     <span class="expect">
-      Une recette générée est enregistrée directement en <code>validated</code>, sans passer par
-      la file de brouillons : l'utilisateur l'a déjà relue à l'écran. Elle atterrit dans le livre
-      système <b>Mes créations Kass'Dalle</b>, créé au premier besoin.
+      Une recette générée est enregistrée en <code>draft</code>, à relire avant de rejoindre la
+      bibliothèque, dans le livre système <b>Mes créations Kass'Dalle</b>, créé au premier besoin.
+      Quitter l'écran de relecture sans l'enregistrer demande confirmation : la recette n'existe
+      qu'en mémoire. L'Explorer pose le même garde tant qu'une idée n'est pas enregistrée
+      (<code>leaveGuardProvider</code> et <code>PopScope</code>) : le retour, la barre de
+      navigation et le menu latéral demandent « Quitter sans enregistrer ? », une seule fois : depuis
+      l'écran d'une idée, la navigation pose la question de l'Explorer, qui couvre toutes les
+      idées. Une idée enregistrée ouvre son brouillon au lieu d'en créer un second. « Imaginer 3
+      recettes » est inactif pendant une rédaction en cours.
     </span>
     <span class="expect">
       <b>Le rôle dans un repas est posé après l'enregistrement.</b> Le prompt de
@@ -2863,7 +2896,7 @@ sequenceDiagram
   GC->>M: planning_concept
   M-->>GC: titre, CookLang, justification
   AI->>AI: ingrédients, tags, parts extraits du CookLang
-  P->>PR: saveGenerated, statut validated
+  P->>PR: saveAsDraft, statut draft
   PR->>FS: recipes, livre Mes créations Kass'Dalle
   Note over FS: onRecipeWritten classe le rôle,<br/>puis courses et nutrition (séquence 06)
   MI-->>RP: recette enregistrée
@@ -2897,9 +2930,12 @@ sequenceDiagram
 </pre>
       </div>
       <figcaption>
-        <b>Une idée retenue devient une recette validée.</b> La personne a choisi ce plat : la
-        recette est enregistrée en <code>validated</code> dans <b>Mes créations Kass'Dalle</b>, et
-        le repas pointe sur elle. Les deux appels de modèle sont imputés à
+        <b>Une idée retenue devient un brouillon.</b> La recette est enregistrée en
+        <code>draft</code> dans <b>Mes créations Kass'Dalle</b>, comme toute recette créée par
+        l'IA, et le repas pointe sur elle : le planning et les courses lisent un brouillon comme
+        une recette validée. « Générer avec l'IA » est réservé aux éditeurs et administrateurs
+        (<code>suggestMealIdeasFn</code> et <code>generateRecipeConceptFn</code> en
+        <code>requireEditor</code>). Les deux appels de modèle sont imputés à
         <code>planning_meal_ideas</code> et <code>planning_concept</code>.
         <span class="expect">
           <b>L'événement Calendar porte un lien vers la fiche.</b> Ce lien ouvre le client web avec
@@ -3074,7 +3110,7 @@ sequenceDiagram
   end
   RP->>M: tagAndNormalize — poste url_import
   M-->>RP: CookLang, ingrédients, tags
-  RP->>FS: books/web_{uid} (créé au premier import, privé, tag __web ;<br/>un document web_{uid} étranger au compte n'est jamais réutilisé)
+  RP->>FS: books/web_{uid} (créé par ensureWebBookFn ou ici s'il manque, privé, tag __web ;<br/>un document web_{uid} étranger au compte n'est jamais réutilisé)
   RP->>FS: texte de la page → scans/{uid}/…txt (document original)
   RP->>FS: saveDraft — origin web, source_url, source_site, review_status draft<br/>(au plus 200 ingrédients, nom ≤ 120 car., unité ≤ 40 car.)
   RP->>W: photo (JSON-LD, sinon og:image) — même garde, image/*, 8 Mo

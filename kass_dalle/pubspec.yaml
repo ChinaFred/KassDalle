@@ -112,6 +112,7 @@ flutter:
     - assets/mycreations.png
     - assets/opensource.png
     - assets/Secret.png
+    - assets/FromTheWeb.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

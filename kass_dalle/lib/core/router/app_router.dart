@@ -40,6 +40,7 @@ import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
 import '../../features/recipes/presentation/detail/book_reader_navigation.dart';
 import '../../features/search/presentation/search_screen.dart';
+import '../../features/auth/presentation/editor_only_gate.dart';
 import '../../features/planning/domain/meal_prep_context.dart';
 import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
@@ -261,12 +262,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'new',
-                builder: (context, state) => RecipeCreateScreen(
-                  initialBookId: state.uri.queryParameters['bookId'],
-                  initialBookTitre: state.uri.queryParameters['bookTitre'],
-                  // Rappel de la page d'un import par lien qui a échoué :
-                  // affichée, jamais enregistrée sur la recette.
-                  sourceUrl: state.uri.queryParameters['sourceUrl'],
+                // Le lecteur ne crée pas de recette : arrivé par un lien, il
+                // voit un état qui le lui dit (même garde que `/scan`).
+                builder: (context, state) => EditorOnlyGate(
+                  appBarTitle: 'Nouvelle recette',
+                  lockedTitle: 'Création réservée aux éditeurs',
+                  lockedMessage:
+                      'Créer une recette est réservé aux éditeurs et aux '
+                      'administrateurs. Demandez à un administrateur de vous '
+                      'nommer éditeur.',
+                  builder: (_) => RecipeCreateScreen(
+                    initialBookId: state.uri.queryParameters['bookId'],
+                    initialBookTitre: state.uri.queryParameters['bookTitre'],
+                    // Rappel de la page d'un import par lien qui a échoué :
+                    // affichée, jamais enregistrée sur la recette.
+                    sourceUrl: state.uri.queryParameters['sourceUrl'],
+                  ),
                 ),
               ),
               GoRoute(

@@ -16,6 +16,10 @@
  * boîte, sans rapport d'erreur.
  *
  * `getUrlImportQuotaFn` rend le compteur, pour l'afficher à l'ouverture.
+ *
+ * `ensureWebBookFn` crée le livre système « Mes recettes du web » avec les
+ * autres livres système, à l'ouverture de la bibliothèque. Le client ne peut
+ * pas le créer lui-même : les règles refusent `books/web_*` et le tag `__web`.
  */
 
 import { onCall } from "firebase-functions/v2/https";
@@ -32,7 +36,7 @@ import { requireEditor } from "./_auth";
 import { budgetMultiplierFor, spendDay } from "../ai/budget";
 import { logInfo, logWarn, newScanId } from "../logging";
 import { UrlRefusedError, assertPublicHost, parseImportUrl } from "../web/urlGuard";
-import { URL_IMPORT_JOB_TYPE, WEB_BOOK_TITLE } from "../pipeline/urlImport";
+import { URL_IMPORT_JOB_TYPE, WEB_BOOK_TITLE, findOrCreateWebBook } from "../pipeline/urlImport";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -76,6 +80,18 @@ export const getUrlImportQuotaFn = onCall(opts, async (req) => {
   const limit = urlImportLimit(await budgetMultiplierFor(ctx.userId));
   const used = readCount((await counterRef(ctx.userId).get()).data());
   return { limit, used, remaining: remainingImports(used, limit) };
+});
+
+/**
+ * Crée (ou retrouve) le livre « Mes recettes du web » du compte et rend son
+ * identifiant. Appelée par `BookRepository.ensureSystemBooks` pour un éditeur
+ * ou un administrateur : le lecteur ne crée pas de recette, il n'a pas besoin
+ * de ce livre. Idempotente — l'identifiant est déterministe (`web_{uid}`).
+ */
+export const ensureWebBookFn = onCall(opts, async (req) => {
+  const ctx = await requireEditor(req, "web_book_ensure");
+  const book = await findOrCreateWebBook(ctx.userId, ctx);
+  return { bookId: book.id, titre: book.titre };
 });
 
 export const importRecipeFromUrlFn = onCall(opts, async (req) => {

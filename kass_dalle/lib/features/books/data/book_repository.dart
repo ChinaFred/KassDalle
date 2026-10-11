@@ -330,6 +330,33 @@ class BookRepository {
     return (id: id, titre: titre);
   }
 
+  /// Fait créer « Mes recettes du web » par le serveur, puis pose sa
+  /// couverture si elle manque. Best-effort : ouvrir la bibliothèque ne doit
+  /// pas échouer pour ce livre, mais l'échec est rapporté.
+  Future<void> _ensureWebBookCover(
+    String uid,
+    Future<String> Function() ensureWebBook,
+  ) async {
+    try {
+      final bookId = await ensureWebBook();
+      if (bookId.isEmpty) return;
+      final doc = await _col.doc(bookId).get();
+      final cover = doc.data()?['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        await _uploadAssetCover(webBookCoverAsset, bookId);
+      }
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_ensure_web_book',
+          error: e,
+          stackTrace: st,
+          context: {'uid': uid},
+        ),
+      );
+    }
+  }
+
   /// Trouve ou crée le livre "Mes Recettes Secrètes" pour [uid].
   Future<({String id, String titre})> findOrCreateSecretesBook(
     String uid,
@@ -442,9 +469,24 @@ class BookRepository {
     }
   }
 
-  /// Initialise les trois livres système pour [uid] et migre les recettes libres.
-  /// À appeler au démarrage / ouverture de la bibliothèque.
-  Future<void> ensureSystemBooks(String uid, String displayName) async {
+  /// Initialise les livres système pour [uid] et migre les recettes libres.
+  /// À appeler au démarrage / ouverture de la bibliothèque, pour un éditeur ou
+  /// un administrateur seulement : un lecteur ne crée pas de recette, il n'a
+  /// pas besoin de livre pour en recevoir (et les règles lui refusent la
+  /// création d'un livre).
+  ///
+  /// [ensureWebBook] crée « Mes recettes du web » côté serveur
+  /// (`ensureWebBookFn`) — le client n'a pas le droit de le faire — et rend
+  /// son identifiant ; la couverture est ensuite posée ici, comme pour les
+  /// trois autres.
+  Future<void> ensureSystemBooks(
+    String uid,
+    String displayName, {
+    Future<String> Function()? ensureWebBook,
+  }) async {
+    if (ensureWebBook != null) {
+      unawaited(_ensureWebBookCover(uid, ensureWebBook));
+    }
     try {
       // 1. Livre Kass'Dalle (créé si absent, couverture asset si manquante)
       unawaited(findOrCreateKassDalleBook(uid));

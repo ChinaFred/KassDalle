@@ -105,32 +105,3 @@ export async function extractBookCover(
 
   return JSON.parse(extractJsonObject(text)) as BookCoverExtraction;
 }
-
-/**
- * Génère une requête Google optimisée à partir d'une demande libre.
- * Porté depuis GeminiService.generateWebSearchQuery().
- */
-export async function generateWebSearchQuery(
-  apiKey: string,
-  userQuery: string,
-  ctx: ModelCallContext,
-): Promise<string> {
-  const prompt = `Tu es un expert SEO spécialisé en cuisine.
-L'utilisateur veut chercher une recette sur Google avec la demande suivante : "${userQuery}"
-
-Génère UNE SEULE requête Google optimisée pour trouver cette recette.
-Règles strictes :
-- Corrige les fautes d'orthographe
-- Garde uniquement les mots-clés culinaires essentiels (nom du plat, type de cuisine, contraintes clés)
-- N'ajoute PAS le mot "recette" (il sera ajouté automatiquement)
-- Ne dépasse pas 6 mots
-- Réponds UNIQUEMENT avec la requête, sans guillemets, sans explication
-`;
-  const result = await callModel({
-    parts: [textPart(prompt)],
-    ctx: { ...ctx, feature: "web_search_query", timeoutMs: 15_000 },
-  });
-  const query = result.text.trim();
-  if (!query) throw new Error("Réponse vide du moteur d'IA");
-  return query;
-}

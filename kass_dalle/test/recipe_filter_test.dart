@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kass_dalle/features/planning/domain/recipe_picker_filter.dart';
+import 'package:kass_dalle/features/recipes/domain/recipe_filter.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 
 /// Ce que le sélecteur de recette propose, et ce qu'il tait.
@@ -53,34 +53,31 @@ void main() {
 
   group('filtre', () {
     test('sans étiquette cochée, tout passe', () {
-      expect(RecipePickerFilter.none.matches(baozi), isTrue);
-      expect(RecipePickerFilter.none.isEmpty, isTrue);
+      expect(RecipeFilter.none.matches(baozi), isTrue);
+      expect(RecipeFilter.none.isEmpty, isTrue);
     });
 
     test('un type de plat coché retient les recettes qui le portent', () {
-      const f = RecipePickerFilter(dishTypes: {'dessert'});
+      const f = RecipeFilter(dishTypes: {'dessert'});
       expect(f.matches(tarte), isTrue);
       expect(f.matches(baozi), isFalse);
     });
 
     test('la casse de l\'étiquette ne compte pas', () {
-      const f = RecipePickerFilter(cuisines: {'asiatique'});
+      const f = RecipeFilter(cuisines: {'asiatique'});
       expect(f.matches(baozi), isTrue, reason: '« Asiatique » en base');
       expect(f.matches(nems), isTrue, reason: '« asiatique » en base');
       expect(f.matches(tarte), isFalse);
     });
 
     test('les deux groupes se cumulent', () {
-      const f = RecipePickerFilter(
-        dishTypes: {'entrée'},
-        cuisines: {'asiatique'},
-      );
+      const f = RecipeFilter(dishTypes: {'entrée'}, cuisines: {'asiatique'});
       expect(f.matches(nems), isTrue);
       expect(f.matches(baozi), isFalse, reason: 'asiatique mais pas entrée');
     });
 
     test('cocher puis décocher revient au filtre vide', () {
-      final f = RecipePickerFilter.none.toggleDishType('dessert');
+      final f = RecipeFilter.none.toggleDishType('dessert');
       expect(f.count, 1);
       expect(f.toggleDishType('dessert').isEmpty, isTrue);
     });
@@ -88,7 +85,7 @@ void main() {
 
   group('valeurs proposées', () {
     test('elles viennent du corpus, les plus fréquentes en premier', () {
-      final facets = recipePickerFacets([baozi, tarte, nems]);
+      final facets = recipeTagFacets([baozi, tarte, nems]);
       expect(facets.cuisines.first.key, 'asiatique');
       expect(facets.cuisines.first.count, 2);
       expect(
@@ -98,7 +95,7 @@ void main() {
     });
 
     test('la graphie affichée est la plus fréquente', () {
-      final facets = recipePickerFacets([
+      final facets = recipeTagFacets([
         nems,
         recipe('x', cuisines: const ['asiatique']),
         baozi,
@@ -107,7 +104,7 @@ void main() {
     });
 
     test('un corpus sans étiquette ne propose rien', () {
-      final facets = recipePickerFacets([technique]);
+      final facets = recipeTagFacets([technique]);
       expect(facets.dishTypes, isEmpty);
       expect(facets.cuisines, isEmpty);
     });
@@ -118,7 +115,7 @@ void main() {
       final shown = filterPickerRecipes(
         [baozi, tarte, nems],
         query: 'recette',
-        filter: const RecipePickerFilter(cuisines: {'asiatique'}),
+        filter: const RecipeFilter(cuisines: {'asiatique'}),
         dismissedRecipeIds: const {'nems'},
       );
       expect(shown.map((r) => r.id), ['baozi']);

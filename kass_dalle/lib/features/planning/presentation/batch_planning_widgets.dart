@@ -1144,11 +1144,16 @@ class RecipeSourceSheet extends StatefulWidget {
   final Set<String> initialBookIds;
   final List<({String id, String titre})> availableBooks;
 
+  /// Faux pour un lecteur : « Conception IA » enregistre une recette, et le
+  /// lecteur n'en crée pas. La source n'est alors ni proposée ni rendue.
+  final bool allowAiCreation;
+
   const RecipeSourceSheet({
     super.key,
     required this.initialSources,
     this.initialBookIds = const {},
     this.availableBooks = const [],
+    this.allowAiCreation = true,
   });
 
   @override
@@ -1163,6 +1168,7 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
   void initState() {
     super.initState();
     _selected = Set.of(widget.initialSources);
+    if (!widget.allowAiCreation) _selected.remove(RecipeSource.aiCreation);
     _selectedBookIds = Set.of(widget.initialBookIds);
   }
 
@@ -1222,25 +1228,27 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
                   ),
                   const SizedBox(height: 4),
                   for (final source in RecipeSource.values)
-                    CheckboxListTile(
-                      value: _selected.contains(source),
-                      title: Text(source.label),
-                      secondary: Icon(switch (source) {
-                        RecipeSource.myRecipes => Icons.check_circle_outline,
-                        RecipeSource.myDrafts => Icons.edit_outlined,
-                        RecipeSource.familyRecipes => Icons.group_outlined,
-                        RecipeSource.aiCreation => Icons.smart_toy_outlined,
-                      }),
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selected.add(source);
-                          } else {
-                            _selected.remove(source);
-                          }
-                        });
-                      },
-                    ),
+                    if (widget.allowAiCreation ||
+                        source != RecipeSource.aiCreation)
+                      CheckboxListTile(
+                        value: _selected.contains(source),
+                        title: Text(source.label),
+                        secondary: Icon(switch (source) {
+                          RecipeSource.myRecipes => Icons.check_circle_outline,
+                          RecipeSource.myDrafts => Icons.edit_outlined,
+                          RecipeSource.familyRecipes => Icons.group_outlined,
+                          RecipeSource.aiCreation => Icons.smart_toy_outlined,
+                        }),
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) {
+                              _selected.add(source);
+                            } else {
+                              _selected.remove(source);
+                            }
+                          });
+                        },
+                      ),
                   if (hasBooks) ...[
                     const Divider(height: 24),
                     Padding(

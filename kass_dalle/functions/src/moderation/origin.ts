@@ -29,6 +29,7 @@ export const BUNDLED_ASSET_SHA256: Readonly<Record<string, string>> = {
   "7bdbc3c44d42a814fd4a5cb79c1b4ea5580e2766683d15822e634ea6a9f754c0": "assets/mycreations.png",
   ba8306bcf5d09280fc0a80b6b51c4a6ab16693daf13dcc3ab0c119f19a28bc91: "assets/opensource.png",
   "6b6eb36ffeb1931358bc183ecda9f41efbeac892a18d1ef1557c88e45642f278": "assets/Secret.png",
+  d9f6cdb0642bbd92fe90a5e97d22d955b902885a4d6cbf3ab78f71d23563c30a: "assets/FromTheWeb.png",
 };
 
 export function sha256Hex(bytes: Uint8Array): string {

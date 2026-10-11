@@ -155,8 +155,11 @@
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Rechercher et faire générer une recette par l'IA</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer, modifier, valider ses propres recettes, rangées dans ses propres livres</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur Google</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Demander à l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Modifier, valider et supprimer ses propres recettes existantes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer des livres, modifier et supprimer les siens (couverture comprise)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer le livre ou la recette d'autrui, changer sa couverture ou ses illustrations — l'écran de modification ouvert par un lien le dit avant toute saisie</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ranger une recette dans le livre d'un autre membre (création, déplacement, import)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -181,11 +184,12 @@
       </table>
     </div>
     <span class="expect">
-      Un <code>reader</code> n'est pas un simple spectateur : il crée et valide <b>ses</b>
-      recettes. Les règles Firestore autorisent la création et la mise à jour par le créateur,
-      indépendamment du rôle — à condition qu'il soit nommé. Ce que le rôle <code>editor</code>
-      ouvre en plus, c'est l'import, la création de livres et la relecture des brouillons
-      partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
+      Un <code>reader</code> lit, note, annote, planifie et filtre la bibliothèque. Il ne crée
+      <b>aucune</b> recette : ni saisie manuelle, ni copie, ni recette conçue par l'IA, ni
+      import. Ses recettes existantes restent à lui : il les modifie, les valide et les
+      supprime. Ce que le rôle <code>editor</code> ouvre en plus, c'est la création de
+      recettes, l'import, « Demander à l'IA » et « Imaginer 3 recettes » dans Explorer, la
+      création de livres et la relecture des brouillons partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
       d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
       et l'<code>admin</code>.
@@ -217,13 +221,17 @@
     <p class="sec-note">
       Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
       la noter, composer les repas de la semaine et faire les courses. Tout compte nommé y a
-      accès.
+      accès, sauf à ce qui crée une recette ou demande à l'IA de choisir dans Explorer :
+      « Demander à l'IA », « Imaginer 3 recettes », et dans le planning les idées de repas et
+      la conception d'une recette par l'IA. Ces cas sont réservés à l'éditeur et à
+      l'administrateur.
     </p>
     <figure class="fig">
       <div class="canvas">
 <pre class="mermaid">
 flowchart LR
   LEC(("Lecteur"))
+  EDI(("Éditeur,&lt;br/&gt;Administrateur"))
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
 
   subgraph app["Kass'Dalle"]
@@ -236,7 +244,10 @@ flowchart LR
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
     a25(["Voir les notes de la famille"])
-    a8(["Rechercher une recette"])
+    a8(["Filtrer la bibliothèque&lt;br/&gt;texte, filtres, tri, sans IA"])
+    a32(["Chercher sur Google"])
+    a33(["Demander à l'IA"])
+    a34(["Imaginer 3 recettes"])
     a9(["Planifier un repas"])
     a10(["Exporter en PDF&lt;br/&gt;une recette, un livre ou tous mes livres"])
     a11(["Demander un dressage sur mesure"])
@@ -272,6 +283,8 @@ flowchart LR
     i10(["Remplir les créneaux sans l'IA"])
     i11(["Recalculer la portée des groupes"])
     i12(["Retenir le plat refusé&lt;br/&gt;21 jours, sous mon compte"])
+    i13(["Proposer trois recettes"])
+    i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
   end
 
   LEC --- a1
@@ -280,6 +293,13 @@ flowchart LR
   LEC --- a6
   LEC --- a7
   LEC --- a8
+  LEC --- a32
+  EDI --- a33
+  EDI --- a34
+  EDI --- a19
+  a8 -.->|"les recettes filtrées, sans le texte"| a33
+  a34 -.->|"inclut"| i13
+  a34 -.->|"proposition retenue"| i14
   LEC --- a9
   LEC --- a10
   LEC --- a11
@@ -301,7 +321,7 @@ flowchart LR
   a2 --- a5
   a9 --- a5
   a9 --- a14
-  a9 --- a19
+  a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
   a12 --- a21
   a12 --- a23
@@ -311,15 +331,16 @@ flowchart LR
   a4 -.->|"inclut"| i0
   a4 -.->|"Recalculer, sa recette"| i1
   a5 -.->|"inclut"| i2
-  a8 -.->|"inclut"| i3
+  a33 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
   a12 -.->|"inclut"| i4
   a27 -.->|"liste classée"| i4
   a6 -.->|"ma note"| i4
   a12 -.->|"sous 0,50 €"| i9
   i10 -.->|"étend : IA muette ou plafond"| a12
-  a12 -.->|"créneau sans candidat, 2 au plus"| i8
-  a27 -.->|"liste épuisée"| i8
+  a12 -.->|"créneau sans candidat, 2 au plus ; éditeur ou admin"| i8
+  a27 -.->|"liste épuisée ; éditeur ou admin"| i8
+  i8 -.->|"inclut"| i14
   a27 -.->|"plat remplacé"| i12
   a12 -.->|"Tout régénérer"| i12
   i12 -.->|"chance ÷2, ÷4 dès 3 refus"| i4
@@ -338,10 +359,11 @@ flowchart LR
   i6 --- GEM
   i7 --- GEM
   i8 --- GEM
+  i13 --- GEM
 </pre>
       </div>
       <figcaption>
-        Sept cas de droite consomment des jetons d'IA dans ce parcours. Aucun ne nomme un
+        Huit cas de droite consomment des jetons d'IA dans ce parcours. Aucun ne nomme un
         fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
         Firestore, et le plafond du compte est vérifié <b>avant</b> l'appel.
         <b>Ajuster les portions n'appelle aucun modèle</b> : les valeurs par portion valent les
@@ -360,7 +382,23 @@ flowchart LR
         recette d'un autre membre, le lecteur lit ce qui est enregistré ; quand rien ne l'est,
         l'écran le dit, sans bouton.
         <b>Les idées de repas</b> coûtent un appel par consigne ou relance, puis un appel par idée
-        retenue : sa recette est rédigée et rangée validée dans « Mes créations Kass'Dalle ».
+        retenue : sa recette est rédigée et enregistrée en brouillon dans « Mes créations
+        Kass'Dalle ✨ ». Ce geste crée une recette : il est réservé à l'éditeur et à
+        l'administrateur.
+        <b>Explorer filtre sans IA.</b> À l'ouverture, il montre les recettes du périmètre
+        — mes recettes, ma famille, mes brouillons. Le champ « Titre, ingrédient, envie… » et les
+        filtres réduisent la liste sur l'appareil, à chaque frappe, sans appel. Filtres et tri sont
+        une préférence du lecteur, enregistrée sous son compte. « Chercher sur Google » ouvre une
+        recherche avec le texte suivi du mot « recette », sans IA, pour tous les rôles.
+        <b>« Demander à l'IA »</b> part sur un bouton : la demande et les recettes que retiennent
+        les filtres, sans le filtre du texte, en un appel. Les recettes choisies remontent en tête
+        sous « Choisies par l'IA », chacune avec sa raison. Un texte ou un filtre modifié ensuite
+        affiche « Recherche ou filtres modifiés depuis la demande. » avec « Relancer ».
+        <b>« Imaginer 3 recettes »</b> part sur un bouton : trois appels, plus un par doublon
+        rejoué. Une proposition retenue est enregistrée en brouillon dans « Mes créations
+        Kass'Dalle ✨ » ; quitter l'Explorer ou l'écran d'une proposition avec des propositions non
+        enregistrées demande confirmation.
+        Ces deux cas sont réservés à l'éditeur et à l'administrateur.
         <b>Le planning présélectionne sans IA</b> : le serveur filtre les recettes (rôle, temps
         de préparation, repos, écartées, déjà au cycle, notées 3/10 ou moins par le lecteur),
         les classe par fraîcheur sur 90 jours et par la note du lecteur, puis tire 5 plats par
@@ -375,6 +413,10 @@ flowchart LR
         atteint, Kass'Dalle remplit les créneaux et un bandeau le dit.
         <b>« Autre suggestion » n'appelle aucun modèle</b> : elle pose la recette suivante de la
         liste classée. Quand la liste est épuisée, seule « Concevoir avec l'IA » est facturée.
+        <b>Toute recette conçue par l'IA dans le planning arrive en brouillon</b> dans « Mes
+        créations Kass'Dalle ✨ » : « Générer avec l'IA », la source « Conception IA » et
+        « Concevoir avec l'IA ». Ces trois gestes sont réservés à l'éditeur et à
+        l'administrateur ; pour un lecteur, un créneau sans candidat reste vide.
         Chaque plat affiche son origine : choisie par l'IA, par Kass'Dalle, par le lecteur, ou
         conçue par l'IA.
         <b>Un plat refusé est proposé moins souvent pendant 21 jours</b> : sa chance est divisée
@@ -418,7 +460,7 @@ flowchart LR
         confirmation. Un membre autre que le propriétaire peut quitter le groupe ; le propriétaire
         en reste membre. Accepter, quitter ou être retiré change la portée des groupes,
         recalculée par le serveur (<code>syncGroupReach</code>) sans appel d'IA : la bibliothèque,
-        la recherche et le planning suivent. Les membres ajoutés directement avant la v0.23.19
+        Explorer et le planning suivent. Les membres ajoutés directement avant la v0.23.19
         restent membres.
       </figcaption>
     </figure>
@@ -430,7 +472,8 @@ flowchart LR
       Cinq portes d'entrée pour une recette : le scan d'une page, l'import depuis un lien, la
       saisie manuelle, la génération par l'IA, la copie d'une recette d'un proche. L'import d'un livre entier répète
       le scan d'une page, tranche par tranche. Toutes convergent vers le même brouillon, puis vers
-      la même validation.
+      la même validation. Les cinq sont réservées à l'éditeur et à l'administrateur : le
+      lecteur ne crée plus de recette, il reprend et modifie les siennes.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -451,7 +494,7 @@ flowchart LR
     b20(["Corriger la protéine et le féculent&lt;br/&gt;d'un plat ou d'un accompagnement"])
     b18(["Retoucher une illustration par l'IA"])
     b2(["Créer une recette à la main"])
-    b3(["Faire générer une recette"])
+    b3(["Faire générer une recette&lt;br/&gt;en brouillon"])
     b4(["Copier la recette d'un proche"])
     b5(["Reprendre un brouillon"])
     b6(["Raffiner le brouillon par IA"])
@@ -508,10 +551,12 @@ flowchart LR
   EDI --- b10
   EDI --- b11
   EDI --- b12
-  LEC --- b2
-  LEC --- b3
-  LEC --- b4
+  EDI --- b2
+  EDI --- b3
+  EDI --- b4
+  EDI --- b5
   LEC --- b5
+  LEC --- b9
   b1 -.->|"inclut"| c1
   b11 -.->|"inclut"| c1
   b1 -.->|"inclut"| c2
@@ -533,12 +578,13 @@ flowchart LR
 </pre>
       </div>
       <figcaption>
-        <b>Les deux acteurs ne sont pas séparés par le parcours mais par la propriété</b> : un
-        <code>reader</code> crée, raffine et valide <b>ses</b> recettes — les règles Firestore
-        autorisent création et mise à jour par le créateur, quel que soit son rôle. Ce que
-        <code>editor</code> ouvre en plus, c'est le fonds commun : les livres, les recettes
-        d'autrui, l'import d'une page, d'un livre entier ou d'un lien, et tout ce qui <b>produit</b> une
-        image. La retouche d'une illustration par l'IA est réservée à l'<code>admin</code>
+        <b>Seuls l'<code>editor</code> et l'<code>admin</code> créent une recette</b> : saisie
+        manuelle, copie de la recette d'un proche, recette conçue par l'IA (Explorer « Imaginer 3
+        recettes », planning « Générer avec l'IA »), import d'une page, d'un livre entier ou d'un
+        lien. Une recette conçue par l'IA arrive en brouillon dans « Mes créations Kass'Dalle ✨ ».
+        Le <code>reader</code> garde ses recettes existantes : il reprend ses brouillons, les
+        raffine, les valide, et modifie ses recettes validées. L'<code>editor</code> ouvre aussi
+        les livres et tout ce qui <b>produit</b> une image. La retouche d'une illustration par l'IA est réservée à l'<code>admin</code>
         (<code>enhanceIllustrationFn</code> exige ce rôle), sur ses propres brouillons.
         <b>Un livre entier part avec un plafond de dépense</b>, fixé avant le départ : le fichier
         est lu et le coût estimé sans appel facturé, puis l'éditeur saisit le montant. Quand le
@@ -562,14 +608,16 @@ flowchart LR
         collé. Le texte d'avant traduction d'une page importée est gardé à côté de la recette ;
         celui d'un texte collé reste le fichier source.
         <b>L'import depuis un lien</b> est réservé à l'<code>editor</code> et à
-        l'<code>admin</code>. Il part d'Explorer, de l'écran Import ou du bouton « Lien » de la
-        saisie manuelle. Avant l'envoi, l'adresse est contrôlée (valide, publique), le plafond de
+        l'<code>admin</code>. Il part d'Explorer (« Importer depuis un lien »), de l'écran Import
+        ou du bouton « Lien » de la saisie manuelle. Avant l'envoi, l'adresse est contrôlée (valide, publique), le plafond de
         10 imports par lien et par jour est vérifié, et une recette déjà importée depuis la même
         adresse, normalisée, est signalée : l'utilisateur l'ouvre ou importe quand même. Le serveur lit
         d'abord les données schema.org/Recipe de la page, sans appel d'IA, puis met en forme ; à
         défaut, le texte de la page suit la chaîne du texte collé. Une page dans une autre langue
-        est traduite. Le brouillon arrive dans « Mes recettes du web », livre système privé créé
-        au premier import, qui ne se supprime pas. Le texte de la page est joint comme document
+        est traduite. Le brouillon arrive dans « Mes recettes du web », livre système privé qui ne
+        se supprime pas. Il est créé avec les autres livres système, à l'ouverture de la
+        bibliothèque, pour un éditeur ou un administrateur, avec sa couverture « From the web » ;
+        le lecteur n'a pas ce livre. Le texte de la page est joint comme document
         original, et la source s'affiche sur la fiche ; la copie d'une recette importée la garde.
         La photo de la page s'ajoute quand la modération l'accepte : en attente, la recette est
         créée sans photo ; refusée, la photo ne s'ajoute jamais. Un site qui bloque la lecture

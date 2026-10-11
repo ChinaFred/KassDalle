@@ -9,7 +9,7 @@ class RecipeAiUiCopy {
   static const appBarActionTooltip = 'Améliorer cette recette avec l\'IA';
 
   static const refineDialogTitle = 'Améliorer avec l\'IA';
-  static const refineDialogPrimaryCta = 'Lancer l\'amelioration';
+  static const refineDialogPrimaryCta = 'Lancer l\'amélioration';
   static const refineDialogInputPrompt =
       'Précisez ce que vous voulez améliorer (optionnel) :';
 
@@ -27,8 +27,8 @@ class RecipeAiUiCopy {
       'Décris le plat ou ajuste le prompt. L\'image sera photo-réaliste, avec un dressage soigné et les éléments essentiels bien visibles.';
   static const generateImageSuccess = 'Image générée par l\'IA ✓';
 
-  static const successRecipeRefined = 'Recette amelioree par l\'IA ✓';
-  static const successRecipePolished = 'Recette corrigee et harmonisee !';
+  static const successRecipeRefined = 'Recette améliorée par l\'IA ✓';
+  static const successRecipePolished = 'Recette corrigée et harmonisée !';
   static const successRecipeTransformed = 'Recette convertie en CookLang !';
 
   static const processingTitle = 'Traitement IA en cours';

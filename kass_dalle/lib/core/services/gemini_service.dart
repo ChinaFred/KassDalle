@@ -518,15 +518,6 @@ class GeminiService {
     ];
   }
 
-  // ── Web search query ────────────────────────────────────────────────────────
-
-  Future<String> generateWebSearchQuery(String userQuery) async {
-    final data = await _call('generateWebSearchQueryFn', {
-      'userQuery': userQuery,
-    });
-    return data['query'] as String;
-  }
-
   // ── Suggest recipe tags (Cuisine + Type de plat + rôle dans un repas) ──────
 
   Future<
@@ -628,6 +619,14 @@ class GeminiService {
       'force': force,
     });
     return UrlImportResult.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// Crée (ou retrouve) le livre système « Mes recettes du web » et rend son
+  /// identifiant. Le client ne peut pas le créer lui-même : les règles
+  /// refusent `books/web_*` et le tag `__web`. Éditeurs et administrateurs.
+  Future<String> ensureWebBook() async {
+    final data = await _call('ensureWebBookFn', const <String, dynamic>{});
+    return (Map<String, dynamic>.from(data as Map)['bookId'] as String?) ?? '';
   }
 
   /// Le compteur d'imports par lien du jour.

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../domain/meal_idea.dart';
-import '../domain/recipe_picker_filter.dart';
+import '../../recipes/domain/recipe_filter.dart';
+import '../../recipes/presentation/recipe_filter_widgets.dart';
 import 'meal_ideas_sheet.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -54,8 +55,8 @@ class RecipePickerSheet extends StatefulWidget {
 class _RecipePickerSheetState extends State<RecipePickerSheet> {
   String _query = '';
   bool _showDismissed = false;
-  RecipePickerFilter _filter = RecipePickerFilter.none;
-  late final _facets = recipePickerFacets(widget.recipes);
+  RecipeFilter _filter = RecipeFilter.none;
+  late final _facets = recipeTagFacets(widget.recipes);
 
   bool _isDismissed(Recipe r) => widget.dismissedRecipeIds.contains(r.id);
 
@@ -145,40 +146,9 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
       useSafeArea: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          void apply(RecipePickerFilter next) {
+          void apply(RecipeFilter next) {
             setSheetState(() {});
             setState(() => _filter = next);
-          }
-
-          Widget group(
-            String title,
-            List<PickerFacet> facets,
-            Set<String> selected,
-            RecipePickerFilter Function(String key) toggle,
-          ) {
-            if (facets.isEmpty) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(ctx).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      for (final facet in facets)
-                        FilterChip(
-                          label: Text('${facet.label} (${facet.count})'),
-                          selected: selected.contains(facet.key),
-                          onSelected: (_) => apply(toggle(facet.key)),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            );
           }
 
           return SingleChildScrollView(
@@ -198,23 +168,23 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                       TextButton(
                         onPressed: _filter.isEmpty
                             ? null
-                            : () => apply(RecipePickerFilter.none),
+                            : () => apply(RecipeFilter.none),
                         child: const Text('Effacer'),
                       ),
                     ],
                   ),
                 ),
-                group(
-                  'Type de plat',
-                  _facets.dishTypes,
-                  _filter.dishTypes,
-                  _filter.toggleDishType,
+                RecipeFacetChipGroup(
+                  title: 'Type de plat',
+                  facets: _facets.dishTypes,
+                  selected: _filter.dishTypes,
+                  onToggle: (key) => apply(_filter.toggleDishType(key)),
                 ),
-                group(
-                  'Cuisine',
-                  _facets.cuisines,
-                  _filter.cuisines,
-                  _filter.toggleCuisine,
+                RecipeFacetChipGroup(
+                  title: 'Cuisine',
+                  facets: _facets.cuisines,
+                  selected: _filter.cuisines,
+                  onToggle: (key) => apply(_filter.toggleCuisine(key)),
                 ),
                 Padding(
                   padding: const EdgeInsets.all(16),
