@@ -11,8 +11,8 @@
  *   - texte déjà présent → rien.
  *
  * Réentrant par construction : un compte traité contient le texte et est
- * sauté au passage suivant. Un document par famille, quelques dizaines au
- * plus : pas de curseur, mais les mêmes bornes que les autres backfills.
+ * sauté au passage suivant. Un document par compte, quelques dizaines : pas
+ * de curseur, mais les mêmes bornes que les autres backfills.
  */
 
 import { createHash } from "node:crypto";
@@ -62,6 +62,8 @@ export interface BackfillPlanningDefaultsResponse {
    */
   tropLongs: number;
   echoues: number;
+  /** Comptes pas encore examinés à l'arrêt du passage. */
+  restants: number;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
@@ -113,16 +115,17 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       ignores: 0,
       tropLongs: 0,
       echoues: 0,
+      restants: 0,
       stoppedByDeadline: false,
       stoppedByBudget: false,
       stoppedByErrors: false,
       completed: false,
     };
 
-    const snap = await db
-      .collection(COLL_PLANNING_CONFIG)
-      .limit(MAX_DOCS + 1)
-      .get();
+    // Un document par compte : toute la collection tient en une lecture.
+    // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
+    // si bien qu'une relance avance toujours au-delà des précédents.
+    const snap = await db.collection(COLL_PLANNING_CONFIG).get();
     let consecutiveFailures = 0;
     let treated = 0;
     for (const doc of snap.docs) {
@@ -179,11 +182,8 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
         });
       }
     }
-    response.completed =
-      !response.stoppedByDeadline &&
-      !response.stoppedByBudget &&
-      !response.stoppedByErrors &&
-      snap.size <= MAX_DOCS;
+    response.restants = snap.size - response.examines;
+    response.completed = response.restants === 0 && !response.stoppedByErrors;
 
     await logInfo({
       message: "Contraintes de variété par défaut — passage",

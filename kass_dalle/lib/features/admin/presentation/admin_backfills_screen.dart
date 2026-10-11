@@ -348,7 +348,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
           'le vôtre ignoré=${r['ignores']}, '
           'trop longs (laissés tels quels)=${r['tropLongs']}, '
-          'échecs=${r['echoues']}'
+          'échecs=${r['echoues']}, restants=${r['restants']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
     );
   }
