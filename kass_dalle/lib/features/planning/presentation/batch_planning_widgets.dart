@@ -11,6 +11,7 @@ import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/recipe_search_scope.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/utils/duration_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 
@@ -182,6 +183,10 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
 ///
 /// Une carte plus large étire la ligne de lecture sans rien montrer de plus.
 const double kBatchSlotCardMaxWidth = 560;
+
+/// Largeur minimale d'une carte : en dessous, l'éditeur des contraintes d'une
+/// carte dépliée se tasse, et la grille garde une colonne de moins.
+const double kBatchSlotCardMinWidth = 340;
 
 /// Actions du menu ⋮ d'un créneau.
 enum _SlotAction { assign, exportToCalendar, remove, delete }
@@ -668,7 +673,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
       final prep = r.tags.prepTime;
       final cook = r.tags.cookTime;
       if (prep != null || cook != null) {
-        parts.add('${(prep ?? 0) + (cook ?? 0)} min');
+        parts.add(formatDurationMinutes((prep ?? 0) + (cook ?? 0)));
       }
     }
     if (c.maxPrepMinutes > 0) parts.add('${c.maxPrepMinutes} min max');
@@ -852,7 +857,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
         onTap: _toggle,
         borderRadius: BorderRadius.circular(8),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Row(
             children: [
               Icon(

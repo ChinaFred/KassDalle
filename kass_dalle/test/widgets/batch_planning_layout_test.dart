@@ -93,11 +93,11 @@ void main() {
     expect(find.byTooltip('Suggérer avec l\'IA'), findsOneWidget);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
     expect(scaffold.bottomNavigationBar, isNotNull);
-    expect(find.text('Consignes du cycle · vide'), findsOneWidget);
+    expect(find.text('Consignes du cycle · aucune'), findsOneWidget);
     expect(find.byType(BatchSlotTile), findsWidgets);
 
     // Déplier les consignes ouvre le champ, et le compte suit la saisie.
-    await tester.tap(find.text('Consignes du cycle · vide'));
+    await tester.tap(find.text('Consignes du cycle · aucune'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextField).first,

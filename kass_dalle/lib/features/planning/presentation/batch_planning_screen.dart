@@ -1301,6 +1301,39 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     });
   }
 
+  /// Confirmation avant de perdre la recette posée sur [index]. Un créneau
+  /// vide part sans question : il n'y a rien à perdre. Le menu ⋮ et le clic
+  /// droit rendent ces actions faciles à toucher par mégarde.
+  Future<bool> _confirmLoss(
+    int index, {
+    required String title,
+    required String action,
+  }) async {
+    final recipe = _slots[index];
+    if (recipe == null) return true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text('« ${recipe.titre} » sera retiré de ce cycle.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return ok == true && mounted;
+  }
+
   /// Supprime le jour à [index] de la liste des slots.
   void _removeDay(int index) {
     if (_slotDates.length <= 1) {
@@ -2367,6 +2400,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: const Text('Quitter sans valider'),
           ),
         ],
@@ -2379,8 +2415,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   Widget _buildCycleBanner(int assignedCount, int totalSlots) {
     final theme = Theme.of(context);
     final String label;
+    // Lu à voix haute : ni « flèche droite » ni « barre oblique ».
+    String spoken;
     if (_slotDates.isEmpty) {
       label = 'Chargement…';
+      spoken = label;
     } else {
       final first = _slotDates.first;
       final last = _slotDates.last;
@@ -2388,6 +2427,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final from = DateFormat(sameMonth ? 'd' : 'd MMM', 'fr').format(first);
       final to = DateFormat('d MMM', 'fr').format(last);
       label = '$from → $to · $assignedCount/$totalSlots repas';
+      spoken =
+          'Du ${DateFormat('d MMMM', 'fr').format(first)} au '
+          '${DateFormat('d MMMM', 'fr').format(last)}, '
+          '$assignedCount repas sur $totalSlots';
     }
     return Container(
       color: theme.colorScheme.surfaceContainerHighest,
@@ -2400,7 +2443,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             color: theme.colorScheme.primary,
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+          Expanded(
+            child: Semantics(
+              label: spoken,
+              excludeSemantics: true,
+              child: Text(label, style: theme.textTheme.bodyMedium),
+            ),
+          ),
         ],
       ),
     );
@@ -2524,7 +2573,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 .where((line) => line.trim().isNotEmpty)
                 .length;
             final count = rules == 0
-                ? 'vide'
+                ? 'aucune'
                 : '$rules règle${rules > 1 ? 's' : ''}';
             return Text('Consignes du cycle · $count');
           },
@@ -2573,7 +2622,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final usable = constraints.maxWidth - 2 * 16;
-        final columns = math.max(1, (usable / kBatchSlotCardMaxWidth).ceil());
+        // Des cartes de 560 px au plus, et de 340 px au moins : sous cette
+        // largeur, l'éditeur des contraintes d'une carte dépliée se tasse.
+        final columns = math.max(
+          1,
+          math.min(
+            (usable / kBatchSlotCardMaxWidth).ceil(),
+            (usable / kBatchSlotCardMinWidth).floor(),
+          ),
+        );
         final items = <Widget>[
           for (var i = 0; i < _slotDates.length; i++)
             _buildSlotTile(i, effectivePrefs),
@@ -2638,20 +2695,37 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           ? () => _generateStorageAdvice(index)
           : null,
       onAssign: () => _pickRecipeForSlot(index),
-      onRemove: () => setState(() {
-        _slots[index] = null;
-        _slotSides.remove(index);
-        _slotSideManual.remove(index);
-        _slotStarters.remove(index);
-        _slotDesserts.remove(index);
-        _slotJustifications.remove(index);
-        _slotPrepDates.remove(index);
-        _slotWasResized.remove(index);
-        _slotResizeReasons.remove(index);
-        _slotIsGenerated.remove(index);
-        _slotSources.remove(index);
-      }),
-      onDelete: () => _removeDay(index),
+      onRemove: () async {
+        if (!await _confirmLoss(
+          index,
+          title: 'Retirer la recette ?',
+          action: 'Retirer',
+        )) {
+          return;
+        }
+        setState(() {
+          _slots[index] = null;
+          _slotSides.remove(index);
+          _slotSideManual.remove(index);
+          _slotStarters.remove(index);
+          _slotDesserts.remove(index);
+          _slotJustifications.remove(index);
+          _slotPrepDates.remove(index);
+          _slotWasResized.remove(index);
+          _slotResizeReasons.remove(index);
+          _slotIsGenerated.remove(index);
+          _slotSources.remove(index);
+        });
+      },
+      onDelete: () async {
+        if (await _confirmLoss(
+          index,
+          title: 'Supprimer ce jour ?',
+          action: 'Supprimer',
+        )) {
+          _removeDay(index);
+        }
+      },
       onTimeChanged: (t) => setState(() => _slotTimes[index] = t),
       onMaxPrepChanged: (maxPrep) => setState(() {
         final current = _slotConstraints[index] ?? const DayConstraint();

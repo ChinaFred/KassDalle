@@ -126,7 +126,7 @@ void main() {
       constraint: const DayConstraint(targetPortions: 4, maxPrepMinutes: 45),
     );
 
-    expect(find.text('4 parts · 110 min · 45 min max'), findsOneWidget);
+    expect(find.text('4 parts · 1h50min · 45 min max'), findsOneWidget);
     // Ni « Redimensionnée : non » ni « Réchauffage: non ».
     expect(find.textContaining('Redimensionnée'), findsNothing);
     expect(find.textContaining('Réchauffage: non'), findsNothing);
