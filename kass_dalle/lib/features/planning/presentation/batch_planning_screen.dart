@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
@@ -615,6 +616,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         initialSources: _selectedSources,
         initialBookIds: _selectedBookIds ?? books.map((b) => b.id).toSet(),
         availableBooks: books,
+        allowAiCreation: ref.read(canEditProvider),
       ),
     );
     if (scope == null || scope.sources.isEmpty || !mounted) return;
@@ -664,7 +666,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     bool replaceExisting = false,
   }) async {
     final pool = _poolFor(scope);
-    final mayConceive = scope.sources.contains(RecipeSource.aiCreation);
+    // Un lecteur ne conçoit pas : la conception enregistre une recette, et
+    // une préférence enregistrée avant ce changement peut encore la porter.
+    final mayConceive =
+        scope.sources.contains(RecipeSource.aiCreation) &&
+        ref.read(canEditProvider);
 
     if (pool.isEmpty && !mayConceive) {
       _showError('Aucune recette disponible dans les sources sélectionnées.');
@@ -1547,6 +1553,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// Liste épuisée : choisir une recette, ou la concevoir avec l'IA — un
   /// appel facturé, demandé par la personne, hors plafond de génération.
   Future<void> _offerWhenExhausted(int slotIndex) async {
+    final canCreate = ref.read(canEditProvider);
     final choice = await showDialog<_ExhaustedChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1558,10 +1565,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Fermer'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.conceive),
-            child: const Text('Concevoir avec l\'IA'),
-          ),
+          // Concevoir enregistre une recette : pas pour un lecteur.
+          if (canCreate)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.conceive),
+              child: const Text('Concevoir avec l\'IA'),
+            ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.pick),
             child: const Text('Choisir une recette'),

@@ -13,25 +13,31 @@ import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/presentation/leave_guard.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
+import '../../../core/widgets/app_shortcuts.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
+/// Relecture d'une recette créée par l'IA, avant son enregistrement.
+///
+/// La recette n'existe qu'en mémoire : « Enregistrer en brouillon » la range
+/// dans « Mes créations Kass'Dalle ✨ », en brouillon, à relire. Quitter sans
+/// l'enregistrer la perd : l'écran le demande avant.
 class GeneratedRecipeScreen extends ConsumerStatefulWidget {
   final Recipe recipe;
+
+  /// Enregistre la recette en brouillon et rend son identifiant.
   final Future<String> Function(Recipe) onSave;
-  final VoidCallback onSaved;
-  final VoidCallback onCancel;
 
   const GeneratedRecipeScreen({
     super.key,
     required this.recipe,
     required this.onSave,
-    required this.onSaved,
-    required this.onCancel,
   });
 
   @override
@@ -58,10 +64,21 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     super.initState();
     _currentRecipe = widget.recipe;
     initFormFromRecipe(widget.recipe);
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    _previousGuard = ref.read(leaveGuardProvider);
+    // Après le rendu : un provider ne se modifie pas pendant la construction.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _leaveGuardNotifier.set(_leaveGuard);
+    });
   }
 
   @override
   void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    final previous = _previousGuard;
+    Future.microtask(() => notifier.restoreIf(guard, previous));
     _refineCtrl.dispose();
     super.dispose();
   }
@@ -92,16 +109,36 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     bookTitre: selectedBookTitre,
   );
 
+  /// Vrai une fois la recette enregistrée : quitter ne perd plus rien.
+  bool _saved = false;
+
+  bool get _canSave => !_saving && !_refining && !_saved;
+
+  // Garde de sortie : la barre de navigation et le menu latéral appellent
+  // `context.go`, que `PopScope` ne voit pas (voir `leave_guard.dart`).
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmShellLeave;
+
+  /// Le garde de l'écran du dessous (l'Explorer), rendu à la fermeture.
+  LeaveGuard? _previousGuard;
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final id = await widget.onSave(_buildCurrentRecipe());
-      if (mounted) {
-        context.showSuccessSnackBar('Recette créée et validée !');
-        widget.onSaved();
-        Navigator.of(context).pop();
-        context.go('${AppRoutes.recipes}/$id');
-      }
+      _saved = true;
+      if (!mounted) return;
+      // Le messager survit à la fermeture de l'écran : l'action « Ouvrir »
+      // reste joignable depuis l'Explorer.
+      final router = GoRouter.of(context);
+      context.showSuccessSnackBar(
+        'Brouillon enregistré dans « Mes créations Kass\'Dalle ✨ ».',
+        action: SnackBarAction(
+          label: 'Ouvrir',
+          onPressed: () => router.push('${AppRoutes.drafts}/$id'),
+        ),
+      );
+      Navigator.of(context).pop();
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'generatedRecipeScreen.save',
@@ -109,11 +146,56 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showErrorSnackBar(
+          'Le brouillon n\'a pas été enregistré : ${shortErrorMessage(e)}',
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Demande confirmation avant de quitter une recette non enregistrée.
+  /// Vrai quand l'écran peut être quitté.
+  Future<bool> _confirmLeave() async {
+    if (_saved) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitter sans enregistrer ?'),
+        content: const Text('Cette recette créée par l\'IA sera perdue.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Rester'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitter'),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  /// La question posée quand la navigation du shell (barre, menu latéral)
+  /// quitte l'écran : elle quitte aussi l'Explorer du dessous. Ctrl/Cmd+K,
+  /// déjà sur l'Explorer, ne navigue pas et ne pose donc rien.
+  ///
+  /// Un seul dialogue. Si l'Explorer avait posé son garde, c'est sa question
+  /// qui est posée : elle couvre cette recette et les autres idées non
+  /// enregistrées. Sinon, celle de cet écran.
+  Future<bool> _confirmShellLeave() {
+    final previous = _previousGuard;
+    if (previous != null) return previous();
+    return _confirmLeave();
+  }
+
+  Future<void> _leaveAfterConfirmation() async {
+    if (!await _confirmLeave() || !mounted) return;
+    _saved = true; // la question est posée : le pop suivant passe
+    Navigator.of(context).pop();
   }
 
   Future<void> _refine() async {
@@ -285,7 +367,43 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
   Widget build(BuildContext context) {
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
-    return Scaffold(
+    final theme = Theme.of(context);
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.smart_toy_outlined,
+            size: AppIconSize.inline,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Générée par l\'IA',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+    final saveButton = FilledButton.icon(
+      onPressed: _canSave ? _save : null,
+      icon: _saving
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.save_outlined),
+      label: const Text('Enregistrer en brouillon'),
+    );
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: Text(
           titleCtrl.text.isEmpty ? _currentRecipe.titre : titleCtrl.text,
@@ -293,54 +411,29 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: 'Retour',
-          onPressed: () {
-            widget
-                .onCancel(); // reset state AVANT le pop pour éviter le double-push
-            Navigator.of(context).pop();
-          },
+          onPressed: _leaveAfterConfirmation,
         ),
-        actions: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            margin: const EdgeInsets.only(right: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.smart_toy_outlined,
-                  size: AppIconSize.inline,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+        // Sur téléphone, la pastille passe dans le corps et le bouton dans
+        // une barre fixe en bas : la barre d'application n'a pas la place.
+        actions: isWide
+            ? [
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Center(child: badge),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  'Générée par l\'IA',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          FilledButton.icon(
-            onPressed: (_saving || _refining) ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save_outlined),
-            label: const Text('Sauvegarder'),
-          ),
-          const SizedBox(width: 8),
-        ],
+                saveButton,
+                const SizedBox(width: 8),
+              ]
+            : null,
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (!isWide)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Align(alignment: Alignment.centerLeft, child: badge),
+            ),
           if (_refineDiff != null) _buildDiffBanner(),
           Expanded(
             child: Padding(
@@ -351,6 +444,24 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
           _buildRefineBar(context),
         ],
       ),
+      bottomNavigationBar: isWide
+          ? null
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: saveButton,
+              ),
+            ),
+    );
+    return PopScope(
+      canPop: _saved,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _leaveAfterConfirmation();
+      },
+      // Ctrl/Cmd+S enregistre, comme dans les autres écrans d'édition.
+      child: AppShortcuts(onSave: _canSave ? _save : null, child: scaffold),
     );
   }
 

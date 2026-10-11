@@ -104,6 +104,17 @@ service cloud.firestore {
         && (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
+    /// Forme de `users/{uid}/preferences/explore_filters` (écran Explorer) :
+    /// `{ sources: list, sort: string, filters: map, updated_at }`. Bornée pour
+    /// qu'une préférence de lecteur ne serve pas de stockage libre.
+    function isExploreFilters(data) {
+      return data.keys().hasOnly(['sources', 'sort', 'filters', 'updated_at'])
+        && (!('sources' in data) || (data.sources is list && data.sources.size() <= 10))
+        && (!('sort' in data) || (data.sort is string && data.sort.size() <= 32))
+        && (!('filters' in data) || (data.filters is map && data.filters.size() <= 20))
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     /// Le compte fondateur, seul à pouvoir se nommer administrateur sans que
     /// personne ne l'y autorise — et seul à pouvoir toucher à son propre rôle.
     ///
@@ -223,7 +234,9 @@ service cloud.firestore {
         allow read, delete: if isOwner(uid) || isAdmin();
         allow create, update: if (isOwner(uid) || isAdmin())
           && (prefId != 'planning_refusals'
-              || isPlanningRefusals(request.resource.data));
+              || isPlanningRefusals(request.resource.data))
+          && (prefId != 'explore_filters'
+              || isExploreFilters(request.resource.data));
       }
 
       // Générations de planning : journal des propositions, compteur des
@@ -351,8 +364,9 @@ service cloud.firestore {
       // renomment — c'est le titre que l'utilisateur voit — mais ne se
       // suppriment pas : ce sont les destinations par défaut des recettes sans
       // livre, des créations de l'IA et des recettes importées depuis un lien
-      // (« Mes recettes du web », `__web`, créé par le serveur au premier
-      // import). Les perdre laisserait des recettes
+      // (« Mes recettes du web », `__web`, créé par le serveur à l'ouverture de
+      // la bibliothèque par `ensureWebBookFn`, le premier import restant un
+      // filet). Les perdre laisserait des recettes
       // sans porteur, et la règle « toute recette a un livre » sans issue.
       //
       // La garde vit aussi dans l'écran et dans le repository ; ici seulement,
@@ -380,12 +394,16 @@ service cloud.firestore {
 
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
-      // « Mes recettes du web » est créé par le serveur seul, sous `web_{uid}`.
+      // « Mes recettes du web » est créé par le serveur seul, sous `web_{uid}`
+      // (`ensureWebBookFn` à l'ouverture de la bibliothèque ; le premier import
+      // par lien reste un filet).
       // Un client qui créait `web_{uid d'un autre}`, public, à son nom, y
-      // faisait tomber les brouillons importés de cet autre compte. Les trois
+      // faisait tomber les brouillons importés de cet autre compte. `web2_{uid}`
+      // est le repli du serveur quand `web_{uid}` est occupé : même interdit.
+      // Les trois
       // autres livres système restent créés par le client (`ensureSystemBooks`).
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
-        && !bookId.matches('web_.*')
+        && !bookId.matches('web[0-9]*_.*')
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
@@ -457,9 +475,13 @@ service cloud.firestore {
 
       allow read: if canReadRecipe(resource.data);
 
-      // Création : tout compte nommé, toujours à son propre nom — éditeur et
-      // administrateur compris. Le serveur (Admin SDK) écrit hors de ces règles.
-      allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
+      // Création : éditeur et administrateur, toujours à leur propre nom. Le
+      // lecteur ne crée aucune recette — ni saisie, ni copie, ni création par
+      // l'IA, ni import (refonte de l'écran Explorer, lot 2). Ses recettes
+      // existantes restent les siennes : la mise à jour et la suppression
+      // ci-dessous ne demandent que d'en être le créateur. Le serveur (Admin
+      // SDK) écrit hors de ces règles.
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.

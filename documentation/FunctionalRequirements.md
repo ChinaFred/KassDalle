@@ -50,8 +50,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 | Rôle | Accès |
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
-| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6). Peut annoter. |
-| **Reader** | Consultation, annotation, notation, planning, export PDF. **Crée, modifie et valide ses propres recettes** : `firestore.rules` autorise la création et la mise à jour par le créateur, quel que soit son rôle. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. **Il n'importe pas** : l'import d'une recette ou d'un livre (`/scan`) et l'import d'une recette depuis un lien (4.6) lancent des appels d'IA facturés et restent réservés à l'Editor et à l'Admin. Les boutons d'import lui sont masqués, icône lien d'Explorer et bouton « Lien » de la saisie manuelle compris ; s'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6). Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Demander à l'IA » et « Imaginer 3 recettes ». Peut annoter. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur Google » ; « Demander à l'IA » ne lui est pas proposé. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
@@ -165,7 +165,7 @@ Comportement asynchrone :
 
 ### 4.3 Saisie Manuelle d'une Recette (Web / Desktop / Mobile)
 
-**Qui :** tout compte nommé. Un `reader` crée et valide ses propres recettes.
+**Qui :** Editor ou Admin. Le Reader ne crée pas de recette : le bouton de création lui est masqué.
 
 Pour les recettes sans photo source (recettes mémorisées, recettes tapées manuellement) :
 - L'utilisateur accède à un formulaire de création de recette.
@@ -176,7 +176,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - **Un texte collé dans une autre langue est traduit**, comme une page scannée (4.2). L'écran l'annonce : « Traduit de l'anglais, mesures converties. Le texte collé reste consultable comme document original. » Le texte d'origine n'est pas stocké une seconde fois avec la recette : le texte collé, conservé comme fichier source, en tient lieu.
 - **Le texte original collé est automatiquement conservé** : il est uploadé sur Firebase Storage et attaché à la recette comme fichier source. Le bouton de téléchargement de l'original apparaît ensuite dans l'en-tête de la recette, comme pour un scan.
 - Si l'IA n'est pas utilisée (saisie CookLang directe), aucun fichier source n'est attaché.
-- Un bouton **« Lien »** ouvre l'import d'une recette depuis une adresse web (4.6). Il n'est proposé qu'à l'Editor et à l'Admin.
+- Un bouton **« Lien »** ouvre l'import d'une recette depuis une adresse web (4.6).
 
 ---
 
@@ -188,7 +188,7 @@ Admin. Les annotations d'une recette sont visibles par tous ceux qui voient cett
 celles d'une recette privée, par son créateur et un Admin seulement — et par leur auteur.
 
 1. L'utilisateur navigue dans la bibliothèque (vue par livre ou vue globale).
-2. La liste d'un livre ne porte ni filtre ni champ de recherche : chercher se fait depuis l'écran **Recherche** dédié (5.5).
+2. La liste d'un livre ne porte ni filtre ni champ de recherche : chercher et filtrer se font depuis l'écran **Explorer** (5.5).
 3. Il clique sur une recette et accède à la fiche détaillée. **Sa présentation dépend de la largeur, pas de la plateforme** : au-dessus de 700 px (`PlatformUtils.compactDetailBreakpoint`), cinq onglets — *Préparer*, *Nutrition*, *Dressage*, *Communauté*, *Photos* ; en dessous, une page continue (`MobileUnifiedBody`) qui enchaîne les mêmes contenus sans onglets. La présentation compacte réorganise, elle ne retire rien.
    - **En-tête** : titre, livre source, page, langue, tags. Il reste hors onglets, comme la barre d'actions.
    - **Portions** : affichées sous forme de chip (ex : « 4 portions ») si renseignées dans les métadonnées CookLang (`>> portions: 4`). Ce champ est également stocké comme donnée structurée dans Firestore (`portions: int?`).
@@ -227,7 +227,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
   pavé et celui du dialogue sont le même texte. Le même pavé sert aux autres champs de texte
   libre : description d'un livre, contraintes du planning, instructions d'amélioration d'un
   brouillon, texte d'une image à générer, modification d'une recette générée, envie culinaire
-  de la recherche. L'éditeur de recette n'en fait pas partie. Le pavé ne s'ouvre que là où le
+  d'Explorer. L'éditeur de recette n'en fait pas partie. Le pavé ne s'ouvre que là où le
   système convertit l'écriture : Android 14 et plus avec un clavier compatible, et iPad.
   Ailleurs, et sous le doigt, le champ reste un champ ordinaire.
 
@@ -238,7 +238,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 **Qui :** Editor ou Admin. Le Reader n'importe pas : les points d'entrée lui sont masqués.
 
 **Points d'entrée.** Trois boutons ouvrent le même parcours :
-- l'icône lien de la barre d'**Explorer** (5.5) ;
+- « Importer depuis un lien », dans **Explorer** (5.5) ;
 - le bouton placé sous « Saisie manuelle » dans l'écran **Import** (`/scan`) ;
 - le bouton **« Lien »** de l'éditeur de la saisie manuelle (`/recipes/new`).
 
@@ -265,7 +265,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports.
 
 **Étape 3 — Le brouillon.** La recette arrive en **brouillon** (`draft`), à relire et valider comme les autres (4.2, étape 4) :
-- Elle est rangée dans le livre **« Mes recettes du web »**, créé automatiquement au premier import par lien de l'utilisateur. Sa couverture est l'image `FromTheWeb.png`, posée à l'ouverture suivante de la bibliothèque. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.
+- Elle est rangée dans le livre **« Mes recettes du web »**. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est créé avec les autres livres système, à l'ouverture de la bibliothèque, pour un Editor ou un Admin, avec sa couverture par défaut (image « From the web »). Un Reader n'a pas ce livre : il n'importe pas. Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.
 - La photo principale de la page est reprise comme illustration, après modération (5.11). Tant que la modération n'a pas rendu son verdict, la recette est créée sans photo ; la photo s'ajoute quand la modération l'accepte. Refusée, elle ne s'ajoute jamais.
 - Le texte de la page est joint comme document original : « Voir l'original » l'ouvre, comme pour un texte collé.
 - La recette garde l'adresse de la page comme **source**, affichée sur la fiche (4.4).
@@ -340,7 +340,7 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
 
 Deux lignes. Le titre occupe la première, sur deux lignes de texte au besoin. Toutes les actions
 occupent la seconde, en icônes : note, annotations, document source, retouche par l'IA, copie en
-brouillon, changement de couverture, détachement du livre, modification, export PDF, suppression. Sur une recette traduite, la mention « Traduit de l'… » s'y ajoute en tête et ouvre le texte d'origine.
+brouillon, changement de couverture, détachement du livre, modification, export PDF, suppression. Un Reader n'a pas la copie en brouillon. Sur une recette traduite, la mention « Traduit de l'… » s'y ajoute en tête et ouvre le texte d'origine.
 
 Il n'y a plus de menu « … ». Il cachait huit actions derrière un geste et un temps d'attente, et
 privait le titre de la place dont il manquait.
@@ -388,54 +388,124 @@ privait le titre de la place dont il manquait.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 
-### 5.5 Module Recherche (tous les clients)
+### 5.5 Module Explorer (tous les clients)
 
-Écran dédié `/search`, intitulé **Explorer**. Pour l'Editor et l'Admin, une icône lien de sa barre ouvre l'import d'une recette depuis un lien (4.6). **Ce n'est pas une recherche plein texte.** La bibliothèque
-n'est pas interrogée par mots-clés : les recettes accessibles sont résumées, envoyées
-au moteur, et c'est lui qui décide lesquelles répondent à la demande.
+Écran dédié `/search`, intitulé **Explorer**. Il sert d'abord à parcourir et filtrer la
+bibliothèque, sur l'appareil, sans IA. Quatre actions vont plus loin, chacune sur un bouton :
+« Demander à l'IA », « Imaginer 3 recettes », « Chercher sur Google » et « Importer depuis un
+lien » (4.6). Aucune ne part toute seule.
 
-**Quatre portées**, en puces de choix — l'écran annonce ce que chacune déclenche :
+| Action | Qui | Appel d'IA |
+|---|---|---|
+| Liste, champ de texte, filtres, tri | tous les rôles | aucun |
+| **Demander à l'IA** | Editor, Admin | un appel par appui |
+| **Imaginer 3 recettes** | Editor, Admin | trois appels, plus un par doublon rejoué |
+| **Chercher sur Google** | tous les rôles | aucun |
+| **Importer depuis un lien** | Editor, Admin | voir 4.6 |
 
-| Portée | Ce qui part |
+**À l'ouverture**, l'écran montre la liste des recettes du périmètre : « Mes recettes »,
+« Ma famille », « Mes brouillons ». Rien n'est envoyé à l'IA.
+
+**Le champ « Titre, ingrédient, envie… » filtre la liste à chaque frappe**, sans IA. Il
+cherche dans le titre, les ingrédients et les étiquettes de la recette. Les accents et la
+casse ne comptent pas. Une recette reste dans la liste si elle contient tous les mots tapés,
+où qu'ils soient.
+
+**Les filtres.** Quatre sont visibles :
+
+| Filtre | Ce qu'il retient |
 |---|---|
-| **Tout** | la bibliothèque, trois idées d'IA et une ouverture web, en parallèle |
-| **Bibliothèque** | uniquement les recettes accessibles |
-| **IA** | trois propositions à comparer |
-| **Web** | une requête Google optimisée, rien d'autre |
+| **Recettes** | le périmètre : Mes recettes, Ma famille, Mes brouillons |
+| **Type de plat** | les types de plat de la recette |
+| **Temps total** | préparation + cuisson, sous une durée choisie |
+| **Cuisine** | les cuisines de la recette |
 
-**Trois cases de périmètre**, hors portée *Web* : « Mes recettes », « Ma famille »,
-« Mes brouillons ».
+« Plus de filtres » ouvre les autres : rôle dans le repas, protéine, féculent, difficulté,
+thème ou occasion, sans l'ingrédient, sans allergène, livre, auteur, note minimale, calories
+par portion maximum.
 
-**La piste bibliothèque.** Chaque recette est résumée — identifiant, titre, livre,
-vingt premiers ingrédients de l'index, thèmes, cuisines, difficulté, statut — et le
-lot part dans un seul appel. Le moteur rend les identifiants retenus, **classés par
-pertinence**, chacun avec sa **raison** en une phrase. Une raison affichée peut se
-discuter ; un classement muet, non. Quand rien ne correspond, il rend une
-**reformulation** plutôt qu'une liste vide.
+- **Chaque valeur affiche le nombre de recettes** qu'elle retient.
+- **Deux filtres différents se cumulent** : une recette doit les satisfaire tous.
+  **Plusieurs valeurs d'un même filtre s'additionnent** : « Italienne » et « Française »
+  retiennent les recettes de l'une ou de l'autre cuisine.
+- **Les deux filtres d'exclusion font exception.** « Sans l'ingrédient » et « Sans
+  allergène » écartent toute recette qui contient l'une des valeurs cochées : « sans gluten »
+  et « sans lait » écartent ce qui contient du gluten, et ce qui contient du lait.
+- **Temps total** : préparation plus cuisson. Le temps de repos n'y entre pas. Si une seule
+  des deux durées est renseignée, elle sert de temps total. Une recette sans durée — ni
+  préparation, ni cuisson — est écartée dès qu'un temps est choisi, et l'écran le dit :
+  « 12 recettes sans durée écartées ».
+- **Sans allergène** : s'appuie sur l'analyse décrite en 5.9. Une recette dont l'analyse est
+  incomplète, ou qui n'a jamais été analysée, est écartée : rien ne permet de dire qu'elle
+  ne contient pas l'allergène. L'écran le dit, comme pour le temps : « 8 recettes sans
+  analyse d'allergènes écartées ». Le filtre reste indicatif, comme le bloc de la fiche.
+- **Calories par portion maximum** : le total de la recette divisé par son nombre de parts,
+  calculé à l'affichage. Rien n'est écrit dans la recette. Une recette sans nutrition ou sans
+  nombre de parts est écartée dès que ce filtre est actif.
+- **Note minimale** : la note du lecteur sur 10.
+- **Auteur** : le membre qui a créé la recette.
 
-**Les notes de l'utilisateur entrent dans la demande.** Les recettes qu'il a notées
-partent avec leur note sur 10, et le prompt donne la clé de lecture : ≥ 8 aime
-beaucoup, 5–7 apprécie, ≤ 4 n'aime pas. Quand un goût se dégage, le moteur le formule
-dans `preference_insight`, affiché à part.
+- **Limite connue des nombres affichés** : le nombre placé sur une valeur de filtre
+  (« Plat (40) ») est compté sur les recettes des sources choisies, sans tenir compte des
+  autres filtres. Combinée à d'autres filtres, la valeur peut donc mener à moins de résultats
+  que ce nombre.
 
-**La piste IA** produit **trois** propositions, chacune par un angle différent, en
-parallèle. Chaque proposition porte son **libellé de variante** et sa
-**justification**. Une proposition en double est **rejouée une fois**, en lui
-interdisant les titres déjà rendus ; si le doublon persiste, elle est abandonnée
-plutôt que répétée. Une proposition retenue s'enregistre en recette, qui rejoint
-« Mes créations Kass'Dalle ».
+**Le tri** : « Mieux notées » par défaut, « Plus rapides » (temps total croissant),
+« Plus récentes », « Titre ».
 
-**La piste web ne lit pas le web.** Elle demande au moteur une requête mieux
-formulée, y ajoute le mot « recette », et rend un lien Google. L'utilisateur va
-chercher lui-même. Rien n'est téléchargé, rien n'est analysé.
+**Filtres et tri sont une préférence du lecteur**, enregistrée sous son compte, comme le
+rangement de la bibliothèque. Il les retrouve à la prochaine ouverture, sur tout appareil. Le
+texte du champ n'est pas retenu. Rien n'est écrit dans les recettes.
 
-**Les listes de recettes ne filtrent pas.** Ni la bibliothèque, ni la liste d'un
-livre, ni la vue « toutes les recettes » ne portent de champ de recherche ou de
-filtre : chercher se fait ici.
+**Demander à l'IA** (Editor, Admin). Le bouton envoie la demande écrite dans le champ, avec
+les recettes que retiennent les filtres. Le filtre du texte ne s'applique pas à cet envoi :
+le texte sert de demande. Chaque recette est résumée — identifiant, titre, livre, vingt
+premiers ingrédients de l'index, thèmes, cuisines, difficulté, statut — et le lot part dans
+un seul appel.
 
-**Ce qui est écarté du corpus** : les recettes d'un livre privé d'un autre membre.
-Elles y remontaient, la recherche chargeant les recettes validées des membres sans
-regarder le livre porteur.
+- Le moteur rend les identifiants retenus, classés par pertinence, chacun avec sa **raison**
+  en une phrase. Ils s'affichent en tête de la liste, sous « Choisies par l'IA », la raison
+  sous le titre, marquée du robot (§6, « Deux icônes, deux sens »). Le reste de la liste suit.
+- Quand rien ne correspond, le moteur rend une **reformulation** plutôt qu'une liste vide.
+- **Les notes du lecteur entrent dans la demande.** Les recettes qu'il a notées partent avec
+  leur note sur 10, et le prompt donne la clé de lecture : 8 ou plus, il aime beaucoup ; 5 à
+  7, il apprécie ; 4 ou moins, il n'aime pas. Quand un goût se dégage, le moteur le formule à
+  part.
+- **Un texte ou un filtre modifié après la réponse** affiche au-dessus des recettes choisies
+  le bandeau « Recherche ou filtres modifiés depuis la demande. », avec l'action « Relancer ».
+  Rien ne repart sans appui.
+
+**Imaginer 3 recettes** (Editor, Admin). Le bouton demande trois propositions à partir du
+texte du champ, chacune par un angle différent, en parallèle. Chaque proposition porte son
+libellé de variante et sa justification. Une proposition en double est rejouée une fois, en
+lui interdisant les titres déjà rendus ; si le doublon persiste, elle est abandonnée.
+
+- L'utilisateur enregistre les propositions qu'il veut. Chacune devient un **brouillon**
+  dans « Mes créations Kass'Dalle ✨ », à relire et valider comme un import (4.2, étape 4).
+  Une proposition enregistrée porte « Brouillon enregistré » et ouvre ce brouillon : elle ne
+  s'enregistre pas une seconde fois.
+- Quitter l'Explorer, ou l'écran d'une proposition, avec des propositions non enregistrées
+  demande confirmation : « Quitter sans enregistrer ? », « Rester » ou « Quitter ». La
+  question est posée au retour comme à un changement d'écran par la navigation.
+
+**Chercher sur Google** (tous les rôles). Le bouton ouvre une recherche Google avec le texte
+du champ suivi du mot « recette ». Aucun appel d'IA : le texte n'est pas reformulé. Rien n'est téléchargé, rien n'est analysé.
+
+**Disposition.** Sur téléphone, une barre en bas porte « Demander à l'IA » et « Aller plus
+loin », qui ouvre les autres actions. Sur grand écran, les filtres occupent un panneau à
+gauche et la liste le reste de la largeur. Un Reader ne voit ni « Demander à l'IA », ni
+« Imaginer 3 recettes », ni « Importer depuis un lien », ni la source « Mes brouillons » : sa
+barre du bas porte directement « Chercher sur Google ». « Demander à l'IA » est inactif
+pendant un classement en cours et quand les filtres ne retiennent aucune recette ;
+« Imaginer 3 recettes » l'est pendant une rédaction en cours.
+
+**Les autres listes de recettes ne filtrent pas.** Ni la bibliothèque, ni la liste d'un
+livre, ni la vue « toutes les recettes » ne portent de champ de recherche ou de filtre :
+chercher se fait ici.
+
+**Ce qui est écarté de la liste et de l'envoi à l'IA** : les recettes d'un livre privé d'un
+autre membre, et toute recette d'un compte qui ne partage aucun groupe avec le lecteur
+(§3.2). Un Admin lit tout.
 
 ---
 
@@ -548,7 +618,7 @@ C'est le refuge : s'il peut redevenir public d'une case décochée, il cesse d'e
 être un. Les deux autres livres système basculent librement.
 
 **La confidentialité vaut partout, pas seulement dans la bibliothèque.** Les
-recettes d'un livre privé sont écartées de la recherche familiale et du générateur
+recettes d'un livre privé sont écartées d'Explorer et du générateur
 de menus. Elles y remontaient : ces deux écrans chargeaient les recettes validées
 des membres sans jamais regarder le livre porteur, et proposaient donc les recettes
 secrètes des autres — la recherche dans son corpus, le planning jusque dans les
@@ -580,7 +650,8 @@ déjà transmise continue de fonctionner.
 - Menu contextuel sur chaque repas : « Autre suggestion », « Changer la recette », « Replanifier », « Ajouter un accompagnement » (repas avec recette), « Remettre à blanc », « Conservation et réchauffage » (repas avec recette), « Exporter vers Calendar », « Supprimer ».
 - **« Replanifier »** déplace le repas à une autre date, choisie dans un calendrier, et garde son heure. Le jour de préparation suit du même nombre de jours, pour que la conservation calculée reste juste. Le calendrier s'ouvre sur la date du repas et va jusqu'à deux ans devant.
 - **Le sélecteur de recette ne propose que des plats** : les pages de type technique, matériel ou note d'ingrédient en sont écartées, du sélecteur comme du corpus envoyé à l'IA. Une icône de filtre en bout de recherche ouvre deux groupes de puces — type de plat, cuisine — lus dans les étiquettes du corpus lui-même, avec le nombre de recettes derrière chacune ; on peut en cocher plusieurs, et les filtres actifs se retirent d'un appui sous la recherche. Le même sélecteur sert au planning et à la composition d'un cycle.
-- **« Générer avec l'IA » suit « Saisir un nom libre » dans le sélecteur du planning** : une consigne écrite — « un plat léger sans viande, prêt en 30 min » —, et l'IA rend trois idées de repas, chacune avec une phrase et des durées estimées ; ce qui est tapé dans la recherche sert de première consigne. On retouche la consigne et on relance pour en avoir trois autres : les idées déjà affichées ne reviennent pas. **Appuyer sur une idée rédige sa recette**, comme « Conception IA » de Nouveau planning, et l'enregistre **validée** dans « Mes créations Kass'Dalle ✨ » ; le repas pointe vers elle, la fiche s'ouvre d'un appui, les ingrédients entrent dans les courses. Les préférences générales et les contraintes du jour cadrent la rédaction. Deux postes : « Idées de repas (planning) » par consigne ou relance, « Concept de recette (planning) » par idée retenue.
+- **« Générer avec l'IA » suit « Saisir un nom libre » dans le sélecteur du planning** : une consigne écrite — « un plat léger sans viande, prêt en 30 min » —, et l'IA rend trois idées de repas, chacune avec une phrase et des durées estimées ; ce qui est tapé dans la recherche sert de première consigne. On retouche la consigne et on relance pour en avoir trois autres : les idées déjà affichées ne reviennent pas. **Appuyer sur une idée rédige sa recette**, comme « Conception IA » de Nouveau planning, et l'enregistre **en brouillon** dans « Mes créations Kass'Dalle ✨ », à relire et valider comme les autres brouillons ; le repas pointe vers elle, la fiche s'ouvre d'un appui, les ingrédients entrent dans les courses. Les préférences générales et les contraintes du jour cadrent la rédaction. Deux postes : « Idées de repas (planning) » par consigne ou relance, « Concept de recette (planning) » par idée retenue. **« Générer avec l'IA » est réservé à l'Editor et à l'Admin** : il crée une recette, et un Reader n'en crée pas. Le Reader garde le choix d'une recette existante et « Saisir un nom libre ».
+- **Toute recette conçue par l'IA dans le planning s'enregistre en brouillon** dans « Mes créations Kass'Dalle ✨ » : « Générer avec l'IA » du sélecteur, la source « Conception IA » de Nouveau planning, et « Concevoir avec l'IA » sur un créneau. Le repas pointe vers ce brouillon ; ses ingrédients entrent dans les courses. **Ces trois gestes sont réservés à l'Editor et à l'Admin.** Un Reader ne voit pas la source « Conception IA » dans la feuille « où chercher des recettes ? », ni « Concevoir avec l'IA » sur une liste épuisée : un créneau sans candidat reste vide, et l'écran le dit.
 - **Une recette écartée d'un repas ne revient pas** : « Changer la recette », « Remettre à blanc » et une nouvelle suggestion retiennent la recette remplacée, et elle n'est plus proposée pour ce repas, ni par l'IA ni par Kass'Dalle. Pendant la composition d'un cycle, choisir ou demander une autre recette sur un créneau écarte de même celle en place, et ces écarts suivent le repas à la validation. Quand tout le corpus a été écarté, l'écran le dit au lieu de proposer à nouveau. Le sélecteur manuel masque les recettes écartées derrière une puce « Écartées » qu'on peut déplier, et « Tout régénérer » écarte de même tout ce qui était en place.
 - Bouton d'export vers Google Calendar sur chaque repas, **sous la même icône partout** : liste, barre de l'écran, menus, créneaux du nouveau planning, feuille de planification. Elle reste distincte de l'icône du calendrier de l'écran, qui sert à voir. Sur un téléphone, le bouton « Nouveau planning » se réduit à son icône dès qu'on fait défiler la liste, se masque pendant qu'on descend et revient quand on remonte ; la liste se prolonge sous lui, pour atteindre l'export du dernier repas. Sur grand écran, il est dans la barre de l'écran.
 - **Sur un créneau du nouveau planning, l'icône enregistre aussi le repas** : l'événement est posé dans le calendrier, puis le repas entre au planning avec le même contenu, sans attendre « Valider ». Le créneau porte une coche « Déjà au planning ». « Valider » met ensuite ce repas à jour sous le même identifiant au lieu d'en créer un second, et ne le compte pas parmi les repas « déjà présents » qu'il propose de remplacer. Si l'événement est créé mais que l'enregistrement du repas échoue, l'écran le dit tel quel, et « Valider » le rattrape.
@@ -627,7 +698,7 @@ déjà transmise continue de fonctionner.
   - **Plafond quotidien du compte atteint** : même chose. Kass'Dalle remplit les créneaux au lieu d'afficher une erreur, et le bandeau dit « Votre plafond d'IA du jour est atteint. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé. »
 - **Le nombre de parts ne guide plus le choix.** L'application signale elle-même une recette écrite pour un autre nombre de parts que celui du jour (« Écrite pour 4 parts, servie pour 6. »). Les quantités sont recalculées à l'affichage. Rien n'est écrit dans la recette.
 - **Chaque génération est consignée sous le compte de l'utilisateur** : recettes proposées par créneau, origine, durée, coût. Ce journal sert à mesurer la répétition et le coût. Il n'apparaît pas dans l'application ; un administrateur peut le lire. Il est effacé au bout de six mois.
-- **Chaque compte planifie pour lui-même.** Ses repas servis, ses notes, ses écarts, ses refus et son journal ne valent que pour lui. Deux membres de la famille peuvent recevoir la même recette la même semaine. Aucun droit ne change : `reader`, `editor` et `admin` planifient de la même façon.
+- **Chaque compte planifie pour lui-même.** Ses repas servis, ses notes, ses écarts, ses refus et son journal ne valent que pour lui. Deux membres de la famille peuvent recevoir la même recette la même semaine. `reader`, `editor` et `admin` planifient de la même façon, à une exception : ce qui crée une recette — « Générer avec l'IA » dans le sélecteur — est réservé à l'`editor` et à l'`admin`.
 - **Fenêtre de variété** : un plat servi dans les N semaines qui précèdent le cycle n'est pas reproposé, N de 0 à 4 dans les préférences (2 par défaut, 0 désactive). Elle vaut pour le cycle entier, pour un créneau isolé, pour « Autre suggestion » et pour « Changer la recette » dans le planning. Le retrait se fait **avant** la présélection, tant qu'il reste au moins autant de recettes que de créneaux à remplir ; au-delà, les plats récents ne reviennent que par le relâchement décrit plus haut, et la justification le dit. L'IA reçoit aussi les derniers repas servis, pour enchaîner sans répéter la protéine ni le féculent de la veille. Le message de fin dit combien de plats récents ont été écartés.
 - **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, fenêtre de variété, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible. Un compte qui n'a jamais réglé ses contraintes globales part de règles de variété par défaut (protéines, féculents et cuisines alternés d'un jour à l'autre, majorité de cuisine française), modifiables librement.
   - **Plats refusés récemment** : une ligne de la section « Paramètres du cycle », sous « Ne pas reproposer un plat récent ». Le sous-titre dit « N plats proposés moins souvent pendant 21 jours », « Aucun plat refusé ces 21 derniers jours », « Chargement… » pendant la lecture, ou « Effacement… » pendant l'effacement. Si la lecture échoue, le sous-titre dit « Liste des refus illisible » et le bouton devient *Réessayer*, qui relance la lecture.
@@ -743,10 +814,13 @@ déjà transmise continue de fonctionner.
 | Isolation des données | Chaque utilisateur possède ses propres livres et recettes (champ `created_by`). Un livre ou une recette non privé d'un autre compte ne se lit que si ce compte partage au moins un groupe familial avec le lecteur ; ses annotations, ses notes et son texte d'origine suivent la recette (v0.23.19). Un compte hors de mes groupes ne lit rien de moi, et je ne lis rien de lui. Un membre sorti d'un groupe est traité comme un compte supprimé pour ce groupe ; il garde ses propres documents. L'Admin lit tout. Les règles Firestore l'imposent, pas seulement les écrans. |
 | Entrée dans un groupe | On n'entre dans un groupe qu'en acceptant une invitation de son propriétaire. Personne n'ajoute directement un membre : sans cette règle, ajouter un inconnu à son propre groupe suffisait pour lire ses livres. |
 | Validation exclusive | Seul le propriétaire d'un brouillon peut le valider ou le supprimer. Cette règle est enforced à la fois dans l'UI (boutons masqués) et dans le dépôt (vérification Firestore avant écriture). |
-| Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
+| Copie cross-utilisateur | Un Editor ou un Admin membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. Un Reader ne copie pas : copier crée une recette. |
+| Création de recette réservée | Seuls l'Editor et l'Admin créent une recette, quel que soit le chemin : saisie manuelle, copie, recette conçue par l'IA (Explorer « Imaginer 3 recettes », planning « Générer avec l'IA », « Conception IA » et « Concevoir avec l'IA »), import. Les gestes sont masqués au Reader. Ses recettes existantes restent à lui : il les modifie, les valide et les supprime. |
+| Recette conçue par l'IA en brouillon | Une recette imaginée dans Explorer ou générée depuis le sélecteur du planning s'enregistre en brouillon dans « Mes créations Kass'Dalle ✨ ». Il en va de même pour la source « Conception IA » de Nouveau planning et pour « Concevoir avec l'IA ». Personne n'a encore relu ce que le modèle a écrit. |
 | Import réservé | Importer une recette ou un livre (`/scan`), importer une recette depuis un lien (4.6), et relancer un import, est réservé à l'Editor et à l'Admin. Les règles Firestore refusent le traitement créé ou relancé par un Reader. Joindre un fichier source à sa propre recette reste permis au Reader. |
+| Explorer filtre sans IA | La liste, le champ de texte, les filtres et le tri d'Explorer travaillent sur l'appareil, sans appel d'IA. Un appel n'a lieu que sur un bouton : « Demander à l'IA » ou « Imaginer 3 recettes », réservés à l'Editor et à l'Admin. Les filtres et le tri choisis sont une préférence du lecteur, sous son compte ; rien n'est écrit dans les recettes. |
 | Annotations non modifiables par autrui | Un Reader ou un Editor ne peut modifier/supprimer que ses propres annotations ; un Admin peut toutes les modifier. |
-| On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
+| On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe pour un Editor ou un Admin. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
 | Suppression d'un livre | Le créateur ne supprime ou ne détache que ses recettes ; un Admin agit sur toutes, et la boîte le lui dit (« pour tous leurs auteurs »). La boîte s'ouvre aussitôt et annonce les pages ajoutées par d'autres membres (« Au moins 2 pages ajoutées par d'autres membres seront conservées » ; sans chiffre pour un livre privé), et le message de fin dit ce qui reste. À la suppression, le serveur détache ces pages : aucune ne garde le lien vers un livre disparu, et celles d'un livre privé restent privées. Un échec affiche « La suppression du livre a échoué. Réessayez. » |
 | Export PDF d'un livre | Tout lecteur d'un livre l'exporte, depuis le menu « Plus d'options » de la liste du livre. Tout utilisateur exporte d'un coup ses propres livres, un PDF par livre dans un ZIP, depuis la Bibliothèque. « Modifier le livre » et « Supprimer le livre » n'y apparaissent qu'à son créateur et à un Admin. |
 | Conseils et calculs écrits sur la recette | Le conseil de dressage, le conseil de conservation, le visuel d'une étape et le calcul de nutrition s'enregistrent sur la recette, que lisent tous ceux qui la voient. Seuls son créateur et un Admin les demandent ou les relancent ; le serveur refuse les autres comptes, recette partagée comprise. Les autres membres lisent les conseils et la nutrition déjà enregistrés. Quand rien n'est enregistré, l'écran le dit en une ligne au lieu d'offrir un bouton : « Aucun conseil de dressage pour cette recette. Seuls son créateur et un administrateur peuvent en demander un. », « Pas encore de conseil de réchauffage pour ce plat : son créateur peut le demander. », « Aucune donnée nutritionnelle calculée. Le calcul se fait à l'enregistrement de la recette ; seuls son créateur et un administrateur peuvent le relancer. ». Les visuels d'étape du dressage exigent en plus le rôle Editor : un Reader créateur de sa recette demande et régénère le conseil, sans visuels (« Les visuels d'étape sont réservés aux éditeurs. »). Le calcul automatique de la nutrition à l'enregistrement d'une recette continue pour toutes. |
@@ -756,7 +830,7 @@ déjà transmise continue de fonctionner.
 | Privé = créateur seul | Un livre ou une recette privé ne se lit que par son créateur et un Admin, y compris ses annotations et ses notes. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
 | Toute recette a un livre | Il n'y a plus de recette orpheline : sans choix, elle rejoint « Mes recettes libres » ; conçue par l'IA, elle rejoint « Mes créations Kass'Dalle ». La règle est posée à l'entonnoir de création, pas dans un écran. |
-| Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle », « Mes recettes secrètes » et « Mes recettes du web » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. « Mes recettes du web » est créé au premier import par lien (4.6) et reste privé à son propriétaire. |
+| Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle », « Mes recettes secrètes » et « Mes recettes du web » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. « Mes recettes du web » est créé avec les autres livres système, à l'ouverture de la bibliothèque, pour un Editor ou un Admin seulement, avec sa couverture par défaut (« From the web »). Il reste privé à son propriétaire (4.6). |
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
 | Une contrainte d'ensemble se donne à chaque appel | Le choix parmi les recettes existantes se fait en un seul appel pour tout le cycle. La **conception** d'une recette, elle, se fait un créneau à la fois. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque conception voit ce que le cycle contient déjà. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
@@ -778,7 +852,8 @@ déjà transmise continue de fonctionner.
 - Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
-- Recherche assistée par IA — bibliothèque, propositions, requête web — annotations, notes personnelles
+- Explorer : liste filtrée sur l'appareil (texte, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Demander à l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur Google »
+- Annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation
 - Liste de courses des repas à venir, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
 - Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
@@ -800,7 +875,7 @@ déjà transmise continue de fonctionner.
 | **Partage externe (lien public)** | Rien ne sort aujourd'hui du cercle authentifié. Demande une décision sur ce qu'un lien expose, et pour combien de temps. | Faible |
 | **Minuteur interactif depuis CookLang** | Les durées sont analysées et affichées ; rien ne décompte. Demande des notifications locales. | Faible |
 | **Attestation du client Windows** | Sa seule voie serait un jeton de débogage, c'est-à-dire un secret partagé dans un binaire distribué. Limite assumée, non contournable par une exemption de plateforme. | — |
-| **Filtre « sans allergène » dans Explorer** | Attend la refonte d'Explorer. Reste aussi à trancher le lien entre un régime et un allergène : « sans lactose » équivaut-il à « sans lait » ? | Faible |
+| **Régimes et allergènes** | Le filtre « Sans allergène » d'Explorer porte sur les quatorze allergènes. Reste à trancher le lien entre un régime et un allergène : « sans lactose » équivaut-il à « sans lait » ? | Faible |
 | **Allergènes : surcharge par recette** | Aujourd'hui, seul l'ingrédient se corrige, dans le référentiel. Une recette dont l'ingrédient est une variante sans allergène (pâte sans gluten) ne peut pas le dire. | Moyenne |
 | **Allergènes dans l'export PDF** | Le PDF d'une recette n'emporte pas le bloc « Allergènes ». | Faible |
 | **Lien de « Ingrédients en cause » vers le référentiel** | Depuis la feuille, un administrateur ne peut pas ouvrir directement l'ingrédient pour le corriger. | Faible |
@@ -890,13 +965,16 @@ stateDiagram-v2
     end note
 
     note right of reader
-        Consultation + annotations
-        uniquement
+        Consultation, annotations, notes,
+        planning, filtres d'Explorer.
+        Ne crée aucune recette ;
+        garde les siennes
     end note
 
     note right of editor
-        CRUD livres, recettes
-        et validation des brouillons
+        CRUD livres, recettes,
+        validation des brouillons,
+        import et IA d'Explorer
     end note
 
     note right of admin

@@ -251,7 +251,9 @@ export const ROUTABLE_FEATURES: Array<{
 
   // ── Recherche ─────────────────────────────────────────────────────────────
   { id: "search", label: "Recherche dans la collection", group: "Recherche" },
-  { id: "web_search_query", label: "Formulation d'une requête web", group: "Recherche" },
+  // `web_search_query` (« Formulation d'une requête web ») est parti avec la
+  // refonte de l'écran Explorer (lot 2) : « Chercher sur Google » envoie le
+  // texte tel quel, sans appel d'IA. Le poste reste au catalogue comptable.
 
   // ── Planning ──────────────────────────────────────────────────────────────
   { id: "planning", label: "Suggestion de planning", group: "Planning" },

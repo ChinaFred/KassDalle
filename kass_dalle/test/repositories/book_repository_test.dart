@@ -113,6 +113,10 @@ void main() {
         testBook(tags: [Book.tagLibres]).defaultCoverAsset,
         'assets/opensource.png',
       );
+      expect(
+        testBook(tags: [Book.tagWeb]).defaultCoverAsset,
+        'assets/FromTheWeb.png',
+      );
       expect(testBook().defaultCoverAsset, isNull);
     });
   });

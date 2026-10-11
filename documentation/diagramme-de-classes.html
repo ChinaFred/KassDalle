@@ -1001,7 +1001,7 @@ classDiagram
     aiCreation
   }
 
-  class RecipePickerFilter {
+  class RecipeFilter {
     +Set~String~ dishTypes
     +Set~String~ cuisines
     +bool isEmpty
@@ -1142,8 +1142,9 @@ classDiagram
           <b><code>RecipeSearchScope</code> est une préférence de lecteur</b>, stockée sous
           <code>users/{uid}/preferences/recipe_search_scope</code> (champs <code>sources</code>
           et <code>book_ids</code>). Un livre absent de <code>bookIds</code> est écarté ; une
-          recette sans livre ne l'est jamais. <code>RecipePickerFilter</code> filtre le
-          sélecteur par types de plat et cuisines ; il n'est pas stocké.
+          recette sans livre ne l'est jamais. <code>RecipeFilter</code> (partagé avec l'Explorer,
+          <code>features/recipes/domain/</code>) filtre le sélecteur par types de plat et
+          cuisines ; il n'est pas stocké.
         </span>
         <span class="expect">
           <b><code>SlotRanking</code> n'est pas stocké.</b> Rendu par
@@ -1166,7 +1167,7 @@ classDiagram
           <b><code>MealIdea</code> n'est pas une recette.</b> Rendue par
           <code>suggestMealIdeasFn</code>, elle porte un nom, une phrase et deux durées. Retenue
           depuis le planning, elle est rédigée par <code>generateRecipeConceptFn</code> et
-          enregistrée comme recette validée dans « Mes créations Kass'Dalle », puis placée dans
+          enregistrée en brouillon dans « Mes créations Kass'Dalle », puis placée dans
           le créneau. Le repas libre sans recette n'existe que si l'écran ne fournit pas cette
           étape de rédaction.
           <code>SideCandidate</code> et <code>SideNeed</code> servent au choix de
@@ -1180,9 +1181,9 @@ classDiagram
   <section>
     <h2>Chercher</h2>
     <p class="sec-note">
-      La recherche est le seul écran dont l'état est modélisé en somme fermée. Une requête peut
-      être au repos, en cours, aboutie ou en échec — jamais deux à la fois, et jamais « aboutie
-      avec un message d'erreur ».
+      L'écran Explorer filtre sur l'appareil, sans IA : texte, filtres et tri s'appliquent aux
+      recettes des sources choisies. L'IA ne part que sur un bouton, et son état est modélisé en
+      somme fermée : au repos, en cours, aboutie ou en échec — jamais deux à la fois.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -1190,16 +1191,12 @@ classDiagram
 classDiagram
   direction TB
 
-  class SearchState {
-    &lt;&lt;abstract&gt;&gt;
-  }
-  class SearchIdle
-  class SearchLoading
-  class SearchSuccess {
-    +SearchResultData data
-  }
-  class SearchError {
-    +String message
+  class ExplorePreferences {
+    +SearchParams sources
+    +RecipeFilter filter
+    +RecipeSort sort
+    +toMap() Map
+    +fromMap(data) ExplorePreferences$
   }
 
   class SearchParams {
@@ -1208,17 +1205,78 @@ classDiagram
     +bool includeDrafts
   }
 
-  class SearchResultData {
-    +List~RecipeSearchResult~ libraryResults
-    +List~GeneratedRecipeSuggestion~ generatedResults
-    +WebSearchSuggestion? webSuggestion
-    +String? librarySuggestion
+  class RecipeFilter {
+    +Set~String~ dishTypes
+    +Set~String~ cuisines
+    +Set~String~ mealRoles
+    +Set~String~ proteins
+    +Set~String~ starches
+    +Set~String~ difficulties
+    +Set~String~ themes
+    +Set~String~ excludedIngredients
+    +Set~String~ excludedAllergens
+    +Set~String~ bookIds
+    +Set~String~ authorIds
+    +int? maxTotalMinutes
+    +int? minRating
+    +int? maxCaloriesPerPortion
+    +verdict(dimension, recipe, context) FilterVerdict
+    +toggle(dimension, key) RecipeFilter
+  }
+
+  class RecipeFilterContext {
+    +Map~String,int~ myRatings
+    +totalMinutesOf(recipe) int?
+  }
+
+  class RecipeFilterOutcome {
+    +List~Recipe~ recipes
+    +Map~RecipeFilterDimension,int~ missingData
+  }
+
+  class RecipeSort {
+    &lt;&lt;enumeration&gt;&gt;
+    bestRated
+    fastest
+    newest
+    title
+  }
+
+  class ExploreCorpus {
+    +String myUid
+    +List~Recipe~ recipes
+    +Map~String,int~ myRatings
     +String? preferenceInsight
+  }
+
+  class AiRankingRequest {
+    +String query
+    +String filterSignature
+    +SearchParams sources
+    +List~Recipe~ corpus
+    +isStale(query, filterSignature, sources) bool
+  }
+
+  class AiRankingState {
+    &lt;&lt;abstract&gt;&gt;
+  }
+  class AiRankingSuccess {
+    +List~RecipeSearchResult~ results
+    +String? suggestion
+    +String? preferenceInsight
+  }
+
+  class AiIdeasState {
+    &lt;&lt;abstract&gt;&gt;
+  }
+  class AiIdeasSuccess {
+    +String query
+    +List~GeneratedRecipeSuggestion~ ideas
   }
 
   class RecipeSearchResult {
     +Recipe recipe
-    +String reason
+    +String? reason
   }
 
   class GeneratedRecipeSuggestion {
@@ -1227,38 +1285,38 @@ classDiagram
     +String variantLabel
   }
 
-  class WebSearchSuggestion {
-    +String query
-    +String url
-  }
-
-  class ExploreSource {
-    &lt;&lt;enumeration&gt;&gt;
-    all
-    library
-    ai
-    web
-  }
-
-  SearchState &lt;|-- SearchIdle
-  SearchState &lt;|-- SearchLoading
-  SearchState &lt;|-- SearchSuccess
-  SearchState &lt;|-- SearchError
-  SearchSuccess --> SearchResultData
-  SearchResultData "1" --> "0..*" RecipeSearchResult
-  SearchResultData "1" --> "0..*" GeneratedRecipeSuggestion
-  SearchResultData "1" --> "0..1" WebSearchSuggestion
+  ExplorePreferences --> SearchParams
+  ExplorePreferences --> RecipeFilter
+  ExplorePreferences --> RecipeSort
+  RecipeFilter ..> RecipeFilterContext
+  RecipeFilter ..> RecipeFilterOutcome : applyRecipeFilter
+  AiRankingState &lt;|-- AiRankingIdle
+  AiRankingState &lt;|-- AiRankingLoading
+  AiRankingState &lt;|-- AiRankingSuccess
+  AiRankingState &lt;|-- AiRankingError
+  AiRankingLoading --> AiRankingRequest
+  AiRankingSuccess --> AiRankingRequest
+  AiRankingError --> AiRankingRequest
+  AiRankingSuccess "1" --> "0..*" RecipeSearchResult
+  AiIdeasState &lt;|-- AiIdeasIdle
+  AiIdeasState &lt;|-- AiIdeasLoading
+  AiIdeasState &lt;|-- AiIdeasSuccess
+  AiIdeasState &lt;|-- AiIdeasError
+  AiIdeasSuccess "1" --> "0..3" GeneratedRecipeSuggestion
 </pre>
       </div>
       <figcaption>
-        <b>Chaque résultat porte son motif</b> — <code>reason</code> pour la bibliothèque,
-        <code>justification</code> pour une génération. Une liste classée par une IA sans dire
-        pourquoi ne se discute pas : l'utilisateur ne peut ni la corriger, ni cesser de lui faire
-        confiance à bon escient.
+        <b><code>ExplorePreferences</code> est une préférence de lecteur</b>, stockée sous
+        <code>users/{uid}/preferences/explore_filters</code> (sources, filtres, tri ; pas le
+        texte). <code>RecipeFilter</code> est partagé avec le sélecteur du planning
+        (<code>features/recipes/domain/recipe_filter.dart</code>) ; une recette sans donnée pour
+        un filtre actif est écartée et comptée dans <code>missingData</code>. Les calories par
+        portion et le temps total se calculent à l'affichage : rien n'est écrit dans la recette.
         <span class="expect">
-          <code>webSuggestion</code> est une <b>requête</b> et une URL, pas un résultat.
-          L'application ne lit pas le web ; elle prépare la recherche que l'utilisateur ira faire
-          lui-même.
+          <b>Un résultat de l'IA porte son motif</b> — <code>reason</code> pour une recette
+          choisie, <code>justification</code> pour une recette imaginée. Une recette de la liste
+          locale n'en a pas : <code>reason</code> est nul. « Chercher sur Google » n'a pas de
+          modèle : une adresse construite à partir du texte, sans appel d'IA.
         </span>
       </figcaption>
     </figure>
@@ -1542,12 +1600,20 @@ classDiagram
     -_processSelectedBytes(...) Future
   }
 
-  class SearchNotifier {
-    +explore(query, params, source) Future
+  class AiRankingNotifier {
+    +rank(request, myRatings) Future
+    +close()
+  }
+
+  class AiIdeasNotifier {
+    +imagine(query, corpus) Future
     +saveGeneratedRecipe(recipe) Future~String~
-    -_loadContext(params) Future
-    -_searchLibrary(...) Future
-    -_generateAlternatives(...) Future
+    +close()
+  }
+
+  class ExplorePreferencesRepository {
+    +load(uid) Future~ExplorePreferences~
+    +save(uid, prefs) Future
   }
 
   class OriginalTextRepository {
@@ -1594,13 +1660,14 @@ classDiagram
   ScanUploadNotifier --&gt; ProcessingJobRepository
   ScanUploadNotifier --&gt; RecipeRepository
   ScanUploadNotifier --&gt; GeminiService
-  SearchNotifier --&gt; RecipeRepository
-  SearchNotifier --&gt; GeminiService
+  AiIdeasNotifier --&gt; RecipeRepository
+  AiIdeasNotifier --&gt; GeminiService : generateRecipeFn
+  AiRankingNotifier --&gt; GeminiService : searchRecipesFn
+  ExplorePreferencesRepository --&gt; ErrorReportService
   ImageModerationService --&gt; CloudFunctions : moderateAndPromoteImagesFn
   ModerationRepository --&gt; CloudFunctions : reviewModeratedImageFn, retryPendingModerationFn
   RecipeRepository --&gt; ImageModerationService
   DraftReviewService --&gt; ImageModerationService
-  SearchNotifier --&gt; ImageModerationService
 </pre>
       </div>
       <figcaption>

@@ -43,7 +43,7 @@ import {
 import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
-import { searchRecipes, extractBookCover, generateWebSearchQuery } from "../gemini/search";
+import { searchRecipes, extractBookCover } from "../gemini/search";
 import { randomInt } from "node:crypto";
 import {
   PLANNING_CONCEPT_MAX_TOKENS,
@@ -216,7 +216,9 @@ async function logUploadScanUsage(args: {
 const extractionCallableOpts = { ...callableOpts, timeoutSeconds: 540 };
 
 export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req) => {
-  const ctx = await requireAuth(req, "text_extraction");
+  // Le texte collé devient une recette : le lecteur n'en crée pas (règle
+  // `recipes` create = éditeur), il ne déclenche donc pas l'extraction facturée.
+  const ctx = await requireEditor(req, "text_extraction");
   const data = (req.data ?? {}) as Record<string, unknown>;
   const text = await readAiInputs({ ...ctx, feature: "text_extraction" }, (inputs) =>
     inputs.text(data.text, { field: "text", max: PASTED_TEXT_MAX_CHARS, required: true }),
@@ -374,7 +376,9 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
   // nom, l'écran de journaux alignait trois « generate » identiques, et la
   // question « pourquoi trois ? » n'avait aucune réponse lisible.
   const askedVariant = (req.data as { variantLabel?: unknown } | undefined)?.variantLabel;
-  const ctx = await requireAuth(req, qualify("generation_recette", askedVariant));
+  // « Imaginer 3 recettes » rédige des recettes à enregistrer : éditeurs et
+  // administrateurs seulement, comme la création d'une recette.
+  const ctx = await requireEditor(req, qualify("generation_recette", askedVariant));
   const data = (req.data ?? {}) as Record<string, unknown>;
   const {
     query,
@@ -435,7 +439,9 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const searchRecipesFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "search");
+  // « Demander à l'IA » classe la bibliothèque, un appel facturé : le lecteur
+  // garde la liste et les filtres locaux, pas ce classement.
+  const ctx = await requireEditor(req, "search");
   const data = (req.data ?? {}) as Record<string, unknown>;
   // Liste blanche : seuls les champs validés atteignent le générateur.
   const input = await readAiInputs({ ...ctx, feature: "search" }, (inputs) =>
@@ -600,7 +606,8 @@ export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
  * Utilisé quand aucune recette existante ne satisfait les contraintes.
  */
 export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "planning_concept");
+  // Une conception devient une recette enregistrée : éditeurs et administrateurs.
+  const ctx = await requireEditor(req, "planning_concept");
   const raw = (req.data ?? {}) as Record<string, unknown>;
   // Liste blanche : seuls les champs validés atteignent le générateur.
   const input = await readAiInputs({ ...ctx, feature: "planning_concept" }, (inputs) =>
@@ -675,7 +682,9 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
  * relance pour que « trois autres » en rende trois autres.
  */
 export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "planning_meal_ideas");
+  // « Générer avec l'IA » du sélecteur mène à une recette rédigée et
+  // enregistrée : le lecteur, qui ne crée pas de recette, n'y a pas accès.
+  const ctx = await requireEditor(req, "planning_meal_ideas");
   const raw = (req.data ?? {}) as Partial<MealIdeasInput>;
   // Ce poste bornait déjà ses entrées avant ce module : la consigne est
   // refusée au-delà de MEAL_IDEAS_MAX_PROMPT_CHARS, les titres et les
@@ -727,9 +736,6 @@ export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
   }
 });
 
-/**
- * Génère une requête Google optimisée pour la recherche web.
- */
 export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, "suggest_tags");
   const data = (req.data ?? {}) as Record<string, unknown>;
@@ -747,24 +753,6 @@ export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
       { ...ctx, feature: "suggest_tags", moduleType: "DESIGN" },
     );
     return data;
-  } catch (e) {
-    throw toHttpsError(e);
-  }
-});
-
-export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "web_search_query");
-  const data = (req.data ?? {}) as Record<string, unknown>;
-  const userQuery = await readAiInputs({ ...ctx, feature: "web_search_query" }, (inputs) =>
-    inputs.text(data.userQuery, { field: "userQuery", max: SHORT_TEXT_MAX_CHARS, required: true }),
-  );
-  try {
-    const query = await generateWebSearchQuery(GEMINI_API_KEY.value(), userQuery, {
-      ...ctx,
-      feature: "web_search_query",
-      moduleType: "SEARCH",
-    });
-    return { query };
   } catch (e) {
     throw toHttpsError(e);
   }

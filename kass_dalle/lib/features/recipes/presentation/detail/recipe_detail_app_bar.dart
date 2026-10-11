@@ -180,13 +180,16 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           icon: Icons.sticky_note_2_outlined,
           onPressed: onScrollToAnnotations,
         ),
-        if (user != null)
+        // « Améliorer avec l'IA » part d'une copie : réservé à qui crée.
+        if (user != null && user!.canEdit)
           _ActionCompacte(
             tooltip: RecipeAiUiCopy.appBarActionTooltip,
             icon: Icons.auto_awesome_outlined,
             onPressed: onModifyWithAi,
           ),
-        if (user != null && recipe.createdBy != user!.uid)
+        // Copier crée une recette : éditeurs et administrateurs seulement
+        // (règle `recipes` create de `firestore.rules`).
+        if (user != null && user!.canEdit && recipe.createdBy != user!.uid)
           _ActionCompacte(
             tooltip: 'Copier comme brouillon',
             icon: Icons.copy_outlined,
@@ -430,13 +433,16 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           additionalSourceFileUrls: recipe.additionalSourceFileUrls,
         ),
         OriginalTextButton(recipe: recipe),
-        if (user != null && recipe.createdBy != user!.uid)
+        // Copier crée une recette : éditeurs et administrateurs seulement
+        // (règle `recipes` create de `firestore.rules`).
+        if (user != null && user!.canEdit && recipe.createdBy != user!.uid)
           IconButton(
             icon: const Icon(Icons.copy_outlined),
             tooltip: 'Copier comme mon brouillon',
             onPressed: onCopyAsDraft,
           ),
-        if (user != null)
+        // « Améliorer avec l'IA » part d'une copie : réservé à qui crée.
+        if (user != null && user!.canEdit)
           IconButton(
             icon: const Icon(Icons.auto_awesome_outlined),
             tooltip: RecipeAiUiCopy.appBarActionTooltip,

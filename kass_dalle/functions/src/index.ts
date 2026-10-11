@@ -56,7 +56,6 @@ export {
   suggestMealPlanFn,
   generateRecipeConceptFn,
   suggestMealIdeasFn,
-  generateWebSearchQueryFn,
   suggestRecipeTagsFn,
   scanAndPromoteUploadFn,
   detectAndCropIllustrationsFn,
@@ -68,7 +67,11 @@ export {
 } from "./callable/geminiCallables";
 
 // Import d'une recette depuis un lien : contrôles, plafond du jour, mise en file.
-export { importRecipeFromUrlFn, getUrlImportQuotaFn } from "./callable/urlImportCallable";
+export {
+  importRecipeFromUrlFn,
+  getUrlImportQuotaFn,
+  ensureWebBookFn,
+} from "./callable/urlImportCallable";
 
 // Analyse d'un livre entier avant son import : pages, tranches, coût estimé.
 export { analyzeBookFileFn } from "./callable/bookImportCallable";

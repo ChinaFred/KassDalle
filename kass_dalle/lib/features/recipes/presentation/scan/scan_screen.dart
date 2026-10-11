@@ -8,9 +8,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/presentation/leave_guard.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
-import '../../../../core/router/app_router.dart';
-import '../../../../core/widgets/app_states.dart';
-import '../../../auth/presentation/auth_providers.dart';
+import '../../../auth/presentation/editor_only_gate.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_picker_field.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -35,44 +33,15 @@ class ScanScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(appUserProvider);
-    AppBar appBar() => AppBar(title: const Text('Importer un scan'));
-
-    // Le compte n'est pas encore lu : ni formulaire (la caméra démarre toute
-    // seule sur mobile), ni refus prématuré.
-    if (userAsync.isLoading && !userAsync.hasValue) {
-      return Scaffold(appBar: appBar(), body: const AppLoadingState());
-    }
-    if (userAsync.hasError) {
-      return Scaffold(
-        appBar: appBar(),
-        body: AppErrorState(
-          error: userAsync.error,
-          title: 'Impossible de lire votre compte',
-          onRetry: () => ref.invalidate(appUserProvider),
-        ),
-      );
-    }
-    // Profil absent compris : sans rôle lu, pas d'import.
-    final user = userAsync.value;
-    if (user == null || !user.canEdit) {
-      return Scaffold(
-        appBar: appBar(),
-        body: AppEmptyState(
-          icon: Icons.lock_outline,
-          title: 'Import réservé aux éditeurs',
-          message:
-              'Importer une recette ou un livre est réservé aux éditeurs et '
-              'aux administrateurs. Demandez à un administrateur de vous '
-              'nommer éditeur.',
-          action: FilledButton.tonal(
-            onPressed: () => context.go(AppRoutes.books),
-            child: const Text('Retour à la bibliothèque'),
-          ),
-        ),
-      );
-    }
-    return const _ScanForm();
+    return EditorOnlyGate(
+      appBarTitle: 'Importer un scan',
+      lockedTitle: 'Import réservé aux éditeurs',
+      lockedMessage:
+          'Importer une recette ou un livre est réservé aux éditeurs et '
+          'aux administrateurs. Demandez à un administrateur de vous '
+          'nommer éditeur.',
+      builder: (_) => const _ScanForm(),
+    );
   }
 }
 

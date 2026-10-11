@@ -12,6 +12,7 @@ import 'export_my_books_flow.dart';
 import 'reorderable_books_grid.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -84,10 +85,19 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     // Migration silencieuse : génère la couverture du livre IA s'il n'en a pas.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(appUserProvider).value;
-      if (user != null) {
+      // Un lecteur ne crée pas de recette : il n'a pas besoin des livres
+      // système qui les reçoivent, et les règles lui en refusent la création.
+      if (user != null && user.canEdit) {
         final repo = ref.read(bookRepositoryProvider);
         final displayName = user.displayName;
-        unawaited(repo.ensureSystemBooks(user.uid, displayName));
+        final gemini = ref.read(geminiServiceProvider);
+        unawaited(
+          repo.ensureSystemBooks(
+            user.uid,
+            displayName,
+            ensureWebBook: gemini.ensureWebBook,
+          ),
+        );
       }
     });
   }

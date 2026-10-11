@@ -330,6 +330,33 @@ class BookRepository {
     return (id: id, titre: titre);
   }
 
+  /// Fait créer « Mes recettes du web » par le serveur, puis pose sa
+  /// couverture si elle manque. Best-effort : ouvrir la bibliothèque ne doit
+  /// pas échouer pour ce livre, mais l'échec est rapporté.
+  Future<void> _ensureWebBookCover(
+    String uid,
+    Future<String> Function() ensureWebBook,
+  ) async {
+    try {
+      final bookId = await ensureWebBook();
+      if (bookId.isEmpty) return;
+      final doc = await _col.doc(bookId).get();
+      final cover = doc.data()?['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        await _uploadAssetCover(webBookCoverAsset, bookId);
+      }
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_ensure_web_book',
+          error: e,
+          stackTrace: st,
+          context: {'uid': uid},
+        ),
+      );
+    }
+  }
+
   /// Trouve ou crée le livre "Mes Recettes Secrètes" pour [uid].
   Future<({String id, String titre})> findOrCreateSecretesBook(
     String uid,
@@ -370,38 +397,6 @@ class BookRepository {
     final id = await createBook(book);
     unawaited(_uploadAssetCover('assets/Secret.png', id));
     return (id: id, titre: titre);
-  }
-
-  /// Pose la couverture `assets/FromTheWeb.png` sur « Mes recettes du web »
-  /// quand le livre existe sans couverture.
-  ///
-  /// Le livre est créé par le serveur (`urlImport.ts`, `web_{uid}`), sans
-  /// couverture : les règles interdisent au client de le créer, mais son
-  /// créateur peut le modifier. Rien n'est fait tant qu'aucun import par lien
-  /// n'a eu lieu.
-  Future<void> ensureWebBookCover(String uid) async {
-    try {
-      final byTag = await _col
-          .where('created_by', isEqualTo: uid)
-          .where('tags', arrayContains: Book.tagWeb)
-          .limit(1)
-          .get();
-      if (byTag.docs.isEmpty) return;
-      final doc = byTag.docs.first;
-      final cover = doc.data()['url_couverture'] as String?;
-      if (cover == null || cover.isEmpty) {
-        await _uploadAssetCover('assets/FromTheWeb.png', doc.id);
-      }
-    } catch (e, st) {
-      unawaited(
-        _errorReportService.reportError(
-          feature: 'book_ensure_web_book_cover',
-          error: e,
-          stackTrace: st,
-          context: {'uid': uid},
-        ),
-      );
-    }
   }
 
   /// Migration : attache toutes les recettes sans livre de [uid] au livre
@@ -474,10 +469,24 @@ class BookRepository {
     }
   }
 
-  /// Initialise les livres système pour [uid], pose la couverture de « Mes
-  /// recettes du web » s'il existe, et migre les recettes libres.
-  /// À appeler au démarrage / ouverture de la bibliothèque.
-  Future<void> ensureSystemBooks(String uid, String displayName) async {
+  /// Initialise les livres système pour [uid] et migre les recettes libres.
+  /// À appeler au démarrage / ouverture de la bibliothèque, pour un éditeur ou
+  /// un administrateur seulement : un lecteur ne crée pas de recette, il n'a
+  /// pas besoin de livre pour en recevoir (et les règles lui refusent la
+  /// création d'un livre).
+  ///
+  /// [ensureWebBook] crée « Mes recettes du web » côté serveur
+  /// (`ensureWebBookFn`) — le client n'a pas le droit de le faire — et rend
+  /// son identifiant ; la couverture est ensuite posée ici, comme pour les
+  /// trois autres.
+  Future<void> ensureSystemBooks(
+    String uid,
+    String displayName, {
+    Future<String> Function()? ensureWebBook,
+  }) async {
+    if (ensureWebBook != null) {
+      unawaited(_ensureWebBookCover(uid, ensureWebBook));
+    }
     try {
       // 1. Livre Kass'Dalle (créé si absent, couverture asset si manquante)
       unawaited(findOrCreateKassDalleBook(uid));
@@ -497,9 +506,6 @@ class BookRepository {
       );
       // 4. Livre "Mes Recettes Secrètes"
       unawaited(findOrCreateSecretesBook(uid, displayName));
-      // 5. Livre "Mes recettes du web" : couverture seulement, il est créé
-      //    par le serveur au premier import par lien.
-      unawaited(ensureWebBookCover(uid));
     } catch (e, st) {
       unawaited(
         _errorReportService.reportError(

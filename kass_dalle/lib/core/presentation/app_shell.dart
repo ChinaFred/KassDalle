@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/search/presentation/search_providers.dart';
 import '../app_version.dart';
 import '../services/app_update_service.dart';
 import 'app_update_dialog.dart';
@@ -62,7 +63,18 @@ class _AppShellState extends ConsumerState<AppShell> {
     // n'importe quel écran, sans que chacun ait à le savoir. Ctrl+S reste
     // local aux écrans d'édition, seuls à savoir ce qu'enregistrer veut dire.
     return AppShortcuts(
-      onSearch: () => goGuarded(context, ref, AppRoutes.search),
+      onSearch: () {
+        // L'Explorer met le focus dans son champ, qu'il soit déjà affiché ou
+        // qu'il s'ouvre.
+        ref.read(exploreSearchFocusRequestProvider.notifier).request();
+        // Déjà sur l'Explorer : rien à quitter, donc aucune question de
+        // sortie à poser sur des idées qui ne seraient pas perdues.
+        final location = GoRouter.of(
+          context,
+        ).routeInformationProvider.value.uri.path;
+        if (location == AppRoutes.search) return;
+        goGuarded(context, ref, AppRoutes.search);
+      },
       child: isWide
           ? _WideShell(child: widget.child)
           : _NarrowShell(child: widget.child),

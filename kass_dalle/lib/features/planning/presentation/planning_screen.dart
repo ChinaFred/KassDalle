@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planning_history.dart';
@@ -251,11 +252,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Rédige la recette d'une idée retenue, comme « Conception IA » de Nouveau
-  /// planning, et l'enregistre validée dans « Mes créations Kass'Dalle ».
+  /// planning, et l'enregistre en brouillon dans « Mes créations Kass'Dalle ».
   ///
-  /// Validée, pas en brouillon : la personne a choisi ce plat elle-même, elle
-  /// veut l'ouvrir depuis le repas tout de suite. [on] est le jour du repas,
-  /// dont les contraintes cadrent la rédaction.
+  /// En brouillon, comme toute recette créée par l'IA : elle s'ouvre depuis le
+  /// repas et entre dans les courses comme une recette validée, et se relit
+  /// avant de rejoindre la bibliothèque. [on] est le jour du repas, dont les
+  /// contraintes cadrent la rédaction.
   Future<Recipe> _conceiveMealIdea(
     MealIdea idea, {
     required DateTime on,
@@ -282,10 +284,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         suggestion.justification ?? 'L\'IA n\'a pas rendu de recette.',
       );
     }
-    final id = await repo.saveGenerated(
-      recipe,
-      reviewStatus: ReviewStatus.validated,
-    );
+    final id = await repo.saveAsDraft(recipe);
     // La recette telle qu'enregistrée : l'identifiant, le statut, le livre.
     // `copyWith` ne prend pas d'identifiant ; on la reconstruit avec tout ce
     // que le repas et les courses liront (durées, parts, ingrédients).
@@ -296,7 +295,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       rawCooklang: recipe.rawCooklang,
       draftCooklang: recipe.draftCooklang,
       imageUrls: const [],
-      reviewStatus: ReviewStatus.validated,
+      reviewStatus: ReviewStatus.draft,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       ingredients: recipe.ingredients,
@@ -311,6 +310,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
+    final canCreate = ref.read(canEditProvider);
     final recipe = await showModalBottomSheet<Recipe>(
       context: context,
       isScrollControlled: true,
@@ -320,8 +320,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
-        onGenerateIdeas: _generateMealIdeas,
-        onConceiveIdea: (idea) => _conceiveMealIdea(idea, on: meal.plannedAt),
+        // « Générer avec l'IA » mène à une recette enregistrée : le lecteur,
+        // qui ne crée pas de recette, ne la voit pas.
+        onGenerateIdeas: canCreate ? _generateMealIdeas : null,
+        onConceiveIdea: canCreate
+            ? (idea) => _conceiveMealIdea(idea, on: meal.plannedAt)
+            : null,
       ),
     );
     if (recipe == null || !mounted) return;
@@ -719,6 +723,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// Liste épuisée pour ce repas : choisir une recette, ou la concevoir avec
   /// l'IA — un appel facturé, que la personne demande elle-même.
   Future<void> _offerWhenExhausted(PlannedMeal meal) async {
+    final canCreate = ref.read(canEditProvider);
     final choice = await showDialog<_ExhaustedChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -730,10 +735,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Fermer'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.conceive),
-            child: const Text('Concevoir avec l\'IA'),
-          ),
+          // Concevoir enregistre une recette : pas pour un lecteur.
+          if (canCreate)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.conceive),
+              child: const Text('Concevoir avec l\'IA'),
+            ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, _ExhaustedChoice.pick),
             child: const Text('Choisir une recette'),
@@ -1431,6 +1438,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _addMealOnDay(DateTime day) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
+    final canCreate = ref.read(canEditProvider);
     final recipe = await showModalBottomSheet<Recipe>(
       context: context,
       isScrollControlled: true,
@@ -1439,8 +1447,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         recipes: _availableRecipes,
         hintText: 'Rechercher ou saisir un nom libre\u2026',
         freeNameAlways: true,
-        onGenerateIdeas: _generateMealIdeas,
-        onConceiveIdea: (idea) => _conceiveMealIdea(idea, on: day),
+        onGenerateIdeas: canCreate ? _generateMealIdeas : null,
+        onConceiveIdea: canCreate
+            ? (idea) => _conceiveMealIdea(idea, on: day)
+            : null,
       ),
     );
     if (recipe == null || !mounted) return;

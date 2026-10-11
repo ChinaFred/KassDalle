@@ -186,7 +186,7 @@ Côté Cloud Functions (Node 22, TypeScript) :
 firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
-│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, meal_staples, planning_refusals
+│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals
 │   └── planning_runs/{runId}                      ← générations de planning, serveur seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
@@ -330,19 +330,26 @@ pour que deux comptes sans profil restent distincts.
 formulaire de livre) : « Mes créations Kass'Dalle » (`__kassdale_ia`), « Mes recettes libres »
 (`__libres`), « Mes Recettes Secrètes » (`__secretes`) et « Mes recettes du web » (`__web`). Ils
 se renomment mais ne se suppriment pas : `BookRepository.deleteBook` refuse, et les règles
-Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Les trois premiers sont créés par le
-client (`ensureSystemBooks`). « Mes recettes du web » est créé **par le serveur**, au premier
-import par lien (`findOrCreateWebBook`, `pipeline/urlImport.ts`) : identifiant déterministe
-`books/web_{uid}` (deux imports simultanés ne créent pas deux livres), `is_private: true`, auteur
-« Kass'Dalle », sans couverture. Le client pose ensuite `assets/FromTheWeb.png` à l'ouverture
-de la bibliothèque (`ensureWebBookCover`, appelé par `ensureSystemBooks`), comme pour les trois
-autres livres système : son créateur a le droit de modifier le livre. Tant que la couverture
-n'est pas posée, la liste affiche la même image comme repli (`Book.defaultCoverAsset`). Le client ne peut créer ni un livre d'identifiant `web_…`, ni un livre portant le
+Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Ils sont posés à l'ouverture de la
+bibliothèque (`ensureSystemBooks`), pour un éditeur ou un administrateur seulement : un lecteur ne
+crée pas de recette, il n'a pas besoin des livres qui les reçoivent (les règles lui refusent
+d'ailleurs la création d'un livre), et il garde ceux qu'il avait. Les trois premiers sont créés
+par le client. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
+`pipeline/urlImport.ts`) : par `ensureWebBookFn` (`callable/urlImportCallable.ts`,
+`requireEditor`), appelée par `ensureSystemBooks` avec les autres livres, et à défaut au premier
+import par lien. Identifiant déterministe `books/web_{uid}` (deux appels simultanés ne créent
+pas deux livres), `is_private: true`, auteur « Kass'Dalle ». Sa couverture,
+`assets/FromTheWeb.png` (`Book.defaultCoverAsset`, empreinte dans `moderation/origin.ts`), est
+posée par le client comme celle des trois autres (`_uploadAssetCover`), dès que le livre n'en a
+pas : un livre déjà créé par un import la reçoit à l'ouverture suivante de la bibliothèque, sans
+backfill. Le client ne peut créer ni un livre d'identifiant `web_…`, ni un livre portant le
 tag `__web` (règles, §4) : sans cela, un éditeur créait `books/web_{uid d'un autre}`, public et à
 son nom, et les brouillons importés de l'autre compte y tombaient. Le serveur vérifie en plus le
 document trouvé (`isOwnWebBook` : `created_by` du compte et tag `__web`) ; un document étranger
-n'est jamais réutilisé, l'incident est journalisé (`logError`) et le livre du compte est
-cherché par son tag, sinon créé sous un identifiant aléatoire.
+n'est jamais réutilisé : le livre du compte est cherché par son tag, sinon créé sous le second
+identifiant déterministe `web2_{uid}`, en transaction (deux appels simultanés ne créent pas deux
+livres), et l'incident est journalisé une fois, à cette création (`logError`). Les règles
+refusent au client tout identifiant `web…_` (`web_`, `web2_`).
 
 ---
 
@@ -1478,6 +1485,30 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
   main comme les autres. Une recette sans `book_id` n'est jamais écartée par ce filtre : il ne
   peut pas se prononcer sur elle. Document absent = comportement d'avant ce réglage, recettes
   validées, tous les livres du moment.
+- `users/{uid}/preferences/explore_filters` : sources, filtres et tri de l'écran Explorer
+  (`/search`), relus à l'ouverture et réécrits une demi-seconde après chaque changement
+  (`ExplorePreferencesRepository`, `ExplorePreferences.toMap`). Le texte du champ de recherche
+  n'y est pas. Schéma :
+
+  | Champ | Type | Contenu |
+  |---|---|---|
+  | `sources` | `List<String>` | sous-ensemble de `mine`, `family`, `drafts` (« Mes recettes », « Ma famille », « Mes brouillons ») |
+  | `sort` | `String` | `best_rated` (défaut), `fastest`, `newest`, `title` |
+  | `filters.dish_types`, `cuisines`, `meal_roles`, `proteins`, `starches`, `difficulties`, `themes` | `List<String>` | clés d'étiquette en minuscules (`recipeTagKey`) ; `themes` couvre thèmes et occasions |
+  | `filters.excluded_ingredients` | `List<String>` | mots saisis dans « Sans l'ingrédient… » |
+  | `filters.excluded_allergens` | `List<String>` | clés de `kAllergenKeys` |
+  | `filters.book_ids`, `author_ids` | `List<String>` | identifiants de livre et de compte, tels quels |
+  | `filters.max_total_minutes` | `int?` | 15, 30, 45, 60 ou 120 |
+  | `filters.min_rating` | `int?` | 5, 7 ou 8 (note du lecteur, sur 10) |
+  | `filters.max_kcal_per_portion` | `int?` | 400, 600 ou 800 |
+  | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+  Une valeur mal formée est ignorée à la lecture (`RecipeFilter.fromMap`) ; document absent ou
+  illisible = valeurs par défaut (mes recettes et la famille, sans brouillons, aucun filtre,
+  « Mieux notées »). Aucune migration : le document naît à la première modification. Forme
+  bornée par les règles (`isExploreFilters`, §4) : seules les clés `sources`, `sort`,
+  `filters`, `updated_at`, au plus 10 sources, un tri de 32 caractères, 20 filtres. Le serveur
+  ne le lit pas ; le titulaire et un administrateur le lisent.
 
 ---
 
@@ -1608,6 +1639,15 @@ service cloud.firestore {
         && (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
+    /// Forme de `users/{uid}/preferences/explore_filters` (écran Explorer).
+    function isExploreFilters(data) {
+      return data.keys().hasOnly(['sources', 'sort', 'filters', 'updated_at'])
+        && (!('sources' in data) || (data.sources is list && data.sources.size() <= 10))
+        && (!('sort' in data) || (data.sort is string && data.sort.size() <= 32))
+        && (!('filters' in data) || (data.filters is map && data.filters.size() <= 20))
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     function founderEmail() {
       return 'china.fred.75@gmail.com';
     }
@@ -1687,7 +1727,9 @@ service cloud.firestore {
         allow read, delete: if isOwner(uid) || isAdmin();
         allow create, update: if (isOwner(uid) || isAdmin())
           && (prefId != 'planning_refusals'
-              || isPlanningRefusals(request.resource.data));
+              || isPlanningRefusals(request.resource.data))
+          && (prefId != 'explore_filters'
+              || isExploreFilters(request.resource.data));
       }
     }
 
@@ -1760,7 +1802,7 @@ service cloud.firestore {
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
       // « Mes recettes du web » est créé par le serveur seul (`web_{uid}`).
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
-        && !bookId.matches('web_.*')
+        && !bookId.matches('web[0-9]*_.*')
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
@@ -1806,7 +1848,9 @@ service cloud.firestore {
       }
 
       allow read: if canReadRecipe(resource.data);
-      allow create: if isApproved() && request.resource.data.created_by == request.auth.uid
+      // Création : éditeur et administrateur seulement. Le lecteur ne crée aucune
+      // recette (saisie, copie, création par l'IA, import) ; il garde les siennes.
+      allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && !changes('source_url') && !changes('source_site')
@@ -1856,7 +1900,7 @@ service cloud.firestore {
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
-| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Un autre compte ne lit ni n'écrit les refus d'un autre (`rules-tests`) |
+| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
@@ -2179,6 +2223,12 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
   production : une requête qui perd son filtre `is_private` ou `created_by` y échoue, même sur
   une collection vide.
+- La création d'une recette a ses tests : un `reader` ne crée pas de recette, même à son nom,
+  ni de copie ; un éditeur et un administrateur créent la leur ; un `reader` modifie toujours
+  la sienne. Les cas de confidentialité et de rangement à la création sont rejoués avec
+  l'éditeur. `users/{uid}/preferences/explore_filters` se lit et s'écrit par son titulaire et
+  par un administrateur, dans la forme bornée par `isExploreFilters` (clé inconnue refusée).
+  Un éditeur ne crée pas `books/web2_{autre uid}`, le repli du livre web.
 - L'import par lien a ses tests : « Mes recettes du web » (`__web`) ne se supprime pas et garde
   son tag ; un éditeur ne crée ni `books/web_{autre uid}` ni un livre tagué `__web`, mais crée
   toujours « Mes recettes libres » ; `source_url` et `source_site` ne se posent pas à la
@@ -2525,6 +2575,9 @@ Dans l'ordre, avant toute dépense :
    avec `jobId` et `remaining`.
 
 `getUrlImportQuotaFn` (`requireEditor`) rend `{limit, used, remaining}` pour la boîte du client.
+`ensureWebBookFn` (`requireEditor`, sans appel de modèle) crée ou retrouve « Mes recettes du
+web » (`findOrCreateWebBook`) et rend `{bookId, titre}` ; `ensureSystemBooks` l'appelle à
+l'ouverture de la bibliothèque, avec les autres livres système (§3).
 Les issues attendues sont des réponses, pas des `HttpsError` : le client les affiche sans
 rapport d'erreur.
 
@@ -2762,6 +2815,76 @@ automatiques ne bouclent que sur `conceptsRemaining` créneaux et s'arrêtent au
 Les recettes proposées que l'utilisateur écarte sont enregistrées dans sa mémoire des refus
 (§3.8 ter) ; Préférences du planning en affiche le nombre et propose « Oublier mes refus ».
 
+### L'écran Explorer : filtre local, IA sur demande
+
+`/search` (`features/search/`) liste à l'ouverture les recettes des sources choisies
+(`exploreCorpusProvider` : mes recettes par `getAllByOwners([uid], includeDrafts)`, la famille
+par une seconde requête `excludePrivate: true` — deux publics, deux requêtes, pour qu'une
+recette secrète d'un autre membre n'entre jamais dans le corpus). Tout le reste se calcule sur
+l'appareil, sans appel de modèle (`features/recipes/domain/recipe_filter.dart`, partagé avec le
+sélecteur du planning) :
+
+- **Texte** (`matchesRecipeQuery`) : titre, `ingredients_index`, noms d'ingrédients, cuisines,
+  thèmes, occasions, types de plat ; minuscules, sans accents (`foldSearchText`) ; tous les mots
+  doivent être trouvés. Entrée ferme le clavier et ne lance rien.
+- **Filtres** (`RecipeFilter`) : OU dans une dimension, ET entre les dimensions ; les exclusions
+  (ingrédient, allergène) écartent une recette qui contient l'une OU l'autre valeur. Une recette
+  sans donnée pour un filtre actif est écartée et comptée par dimension
+  (`RecipeFilterOutcome.missingData`, ligne « N recettes sans … écartées »). Temps total =
+  préparation + cuisson, l'une des deux suffit, le repos n'est pas compté
+  (`recipeTotalMinutes`) ; une durée estimée se branchera par
+  `RecipeFilterContext.totalMinutesOf` sans toucher au filtre. Calories par portion =
+  `nutrition.perPortionFor(portions)['kcal']`, calculées à l'affichage, rien n'est écrit.
+  « Sans allergène » écarte une recette jamais analysée ou d'analyse incomplète
+  (`allergens.complete == false`). Note minimale et tri « Mieux notées » : la note du lecteur
+  (`recipe_ratings` filtrées sur son uid), pas une moyenne familiale.
+- **Préférence** : sources, filtres et tri sous `users/{uid}/preferences/explore_filters` (§3).
+
+L'IA ne part que sur un bouton, et jamais pour un `reader` :
+
+| Bouton | Callable | Poste | Garde | Ce qui part |
+|---|---|---|---|---|
+| « Demander à l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
+| « Imaginer 3 recettes » | `generateRecipeFn` ×3 (+ une relance par doublon) | `generate` | `requireEditor` | le texte du champ seul ; douze résumés du corpus et l'observation locale tirée des notes |
+| « Chercher sur Google » | — | — | — | aucun appel : `google.com/search?q=<texte> recette` (`googleRecipeSearchUri`) |
+
+Le poste `web_search_query` (`generateWebSearchQueryFn`, reformulation de la requête Google par
+le modèle) est retiré : la callable et son export sont supprimés, le poste quitte
+`ROUTABLE_FEATURES` et reste dans `kFeatureCatalog` / `kFeatureProcess` pour les mois déjà
+comptabilisés. `getAiRoutingPolicyFn` le retire de la politique enregistrée à l'affichage
+(`withoutRetiredFeatures`).
+
+Une réponse du classement arrivée après une nouvelle demande est ignorée
+(`AiRankingNotifier`). « Demander à l'IA » est inactif pendant un classement en cours et quand
+les filtres ne retiennent aucune recette ; `rank` ne relance pas une demande identique déjà en
+cours. « Imaginer 3 recettes » est inactif pendant une rédaction, et `imagine` ne relance pas
+de second lot. Si le texte, les filtres ou les sources changent après la demande, la section
+l'affiche (« Recherche ou filtres modifiés depuis la demande. ») et propose « Relancer ». « Réessayer »
+après une erreur relance la même demande. Une recette imaginée n'existe qu'en mémoire ;
+« Enregistrer en brouillon » (`AiIdeasNotifier.saveGeneratedRecipe`) la crée en `draft`,
+`origin: ai`, dans « Mes créations Kass'Dalle ✨ ». Des idées non enregistrées posent un garde
+de sortie (`leaveGuardProvider` et `PopScope`) sur l'Explorer comme sur l'écran d'une idée :
+le retour, la barre de navigation et le menu latéral demandent « Quitter sans enregistrer ? ».
+L'écran d'une idée rend, en se fermant, le garde de l'Explorer (`LeaveGuardNotifier.restoreIf`) ;
+tant qu'il est ouvert, la navigation du shell pose la question de l'Explorer quand elle existe,
+un seul dialogue. `markSaved` garde l'identifiant du brouillon : la tuile d'une idée enregistrée
+ouvre `/drafts/{id}`. Au retour Android, sans page dessous, l'Explorer appelle
+`SystemNavigator.pop()` après « Quitter ».
+Les créations du planning (« Générer avec
+l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») passent aussi toutes par
+`PlanningRepository.saveAsDraft` : un repas planifié lit un brouillon comme une recette validée
+(`getRecipesByIds`), courses comprises.
+
+**Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
+callables qui produisent une recette à enregistrer exigent `requireEditor` —
+`generateRecipeFn`, `extractRecipeFromTextFn`, `generateRecipeConceptFn`, `suggestMealIdeasFn` —,
+ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points d'entrée
+(`canEditProvider`) : copie et « Améliorer avec l'IA » de la fiche, copie d'un brouillon,
+« Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
+planning, « Demander à l'IA », « Imaginer 3 recettes » et « Importer depuis un lien » de
+l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
+« Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
+
 ### Les réponses JSON
 
 Les autres postes — nutrition, planning, tags, dressage — demandent du JSON. Un seul module
@@ -2889,7 +3012,7 @@ Trois conséquences de conception, toutes tirées de pannes réelles :
 1. **Chaque fonction nomme son traitement.** Toutes les callables partageaient le préfixe
    par défaut `call`, si bien que l'écran alignait des dizaines de groupes tous intitulés
    « call » — un regroupement correct, et illisible. Le nom se passe en second argument des
-   gardes : `requireAuth(req, "generation_recette")`.
+   gardes : `requireEditor(req, "generation_recette")`.
 2. **Deux départs du même traitement se distinguent par un suffixe.** `qualify(feature,
    detail)` produit `ecriture_recette:ingredients-modifies` — le deux-points est la
    frontière que l'écran connaît : avant, l'étape ; après, laquelle. Le détail est
@@ -3189,7 +3312,6 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `suggestMealIdeasFn` | `planning_meal_ideas` | règles propres au poste (voir ci-dessus) ; tailles relevées avant troncature : `prompt`, `previousTitles`, `globalConstraints` |
 | `consolidateShoppingListFn` | `shopping_list` | `ingredients` → 500 éléments de 20 000 car., requis et non vide |
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
-| `generateWebSearchQueryFn` | `web_search_query` | `userQuery` → 5 000 car., requis |
 | `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
 | `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
 | `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. |
@@ -4272,7 +4394,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/books/new` | `BookFormScreen` | `editor` |
 | `/books/:bookId/edit` | `BookFormScreen` | `editor` |
 | `/recipes` | `RecipeListScreen` | `reader` |
-| `/recipes/new` | `RecipeCreateScreen` | `reader` — chacun crée les siennes. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
+| `/recipes/new` | `RecipeCreateScreen` | `editor` — gardée par `EditorOnlyGate` : un `reader` arrivé par un lien voit « Création réservée aux éditeurs », comme sur `/scan`. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
 | `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
 | `/recipes/:recipeId/edit` | `RecipeEditScreen` | `reader` sur les siennes, `editor` sur celles d'autrui |
 | `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
@@ -4280,7 +4402,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts` | `WorkQueueScreen` | `reader` |
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
-| `/search` | `SearchScreen` | `reader` |
+| `/search` | `SearchScreen` | `reader` — liste, filtres locaux et « Chercher sur Google » ; « Demander à l'IA », « Imaginer 3 recettes » et « Importer depuis un lien » : `editor` |
 | `/planning` | `PlanningScreen` | `reader` |
 | `/planning/batch` | `BatchPlanningScreen` | `reader` |
 | `/planning/config` | `PlanningConfigScreen` | `reader` |

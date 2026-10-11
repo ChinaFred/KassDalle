@@ -1,43 +1,251 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/data/book_repository.dart';
 import '../../groups/presentation/group_providers.dart';
-import '../../recipes/data/recipe_rating_repository.dart';
-import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/domain/recipe_filter.dart';
 import '../../recipes/presentation/recipe_providers.dart';
+import '../data/explore_preferences_repository.dart';
 import '../domain/search_models.dart';
-import '../../../core/services/error_reporting.dart';
 
-class _ExploreLibraryResult {
-  final List<RecipeSearchResult> results;
-  final String? suggestion;
-  final String? preferenceInsight;
+// ── Préférence du lecteur : sources, filtres, tri ─────────────────────────────
 
-  const _ExploreLibraryResult({
-    required this.results,
-    this.suggestion,
-    this.preferenceInsight,
-  });
+final explorePreferencesRepositoryProvider =
+    Provider<ExplorePreferencesRepository>(
+      (ref) => ExplorePreferencesRepository(),
+    );
+
+/// Sources, filtres et tri de l'écran Explorer, relus à l'ouverture et
+/// enregistrés à chaque changement sous `users/{uid}/preferences/explore_filters`.
+class ExplorePreferencesNotifier extends AsyncNotifier<ExplorePreferences> {
+  Timer? _saveTimer;
+
+  @override
+  Future<ExplorePreferences> build() async {
+    ref.onDispose(() => _saveTimer?.cancel());
+    final uid = ref.watch(appUserProvider.select((u) => u.value?.uid));
+    if (uid == null) return ExplorePreferences.defaults;
+    return ref.read(explorePreferencesRepositoryProvider).load(uid);
+  }
+
+  /// Applique [next] tout de suite et l'enregistre une demi-seconde plus
+  /// tard : cocher cinq puces d'affilée n'écrit qu'une fois.
+  void apply(ExplorePreferences next) {
+    state = AsyncData(next);
+    final uid = ref.read(appUserProvider).value?.uid;
+    if (uid == null) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 500), () {
+      unawaited(ref.read(explorePreferencesRepositoryProvider).save(uid, next));
+    });
+  }
 }
 
-class _ExploreContextData {
-  final String myUid;
-  final List<Recipe> recipes;
-  final List<Map<String, String>> summaries;
-  final List<Map<String, String>> ratedSummaries;
-  final String? preferenceInsight;
+final explorePreferencesProvider =
+    AsyncNotifierProvider<ExplorePreferencesNotifier, ExplorePreferences>(
+      ExplorePreferencesNotifier.new,
+    );
 
-  const _ExploreContextData({
-    required this.myUid,
-    required this.recipes,
-    required this.summaries,
-    required this.ratedSummaries,
-    required this.preferenceInsight,
-  });
+// ── Corpus : les recettes des sources choisies ───────────────────────────────
+
+/// Les recettes des sources choisies, et les notes du lecteur.
+///
+/// Deux publics, deux requêtes. Elles étaient réunies en une seule, et cette
+/// réunion coûtait la confidentialité : un corpus mêlant mes recettes et
+/// celles de la famille ne peut appliquer qu'une règle, et c'était la plus
+/// permissive. Les recettes du livre « Mes Recettes Secrètes » des autres
+/// membres entraient donc dans le contexte envoyé au modèle.
+final exploreCorpusProvider = FutureProvider.autoDispose
+    .family<ExploreCorpus, SearchParams>((ref, params) async {
+      final myUid = ref.watch(appUserProvider.select((u) => u.value?.uid));
+      if (myUid == null) throw StateError('Utilisateur non connecté.');
+      final repo = ref.read(recipeRepositoryProvider);
+      final ratingRepo = ref.read(recipeRatingRepositoryProvider);
+
+      final familyIds = params.familyRecipes
+          ? (ref.watch(groupMemberIdsProvider).value ?? const <String>{})
+                .where((id) => id != myUid)
+                .toList(growable: false)
+          : const <String>[];
+
+      final results = await Future.wait([
+        if (params.myRecipes)
+          repo.getAllByOwners([myUid], includeDrafts: params.includeDrafts)
+        else
+          Future.value(const <Recipe>[]),
+        if (familyIds.isNotEmpty)
+          repo.getAllByOwners(familyIds, excludePrivate: true)
+        else
+          Future.value(const <Recipe>[]),
+      ]);
+      final recipes = [...results[0], ...results[1]];
+
+      final userRatings = await ratingRepo.getAllForUser(myUid);
+      final myRatings = {
+        for (final rating in userRatings) rating.recipeId: rating.rating,
+      };
+
+      return ExploreCorpus(
+        myUid: myUid,
+        recipes: recipes,
+        myRatings: myRatings,
+        preferenceInsight: buildPreferenceInsight(
+          recipes: recipes,
+          ratingByRecipeId: myRatings,
+        ),
+      );
+    });
+
+/// Observation locale tirée des notes du lecteur, envoyée à la création
+/// d'idées. `null` sans note marquante.
+String? buildPreferenceInsight({
+  required List<Recipe> recipes,
+  required Map<String, num> ratingByRecipeId,
+}) {
+  final liked = <String>[];
+  final disliked = <String>[];
+
+  for (final recipe in recipes) {
+    final rating = ratingByRecipeId[recipe.id];
+    if (rating == null) continue;
+    if (rating >= 8 && liked.length < 3) {
+      liked.add(recipe.titre);
+    } else if (rating <= 4 && disliked.length < 2) {
+      disliked.add(recipe.titre);
+    }
+  }
+
+  if (liked.isEmpty && disliked.isEmpty) return null;
+
+  final parts = <String>[];
+  if (liked.isNotEmpty) {
+    parts.add('Aime particulièrement : ${liked.join(', ')}.');
+  }
+  if (disliked.isNotEmpty) {
+    parts.add('A tendance à éviter : ${disliked.join(', ')}.');
+  }
+  return parts.join(' ');
 }
+
+/// Construit un résumé compact d'une recette pour l'envoi au modèle.
+Map<String, String> buildRecipeSummary(Recipe recipe, {int? myRating}) {
+  final statusLabel = switch (recipe.reviewStatus) {
+    ReviewStatus.validated => 'validée',
+    ReviewStatus.draft => 'brouillon',
+    ReviewStatus.inReview => 'en révision',
+  };
+  return {
+    'id': recipe.id,
+    'titre': recipe.titre,
+    'livre': recipe.bookTitre ?? 'Sans livre',
+    'ingredients': recipe.ingredientsIndex.take(20).join(', '),
+    'themes': recipe.tags.themes.join(', '),
+    'cuisines': recipe.tags.cuisines.join(', '),
+    'difficulte': recipe.tags.difficulty ?? '',
+    'statut': statusLabel,
+    // Inchangé depuis la version précédente : le prompt lit « non notee ».
+    'note': myRating != null ? '$myRating/10' : 'non notee',
+  };
+}
+
+// ── « Demander à l'IA » : classement facturé ─────────────────────────────────
+
+/// La section « Choisies par l'IA ».
+///
+/// Le corpus envoyé est celui des filtres, sans le texte : le texte est la
+/// demande. La liste locale reste utilisable pendant le chargement. Une
+/// réponse arrivée après une nouvelle demande est ignorée.
+class AiRankingNotifier extends Notifier<AiRankingState> {
+  @override
+  AiRankingState build() => const AiRankingIdle();
+
+  Future<void> rank(
+    AiRankingRequest request,
+    Map<String, int> myRatings,
+  ) async {
+    // Une demande identique déjà en cours ne repart pas : un second appui
+    // coûterait un second appel facturé pour la même réponse.
+    if (state case AiRankingLoading(request: final current)
+        when !current.isStale(
+          query: request.query,
+          filterSignature: request.filterSignature,
+          sources: request.sources,
+        )) {
+      return;
+    }
+    state = AiRankingLoading(request);
+    try {
+      final summaries = [
+        for (final r in request.corpus)
+          buildRecipeSummary(r, myRating: myRatings[r.id]),
+      ];
+      final rated = summaries
+          .where((s) => s['note'] != 'non notee')
+          .toList(growable: false);
+      final raw = await ref
+          .read(geminiServiceProvider)
+          .searchRecipes(
+            query: request.query,
+            recipes: summaries,
+            ratedRecipes: rated,
+          );
+      if (!_isCurrent(request)) return;
+
+      final byId = {for (final r in request.corpus) r.id: r};
+      final results = (raw['results'] as List? ?? const [])
+          .map((entry) {
+            final map = Map<String, dynamic>.from(entry as Map);
+            final recipe = byId[map['id'] as String? ?? ''];
+            if (recipe == null) return null;
+            final reason = (map['raison'] as String? ?? '').trim();
+            return RecipeSearchResult(
+              recipe: recipe,
+              reason: reason.isEmpty ? null : reason,
+            );
+          })
+          .whereType<RecipeSearchResult>()
+          .toList(growable: false);
+      state = AiRankingSuccess(
+        request: request,
+        results: results,
+        suggestion: _nonEmpty(raw['suggestion']),
+        preferenceInsight: _nonEmpty(raw['preference_insight']),
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'searchProviders.aiRanking',
+        error: e,
+        stackTrace: stackTrace,
+        context: {
+          'query_length': request.query.length,
+          'corpus_size': request.corpus.length,
+          'filters': request.filterSignature,
+        },
+      );
+      if (_isCurrent(request)) state = AiRankingError(request, e);
+    }
+  }
+
+  bool _isCurrent(AiRankingRequest request) => switch (state) {
+    AiRankingLoading(request: final r) => identical(r, request),
+    _ => false,
+  };
+
+  /// Ferme la section.
+  void close() => state = const AiRankingIdle();
+}
+
+final aiRankingProvider =
+    NotifierProvider.autoDispose<AiRankingNotifier, AiRankingState>(
+      AiRankingNotifier.new,
+    );
+
+// ── « Imaginer 3 recettes » ──────────────────────────────────────────────────
 
 class _GenerationVariant {
   final String label;
@@ -46,116 +254,82 @@ class _GenerationVariant {
   const _GenerationVariant({required this.label, required this.instruction});
 }
 
-/// Notifier pour l'état de la page de recherche.
-class SearchNotifier extends Notifier<SearchState> {
-  late final RecipeRepository _repo;
-  late final RecipeRatingRepository _ratingRepo;
-  final BookRepository _bookRepo = BookRepository();
-
+/// La section « Idées de l'IA » : trois recettes imaginées sur le texte du
+/// champ, sur demande seulement.
+class AiIdeasNotifier extends Notifier<AiIdeasState> {
   static const _generationVariants = [
     _GenerationVariant(
-      label: 'Fidele',
+      label: 'Fidèle',
       instruction:
-          'Propose la version la plus fidele, claire et rassurante de la demande.',
+          'Propose la version la plus fidèle, claire et rassurante de la demande.',
     ),
     _GenerationVariant(
       label: 'Rapide',
       instruction:
-          'Propose une version plus simple, plus rapide ou plus accessible pour un quotidien charge.',
+          'Propose une version plus simple, plus rapide ou plus accessible pour un quotidien chargé.',
     ),
     _GenerationVariant(
-      label: 'Creative',
+      label: 'Créative',
       instruction:
-          'Propose une version plus originale, gourmande ou surprenante sans sortir du besoin exprime.',
+          'Propose une version plus originale, gourmande ou surprenante sans sortir du besoin exprimé.',
     ),
   ];
 
   @override
-  SearchState build() {
-    _repo = ref.read(recipeRepositoryProvider);
-    _ratingRepo = ref.read(recipeRatingRepositoryProvider);
-    return const SearchIdle();
-  }
+  AiIdeasState build() => const AiIdeasIdle();
 
-  Future<void> explore({
-    required String query,
-    required SearchParams params,
-    required ExploreSource source,
-  }) async {
-    if (query.trim().isEmpty) return;
-
-    state = const SearchLoading();
-
+  Future<void> imagine(String query, ExploreCorpus corpus) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    // Trois rédactions déjà en cours : pas de second lot facturé.
+    if (state is AiIdeasLoading) return;
+    state = AiIdeasLoading(trimmed);
     try {
-      final trimmedQuery = query.trim();
-      final shouldUseLibrary =
-          source == ExploreSource.all ||
-          source == ExploreSource.library ||
-          source == ExploreSource.ai;
-      final context = shouldUseLibrary
-          ? await _loadContext(params: params)
-          : await _loadContext(
-              params: const SearchParams(
-                myRecipes: false,
-                familyRecipes: false,
-                includeDrafts: false,
-              ),
-            );
-
-      final libraryFuture =
-          source == ExploreSource.all || source == ExploreSource.library
-          ? _searchLibrary(query: trimmedQuery, context: context)
-          : null;
-      final generatedFuture =
-          source == ExploreSource.all || source == ExploreSource.ai
-          ? _generateAlternatives(query: trimmedQuery, context: context)
-          : null;
-      final webFuture = source == ExploreSource.web
-          ? _buildOptimizedWebSuggestion(trimmedQuery)
-          : Future.value(
-              source == ExploreSource.all
-                  ? _buildDirectWebSuggestion(trimmedQuery)
-                  : null,
-            );
-
-      final library = libraryFuture != null ? await libraryFuture : null;
-      final generated = generatedFuture != null
-          ? await generatedFuture
-          : const <GeneratedRecipeSuggestion>[];
-      final webSuggestion = await webFuture;
-
-      state = SearchSuccess(
-        SearchResultData(
-          libraryResults: library?.results ?? const [],
-          generatedResults: generated,
-          webSuggestion: webSuggestion,
-          librarySuggestion: library?.suggestion,
-          preferenceInsight:
-              library?.preferenceInsight ?? context.preferenceInsight,
-        ),
+      final context = [
+        for (final r in corpus.recipes.take(12))
+          buildRecipeSummary(r, myRating: corpus.myRatings[r.id]),
+      ];
+      final ideas = await _generateAlternatives(
+        query: trimmed,
+        context: context,
+        preferenceInsight: corpus.preferenceInsight,
       );
+      if (state case AiIdeasLoading(query: final q) when q == trimmed) {
+        state = AiIdeasSuccess(trimmed, ideas);
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'searchProviders.explore',
+        feature: 'searchProviders.aiIdeas',
         error: e,
         stackTrace: stackTrace,
+        context: {'query_length': trimmed.length},
       );
-      state = SearchError('Erreur lors de l\'exploration : $e');
+      if (state case AiIdeasLoading(query: final q) when q == trimmed) {
+        state = AiIdeasError(trimmed, e);
+      }
     }
   }
 
-  void reset() => state = const SearchIdle();
+  /// Ferme la section.
+  void close() => state = const AiIdeasIdle();
 
-  /// Sauvegarde la recette générée comme recette validée dans le livre Kass'Dalle IA.
+  /// Note qu'une idée a été enregistrée : quitter l'écran ne la perd plus.
+  void markSaved(GeneratedRecipeSuggestion idea, String draftId) {
+    if (state case AiIdeasSuccess(:final query, :final ideas, :final saved)) {
+      state = AiIdeasSuccess(query, ideas, saved: {...saved, idea: draftId});
+    }
+  }
+
+  /// Enregistre une recette imaginée en brouillon dans « Mes créations
+  /// Kass'Dalle ✨ », créé s'il n'existe pas encore pour ce compte.
   ///
-  /// Le livre "Mes créations Kass'Dalle ✨" est créé automatiquement s'il
-  /// n'existe pas encore pour cet utilisateur.
+  /// En brouillon : une recette rédigée par l'IA se relit avant de rejoindre
+  /// la bibliothèque.
   Future<String> saveGeneratedRecipe(Recipe recipe) async {
     final uid = ref.read(appUserProvider).value?.uid;
-    if (uid == null) throw Exception('Utilisateur non connecté.');
+    if (uid == null) throw StateError('Utilisateur non connecté.');
 
-    // Trouver ou créer le livre spécial Kass'Dalle IA.
-    final book = await _bookRepo.findOrCreateKassDalleBook(uid);
+    final book = await BookRepository().findOrCreateKassDalleBook(uid);
 
     final now = DateTime.now();
     final toSave = Recipe(
@@ -163,8 +337,9 @@ class SearchNotifier extends Notifier<SearchState> {
       titre: recipe.titre,
       langue: recipe.langue,
       rawCooklang: recipe.rawCooklang,
-      imageUrls: const [],
-      reviewStatus: ReviewStatus.validated,
+      draftCooklang: recipe.rawCooklang,
+      imageUrls: recipe.imageUrls,
+      reviewStatus: ReviewStatus.draft,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       createdBy: uid,
@@ -176,129 +351,23 @@ class SearchNotifier extends Notifier<SearchState> {
       bookId: book.id,
       bookTitre: book.titre,
     );
-    return _repo.createRecipe(toSave);
-  }
-
-  Future<_ExploreContextData> _loadContext({
-    required SearchParams params,
-  }) async {
-    final myUid = ref.read(appUserProvider).value?.uid;
-    if (myUid == null) {
-      throw Exception('Utilisateur non connecté.');
-    }
-
-    // Deux publics, deux requêtes. Elles étaient réunies en une seule, et cette
-    // réunion coûtait la confidentialité : un corpus mêlant mes recettes et
-    // celles de la famille ne peut appliquer qu'une règle, et c'était la plus
-    // permissive. Les recettes du livre « Mes Recettes Secrètes » des autres
-    // membres entraient donc dans le contexte envoyé au modèle.
-    final familyIds = params.familyRecipes
-        ? (ref.read(groupMemberIdsProvider).value ?? const <String>{})
-              .where((id) => id != myUid)
-              .toList(growable: false)
-        : const <String>[];
-
-    final results = await Future.wait([
-      if (params.myRecipes)
-        _repo.getAllByOwners([myUid], includeDrafts: params.includeDrafts)
-      else
-        Future.value(const <Recipe>[]),
-      if (familyIds.isNotEmpty)
-        _repo.getAllByOwners(familyIds, excludePrivate: true)
-      else
-        Future.value(const <Recipe>[]),
-    ]);
-    final recipes = [...results[0], ...results[1]];
-
-    final userRatings = await _ratingRepo.getAllForUser(myUid);
-    final ratingByRecipeId = {
-      for (final rating in userRatings) rating.recipeId: rating.rating,
-    };
-
-    final summaries = recipes
-        .map((recipe) {
-          final summary = _buildSummary(recipe);
-          final note = ratingByRecipeId[recipe.id];
-          return {...summary, 'note': note != null ? '$note/10' : 'non notee'};
-        })
-        .toList(growable: false);
-
-    final ratedSummaries = summaries
-        .where((summary) => summary['note'] != 'non notee')
-        .toList(growable: false);
-
-    return _ExploreContextData(
-      myUid: myUid,
-      recipes: recipes,
-      summaries: summaries,
-      ratedSummaries: ratedSummaries,
-      preferenceInsight: _buildPreferenceInsight(
-        recipes: recipes,
-        ratingByRecipeId: ratingByRecipeId,
-      ),
-    );
-  }
-
-  Future<_ExploreLibraryResult> _searchLibrary({
-    required String query,
-    required _ExploreContextData context,
-  }) async {
-    if (context.summaries.isEmpty) {
-      return const _ExploreLibraryResult(
-        results: [],
-        suggestion:
-            'Aucune recette disponible dans ce périmètre. Élargissez à votre famille ou créez une nouvelle recette.',
-      );
-    }
-
-    final gemini = ref.read(geminiServiceProvider);
-    final raw = await gemini.searchRecipes(
-      query: query,
-      recipes: context.summaries,
-      ratedRecipes: context.ratedSummaries,
-    );
-
-    final resultsRaw = raw['results'] as List? ?? [];
-    final recipeById = {
-      for (final recipe in context.recipes) recipe.id: recipe,
-    };
-    final results = resultsRaw
-        .map((entry) {
-          final map = Map<String, dynamic>.from(entry as Map);
-          final id = map['id'] as String? ?? '';
-          final recipe = recipeById[id];
-          if (recipe == null) return null;
-          return RecipeSearchResult(
-            recipe: recipe,
-            reason: map['raison'] as String? ?? '',
-          );
-        })
-        .whereType<RecipeSearchResult>()
-        .toList(growable: false);
-
-    return _ExploreLibraryResult(
-      results: results,
-      suggestion: raw['suggestion'] as String?,
-      preferenceInsight:
-          raw['preference_insight'] as String? ?? context.preferenceInsight,
-    );
+    return ref.read(recipeRepositoryProvider).createRecipe(toSave);
   }
 
   Future<List<GeneratedRecipeSuggestion>> _generateAlternatives({
     required String query,
-    required _ExploreContextData context,
+    required List<Map<String, String>> context,
+    required String? preferenceInsight,
   }) async {
-    final futures = _generationVariants
-        .map(
-          (variant) => _generateSingleAlternative(
-            query: query,
-            context: context,
-            variant: variant,
-          ),
-        )
-        .toList(growable: false);
-
-    final initial = await Future.wait(futures);
+    final initial = await Future.wait([
+      for (final variant in _generationVariants)
+        _generateSingle(
+          query: query,
+          context: context,
+          preferenceInsight: preferenceInsight,
+          variant: variant,
+        ),
+    ]);
     final unique = <GeneratedRecipeSuggestion>[];
 
     for (final entry in initial.indexed) {
@@ -307,211 +376,145 @@ class SearchNotifier extends Notifier<SearchState> {
         unique.add(suggestion);
         continue;
       }
-
-      final rerolled = await _generateSingleAlternative(
+      final rerolled = await _generateSingle(
         query: query,
         context: context,
+        preferenceInsight: preferenceInsight,
         variant: _generationVariants[entry.$1],
         avoidTitles: unique.map((item) => item.recipe.titre).toList(),
       );
-      if (!_containsDuplicate(unique, rerolled)) {
-        unique.add(rerolled);
-      }
+      if (!_containsDuplicate(unique, rerolled)) unique.add(rerolled);
     }
-
     return unique;
   }
 
-  Future<GeneratedRecipeSuggestion> _generateSingleAlternative({
+  Future<GeneratedRecipeSuggestion> _generateSingle({
     required String query,
-    required _ExploreContextData context,
+    required List<Map<String, String>> context,
+    required String? preferenceInsight,
     required _GenerationVariant variant,
     List<String> avoidTitles = const [],
   }) async {
-    final gemini = ref.read(geminiServiceProvider);
-    final raw = await gemini.generateRecipe(
-      query: query,
-      preferenceInsight: context.preferenceInsight,
-      libraryContext: context.summaries.take(12).toList(growable: false),
-      variantLabel: variant.label,
-      variantInstruction: variant.instruction,
-      siblingVariantLabels: _generationVariants
-          .map((item) => item.label)
-          .toList(growable: false),
-      avoidTitles: avoidTitles,
-    );
-
+    final raw = await ref
+        .read(geminiServiceProvider)
+        .generateRecipe(
+          query: query,
+          preferenceInsight: preferenceInsight,
+          libraryContext: context,
+          variantLabel: variant.label,
+          variantInstruction: variant.instruction,
+          siblingVariantLabels: _generationVariants
+              .map((item) => item.label)
+              .toList(growable: false),
+          avoidTitles: avoidTitles,
+        );
     return GeneratedRecipeSuggestion(
-      recipe: _recipeFromGeneratedRaw(raw, fallbackTitle: query),
+      recipe: recipeFromGeneratedRaw(raw, fallbackTitle: query),
       justification: raw['justification'] as String? ?? variant.instruction,
       variantLabel: raw['variant_label'] as String? ?? variant.label,
-    );
-  }
-
-  Recipe _recipeFromGeneratedRaw(
-    Map<String, dynamic> raw, {
-    required String fallbackTitle,
-  }) {
-    final titre = raw['titre'] as String? ?? fallbackTitle;
-    final langue = raw['langue'] as String? ?? 'fr';
-    final cooklang = raw['cooklang'] as String? ?? '';
-    final ingredientsIndex = List<String>.from(
-      raw['ingredients_index'] as List? ?? [],
-    );
-    final ingredientsRaw = raw['ingredients'] as List? ?? [];
-    final ingredients = ingredientsRaw
-        .map((entry) {
-          final map = Map<String, dynamic>.from(entry as Map);
-          return RecipeIngredient(
-            name: map['name'] as String? ?? '',
-            qty: map['qty'] as String? ?? '',
-            unit: map['unit'] as String? ?? '',
-          );
-        })
-        .toList(growable: false);
-    final tagsRaw = Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
-    final tags = RecipeTags(
-      themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
-      cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
-      occasions: List<String>.from(tagsRaw['occasions'] as List? ?? []),
-      dishTypes: List<String>.from(tagsRaw['dish_types'] as List? ?? []),
-      difficulty: tagsRaw['difficulty'] as String?,
-      prepTime: tagsRaw['prep_time'] as int?,
-      cookTime: tagsRaw['cook_time'] as int?,
-    );
-    final portions = raw['portions'] as int?;
-    final now = DateTime.now();
-    return Recipe(
-      id: '',
-      titre: titre,
-      langue: langue,
-      rawCooklang: cooklang,
-      imageUrls: const [],
-      reviewStatus: ReviewStatus.draft,
-      tags: tags,
-      ingredientsIndex: ingredientsIndex,
-      createdBy: '',
-      createdAt: now,
-      updatedAt: now,
-      portions: portions,
-      ingredients: ingredients,
     );
   }
 
   bool _containsDuplicate(
     List<GeneratedRecipeSuggestion> existing,
     GeneratedRecipeSuggestion candidate,
-  ) {
-    for (final current in existing) {
-      if (_isDuplicateGeneratedRecipe(current.recipe, candidate.recipe)) {
-        return true;
-      }
-    }
-    return false;
-  }
+  ) => existing.any(
+    (current) => isDuplicateGeneratedRecipe(current.recipe, candidate.recipe),
+  );
+}
 
-  bool _isDuplicateGeneratedRecipe(Recipe left, Recipe right) {
-    final leftTitle = _normalizeRecipeToken(left.titre);
-    final rightTitle = _normalizeRecipeToken(right.titre);
-    if (leftTitle.isNotEmpty && leftTitle == rightTitle) {
-      return true;
-    }
-
-    final leftIngredients = left.ingredients
-        .map((item) => _normalizeRecipeToken(item.name))
-        .where((item) => item.isNotEmpty)
-        .toSet();
-    final rightIngredients = right.ingredients
-        .map((item) => _normalizeRecipeToken(item.name))
-        .where((item) => item.isNotEmpty)
-        .toSet();
-    if (leftIngredients.isEmpty || rightIngredients.isEmpty) {
-      return false;
-    }
-
-    final intersection = leftIngredients.intersection(rightIngredients).length;
-    final smallest = leftIngredients.length < rightIngredients.length
-        ? leftIngredients.length
-        : rightIngredients.length;
-    return smallest > 0 && intersection / smallest >= 0.8;
-  }
-
-  String _normalizeRecipeToken(String value) {
-    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-  }
-
-  String? _buildPreferenceInsight({
-    required List<Recipe> recipes,
-    required Map<String, num> ratingByRecipeId,
-  }) {
-    final liked = <String>[];
-    final disliked = <String>[];
-
-    for (final recipe in recipes) {
-      final rating = ratingByRecipeId[recipe.id];
-      if (rating == null) continue;
-      if (rating >= 8 && liked.length < 3) {
-        liked.add(recipe.titre);
-      } else if (rating <= 4 && disliked.length < 2) {
-        disliked.add(recipe.titre);
-      }
-    }
-
-    if (liked.isEmpty && disliked.isEmpty) return null;
-
-    final parts = <String>[];
-    if (liked.isNotEmpty) {
-      parts.add('Aime particulierement : ${liked.join(', ')}.');
-    }
-    if (disliked.isNotEmpty) {
-      parts.add('A tendance a eviter : ${disliked.join(', ')}.');
-    }
-    return parts.join(' ');
-  }
-
-  Future<WebSearchSuggestion> _buildOptimizedWebSuggestion(String query) async {
-    final gemini = ref.read(geminiServiceProvider);
-    final optimizedQuery = await gemini.generateWebSearchQuery(query);
-    return _buildWebSuggestion(optimizedQuery);
-  }
-
-  WebSearchSuggestion _buildDirectWebSuggestion(String query) {
-    return _buildWebSuggestion(query);
-  }
-
-  WebSearchSuggestion _buildWebSuggestion(String query) {
-    final encoded = Uri.encodeComponent('$query recette');
-    return WebSearchSuggestion(
-      query: query,
-      url: 'https://www.google.com/search?q=$encoded',
+final aiIdeasProvider =
+    NotifierProvider.autoDispose<AiIdeasNotifier, AiIdeasState>(
+      AiIdeasNotifier.new,
     );
+
+/// Recette en mémoire à partir de la réponse de `generateRecipeFn`.
+Recipe recipeFromGeneratedRaw(
+  Map<String, dynamic> raw, {
+  required String fallbackTitle,
+}) {
+  final ingredients = (raw['ingredients'] as List? ?? const [])
+      .map((entry) {
+        final map = Map<String, dynamic>.from(entry as Map);
+        return RecipeIngredient(
+          name: map['name'] as String? ?? '',
+          qty: map['qty'] as String? ?? '',
+          unit: map['unit'] as String? ?? '',
+        );
+      })
+      .toList(growable: false);
+  final tagsRaw = Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
+  final now = DateTime.now();
+  return Recipe(
+    id: '',
+    titre: raw['titre'] as String? ?? fallbackTitle,
+    langue: raw['langue'] as String? ?? 'fr',
+    rawCooklang: raw['cooklang'] as String? ?? '',
+    imageUrls: const [],
+    reviewStatus: ReviewStatus.draft,
+    tags: RecipeTags(
+      themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
+      cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
+      occasions: List<String>.from(tagsRaw['occasions'] as List? ?? []),
+      dishTypes: List<String>.from(tagsRaw['dish_types'] as List? ?? []),
+      difficulty: tagsRaw['difficulty'] as String?,
+      prepTime: (tagsRaw['prep_time'] as num?)?.toInt(),
+      cookTime: (tagsRaw['cook_time'] as num?)?.toInt(),
+    ),
+    ingredientsIndex: List<String>.from(
+      raw['ingredients_index'] as List? ?? [],
+    ),
+    createdBy: '',
+    createdAt: now,
+    updatedAt: now,
+    portions: (raw['portions'] as num?)?.toInt(),
+    ingredients: ingredients,
+  );
+}
+
+/// Deux idées trop proches : même titre, ou 80 % d'ingrédients en commun.
+bool isDuplicateGeneratedRecipe(Recipe left, Recipe right) {
+  final leftTitle = foldSearchText(left.titre);
+  if (leftTitle.isNotEmpty && leftTitle == foldSearchText(right.titre)) {
+    return true;
   }
+  Set<String> names(Recipe r) => r.ingredients
+      .map((item) => foldSearchText(item.name))
+      .where((item) => item.isNotEmpty)
+      .toSet();
+  final leftIngredients = names(left);
+  final rightIngredients = names(right);
+  if (leftIngredients.isEmpty || rightIngredients.isEmpty) return false;
+  final intersection = leftIngredients.intersection(rightIngredients).length;
+  final smallest = leftIngredients.length < rightIngredients.length
+      ? leftIngredients.length
+      : rightIngredients.length;
+  return intersection / smallest >= 0.8;
 }
 
-/// Construit un résumé compact d'une recette pour l'envoi à Gemini.
-Map<String, String> _buildSummary(Recipe recipe) {
-  final ingredients = recipe.ingredientsIndex.take(20).join(', ');
-  final themes = recipe.tags.themes.join(', ');
-  final cuisines = recipe.tags.cuisines.join(', ');
-  final difficulty = recipe.tags.difficulty ?? '';
-  final statusLabel = switch (recipe.reviewStatus) {
-    ReviewStatus.validated => 'validée',
-    ReviewStatus.draft => 'brouillon',
-    ReviewStatus.inReview => 'en révision',
-  };
-
-  return {
-    'id': recipe.id,
-    'titre': recipe.titre,
-    'livre': recipe.bookTitre ?? 'Sans livre',
-    'ingredients': ingredients,
-    'themes': themes,
-    'cuisines': cuisines,
-    'difficulte': difficulty,
-    'statut': statusLabel,
-  };
+String? _nonEmpty(Object? raw) {
+  if (raw is! String) return null;
+  final trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
-final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
-  SearchNotifier.new,
-);
+// ── Ctrl/Cmd+K ───────────────────────────────────────────────────────────────
+
+/// Demande de focus du champ de l'Explorer, posée par le shell sur Ctrl/Cmd+K.
+///
+/// Un drapeau plutôt qu'un appel direct : l'écran peut ne pas encore exister
+/// quand le raccourci part (navigation vers `/search`). Il consomme la
+/// demande à son ouverture, ou dès qu'elle arrive s'il est déjà affiché.
+class ExploreSearchFocusRequest extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void request() => state = true;
+
+  void consume() => state = false;
+}
+
+final exploreSearchFocusRequestProvider =
+    NotifierProvider<ExploreSearchFocusRequest, bool>(
+      ExploreSearchFocusRequest.new,
+    );
