@@ -3504,12 +3504,16 @@ recopiée que dans le `last_report` du point de reprise quand le backfill en éc
 | `backfillRecipeProteinFn` | recettes sans réponse du modèle, en échec, ou dont le marqueur n'a pas pu être écrit |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
-| `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'adresse ou l'uid |
+| `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'uid — jamais l'adresse |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. Un backfill ajouté à Admin ›
 Backfills renvoie `aRevoir` par ce collecteur et se branche dans `_runBackfill` par le
 paramètre `failuresOf`.
+
+La liste ne part jamais dans les journaux : elle porte des noms de comptes et des titres de
+recettes privées. Le `logInfo` de fin de passage reçoit le compte rendu par
+`withoutReviewList`, qui remplace la liste par son total (`aRevoirTotal`).
 
 ### 7.11 Les échecs qui ne se rejouent pas
 

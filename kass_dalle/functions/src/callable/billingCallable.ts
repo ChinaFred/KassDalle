@@ -1173,7 +1173,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         refreshSodium,
         completed,
         stoppedByDeadline,
-        aRevoir: review.toJSON(),
+        aRevoirTotal: review.toJSON().total,
       },
     });
 

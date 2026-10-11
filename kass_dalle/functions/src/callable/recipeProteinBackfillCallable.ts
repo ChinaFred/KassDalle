@@ -51,6 +51,7 @@ import {
   recipeReviewLabel,
   shortErrorMessage,
   type BackfillReviewList,
+  withoutReviewList,
 } from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
@@ -377,7 +378,7 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: FEATURE,
-      extra: { ...response, maxMinutes, maxRecipes },
+      extra: { ...withoutReviewList(response), maxMinutes, maxRecipes },
     });
 
     return response;

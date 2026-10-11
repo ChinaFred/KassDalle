@@ -192,7 +192,7 @@ export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
           " laissée(s)",
         moduleType: "DESIGN",
         correlationId,
-        extra: { ...report, completed, adminUid, aRevoir: review.toJSON() },
+        extra: { ...report, completed, adminUid, aRevoirTotal: review.toJSON().total },
       });
 
       return {

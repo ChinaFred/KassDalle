@@ -28,6 +28,7 @@ import {
   BackfillReview,
   shortErrorMessage,
   type BackfillReviewList,
+  withoutReviewList,
 } from "./_backfillReview";
 import { SHORT_TEXT_MAX_CHARS } from "./_inputBounds";
 
@@ -79,8 +80,8 @@ export interface BackfillPlanningDefaultsResponse {
 }
 
 /**
- * Nom lisible des comptes à revoir : `display_name`, à défaut l'adresse, à
- * défaut l'identifiant. Une lecture impossible est journalisée et laisse les
+ * Nom lisible des comptes à revoir : `display_name`, à défaut l'identifiant.
+ * Jamais l'adresse : la liste est recopiée dans un compte rendu. Une lecture impossible est journalisée et laisse les
  * identifiants : la liste reste utilisable.
  */
 async function accountLabels(
@@ -94,10 +95,7 @@ async function accountLabels(
     const snaps = await db.getAll(...uids.map((uid) => db.collection(COLL_USERS).doc(uid)));
     for (const snap of snaps) {
       const data = (snap.data() ?? {}) as Record<string, unknown>;
-      const name =
-        (typeof data.display_name === "string" && data.display_name.trim()) ||
-        (typeof data.email === "string" && data.email.trim()) ||
-        "";
+      const name = (typeof data.display_name === "string" && data.display_name.trim()) || "";
       if (name) labels.set(snap.id, name);
     }
   } catch (e) {
@@ -259,7 +257,7 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       feature: FEATURE,
       // Le texte posé chez les autres se retrouve : sa longueur et son empreinte.
       extra: {
-        ...response,
+        ...withoutReviewList(response),
         textLength: text.length,
         textSha256: createHash("sha256").update(text).digest("hex"),
       },

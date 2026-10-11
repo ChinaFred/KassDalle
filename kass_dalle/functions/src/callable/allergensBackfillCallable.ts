@@ -51,6 +51,7 @@ import {
   shortErrorMessage,
   type BackfillReviewItem,
   type BackfillReviewList,
+  withoutReviewList,
 } from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
@@ -481,7 +482,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: FEATURE,
-      extra: { ...response, maxMinutes, maxIngredients, maxRecipes },
+      extra: { ...withoutReviewList(response), maxMinutes, maxIngredients, maxRecipes },
     });
 
     return response;

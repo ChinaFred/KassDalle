@@ -9,7 +9,9 @@
  * `aRevoir: { items, total }` dans sa réponse, construit par ce collecteur.
  *
  * La liste vit dans la réponse du passage. Elle n'est recopiée que dans le
- * `last_report` du point de reprise, quand le backfill en écrit un.
+ * `last_report` du point de reprise, quand le backfill en écrit un. Elle ne
+ * part jamais dans les journaux : elle porte des noms de comptes et des titres
+ * de recettes privées. Les journaux reçoivent `withoutReviewList`.
  *
  * Plafond : `BACKFILL_REVIEW_LIMIT` entrées, dans l'ordre de traitement.
  * `total` continue de compter au-delà, et le client affiche « 100 affichés sur
@@ -85,6 +87,17 @@ export class BackfillReview {
 }
 
 /** Message d'erreur court, pour une raison « Lot en échec : … ». */
+/**
+ * Le compte rendu tel qu'il part dans un journal : la liste `aRevoir` est
+ * remplacée par son seul total.
+ */
+export function withoutReviewList<T extends { aRevoir?: BackfillReviewList }>(
+  report: T,
+): Omit<T, "aRevoir"> & { aRevoirTotal: number } {
+  const { aRevoir, ...rest } = report;
+  return { ...rest, aRevoirTotal: aRevoir?.total ?? 0 };
+}
+
 export function shortErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const message = clip(raw, ERROR_MESSAGE_MAX_LENGTH);

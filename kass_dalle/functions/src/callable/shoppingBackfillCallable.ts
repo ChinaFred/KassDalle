@@ -33,6 +33,7 @@ import {
   recipeReviewLabel,
   shortErrorMessage,
   type BackfillReviewList,
+  withoutReviewList,
 } from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
@@ -299,7 +300,7 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: PRODUCTS_FEATURE,
-      extra: { ...response, maxMinutes, maxDocs },
+      extra: { ...withoutReviewList(response), maxMinutes, maxDocs },
     });
 
     return response;
