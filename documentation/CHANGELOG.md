@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.31 — technique
+
+#### Sauvegardes planifiées de Firestore
+
+Aucune sauvegarde de la base n'existait : une suppression ou un backfill erroné ne se
+défaisait pas. `TechnicalRequirements.md` décrit maintenant deux sauvegardes planifiées
+gérées par Google Cloud, quotidienne gardée 7 jours et hebdomadaire gardée 14 semaines,
+les commandes `gcloud` qui les créent depuis le PC, et la procédure de restauration dans
+une base neuve puis de report dans `(default)`. Aucun code ne change.
+
 ### v0.23.30 — fonctionnel
 
 #### Nouveau planning : panneau, grille et cartes repliables

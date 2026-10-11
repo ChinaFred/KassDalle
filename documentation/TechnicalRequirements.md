@@ -3687,6 +3687,59 @@ le 8 octobre 2026.
 Un déploiement dit s'il manque un rôle : le message d'erreur de la CLI nomme la permission
 refusée, et le workflow le reprend dans ses avertissements.
 
+### Sauvegardes de Firestore
+
+Firestore ne garde aucune copie sans réglage : une suppression ou un backfill qui écrit une
+mauvaise valeur ne se défait pas. La base `(default)` de `kassdale-6d948` reçoit donc deux
+sauvegardes planifiées, gérées par Google Cloud, hors du code et hors du déploiement :
+
+| Planification | Rétention | Ce qu'elle couvre |
+|---|---|---|
+| quotidienne | 7 jours | une erreur vue dans la semaine |
+| hebdomadaire, le dimanche | 14 semaines (le maximum) | une erreur vue tard |
+
+Une base n'accepte qu'une planification quotidienne et une hebdomadaire. Chaque sauvegarde
+est une copie complète de la base. Elle est facturée au Go stocké ; une restauration est
+facturée au Go restauré. Les fichiers de Storage (photos, scans) ne sont pas couverts.
+
+Les planifications se créent une fois, depuis le PC, avec un compte qui a le rôle
+`roles/datastore.owner` (le propriétaire du projet l'a). Ni le workflow ni `deploy.ps1` ne
+les touchent :
+
+```powershell
+gcloud firestore backups schedules create --project=kassdale-6d948 --database="(default)" --recurrence=daily --retention=7d
+gcloud firestore backups schedules create --project=kassdale-6d948 --database="(default)" --recurrence=weekly --day-of-week=SUN --retention=14w
+gcloud firestore backups schedules list --project=kassdale-6d948 --database="(default)"
+```
+
+La première sauvegarde apparaît dans les 24 heures :
+`gcloud firestore backups list --project=kassdale-6d948`.
+
+**Restaurer.** Une sauvegarde ne se restaure jamais par-dessus `(default)` : elle crée une
+**nouvelle base**, que l'application ne lit pas. On y vérifie les données, puis on reporte
+ce qu'il faut dans `(default)`.
+
+1. Choisir la sauvegarde (`gcloud firestore backups list --project=kassdale-6d948`) et noter son nom complet
+   `projects/kassdale-6d948/locations/<région>/backups/<id>`.
+2. La restaurer dans une base neuve :
+   `gcloud firestore databases restore --project=kassdale-6d948 --source-backup=<nom complet> --destination-database=restore-AAAAMMJJ`.
+   Le temps de restauration dépend du volume, de quelques minutes à une heure.
+3. Lire la base restaurée dans la console Firebase (sélecteur de base) et vérifier les
+   documents attendus.
+4. Reporter dans `(default)` :
+   - **quelques documents** : les recopier depuis la console ;
+   - **des collections entières** : exporter la base restaurée vers un bucket
+     (`gcloud firestore export gs://<bucket>/restore-AAAAMMJJ --project=kassdale-6d948 --database=restore-AAAAMMJJ --collection-ids=<ids>`),
+     puis importer dans `(default)` (`gcloud firestore import gs://<bucket>/restore-AAAAMMJJ --project=kassdale-6d948 --database="(default)"`).
+     L'import **écrase** les documents de même identifiant et **ne supprime pas** ceux
+     créés depuis : ce n'est pas un retour en arrière complet.
+5. Supprimer la base restaurée une fois le travail fini
+   (`gcloud firestore databases delete --project=kassdale-6d948 --database=restore-AAAAMMJJ`) : elle est facturée
+   tant qu'elle existe.
+
+Rien de cela ne s'écrit depuis une session cloud : la restauration est une opération
+d'exploitation, lancée à la main depuis le PC.
+
 ---
 
 ## 11 bis. Cadrer un document dans une photo
