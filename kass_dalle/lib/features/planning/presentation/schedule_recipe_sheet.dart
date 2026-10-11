@@ -12,6 +12,7 @@ import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/duration_format.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
@@ -234,15 +235,6 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
-  String _formatDuration(int totalMin) {
-    if (totalMin >= 60) {
-      final h = totalMin ~/ 60;
-      final m = totalMin % 60;
-      return m > 0 ? '${h}h${m}min' : '${h}h';
-    }
-    return '$totalMin min';
-  }
-
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
@@ -303,7 +295,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             _InfoRow(
               icon: Icons.timer_outlined,
               label: 'Durée estimée',
-              value: _formatDuration(_totalDurationMin),
+              value: formatDurationMinutes(_totalDurationMin),
             ),
             const SizedBox(height: 4),
           ],
