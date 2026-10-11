@@ -20,6 +20,48 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.31 — technique
+
+#### Sauvegardes planifiées de Firestore
+
+Aucune sauvegarde de la base n'existait : une suppression ou un backfill erroné ne se
+défaisait pas. `TechnicalRequirements.md` décrit maintenant deux sauvegardes planifiées
+gérées par Google Cloud, quotidienne gardée 7 jours et hebdomadaire gardée 14 semaines,
+les commandes `gcloud` qui les créent depuis le PC, et la procédure de restauration dans
+une base neuve puis de report dans `(default)`. Aucun code ne change.
+
+### v0.23.30 — fonctionnel
+
+#### Nouveau planning : panneau, grille et cartes repliables
+
+Sur grand écran, l'écran « Nouveau planning » montre un panneau de 320 px à gauche. Il contient
+le cycle, les consignes du cycle (8 lignes visibles) et les boutons « Planifier avec l'IA » et
+« Valider », toujours à portée. Les créneaux occupent le reste de la largeur en colonnes de
+560 px au plus : trois colonnes sur un écran de 2 000 px. Sur téléphone, les consignes se
+replient en une ligne « Consignes du cycle · N règles ».
+
+Chaque créneau est une carte. Elle montre le jour, l'heure, le plat, puis une ligne de résumé :
+parts, durée, accompagnement, format. Le reste se range sous « Détails » : contraintes du jour,
+composants, conservation, origine du choix, redimensionnement s'il a eu lieu. Ce pli s'ouvre de
+lui-même quand le créneau porte un avertissement (entrée ou dessert à choisir, plat à préparer
+un autre jour). « Autre suggestion » reste visible ; les autres actions passent dans un menu ⋮,
+aussi ouvert par un clic droit. L'heure est un bouton de 48 px.
+
+« Contrainte locale du cycle » devient « Consignes du cycle ». Ctrl+S valide le planning, et
+quitter l'écran avec des repas non validés demande confirmation.
+
+### v0.23.29 — fonctionnel
+
+#### Bibliothèque : exporter tous mes livres en PDF, un fichier par livre
+
+Une icône PDF dans la barre de la Bibliothèque exporte en une opération tous les
+livres dont l'utilisateur est le créateur. Chaque livre donne son propre PDF, au
+même format que l'export d'un livre, et les PDF sont réunis dans un seul fichier
+`Bibliotheque_AAAA-MM-JJ.zip`. Un ZIP évite une rafale de téléchargements dans le
+navigateur et une feuille de partage par livre sur mobile. Les livres sans page validée sont
+ignorés, un livre en échec n'arrête pas les autres, et le compte rendu donne les
+nombres de livres exportés, sans page validée et en erreur.
+
 ### v0.23.28 — fonctionnel
 
 #### Planning : variété des cuisines et des protéines dans la présélection
