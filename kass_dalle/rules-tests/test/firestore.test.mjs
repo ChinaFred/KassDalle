@@ -736,8 +736,9 @@ describe("books", () => {
     await assertFails(db("editor").doc("books/web_editor").update({ tags: ["web"] }));
   });
 
-  // `ensureWebBookCover` pose la couverture côté client : le créateur doit
-  // pouvoir écrire `url_couverture` sur le livre créé par le serveur.
+  // `_ensureWebBookCover` (appelée par `ensureSystemBooks`) pose la couverture
+  // côté client : le créateur doit pouvoir écrire `url_couverture` sur le
+  // livre créé par le serveur.
   it("le créateur pose la couverture de « Mes recettes du web »", async () => {
     await assertSucceeds(
       db("editor")
