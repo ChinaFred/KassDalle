@@ -13,6 +13,7 @@ import 'core/services/app_check.dart';
 import 'core/services/error_report_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/recipes/presentation/recipe_providers.dart';
 import 'core/widgets/provider_retry.dart';
 import 'firebase_options.dart';
 
@@ -84,6 +85,9 @@ class KassDalleApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Écouté dès le démarrage : un partage Android qui ouvre l'application
+    // avant la connexion attend la session dans ce provider.
+    ref.listen(pendingSharedTextProvider, (_, _) {});
 
     return MaterialApp.router(
       title: "Kass'dalle",

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show SystemNavigator;
+import 'package:flutter/services.dart' show Clipboard, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -15,7 +15,9 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
+import '../../recipes/domain/url_import.dart';
 import '../../recipes/presentation/url_import/url_import_dialog.dart';
 import '../domain/explore_facets.dart';
 import '../domain/search_models.dart';
@@ -27,10 +29,13 @@ import 'search_widgets.dart';
 /// L'écran Explorer (`/search`).
 ///
 /// À l'ouverture, la liste des recettes des sources choisies. Le champ filtre
-/// cette liste à chaque frappe, sur l'appareil, sans IA. L'IA ne part que sur
-/// un bouton : « Demander à l'IA » (classement, éditeurs et administrateurs)
-/// et « Imaginer 3 recettes » (création, mêmes rôles). « Chercher sur Google »
-/// ouvre le texte tel quel, sans appel d'IA.
+/// cette liste à chaque frappe, sur l'appareil, sans IA, et la range en
+/// sections : dans le titre, par cuisine, type ou thème, dans les ingrédients
+/// principaux. L'IA ne part que sur un bouton : « Chercher avec l'IA »
+/// (classement, éditeurs et administrateurs) et « Imaginer 3 recettes »
+/// (création, mêmes rôles). « Chercher sur Google » ouvre le texte tel quel,
+/// sans appel d'IA ; au retour, un éditeur voit un bandeau qui propose
+/// d'importer la recette trouvée.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -46,6 +51,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// Aide posée sous le champ quand un bouton d'IA est pressé sans texte.
   String? _fieldHelp;
 
+  /// Sections de la recherche ouvertes ou fermées à la main, pour le texte
+  /// [_sectionsQuery]. Remises à leur état par défaut quand le texte change.
+  final Map<RecipeQuerySection, bool> _sectionOpen = {};
+  String _sectionsQuery = '';
+
+  // Bandeau « Vous avez trouvé une recette ? Importez-la. » : armé quand
+  // « Chercher sur Google » a ouvert le navigateur, montré au retour dans
+  // l'application. En mémoire seulement : il disparaît avec l'écran.
+  late final AppLifecycleListener _lifecycle;
+  bool _awaitingGoogleReturn = false;
+  bool _importBannerVisible = false;
+
+  /// Adresse lue dans le presse-papiers au retour (Android et Windows).
+  Uri? _bannerLink;
+
   // Garde de sortie : des idées de l'IA non enregistrées se perdent en
   // quittant l'écran. La navigation du bas et le menu latéral appellent
   // `context.go`, que `PopScope` ne voit pas (voir `leave_guard.dart`).
@@ -57,6 +77,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void initState() {
     super.initState();
     _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    _lifecycle = AppLifecycleListener(onResume: _onResume);
     WidgetsBinding.instance.addPostFrameCallback((_) => _consumeFocusRequest());
   }
 
@@ -66,6 +87,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final notifier = _leaveGuardNotifier;
     final guard = _leaveGuard;
     Future.microtask(() => notifier.clearIf(guard));
+    _lifecycle.dispose();
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -192,8 +214,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final uri = googleRecipeSearchUri(_query);
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
+      if (!mounted) return;
+      if (!opened) {
         context.showErrorSnackBar('Impossible d\'ouvrir Google.');
+        return;
+      }
+      // Le bandeau d'import attend le retour ; une nouvelle recherche le
+      // réarme. Un lecteur n'importe pas : rien à armer.
+      if (ref.read(canEditProvider)) {
+        setState(() {
+          _awaitingGoogleReturn = true;
+          _importBannerVisible = false;
+          _bannerLink = null;
+        });
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -203,6 +236,88 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
       if (mounted) context.showErrorSnackBar('Impossible d\'ouvrir Google.');
     }
+  }
+
+  /// Retour dans l'application après « Chercher sur Google » : le bandeau
+  /// d'import apparaît. Sur Android et Windows, le presse-papiers est lu
+  /// aussitôt ; sur le web et iOS, il ne l'est qu'à l'appui sur « Coller le
+  /// lien » — le navigateur demande une permission, iOS affiche une alerte.
+  void _onResume() {
+    if (!_awaitingGoogleReturn || !mounted) return;
+    _awaitingGoogleReturn = false;
+    if (!ref.read(canEditProvider)) return;
+    setState(() {
+      _importBannerVisible = true;
+      _bannerLink = null;
+    });
+    if (PlatformUtils.isAndroidApp || PlatformUtils.isWindowsApp) {
+      unawaited(_readClipboardIntoBanner());
+    }
+  }
+
+  /// La première adresse web du presse-papiers, ou `null` : vide, sans
+  /// adresse, ou lecture refusée.
+  Future<Uri?> _clipboardLink(String trigger) async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      return firstWebLink(data?.text);
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'searchScreen.importBanner.clipboard',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'trigger': trigger},
+      );
+      return null;
+    }
+  }
+
+  Future<void> _readClipboardIntoBanner() async {
+    final link = await _clipboardLink('resume');
+    if (!mounted || !_importBannerVisible) return;
+    setState(() => _bannerLink = link);
+  }
+
+  /// « Importer ce lien » ou « Coller le lien » : la boîte d'import s'ouvre,
+  /// adresse posée s'il y en a une. Rien ne part avant « Importer ».
+  Future<void> _importFromBanner() async {
+    final link = _bannerLink ?? await _clipboardLink('paste');
+    if (!mounted) return;
+    final queued = await showUrlImportDialog(
+      context,
+      initialUrl: link?.toString(),
+    );
+    // « Annuler » laisse le bandeau ; un import envoyé le retire.
+    if (queued && mounted) {
+      setState(() {
+        _importBannerVisible = false;
+        _bannerLink = null;
+      });
+    }
+  }
+
+  void _closeImportBanner() => setState(() {
+    _importBannerVisible = false;
+    _bannerLink = null;
+  });
+
+  /// Le texte a changé : les sections reprennent leur état par défaut.
+  void _onQueryChanged() => setState(() {
+    _fieldHelp = null;
+    if (_query != _sectionsQuery) {
+      _sectionsQuery = _query;
+      _sectionOpen.clear();
+    }
+  });
+
+  /// Ouverte par défaut, sauf « Dans les ingrédients principaux » quand une
+  /// section au-dessus a des résultats.
+  bool _isSectionOpen(RecipeQuerySection section, RecipeFilterOutcome outcome) {
+    final manual = _sectionOpen[section];
+    if (manual != null) return manual;
+    if (section != RecipeQuerySection.ingredients) return true;
+    return !outcome.sections.containsKey(RecipeQuerySection.title) &&
+        !outcome.sections.containsKey(RecipeQuerySection.tags);
   }
 
   void _scrollToTop() {
@@ -376,7 +491,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       context: filterContext,
       sort: prefs.sort,
     );
-    // Le corpus de « Demander à l'IA » : les filtres, sans le texte.
+    // Le corpus de « Chercher avec l'IA » : les filtres, sans le texte.
     final aiCorpusSize = _query.isEmpty
         ? outcome.recipes.length
         : applyRecipeFilter(
@@ -397,8 +512,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final emptyLibrary =
         corpus.recipes.isEmpty && _query.isEmpty && prefs.filter.isEmpty;
 
+    final banner = canEdit && _importBannerVisible
+        ? _ImportBanner(
+            link: _bannerLink,
+            onImport: () => unawaited(_importFromBanner()),
+            onClose: _closeImportBanner,
+          )
+        : null;
+
     final list = _ResultList(
       scrollController: _scrollController,
+      // Téléphone : le bandeau d'import défile avec les résultats, en tête
+      // de liste, pour ne pas réduire la hauteur utile. Grand écran : il
+      // reste fixe sous le champ.
+      leading: isWide ? null : banner,
       outcome: outcome,
       prefs: prefs,
       corpus: corpus,
@@ -411,14 +538,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       onOpenIdea: _openGeneratedSuggestion,
       emptyLibrary: emptyLibrary,
       onImport: canEdit ? () => showUrlImportDialog(context) : null,
+      isSectionOpen: (section) => _isSectionOpen(section, outcome),
+      onToggleSection: (section) => setState(
+        () => _sectionOpen[section] = !_isSectionOpen(section, outcome),
+      ),
     );
 
     final field = _SearchField(
       controller: _controller,
       focusNode: _focusNode,
       help: _fieldHelp,
-      onChanged: () => setState(() => _fieldHelp = null),
+      onChanged: _onQueryChanged,
     );
+
+    final titleOnlyWords = titleOnlyQueryWords(_query);
 
     if (isWide) {
       return Row(
@@ -440,6 +573,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 field,
+                ?banner,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Wrap(
@@ -454,7 +588,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             size: AppIconSize.small,
                           ),
                           label: Text(
-                            'Demander à l\'IA · ${recipeCountLabel(aiCorpusSize).toLowerCase()}',
+                            'Chercher avec l\'IA · ${recipeCountLabel(aiCorpusSize).toLowerCase()}',
                           ),
                         ),
                       if (canEdit)
@@ -471,8 +605,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         icon: const Icon(Icons.public, size: AppIconSize.small),
                         label: const Text('Chercher sur Google'),
                       ),
+                      // En fin de rangée, en bouton texte : un import n'est
+                      // pas une recherche.
                       if (canEdit)
-                        OutlinedButton.icon(
+                        TextButton.icon(
                           onPressed: () => showUrlImportDialog(context),
                           icon: const Icon(Icons.link, size: AppIconSize.small),
                           label: const Text('Importer depuis un lien'),
@@ -482,6 +618,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 _StatusLine(
                   outcome: outcome,
+                  titleOnlyWords: titleOnlyWords,
                   hasFilters: !prefs.filter.isEmpty,
                   onClearAll: () => _updatePrefs(
                     prefs.copyWith(filter: prefs.filter.cleared),
@@ -509,6 +646,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         _StatusLine(
           outcome: outcome,
+          titleOnlyWords: titleOnlyWords,
           hasFilters: !prefs.filter.isEmpty,
           onClearAll: () =>
               _updatePrefs(prefs.copyWith(filter: prefs.filter.cleared)),
@@ -582,11 +720,15 @@ class _SearchField extends StatelessWidget {
 
 class _StatusLine extends StatelessWidget {
   final RecipeFilterOutcome outcome;
+
+  /// Mots tapés cherchés dans les titres seuls (petits ingrédients).
+  final List<String> titleOnlyWords;
   final bool hasFilters;
   final VoidCallback onClearAll;
 
   const _StatusLine({
     required this.outcome,
+    required this.titleOnlyWords,
     required this.hasFilters,
     required this.onClearAll,
   });
@@ -617,6 +759,8 @@ class _StatusLine extends StatelessWidget {
                     estimatedExcludedLine(outcome.estimatedTimeExcluded),
                     style: muted,
                   ),
+                if (titleOnlyWords.isNotEmpty)
+                  Text(titleOnlyWordsLine(titleOnlyWords), style: muted),
               ],
             ),
           ),
@@ -821,8 +965,8 @@ class _FilterSheet extends ConsumerWidget {
   }
 }
 
-/// Barre fixe en bas, au-dessus du clavier : « Demander à l'IA » et « Aller
-/// plus loin ». Avec un texte agrandi, elle passe sur deux lignes.
+/// Barre fixe en bas, au-dessus du clavier : « Chercher avec l'IA » et
+/// « Aller plus loin ». Avec un texte agrandi, elle passe sur deux lignes.
 class _BottomActions extends StatelessWidget {
   final bool canEdit;
   final int aiCorpusSize;
@@ -847,7 +991,7 @@ class _BottomActions extends StatelessWidget {
       onPressed: onAskAi,
       icon: const Icon(Icons.smart_toy_outlined, size: AppIconSize.small),
       label: Text(
-        'Demander à l\'IA · ${recipeCountLabel(aiCorpusSize).toLowerCase()}',
+        'Chercher avec l\'IA · ${recipeCountLabel(aiCorpusSize).toLowerCase()}',
         textAlign: TextAlign.center,
       ),
     );
@@ -896,6 +1040,10 @@ class _BottomActions extends StatelessWidget {
 
 class _ResultList extends ConsumerWidget {
   final ScrollController scrollController;
+
+  /// Premier élément défilant, avant tout le reste : le bandeau d'import sur
+  /// téléphone ; nul sinon.
+  final Widget? leading;
   final RecipeFilterOutcome outcome;
   final ExplorePreferences prefs;
   final ExploreCorpus corpus;
@@ -914,8 +1062,14 @@ class _ResultList extends ConsumerWidget {
   /// « Importer depuis un lien », pour un éditeur ; nul pour un lecteur.
   final VoidCallback? onImport;
 
+  /// Avec du texte : l'état ouvert ou fermé de chaque section, et son
+  /// basculement.
+  final bool Function(RecipeQuerySection) isSectionOpen;
+  final ValueChanged<RecipeQuerySection> onToggleSection;
+
   const _ResultList({
     required this.scrollController,
+    required this.leading,
     required this.outcome,
     required this.prefs,
     required this.corpus,
@@ -927,6 +1081,8 @@ class _ResultList extends ConsumerWidget {
     required this.onOpenIdea,
     required this.emptyLibrary,
     required this.onImport,
+    required this.isSectionOpen,
+    required this.onToggleSection,
   });
 
   @override
@@ -934,11 +1090,14 @@ class _ResultList extends ConsumerWidget {
     final ranking = ref.watch(aiRankingProvider);
     final ideas = ref.watch(aiIdeasProvider);
     final recipes = outcome.recipes;
+    final sectioned = outcome.sections.isNotEmpty;
 
     final head = <Widget>[
+      ?leading,
       ..._rankingSection(context, ref, ranking),
       ..._ideasSection(context, ref, ideas),
-      if (ranking is! AiRankingIdle || ideas is! AiIdeasIdle)
+      // Avec du texte, les sections nomment déjà ce qui suit.
+      if (!sectioned && (ranking is! AiRankingIdle || ideas is! AiIdeasIdle))
         const SearchSectionHeader(title: 'Vos recettes'),
     ];
 
@@ -989,15 +1148,41 @@ class _ResultList extends ConsumerWidget {
       );
     }
 
+    // Une ligne par en-tête de section et par tuile. Sans texte, des
+    // tuiles seules. Une section fermée ne garde que son en-tête.
+    final rows = <({RecipeQuerySection? header, Recipe? recipe})>[];
+    if (sectioned) {
+      for (final MapEntry(key: section, value: inSection)
+          in outcome.sections.entries) {
+        rows.add((header: section, recipe: null));
+        if (isSectionOpen(section)) {
+          rows.addAll(inSection.map((r) => (header: null, recipe: r)));
+        }
+      }
+    } else {
+      rows.addAll(recipes.map((r) => (header: null, recipe: r)));
+    }
+
     return ListView.builder(
       key: const PageStorageKey('explore-results'),
       controller: scrollController,
       padding: const EdgeInsets.only(bottom: 8),
-      itemCount: head.length + recipes.length,
+      itemCount: head.length + rows.length,
       itemBuilder: (context, i) {
         if (i < head.length) return head[i];
+        final row = rows[i - head.length];
+        if (row.header case final section?) {
+          return QuerySectionHeader(
+            title: section.label,
+            count: outcome.sections[section]!.length,
+            open: isSectionOpen(section),
+            onToggle: () => onToggleSection(section),
+          );
+        }
+        final recipe = row.recipe!;
         return SearchResultTile(
-          result: RecipeSearchResult(recipe: recipes[i - head.length]),
+          result: RecipeSearchResult(recipe: recipe),
+          matchedIngredients: outcome.matchedIngredients[recipe.id] ?? const [],
         );
       },
     );
@@ -1305,6 +1490,91 @@ class _InsightCard extends StatelessWidget {
                 text,
                 style: theme.textTheme.bodySmall?.copyWith(color: fg),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// « Vous avez trouvé une recette ? Importez-la. » : au retour de Google,
+/// pour un éditeur ou un administrateur.
+class _ImportBanner extends StatelessWidget {
+  /// Adresse lue dans le presse-papiers ; nulle sur le web et iOS, ou quand
+  /// le presse-papiers n'en contient pas.
+  final Uri? link;
+  final VoidCallback onImport;
+  final VoidCallback onClose;
+
+  const _ImportBanner({
+    required this.link,
+    required this.onImport,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSecondaryContainer;
+    final link = this.link;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 4, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Seule la phrase s'annonce à l'apparition du
+                      // bandeau, pas chaque bouton de la carte.
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          'Vous avez trouvé une recette ? Importez-la.',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: fg,
+                          ),
+                        ),
+                      ),
+                      if (link != null)
+                        Text(
+                          shortLinkLabel(link),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(color: fg),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Fermer',
+                  icon: Icon(Icons.close, color: fg),
+                  onPressed: onClose,
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: onImport,
+                  icon: Icon(
+                    link != null ? Icons.link : Icons.content_paste,
+                    size: AppIconSize.small,
+                  ),
+                  label: Text(
+                    link != null ? 'Importer ce lien' : 'Coller le lien',
+                  ),
+                ),
+              ],
             ),
           ],
         ),

@@ -280,6 +280,11 @@ stateDiagram-v2
       <b>L'import depuis un lien</b> emprunte la même file. Le job <code>recipeUrlImport</code> est
       créé par <code>importRecipeFromUrlFn</code>, jamais par le client ; <code>recipeProcessor</code>
       le reconnaît après <code>assertJobTargetBook</code> et ne télécharge aucun fichier.
+      Côté client, une seule boîte (<code>showUrlImportDialog</code>) envoie l'adresse ; elle
+      s'ouvre depuis Explorer, son bandeau au retour de Google, l'écran Import, la saisie
+      manuelle, et sur Android depuis « Partager vers Kass'Dalle » (filtre d'intention
+      <code>ACTION_SEND</code> <code>text/plain</code>, lu par <code>MainActivity</code> et rendu par le canal <code>dev.kassbi.kass_dalle/share</code>).
+      Les deux derniers chemins posent l'adresse dans le champ ; rien ne part avant « Importer ».
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -407,7 +412,7 @@ stateDiagram-v2
           <tr><td><code>polishCooklangFn</code> · <code>polishMarkdownFn</code></td><td>Callable</td><td>Correction de forme sans changer le fond</td><td>auth</td></tr>
           <tr><td><code>refineRecipeFn</code></td><td>Callable</td><td>Raffinement d'une recette sur instruction</td><td>auth</td></tr>
           <tr><td><code>generateRecipeFn</code></td><td>Callable</td><td>Création d'une recette de toutes pièces (« Imaginer 3 recettes » de l'Explorer)</td><td>editor / admin</td></tr>
-          <tr><td><code>searchRecipesFn</code></td><td>Callable</td><td>Classement sémantique du corpus fourni (« Demander à l'IA » de l'Explorer : les recettes des filtres, sans le texte)</td><td>editor / admin</td></tr>
+          <tr><td><code>searchRecipesFn</code></td><td>Callable</td><td>Classement sémantique du corpus fourni (« Chercher avec l'IA » de l'Explorer : les recettes des filtres, sans le texte)</td><td>editor / admin</td></tr>
           <tr><td><code>suggestRecipeTagsFn</code></td><td>Callable</td><td>Cuisines et types de plat</td><td>auth</td></tr>
           <tr><td><code>suggestMealPlanFn</code> · <code>generateRecipeConceptFn</code> · <code>suggestMealIdeasFn</code></td><td>Callable</td><td>Planning de repas assisté — présélection des candidats par le code puis choix du modèle (<code>mode: "model"</code>), ou présélection seule sans appel de modèle (<code>mode: "code"</code>, « Autre suggestion ») ; conception d'une recette, rattachée à sa génération par <code>runId</code> et plafonnée (nombre et coût) ; trois idées de repas sur une consigne</td><td>auth pour <code>suggestMealPlanFn</code> ; editor / admin pour <code>generateRecipeConceptFn</code> et <code>suggestMealIdeasFn</code>, qui mènent à une recette enregistrée</td></tr>
           <tr><td><code>suggestStorageAdviceFn</code></td><td>Callable</td><td>Conseil de conservation d'un plat cuisiné — réfrigérateur, congélateur, durées</td><td>auth ; créateur de la recette ou admin (<code>assertCanModifyRecipe</code>)</td></tr>

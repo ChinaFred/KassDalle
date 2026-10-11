@@ -20,6 +20,36 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.39 — fonctionnel
+
+#### Explorer : une recherche par texte qui filtre vraiment, import après Google
+
+Un mot tapé ne correspond plus qu'au début d'un mot de la recette : « bla » ne trouve plus
+« sablé ». Les petits ingrédients (sel, poivre, épices, huile, beurre, vinaigre, eau,
+herbes, sucre, farine, ail, oignon) ne sont cherchés que dans les titres. Les résultats se
+rangent en trois groupes : « Dans le titre », « Par cuisine, type ou thème », puis « Dans
+les ingrédients principaux », replié quand les premiers ont des résultats, avec la ligne
+« Avec : … » qui dit l'ingrédient trouvé.
+
+« Demander à l'IA » devient « Chercher avec l'IA ». Le bouton de retouche d'une recette
+imaginée devient « Envoyer à l'IA ».
+
+Au retour d'une recherche Google, un éditeur voit « Vous avez trouvé une recette ?
+Importez-la. ». Sur Android et Windows, le lien copié est proposé tout de suite. Sur
+Android, « Partager vers Kass'Dalle » depuis le navigateur ouvre la boîte d'import avec
+l'adresse remplie ; un lecteur voit « Import réservé aux éditeurs ».
+
+### v0.23.39 — technique
+
+#### Recherche par sections, canal de partage Android
+
+`matchRecipeQuery` et `RecipeQuerySection` remplacent `matchesRecipeQuery` : début de mot,
+liste de petits ingrédients propre à la recherche (côté Dart seul, `isSeasoning` lu sans
+être modifié), sections dans `RecipeFilterOutcome`. Le partage Android passe par un
+`intent-filter` `ACTION_SEND` `text/plain` et le canal `dev.kassbi.kass_dalle/share` de
+`MainActivity`, sans dépendance Gradle ; `SharedLinkImportHost` attend que le compte soit
+chargé avant de traiter le lien. `showUrlImportDialog` reçoit `initialUrl`.
+
 ### v0.23.38 — fonctionnel
 
 #### Durées estimées par l'IA

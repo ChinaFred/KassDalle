@@ -21,6 +21,9 @@ class PlatformUtils {
   /// seul, qui répond vrai depuis un navigateur Android.
   static bool get isAndroidApp => !kIsWeb && Platform.isAndroid;
 
+  /// Windows natif, l'application de bureau.
+  static bool get isWindowsApp => !kIsWeb && Platform.isWindows;
+
   static bool get hasCameraSupport => isMobile || kIsWeb;
 
   // ── Seuils de largeur ───────────────────────────────────────────────────

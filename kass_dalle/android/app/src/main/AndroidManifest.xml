@@ -45,6 +45,26 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- « Partager vers Kass'Dalle » : l'application apparaît dans la
+                 feuille de partage du système pour un texte, ce qu'envoie un
+                 navigateur qui partage une page. MainActivity lit ce texte et le
+                 rend à Dart par le canal dev.kassbi.kass_dalle/share, qui en
+                 tire l'adresse et ouvre la boîte « Importer depuis un lien »
+                 (éditeurs et administrateurs). Ni image ni fichier : seul le
+                 texte est déclaré.
+
+                 launchMode reste singleTop. Un partage depuis une autre
+                 application ouvre une instance dans la tâche de l'expéditeur
+                 (onCreate lit le partage, « Retour » ramène au navigateur) ;
+                 quand Kass'Dalle est déjà au premier plan, le partage arrive
+                 par onNewIntent. singleTask fermerait les activités ouvertes
+                 par-dessus l'application (sélecteur d'images, connexion
+                 Google) à chaque partage reçu. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
         </activity>
 
         <!-- Depuis Android 7, un `file://` passé à une autre application lève

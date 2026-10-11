@@ -1247,8 +1247,23 @@ classDiagram
 
   class RecipeFilterOutcome {
     +List~Recipe~ recipes
+    +Map~RecipeQuerySection,List~ sections
+    +Map~String,List~ matchedIngredients
     +Map~RecipeFilterDimension,int~ missingData
     +int estimatedTimeExcluded
+  }
+
+  class RecipeQuerySection {
+    &lt;&lt;enumeration&gt;&gt;
+    title
+    tags
+    ingredients
+    +String label
+  }
+
+  class RecipeQueryMatch {
+    +RecipeQuerySection section
+    +List~String~ ingredients
   }
 
   class RecipeTimes {
@@ -1316,6 +1331,9 @@ classDiagram
   ExplorePreferences --> RecipeSort
   RecipeFilter ..> RecipeFilterContext
   RecipeFilter ..> RecipeFilterOutcome : applyRecipeFilter
+  RecipeFilterOutcome --> RecipeQuerySection
+  RecipeQueryMatch --> RecipeQuerySection
+  RecipeFilterOutcome ..> RecipeQueryMatch : matchRecipeQuery
   RecipeFilterContext ..> RecipeTimes : recipeTimes
   AiRankingState &lt;|-- AiRankingIdle
   AiRankingState &lt;|-- AiRankingLoading
@@ -1343,7 +1361,10 @@ classDiagram
         l'estimation de l'IA quand <code>countEstimatedTimes</code> est coché
         (<code>RecipeFilterContext.forFilter</code>). Décoché, une recette que son estimation
         aurait retenue est comptée dans <code>estimatedTimeExcluded</code>, pas dans
-        <code>missingData</code>.
+        <code>missingData</code>. Avec du texte, <code>matchRecipeQuery</code> range chaque
+        recette dans la première <code>RecipeQuerySection</code> où tous les mots tapés se
+        trouvent (début de mot, petits ingrédients non lus) ; <code>sections</code> est vide sans
+        texte, et <code>recipes</code> compte toutes les sections.
         <span class="expect">
           <b>Un résultat de l'IA porte son motif</b> — <code>reason</code> pour une recette
           choisie, <code>justification</code> pour une recette imaginée. Une recette de la liste

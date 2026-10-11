@@ -96,12 +96,152 @@ void main() {
     });
 
     test('tous les mots doivent être trouvés', () {
-      expect(ids('lait farine'), ['crepes']);
+      expect(ids('lait chandeleur'), ['crepes']);
       expect(ids('lait poulet'), isEmpty);
     });
 
     test('un texte vide garde tout', () {
       expect(ids('   '), hasLength(2));
+    });
+  });
+
+  group('texte : début de mot, sections, petits ingrédients', () {
+    final sable = recipe(
+      'sable',
+      titre: 'Sablés bretons',
+      ingredients: const ['farine', 'beurre demi-sel', 'sucre'],
+    );
+    final poisson = recipe(
+      'poisson',
+      titre: 'Cabillaud rôti',
+      ingredients: const ['cabillaud', 'poivre blanc', 'citron'],
+    );
+    final blanquette = recipe(
+      'blanquette',
+      titre: 'Blanquette de veau',
+      ingredients: const ['veau', 'carottes', 'crème'],
+      cuisines: const ['Française'],
+    );
+    final pouletCoreen = recipe(
+      'poulet_coreen',
+      titre: 'Poulet coréen',
+      ingredients: const ['poulet', 'gochujang'],
+    );
+    final bibimbap = recipe(
+      'bibimbap',
+      titre: 'Bibimbap',
+      ingredients: const ['riz', 'boeuf', 'gousse d\'ail'],
+      cuisines: const ['Coréenne'],
+    );
+    final pouletCoco = recipe(
+      'poulet_coco',
+      titre: 'Poulet au curry',
+      ingredients: const ['poulet', 'lait de coco', 'huile d\'olive'],
+    );
+    final ailTitre = recipe(
+      'ail_titre',
+      titre: 'Soupe à l\'ail',
+      ingredients: const ['ail', 'pain'],
+    );
+    final ailIngredient = recipe(
+      'ail_ingredient',
+      titre: 'Gigot rôti',
+      ingredients: const ['gigot', 'gousses d\'ail', 'romarin'],
+    );
+    final ailes = recipe(
+      'ailes',
+      titre: 'Poêlée de légumes',
+      ingredients: const ['ailes de poulet', 'courgettes'],
+    );
+    final corpus = [
+      sable,
+      poisson,
+      blanquette,
+      pouletCoreen,
+      bibimbap,
+      pouletCoco,
+      ailTitre,
+      ailIngredient,
+      ailes,
+    ];
+
+    RecipeFilterOutcome run(String q, {RecipeSort sort = RecipeSort.title}) =>
+        applyRecipeFilter(corpus, query: q, sort: sort);
+    List<String> idsIn(RecipeFilterOutcome out, RecipeQuerySection s) =>
+        (out.sections[s] ?? const []).map((r) => r.id).toList();
+
+    test('« bla » ne trouve ni « sablé » ni « poivre blanc »', () {
+      final out = run('bla');
+      expect(out.recipes.map((r) => r.id), ['blanquette']);
+      expect(idsIn(out, RecipeQuerySection.title), ['blanquette']);
+    });
+
+    test('« blanquette » : dans le titre', () {
+      final out = run('blanquette');
+      expect(idsIn(out, RecipeQuerySection.title), ['blanquette']);
+      expect(out.sections.keys, [RecipeQuerySection.title]);
+    });
+
+    test('« coréen » : le titre d\'abord, la cuisine ensuite', () {
+      final out = run('coréen');
+      expect(idsIn(out, RecipeQuerySection.title), ['poulet_coreen']);
+      expect(idsIn(out, RecipeQuerySection.tags), ['bibimbap']);
+      expect(idsIn(out, RecipeQuerySection.ingredients), isEmpty);
+    });
+
+    test('« poulet coco » : dans les ingrédients, avec « lait de coco »', () {
+      final out = run('poulet coco');
+      expect(idsIn(out, RecipeQuerySection.ingredients), ['poulet_coco']);
+      expect(out.matchedIngredients['poulet_coco'], ['lait de coco']);
+      expect(
+        matchedIngredientsLine(out.matchedIngredients['poulet_coco']!),
+        'Avec : lait de coco',
+      );
+    });
+
+    test('« ail » ne cherche que dans les titres', () {
+      final out = run('ail');
+      expect(out.recipes.map((r) => r.id), ['ail_titre']);
+      expect(titleOnlyQueryWords('ail'), ['ail']);
+      expect(
+        titleOnlyWordsLine(titleOnlyQueryWords('sel ail')),
+        '« sel » et « ail » ne sont cherchés que dans les titres.',
+      );
+      expect(
+        titleOnlyWordsLine(['sel']),
+        '« sel » n\'est cherché que dans les titres.',
+      );
+      expect(titleOnlyQueryWords('poulet coco'), isEmpty);
+    });
+
+    test('un petit ingrédient de la recette n\'est pas lu', () {
+      // « olive » n'est que dans « huile d'olive » : rien ne sort.
+      expect(run('olive').recipes, isEmpty);
+      expect(isSearchMinorIngredient('huile d\'olive'), isTrue);
+      expect(isSearchMinorIngredient('gousses d\'ail'), isTrue);
+      expect(isSearchMinorIngredient('oignons rouges'), isTrue);
+      expect(isSearchMinorIngredient('poivre blanc'), isTrue);
+      expect(isSearchMinorIngredient('lait de coco'), isFalse);
+      expect(isSearchMinorIngredient('ailes de poulet'), isFalse);
+      expect(isSearchMinorIngredient('selle d\'agneau'), isFalse);
+    });
+
+    test('le compteur compte toutes les sections, tri dans chacune', () {
+      final out = run('poulet');
+      expect(
+        idsIn(out, RecipeQuerySection.title),
+        ['poulet_coreen', 'poulet_coco']..sort((a, b) => a.compareTo(b)),
+      );
+      expect(idsIn(out, RecipeQuerySection.ingredients), ['ailes']);
+      expect(out.recipes, hasLength(3));
+      // Ordre des sections fixe, quel que soit le tri.
+      expect(out.recipes.last.id, 'ailes');
+    });
+
+    test('sans texte : pas de sections', () {
+      final out = run('');
+      expect(out.sections, isEmpty);
+      expect(out.recipes, hasLength(corpus.length));
     });
   });
 

@@ -12,6 +12,7 @@ import 'leave_guard.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
+import '../../features/recipes/presentation/url_import/shared_link_import_host.dart';
 import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_shortcuts.dart';
@@ -75,9 +76,13 @@ class _AppShellState extends ConsumerState<AppShell> {
         if (location == AppRoutes.search) return;
         goGuarded(context, ref, AppRoutes.search);
       },
-      child: isWide
-          ? _WideShell(child: widget.child)
-          : _NarrowShell(child: widget.child),
+      // « Partager vers Kass'Dalle » (Android) : la boîte d'import s'ouvre
+      // par-dessus l'écran courant.
+      child: SharedLinkImportHost(
+        child: isWide
+            ? _WideShell(child: widget.child)
+            : _NarrowShell(child: widget.child),
+      ),
     );
   }
 }

@@ -20,13 +20,22 @@ import '../../domain/url_import.dart';
 /// « Coller le texte » la ferme alors sans naviguer — on y est déjà —, et le
 /// message de confirmation ne propose pas « Voir » : quitter la saisie
 /// perdrait le texte en cours, et l'écran n'a pas de garde de sortie.
-Future<void> showUrlImportDialog(
+///
+/// [initialUrl] : l'adresse déjà posée dans le champ — bandeau d'Explorer au
+/// retour de Google, partage Android. Rien ne part avant « Importer ».
+///
+/// Rend `true` quand le lien est parti, `false` sur « Annuler ».
+Future<bool> showUrlImportDialog(
   BuildContext context, {
   bool fromManualEntry = false,
+  String? initialUrl,
 }) async {
   final router = GoRouter.of(context);
   final wide = MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
-  final form = UrlImportForm(fromManualEntry: fromManualEntry);
+  final form = UrlImportForm(
+    fromManualEntry: fromManualEntry,
+    initialUrl: initialUrl,
+  );
   final bool? queued;
   if (wide) {
     queued = await showDialog<bool>(
@@ -68,6 +77,7 @@ Future<void> showUrlImportDialog(
             ),
     );
   }
+  return queued == true;
 }
 
 /// Message de plafond atteint. Sans valeur du serveur, pas de nombre inventé.
@@ -79,9 +89,18 @@ String urlImportQuotaMessage(int? limit) => limit == null
 
 /// Le contenu de la boîte. Rend `true` par `Navigator.pop` quand le job est créé.
 class UrlImportForm extends ConsumerStatefulWidget {
-  const UrlImportForm({super.key, this.fromManualEntry = false});
+  const UrlImportForm({
+    super.key,
+    this.fromManualEntry = false,
+    this.initialUrl,
+  });
 
   final bool fromManualEntry;
+
+  /// Adresse posée dans le champ à l'ouverture. Sur téléphone, le champ ne
+  /// prend alors pas le focus : le clavier ne cache pas l'adresse à vérifier.
+  /// Avec un clavier physique, il le prend, pour qu'Entrée envoie le lien.
+  final String? initialUrl;
 
   @override
   ConsumerState<UrlImportForm> createState() => _UrlImportFormState();
@@ -103,9 +122,20 @@ class _UrlImportFormState extends ConsumerState<UrlImportForm> {
   UrlImportResult? _duplicate;
   bool _quotaReached = false;
 
+  /// Bureau natif, ou web en grand écran : un clavier physique est là, et
+  /// poser le focus ne fait surgir aucun clavier à l'écran.
+  bool _hasPhysicalKeyboard(BuildContext context) {
+    if (PlatformUtils.isMobile) return false;
+    if (!PlatformUtils.isWeb) return true;
+    return MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+  }
+
+  bool get _prefilled => (widget.initialUrl ?? '').trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
+    if (_prefilled) _ctrl.text = widget.initialUrl!.trim();
     _loadQuota();
   }
 
@@ -252,7 +282,10 @@ class _UrlImportFormState extends ConsumerState<UrlImportForm> {
             TextField(
               controller: _ctrl,
               enabled: !_sending && !_quotaReached,
-              autofocus: true,
+              // Adresse posée : pas de clavier qui surgit sur un téléphone
+              // (ni sur le web en largeur de téléphone). Au bureau et sur
+              // grand écran, le focus est posé : Entrée envoie.
+              autofocus: !_prefilled || _hasPhysicalKeyboard(context),
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.go,
               onSubmitted: (_) => _submit(),
