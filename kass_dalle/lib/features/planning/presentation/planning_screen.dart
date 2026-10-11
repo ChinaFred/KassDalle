@@ -57,16 +57,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   final Set<String> _aiLoadingIds = {};
   final Set<String> _storageLoadingIds = {};
 
-  /// Semaine lue, par un jour repère.
+  /// Période lue : une semaine du cycle touchée dans le calendrier, ou une
+  /// période libre.
   ///
-  /// La semaine se recalcule à chaque construction : son premier jour dépend
-  /// du jour de démarrage du cycle, lu dans les préférences, qui peuvent
-  /// arriver après le premier affichage. Null tant qu'on n'a pas navigué :
-  /// c'est alors la semaine d'aujourd'hui.
+  /// Null tant qu'on n'a rien choisi : c'est alors la semaine du cycle qui
+  /// contient aujourd'hui, recalculée à chaque construction — le jour de
+  /// démarrage du cycle vient des préférences, qui peuvent arriver après le
+  /// premier affichage.
   ///
   /// Elle vit dans l'état de l'écran et nulle part ailleurs : choisir une
-  /// semaine à regarder n'est pas une donnée du planning.
-  DateTime? _periodAnchor;
+  /// période à regarder n'est pas une donnée du planning, et chaque ouverture
+  /// repart de la semaine en cours.
+  PlanningPeriod? _chosenPeriod;
+
+  /// Premier jour d'une période libre en cours de choix, ou null.
+  DateTime? _rangeStart;
 
   /// Mois affiché quand le calendrier est déplié.
   DateTime _visibleMonth = PlanningPeriodCalendar.monthOf(DateTime.now());
@@ -460,16 +465,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// La semaine lue, recalculée sur le jour de démarrage du cycle.
-  PlanningWeek _period(DateTime today) {
+  PlanningPeriod _period(DateTime today) {
     final cycleStartDay =
         ref.read(planningPreferencesProvider).value?.cycleStartDay ??
         DateTime.friday;
-    return planningWeekOf(_periodAnchor ?? today, cycleStartDay: cycleStartDay);
+    return _chosenPeriod ?? planningWeekOf(today, cycleStartDay: cycleStartDay);
   }
 
   /// La semaine que la liste de courses couvre : celle qu'on est en train de
   /// lire.
-  PlanningWeek? _shoppingWeek(DateTime today) => _period(today);
+  PlanningPeriod? _shoppingWeek(DateTime today) => _period(today);
 
   Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
     final today = DateTime.now();
@@ -481,7 +486,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         context.showSnackBar(
           week == null
               ? 'Aucun repas à venir dans le planning.'
-              : 'Aucun repas à venir cette semaine.',
+              : 'Aucun repas à venir sur cette période.',
         );
       }
       return;
@@ -968,6 +973,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               tooltip: 'Actions',
               onSelected: (value) {
                 if (value == 0) context.push('/planning/config');
+                if (value == 3) _chooseDates();
                 if (value == 1 && mealsAsync.value?.isNotEmpty == true) {
                   _showIngredientsList(mealsAsync.value!);
                 }
@@ -976,6 +982,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                 }
               },
               itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 3,
+                  child: ListTile(
+                    leading: Icon(Icons.date_range_outlined),
+                    title: Text('Choisir des dates…'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
                 const PopupMenuItem(
                   value: 0,
                   child: ListTile(
@@ -1116,17 +1130,34 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       expanded: isWide || _calendarExpanded,
       month: _visibleMonth,
       earliestDay: earliestDay,
-      onSelectPeriod: (week) => _selectPeriod(week, collapse: !isWide),
+      onSelectPeriod: (p) => _selectPeriod(p, collapse: !isWide),
       onMonthChanged: (month) {
         setState(() => _visibleMonth = month);
         _loadArchiveAround(month);
       },
       onTapDay: _revealDay,
+      rangeStart: _rangeStart,
+      onRangeStart: (day) {
+        setState(() {
+          _rangeStart = day;
+          // La fin peut tomber un autre mois : le choix se fait calendrier
+          // déplié, sur le mois du premier jour.
+          _calendarExpanded = true;
+          _visibleMonth = PlanningPeriodCalendar.monthOf(day);
+        });
+        _loadArchiveAround(_visibleMonth);
+      },
+      onRangeCancel: () => setState(() => _rangeStart = null),
+      onRangeTooLong: () => context.showErrorSnackBar(
+        '${PlanningPeriod.maxLength} jours au plus — touchez un jour plus '
+        'proche.',
+      ),
+      onChooseDates: isWide ? _chooseDates : null,
       onToggleExpanded: isWide
           ? null
           : () => setState(() {
               _calendarExpanded = !_calendarExpanded;
-              // Déplié, le mois montré est celui de la semaine lue.
+              // Déplié, le mois montré est celui de la période lue.
               if (_calendarExpanded) {
                 _visibleMonth = PlanningPeriodCalendar.monthOf(period.start);
                 _loadArchiveAround(_visibleMonth);
@@ -1178,17 +1209,56 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
   }
 
-  /// Change de semaine : le calendrier déplié se replie sur un téléphone, et
-  /// l'archive des mois touchés se charge si besoin.
-  void _selectPeriod(PlanningWeek week, {required bool collapse}) {
+  /// Change de période : le calendrier déplié se replie sur un téléphone, et
+  /// l'archive de chaque mois traversé se charge si besoin.
+  void _selectPeriod(PlanningPeriod period, {required bool collapse}) {
     setState(() {
-      _periodAnchor = week.start;
+      _chosenPeriod = period;
+      _rangeStart = null;
       if (collapse) _calendarExpanded = false;
       _fabCompact = false;
       _fabHidden = false;
     });
-    _loadArchiveMonth(week.start);
-    _loadArchiveMonth(week.end);
+    for (
+      var m = PlanningPeriodCalendar.monthOf(period.start);
+      !m.isAfter(period.end);
+      m = DateTime(m.year, m.month + 1)
+    ) {
+      _loadArchiveMonth(m);
+    }
+  }
+
+  /// « Choisir des dates… » : le sélecteur de plage du système, l'autre
+  /// chemin vers une période libre que l'appui long, qui ne se devine pas.
+  Future<void> _chooseDates() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final period = _period(today);
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: PlanningPeriodCalendar.monthOf(today.subtract(_archiveDepth)),
+      lastDate: DateTime(today.year + 2, today.month, today.day),
+      initialDateRange: DateTimeRange(start: period.start, end: period.end),
+      helpText: 'Choisir la période',
+      saveText: 'Afficher',
+    );
+    if (picked == null || !mounted) return;
+    final chosen = PlanningPeriod(picked.start, picked.end);
+    if (chosen.length > PlanningPeriod.maxLength) {
+      context.showErrorSnackBar(
+        '${PlanningPeriod.maxLength} jours au plus — choisissez une période '
+        'plus courte.',
+      );
+      return;
+    }
+    final isWide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+    _selectPeriod(chosen, collapse: !isWide);
+    if (isWide) {
+      setState(
+        () => _visibleMonth = PlanningPeriodCalendar.monthOf(chosen.start),
+      );
+    }
   }
 
   /// Amène la liste sur [day], touché dans le bandeau replié.
@@ -1227,7 +1297,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Widget _buildPeriodDays(
     ThemeData theme,
     List<PlannedMeal> meals,
-    PlanningWeek period,
+    PlanningPeriod period,
     DateTime today,
     bool isWide,
   ) {
