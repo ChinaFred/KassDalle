@@ -689,10 +689,11 @@ sequenceDiagram
     <h2 id="nutrition"><span class="n">06</span>Écriture d'une recette : confidentialité, rôle, courses, nutrition</h2>
     <p class="sec-note">
       Aucun écran ne demande ces traitements : un seul déclencheur part à chaque écriture d'une
-      recette. Il recopie la confidentialité du livre, classe le rôle dans un repas, puis lance
-      les courses et la nutrition quand une de ses entrées a changé.
+      recette. Il recopie la confidentialité du livre, classe le rôle dans un repas, lance
+      les courses et la nutrition quand une de ses entrées a changé, puis déduit les allergènes
+      de la recette.
       <span class="path">triggers/recipeWritten.ts → recipePrivacy.ts, recipeMealRoleAutoSync.ts,
-      recipeShoppingProducts.ts, recipeNutritionAutoSync.ts</span>
+      recipeShoppingProducts.ts, recipeNutritionAutoSync.ts, recipeAllergensSync.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -730,7 +731,11 @@ sequenceDiagram
   end
 
   alt mise à jour sans changement d'entrée (ingrédients, portions, page_type, raw_cooklang)
-    TR-->>FS: sortie, aucun recalcul
+    opt allergens absent
+      TR->>NI: lit les allergens des ingrédients
+      TR->>FS: allergens, sans appel de modèle (transaction)
+    end
+    TR-->>FS: sortie, aucun autre recalcul
   else création, ou une entrée a changé
     par l'échec de l'un ne prive pas la recette de l'autre
       TR->>SH: refreshShoppingProducts
@@ -752,9 +757,16 @@ sequenceDiagram
       loop pour chaque ingrédient canonique
         NS->>NI: create sinon merge des alias et du compteur
       end
-      opt ingrédients créés par cette écriture
-        NS->>M: produit acheté (shopping_product_alias_auto)
-        NS->>NI: shopping_product
+      par en parallèle
+        opt ingrédients sans allergens (jamais examinés)
+          NS->>M: allergènes, lots de 40 (allergens_auto)
+          NS->>NI: allergens, si toujours absent (transaction)
+        end
+      and
+        opt ingrédients créés par cette écriture
+          NS->>M: produit acheté (shopping_product_alias_auto)
+          NS->>NI: shopping_product
+        end
       end
       opt ingrédients sans per100g, hors échec de moins de 24 h
         NS->>M: estimatePer100gForTargets, lots de 20 (inline_ingredient_per100g_enrichment)
@@ -770,6 +782,10 @@ sequenceDiagram
       end
       RN->>FS: nutrition — totaux, par portion, pour 100 g, qualité, huile absorbée
     end
+    opt création, ingrédients modifiés, ou allergens absent
+      TR->>NI: lit les allergens des ingrédients
+      TR->>FS: allergens — union, sans appel de modèle, si le résultat change
+    end
   end
 
   FS-->>TR: onWrite de nouveau, pour chaque écriture ci-dessus
@@ -782,7 +798,7 @@ sequenceDiagram
         les ingrédients (<code>nom | quantité | unité</code>), <code>portions</code>,
         <code>page_type</code> et <code>raw_cooklang</code>. Les écritures du déclencheur
         (<code>is_private</code>, <code>tags</code>, <code>shopping_products</code>,
-        <code>nutrition</code>) ne touchent aucun de ces champs : le réveil qu'elles provoquent
+        <code>nutrition</code>, <code>allergens</code>) ne touchent aucun de ces champs : le réveil qu'elles provoquent
         sort à la garde. Le déclencheur ne compte pas ses tentatives. Il remet à 0 <code>nutrition_catch_up_attempts</code>, le compteur du rattrapage (séquence 25).
       </figcaption>
       <figcaption>
@@ -791,6 +807,15 @@ sequenceDiagram
         recette dans un autre livre. Le rôle se pose sur une recette créée à la main, générée par
         l'IA ou copiée, qui n'a pas de <code>tags.meal_role</code>. Si le modèle ne rend
         aucun rôle, rien n'est écrit, et la prochaine écriture retente.
+      </figcaption>
+      <figcaption>
+        <b>Les allergènes se déduisent en dernier.</b> Le modèle juge chaque ingrédient du
+        référentiel une seule fois, juste après sa création par la nutrition (poste
+        <code>allergens_auto</code>) ; l'examen ne crée jamais de document, et n'écrase jamais
+        une valeur posée. La recette reçoit ensuite l'union, sans appel. Quand le champ manque
+        sans qu'aucune entrée ait changé — recette ancienne, ou écho d'un calcul en cours —, il
+        est posé tout de suite avec ce que le référentiel sait déjà, sans appel de modèle :
+        un écho ne refacture pas un examen en cours.
       </figcaption>
     </figure>
     <span class="expect">

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/error_report_service.dart';
+import '../../recipes/domain/allergens.dart';
 
 class NutritionIngredientDoc {
   final String id;
@@ -45,6 +46,20 @@ class NutritionIngredientDoc {
   /// d'achat d'une recette.
   final String? shoppingProduct;
 
+  /// Allergènes majeurs de cet ingrédient (clés de `kAllergenKeys`).
+  ///
+  /// `null` : jamais examiné. Vide : examiné, aucun allergène. Posé par le
+  /// modèle à l'écriture d'une recette ou par le backfill « Allergènes des
+  /// ingrédients et des recettes », corrigé à la main depuis cet écran. Le
+  /// serveur en déduit le champ `allergens` de chaque recette.
+  final List<String>? allergens;
+
+  /// `ai_estimated` ou `admin` ; `null` si jamais examiné.
+  final String? allergensSource;
+
+  /// Vrai quand un administrateur a posé ou confirmé la liste.
+  bool get allergensVerified => allergensSource == 'admin';
+
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
@@ -55,6 +70,8 @@ class NutritionIngredientDoc {
     this.usualPortionGrams,
     this.notConsumed = false,
     this.shoppingProduct,
+    this.allergens,
+    this.allergensSource,
   });
 
   /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
@@ -120,6 +137,10 @@ class NutritionIngredientDoc {
       shoppingProduct: data['shopping_product'] is String
           ? data['shopping_product'] as String
           : null,
+      allergens: data['allergens'] is List
+          ? sortAllergenKeys((data['allergens'] as List).whereType<String>())
+          : null,
+      allergensSource: data['allergens_source'] as String?,
     );
   }
 }
@@ -251,6 +272,34 @@ class NutritionIngredientsRepository {
         error: error,
         stackTrace: stackTrace,
         context: {'id': id, 'value': value},
+      );
+      rethrow;
+    }
+  }
+
+  /// Pose les allergènes d'un ingrédient, vérifiés par l'administrateur.
+  ///
+  /// Même ouverture que le produit acheté : un administrateur, ces champs et
+  /// eux seuls (règles Firestore). Liste vide = aucun allergène. Écrit même
+  /// sans changement : la liste passe alors de « estimée par l'IA » à
+  /// « vérifiée par l'admin ». Les recettes ne la reprennent qu'au backfill
+  /// « Allergènes des ingrédients et des recettes », ou à la prochaine
+  /// modification de leurs ingrédients.
+  Future<void> setAllergens(String id, List<String> keys) async {
+    final sorted = sortAllergenKeys(keys);
+    try {
+      await _firestore.collection('nutrition_ingredients').doc(id).update({
+        'allergens': sorted,
+        'allergens_source': 'admin',
+        'allergens_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'nutritionIngredients.setAllergens',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'id': id, 'allergens': sorted},
       );
       rethrow;
     }

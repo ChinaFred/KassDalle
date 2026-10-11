@@ -16,6 +16,7 @@ import 'prepare_tab.dart' show recipeTopContent;
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
+import '../recipe_allergens_block.dart';
 
 /// Corps unifié de l'écran de détail sur mobile : illustrations, méta,
 /// ingrédients, préparation et résumé communauté sur une seule page.
@@ -94,6 +95,9 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
     final preview = CooklangPreview(
       ctrl: widget.ctrl,
       topContent: topContent,
+      ingredientsFooter: recipe.allergens == null
+          ? null
+          : RecipeAllergensBlock(allergens: recipe.allergens!),
       bottomContent: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

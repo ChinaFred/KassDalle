@@ -463,6 +463,41 @@ class GcpBillingRepository {
     return out;
   }
 
+  /// Allergènes : examine par lots de quarante les ingrédients du référentiel
+  /// qui n'en ont pas (appels de modèle, poste `backfill_allergens`), puis
+  /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec
+  /// reprise sur point de contrôle. Rend les compteurs tels quels ; les
+  /// drapeaux valent 1 ou 0.
+  Future<Map<String, int>> backfillAllergens({
+    double maxMinutes = 8,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillAllergensFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    final out = <String, int>{};
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is num) {
+        out[entry.key] = value.toInt();
+      } else if (value is bool) {
+        out[entry.key] = value ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

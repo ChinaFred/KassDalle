@@ -47,6 +47,12 @@ describe("empreinte des entrées du déclencheur", () => {
       shopping_products: [{ name: "beurre", qty: "200", unit: "g" }],
       nutrition_validation: { state: "ok" },
       shopping_products_updated_at: "2026-08-24T12:00:00Z",
+      allergens: {
+        present: ["gluten", "lait"],
+        complete: true,
+        by_ingredient: { gluten: ["farine"], lait: ["beurre"] },
+        computed_at: "2026-10-11T12:00:00Z",
+      },
     };
     assert.equal(recipeTriggerInputsFingerprint(avant), recipeTriggerInputsFingerprint(apres));
   });

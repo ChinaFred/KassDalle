@@ -399,6 +399,61 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Allergènes : examine les ingrédients du référentiel qui n'en ont pas,
+  /// puis recalcule le champ sur toutes les recettes. C'est aussi ce qu'on
+  /// relance après avoir corrigé un ingrédient à la main.
+  Future<void> _runBackfillAllergens() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Allergènes des ingrédients et des recettes'),
+        content: const Text(
+          'Deux étapes. D\'abord, demande au modèle les allergènes majeurs de '
+          'chaque ingrédient du référentiel qui ne les a pas encore : un appel '
+          'pour quarante ingrédients, quatre cents ingrédients au plus par '
+          'passage. Un ingrédient déjà examiné, ou corrigé à la main, n\'est '
+          'ni redemandé ni refacturé.\n\n'
+          'Ensuite, une fois tout le référentiel parcouru, recalcule les '
+          'allergènes de chaque recette, sans appel de modèle. Une recette '
+          'dont le résultat ne change pas n\'est pas réécrite.\n\n'
+          'Reprise sur point de contrôle : relancez tant que le résultat '
+          'indique « incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Allergènes en cours...',
+      feature: 'admin_backfill_allergens',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillAllergens(),
+      format: (r) =>
+          'Ingrédients : examinés=${r['ingredientsExamines']}, '
+          'ignorés (déjà examinés)=${r['ingredientsIgnores']}, '
+          'en erreur=${r['ingredientsEnErreur']}'
+          '${(r['referentielParcouru'] ?? 0) == 1 ? '' : ' — référentiel pas encore parcouru en entier, recettes non recalculées'}\n'
+          'Recettes : calculées=${r['recettesCalculees']}, '
+          'identiques=${r['recettesIdentiques']}, '
+          'encore incomplètes=${r['recettesIncompletes']}, '
+          'hors recette=${r['recettesHorsRecette']}, '
+          'échecs=${r['recettesEchouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint)' : ''}'
+          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
+    );
+  }
+
   /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
   /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
   String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
@@ -609,6 +664,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À relancer après '
                           'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.no_food_outlined,
+                      title: 'Allergènes des ingrédients et des recettes',
+                      subtitle:
+                          'Examine par IA les ingrédients du référentiel qui '
+                          'n\'ont pas encore d\'allergènes, quarante par '
+                          'appel, puis recalcule les allergènes de toutes les '
+                          'recettes sans appel. À relancer après une '
+                          'correction d\'un ingrédient.',
+                      onTap: _busy ? null : _runBackfillAllergens,
                     ),
                     const SizedBox(height: 8),
                     _BackfillTile(

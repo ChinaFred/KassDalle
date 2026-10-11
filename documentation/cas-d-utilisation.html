@@ -169,6 +169,8 @@
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur la recette d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les allergènes d'une recette qu'on voit — même bloc pour tous les rôles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Corriger les allergènes d'un ingrédient du référentiel, lancer le backfill « Allergènes »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -256,6 +258,7 @@ flowchart LR
     a27(["Demander une autre suggestion"])
     a28(["Oublier mes refus"])
     a26(["Consulter le texte d'origine&lt;br/&gt;d'une recette traduite"])
+    a29(["Consulter les allergènes&lt;br/&gt;d'une recette"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -294,6 +297,7 @@ flowchart LR
   LEC --- a25
   a2 -.->|"si la recette est traduite"| a26
   a2 --- a4
+  a2 --- a29
   a2 --- a5
   a9 --- a5
   a9 --- a14
@@ -393,7 +397,16 @@ flowchart LR
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
         appel d'IA. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
-        la mention « Traduit de l'… ». Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
+        la mention « Traduit de l'… ».
+        <b>Consulter les allergènes n'appelle aucun modèle</b> : la fiche lit la liste que le
+        serveur a posée sur la recette à son écriture, union des allergènes de ses ingrédients
+        estimés dans le référentiel nutritionnel. Le bloc « Allergènes », sous les ingrédients,
+        nomme les quatorze allergènes majeurs de l'UE trouvés ; un appui sur une pastille ouvre
+        « Ingrédients en cause ». Il dit quand l'analyse est incomplète, n'apparaît pas sur une
+        recette jamais analysée, et rappelle toujours : « Liste indicative établie par IA. Elle ne
+        remplace pas la lecture des emballages. » Tous les rôles voient le même bloc ; aucun ne le
+        modifie depuis la fiche.
+        Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
         propriétaire cherche une personne par son nom (« Rechercher une personne à inviter… ») et
@@ -622,7 +635,10 @@ flowchart LR
     d23(["Enregistrer ou charger une configuration de routage"])
     d24(["Diagnostiquer la qualité des données"])
     d25(["Tenir le référentiel des garnitures simples"])
+    d26(["Corriger les allergènes d'un ingrédient&lt;br/&gt;14 cases à cocher"])
+    d27(["Lancer le backfill Allergènes"])
   end
+  GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
 
   ADM --- d0
   ADM --- d1
@@ -650,6 +666,8 @@ flowchart LR
   ADM --- d23
   ADM --- d24
   ADM --- d25
+  ADM --- d26
+  ADM --- d27
   d23 -.->|"charger remplit le formulaire, rien n'est écrit"| d16
   d24 -.->|"lecture seule, ouvre l'écran à corriger"| d11
   d0 -.->|"est"| d1
@@ -662,6 +680,12 @@ flowchart LR
   d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
   d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
   d12 -.->|"Protéine et féculent des plats, une fois après le déploiement"| e7(["Poser protéine et féculent&lt;br/&gt;sur les plats qui n'en ont pas"])
+  d26 -.->|"dans Ingrédients nutrition, liste « vérifiée par l'admin »"| d11
+  d26 -.->|"les recettes suivent au prochain passage"| d27
+  d27 -.->|"est"| d12
+  d27 -.->|"phase 1 : ingrédients non examinés"| e8(["Estimer les allergènes d'un ingrédient"])
+  d27 -.->|"phase 2 : toutes les recettes, sans IA"| e9(["Poser sur la recette l'union&lt;br/&gt;des allergènes de ses ingrédients"])
+  e8 --- GEM
 </pre>
       </div>
       <figcaption>
@@ -681,6 +705,14 @@ flowchart LR
         autres tags, ni une protéine ou un féculent posés à la main. Une recette remise à
         « Non renseigné » dans le panneau de métadonnées est reprise au passage suivant. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
         base.
+        <b>Les allergènes d'un ingrédient</b> se lisent dans Référentiels › Ingrédients
+        nutrition : « estimé par l'IA », « vérifié par l'admin » ou « non examiné ». L'administrateur
+        les corrige par quatorze cases à cocher ; la liste passe à « vérifié par l'admin ». La
+        correction ne touche pas les recettes déjà écrites : elles suivent quand l'administrateur
+        relance <b>« Allergènes »</b> dans Backfills. Cette reprise fait deux phases. La première
+        estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
+        chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
+        est chiffré pour chaque phase : traités, ignorés, en erreur.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
         <span class="expect warn">

@@ -229,6 +229,15 @@ classDiagram
     +List~String~ duplicateIngredients
   }
 
+  class RecipeAllergens {
+    +List~String~ present
+    +bool complete
+    +Map byIngredient
+    +DateTime? computedAt
+    +fromMap(raw) RecipeAllergens?$
+    +ingredientsFor(key) List~String~
+  }
+
   class RecipeNutritionQuality {
     +int score
     +String level
@@ -273,6 +282,7 @@ classDiagram
   Recipe "1" *-- "0..*" RecipeShoppingProduct : shoppingProducts
   Recipe "1" *-- "1" RecipeTags : tags
   Recipe "1" o-- "0..1" RecipeNutritionSnapshot : nutrition
+  Recipe "1" o-- "0..1" RecipeAllergens : allergens
   RecipeNutritionSnapshot "1" *-- "1" RecipeNutritionQuality : quality
   RecipeNutritionSnapshot "1" o-- "0..1" RecipeAbsorbedOil : absorbedOil
   Recipe ..&gt; ReviewStatus
@@ -286,6 +296,12 @@ classDiagram
         côté serveur et peut être absent. Les champs <code>totals</code>, <code>perPortion</code>
         et <code>per100g</code> sont des <code>Map&lt;String, double&gt;</code> indexées par
         nutriment.
+        <br><br>
+        <code>RecipeAllergens</code> est agrégé de la même façon : calculé côté serveur à partir
+        du référentiel (champ <code>allergens</code>), absent tant qu'aucun calcul n'a eu lieu,
+        jamais écrit par le client. <code>present</code> suit l'ordre des quatorze clés de
+        l'annexe II INCO (<code>kAllergenKeys</code>, fixture <code>allergens.json</code>) ;
+        <code>byIngredient</code> donne, par clé, les noms d'ingrédients en cause.
         <br><br>
         <code>RecipeAbsorbedOil</code> n'a d'équivalent dans aucune liste d'ingrédients : c'est
         l'huile que la friture fait passer du bain à l'assiette, calculée côté serveur et présente
@@ -1639,6 +1655,7 @@ classDiagram
           <tr><td><code>shoppingProducts</code></td><td><code>shopping_products</code></td><td>Écrit uniquement si non vide</td></tr>
           <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>
+          <tr><td><code>allergens</code></td><td><code>allergens</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill) ; <code>toFirestore</code> l'omet, une mise à jour partielle le laisse en place. Absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>pipeline_correlation_id</code></td><td>Trace du job d'import, pour rapprocher recette et logs</td></tr>
         </tbody>
       </table>

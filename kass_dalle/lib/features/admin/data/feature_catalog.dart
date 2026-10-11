@@ -100,6 +100,10 @@ const kFeatureProcess = <String, String>{
   'backfill_enrich_referentials_per100g_batch': 'Valeurs nutritionnelles',
   'backfill_refresh_sodium_per100g': 'Valeurs nutritionnelles',
   'backfill_refresh_sodium_per100g_batch': 'Valeurs nutritionnelles',
+  // Allergènes : un jugement par ingrédient du référentiel, comme les
+  // valeurs pour 100 g. Rangés avec elles.
+  'allergens_auto': 'Valeurs nutritionnelles',
+  'backfill_allergens': 'Valeurs nutritionnelles',
   'sandbox_detect_page': 'Bac à sable',
   'sandbox_detect_orientation': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
@@ -535,6 +539,21 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Le mode normal de la réparation : les profils porteurs de sodium '
         'sont réestimés par paquets de vingt.',
+  ),
+  'allergens_auto': FeatureInfo(
+    label: 'Allergènes d\'un ingrédient (à l\'écriture d\'une recette)',
+    description:
+        'À l\'écriture d\'une recette, demande au modèle les allergènes '
+        'majeurs (14 de l\'annexe II INCO) des ingrédients du référentiel '
+        'pas encore examinés, par lots de quarante. Un ingrédient examiné '
+        'ne l\'est plus jamais ; la recette en déduit les siens sans appel.',
+  ),
+  'backfill_allergens': FeatureInfo(
+    label: 'Allergènes des ingrédients (backfill)',
+    description:
+        'Demande au modèle, par lots de quarante, les allergènes majeurs de '
+        'chaque ingrédient du référentiel qui n\'en a pas, puis recalcule '
+        'ceux des recettes sans appel. Lancé depuis Admin › Backfills.',
   ),
 
   // Le bac à sable dépense de l'argent réel. Son poste est catalogué comme les

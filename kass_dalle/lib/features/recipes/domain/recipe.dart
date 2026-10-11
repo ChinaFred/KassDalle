@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 
 import '../../../core/services/cooklang_parser.dart'
     show extractPageType, ingredientKey, parsePageTypeLabel;
+import 'allergens.dart';
 import 'meal_role.dart';
 import 'recipe_origin.dart';
 
@@ -700,6 +701,15 @@ class Recipe {
   /// Snapshot nutrition calculé côté backend.
   final RecipeNutritionSnapshot? nutrition;
 
+  /// Allergènes majeurs de la recette, déduits par le serveur des
+  /// ingrédients du référentiel (`onRecipeWritten`). `null` tant qu'ils
+  /// n'ont pas été calculés.
+  ///
+  /// Le client le lit et ne l'écrit jamais : [toFirestore] l'omet, une mise à
+  /// jour le laisse en place, et une copie ne le reprend pas — le serveur le
+  /// recalcule pour elle.
+  final RecipeAllergens? allergens;
+
   /// ID de la recette source dont ce brouillon est une copie.
   /// Non nul uniquement pour les brouillons créés par copie/amélioration.
   /// Nul pour les brouillons issus d'un scan.
@@ -807,6 +817,7 @@ class Recipe {
     this.importVersion,
     this.shoppingProducts = const [],
     this.nutrition,
+    this.allergens,
     this.sourceRecipeId,
     this.origin,
     this.fidelityLevel,
@@ -877,6 +888,7 @@ class Recipe {
               Map<String, dynamic>.from(data['nutrition'] as Map),
             )
           : null,
+      allergens: RecipeAllergens.fromMap(data['allergens']),
       sourceRecipeId: data['source_recipe_id'] as String?,
       origin: recipeOriginFrom(data['origin']),
       fidelityLevel: data['fidelity_level'] as String?,
@@ -992,6 +1004,8 @@ class Recipe {
       importVersion: importVersion ?? this.importVersion,
       shoppingProducts: shoppingProducts ?? this.shoppingProducts,
       nutrition: nutrition ?? this.nutrition,
+      // Calculés par le serveur : suivent la recette, jamais un paramètre.
+      allergens: allergens,
       sourceRecipeId: sourceRecipeId ?? this.sourceRecipeId,
       origin: origin ?? this.origin,
       // Le verdict de fidélité suit la recette : une copie, un renommage ou une

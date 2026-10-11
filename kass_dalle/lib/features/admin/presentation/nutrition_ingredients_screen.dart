@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
 import '../data/nutrition_ingredients_repository.dart';
+import '../../recipes/domain/allergens.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -94,6 +95,80 @@ class _NutritionIngredientsScreenState
     }
   }
 
+  /// Corrige les allergènes d'un ingrédient. Enregistrer sans rien cocher
+  /// signifie « aucun allergène » ; enregistrer sans changement confirme la
+  /// liste estimée par l'IA.
+  Future<void> _editAllergens(NutritionIngredientDoc doc) async {
+    final selected = <String>{...?doc.allergens};
+    final name = doc.id.replaceAll('_', ' ');
+    final value = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          scrollable: true,
+          title: const Text('Allergènes'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cochez les allergènes que contient « $name ». Enregistrer '
+                'sans rien cocher signifie : aucun allergène.',
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final key in kAllergenKeys)
+                    FilterChip(
+                      label: Text(allergenLabel(key)),
+                      selected: selected.contains(key),
+                      onSelected: (on) => setDialogState(() {
+                        if (on) {
+                          selected.add(key);
+                        } else {
+                          selected.remove(key);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(ctx).pop(sortAllergenKeys(selected)),
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (value == null || !mounted) return;
+    try {
+      await ref
+          .read(nutritionIngredientsRepositoryProvider)
+          .setAllergens(doc.id, value);
+      if (!mounted) return;
+      final list = value.isEmpty
+          ? 'aucun'
+          : value.map(allergenLabel).join(', ');
+      context.showSuccessSnackBar(
+        'Allergènes enregistrés : $list. Lancez « Allergènes des '
+        'ingrédients et des recettes » pour les recettes.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Enregistrement impossible : $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ingredientsAsync = ref.watch(allNutritionIngredientsProvider);
@@ -176,6 +251,19 @@ class _NutritionIngredientsScreenState
                         ? 'le nom lui-même'
                         : shopping.trim();
 
+                    // Même distinction pour les allergènes : jamais examiné,
+                    // aucun, ou la liste — et qui l'a posée.
+                    final allergens = doc.allergens;
+                    final allergensOrigin = doc.allergensVerified
+                        ? '(vérifié par l\'admin)'
+                        : '(estimé par l\'IA)';
+                    final allergensText = allergens == null
+                        ? 'non examiné'
+                        : allergens.isEmpty
+                        ? 'aucun $allergensOrigin'
+                        : '${allergens.map(allergenLabel).join(', ')} '
+                              '$allergensOrigin';
+
                     return Card(
                       child: ExpansionTile(
                         title: Row(
@@ -201,6 +289,19 @@ class _NutritionIngredientsScreenState
                                   color: Theme.of(context).colorScheme.tertiary,
                                 ),
                               ),
+                            if (allergens == null) ...[
+                              const SizedBox(width: 4),
+                              Tooltip(
+                                message: 'Allergènes non examinés',
+                                child: Icon(
+                                  Icons.help_outline,
+                                  size: AppIconSize.small,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         subtitle: Text(
@@ -225,6 +326,21 @@ class _NutritionIngredientsScreenState
                                   size: AppIconSize.small,
                                 ),
                                 onPressed: () => _editShoppingProduct(doc),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text('Allergènes : $allergensText'),
+                              ),
+                              IconButton(
+                                tooltip: 'Corriger les allergènes',
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  size: AppIconSize.small,
+                                ),
+                                onPressed: () => _editAllergens(doc),
                               ),
                             ],
                           ),

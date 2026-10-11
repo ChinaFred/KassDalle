@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
-### v0.23.32 — fonctionnel
+### v0.23.33 — fonctionnel
 
 #### Importer une recette depuis un lien
 
@@ -38,7 +38,7 @@ texte, ou relancer, deux fois au plus.
 
 C'est le premier lot de la refonte d'Explorer.
 
-### v0.23.32 — technique
+### v0.23.33 — technique
 
 #### Pipeline d'import par lien
 
@@ -55,6 +55,40 @@ seulement par une copie lisible. Nouvelle collection `url_import_daily`. Les rè
 refusent au client la création d'un job `recipeUrlImport` et d'un livre `web_…`, et
 bornent la relance d'un import par lien à deux. La modération rattache désormais une
 photo approuvée à sa recette (`attach_on_approval`).
+
+### v0.23.32 — fonctionnel
+
+#### Allergènes d'une recette
+
+La fiche d'une recette montre ses allergènes sous la liste des ingrédients. Ce sont les
+14 allergènes de l'annexe II du règlement INCO. Chaque allergène a sa pastille, et un appui
+dessus montre les ingrédients en cause. Le bloc dit « Aucun allergène majeur détecté »
+seulement si tous les ingrédients ont été examinés. Sinon, il dit que l'analyse est
+incomplète. Un avertissement est toujours visible : « Liste indicative établie par IA. Elle
+ne remplace pas la lecture des emballages. »
+
+Dans Admin › Référentiels › Ingrédients nutrition, l'admin voit les allergènes de chaque
+ingrédient et les corrige avec 14 cases à cocher. Le nouveau backfill « Allergènes »
+d'Admin › Backfills examine les ingrédients pas encore examinés, puis recalcule toutes les
+recettes. Le filtre « sans allergène » d'Explorer viendra dans une prochaine version.
+
+### v0.23.32 — technique
+
+#### Allergènes : examen par ingrédient, union sur la recette
+
+Le modèle examine les allergènes une fois par ingrédient du référentiel. Les ingrédients
+sont envoyés par lots de 40, avec un schéma JSON fermé et une règle de prudence : en cas de
+doute, l'allergène est signalé. Le résultat est écrit dans `nutrition_ingredients`
+(`allergens`, `allergens_source`, `allergens_at`). Le modèle ne remplace jamais une valeur
+déjà posée, en particulier une correction de l'admin. La recette reçoit un champ racine
+`allergens` (`present`, `complete`, `by_ingredient`, `computed_at`), calculé par
+`onRecipeWritten` sans appel de modèle. Ce champ ne fait pas partie de l'empreinte des
+entrées du déclencheur, donc son écriture ne relance aucun calcul.
+
+Deux postes d'IA sont ajoutés : `allergens_auto` (ingrédients neufs, à l'écriture d'une
+recette) et `backfill_allergens`, avec la fonction `backfillAllergensFn`. La règle Firestore
+de `nutrition_ingredients` permet à l'admin d'écrire les trois champs d'allergènes. Les
+clés et leurs libellés sont partagés par la fixture `allergens.json`.
 
 ### v0.23.31 — technique
 

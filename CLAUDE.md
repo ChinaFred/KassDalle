@@ -551,6 +551,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur (section `unsafe_keys` : serveur seul) | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et dans la feuille de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
+| `allergens.json` | les quatorze allergènes majeurs de l'annexe II INCO — clés dans l'ordre du règlement et libellés, valeurs seules ; le serveur les cite dans le prompt et calcule le champ `allergens` d'une recette (serveur seul), le client les affiche sur la fiche et dans la correction admin | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

@@ -193,6 +193,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
    - **En-tête** : titre, livre source, page, langue, tags. Il reste hors onglets, comme la barre d'actions.
    - **Portions** : affichées sous forme de chip (ex : « 4 portions ») si renseignées dans les métadonnées CookLang (`>> portions: 4`). Ce champ est également stocké comme donnée structurée dans Firestore (`portions: int?`).
    - **Ingrédients** : liste structurée extraite du Cooklang, avec quantités et unités bien formatées. Chaque ingrédient est stocké dans Firestore sous forme d'objet `{ name, qty, unit }` (champ `ingredients`).
+   - **Allergènes** : un bloc « Allergènes » se place sous la liste des ingrédients — dans l'onglet *Préparer* sur grand écran, dans la page continue sur téléphone. Il nomme, parmi les quatorze allergènes majeurs de l'UE, ceux que contiennent les ingrédients, sous forme de pastilles. Un appui sur une pastille ouvre la feuille « Ingrédients en cause », qui liste les ingrédients de la recette porteurs de cet allergène. Le bloc suit l'état de l'analyse (voir 5.9, « Allergènes ») ; une recette qui n'a jamais été analysée n'affiche pas de bloc. Sous le bloc, toujours visible avec lui : « Liste indicative établie par IA. Elle ne remplace pas la lecture des emballages. » Le rendu est le même pour un Reader, un Editor et un Admin.
    - **Instructions** : étapes numérotées, avec mise en valeur des ingrédients et du matériel (rendu Cooklang interactif).
    - **Taille du texte** : sur l'APK Android en présentation étendue, deux boutons de la barre — réduire, agrandir — zooment l'onglet *Préparer* (ingrédients, étapes, puces) par paliers : 100, 125, 150, 175 et 200 %. Le zoom s'ajoute à la taille de police du système, il ne la remplace pas. Il est mémorisé sur l'appareil (`SharedPreferences`, clé `recipe_text_zoom`), pas dans le compte : il dépend de l'écran et de la distance de lecture, pas de la personne. Les autres onglets, la barre et les feuilles ouvertes depuis la fiche gardent leur taille.
    - **Document original** : bouton "Voir l'original" (icône scanner) toujours visible dans la barre d'actions. Ouvre l'image en plein écran zoomable ou le PDF dans le navigateur.
@@ -442,8 +443,9 @@ Les quatorze entrées sont ouvertes sur mobile : rien n'est réservé au grand �
 **Gestion**
 
 - **Gestion des utilisateurs** : liste, attribution de rôle, révocation, nom préféré. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation.
-- **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul (seuils d'affichage, repli, priorité des sources), garnitures simples. Quatre écrans en dépendent : ingrédients, unités, politique, garnitures.
-- **Backfills** : sept reprises ponctuelles sur l'existant — enrichir les unités et les ingrédients des référentiels, reprendre le sel des ingrédients, reprendre la nutrition, classer le rôle des recettes dans un repas, renseigner la protéine et le féculent des plats, recalculer les produits d'achat, poser les contraintes de variété par défaut dans le planning des autres comptes (contraintes vides : texte posé ; contraintes écrites : texte ajouté à la suite, rien n'est effacé ; le compte de l'administrateur n'est pas modifié). Toute écriture ponctuelle sur un ensemble de documents vit ici, avec une bannière de progression et un compte rendu chiffré ; l'écran d'un référentiel montre et corrige, il ne lance pas d'opération de masse.
+- **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul (seuils d'affichage, repli, priorité des sources), garnitures simples. Quatre écrans en dépendent : ingrédients, unités, politique, garnitures. L'écran *Ingrédients nutrition* montre aussi les allergènes de chaque ingrédient — « estimé par l'IA », « vérifié par l'admin » ou « non examiné » — et les corrige par quatorze cases à cocher (voir 5.9, « Allergènes »).
+- **Backfills** : huit reprises ponctuelles sur l'existant — enrichir les unités et les ingrédients des référentiels, reprendre le sel des ingrédients, reprendre la nutrition, classer le rôle des recettes dans un repas, renseigner la protéine et le féculent des plats, recalculer les produits d'achat, analyser les allergènes, poser les contraintes de variété par défaut dans le planning des autres comptes (contraintes vides : texte posé ; contraintes écrites : texte ajouté à la suite, rien n'est effacé ; le compte de l'administrateur n'est pas modifié). Toute écriture ponctuelle sur un ensemble de documents vit ici, avec une bannière de progression et un compte rendu chiffré ; l'écran d'un référentiel montre et corrige, il ne lance pas d'opération de masse.
+  - **Allergènes** se déroule en deux phases. Phase 1 : chaque ingrédient du référentiel encore non examiné reçoit sa liste d'allergènes par l'IA ; elle est facturée, et ne touche ni un ingrédient déjà examiné ni une liste vérifiée par l'admin. Phase 2 : toutes les recettes reçoivent l'union des allergènes de leurs ingrédients, sans appel d'IA. Le compte rendu donne, pour chaque phase, les nombres de documents traités, ignorés et en erreur. L'administrateur la lance une fois après le déploiement qui introduit les allergènes, puis après chaque correction faite dans *Ingrédients nutrition*.
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
@@ -643,6 +645,29 @@ déjà transmise continue de fonctionner.
 - **Calculer ou recalculer est réservé au créateur de la recette et à un Admin.** Le calcul s'enregistre sur la recette partagée. Les autres membres voient la nutrition enregistrée, sans bouton ; sans nutrition, l'onglet dit que le calcul se fait à l'enregistrement de la recette et que seuls son créateur et un administrateur peuvent le relancer.
 - La politique de calcul — seuils d'affichage, priorité des sources, repli — se règle depuis l'administration.
 
+#### Allergènes
+
+- **Quatorze allergènes, ceux de la réglementation européenne** : gluten, crustacés, œuf, poisson, arachide, soja, lait, fruits à coque, céleri, moutarde, sésame, sulfites, lupin, mollusques. Les traces (« peut contenir ») ne sont pas signalées : elles dépendent du fabricant, pas de l'ingrédient.
+- **L'analyse se fait par ingrédient, dans le référentiel nutritionnel.** Chaque ingrédient de `nutrition_ingredients` reçoit sa liste d'allergènes, estimée par l'IA. Un ingrédient examiné une fois ne l'est plus : la liste sert à toutes les recettes qui l'emploient, de tous les comptes.
+- **Règle de prudence.** En cas de doute, l'allergène est signalé. Un produit composé (pâte feuilletée, sauce soja, bouillon) est jugé dans sa forme du commerce habituelle : la pâte feuilletée contient du gluten et du lait, même si une version sans existe.
+- **La recette reçoit l'union des allergènes de ses ingrédients**, recalculée par le serveur à chaque écriture de la recette. Personne ne la saisit à la main. Le résultat vit dans la recette partagée, comme la nutrition : il décrit la recette, pas un lecteur, et ne dépend pas du nombre de parts.
+- **Une analyse est complète quand tous les ingrédients de la recette ont été examinés.** Sinon, elle est incomplète ; l'écran ne liste pas les ingrédients non examinés.
+- **Ce qu'affiche la fiche**, sous les ingrédients :
+
+  | État | Affichage |
+  |---|---|
+  | Recette jamais analysée | rien (pas de bloc) |
+  | Incomplète, au moins un allergène | « Analyse des allergènes incomplète : certains ingrédients n'ont pas encore été examinés. » puis les pastilles |
+  | Incomplète, aucun allergène | « Analyse des allergènes incomplète : aucun allergène trouvé parmi les ingrédients déjà examinés. » |
+  | Complète, aucun allergène | « Aucun allergène majeur détecté. » |
+  | Complète, au moins un allergène | les pastilles |
+
+  Dans les quatre derniers cas, l'avertissement « Liste indicative établie par IA. Elle ne remplace pas la lecture des emballages. » accompagne le bloc.
+- **La feuille « Ingrédients en cause »** s'ouvre d'un appui sur une pastille. Elle liste les ingrédients de la recette qui portent cet allergène.
+- **Correction par l'administrateur.** Dans *Admin › Référentiels › Ingrédients nutrition*, chaque ingrédient porte une ligne « Allergènes : … (estimé par l'IA) » ou « (vérifié par l'admin) », ou « Allergènes : non examiné ». L'administrateur corrige la liste par quatorze cases à cocher ; la ligne passe alors à « vérifié par l'admin », et une liste vérifiée n'est plus remplacée par l'IA. Une correction ne recalcule pas les recettes déjà écrites : l'administrateur relance le backfill « Allergènes ».
+- **Les recettes existantes** reçoivent leurs allergènes par *Admin › Backfills › Allergènes*, réservé à l'administrateur (voir 5.6).
+- Un Reader ou un Editor lit les allergènes sur toute recette qu'il voit. Il ne les corrige pas, ni sur sa recette ni dans le référentiel.
+
 ### 5.10 Module Liste de courses (tous les clients)
 
 - Construite depuis les repas **à venir** du planning : une liste qui reprend les courses de repas déjà mangés ne sert à rien.
@@ -733,6 +758,7 @@ déjà transmise continue de fonctionner.
 | Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
+| Allergènes : prudence et indication | Les quatorze allergènes majeurs de l'UE sont estimés par l'IA, ingrédient par ingrédient, dans le référentiel nutritionnel. En cas de doute, l'allergène est signalé ; un produit composé est jugé dans sa forme du commerce habituelle. Les traces ne sont pas signalées. La recette porte l'union de ses ingrédients, calculée par le serveur à l'écriture, jamais saisie à la main. L'écran dit quand l'analyse est incomplète et rappelle toujours que la liste est indicative et ne remplace pas la lecture des emballages. Seul un Admin corrige un ingrédient ; la correction atteint les recettes au prochain passage du backfill « Allergènes ». |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -750,6 +776,7 @@ déjà transmise continue de fonctionner.
 - Planning des repas + intégration Google Calendar, conseils de conservation
 - Liste de courses des repas à venir, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
 - Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
+- Allergènes : les quatorze allergènes majeurs de l'UE, estimés par l'IA pour chaque ingrédient du référentiel, affichés sur la fiche recette, corrigés par l'administrateur
 - Export PDF d'une recette, partagé ou téléchargé selon la plateforme
 - Illustrations : extraction depuis un scan, retouche, génération, conseil de dressage
 - Routage multi-fournisseur Gemini / Claude, piloté depuis l'administration
@@ -767,6 +794,10 @@ déjà transmise continue de fonctionner.
 | **Partage externe (lien public)** | Rien ne sort aujourd'hui du cercle authentifié. Demande une décision sur ce qu'un lien expose, et pour combien de temps. | Faible |
 | **Minuteur interactif depuis CookLang** | Les durées sont analysées et affichées ; rien ne décompte. Demande des notifications locales. | Faible |
 | **Attestation du client Windows** | Sa seule voie serait un jeton de débogage, c'est-à-dire un secret partagé dans un binaire distribué. Limite assumée, non contournable par une exemption de plateforme. | — |
+| **Filtre « sans allergène » dans Explorer** | Attend la refonte d'Explorer. Reste aussi à trancher le lien entre un régime et un allergène : « sans lactose » équivaut-il à « sans lait » ? | Faible |
+| **Allergènes : surcharge par recette** | Aujourd'hui, seul l'ingrédient se corrige, dans le référentiel. Une recette dont l'ingrédient est une variante sans allergène (pâte sans gluten) ne peut pas le dire. | Moyenne |
+| **Allergènes dans l'export PDF** | Le PDF d'une recette n'emporte pas le bloc « Allergènes ». | Faible |
+| **Lien de « Ingrédients en cause » vers le référentiel** | Depuis la feuille, un administrateur ne peut pas ouvrir directement l'ingrédient pour le corriger. | Faible |
 | **Application iOS** | Le projet existe et n'a jamais été construit : il manque cinq éléments de configuration, un poste macOS et un compte développeur. Rien ne bloque techniquement, personne n'en a eu besoin. | Moyenne |
 
 ---
