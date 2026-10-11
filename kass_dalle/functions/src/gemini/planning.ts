@@ -778,7 +778,12 @@ const CUISINE_MARKERS: Array<[CuisineFamily, string[]]> = [
 ];
 
 export function cuisineFamilyOf(r: Pick<PlanningRecipeSummary, "cuisines">): CuisineFamily {
-  const bag = normalize((r.cuisines ?? []).join(" | "));
+  // Le corpus vient du client : un champ qui n'est pas une liste de textes
+  // ne compte pas, plutôt que de faire échouer toute la génération.
+  const cuisines = Array.isArray(r.cuisines)
+    ? r.cuisines.filter((c): c is string => typeof c === "string")
+    : [];
+  const bag = normalize(cuisines.join(" | "));
   if (!bag) return "inconnue";
   for (const [family, markers] of CUISINE_MARKERS) {
     if (markers.some((m) => bag.includes(m))) return family;
@@ -793,10 +798,11 @@ export function cuisineFamilyOf(r: Pick<PlanningRecipeSummary, "cuisines">): Cui
  */
 export function cuisineRepeatsOf(
   family: CuisineFamily,
-  cycleFamilies: ReadonlyArray<CuisineFamily>,
+  cycleFamilies: ReadonlyArray<CuisineFamily> | ReadonlyMap<CuisineFamily, number>,
 ): number {
   if (family === "francaise" || family === "inconnue") return 0;
-  return cycleFamilies.filter((f) => f === family).length;
+  if (cycleFamilies instanceof Map) return cycleFamilies.get(family) ?? 0;
+  return (cycleFamilies as ReadonlyArray<CuisineFamily>).filter((f) => f === family).length;
 }
 
 /** Le féculent principal (`main_starch`), ou `null` s'il n'est pas posé. */
@@ -1240,10 +1246,12 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
   }
   // Familles de cuisine posées dans le cycle : les recettes déjà assignées,
   // puis le premier plat classé de chaque créneau traité, comme les féculents.
-  const cycleCuisines: CuisineFamily[] = [];
+  const cycleCuisines = new Map<CuisineFamily, number>();
+  const noteCuisine = (family: CuisineFamily) =>
+    cycleCuisines.set(family, (cycleCuisines.get(family) ?? 0) + 1);
   for (const id of inCycle) {
     const r = corpusById.get(id);
-    if (r) cycleCuisines.push(cuisineFamilyOf(r));
+    if (r) noteCuisine(cuisineFamilyOf(r));
   }
   const neighbourStarches = (date: string): Array<MainStarch | null> => [
     ...(starchesByDate.get(shiftDate(date, -1)) ?? []),
@@ -1311,7 +1319,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     for (const r of head) reserved.add(r.id);
     if (role === "main" && list.length > 0) {
       noteStarch(ctx.date, starchOf(list[0]));
-      cycleCuisines.push(cuisineFamilyOf(list[0]));
+      noteCuisine(cuisineFamilyOf(list[0]));
     }
     return {
       list: list.slice(0, Math.max(depth, headSize)).map((r) => {

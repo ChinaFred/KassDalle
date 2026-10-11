@@ -27,7 +27,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 La présélection des plats tient compte de la cuisine. Chaque recette est rangée dans une
 famille d'après ses étiquettes de cuisine : asiatique, indienne, orientale, Amériques,
 africaine, italienne, européenne ou française. Un plat d'une famille étrangère déjà prévue dans
-la semaine a deux fois moins de chances d'être tiré, et quatre fois moins à la troisième.
+le cycle a deux fois moins de chances d'être tiré, et quatre fois moins à la troisième.
 La cuisine française n'est jamais pénalisée, ce qui lui donne l'avantage sur la semaine. Une
 recette sans étiquette de cuisine ne l'est pas non plus.
 
