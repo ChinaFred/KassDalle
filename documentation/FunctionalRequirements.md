@@ -322,12 +322,15 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   - Les deux lignes sont posées **sous** la tuile, sur toute la largeur de la carte. Dans la
     colonne du sous-titre, elles n'avaient que la place laissée par les boutons de droite, et le
     libellé s'y coupait.
-  - Une recette écrite dans une autre langue passe par une étape de plus, la traduction. Elle n'a
-    pas d'icône dans la rangée ; la seconde ligne affiche « Traduction de la recette par l'IA… »
-    pendant qu'elle a lieu.
   - Le nombre d'étapes dépend du travail : **trois** pour une couverture de livre (envoi, lecture,
     écriture), **sept** pour une page de recette (envoi, lecture, analyse, photos, balisage,
-    ingrédients, écriture). Les séquences viennent des branchements du pipeline serveur, pas d'une
+    ingrédients, écriture), **sept** pour un import par lien (page, lecture, analyse, balisage,
+    ingrédients, écriture, photo).
+  - Une recette écrite dans une autre langue passe par une étape de plus, la traduction, avec son
+    icône : avant l'analyse pour une page scannée, après l'analyse pour un lien. L'icône apparaît
+    quand la traduction commence et reste jusqu'à la fin de l'import. Une recette française n'a
+    pas cette icône.
+  - Les séquences viennent des branchements du pipeline serveur, pas d'une
     liste plausible : afficher sept étapes pour une couverture promettrait un travail qui n'a pas
     lieu.
   - La phrase complète s'affichait auparavant sous le titre. Sur un téléphone étroit, et dès que la

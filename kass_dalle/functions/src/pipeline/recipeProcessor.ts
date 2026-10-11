@@ -579,7 +579,13 @@ export const recipeProcessor = onTaskDispatched(
       // reprise est réécrit avec elle : une relance après un balisage en échec
       // ne la refait pas.
       if (transcription.recettes.some(needsTranslation)) {
-        await jobRef.update({ current_step: "translate", updated_at: Timestamp.now() });
+        // `translated` reste sur le job après l'étape : le fil d'icônes du
+        // client garde ainsi le jalon « Traduction » jusqu'à la fin.
+        await jobRef.update({
+          current_step: "translate",
+          translated: true,
+          updated_at: Timestamp.now(),
+        });
         const recettes: TranscribedRecipe[] = [...transcription.recettes];
         for (let i = 0; i < recettes.length; i++) {
           if (!needsTranslation(recettes[i])) continue;

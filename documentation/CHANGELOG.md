@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.34 — fonctionnel
+
+#### Le fil d'icônes garde ses icônes pendant une traduction
+
+Pendant la traduction d'une recette écrite dans une autre langue, la ligne de la file de
+travail perdait toutes ses icônes et n'affichait plus que « Traduction de la recette par
+l'IA… ». L'étape `translate` n'avait pas de jalon dans le fil. Le fil d'une recette traduite
+porte maintenant un jalon « Traduction » : avant « Analyse » pour un scan, après « Analyse »
+pour un import par lien. Il reste affiché jusqu'à la fin de l'import. Une recette française
+garde le fil d'avant.
+
+Le fil d'un import par lien gagne aussi le jalon « Analyse » : le serveur écrit cette étape,
+et la ligne perdait ses icônes pendant ce temps.
+
+### v0.23.34 — technique
+
+Nouveau champ `processing_jobs.translated` (`Boolean?`), posé à `true` par le serveur dans la
+même écriture que `current_step: "translate"` et jamais retiré. Aucune écriture
+supplémentaire. Le client le lit pour ajouter le jalon (`trailFor(type, translated:)`).
+
 ### v0.23.33 — fonctionnel
 
 #### Importer une recette depuis un lien

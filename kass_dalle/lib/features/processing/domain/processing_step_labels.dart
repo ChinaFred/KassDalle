@@ -28,8 +28,8 @@ String formatProcessingStep(String? raw) {
       return 'Lecture de la page par l\'IA…';
     case 'translate':
       // Étape conditionnelle : seule une recette écrite dans une autre langue
-      // la traverse. Elle n'a pas de jalon dans le fil (`processing_trail`),
-      // qui retombe alors sur ce libellé.
+      // la traverse. Son jalon n'est dans le fil (`processing_trail`) que si
+      // le job porte `translated`.
       return 'Traduction de la recette par l\'IA…';
     case 'parse':
       return 'Analyse de la recette…';
