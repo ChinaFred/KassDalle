@@ -234,7 +234,8 @@ export async function prepareUrlImport(args: {
   });
 
   if (needsTranslation(recette)) {
-    await onStep("translate");
+    // `translated` garde le jalon « Traduction » dans le fil du client.
+    await onStep("translate", { translated: true });
     recette = await translateRecipe(recette, {
       ...ctx,
       feature: "recipe_translation",

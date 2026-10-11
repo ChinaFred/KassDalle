@@ -554,6 +554,7 @@ class QueueJobTile extends StatelessWidget {
                 child: ProcessingTrailRow(
                   type: job.type,
                   currentStep: job.currentStep,
+                  translated: job.translated,
                 ),
               ),
             ],

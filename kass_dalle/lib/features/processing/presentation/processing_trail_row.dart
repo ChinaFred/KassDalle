@@ -22,6 +22,9 @@ class ProcessingTrailRow extends StatelessWidget {
   final ProcessingJobType type;
   final String? currentStep;
 
+  /// Le champ `translated` du job : ajoute le jalon « Traduction » au fil.
+  final bool translated;
+
   /// Vrai quand le traitement est fini : tous les jalons s'éteignent en
   /// « fait », aucun n'est en cours.
   final bool termine;
@@ -30,13 +33,14 @@ class ProcessingTrailRow extends StatelessWidget {
     super.key,
     required this.type,
     required this.currentStep,
+    this.translated = false,
     this.termine = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final trail = trailFor(type);
+    final trail = trailFor(type, translated: translated);
     final courant = stepIndexIn(trail, currentStep);
 
     // Étape hors du fil : c'est un libellé écrit en clair par le client. On
