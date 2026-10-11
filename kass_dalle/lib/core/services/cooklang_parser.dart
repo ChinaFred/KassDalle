@@ -279,6 +279,36 @@ RecipeTags extractRecipeTags(String cooklang) {
   );
 }
 
+/// Durées LUES d'une recette, composante par composante : le champ `tags`
+/// ([prepTime], [cookTime], strictement positifs) d'abord, puis les
+/// métadonnées des textes CookLang dans l'ordre donné (brouillon, puis texte
+/// validé), avec les alias de [extractRecipeTags].
+///
+/// Jumeau de `readDurations` dans `functions/src/cooklang/parser.ts`, asservi
+/// par `test-fixtures/cooklang_parsing.json` (section `readDurations`). Le
+/// serveur décide ce qu'il estime, le client ce qu'il affiche et filtre : ils
+/// doivent voir les mêmes durées lues.
+({int? prep, int? cook}) readDurations({
+  int? prepTime,
+  int? cookTime,
+  List<String?> cooklangs = const [],
+}) {
+  int? positive(int? v) => v != null && v > 0 ? v : null;
+  var prep = positive(prepTime);
+  var cook = positive(cookTime);
+  for (final cooklang in cooklangs) {
+    if (cooklang == null ||
+        cooklang.isEmpty ||
+        (prep != null && cook != null)) {
+      continue;
+    }
+    final tags = extractRecipeTags(cooklang);
+    prep ??= positive(tags.prepTime);
+    cook ??= positive(tags.cookTime);
+  }
+  return (prep: prep, cook: cook);
+}
+
 /// Parse une valeur CSV en liste de strings normalisés.
 List<String> _parseCsvList(String? value) {
   if (value == null || value.trim().isEmpty) return const [];

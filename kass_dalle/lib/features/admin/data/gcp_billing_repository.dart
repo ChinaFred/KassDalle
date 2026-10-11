@@ -498,6 +498,41 @@ class GcpBillingRepository {
     return out;
   }
 
+  /// Durées estimées : estime, huit recettes par appel de modèle (poste
+  /// `backfill_time_estimate_batch`), la préparation et la cuisson des
+  /// recettes qui n'en donnent pas. Une recette déjà estimée pour son contenu
+  /// n'est ni redemandée ni refacturée. Réentrante, avec reprise sur point de
+  /// contrôle. Rend les compteurs tels quels ; les drapeaux valent 1 ou 0.
+  Future<Map<String, int>> backfillEstimatedTimes({
+    double maxMinutes = 8,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillEstimatedTimesFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    final out = <String, int>{};
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is num) {
+        out[entry.key] = value.toInt();
+      } else if (value is bool) {
+        out[entry.key] = value ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

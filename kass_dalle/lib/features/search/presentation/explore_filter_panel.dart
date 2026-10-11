@@ -153,6 +153,19 @@ class _ExploreFilterPanelState extends ConsumerState<ExploreFilterPanel> {
           RecipeFilterDimension.totalTime,
           help: 'Préparation + cuisson ; le repos n\'est pas compté.',
         ),
+        SwitchListTile(
+          title: const Text('Compter les durées estimées'),
+          subtitle: const Text(
+            'Durées estimées par l\'IA pour les recettes qui n\'en donnent '
+            'pas. Comptent aussi dans le tri « Plus rapides ».',
+          ),
+          value: _filter.countEstimatedTimes,
+          onChanged: (v) => widget.onChanged(
+            widget.prefs.copyWith(
+              filter: _filter.copyWith(countEstimatedTimes: v),
+            ),
+          ),
+        ),
         _group('Cuisine', RecipeFilterDimension.cuisine),
         const SizedBox(height: 8),
         ExpansionTile(

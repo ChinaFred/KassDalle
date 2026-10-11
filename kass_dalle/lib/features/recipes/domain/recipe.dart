@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import '../../../core/services/cooklang_parser.dart'
     show extractPageType, ingredientKey, parsePageTypeLabel;
 import 'allergens.dart';
+import 'estimated_times.dart';
 import 'meal_role.dart';
 import 'recipe_origin.dart';
 
@@ -710,6 +711,12 @@ class Recipe {
   /// recalcule pour elle.
   final RecipeAllergens? allergens;
 
+  /// Durées de préparation et de cuisson estimées par l'IA, pour une recette
+  /// qui ne les donne pas (`estimated_times`, écrit par `onRecipeWritten`).
+  /// `null` sans estimation. Même règle que [allergens] : lu, jamais écrit.
+  /// Une durée lue dans la recette garde la priorité (voir `recipeTimes`).
+  final RecipeEstimatedTimes? estimatedTimes;
+
   /// ID de la recette source dont ce brouillon est une copie.
   /// Non nul uniquement pour les brouillons créés par copie/amélioration.
   /// Nul pour les brouillons issus d'un scan.
@@ -818,6 +825,7 @@ class Recipe {
     this.shoppingProducts = const [],
     this.nutrition,
     this.allergens,
+    this.estimatedTimes,
     this.sourceRecipeId,
     this.origin,
     this.fidelityLevel,
@@ -889,6 +897,7 @@ class Recipe {
             )
           : null,
       allergens: RecipeAllergens.fromMap(data['allergens']),
+      estimatedTimes: RecipeEstimatedTimes.fromMap(data['estimated_times']),
       sourceRecipeId: data['source_recipe_id'] as String?,
       origin: recipeOriginFrom(data['origin']),
       fidelityLevel: data['fidelity_level'] as String?,
@@ -1006,6 +1015,7 @@ class Recipe {
       nutrition: nutrition ?? this.nutrition,
       // Calculés par le serveur : suivent la recette, jamais un paramètre.
       allergens: allergens,
+      estimatedTimes: estimatedTimes,
       sourceRecipeId: sourceRecipeId ?? this.sourceRecipeId,
       origin: origin ?? this.origin,
       // Le verdict de fidélité suit la recette : une copie, un renommage ou une

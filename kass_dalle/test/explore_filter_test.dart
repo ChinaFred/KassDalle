@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/recipes/domain/allergens.dart';
+import 'package:kass_dalle/features/recipes/domain/estimated_times.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe_filter.dart';
 import 'package:kass_dalle/features/search/domain/explore_facets.dart';
@@ -33,6 +34,8 @@ void main() {
     int? portions,
     RecipeNutritionSnapshot? nutri,
     RecipeAllergens? allergens,
+    RecipeEstimatedTimes? estimated,
+    String cooklang = '',
     String createdBy = 'moi',
     DateTime? createdAt,
     String? mealRole,
@@ -40,7 +43,7 @@ void main() {
     id: id,
     titre: titre ?? 'Recette $id',
     langue: 'fr',
-    rawCooklang: '',
+    rawCooklang: cooklang,
     imageUrls: const [],
     reviewStatus: ReviewStatus.validated,
     tags: RecipeTags(
@@ -59,6 +62,7 @@ void main() {
     portions: portions,
     nutrition: nutri,
     allergens: allergens,
+    estimatedTimes: estimated,
   );
 
   group('texte', () {
@@ -184,6 +188,190 @@ void main() {
         context: ctx,
       );
       expect(out.recipes, hasLength(1));
+    });
+  });
+
+  group('durées estimées', () {
+    test('lecture du champ : terminé seulement, durées positives', () {
+      expect(
+        RecipeEstimatedTimes.fromMap({
+          'status': 'done',
+          'prep': 20,
+          'cook': null,
+        })?.prep,
+        20,
+      );
+      expect(
+        RecipeEstimatedTimes.fromMap({'status': 'pending', 'prep': 20}),
+        isNull,
+      );
+      expect(
+        RecipeEstimatedTimes.fromMap({
+          'status': 'done',
+          'prep': null,
+          'cook': 0,
+        }),
+        isNull,
+      );
+      expect(RecipeEstimatedTimes.fromMap('texte'), isNull);
+    });
+
+    test('une durée lue garde la priorité sur l\'estimation', () {
+      final r = recipe(
+        'a',
+        prep: 15,
+        estimated: const RecipeEstimatedTimes(prep: 40, cook: 25),
+      );
+      final times = recipeTimes(r);
+      expect(times.prep, 15);
+      expect(times.prepEstimated, isFalse);
+      expect(times.cook, 25);
+      expect(times.cookEstimated, isTrue);
+      expect(times.total, 40);
+      expect(times.isEstimated, isTrue);
+      // Durées lues seules : la cuisson estimée ne compte pas.
+      expect(recipeTotalMinutes(r), 15);
+      expect(recipeTotalMinutesWithEstimates(r), 40);
+      // La fiche n'affiche que la cuisson estimée.
+      final shown = recipeShownEstimate(r);
+      expect(shown?.prep, isNull);
+      expect(shown?.cook, 25);
+    });
+
+    test('durée lue dans le texte seul : 20 min, pas d\'estimation de la '
+        'préparation', () {
+      final r = recipe(
+        'texte',
+        cooklang: '>> temps_preparation: 20\nÉplucher.',
+        estimated: const RecipeEstimatedTimes(prep: 45, cook: 30),
+      );
+      expect(recipeTotalMinutes(r), 20);
+      final times = recipeTimes(r);
+      expect(times.prep, 20);
+      expect(times.prepEstimated, isFalse);
+      expect(times.cook, 30);
+      expect(times.total, 50);
+      expect(recipeShownEstimate(r)?.prep, isNull);
+      expect(recipeShownEstimate(r)?.cook, 30);
+      // Sans estimation de cuisson : « 20 min », rien d'estimé.
+      final seule = recipe(
+        'texte-seul',
+        cooklang: '>> temps_preparation: 20\nÉplucher.',
+        estimated: const RecipeEstimatedTimes(prep: 45),
+      );
+      expect(recipeTimes(seule).total, 20);
+      expect(recipeTimes(seule).isEstimated, isFalse);
+      expect(recipeShownEstimate(seule), isNull);
+      expect(
+        exploreDurationText(
+          recipeTimes(seule).total!,
+          estimated: recipeTimes(seule).isEstimated,
+        ),
+        '20 min',
+      );
+      // Le filtre la retient comme une durée lue, interrupteur décoché.
+      const filter = RecipeFilter(
+        maxTotalMinutes: 30,
+        countEstimatedTimes: false,
+      );
+      expect(
+        applyRecipeFilter(
+          [seule],
+          filter: filter,
+          context: RecipeFilterContext.forFilter(filter),
+        ).recipes,
+        hasLength(1),
+      );
+    });
+
+    test('sans estimation, rien n\'est marqué estimé', () {
+      final times = recipeTimes(recipe('a', prep: 10, cook: 20));
+      expect(times.isEstimated, isFalse);
+      expect(recipeShownEstimate(recipe('a', prep: 10)), isNull);
+    });
+
+    final lue = recipe('lue', prep: 10);
+    final estimee = recipe(
+      'estimee',
+      estimated: const RecipeEstimatedTimes(prep: 10, cook: 15),
+    );
+    // Titre en « A » : par titre, elle passerait devant « estimee ».
+    final estimeeLongue = recipe(
+      'estimee-longue',
+      titre: 'A longue',
+      estimated: const RecipeEstimatedTimes(prep: 30, cook: 60),
+    );
+    final nulle = recipe('nulle');
+    final corpus = [lue, estimee, estimeeLongue, nulle];
+
+    test('interrupteur coché : l\'estimation entre dans le filtre', () {
+      const filter = RecipeFilter(maxTotalMinutes: 30);
+      expect(filter.countEstimatedTimes, isTrue);
+      final out = applyRecipeFilter(
+        corpus,
+        filter: filter,
+        context: RecipeFilterContext.forFilter(filter),
+      );
+      expect(out.recipes.map((r) => r.id), ['estimee', 'lue']);
+      expect(out.missingData[RecipeFilterDimension.totalTime], 1);
+      expect(out.estimatedTimeExcluded, 0);
+    });
+
+    test('interrupteur décoché : estimées écartées et comptées à part', () {
+      const filter = RecipeFilter(
+        maxTotalMinutes: 30,
+        countEstimatedTimes: false,
+      );
+      final out = applyRecipeFilter(
+        corpus,
+        filter: filter,
+        context: RecipeFilterContext.forFilter(filter),
+      );
+      expect(out.recipes.map((r) => r.id), ['lue']);
+      // « estimee-longue » (90 min) ne passerait pas même estimée : elle
+      // compte parmi les recettes sans durée.
+      expect(out.estimatedTimeExcluded, 1);
+      expect(out.missingData[RecipeFilterDimension.totalTime], 2);
+      expect(estimatedExcludedLine(1), '1 recette à durée estimée écartée');
+      expect(estimatedExcludedLine(3), '3 recettes à durée estimée écartées');
+    });
+
+    test('plus rapides : l\'estimation range la recette si cochée', () {
+      List<String> fastest(RecipeFilter f) => applyRecipeFilter(
+        corpus,
+        filter: f,
+        context: RecipeFilterContext.forFilter(f),
+        sort: RecipeSort.fastest,
+      ).recipes.map((r) => r.id).toList();
+      expect(fastest(RecipeFilter.none), [
+        'lue',
+        'estimee',
+        'estimee-longue',
+        'nulle',
+      ]);
+      // Décoché : sans durée lue, en fin de liste, par titre.
+      expect(fastest(const RecipeFilter(countEstimatedTimes: false)), [
+        'lue',
+        'estimee-longue',
+        'estimee',
+        'nulle',
+      ]);
+    });
+
+    test('l\'interrupteur s\'enregistre, et « Effacer tout » le garde', () {
+      const f = RecipeFilter(dishTypes: {'plat'}, countEstimatedTimes: false);
+      final back = RecipeFilter.fromMap(f.toMap());
+      expect(back.countEstimatedTimes, isFalse);
+      expect(back.signature, f.signature);
+      expect(
+        f.signature,
+        isNot(const RecipeFilter(dishTypes: {'plat'}).signature),
+      );
+      expect(RecipeFilter.fromMap(const {}).countEstimatedTimes, isTrue);
+      expect(f.cleared.isEmpty, isTrue);
+      expect(f.cleared.countEstimatedTimes, isFalse);
+      // Un réglage, pas une valeur cochée.
+      expect(f.count, 1);
     });
   });
 

@@ -161,7 +161,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final aiCorpus = applyRecipeFilter(
       corpus.recipes,
       filter: prefs.filter,
-      context: _filterContext(corpus),
+      context: _filterContext(corpus, prefs.filter),
       sort: prefs.sort,
     ).recipes;
     final request = AiRankingRequest(
@@ -232,8 +232,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  RecipeFilterContext _filterContext(ExploreCorpus corpus) =>
-      RecipeFilterContext(myRatings: corpus.myRatings);
+  RecipeFilterContext _filterContext(
+    ExploreCorpus corpus,
+    RecipeFilter filter,
+  ) => RecipeFilterContext.forFilter(filter, myRatings: corpus.myRatings);
 
   /// « Aller plus loin » : trois chemins hors de la bibliothèque.
   Future<void> _openGoFurther(ExploreCorpus corpus, bool canEdit) {
@@ -361,7 +363,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildLoaded(ExplorePreferences prefs, ExploreCorpus corpus) {
     final canEdit = ref.watch(canEditProvider);
-    final filterContext = _filterContext(corpus);
+    final filterContext = _filterContext(corpus, prefs.filter);
     final facets = exploreFacets(
       corpus.recipes,
       myUid: corpus.myUid,
@@ -402,7 +404,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       corpus: corpus,
       query: _query,
       canEdit: canEdit,
-      onClearAll: () => _updatePrefs(prefs.copyWith(filter: RecipeFilter.none)),
+      onClearAll: () =>
+          _updatePrefs(prefs.copyWith(filter: prefs.filter.cleared)),
       onRelaunch: askAi,
       onImagine: imagine,
       onOpenIdea: _openGeneratedSuggestion,
@@ -480,8 +483,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 _StatusLine(
                   outcome: outcome,
                   hasFilters: !prefs.filter.isEmpty,
-                  onClearAll: () =>
-                      _updatePrefs(prefs.copyWith(filter: RecipeFilter.none)),
+                  onClearAll: () => _updatePrefs(
+                    prefs.copyWith(filter: prefs.filter.cleared),
+                  ),
                 ),
                 Expanded(child: list),
               ],
@@ -507,7 +511,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           outcome: outcome,
           hasFilters: !prefs.filter.isEmpty,
           onClearAll: () =>
-              _updatePrefs(prefs.copyWith(filter: RecipeFilter.none)),
+              _updatePrefs(prefs.copyWith(filter: prefs.filter.cleared)),
         ),
         Expanded(child: list),
         _BottomActions(
@@ -608,6 +612,11 @@ class _StatusLine extends StatelessWidget {
                 ),
                 for (final e in outcome.missingData.entries)
                   Text(missingDataLine(e.key, e.value), style: muted),
+                if (outcome.estimatedTimeExcluded > 0)
+                  Text(
+                    estimatedExcludedLine(outcome.estimatedTimeExcluded),
+                    style: muted,
+                  ),
               ],
             ),
           ),
@@ -737,7 +746,10 @@ class _FilterSheet extends ConsumerWidget {
     // Les sources peuvent changer depuis la feuille : le corpus suit.
     final current =
         ref.watch(exploreCorpusProvider(prefs.sources)).value ?? corpus;
-    final filterContext = RecipeFilterContext(myRatings: current.myRatings);
+    final filterContext = RecipeFilterContext.forFilter(
+      prefs.filter,
+      myRatings: current.myRatings,
+    );
     final count = applyRecipeFilter(
       current.recipes,
       query: query,
@@ -792,7 +804,7 @@ class _FilterSheet extends ConsumerWidget {
                   onPressed: prefs.filter.isEmpty
                       ? null
                       : () => onChanged(
-                          prefs.copyWith(filter: RecipeFilter.none),
+                          prefs.copyWith(filter: prefs.filter.cleared),
                         ),
                   child: const Text('Effacer tout'),
                 ),

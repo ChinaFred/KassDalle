@@ -178,6 +178,25 @@ String missingDataLine(RecipeFilterDimension dimension, int count) {
       'écartée${plural ? 's' : ''}';
 }
 
+/// « 3 recettes à durée estimée écartées » : interrupteur « Compter les
+/// durées estimées » décoché.
+String estimatedExcludedLine(int count) {
+  final plural = count > 1;
+  return '$count recette${plural ? 's' : ''} à durée estimée '
+      'écartée${plural ? 's' : ''}';
+}
+
+/// Temps total d'une tuile : « 45 min », ou « ≈ 45 min, estimé » quand une
+/// composante vient de l'estimation de l'IA.
+String exploreDurationText(int minutes, {required bool estimated}) =>
+    estimated ? '≈ ${durationLabel(minutes)}, estimé' : durationLabel(minutes);
+
+/// Ce que dit le lecteur d'écran pour la même ligne.
+String exploreDurationSpoken(int minutes, {required bool estimated}) =>
+    estimated
+    ? 'Temps total environ ${spokenDuration(minutes)}, estimé'
+    : 'Temps total : ${spokenDuration(minutes)}';
+
 /// « Aucune recette », « 1 recette », « 12 recettes ».
 String recipeCountLabel(int count) => switch (count) {
   0 => 'Aucune recette',

@@ -227,4 +227,31 @@ void main() {
       });
     }
   });
+
+  // ── Durées lues d'une recette ──────────────────────────────────────────
+  //
+  // `tags` d'abord, puis le brouillon, puis le texte validé. Le serveur
+  // décide ce qu'il estime, le client ce qu'il affiche et filtre : sans la
+  // même règle des deux côtés, la fiche affiche « 20 min » et Explorer
+  // « sans durée ».
+  group('durées lues — tags puis métadonnées', () {
+    final cases = (fixture['readDurations'] as List)
+        .cast<Map<String, dynamic>>();
+
+    for (final c in cases) {
+      test(c['why'] as String, () {
+        final tags = Map<String, dynamic>.from(c['tags'] as Map);
+        final read = readDurations(
+          prepTime: tags['prep_time'] as int?,
+          cookTime: tags['cook_time'] as int?,
+          cooklangs: [
+            c['draft_cooklang'] as String?,
+            c['raw_cooklang'] as String?,
+          ],
+        );
+        expect(read.prep, c['prep'] as int?);
+        expect(read.cook, c['cook'] as int?);
+      });
+    }
+  });
 }

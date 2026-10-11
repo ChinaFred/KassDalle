@@ -238,6 +238,12 @@ classDiagram
     +ingredientsFor(key) List~String~
   }
 
+  class RecipeEstimatedTimes {
+    +int? prep
+    +int? cook
+    +fromMap(raw) RecipeEstimatedTimes?$
+  }
+
   class RecipeNutritionQuality {
     +int score
     +String level
@@ -283,6 +289,7 @@ classDiagram
   Recipe "1" *-- "1" RecipeTags : tags
   Recipe "1" o-- "0..1" RecipeNutritionSnapshot : nutrition
   Recipe "1" o-- "0..1" RecipeAllergens : allergens
+  Recipe "1" o-- "0..1" RecipeEstimatedTimes : estimatedTimes
   RecipeNutritionSnapshot "1" *-- "1" RecipeNutritionQuality : quality
   RecipeNutritionSnapshot "1" o-- "0..1" RecipeAbsorbedOil : absorbedOil
   Recipe ..&gt; ReviewStatus
@@ -302,6 +309,12 @@ classDiagram
         jamais écrit par le client. <code>present</code> suit l'ordre des quatorze clés de
         l'annexe II INCO (<code>kAllergenKeys</code>, fixture <code>allergens.json</code>) ;
         <code>byIngredient</code> donne, par clé, les noms d'ingrédients en cause.
+        <br><br>
+        <code>RecipeEstimatedTimes</code> suit la même règle : écrit par le serveur seul (champ
+        <code>estimated_times</code>, poste <code>time_estimate</code>), refusé au client par
+        les règles, lu seulement quand l'estimation est terminée (<code>status: done</code>).
+        Une durée lue dans <code>RecipeTags</code> ou dans le CookLang passe toujours avant
+        elle (<code>recipeTimes</code>).
         <br><br>
         <code>RecipeAbsorbedOil</code> n'a d'équivalent dans aucune liste d'ingrédients : c'est
         l'huile que la friture fait passer du bain à l'assiette, calculée côté serveur et présente
@@ -1219,6 +1232,8 @@ classDiagram
     +int? maxTotalMinutes
     +int? minRating
     +int? maxCaloriesPerPortion
+    +bool countEstimatedTimes
+    +RecipeFilter cleared
     +verdict(dimension, recipe, context) FilterVerdict
     +toggle(dimension, key) RecipeFilter
   }
@@ -1226,11 +1241,22 @@ classDiagram
   class RecipeFilterContext {
     +Map~String,int~ myRatings
     +totalMinutesOf(recipe) int?
+    +forFilter(filter, myRatings) RecipeFilterContext$
   }
 
   class RecipeFilterOutcome {
     +List~Recipe~ recipes
     +Map~RecipeFilterDimension,int~ missingData
+    +int estimatedTimeExcluded
+  }
+
+  class RecipeTimes {
+    +int? prep
+    +int? cook
+    +bool prepEstimated
+    +bool cookEstimated
+    +int? total
+    +bool isEstimated
   }
 
   class RecipeSort {
@@ -1289,6 +1315,7 @@ classDiagram
   ExplorePreferences --> RecipeSort
   RecipeFilter ..> RecipeFilterContext
   RecipeFilter ..> RecipeFilterOutcome : applyRecipeFilter
+  RecipeFilterContext ..> RecipeTimes : recipeTimes
   AiRankingState &lt;|-- AiRankingIdle
   AiRankingState &lt;|-- AiRankingLoading
   AiRankingState &lt;|-- AiRankingSuccess
@@ -1311,6 +1338,11 @@ classDiagram
         (<code>features/recipes/domain/recipe_filter.dart</code>) ; une recette sans donnée pour
         un filtre actif est écartée et comptée dans <code>missingData</code>. Les calories par
         portion et le temps total se calculent à l'affichage : rien n'est écrit dans la recette.
+        <code>RecipeTimes</code> compose le temps total durée par durée : la durée lue, puis
+        l'estimation de l'IA quand <code>countEstimatedTimes</code> est coché
+        (<code>RecipeFilterContext.forFilter</code>). Décoché, une recette que son estimation
+        aurait retenue est comptée dans <code>estimatedTimeExcluded</code>, pas dans
+        <code>missingData</code>.
         <span class="expect">
           <b>Un résultat de l'IA porte son motif</b> — <code>reason</code> pour une recette
           choisie, <code>justification</code> pour une recette imaginée. Une recette de la liste
@@ -1723,6 +1755,7 @@ classDiagram
           <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>
           <tr><td><code>allergens</code></td><td><code>allergens</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill) ; <code>toFirestore</code> l'omet, une mise à jour partielle le laisse en place. Absent tant qu'aucun calcul n'a eu lieu</td></tr>
+          <tr><td><code>estimatedTimes</code></td><td><code>estimated_times</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill « Durées estimées ») ; les règles refusent au client de le poser, le changer ou l'effacer. <code>toFirestore</code> l'omet, une copie ne le reprend pas. Seules <code>prep</code> et <code>cook</code> sont relues, quand <code>status</code> vaut <code>done</code></td></tr>
           <tr><td>—</td><td><code>pipeline_correlation_id</code></td><td>Trace du job d'import, pour rapprocher recette et logs</td></tr>
         </tbody>
       </table>

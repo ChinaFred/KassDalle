@@ -8,6 +8,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/photo_capture_service.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../domain/recipe.dart';
+import '../../domain/recipe_filter.dart' show recipeShownEstimate;
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
 import '../recipe_rating_widget.dart';
@@ -203,6 +204,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
               CooklangPreview(
                 ctrl: widget.ctrl,
                 overrideIngredients: recipe.ingredients,
+                estimatedTimes: recipeShownEstimate(recipe),
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,
                 onSelectedPortionsChanged: widget.onSelectedPortionsChanged,

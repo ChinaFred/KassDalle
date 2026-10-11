@@ -423,5 +423,56 @@
       "minutes": null,
       "why": "sans chiffre, on ne devine pas — « 1 nuit » aurait rendu 720"
     }
+  ],
+  "_readDurations_comment": "Durées LUES d'une recette, composante par composante : le champ tags (prep_time, cook_time, strictement positif) d'abord, puis les métadonnées CookLang du brouillon (draft_cooklang), puis celles du texte validé (raw_cooklang), avec les alias de extractTags. Une durée lue n'est jamais estimée, et l'estimation n'est affichée ni comptée pour elle. Le serveur décide ce qu'il estime, le client ce qu'il affiche et filtre : les deux doivent voir les mêmes durées lues, sans quoi la fiche affiche 20 min et Explorer « sans durée ».",
+  "readDurations": [
+    {
+      "tags": {
+        "prep_time": 15,
+        "cook_time": 40
+      },
+      "draft_cooklang": null,
+      "raw_cooklang": ">> temps_preparation: 99\n>> temps_cuisson: 99\nTexte.",
+      "prep": 15,
+      "cook": 40,
+      "why": "le champ tags passe avant le texte"
+    },
+    {
+      "tags": {},
+      "draft_cooklang": null,
+      "raw_cooklang": ">> temps_preparation: 20\nTexte.",
+      "prep": 20,
+      "cook": null,
+      "why": "durée dans le texte seul : lue, pas estimée"
+    },
+    {
+      "tags": {
+        "prep_time": 10
+      },
+      "draft_cooklang": ">> temps_cuisson: 25\nTexte.",
+      "raw_cooklang": ">> temps_cuisson: 99\nTexte.",
+      "prep": 10,
+      "cook": 25,
+      "why": "une composante par source, le brouillon avant le texte validé"
+    },
+    {
+      "tags": {
+        "prep_time": 0,
+        "cook_time": -3
+      },
+      "draft_cooklang": null,
+      "raw_cooklang": ">> temps_préparation: 20 min\n>> cook_time: 1 h\nTexte.",
+      "prep": 20,
+      "cook": 60,
+      "why": "zéro ou négatif dans tags ne compte pas : le texte prend le relais, alias compris"
+    },
+    {
+      "tags": {},
+      "draft_cooklang": "",
+      "raw_cooklang": "Texte sans métadonnée.",
+      "prep": null,
+      "cook": null,
+      "why": "rien de lu : les deux durées manquent"
+    }
   ]
 }

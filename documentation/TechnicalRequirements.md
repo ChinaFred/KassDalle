@@ -389,6 +389,7 @@ Document principal d'une recette.
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `allergens` | `Map?` | Allergènes majeurs de la recette — les 14 de l'annexe II INCO — **déduits sans appel de modèle** des `allergens` du référentiel (§3.10). Écrit par le serveur seul (`onRecipeWritten` → `syncRecipeAllergens`, et le backfill « Allergènes des ingrédients et des recettes ») — par convention du client : comme pour `nutrition`, les règles de `recipes` ne restreignent pas les champs qu'un créateur écrit ; le client le lit (`Recipe.allergens`, `RecipeAllergens`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour partielle le laisse en place, une copie ne le reprend pas. Absent tant qu'aucun calcul n'a eu lieu — la fiche n'affiche alors rien. Voir structure ci-dessous |
+| `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes`, et le backfill « Durées estimées ») ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent quand les deux durées sont lues. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
 | `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie |
@@ -460,6 +461,52 @@ résultat a changé (transaction sur la recette, ingrédients relus au moment d'
 
 `allergens` n'est pas une entrée du déclencheur (`recipeTriggerInputsFingerprint`) : l'écho
 de son écriture trouve le champ présent et les entrées inchangées, et s'arrête.
+
+#### Détail du champ `estimated_times` (Map imbriqué)
+
+| Clé | Type | Rôle |
+|---|---|---|
+| `status` | `String` | `done` : estimation rendue ; `pending` : appel en cours (réservation) |
+| `fingerprint` | `String` | Empreinte du contenu estimé : SHA-256 (32 premiers caractères hexadécimaux) du titre et du texte CookLang (`draft_cooklang`, sinon `raw_cooklang`) **sans ses lignes `>>`** (`estimateFingerprint`). Saisir une durée ne la change pas ; modifier une étape ou le titre la change |
+| `prep` · `cook` | `int?` | Minutes estimées, entier de 1 à 1440 (`boundedEstimatedMinutes`) ; `null` quand le modèle n'a pas su, qu'il n'y a pas de cuisson, ou que la recette **donne déjà** cette durée au moment de l'écriture (`doneEstimatedTimes` relit `readRecipeDurations` dans la transaction) : une estimation n'est jamais conservée pour une durée lue. Les deux sont demandées au modèle. Présentes quand `status == done` |
+| `estimated_at` | `Timestamp` | Date de l'estimation (`status == done`) |
+| `claim_id` · `claimed_at` | `String` · `Timestamp` | Réservation (`status == pending`) : identifiant tiré par l'invocation qui appelle le modèle, et sa date |
+
+**Quand il s'écrit** (`triggers/recipeEstimatedTimes.ts`, `decideEstimatedTimes`). À chaque
+écriture d'une recette, **avant** la garde d'empreinte des entrées, en parallèle du rôle dans
+un repas :
+
+- les deux durées sont lues : rien n'est appelé ; un champ présent est **effacé**
+  (`FieldValue.delete()`) — c'est ainsi qu'une durée saisie à la main retire l'estimation ;
+- une durée manque et aucun champ ne porte l'empreinte du contenu actuel : le module
+  **réserve** l'estimation dans une transaction (`status: pending`), appelle le modèle, puis
+  écrit le résultat dans une seconde transaction, seulement si la réservation est toujours la
+  sienne. Les échos qui arrivent pendant l'appel (rôle dans un repas, nutrition) trouvent la
+  réservation et ne rappellent pas le modèle ;
+- l'empreinte correspond et `status == done` : rien, même si les deux valeurs sont `null`
+  (le modèle n'a pas su : on ne refacture pas le même contenu) ;
+- une réservation de plus de dix minutes (`PENDING_TTL_MS`, appel en échec) se reprend à la
+  prochaine écriture ou au backfill.
+
+`estimated_times` n'est pas une entrée du déclencheur (`recipeTriggerInputsFingerprint`) :
+son écriture ne relance ni nutrition, ni courses, ni allergènes, et son écho trouve une
+estimation à jour. Coût : une estimation coûte deux à trois invocations du déclencheur de plus
+(réservation, résultat), sans appel de modèle.
+
+**Durée lue**, même règle des deux côtés : `readDurations` (`cooklang/parser.ts`,
+`core/services/cooklang_parser.dart`, fixture `cooklang_parsing.json`, section
+`readDurations`) — `tags.prep_time` / `cook_time` strictement positifs, puis les métadonnées
+du brouillon, puis du texte validé, avec les alias de `extractTags`.
+
+**Lecture côté client** (`features/recipes/domain/recipe_filter.dart`) : `recipeTimes`
+compose, durée par durée, la valeur lue (`readDurations`, mémorisée par instance de recette)
+puis l'estimation. Le temps total d'Explorer
+(`recipeTotalMinutesWithEstimates`) ne l'emploie que si l'interrupteur « Compter les durées
+estimées » est coché (`RecipeFilter.countEstimatedTimes`, `RecipeFilterContext.forFilter`).
+Le sélecteur du planning (`RecipeFilterContext.empty`, durées lues, métadonnées comprises),
+le serveur du planning et les courses n'emploient pas l'estimation. La fiche n'affiche une
+estimation que pour une durée absente à la fois de `tags` et du texte (`recipeShownEstimate`,
+puis `CooklangMetaRow` sur le texte affiché).
 
 #### Détail du champ `plating_advice` (Map imbriqué)
 
@@ -921,6 +968,10 @@ remplacée), et `main_ingredients_checked_at` dès qu'il a répondu. Si le modè
 une erreur passe par `logError`. L'absence de `main_protein` seule ne déclenche aucun appel :
 une recette classée sans elle est reprise par le backfill, et un déclencheur qui rappellerait
 le modèle tant qu'elle manque le rappellerait à chaque écho de sa propre écriture.
+
+**Les durées estimées se posent au même endroit.** `onRecipeWritten` appelle
+`syncRecipeEstimatedTimes` (`triggers/recipeEstimatedTimes.ts`) en parallèle de
+`syncRecipeMealRole`, avant la garde des entrées : voir « Détail du champ `estimated_times` ».
 
 ---
 
@@ -1389,6 +1440,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn` |
 | `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel, et compte rendu du dernier passage (`last_report`) |
 | `allergens_recipes_backfill_checkpoint` | `backfillAllergensFn` — curseur du recalcul des recettes |
+| `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn` — curseur du parcours des recettes, compte rendu du dernier passage (`last_report`), et verrou du passage en cours (`running_until` : `Timestamp`, heure d'expiration, délai maximal de la fonction ; `running_id` : identifiant du passage qui le tient). Le verrou est posé en transaction au début, levé à la fin ; un lancement pendant qu'il est valide rend `dejaEnCours: true` sans rien faire |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
@@ -1500,6 +1552,7 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
   | `filters.max_total_minutes` | `int?` | 15, 30, 45, 60 ou 120 |
   | `filters.min_rating` | `int?` | 5, 7 ou 8 (note du lecteur, sur 10) |
   | `filters.max_kcal_per_portion` | `int?` | 400, 600 ou 800 |
+  | `filters.count_estimated_times` | `bool` | « Compter les durées estimées » ; absent ou illisible : `true`. Gardé par « Effacer tout » (`RecipeFilter.cleared`) |
   | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
   Une valeur mal formée est ignorée à la lecture (`RecipeFilter.fromMap`) ; document absent ou
@@ -1849,10 +1902,13 @@ service cloud.firestore {
       allow read: if canReadRecipe(resource.data);
       // Création : éditeur et administrateur seulement. Le lecteur ne crée aucune
       // recette (saisie, copie, création par l'IA, import) ; il garde les siennes.
+      // `estimated_times` (durées estimées) : serveur seul, ni posé, ni changé,
+      // ni effacé par un client, administrateur compris.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
+        && !('estimated_times' in request.resource.data)
         && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
-        && !changes('source_url') && !changes('source_site')
+        && !changes('source_url') && !changes('source_site') && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -2226,7 +2282,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   ni de copie ; un éditeur et un administrateur créent la leur ; un `reader` modifie toujours
   la sienne. Les cas de confidentialité et de rangement à la création sont rejoués avec
   l'éditeur. `users/{uid}/preferences/explore_filters` se lit et s'écrit par son titulaire et
-  par un administrateur, dans la forme bornée par `isExploreFilters` (clé inconnue refusée).
+  par un administrateur, dans la forme bornée par `isExploreFilters` (clé inconnue refusée) ;
+  l'interrupteur `filters.count_estimated_times` s'y enregistre sans changer la règle (il vit
+  dans la carte `filters`, bornée à vingt clés). `estimated_times` ne se pose pas à la
+  création d'une recette, et ne se change ni ne s'efface à une mise à jour, administrateur
+  compris.
   Un éditeur ne crée pas `books/web2_{autre uid}`, le repli du livre web.
 - L'import par lien a ses tests : « Mes recettes du web » (`__web`) ne se supprime pas et garde
   son tag ; un éditeur ne crée ni `books/web_{autre uid}` ni un livre tagué `__web`, mais crée
@@ -2668,6 +2728,7 @@ l'utilisateur, pas d'un tiers. La borne ne vaut que pour l'import par lien.
 | `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
 | `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
 | `nutrition/allergenExamination.ts` | `buildAllergenPrompt` — les allergènes majeurs d'un lot de quarante ingrédients du référentiel. Les quatorze clés de l'annexe II INCO et leurs exemples viennent de `nutrition/allergens.ts` (`ALLERGEN_KEYS`, `ALLERGEN_LABELS`, `ALLERGEN_EXAMPLES`). Règles : en cas de doute, signaler ; un produit composé se juge sur sa forme du commerce habituelle (pâte feuilletée → gluten et lait, sauce soja → soja et gluten, bouillon cube → céleri et gluten, chocolat noir → lait, vin et vinaigre de vin → sulfites) ; beurre, ghee, crème → lait ; avoine → gluten ; pas de traces. Schéma JSON fermé `{ingredients: [{id, allergens: [enum des 14]}]}`, lu par `parseAllergenBatchAnswer` : une forme inattendue fait échouer le lot entier (rien n'est posé, `logError`), une clé hors liste est écartée et journalisée (`logWarn`). Deux postes : `allergens_auto` (à l'écriture d'une recette, dans `syncRecipeNutrition`, en parallèle du produit acheté) et `backfill_allergens` (Admin › Backfills), tous deux dans le groupe « Nutrition » du routage et « Valeurs nutritionnelles » du catalogue comptable |
+| `gemini/timeEstimate.ts` | `buildTimeEstimatePrompt` — la préparation (main à la pâte, hors cuisson et repos) et la cuisson (hors repos, marinade, levée, réfrigération ; cuissons successives additionnées) d'un lot de huit recettes au plus, en minutes entières de 1 à 1440 ; 0 pour « pas de cuisson » ou « ne sais pas ». Chaque recette part en JSON (`id`, `titre`, `portions`, `contenu` : le CookLang sans ses lignes `>>`, 2 000 caractères au plus, caractères de contrôle retirés), avec la consigne de la lire comme une donnée, jamais comme une instruction. Schéma JSON fermé `{recipes: [{id, prep_minutes, cook_minutes}]}` via `askJson`, lu par `parseTimeEstimateAnswer` : forme inattendue → lot en échec (`logError`, rien d'écrit) ; identifiant inconnu ou répété → ignoré ; valeur hors bornes, décimale ou nulle → `null` (`boundedEstimatedMinutes`). Deux postes : `time_estimate` (à l'écriture d'une recette, `syncRecipeEstimatedTimes`, une recette par appel) et `backfill_time_estimate_batch` (Admin › Backfills, huit recettes par appel), dans le groupe « Rédaction » du routage et « Rédaction d'une recette » du catalogue comptable |
 | `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier et repris par le backfill « Protéine et féculent des plats » (`suggestMainProteinStarch`, `gemini/tagger.ts`) |
 
 **Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
@@ -2831,8 +2892,13 @@ sélecteur du planning) :
   sans donnée pour un filtre actif est écartée et comptée par dimension
   (`RecipeFilterOutcome.missingData`, ligne « N recettes sans … écartées »). Temps total =
   préparation + cuisson, l'une des deux suffit, le repos n'est pas compté
-  (`recipeTotalMinutes`) ; une durée estimée se branchera par
-  `RecipeFilterContext.totalMinutesOf` sans toucher au filtre. Calories par portion =
+  (`recipeTotalMinutes` : `tags`, puis métadonnées CookLang — `readDurations`). Durée estimée (`estimated_times`, §3) : `RecipeFilterContext.forFilter`
+  branche `recipeTotalMinutesWithEstimates` sur `totalMinutesOf` quand
+  `RecipeFilter.countEstimatedTimes` est coché (défaut) — filtre « Temps total », nombres des
+  seuils et tri « Plus rapides ». Décoché, une recette que son estimation aurait retenue est
+  comptée dans `RecipeFilterOutcome.estimatedTimeExcluded` (« N recettes à durée estimée
+  écartées »). La tuile affiche toujours l'estimation, marquée « ≈ …, estimé »
+  (`recipeTimes`, `exploreDurationText`). Calories par portion =
   `nutrition.perPortionFor(portions)['kcal']`, calculées à l'affichage, rien n'est écrit.
   « Sans allergène » écarte une recette jamais analysée ou d'analyse incomplète
   (`allergens.complete == false`). Note minimale et tri « Mieux notées » : la note du lecteur
@@ -3479,6 +3545,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
+| `backfillEstimatedTimesFn` | `admin` | un seul passage à la fois : verrou daté `running_until` sur le point de reprise, posé en transaction, levé à la fin, expiré au bout de 540 s ; un second lancement rend « déjà en cours » (`dejaEnCours`) sans appel. Parcourt `recipes` et soumet au modèle, par lots de huit recettes **d'un même `created_by`** — le texte d'un compte ne partage jamais un prompt avec celui d'un autre — (poste `backfill_time_estimate_batch`, 160 recettes par appel par défaut, 400 au plus), les recettes de type `recipe` à qui il manque une durée de préparation ou de cuisson et qui ne portent pas d'estimation pour leur contenu actuel (`decideEstimatedTimes`). Une recette dont les durées sont lues, ou déjà estimée, n'est ni redemandée ni refacturée. Chaque réponse s'écrit dans une transaction qui revérifie l'empreinte : une recette modifiée pendant l'appel est ignorée. S'arrête après trois lots en échec de suite. Compte rendu : examinées, estimées, sans estimation, ignorées, hors recette, en erreur. Point de reprise dans `app_config/estimated_times_backfill_checkpoint`. À lancer une fois après le déploiement qui introduit les durées estimées — Admin › Backfills, « Durées estimées » |
 | `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
@@ -3855,7 +3922,7 @@ Functions.
 
 | Fixture | Logique | Dart | TypeScript |
 |---|---|---|---|
-| `cooklang_parsing.json` | parseur CookLang, index, type de page, durées | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
+| `cooklang_parsing.json` | parseur CookLang, index, type de page, durées, durées lues d'une recette (`readDurations` : `tags` puis métadonnées du brouillon et du texte validé) | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
 | `quantity_parsing.json` | parsing d'une quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
 | `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |

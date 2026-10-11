@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../../core/utils/recipe_tag_sections.dart';
+import '../domain/estimated_times.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_model.dart';
 import 'cooklang_preview_sections.dart';
@@ -72,6 +73,11 @@ class CooklangPreview extends StatefulWidget {
   /// quand la section est dépliée — les allergènes sur la fiche recette.
   final Widget? ingredientsFooter;
 
+  /// Durées estimées par l'IA, affichées « ≈ Prép. 20 min » pour une durée
+  /// que le texte ne donne pas. Fiche recette seulement : l'éditeur n'en
+  /// passe pas, la durée s'y saisit.
+  final RecipeEstimatedTimes? estimatedTimes;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -92,6 +98,7 @@ class CooklangPreview extends StatefulWidget {
     this.minPortions = 1,
     this.maxPortions = 99,
     this.ingredientsFooter,
+    this.estimatedTimes,
   });
 
   @override
@@ -188,6 +195,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             onAddIllustration: onAddIllustration,
             onTapIllustration: onTapIllustration,
             onDeleteIllustration: onDeleteIllustration,
+            estimatedTimes: widget.estimatedTimes,
           ),
           if (meta.isNotEmpty) const SizedBox(height: 8),
           if (tagSections.isNotEmpty) ...[

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/recipe_tag_sections.dart';
+import '../domain/estimated_times.dart';
 import '../domain/recipe.dart';
+import '../domain/recipe_filter.dart' show durationLabel, spokenDuration;
 import 'cooklang_preview_helpers.dart';
 import 'detail/portions_input_dialog.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -230,6 +232,10 @@ class CooklangMetaRow extends StatelessWidget {
   final void Function(int index)? onTapIllustration;
   final void Function(String url)? onDeleteIllustration;
 
+  /// Durées estimées par l'IA. Chacune ne s'affiche que si le texte ne donne
+  /// pas la sienne : une durée lue garde toujours la priorité.
+  final RecipeEstimatedTimes? estimatedTimes;
+
   const CooklangMetaRow({
     super.key,
     required this.meta,
@@ -241,6 +247,7 @@ class CooklangMetaRow extends StatelessWidget {
     this.onAddIllustration,
     this.onTapIllustration,
     this.onDeleteIllustration,
+    this.estimatedTimes,
   });
 
   @override
@@ -276,88 +283,158 @@ class CooklangMetaRow extends StatelessWidget {
     final hasRestTime = restTime != null;
     final hasIllus = illustrationUrls.isNotEmpty;
     final hasAdd = onAddIllustration != null;
+    final estimatedPrep = hasPrepTime ? null : estimatedTimes?.prep;
+    final estimatedCook = hasCookTime ? null : estimatedTimes?.cook;
+    final hasEstimate = estimatedPrep != null || estimatedCook != null;
 
     if (!hasPortions &&
         !hasPrepTime &&
         !hasCookTime &&
+        !hasEstimate &&
         !hasRestTime &&
         !hasIllus &&
         !hasAdd) {
       return const SizedBox.shrink();
     }
 
+    final chips = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (hasPortions)
+          CooklangPortionsControl(
+            selectedPortions: selectedPortions,
+            fallback: meta['portions'] ?? meta['servings'],
+            onChanged: onSelectedPortionsChanged,
+            minPortions: minPortions,
+            maxPortions: maxPortions,
+          ),
+        if (hasPrepTime)
+          Chip(
+            label: Text('Prép. $prepTime'),
+            avatar: const Icon(Icons.timer_outlined, size: AppIconSize.inline),
+          ),
+        if (estimatedPrep != null)
+          CooklangEstimatedTimeChip(
+            label: 'Prép.',
+            spokenLabel: 'Préparation',
+            minutes: estimatedPrep,
+            icon: Icons.timer_outlined,
+          ),
+        if (hasCookTime)
+          Chip(
+            label: Text('Cuisson $cookTime'),
+            avatar: const Icon(
+              Icons.local_fire_department_outlined,
+              size: AppIconSize.inline,
+            ),
+          ),
+        if (estimatedCook != null)
+          CooklangEstimatedTimeChip(
+            label: 'Cuisson',
+            spokenLabel: 'Cuisson',
+            minutes: estimatedCook,
+            icon: Icons.local_fire_department_outlined,
+          ),
+        // Le repos porte son propre libellé et sa propre icône : c'est la
+        // seule des trois durées qui dit « commence la veille » plutôt que
+        // « prévois tant de temps devant toi ».
+        if (hasRestTime)
+          Chip(
+            label: Text('Repos $restTime'),
+            avatar: const Icon(
+              Icons.bedtime_outlined,
+              size: AppIconSize.inline,
+            ),
+          ),
+        for (int i = 0; i < illustrationUrls.length; i++)
+          CooklangIllustrationThumb(
+            url: illustrationUrls[i],
+            onTap: () => onTapIllustration?.call(i),
+            onDelete: onDeleteIllustration != null
+                ? () => onDeleteIllustration!(illustrationUrls[i])
+                : null,
+          ),
+        if (hasAdd)
+          InkWell(
+            onTap: onAddIllustration,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                  width: 1.5,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.add_a_photo_outlined,
+                size: AppIconSize.small,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (hasPortions)
-            CooklangPortionsControl(
-              selectedPortions: selectedPortions,
-              fallback: meta['portions'] ?? meta['servings'],
-              onChanged: onSelectedPortionsChanged,
-              minPortions: minPortions,
-              maxPortions: maxPortions,
-            ),
-          if (hasPrepTime)
-            Chip(
-              label: Text('Prép. $prepTime'),
-              avatar: const Icon(
-                Icons.timer_outlined,
-                size: AppIconSize.inline,
-              ),
-            ),
-          if (hasCookTime)
-            Chip(
-              label: Text('Cuisson $cookTime'),
-              avatar: const Icon(
-                Icons.local_fire_department_outlined,
-                size: AppIconSize.inline,
-              ),
-            ),
-          // Le repos porte son propre libellé et sa propre icône : c'est la
-          // seule des trois durées qui dit « commence la veille » plutôt que
-          // « prévois tant de temps devant toi ».
-          if (hasRestTime)
-            Chip(
-              label: Text('Repos $restTime'),
-              avatar: const Icon(
-                Icons.bedtime_outlined,
-                size: AppIconSize.inline,
-              ),
-            ),
-          for (int i = 0; i < illustrationUrls.length; i++)
-            CooklangIllustrationThumb(
-              url: illustrationUrls[i],
-              onTap: () => onTapIllustration?.call(i),
-              onDelete: onDeleteIllustration != null
-                  ? () => onDeleteIllustration!(illustrationUrls[i])
-                  : null,
-            ),
-          if (hasAdd)
-            InkWell(
-              onTap: onAddIllustration,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: theme.colorScheme.outline.withAlpha(80),
-                    width: 1.5,
+      child: hasEstimate
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                chips,
+                const SizedBox(height: 4),
+                Text(
+                  'Durées estimées par l\'IA, absentes de la recette '
+                  'd\'origine.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.add_a_photo_outlined,
-                  size: AppIconSize.small,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-        ],
+              ],
+            )
+          : chips,
+    );
+  }
+}
+
+/// « ≈ Prép. 20 min » : une durée estimée par l'IA, que la recette ne donne
+/// pas. Même icône que la durée lue ; le « ≈ », l'infobulle et la lecture
+/// d'écran disent qu'elle est estimée.
+class CooklangEstimatedTimeChip extends StatelessWidget {
+  final String label;
+
+  /// Le mot lu par le lecteur d'écran : « Préparation », « Cuisson ».
+  final String spokenLabel;
+  final int minutes;
+  final IconData icon;
+
+  const CooklangEstimatedTimeChip({
+    super.key,
+    required this.label,
+    required this.spokenLabel,
+    required this.minutes,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Estimé par l\'IA',
+      // La lecture d'écran dit déjà « estimée » : l'infobulle ne s'y ajoute
+      // pas une seconde fois.
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: '$spokenLabel environ ${spokenDuration(minutes)}, estimée',
+        excludeSemantics: true,
+        child: Chip(
+          label: Text('≈ $label ${durationLabel(minutes)}'),
+          avatar: Icon(icon, size: AppIconSize.inline),
+        ),
       ),
     );
   }

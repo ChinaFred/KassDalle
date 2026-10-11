@@ -42,6 +42,7 @@ import {
   parseTimeToMinutes,
   parsePageTypeLabel,
   extractTags,
+  readDurations,
   stripMeta,
 } from "../cooklang/parser";
 import {
@@ -592,6 +593,34 @@ describe("cooklang_parsing.json — priorité des alias du temps de repos", () =
   for (const c of fixture.restTimeAliases) {
     test(c.why, () => {
       assert.equal(extractTags(c.cooklang).restTime ?? null, c.minutes);
+    });
+  }
+});
+
+// ── Durées lues d'une recette ────────────────────────────────────────────────
+//
+// `tags` d'abord, puis le brouillon, puis le texte validé. Le serveur décide ce
+// qu'il estime, le client ce qu'il affiche et filtre : s'ils ne lisent pas les
+// mêmes durées, la fiche affiche « 20 min » et Explorer « sans durée ».
+
+interface ReadDurationsCase {
+  tags: { prep_time?: number; cook_time?: number };
+  draft_cooklang: string | null;
+  raw_cooklang: string | null;
+  prep: number | null;
+  cook: number | null;
+  why: string;
+}
+
+describe("cooklang_parsing.json — durées lues", () => {
+  const fixture = loadFixture<{ readDurations: ReadDurationsCase[] }>("cooklang_parsing.json");
+
+  for (const c of fixture.readDurations) {
+    test(c.why, () => {
+      assert.deepEqual(readDurations(c.tags, [c.draft_cooklang, c.raw_cooklang]), {
+        prep: c.prep,
+        cook: c.cook,
+      });
     });
   }
 });
