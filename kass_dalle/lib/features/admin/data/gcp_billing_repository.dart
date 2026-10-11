@@ -405,6 +405,31 @@ class GcpBillingRepository {
     );
   }
 
+  /// Pose [text] dans les contraintes globales de planning des autres comptes :
+  /// vides, il les remplace ; écrites, il s'ajoute à la suite ; déjà présent,
+  /// rien. Sans appel de modèle. Les drapeaux valent 1 ou 0.
+  Future<Map<String, int>> backfillPlanningDefaults({
+    required String text,
+  }) async {
+    final dynamic raw = await _callViaSdk(
+      'backfillPlanningDefaultsFn',
+      <String, dynamic>{'text': text},
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    final out = <String, int>{};
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is num) {
+        out[entry.key] = value.toInt();
+      } else if (value is bool) {
+        out[entry.key] = value ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
   /// Recalcule `shopping_products` sur toutes les recettes, sans appel de
   /// modèle. Réentrante, avec reprise sur point de contrôle. Rend les
   /// compteurs tels quels ; les drapeaux valent 1 ou 0.

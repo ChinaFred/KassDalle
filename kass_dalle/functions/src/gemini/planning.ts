@@ -813,10 +813,6 @@ export function starchOf(r: Pick<PlanningRecipeSummary, "mainStarch">): MainStar
 }
 
 /**
- * Vrai si le féculent du candidat est celui d'un créneau voisin. « aucun » et
- * un féculent inconnu ne se répètent jamais.
- */
-/**
  * Vrai si la protéine [protein] est celle d'un créneau voisin (veille ou
  * lendemain). « inconnue » ne se répète pas : elle ne dit rien.
  */
@@ -827,6 +823,10 @@ export function isProteinNeighbourRepeat(
   return protein !== "inconnue" && neighbours.includes(protein);
 }
 
+/**
+ * Vrai si le féculent du candidat est celui d'un créneau voisin. « aucun » et
+ * un féculent inconnu ne se répètent jamais.
+ */
 export function isStarchRepeat(
   starch: MainStarch | null,
   neighbours: ReadonlyArray<MainStarch | null>,

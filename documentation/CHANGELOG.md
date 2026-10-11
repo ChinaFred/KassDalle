@@ -42,6 +42,17 @@ comptait que les repas posés avant la génération. Deux poissons pouvaient don
 le cabillaud du vendredi et le fish and chips du samedi. Sections `protein_neighbour` et
 constante `protein_neighbour_factor` de la même fixture.
 
+#### Règles de variété par défaut dans les préférences du planning
+
+Un compte qui n'a jamais réglé ses préférences de planning reçoit des contraintes globales par
+défaut : alterner les protéines, les féculents et les cuisines d'un jour à l'autre, avec une
+majorité de cuisine française. Le texte se modifie dans Paramètres du planning.
+
+Le bouton Admin › Backfills › « Contraintes de variété par défaut » pose ce texte sur les comptes
+existants, hors de celui qui le lance. Des contraintes vides le reçoivent. Des contraintes déjà
+écrites le reçoivent à la suite, sans rien effacer. Nouvelle fonction
+`backfillPlanningDefaultsFn`, sans appel de modèle.
+
 ### v0.23.27 — fonctionnel
 
 #### Planning : calendrier du lundi au dimanche et période libre
