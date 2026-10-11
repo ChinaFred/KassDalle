@@ -20,6 +20,42 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.32 — fonctionnel
+
+#### Importer une recette depuis un lien
+
+Un éditeur ou un administrateur colle l'adresse d'une page de recette. Le bouton se
+trouve dans Explorer (icône lien), dans Import et dans la saisie manuelle. L'import part
+en tâche de fond dans « Brouillons & Traitements ». La recette arrive en brouillon dans
+un nouveau livre système privé, « Mes recettes du web », avec la photo de la page après
+modération et le texte de la page comme document original. La fiche affiche
+« Source : <site> » en lien, et l'adresse complète copiable.
+
+Avant l'envoi, l'écran vérifie l'adresse, le doublon dans ses propres recettes et le
+plafond de 10 imports par lien et par jour (multiplié pour le fondateur). Les échecs
+s'affichent sur la tuile du traitement avec leurs actions : ouvrir la page, coller le
+texte, ou relancer, deux fois au plus.
+
+C'est le premier lot de la refonte d'Explorer.
+
+### v0.23.32 — technique
+
+#### Pipeline d'import par lien
+
+Deux callables, `importRecipeFromUrlFn` et `getUrlImportQuotaFn`, et un type de job
+`recipeUrlImport`. La page est lue par `functions/src/web/safeFetch.ts` : DNS filtré au
+moment de la connexion, 3 redirections revérifiées, 10 s, 3 Mo après décompression. Le
+serveur lit d'abord le JSON-LD schema.org/Recipe sans modèle (borné à 60 000 caractères,
+200 ingrédients et 150 étapes), puis le balise en CookLang ; sans JSON-LD, le texte de la
+page passe par la chaîne du texte collé. Deux postes d'IA : `url_import` et
+`url_import_fallback`.
+
+Nouveaux champs `source_url` et `source_site` sur la recette, immuables, recopiés
+seulement par une copie lisible. Nouvelle collection `url_import_daily`. Les règles
+refusent au client la création d'un job `recipeUrlImport` et d'un livre `web_…`, et
+bornent la relance d'un import par lien à deux. La modération rattache désormais une
+photo approuvée à sa recette (`attach_on_approval`).
+
 ### v0.23.31 — technique
 
 #### Sauvegardes planifiées de Firestore
