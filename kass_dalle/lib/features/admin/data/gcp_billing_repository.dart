@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
+import '../domain/backfill_failures.dart';
 import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
@@ -268,7 +269,7 @@ class GcpBillingRepository {
   /// [refreshSodium] change la cible : au lieu des profils vides, la passe
   /// reprend ceux qui portent du sodium. C'est la réparation du sel compté deux
   /// fois — une dépense volontaire, jamais le mode par défaut.
-  Future<Map<String, int>> backfillEnrichReferentials({
+  Future<BackfillCounts> backfillEnrichReferentials({
     double maxMinutes = 4,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
@@ -290,7 +291,7 @@ class GcpBillingRepository {
     );
 
     final data = Map<String, dynamic>.from(raw as Map);
-    return {
+    final counts = {
       'scannedUnits': (data['scannedUnits'] as num?)?.toInt() ?? 0,
       'enrichedUnits': (data['enrichedUnits'] as num?)?.toInt() ?? 0,
       'scannedIngredients': (data['scannedIngredients'] as num?)?.toInt() ?? 0,
@@ -304,6 +305,10 @@ class GcpBillingRepository {
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
     };
+    return BackfillCounts(
+      counts: counts,
+      failures: BackfillFailures.fromMap(data['aRevoir']),
+    );
   }
 
   /// Reprend le calcul nutritionnel des recettes incomplètes, à la demande.
@@ -315,7 +320,7 @@ class GcpBillingRepository {
   ///
   /// Idempotent, avec point de reprise serveur. Relancer continue là où l'appel
   /// précédent s'est arrêté, jusqu'à ce que `completed` vaille 1.
-  Future<Map<String, int>> backfillNutrition({
+  Future<BackfillCounts> backfillNutrition({
     double maxMinutes = 4,
     int maxRecipes = 40,
     bool resumeFromCheckpoint = true,
@@ -335,7 +340,7 @@ class GcpBillingRepository {
     );
 
     final data = Map<String, dynamic>.from(raw as Map);
-    return {
+    final counts = {
       'examinees': (data['examinees'] as num?)?.toInt() ?? 0,
       'reprises': (data['reprises'] as num?)?.toInt() ?? 0,
       'completees': (data['completees'] as num?)?.toInt() ?? 0,
@@ -345,6 +350,10 @@ class GcpBillingRepository {
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
       'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
     };
+    return BackfillCounts(
+      counts: counts,
+      failures: BackfillFailures.fromMap(data['aRevoir']),
+    );
   }
 
   /// Rôle des recettes dans un repas : plat, accompagnement, entrée, dessert,
@@ -407,8 +416,9 @@ class GcpBillingRepository {
 
   /// Pose [text] dans les contraintes globales de planning des autres comptes :
   /// vides, il les remplace ; écrites, il s'ajoute à la suite ; déjà présent,
-  /// rien. Sans appel de modèle. Les drapeaux valent 1 ou 0.
-  Future<Map<String, int>> backfillPlanningDefaults({
+  /// rien. Sans appel de modèle. Les drapeaux valent 1 ou 0 ; les comptes
+  /// laissés tels quels ou en échec sont dans `failures`.
+  Future<BackfillCounts> backfillPlanningDefaults({
     required String text,
   }) async {
     final dynamic raw = await _callViaSdk(
@@ -417,23 +427,14 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
 
-    final data = Map<String, dynamic>.from(raw as Map);
-    final out = <String, int>{};
-    for (final entry in data.entries) {
-      final value = entry.value;
-      if (value is num) {
-        out[entry.key] = value.toInt();
-      } else if (value is bool) {
-        out[entry.key] = value ? 1 : 0;
-      }
-    }
-    return out;
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
   /// Recalcule `shopping_products` sur toutes les recettes, sans appel de
   /// modèle. Réentrante, avec reprise sur point de contrôle. Rend les
-  /// compteurs tels quels ; les drapeaux valent 1 ou 0.
-  Future<Map<String, int>> backfillShopping({
+  /// compteurs tels quels ; les drapeaux valent 1 ou 0. Les recettes à
+  /// revoir sont dans `failures`.
+  Future<BackfillCounts> backfillShopping({
     double maxMinutes = 8,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
@@ -450,25 +451,16 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
 
-    final data = Map<String, dynamic>.from(raw as Map);
-    final out = <String, int>{};
-    for (final entry in data.entries) {
-      final value = entry.value;
-      if (value is num) {
-        out[entry.key] = value.toInt();
-      } else if (value is bool) {
-        out[entry.key] = value ? 1 : 0;
-      }
-    }
-    return out;
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
   /// Allergènes : examine par lots de quarante les ingrédients du référentiel
   /// qui n'en ont pas (appels de modèle, poste `backfill_allergens`), puis
   /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec
   /// reprise sur point de contrôle. Rend les compteurs tels quels ; les
-  /// drapeaux valent 1 ou 0.
-  Future<Map<String, int>> backfillAllergens({
+  /// drapeaux valent 1 ou 0. Ingrédients et recettes à revoir dans
+  /// `failures`.
+  Future<BackfillCounts> backfillAllergens({
     double maxMinutes = 8,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
@@ -485,17 +477,7 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
 
-    final data = Map<String, dynamic>.from(raw as Map);
-    final out = <String, int>{};
-    for (final entry in data.entries) {
-      final value = entry.value;
-      if (value is num) {
-        out[entry.key] = value.toInt();
-      } else if (value is bool) {
-        out[entry.key] = value ? 1 : 0;
-      }
-    }
-    return out;
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
   /// Durées estimées : estime, huit recettes par appel de modèle (poste

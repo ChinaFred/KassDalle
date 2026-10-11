@@ -1,3 +1,5 @@
+import 'backfill_failures.dart';
+
 /// Compte rendu d'un passage du backfill « Protéine et féculent des plats ».
 ///
 /// Deux origines, une seule forme : la réponse de `backfillRecipeProteinFn`
@@ -32,6 +34,10 @@ class RecipeProteinBackfillReport {
   final bool stoppedByErrors;
   final bool stoppedByDeadline;
 
+  /// Recettes à revoir de ce passage (`aRevoir`). `null` quand la réponse
+  /// n'en porte pas — compte rendu antérieur à la liste.
+  final BackfillFailures? failures;
+
   const RecipeProteinBackfillReport({
     required this.finishedAt,
     required this.examinees,
@@ -45,6 +51,7 @@ class RecipeProteinBackfillReport {
     required this.stoppedByBudget,
     required this.stoppedByErrors,
     required this.stoppedByDeadline,
+    this.failures,
   });
 
   /// Lit les compteurs tels que la fonction les rend. Un compteur absent vaut
@@ -68,6 +75,7 @@ class RecipeProteinBackfillReport {
       stoppedByBudget: map['stoppedByBudget'] == true,
       stoppedByErrors: map['stoppedByErrors'] == true,
       stoppedByDeadline: map['stoppedByDeadline'] == true,
+      failures: BackfillFailures.fromMap(map['aRevoir']),
     );
   }
 

@@ -35,6 +35,13 @@ La fonction exportée s'appelle `backfill<Nom>Fn` (`backfillRecipeRolesFn`, `bac
   `completed`. Pour que l'écran le relise à l'ouverture, le passer en `lastReport` à
   `setBackfillCursor`, qui l'écrit à côté du curseur, puis le lire côté client par
   `lib/features/admin/data/backfill_reports_repository.dart`.
+- **Liste à revoir — obligatoire.** Chaque élément non traité (erreur, sans réponse du
+  modèle, incomplet) s'ajoute à un `BackfillReview` (`_backfillReview.ts`) avec
+  `{ kind, id, label, reason }`, `reason` en français simple (« Pas de réponse de l'IA »,
+  « Recette incomplète : beurre, farine non examinés »). La réponse porte
+  `aRevoir: review.toJSON()` (100 entrées au plus, `total` compté au-delà), recopié dans
+  `lastReport` s'il existe. Un compteur d'erreurs sans noms ne suffit pas : l'admin doit
+  pouvoir ouvrir chaque élément.
 - **Document par document.** Une erreur sur un document est journalisée avec `logError` (id du
   document, contexte) et le traitement continue. Aucun `catch` silencieux.
 - `logInfo` final avec le compte rendu, sous le `correlationId` de l'appel.
@@ -51,9 +58,11 @@ Exporter `backfill<Nom>Fn` dans `functions/src/index.ts`, à côté des autres.
 - **Écran** : un bouton dans `admin_backfills_screen.dart`, une méthode `_runBackfill…` qui :
   - ouvre une boîte de confirmation qui dit ce que fait l'opération, son coût (appels de
     modèle ou non, nombre de documents par passage) et qu'on peut la relancer ;
-  - passe par `_runBackfill<T>(label:, feature: 'admin_backfill_<nom>', run:, format:)`, qui
-    affiche la bannière de progression, le message de résultat, et remonte l'erreur à
-    `ErrorReportService`.
+  - passe par `_runBackfill<T>(label:, title:, feature: 'admin_backfill_<nom>', run:, format:,
+    failuresOf:)`, qui affiche la bannière de progression, le message de résultat, le lien
+    « Voir les N à revoir » et sa feuille, et remonte l'erreur à `ErrorReportService`.
+    `title` est le titre de la tuile ; `failuresOf` lit `aRevoir` (`BackfillFailures.fromMap`)
+    dans le compte rendu, que le repository rend en `BackfillCounts` ou en modèle typé.
 - Le message de résultat est chiffré : créés, ignorés, en erreur, restants.
 
 ## 3. Documentation, dans le même commit

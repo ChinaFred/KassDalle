@@ -20,9 +20,16 @@ import { createHash } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { COLL_PLANNING_CONFIG, MAX_CALLABLE_INSTANCES, REGION } from "../config";
+import { COLL_PLANNING_CONFIG, COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
-import { requireAdmin } from "./_auth";
+import { requireAdmin, type AuthContext } from "./_auth";
+import {
+  BACKFILL_REVIEW_LIMIT,
+  BackfillReview,
+  shortErrorMessage,
+  type BackfillReviewList,
+  withoutReviewList,
+} from "./_backfillReview";
 import { SHORT_TEXT_MAX_CHARS } from "./_inputBounds";
 
 const ALLOWED_ORIGINS = [
@@ -68,6 +75,40 @@ export interface BackfillPlanningDefaultsResponse {
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
   completed: boolean;
+  /** Comptes laissés tels quels ou en échec, nommés, avec la raison. */
+  aRevoir: BackfillReviewList;
+}
+
+/**
+ * Nom lisible des comptes à revoir : `display_name`, à défaut l'identifiant.
+ * Jamais l'adresse : la liste est recopiée dans un compte rendu. Une lecture impossible est journalisée et laisse les
+ * identifiants : la liste reste utilisable.
+ */
+async function accountLabels(
+  db: FirebaseFirestore.Firestore,
+  ctx: AuthContext,
+  uids: readonly string[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  if (uids.length === 0) return labels;
+  try {
+    const snaps = await db.getAll(...uids.map((uid) => db.collection(COLL_USERS).doc(uid)));
+    for (const snap of snaps) {
+      const data = (snap.data() ?? {}) as Record<string, unknown>;
+      const name = (typeof data.display_name === "string" && data.display_name.trim()) || "";
+      if (name) labels.set(snap.id, name);
+    }
+  } catch (e) {
+    await logError("Contraintes de variété par défaut — noms des comptes à revoir illisibles", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      feature: FEATURE,
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { uids: uids.slice(0, 50) },
+    });
+  }
+  return labels;
 }
 
 /**
@@ -120,7 +161,10 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       stoppedByBudget: false,
       stoppedByErrors: false,
       completed: false,
+      aRevoir: { items: [], total: 0 },
     };
+    // Comptes à revoir, nommés à la fin du passage par une seule lecture.
+    const toReview: { uid: string; reason: string }[] = [];
 
     // Un document par compte : toute la collection tient en une lecture.
     // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
@@ -155,6 +199,10 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       }
       if (next === "too_long") {
         response.tropLongs += 1;
+        toReview.push({
+          uid: doc.id,
+          reason: "Contraintes trop longues : texte non ajouté",
+        });
         continue;
       }
       try {
@@ -172,6 +220,7 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       } catch (e) {
         response.echoues += 1;
         consecutiveFailures += 1;
+        toReview.push({ uid: doc.id, reason: `Échec d'écriture : ${shortErrorMessage(e)}` });
         await logError("Contraintes de variété par défaut — échec sur un compte", {
           correlationId: ctx.correlationId,
           userId: ctx.userId,
@@ -184,6 +233,21 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
     }
     response.restants = snap.size - response.examines;
     response.completed = response.restants === 0 && !response.stoppedByErrors;
+    const review = new BackfillReview();
+    const labels = await accountLabels(
+      db,
+      ctx,
+      toReview.slice(0, BACKFILL_REVIEW_LIMIT).map((r) => r.uid),
+    );
+    for (const r of toReview) {
+      review.add({
+        kind: "account",
+        id: r.uid,
+        label: labels.get(r.uid) ?? r.uid,
+        reason: r.reason,
+      });
+    }
+    response.aRevoir = review.toJSON();
 
     await logInfo({
       message: "Contraintes de variété par défaut — passage",
@@ -193,7 +257,7 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       feature: FEATURE,
       // Le texte posé chez les autres se retrouve : sa longueur et son empreinte.
       extra: {
-        ...response,
+        ...withoutReviewList(response),
         textLength: text.length,
         textSha256: createHash("sha256").update(text).digest("hex"),
       },

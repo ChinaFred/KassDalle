@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import 'admin_providers.dart';
+import 'backfill_failures_sheet.dart';
 import 'billing_providers.dart';
+import '../domain/backfill_failures.dart';
 import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../planning/domain/planning_preferences.dart';
@@ -29,11 +31,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   String? _errorMessage;
   bool _resultIsError = false;
 
+  /// Éléments à revoir du dernier passage, et le titre de sa tuile. Remis à
+  /// `null` au lancement d'un autre backfill et à la fermeture de la bannière.
+  BackfillFailures? _failures;
+  String _failuresTitle = '';
+
+  /// Lance un backfill et affiche son compte rendu dans la bannière.
+  ///
+  /// [failuresOf] lit la liste « à revoir » de la réponse (`aRevoir`) ;
+  /// [title] est le titre de la tuile, repris en tête de la feuille. Tout
+  /// backfill de cet écran se branche par ces deux paramètres.
   Future<T?> _runBackfill<T>({
+    required String title,
     required String label,
     required String feature,
     required Future<T> Function() run,
     required String Function(T) format,
+    required BackfillFailures? Function(T) failuresOf,
     Map<String, dynamic> context = const {},
   }) async {
     if (_busy) return null;
@@ -43,6 +57,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       _resultMessage = null;
       _errorMessage = null;
       _resultIsError = false;
+      _failures = null;
+      _failuresTitle = title;
     });
     try {
       final result = await run();
@@ -52,6 +68,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         _busy = false;
         _resultMessage = format(result);
         _resultIsError = false;
+        _failures = failuresOf(result);
       });
       return result;
     } catch (e, st) {
@@ -107,8 +124,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Enrichir unités + ingrédients',
       label: 'Enrichissement des référentiels en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_enrich_referentials',
       run: () =>
           ref.read(gcpBillingRepositoryProvider).backfillEnrichReferentials(),
@@ -160,8 +179,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Reprendre le sel des ingrédients',
       label: 'Reprise du sel des ingrédients en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_refresh_sodium',
       run: () => ref
           .read(gcpBillingRepositoryProvider)
@@ -203,8 +224,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Reprendre la nutrition',
       label: 'Reprise de la nutrition en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_nutrition',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillNutrition(),
       format: (r) =>
@@ -256,7 +279,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     if (confirmed != true || !mounted) return;
 
     await _runBackfill<RecipeRolesBackfillReport>(
+      title: 'Rôle des recettes dans un repas',
       label: 'Classement des recettes en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_recipe_roles',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeRoles(),
       format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
@@ -302,7 +327,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     if (confirmed != true || !mounted) return;
 
     await _runBackfill<RecipeProteinBackfillReport>(
+      title: 'Protéine et féculent des plats',
       label: 'Protéine et féculent des plats en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_recipe_protein',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeProtein(),
       format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
@@ -337,8 +364,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Contraintes de variété par défaut',
       label: 'Contraintes de variété en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_planning_defaults',
       run: () => ref
           .read(gcpBillingRepositoryProvider)
@@ -383,8 +412,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Recalculer les produits d\'achat',
       label: 'Recalcul des produits d\'achat en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_shopping_products',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillShopping(),
       format: (r) =>
@@ -433,8 +464,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await _runBackfill<Map<String, int>>(
+    await _runBackfill<BackfillCounts>(
+      title: 'Allergènes des ingrédients et des recettes',
       label: 'Allergènes en cours...',
+      failuresOf: (r) => r.failures,
       feature: 'admin_backfill_allergens',
       run: () => ref.read(gcpBillingRepositoryProvider).backfillAllergens(),
       format: (r) =>
@@ -619,12 +652,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               // et trois passages du rôle des recettes ont été lancés sans
               // que leur résultat soit lu.
               if (_resultMessage != null || _errorMessage != null)
-                _OperationBanner(
+                BackfillOperationBanner(
                   isError: _resultIsError,
                   message: _errorMessage ?? _resultMessage ?? '',
+                  failures: _resultIsError ? null : _failures,
+                  onShowFailures: () {
+                    final failures = _failures;
+                    if (failures == null) return;
+                    showBackfillFailuresSheet(
+                      context,
+                      title: _failuresTitle,
+                      failures: failures,
+                    );
+                  },
                   onClose: () => setState(() {
                     _resultMessage = null;
                     _errorMessage = null;
+                    _failures = null;
                   }),
                 ),
               Expanded(
@@ -819,14 +863,37 @@ class _BackfillTile extends StatelessWidget {
   }
 }
 
-class _OperationBanner extends StatelessWidget {
+/// Libellé du lien vers la liste « à revoir », ou `null` quand il n'y a
+/// rien à montrer : aucun élément, ou une liste vide malgré un total.
+String? backfillFailuresLinkLabel(BackfillFailures? failures) {
+  if (failures == null || failures.total <= 0 || failures.items.isEmpty) {
+    return null;
+  }
+  if (failures.truncated) {
+    return 'Voir les ${failures.items.length} premiers sur '
+        '${failures.total} à revoir';
+  }
+  if (failures.total == 1) return 'Voir l\'élément à revoir';
+  return 'Voir les ${failures.total} à revoir';
+}
+
+/// Bannière de compte rendu d'un backfill, au-dessus de la liste des tuiles.
+///
+/// Avec des éléments à revoir, l'icône passe à l'avertissement et un lien
+/// ouvre la feuille qui les nomme.
+class BackfillOperationBanner extends StatelessWidget {
   final bool isError;
   final String message;
+  final BackfillFailures? failures;
+  final VoidCallback onShowFailures;
   final VoidCallback onClose;
 
-  const _OperationBanner({
+  const BackfillOperationBanner({
+    super.key,
     required this.isError,
     required this.message,
+    required this.failures,
+    required this.onShowFailures,
     required this.onClose,
   });
 
@@ -839,6 +906,9 @@ class _OperationBanner extends StatelessWidget {
     final fg = isError
         ? theme.colorScheme.onErrorContainer
         : theme.colorScheme.onSecondaryContainer;
+    final toReview = !isError && (failures?.total ?? 0) > 0;
+    final linkLabel = isError ? null : backfillFailuresLinkLabel(failures);
+    final detailMissing = toReview && linkLabel == null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -851,15 +921,37 @@ class _OperationBanner extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                isError ? Icons.error_outline : Icons.check_circle_outline,
+                isError
+                    ? Icons.error_outline
+                    : toReview
+                    ? Icons.warning_amber_outlined
+                    : Icons.check_circle_outline,
                 color: fg,
                 size: AppIconSize.small,
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  message,
-                  style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      detailMissing
+                          ? '$message\nDétail indisponible pour cette opération.'
+                          : message,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                    ),
+                    if (linkLabel != null)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: fg,
+                          minimumSize: const Size(0, 48),
+                          padding: EdgeInsets.zero,
+                          alignment: Alignment.centerLeft,
+                        ),
+                        onPressed: onShowFailures,
+                        child: Text(linkLabel),
+                      ),
+                  ],
                 ),
               ),
               IconButton(

@@ -1492,6 +1492,7 @@ classDiagram
     +bool stoppedByBudget
     +bool stoppedByErrors
     +bool stoppedByDeadline
+    +BackfillFailures? failures
     +fromMap(map, finishedAt) RecipeRolesBackfillReport$
   }
 
@@ -1508,7 +1509,29 @@ classDiagram
     +bool stoppedByBudget
     +bool stoppedByErrors
     +bool stoppedByDeadline
+    +BackfillFailures? failures
     +fromMap(map, finishedAt) RecipeProteinBackfillReport$
+  }
+
+  class BackfillFailure {
+    +String kind
+    +String id
+    +String label
+    +String reason
+  }
+
+  class BackfillFailures {
+    +List~BackfillFailure~ items
+    +int total
+    +bool truncated
+    +fromMap(map) BackfillFailures?$
+  }
+
+  class BackfillCounts {
+    +Map~String,int~ counts
+    +BackfillFailures? failures
+    +operator [](key) int
+    +fromMap(map) BackfillCounts$
   }
 
   class ProcessingJob
@@ -1522,6 +1545,10 @@ classDiagram
   ScanGroup --&gt; AiCostTotal : somme de ses appels
   DataQualityReport "1" *-- "4" DataQualityCheck : un par contrôle
   DataQualityCheck "1" *-- "0..200" DataQualityExample : examples
+  BackfillFailures "1" *-- "0..100" BackfillFailure : items
+  RecipeRolesBackfillReport --&gt; BackfillFailures : failures
+  RecipeProteinBackfillReport --&gt; BackfillFailures : failures
+  BackfillCounts --&gt; BackfillFailures : failures
   AiRoutingDiff ..&gt; AiRoutingPolicy : compare la politique en place et celle à charger
 </pre>
       </div>
@@ -1562,6 +1589,10 @@ classDiagram
           <code>backfillRecipeProteinFn</code> (examinées, traitées, déjà traitées, ignorées, sans
           réponse, échecs, restantes), lu de la même façon dans
           <code>app_config/recipe_protein_backfill_checkpoint</code>.
+          <b><code>BackfillFailures</code></b> est la liste « à revoir » qu'un backfill renvoie
+          dans <code>aRevoir</code> : cent <code>BackfillFailure</code> au plus (nature, id, nom,
+          raison), et le total compté au-delà. <b><code>BackfillCounts</code></b> porte les
+          compteurs des backfills sans compte rendu typé, avec la même liste.
         </span>
       </figcaption>
     </figure>

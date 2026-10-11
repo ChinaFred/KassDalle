@@ -146,6 +146,21 @@ export interface NutritionCatchUpOptions {
   forced?: boolean;
   /** Reprendre le parcours après cette recette. */
   startAfterId?: string | null;
+  /**
+   * Appelé pour chaque recette reprise qui reste incomplète : le backfill à
+   * la demande en fait sa liste « à revoir ».
+   */
+  onStillIncomplete?: (recipe: StillIncompleteRecipe) => void;
+}
+
+/** Recette reprise dont la nutrition reste incomplète. */
+export interface StillIncompleteRecipe {
+  id: string;
+  data: Record<string, unknown>;
+  /** Instantané relu après la reprise, `null` s'il n'existe pas. */
+  nutrition: Record<string, unknown> | null;
+  /** Message de l'erreur levée par la reprise, `null` sans erreur. */
+  error: string | null;
 }
 
 /** Ce qu'un passage a fait, et pourquoi il s'est arrêté. */
@@ -248,6 +263,7 @@ export async function runNutritionCatchUp(
       report.reprises += 1;
       report.lastProcessedId = doc.id;
 
+      let syncError: string | null = null;
       try {
         await syncRecipeNutrition({
           after: doc,
@@ -256,6 +272,7 @@ export async function runNutritionCatchUp(
           correlationId: options.correlationId,
         });
       } catch (err) {
+        syncError = err instanceof Error ? err.message : String(err);
         await logError({
           message: "rattrapageNutrition: reprise en échec",
           errorDescription: err instanceof Error ? err.message : String(err),
@@ -276,8 +293,12 @@ export async function runNutritionCatchUp(
         Number.MAX_SAFE_INTEGER,
       );
 
-      if (encoreIncomplete) report.echouees += 1;
-      else report.completees += 1;
+      if (encoreIncomplete) {
+        report.echouees += 1;
+        options.onStillIncomplete?.({ id: doc.id, data, nutrition, error: syncError });
+      } else {
+        report.completees += 1;
+      }
 
       await doc.ref.set(
         { nutrition_catch_up_attempts: encoreIncomplete ? attempts + 1 : 0 },

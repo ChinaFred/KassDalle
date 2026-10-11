@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
-### v0.23.37 — fonctionnel
+### v0.23.38 — fonctionnel
 
 #### Durées estimées par l'IA
 
@@ -36,7 +36,7 @@ aussi les durées écrites seulement dans le texte de la recette.
 Le backfill « Durées estimées » d'Admin › Backfills estime les recettes existantes, 160 par
 passage. À relancer tant que le compte rendu affiche « incomplet ».
 
-### v0.23.37 — technique
+### v0.23.38 — technique
 
 #### Champ estimated_times, postes time_estimate
 
@@ -48,6 +48,28 @@ simultanés. Deux postes d'IA : `time_estimate` et `backfill_time_estimate_batch
 recettes d'un même auteur). Le backfill pose un verrou daté contre deux passages
 simultanés. La lecture des durées d'une recette (champs, puis métadonnées CookLang) est
 partagée par la fixture `cooklang_parsing.json`.
+
+### v0.23.37 — fonctionnel
+
+#### Backfills : la liste des éléments à revoir
+
+Un backfill disait seulement « en erreur=17 ». Il ne disait pas lesquels. Désormais, s'il
+reste des éléments à revoir, un lien « Voir les N à revoir » s'affiche sous le compte rendu.
+La liste donne une ligne par ingrédient, unité, recette ou compte, avec la raison : « Pas de
+réponse de l'IA », « Recette incomplète : beurre, farine non examinés »… Un appui ouvre
+l'ingrédient dans le référentiel ou la fiche de la recette. Le bouton « Copier la liste » la
+copie en texte. Les huit backfills d'Admin › Backfills sont concernés.
+
+### v0.23.37 — technique
+
+#### Backfills : champ `aRevoir` dans chaque réponse
+
+Chaque callable de backfill renvoie `aRevoir` (`{ items, total }`), construit par
+`BackfillReview` (`callable/_backfillReview.ts`) : 100 entrées au plus, dans l'ordre de
+traitement, et un total compté au-delà. La liste est recopiée dans `last_report` pour les
+backfills qui en écrivent un. L'examen des allergènes journalise par `logWarn` les noms des
+ingrédients restés sans réponse du modèle. Le skill `backfill` et `CLAUDE.md` imposent la
+liste aux backfills futurs.
 
 ### v0.23.36 — fonctionnel
 

@@ -25,9 +25,20 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { runNutritionCatchUp } from "../scheduled/nutritionCatchUpSchedule";
+import {
+  runNutritionCatchUp,
+  type StillIncompleteRecipe,
+} from "../scheduled/nutritionCatchUpSchedule";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin } from "./_auth";
+import {
+  BackfillReview,
+  namesList,
+  recipeReviewLabel,
+  shortErrorMessage,
+  type BackfillReviewItem,
+  type BackfillReviewList,
+} from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -64,6 +75,44 @@ interface BackfillNutritionResponse {
   stoppedByBudget: boolean;
   /** Vrai quand plus rien n'attend : le curseur a été remis au début. */
   completed: boolean;
+  /** Recettes reprises restées incomplètes, nommées, avec la raison. */
+  aRevoir: BackfillReviewList;
+}
+
+/**
+ * Ligne « à revoir » d'une recette dont la nutrition reste incomplète après
+ * la reprise : l'erreur levée, un calcul en échec, ou les ingrédients sans
+ * valeurs nutritionnelles.
+ */
+export function nutritionReviewItem(recipe: StillIncompleteRecipe): BackfillReviewItem {
+  const label = recipeReviewLabel(recipe.id, recipe.data);
+  if (recipe.error != null) {
+    return {
+      kind: "recipe",
+      id: recipe.id,
+      label,
+      reason: `Reprise en échec : ${shortErrorMessage(recipe.error)}`,
+    };
+  }
+  const nutrition = recipe.nutrition;
+  if (!nutrition) {
+    return { kind: "recipe", id: recipe.id, label, reason: "Nutrition non calculée" };
+  }
+  if (nutrition.coverage_state === "failed") {
+    return { kind: "recipe", id: recipe.id, label, reason: "Calcul de nutrition en échec" };
+  }
+  const missing = Array.isArray(nutrition.missing_ingredients)
+    ? nutrition.missing_ingredients.filter((n): n is string => typeof n === "string")
+    : [];
+  return {
+    kind: "recipe",
+    id: recipe.id,
+    label,
+    reason:
+      missing.length > 0
+        ? `Valeurs nutritionnelles introuvables : ${namesList(missing)}`
+        : "Valeurs nutritionnelles introuvables",
+  };
 }
 
 export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
@@ -108,6 +157,7 @@ export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
       extra: { adminUid, maxMinutes, maxRecipes, startAfterId, resetCheckpoint },
     });
 
+    const review = new BackfillReview();
     try {
       const report = await runNutritionCatchUp({
         correlationId,
@@ -115,6 +165,7 @@ export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
         deadlineMs: Date.now() + Math.floor(maxMinutes * 60_000),
         forced: true,
         startAfterId,
+        onStillIncomplete: (recipe) => review.add(nutritionReviewItem(recipe)),
       });
 
       // Le curseur ne se remet au début que lorsqu'il ne reste RIEN : la
@@ -141,7 +192,7 @@ export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
           " laissée(s)",
         moduleType: "DESIGN",
         correlationId,
-        extra: { ...report, completed, adminUid },
+        extra: { ...report, completed, adminUid, aRevoirTotal: review.toJSON().total },
       });
 
       return {
@@ -154,6 +205,7 @@ export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
         stoppedByDeadline: report.stoppedByDeadline,
         stoppedByBudget: report.stoppedByBudget,
         completed,
+        aRevoir: review.toJSON(),
       };
     } catch (err) {
       await logError({

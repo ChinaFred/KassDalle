@@ -28,6 +28,13 @@ import { shoppingAliasesOrNone, shoppingInputsOf } from "../triggers/recipeShopp
 import type { StoredIngredient } from "../triggers/recipeIngredients";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import {
+  BackfillReview,
+  recipeReviewLabel,
+  shortErrorMessage,
+  type BackfillReviewList,
+  withoutReviewList,
+} from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -71,6 +78,8 @@ interface BackfillShoppingResponse {
   stoppedByErrors: boolean;
   /** Vrai quand la collection a été parcourue en entier : le curseur est remis au début. */
   completed: boolean;
+  /** Recettes sans ingrédient ou en échec dans ce passage, nommées, avec la raison. */
+  aRevoir: BackfillReviewList;
 }
 
 function emptyResponse(): BackfillShoppingResponse {
@@ -86,6 +95,7 @@ function emptyResponse(): BackfillShoppingResponse {
     stoppedByBudget: false,
     stoppedByErrors: false,
     completed: false,
+    aRevoir: { items: [], total: 0 },
   };
 }
 
@@ -118,6 +128,7 @@ async function runProductsMode(
   startAfter: string | null,
 ): Promise<{ response: BackfillShoppingResponse; cursor: string | null }> {
   const response = emptyResponse();
+  const review = new BackfillReview();
   let cursor = startAfter;
   let consecutiveFailures = 0;
   let treated = 0;
@@ -171,7 +182,15 @@ async function runProductsMode(
         ingredients.length === 0
           ? []
           : deriveShoppingProducts(shoppingInputsOf(ingredients, aliases));
-      if (ingredients.length === 0) response.sansIngredients += 1;
+      if (ingredients.length === 0) {
+        response.sansIngredients += 1;
+        review.add({
+          kind: "recipe",
+          id: doc.id,
+          label: recipeReviewLabel(doc.id, data),
+          reason: "Recette sans ingrédient : liste de courses vide",
+        });
+      }
 
       try {
         if (productsSignature(products) === productsSignature(data.shopping_products)) {
@@ -187,6 +206,12 @@ async function runProductsMode(
       } catch (e) {
         response.echouees += 1;
         consecutiveFailures += 1;
+        review.add({
+          kind: "recipe",
+          id: doc.id,
+          label: recipeReviewLabel(doc.id, data),
+          reason: `Échec d'écriture : ${shortErrorMessage(e)}`,
+        });
         await logError("Produits d'achat — échec sur une recette", {
           correlationId: ctx.correlationId,
           userId: ctx.userId,
@@ -213,6 +238,7 @@ async function runProductsMode(
     }
   }
 
+  response.aRevoir = review.toJSON();
   return { response, cursor };
 }
 
@@ -274,7 +300,7 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: PRODUCTS_FEATURE,
-      extra: { ...response, maxMinutes, maxDocs },
+      extra: { ...withoutReviewList(response), maxMinutes, maxDocs },
     });
 
     return response;

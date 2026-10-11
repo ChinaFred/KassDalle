@@ -171,6 +171,39 @@ export interface AllergenExaminationReport {
   batches: number;
   /** Arrêt avant le dernier lot, faute de temps. */
   stoppedByDeadline: boolean;
+  /**
+   * Les ingrédients comptés dans `failed` et `unanswered`, nommés, dans
+   * l'ordre de traitement : la liste « à revoir » du backfill les cite.
+   */
+  issues: AllergenIssue[];
+}
+
+/** Un ingrédient resté sans allergènes, et pourquoi. */
+export interface AllergenIssue {
+  id: string;
+  name: string;
+  /** `unanswered` : lot réussi sans réponse pour lui ; `failed` : lot en échec. */
+  problem: "unanswered" | "failed";
+  /** Message de l'erreur, pour `failed`. */
+  error?: string;
+}
+
+/** Dépendances d'un examen, remplaçables par les tests. */
+export interface AllergenExaminationDeps {
+  examine: (
+    batch: readonly AllergenCandidate[],
+    ctx: AllergenCallContext,
+  ) => Promise<AllergenAnswer[]>;
+  write: (
+    batch: readonly AllergenCandidate[],
+    answers: readonly AllergenAnswer[],
+  ) => Promise<number>;
+  logWarn: typeof logWarn;
+  logError: typeof logError;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Nom soumis au modèle : celui du référentiel, à défaut l'identifiant lu. */
@@ -234,6 +267,7 @@ export async function examineIngredientAllergens(args: {
     unanswered: 0,
     batches: 0,
     stoppedByDeadline: false,
+    issues: [],
   };
   const ids = [...new Set(args.ids.filter((id) => id.trim().length > 0))];
   if (ids.length === 0) return report;
@@ -243,6 +277,14 @@ export async function examineIngredientAllergens(args: {
     docs = await readDocsByIds(COLL_NUTRITION_INGREDIENTS, ids);
   } catch (err) {
     report.failed += ids.length;
+    for (const id of ids) {
+      report.issues.push({
+        id,
+        name: id.replace(/_/g, " "),
+        problem: "failed",
+        error: errorText(err),
+      });
+    }
     await logError({
       message: "Allergènes : lecture du référentiel impossible, rien n'est examiné",
       errorDescription: err instanceof Error ? err.message : String(err),
@@ -291,8 +333,17 @@ export async function examineAllergenCandidates(args: {
   ctx: AllergenCallContext;
   deadlineMs?: number;
   extra?: Record<string, unknown>;
+  /** Pour les tests : appel du modèle, écriture et journaux. */
+  deps?: Partial<AllergenExaminationDeps>;
 }): Promise<AllergenExaminationReport> {
   const { candidates, ctx, extra } = args;
+  const deps: AllergenExaminationDeps = {
+    examine: examineAllergenBatch,
+    write: writeAnswers,
+    logWarn,
+    logError,
+    ...args.deps,
+  };
   const report: AllergenExaminationReport = {
     examined: 0,
     alreadyExamined: 0,
@@ -301,6 +352,7 @@ export async function examineAllergenCandidates(args: {
     unanswered: 0,
     batches: 0,
     stoppedByDeadline: false,
+    issues: [],
   };
   for (let i = 0; i < candidates.length; i += ALLERGEN_BATCH_SIZE) {
     if (args.deadlineMs != null && Date.now() > args.deadlineMs) {
@@ -310,10 +362,10 @@ export async function examineAllergenCandidates(args: {
     const batch = candidates.slice(i, i + ALLERGEN_BATCH_SIZE);
     report.batches += 1;
     try {
-      const answers = await examineAllergenBatch(batch, ctx);
+      const answers = await deps.examine(batch, ctx);
       for (const answer of answers) {
         if (answer.rejected.length === 0) continue;
-        await logWarn({
+        await deps.logWarn({
           message: "Allergènes : clés hors liste écartées",
           correlationId: ctx.correlationId,
           userId: ctx.userId,
@@ -323,13 +375,37 @@ export async function examineAllergenCandidates(args: {
           extra: { ...extra, ingredientId: batch[answer.index].id, rejected: answer.rejected },
         });
       }
-      const written = await writeAnswers(batch, answers);
+      const written = await deps.write(batch, answers);
       report.examined += written;
       report.alreadyExamined += answers.length - written;
       report.unanswered += batch.length - answers.length;
+      // Un ingrédient sans réponse reste « jamais examiné » et sera redemandé.
+      // Le journal le nomme : un compteur seul ne dit pas lequel revoir.
+      const answered = new Set(answers.map((a) => a.index));
+      const unanswered = batch.filter((_, index) => !answered.has(index));
+      if (unanswered.length > 0) {
+        for (const c of unanswered) {
+          report.issues.push({ id: c.id, name: c.name, problem: "unanswered" });
+        }
+        await deps.logWarn({
+          message: "Allergènes : ingrédients sans réponse du modèle, rien n'est posé",
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          scanId: ctx.scanId,
+          moduleType: "DESIGN",
+          feature: ctx.feature,
+          extra: {
+            ...extra,
+            sansReponse: unanswered.map((c) => ({ id: c.id, name: c.name })),
+          },
+        });
+      }
     } catch (err) {
       report.failed += batch.length;
-      await logError({
+      for (const c of batch) {
+        report.issues.push({ id: c.id, name: c.name, problem: "failed", error: errorText(err) });
+      }
+      await deps.logError({
         message: "Allergènes : échec d'un lot, rien n'est posé",
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId: ctx.correlationId,
@@ -368,6 +444,22 @@ export function recipeAllergensFromDocs(
   return computeRecipeAllergens(recipeIngredientNames(data), (name) =>
     allergensFromReferential(name, docs),
   );
+}
+
+/**
+ * Ingrédients d'une recette encore jamais examinés, sans doublon, dans
+ * l'ordre où elle les cite : ce qui rend son résultat incomplet.
+ */
+export function unexaminedIngredientNames(
+  data: Record<string, unknown>,
+  docs: ReadonlyMap<string, Record<string, unknown>>,
+): string[] {
+  const out: string[] = [];
+  for (const name of recipeIngredientNames(data)) {
+    if (out.includes(name)) continue;
+    if (allergensFromReferential(name, docs) == null) out.push(name);
+  }
+  return out;
 }
 
 /**
