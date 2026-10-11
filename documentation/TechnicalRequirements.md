@@ -334,8 +334,10 @@ Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Les trois premiers son
 client (`ensureSystemBooks`). « Mes recettes du web » est créé **par le serveur**, au premier
 import par lien (`findOrCreateWebBook`, `pipeline/urlImport.ts`) : identifiant déterministe
 `books/web_{uid}` (deux imports simultanés ne créent pas deux livres), `is_private: true`, auteur
-« Kass'Dalle », sans couverture : aucun des trois visuels des autres livres système ne lui
-correspond. Le client ne peut créer ni un livre d'identifiant `web_…`, ni un livre portant le
+« Kass'Dalle », sans couverture. Le client pose ensuite `assets/FromTheWeb.png` à l'ouverture
+de la bibliothèque (`ensureWebBookCover`, appelé par `ensureSystemBooks`), comme pour les trois
+autres livres système : son créateur a le droit de modifier le livre. Tant que la couverture
+n'est pas posée, la liste affiche la même image comme repli (`Book.defaultCoverAsset`). Le client ne peut créer ni un livre d'identifiant `web_…`, ni un livre portant le
 tag `__web` (règles, §4) : sans cela, un éditeur créait `books/web_{uid d'un autre}`, public et à
 son nom, et les brouillons importés de l'autre compte y tombaient. Le serveur vérifie en plus le
 document trouvé (`isOwnWebBook` : `created_by` du compte et tag `__web`) ; un document étranger
@@ -3891,7 +3893,8 @@ sauvegardes planifiées, gérées par Google Cloud, hors du code et hors du dép
 
 Une base n'accepte qu'une planification quotidienne et une hebdomadaire. Chaque sauvegarde
 est une copie complète de la base. Elle est facturée au Go stocké ; une restauration est
-facturée au Go restauré. Les fichiers de Storage (photos, scans) ne sont pas couverts.
+facturée au Go restauré. Les fichiers de Storage (photos, scans) ne sont pas couverts : voir
+« Versions des fichiers de Storage » ci-dessous.
 
 Les planifications se créent une fois, depuis le PC, avec un compte qui a le rôle
 `roles/datastore.owner` (le propriétaire du projet l'a). Ni le workflow ni `deploy.ps1` ne
@@ -3930,6 +3933,37 @@ ce qu'il faut dans `(default)`.
 
 Rien de cela ne s'écrit depuis une session cloud : la restauration est une opération
 d'exploitation, lancée à la main depuis le PC.
+
+### Versions des fichiers de Storage
+
+Les sauvegardes de Firestore ne couvrent pas les fichiers : photos de recettes, scans,
+couvertures, fichiers importés. Le bucket `gs://kassdale-6d948.firebasestorage.app` garde donc
+les **versions** de ses objets : un fichier remplacé ou supprimé reste récupérable **30 jours**.
+Au-delà, une règle de cycle de vie supprime l'ancienne version. Les anciennes versions sont
+facturées au Go comme les fichiers en ligne, pendant ces 30 jours.
+
+Le réglage se fait une fois, depuis le PC, avec le compte propriétaire du projet :
+
+```powershell
+gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --versioning
+Set-Content -Path lifecycle.json -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
+gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file=lifecycle.json
+gcloud storage buckets describe gs://kassdale-6d948.firebasestorage.app --format="yaml(versioning,lifecycle_config)"
+```
+
+La dernière commande doit afficher `versioning: enabled: true` et la règle `Delete` sur
+`daysSinceNoncurrentTime: 30`.
+
+**Récupérer un fichier.** Lister ses versions, puis recopier celle qu'on veut à sa place :
+
+```powershell
+gcloud storage ls -a gs://kassdale-6d948.firebasestorage.app/<chemin>
+gcloud storage cp gs://kassdale-6d948.firebasestorage.app/<chemin>#<generation> gs://kassdale-6d948.firebasestorage.app/<chemin>
+```
+
+`<generation>` est le nombre qui suit `#` dans la liste. La copie reprend les métadonnées de la
+version, dont le jeton de téléchargement Firebase : l'URL enregistrée dans Firestore pointe de
+nouveau sur le fichier. À vérifier en ouvrant l'image dans l'application après la copie.
 
 ---
 
@@ -4398,7 +4432,7 @@ n'importe quel compte publiait l'image de son choix. Désormais :
   `user` et l'image est analysée ;
 - `asset` n'est retenu que si l'empreinte SHA-256 du fichier est celle d'une couverture livrée
   avec l'application (`BUNDLED_ASSET_SHA256` : `mycreations.png`, `opensource.png`,
-  `Secret.png`). Sinon l'image est analysée, et un `WARNING` le journalise. Le test
+  `Secret.png`, `FromTheWeb.png`). Sinon l'image est analysée, et un `WARNING` le journalise. Le test
   `moderationOrigin` relit `kass_dalle/assets/` et échoue si une image change sans son
   empreinte.
 
