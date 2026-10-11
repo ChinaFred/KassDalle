@@ -190,6 +190,8 @@ export const COLL_AI_ROUTING_PRESETS = "ai_routing_presets";
  * génération. Conservées 180 jours (politique TTL sur `expires_at`).
  */
 export const COLL_PLANNING_RUNS = "planning_runs";
+/** Préférences de planning, un document par utilisateur (`planning_config/{uid}`). */
+export const COLL_PLANNING_CONFIG = "planning_config";
 
 /** Réglages de la présélection du planning — `app_config/planning_policy`. */
 export const PLANNING_POLICY_DOC_ID = "planning_policy";

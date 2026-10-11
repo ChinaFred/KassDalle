@@ -309,7 +309,9 @@
     "refusal_repeat_factor": 0.25,
     "refusal_max_entries": 300,
     "refusal_future_tolerance_days": 1,
-    "starch_repeat_factor": 0.5
+    "starch_repeat_factor": 0.5,
+    "cuisine_repeat_factor": 0.5,
+    "protein_neighbour_factor": 0.5
   },
   "protein_of": [
     {
@@ -400,6 +402,164 @@
       "neighbours": ["riz"],
       "expected": false,
       "why": "féculent inconnu : pas de pénalité"
+    }
+  ],
+  "_protein_neighbour_comment": "Alternance des protéines d'un jour à l'autre. Un plat dont la protéine (hors « inconnue ») est celle d'un créneau voisin (veille ou lendemain : recette déjà assignée, ou premier plat classé du créneau précédent) pèse x0,5, comme le féculent. S'ajoute à la pénalité de répétition dans le cycle. Jamais une exclusion.",
+  "protein_neighbour": [
+    {
+      "candidate": "poisson",
+      "neighbours": ["poisson"],
+      "expected": true,
+      "why": "poisson la veille : pénalisé"
+    },
+    {
+      "candidate": "poisson",
+      "neighbours": ["volaille", "boeuf"],
+      "expected": false,
+      "why": "protéine différente des deux voisins"
+    },
+    {
+      "candidate": "porc",
+      "neighbours": ["boeuf"],
+      "expected": false,
+      "why": "deux viandes différentes ne se répètent pas"
+    },
+    {
+      "candidate": "inconnue",
+      "neighbours": ["inconnue"],
+      "expected": false,
+      "why": "protéine inconnue : pas de pénalité"
+    },
+    {
+      "candidate": "vegetarien",
+      "neighbours": ["vegetarien"],
+      "expected": true,
+      "why": "végétarien la veille : pénalisé aussi"
+    }
+  ],
+  "_cuisine_of_comment": "Variété des cuisines. La famille d'un plat se lit dans ses étiquettes `cuisines` : asiatique, indienne, orientale, ameriques, africaine, italienne, europeenne, francaise, ou inconnue. Une famille étrangère l'emporte sur l'européenne, qui l'emporte sur la française : un plat « française, japonaise » compte comme asiatique. Chaque fois que sa famille est déjà posée dans le cycle (recette assignée, ou premier plat classé d'un créneau précédent), un plat pèse x0,5. La cuisine française et une cuisine inconnue ne sont jamais pénalisées : la française reste la cuisine de tous les jours. Jamais une exclusion.",
+  "cuisine_of": [
+    {
+      "cuisines": ["Française"],
+      "expected": "francaise",
+      "why": "cuisine française"
+    },
+    {
+      "cuisines": ["provençale"],
+      "expected": "francaise",
+      "why": "une région française compte comme française"
+    },
+    {
+      "cuisines": ["Japonaise"],
+      "expected": "asiatique",
+      "why": "japonaise : asiatique"
+    },
+    {
+      "cuisines": ["thaïlandaise"],
+      "expected": "asiatique",
+      "why": "thaï : asiatique, accents ignorés"
+    },
+    {
+      "cuisines": ["coréenne"],
+      "expected": "asiatique",
+      "why": "coréenne : asiatique"
+    },
+    {
+      "cuisines": ["indienne"],
+      "expected": "indienne",
+      "why": "indienne"
+    },
+    {
+      "cuisines": ["indonésienne"],
+      "expected": "asiatique",
+      "why": "indonésienne n'est pas indienne"
+    },
+    {
+      "cuisines": ["marocaine"],
+      "expected": "orientale",
+      "why": "Maghreb : orientale"
+    },
+    {
+      "cuisines": ["libanaise"],
+      "expected": "orientale",
+      "why": "Proche-Orient : orientale"
+    },
+    {
+      "cuisines": ["mexicaine"],
+      "expected": "ameriques",
+      "why": "mexicaine : Amériques"
+    },
+    {
+      "cuisines": ["sénégalaise"],
+      "expected": "africaine",
+      "why": "Afrique de l'Ouest : africaine"
+    },
+    {
+      "cuisines": ["italienne"],
+      "expected": "italienne",
+      "why": "l'italienne a sa propre famille : pâtes et pizzas reviennent souvent"
+    },
+    {
+      "cuisines": ["espagnole"],
+      "expected": "europeenne",
+      "why": "espagnole : européenne"
+    },
+    {
+      "cuisines": ["méditerranéenne"],
+      "expected": "europeenne",
+      "why": "méditerranéenne : européenne"
+    },
+    {
+      "cuisines": ["française", "japonaise"],
+      "expected": "asiatique",
+      "why": "une famille étrangère l'emporte sur la française"
+    },
+    {
+      "cuisines": ["française", "italienne"],
+      "expected": "italienne",
+      "why": "l'italienne l'emporte sur la française"
+    },
+    {
+      "cuisines": ["fusion"],
+      "expected": "inconnue",
+      "why": "étiquette inconnue"
+    },
+    {
+      "cuisines": [],
+      "expected": "inconnue",
+      "why": "sans étiquette"
+    }
+  ],
+  "cuisine_repeats": [
+    {
+      "candidate": ["japonaise"],
+      "in_cycle": [["chinoise"]],
+      "expected": 1,
+      "why": "une asiatique déjà dans le cycle"
+    },
+    {
+      "candidate": ["thaïlandaise"],
+      "in_cycle": [["chinoise"], ["vietnamienne"]],
+      "expected": 2,
+      "why": "deux asiatiques déjà dans le cycle"
+    },
+    {
+      "candidate": ["japonaise"],
+      "in_cycle": [["italienne"], ["indienne"]],
+      "expected": 0,
+      "why": "aucune autre asiatique"
+    },
+    {
+      "candidate": ["française"],
+      "in_cycle": [["française"], ["française"]],
+      "expected": 0,
+      "why": "la française n'est jamais pénalisée"
+    },
+    {
+      "candidate": [],
+      "in_cycle": [[]],
+      "expected": 0,
+      "why": "cuisine inconnue : jamais pénalisée"
     }
   ],
   "reheat_friendly": [
@@ -670,6 +830,24 @@
       "starch_repeat": true,
       "expected": 0.15,
       "why": "0,5 de fraîcheur x 0,6 de protéine x 0,5 de féculent"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 0,
+      "cuisine_repeats": 2,
+      "expected": 0.25,
+      "why": "même famille de cuisine deux fois dans le cycle : x0,5 x0,5"
+    },
+    {
+      "days": null,
+      "reheat_slot": false,
+      "reheat_friendly": false,
+      "protein_repeats": 1,
+      "protein_neighbour": true,
+      "expected": 0.3,
+      "why": "poisson déjà au cycle, et la veille : x0,6 x0,5"
     }
   ],
   "weighted_order": [

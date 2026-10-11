@@ -121,6 +121,27 @@ class DayConstraint {
       mealFormat == null;
 }
 
+/// Contraintes globales d'un compte qui n'en a jamais écrit : des règles de
+/// variété que le modèle d'IA lit à chaque génération.
+///
+/// Sans goût personnel : ni régime, ni cuisine imposée au-delà d'une base
+/// française. Chacun le retouche dans Paramètres du planning. C'est aussi le
+/// texte que le backfill « Contraintes de variété par défaut » pose sur les
+/// comptes existants — le client l'envoie, le serveur n'en garde pas de copie.
+const kDefaultGlobalConstraints =
+    'VARIÉTÉ SUR LA SEMAINE (texte proposé par Kass\'Dalle, à modifier '
+    'librement dans Paramètres du planning) :\n'
+    '- Protéine : jamais la même protéine principale deux jours de suite. '
+    'Alterner volaille, bœuf, porc, agneau, poisson, œufs, légumineuses.\n'
+    '- Féculent : jamais le même féculent deux jours de suite. Pas plus de '
+    '2 fois les pâtes par semaine. Alterner pâtes, riz, pommes de terre, '
+    'semoule, pain.\n'
+    '- Cuisine : jamais deux jours de suite une cuisine étrangère de la même '
+    'région (asiatique, indienne, mexicaine, orientale…). Pas plus de 2 plats '
+    'd\'une même cuisine étrangère par semaine.\n'
+    '- Préférence : une majorité de cuisine française ou familiale. Les '
+    'cuisines étrangères servent à varier.';
+
 /// Préférences globales de planification.
 class PlanningPreferences {
   /// Nombre de repas par cycle (ex: 7 pour une semaine).
@@ -165,7 +186,7 @@ class PlanningPreferences {
     this.cycleStartDay = DateTime.friday,
     this.batchCookingDay,
     this.dailyConstraints = const {},
-    this.globalConstraints = '',
+    this.globalConstraints = kDefaultGlobalConstraints,
     this.defaultMealHour = 19,
     this.defaultMealMinute = 0,
     this.defaultCalendarDurationMinutes = 60,
@@ -186,7 +207,10 @@ class PlanningPreferences {
             Map<String, dynamic>.from(e.value as Map),
           ),
       },
-      globalConstraints: data['global_constraints'] as String? ?? '',
+      // Absent : un compte qui n'a jamais réglé ses préférences reçoit les
+      // règles de variété. Une chaîne vide enregistrée est un choix, gardé.
+      globalConstraints:
+          data['global_constraints'] as String? ?? kDefaultGlobalConstraints,
       defaultMealHour: data['default_meal_hour'] as int? ?? 19,
       defaultMealMinute: data['default_meal_minute'] as int? ?? 0,
       defaultCalendarDurationMinutes:

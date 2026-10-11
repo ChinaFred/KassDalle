@@ -1054,7 +1054,7 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 | `cycle_start_day` | `int` | Jour de démarrage (1 = lundi) |
 | `batch_cooking_day` | `int?` | Jour de préparation groupée |
 | `daily_constraints` | `Map<int, …>` | Par jour : temps de préparation maximum, parts visées, batch cooking, notes en langage naturel, heure propre, et `meal_format` — le **format du repas** : `plat` \| `plat_dessert` \| `entree_plat` \| `entree_plat_dessert` \| `leger`. Absent = plat seul, jamais stocké comme tel. C'est le format qui fait demander une entrée ou un dessert à `suggestMealPlanFn`, dans le même appel que le plat (`mealFormatOf`, fixture `planning_slot_rules.json` › `meal_format`) ; une contrainte en prose ne les ouvre plus. Il se change aussi sur un créneau pendant la composition d'un cycle |
-| `global_constraints` | `String` | Contraintes valables pour tout le cycle, en langage naturel |
+| `global_constraints` | `String` | Contraintes valables pour tout le cycle, en langage naturel. **Absent** : le client lit `kDefaultGlobalConstraints` (règles de variété des protéines, féculents et cuisines). Une chaîne vide enregistrée est gardée |
 | `default_meal_hour` · `default_meal_minute` | `int` | Heure par défaut d'un repas |
 | `default_calendar_duration_minutes` | `int` | Durée d'un événement Google Calendar, depuis tous les points d'export : le repas à table, jamais les temps de la recette (ceux-ci ne servent qu'au rappel et à `duration_minutes` du repas) |
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
@@ -2445,7 +2445,15 @@ pénalité de refus.
    la recette dans les 21 derniers jours, 0,25 à partir de 3 refus ; jamais une exclusion)
    × 0,5 si le féculent du plat est celui d'un créneau voisin (`STARCH_REPEAT_FACTOR`,
    `isStarchRepeat` : veille ou lendemain, recette déjà assignée ou premier plat classé du
-   créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas).
+   créneau précédent ; « aucun » et un féculent inconnu ne se répètent pas)
+   × 0,5 si la protéine du plat est celle d'un créneau voisin (`PROTEIN_NEIGHBOUR_FACTOR`,
+   `isProteinNeighbourRepeat` : même lecture que le féculent ; « inconnue » ne se répète pas)
+   × 0,5 par répétition de sa famille de cuisine déjà au cycle (`CUISINE_REPEAT_FACTOR`,
+   `cuisineRepeatsOf` : recettes déjà assignées et premier plat classé de chaque créneau
+   traité). La famille se lit dans les étiquettes `cuisines` (`cuisineFamilyOf` : asiatique,
+   indienne, orientale, Amériques, africaine, italienne, européenne, française, inconnue ;
+   une famille étrangère l'emporte sur l'européenne, qui l'emporte sur la française). La
+   cuisine française et une cuisine inconnue ne sont jamais pénalisées.
    La protéine se lit dans `mainProtein` d'abord (`proteinOf` : le tag `main_protein`, envoyé
    par le client, relu en liste blanche), puis dans `dishTypes` en repli (viande, volaille,
    poisson, fruits de mer, végétarien, inconnue). Le féculent se lit dans `mainStarch`
@@ -3122,6 +3130,7 @@ déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlat
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
+| `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
 

@@ -20,6 +20,39 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.28 — fonctionnel
+
+#### Planning : variété des cuisines et des protéines dans la présélection
+
+La présélection des plats tient compte de la cuisine. Chaque recette est rangée dans une
+famille d'après ses étiquettes de cuisine : asiatique, indienne, orientale, Amériques,
+africaine, italienne, européenne ou française. Un plat d'une famille étrangère déjà prévue dans
+le cycle a deux fois moins de chances d'être tiré, et quatre fois moins à la troisième.
+La cuisine française n'est jamais pénalisée, ce qui lui donne l'avantage sur la semaine. Une
+recette sans étiquette de cuisine ne l'est pas non plus.
+
+Jusqu'ici, seul le modèle d'IA lisait la cuisine, dans les préférences générales. Rien ne
+garantissait qu'une semaine ne compte pas quatre plats asiatiques. La règle est verrouillée par
+`planning_slot_rules.json` (sections `cuisine_of` et `cuisine_repeats`, constante
+`cuisine_repeat_factor`).
+
+La protéine de la veille et du lendemain compte aussi. Un plat dont la protéine est celle d'un
+jour voisin a deux fois moins de chances d'être tiré. Jusqu'ici, la pénalité de protéine ne
+comptait que les repas posés avant la génération. Deux poissons pouvaient donc se suivre, comme
+le cabillaud du vendredi et le fish and chips du samedi. Sections `protein_neighbour` et
+constante `protein_neighbour_factor` de la même fixture.
+
+#### Règles de variété par défaut dans les préférences du planning
+
+Un compte qui n'a jamais réglé ses préférences de planning reçoit des contraintes globales par
+défaut : alterner les protéines, les féculents et les cuisines d'un jour à l'autre, avec une
+majorité de cuisine française. Le texte se modifie dans Paramètres du planning.
+
+Le bouton Admin › Backfills › « Contraintes de variété par défaut » pose ce texte sur les comptes
+existants, hors de celui qui le lance. Des contraintes vides le reçoivent. Des contraintes déjà
+écrites le reçoivent à la suite, sans rien effacer. Nouvelle fonction
+`backfillPlanningDefaultsFn`, sans appel de modèle.
+
 ### v0.23.27 — fonctionnel
 
 #### Planning : calendrier du lundi au dimanche et période libre

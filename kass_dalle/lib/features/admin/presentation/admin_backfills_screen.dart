@@ -6,6 +6,7 @@ import 'admin_providers.dart';
 import 'billing_providers.dart';
 import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
+import '../../planning/domain/planning_preferences.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -308,6 +309,50 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillPlanningDefaults() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Contraintes de variété par défaut'),
+        content: const Text(
+          'Pose les règles de variété (protéine, féculent, cuisine) dans les '
+          'contraintes globales du planning des autres comptes. Votre compte '
+          'n\'est pas modifié.\n\n'
+          'Contraintes vides : le texte est posé. Contraintes déjà écrites : '
+          'le texte est ajouté à la suite, rien n\'est effacé. Un compte qui '
+          'a déjà le texte est sauté : relancer ne refait rien.\n\n'
+          'Aucun appel de modèle. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Contraintes de variété en cours...',
+      feature: 'admin_backfill_planning_defaults',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillPlanningDefaults(text: kDefaultGlobalConstraints),
+      format: (r) =>
+          'Comptes : examinés=${r['examines']}, posés=${r['poses']}, '
+          'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
+          'le vôtre ignoré=${r['ignores']}, '
+          'trop longs (laissés tels quels)=${r['tropLongs']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
+    );
+  }
+
   Future<void> _runBackfillShoppingProducts() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -564,6 +609,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'référentiel. Aucun appel d\'IA. À relancer après '
                           'tout changement de la règle de regroupement.',
                       onTap: _busy ? null : _runBackfillShoppingProducts,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.restaurant_menu_outlined,
+                      title: 'Contraintes de variété par défaut',
+                      subtitle:
+                          'Pose les règles de variété des protéines, des '
+                          'féculents et des cuisines dans le planning des '
+                          'autres comptes, sans rien effacer. À lancer une '
+                          'fois après la v0.23.28. Aucun appel d\'IA.',
+                      onTap: _busy ? null : _runBackfillPlanningDefaults,
                     ),
                   ],
                 ),
