@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.29 — fonctionnel
+
+#### Bibliothèque : exporter tous mes livres en PDF, un fichier par livre
+
+Une icône PDF dans la barre de la Bibliothèque exporte en une opération tous les
+livres dont l'utilisateur est le créateur. Chaque livre donne son propre PDF, au
+même format que l'export d'un livre, et les PDF sont réunis dans un seul fichier
+`Bibliotheque_AAAA-MM-JJ.zip`. Un ZIP évite une rafale de téléchargements dans le
+navigateur et une feuille de partage par livre sur mobile. Les livres vides sont
+ignorés, un livre en échec n'arrête pas les autres, et le compte rendu donne les
+nombres de livres exportés, vides et en erreur.
+
 ### v0.23.28 — fonctionnel
 
 #### Planning : variété des cuisines et des protéines dans la présélection

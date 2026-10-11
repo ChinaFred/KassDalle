@@ -13,11 +13,28 @@ const _kDivider = PdfColor.fromInt(0xFFBDBDBD);
 
 typedef _IndexEntry = ({Recipe recipe, int pdfStartPage, int pageCount});
 
-/// Exporte un livre complet (recettes et pages non-recettes) en PDF.
+/// Exporte un livre complet (recettes et pages non-recettes) en PDF, puis le
+/// télécharge (web) ou l'ouvre dans la feuille de partage (mobile, desktop).
+Future<({Uint8List bytes, String filename})> exportBookToPdf({
+  required String bookTitle,
+  required List<Recipe> pages,
+  String? bookAuthor,
+}) async {
+  final result = await buildBookPdf(
+    bookTitle: bookTitle,
+    pages: pages,
+    bookAuthor: bookAuthor,
+  );
+  await downloadPdf(result.bytes, result.filename);
+  return result;
+}
+
+/// Fabrique le PDF d'un livre sans le télécharger.
 ///
 /// La table des matieres est generee en debut de document avec les numeros de
-/// pages finaux du PDF.
-Future<({Uint8List bytes, String filename})> exportBookToPdf({
+/// pages finaux du PDF. L'export de toute la bibliothèque appelle cette
+/// fonction livre par livre et réunit les PDF dans une archive.
+Future<({Uint8List bytes, String filename})> buildBookPdf({
   required String bookTitle,
   required List<Recipe> pages,
   String? bookAuthor,
@@ -117,7 +134,6 @@ Future<({Uint8List bytes, String filename})> exportBookToPdf({
       .replaceAll(RegExp(r'\s+'), '_');
   final filename = '${safe.isEmpty ? 'livre' : safe}.pdf';
 
-  await downloadPdf(bytes, filename);
   return (bytes: bytes, filename: filename);
 }
 
