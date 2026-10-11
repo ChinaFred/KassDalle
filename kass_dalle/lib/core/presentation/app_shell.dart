@@ -67,6 +67,12 @@ class _AppShellState extends ConsumerState<AppShell> {
         // L'Explorer met le focus dans son champ, qu'il soit déjà affiché ou
         // qu'il s'ouvre.
         ref.read(exploreSearchFocusRequestProvider.notifier).request();
+        // Déjà sur l'Explorer : rien à quitter, donc aucune question de
+        // sortie à poser sur des idées qui ne seraient pas perdues.
+        final location = GoRouter.of(
+          context,
+        ).routeInformationProvider.value.uri.path;
+        if (location == AppRoutes.search) return;
         goGuarded(context, ref, AppRoutes.search);
       },
       child: isWide
