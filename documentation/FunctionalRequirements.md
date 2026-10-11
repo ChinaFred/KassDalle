@@ -645,6 +645,17 @@ déjà transmise continue de fonctionner.
   absorbée comprises, avec sa légende.
 - Le détail par ingrédient part **décoché par défaut** : c'est un tableau de
   diagnostic, pas une fiche de cuisine.
+- **Export de tous mes livres** : dans la Bibliothèque, l'icône PDF de la barre
+  du haut exporte, en une opération, les livres dont l'utilisateur est le
+  créateur — un PDF par livre, au format de l'export d'un livre, réunis dans un
+  seul fichier `Bibliotheque_AAAA-MM-JJ.zip`. Les livres des groupes n'y entrent
+  pas. Une confirmation annonce le nombre de livres ; une fenêtre suit
+  l'avancement livre par livre et permet d'annuler. Un livre sans page validée
+  est ignoré, un livre dont le PDF échoue est compté en erreur sans arrêter les
+  autres, et le compte rendu donne les trois nombres. Deux livres de même titre
+  deviennent `Titre.pdf` et `Titre (2).pdf`. Sur le web l'archive se
+  télécharge ; sur Android, iOS et Windows, un dialogue « Enregistrer sous »
+  demande où la poser.
 
 ---
 
@@ -666,7 +677,7 @@ déjà transmise continue de fonctionner.
 | Annotations non modifiables par autrui | Un Reader ou un Editor ne peut modifier/supprimer que ses propres annotations ; un Admin peut toutes les modifier. |
 | On ne modifie que son contenu | Un livre ou une recette ne se modifie, ne se supprime et ne change de couverture ou d'illustration que par son créateur ou un Admin — Editor compris. Le créateur d'un document est fixé à sa création et ne change plus. Les écrans le suivent recette par recette : dans le livre d'un autre, seules mes pages portent leurs actions ; dans la file des brouillons, le brouillon d'un autre ne se valide, ne se supprime ni ne se sélectionne, et sa ligne ouvre la relecture, où « Copier comme mon brouillon » existe. Ouvrir par un lien l'écran de modification du contenu d'un autre affiche « Seul le créateur peut modifier ce livre » (ou « cette recette ») avec un bouton de retour, avant toute saisie. En mode sélection, une page ou un brouillon d'un autre est grisé et ne réagit pas. |
 | Suppression d'un livre | Le créateur ne supprime ou ne détache que ses recettes ; un Admin agit sur toutes, et la boîte le lui dit (« pour tous leurs auteurs »). La boîte s'ouvre aussitôt et annonce les pages ajoutées par d'autres membres (« Au moins 2 pages ajoutées par d'autres membres seront conservées » ; sans chiffre pour un livre privé), et le message de fin dit ce qui reste. À la suppression, le serveur détache ces pages : aucune ne garde le lien vers un livre disparu, et celles d'un livre privé restent privées. Un échec affiche « La suppression du livre a échoué. Réessayez. » |
-| Export PDF d'un livre | Tout lecteur d'un livre l'exporte, depuis le menu « Plus d'options » de la liste du livre. « Modifier le livre » et « Supprimer le livre » n'y apparaissent qu'à son créateur et à un Admin. |
+| Export PDF d'un livre | Tout lecteur d'un livre l'exporte, depuis le menu « Plus d'options » de la liste du livre. Tout utilisateur exporte d'un coup ses propres livres, un PDF par livre dans un ZIP, depuis la Bibliothèque. « Modifier le livre » et « Supprimer le livre » n'y apparaissent qu'à son créateur et à un Admin. |
 | Conseils et calculs écrits sur la recette | Le conseil de dressage, le conseil de conservation, le visuel d'une étape et le calcul de nutrition s'enregistrent sur la recette, que lisent tous ceux qui la voient. Seuls son créateur et un Admin les demandent ou les relancent ; le serveur refuse les autres comptes, recette partagée comprise. Les autres membres lisent les conseils et la nutrition déjà enregistrés. Quand rien n'est enregistré, l'écran le dit en une ligne au lieu d'offrir un bouton : « Aucun conseil de dressage pour cette recette. Seuls son créateur et un administrateur peuvent en demander un. », « Pas encore de conseil de réchauffage pour ce plat : son créateur peut le demander. », « Aucune donnée nutritionnelle calculée. Le calcul se fait à l'enregistrement de la recette ; seuls son créateur et un administrateur peuvent le relancer. ». Les visuels d'étape du dressage exigent en plus le rôle Editor : un Reader créateur de sa recette demande et régénère le conseil, sans visuels (« Les visuels d'étape sont réservés aux éditeurs. »). Le calcul automatique de la nutrition à l'enregistrement d'une recette continue pour toutes. |
 | Badge « Recettes à valider » | Dans un livre, ne compte que les brouillons que le lecteur peut valider : les siens, tous pour un Admin. |
 | Confidentialité d'une recette | Une recette a toujours la confidentialité de son livre : elle est posée à la création, au déplacement et à la validation, et les règles refusent une recette partagée dans un livre privé. Une recette sans livre garde la sienne. |

@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.23.29+376
+version: 0.23.30+377
 
 environment:
   sdk: ^3.11.4
@@ -67,6 +67,8 @@ dependencies:
   # PDF export
   pdf: ^3.11.1
   printing: ^5.13.2
+  # Archive ZIP de l'export de toute la bibliothèque : un PDF par livre.
+  archive: ^4.0.9
 
   # Écran maintenu allumé pendant la lecture d'une recette. On cuisine les
   # mains occupées : sans lui, l'écran s'éteint au milieu d'une étape.

@@ -8,6 +8,7 @@ import '../domain/book.dart';
 import '../domain/book_order.dart';
 import 'book_providers.dart';
 import 'delete_book_flow.dart';
+import 'export_my_books_flow.dart';
 import 'reorderable_books_grid.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
@@ -158,6 +159,16 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
       appBar: AppBar(
         title: const Text('Bibliothèque'),
         actions: [
+          if (myBooksAsync.value?.isNotEmpty ?? false)
+            IconButton(
+              tooltip: 'Exporter mes livres en PDF',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: () => exportMyBooksAsZip(
+                context: context,
+                ref: ref,
+                books: myBooksAsync.value!,
+              ),
+            ),
           // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
           if (isWide)
             IconButton(
