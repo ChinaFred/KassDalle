@@ -1,5 +1,5 @@
 /**
- * Wrapper autour du SDK Gemini.
+ * Wrapper autour du SDK Gemini (`@google/genai`).
  *
  * Gère :
  *  - Instanciation du modèle (clé depuis Secret Manager au runtime)
@@ -14,12 +14,15 @@
  * faut désormais toucher qu'ici.
  */
 
-import {
-  GoogleGenerativeAI,
-  type GenerativeModel,
-  type Part,
-  type GenerateContentResult,
-} from "@google/generative-ai";
+// Types seuls : effacés à la compilation, ils ne chargent pas le SDK. Le code
+// du SDK n'est chargé qu'au premier appel, par `loadSdk()`.
+import type {
+  Content,
+  GenerateContentConfig,
+  GenerateContentResponse,
+  GoogleGenAI,
+  Part,
+} from "@google/genai";
 import { GEMINI_MODEL } from "../config";
 import { logDebug, logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
 
@@ -39,7 +42,12 @@ export interface GeminiUsage {
    * sépare le raisonnement du texte produit.
    */
   thoughtsTokenCount?: number;
-  /** Total rendu par l'API : entrée + sortie + raisonnement. */
+  /**
+   * Jetons du résultat d'un outil (recherche Google) relus par le modèle,
+   * facturés au tarif d'entrée. Absent tant qu'aucun appel ne passe d'outil.
+   */
+  toolUsePromptTokenCount?: number;
+  /** Total rendu par l'API : entrée + sortie + raisonnement + outil. */
   totalTokenCount?: number;
 }
 
@@ -47,8 +55,8 @@ export interface GeminiUsage {
  * Jetons de raisonnement d'un appel.
  *
  * Le champ dédié fait foi quand il est présent. À défaut, le total les trahit :
- * ce que le total compte en plus de l'entrée et de la sortie ne peut être que
- * du raisonnement. Ce repli couvre les versions du SDK qui ne remontent pas
+ * ce que le total compte en plus de l'entrée, de la sortie et du résultat
+ * d'outil ne peut être que du raisonnement. Ce repli couvre les versions du SDK qui ne remontent pas
  * encore le champ — sans lui, une montée de version silencieuse ferait
  * réapparaître le sous-comptage.
  */
@@ -58,7 +66,8 @@ export function thinkingTokensOf(usage: GeminiUsage | undefined): number {
   const derived =
     (usage.totalTokenCount ?? 0) -
     (usage.promptTokenCount ?? 0) -
-    (usage.candidatesTokenCount ?? 0);
+    (usage.candidatesTokenCount ?? 0) -
+    (usage.toolUsePromptTokenCount ?? 0);
   return Math.max(0, declared, derived);
 }
 
@@ -72,9 +81,35 @@ export interface GeminiResponsePart {
   inlineData?: GeminiInlineData;
 }
 
+/** Sous-ensemble lu de `groundingMetadata` (recherche Google). */
+export interface GeminiGroundingMetadata {
+  groundingChunks?: { web?: { uri?: string; title?: string } }[];
+  searchEntryPoint?: { renderedContent?: string };
+  webSearchQueries?: string[];
+}
+
 export interface GeminiCandidate {
   content?: { parts?: GeminiResponsePart[] };
   finishReason?: string;
+  groundingMetadata?: GeminiGroundingMetadata;
+}
+
+/** Une page web citée par la recherche Google. */
+export interface GeminiGroundingSource {
+  uri: string;
+  title?: string;
+}
+
+/**
+ * Ce que la recherche Google a apporté à une réponse.
+ *
+ * `searchEntryPointHtml` est le bloc « Suggestions Google » que les
+ * conditions d'utilisation du grounding imposent d'afficher avec la réponse.
+ */
+export interface GeminiGrounding {
+  sources: GeminiGroundingSource[];
+  webSearchQueries: string[];
+  searchEntryPointHtml?: string;
 }
 
 /** Réponse Gemini telle que la voit le reste du backend, SDK-agnostique. */
@@ -83,35 +118,160 @@ export interface GeminiResponse {
   text: string;
   candidates: GeminiCandidate[];
   usageMetadata?: GeminiUsage;
+  /** Présent seulement quand le premier candidat porte un `groundingMetadata`. */
+  grounding?: GeminiGrounding;
 }
+
+/** Ce que [toGeminiResponse] lit d'une réponse du SDK. */
+export type GeminiSdkResponse = Pick<GenerateContentResponse, "candidates" | "usageMetadata">;
 
 /**
  * Convertit une réponse du SDK vers [GeminiResponse].
  *
  * Le texte est reconstruit depuis les parts plutôt que via l'accesseur
- * `response.text()` du SDK, qui lève une exception quand la réponse a été
- * bloquée par les filtres de sécurité. Ici une réponse bloquée donne une chaîne
+ * `response.text` du SDK, qui ignore silencieusement les parts non textuelles
+ * et journalise un avertissement à chaque réponse mixte (texte + image). Ici une réponse bloquée donne une chaîne
  * vide et `finishReason` reste lisible dans [GeminiResponse.candidates] :
  * l'appelant décide quoi en faire au lieu de subir un throw.
  */
-export function toGeminiResponse(result: GenerateContentResult): GeminiResponse {
-  const candidates = (result.response.candidates ?? []) as GeminiCandidate[];
+export function toGeminiResponse(result: GeminiSdkResponse): GeminiResponse {
+  const candidates = (result.candidates ?? []) as GeminiCandidate[];
   const parts = candidates[0]?.content?.parts ?? [];
   const text = parts.map((part) => (typeof part.text === "string" ? part.text : "")).join("");
+  const grounding = groundingOf(candidates[0]?.groundingMetadata);
   return {
     text,
     candidates,
-    usageMetadata: result.response.usageMetadata as GeminiUsage | undefined,
+    usageMetadata: result.usageMetadata as GeminiUsage | undefined,
+    ...(grounding ? { grounding } : {}),
   };
 }
 
 /**
- * Instancie un modèle génératif pour un modèle autre que [GEMINI_MODEL]
- * (génération et retouche d'images). Passe par ici pour que l'import du SDK
- * reste confiné à ce fichier.
+ * Normalise le `groundingMetadata` d'un candidat.
+ *
+ * Une source sans URI ne peut être ni affichée ni ouverte : elle est écartée.
+ * Les doublons d'URI — une même page citée pour deux passages — n'en font qu'un.
  */
-export function createGenerativeModel(apiKey: string, model: string): GenerativeModel {
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({ model });
+export function groundingOf(
+  metadata: GeminiGroundingMetadata | undefined,
+): GeminiGrounding | undefined {
+  if (!metadata) return undefined;
+  const seen = new Set<string>();
+  const sources: GeminiGroundingSource[] = [];
+  for (const chunk of metadata.groundingChunks ?? []) {
+    const uri = chunk.web?.uri;
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    sources.push(chunk.web?.title ? { uri, title: chunk.web.title } : { uri });
+  }
+  const html = metadata.searchEntryPoint?.renderedContent;
+  return {
+    sources,
+    webSearchQueries: metadata.webSearchQueries ?? [],
+    ...(html ? { searchEntryPointHtml: html } : {}),
+  };
+}
+
+// ── Chargement du SDK ────────────────────────────────────────────────────────
+
+type GenAiSdk = typeof import("@google/genai");
+
+let sdkPromise: Promise<GenAiSdk> | null = null;
+
+/**
+ * SDK `@google/genai`, chargé au premier appel de modèle.
+ *
+ * Son import coûte une centaine de millisecondes, contre quelques-unes pour
+ * l'ancien `@google/generative-ai`. Chargé au niveau module, il les ajouterait
+ * au démarrage des cinquante fonctions du bundle, y compris celles qui
+ * n'appellent jamais Gemini, et rapprocherait la découverte du déploiement de
+ * son plafond de dix secondes. Un import raté n'est pas mémorisé : l'appel
+ * suivant retente.
+ */
+function loadSdk(): Promise<GenAiSdk> {
+  if (!sdkPromise) {
+    sdkPromise = import("@google/genai").catch((err: unknown) => {
+      sdkPromise = null;
+      throw err;
+    });
+  }
+  return sdkPromise;
+}
+
+/** Seul hôte autorisé pour les appels Gemini. */
+export const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com";
+
+let cachedClient: GoogleGenAI | null = null;
+let cachedApiKey: string | null = null;
+
+/** Client SDK mémorisé par clé : la clé vient de Secret Manager au runtime. */
+async function getClient(apiKey: string): Promise<GoogleGenAI> {
+  if (cachedClient && cachedApiKey === apiKey) return cachedClient;
+  const { GoogleGenAI: Client } = await loadSdk();
+  // Hôte et mode figés : le SDK lirait sinon GOOGLE_GEMINI_BASE_URL et
+  // GOOGLE_GENAI_USE_VERTEXAI dans l'environnement, et la clé partirait
+  // vers l'hôte que ces variables désignent.
+  cachedClient = new Client({
+    apiKey,
+    vertexai: false,
+    httpOptions: { baseUrl: GEMINI_API_BASE_URL },
+  });
+  cachedApiKey = apiKey;
+  return cachedClient;
+}
+
+/** Requête acceptée par [GeminiModelHandle.generateContent]. */
+export interface GeminiModelRequest {
+  contents: Content[];
+  config?: GenerateContentConfig;
+}
+
+/** Modèle désigné par son nom, prêt à être appelé. */
+export interface GeminiModelHandle {
+  generateContent(request: GeminiModelRequest): Promise<GenerateContentResponse>;
+}
+
+/**
+ * Désigne un modèle autre que [GEMINI_MODEL] (génération et retouche
+ * d'images, bac à sable). Passe par ici pour que l'import du SDK reste
+ * confiné à ce fichier.
+ *
+ * Ni réessai ni journal : ces appels ont leur propre traçabilité chez
+ * l'appelant. Le SDK n'est chargé qu'au premier `generateContent`.
+ */
+export function createGenerativeModel(apiKey: string, model: string): GeminiModelHandle {
+  return {
+    async generateContent(request) {
+      const client = await getClient(apiKey);
+      return client.models.generateContent({ model, ...request });
+    },
+  };
+}
+
+/**
+ * Construit la requête d'un appel [callGemini].
+ *
+ * Isolée pour être vérifiée sans réseau : c'est ici que vivent le plafond de
+ * raisonnement et l'outil de recherche Google.
+ */
+export function buildGeminiRequest(
+  model: string,
+  parts: Part[],
+  options: { thinkingBudget?: number | null; googleSearch?: boolean } = {},
+): GeminiModelRequest & { model: string } {
+  const config: GenerateContentConfig = {};
+  if (options.thinkingBudget != null) {
+    config.thinkingConfig = { thinkingBudget: options.thinkingBudget };
+  }
+  if (options.googleSearch) {
+    config.tools = [{ googleSearch: {} }];
+  }
+  return {
+    model,
+    contents: [{ role: "user", parts }],
+    ...(Object.keys(config).length > 0 ? { config } : {}),
+  };
 }
 
 export class GeminiQuotaExceededError extends Error {
@@ -153,6 +313,15 @@ export interface GeminiCallContext {
    * fait la majeure partie de la facture de sortie.
    */
   thinkingBudget?: number | null;
+  /**
+   * Autorise le modèle à interroger Google Search (grounding). Les pages
+   * citées reviennent dans [GeminiResponse.grounding].
+   *
+   * Aucun poste ne s'en sert encore. Avant le premier : la recherche est
+   * facturée à la requête, en plus des jetons, et `ai/pricing.ts` ne sait pas
+   * encore la compter — un poste qui l'active sans cela sous-estime son coût.
+   */
+  googleSearch?: boolean;
 }
 
 /**
@@ -167,17 +336,6 @@ function isThinkingRejection(err: unknown): boolean {
   return message.includes("thinking") || message.includes("thinkingconfig");
 }
 
-let cachedModel: GenerativeModel | null = null;
-let cachedApiKey: string | null = null;
-
-function getModel(apiKey: string): GenerativeModel {
-  if (cachedModel && cachedApiKey === apiKey) return cachedModel;
-  const genAi = new GoogleGenerativeAI(apiKey);
-  cachedModel = genAi.getGenerativeModel({ model: GEMINI_MODEL });
-  cachedApiKey = apiKey;
-  return cachedModel;
-}
-
 /**
  * Appelle Gemini avec retry automatique sur quota dépassé.
  *
@@ -190,7 +348,6 @@ export async function callGemini(
   parts: Part[],
   ctx: GeminiCallContext,
 ): Promise<GeminiResponse> {
-  const model = getModel(apiKey);
   const timeoutMs = ctx.timeoutMs ?? 5 * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
@@ -228,20 +385,23 @@ export async function callGemini(
     });
 
     try {
-      // `thinkingConfig` n'est pas typé par cette version du SDK, qui transmet
-      // néanmoins `generationConfig` tel quel à l'API. Le cast est le prix de
-      // l'accès à un réglage qui pèse près de neuf dixièmes de la facture de
-      // sortie ; le repli ci-dessous couvre le cas où l'API le refuserait.
-      const request = {
-        contents: [{ role: "user", parts }],
-        ...(thinkingBudget != null
-          ? { generationConfig: { thinkingConfig: { thinkingBudget } } }
-          : {}),
-      } as Parameters<GenerativeModel["generateContent"]>[0];
+      // Le plafond de raisonnement pèse près de neuf dixièmes de la facture
+      // de sortie ; le repli ci-dessous couvre le cas où l'API le refuserait.
+      const request = buildGeminiRequest(GEMINI_MODEL, parts, {
+        thinkingBudget,
+        googleSearch: ctx.googleSearch,
+      });
 
+      // Le chargement du SDK, au premier appel de l'instance, entre dans le
+      // délai de l'appel : il en fait partie pour l'appelant.
+      // Le délai annule la requête HTTP : la connexion est fermée et la
+      // réponse n'est plus attendue.
+      const abort = new AbortController();
+      request.config = { ...request.config, abortSignal: abort.signal };
       const sdkResult = await withTimeout(
-        model.generateContent(request),
+        getClient(apiKey).then((client) => client.models.generateContent(request)),
         Math.min(timeoutMs, deadline - Date.now()),
+        abort,
       );
       const result = toGeminiResponse(sdkResult);
 
@@ -340,9 +500,19 @@ export async function callGemini(
   }
 }
 
-function classifyError(err: unknown): GeminiStatus {
+/**
+ * Quota dépassé ou autre erreur.
+ *
+ * `@google/genai` lève une `ApiError` dont `status` porte le code HTTP et dont
+ * le message est le corps JSON de l'erreur (`{"error":{"code":429,…,
+ * "status":"RESOURCE_EXHAUSTED"}}`). Le code fait foi quand il est là ; le
+ * message couvre les erreurs sans code.
+ */
+export function classifyError(err: unknown): GeminiStatus {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (status === 429) return "QUOTA_EXCEEDED";
   const msg = errorMessage(err).toLowerCase();
-  if (msg.includes("429") || msg.includes("quota") || msg.includes("resource_exhausted")) {
+  if (/\b429\b/.test(msg) || msg.includes("quota") || msg.includes("resource_exhausted")) {
     return "QUOTA_EXCEEDED";
   }
   return "ERROR";
@@ -357,22 +527,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, abort?: AbortController): Promise<T> {
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Gemini call timeout after ${ms}ms`)), ms);
+    timer = setTimeout(() => {
+      const err = new Error(`Gemini call timeout after ${ms}ms`);
+      abort?.abort(err);
+      reject(err);
+    }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
-/** Crée un Part de type "inline data" pour transmettre un fichier (image/PDF) à Gemini. */
-export function dataPart(mimeType: string, bytes: Buffer): Part {
-  return {
-    inlineData: {
-      mimeType,
-      data: bytes.toString("base64"),
-    },
-  };
 }
 
 /** Crée un Part de type texte. */

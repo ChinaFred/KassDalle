@@ -20,6 +20,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.40 — technique
+
+Le SDK Gemini des Functions passe de `@google/generative-ai` 0.21 à `@google/genai` 2.28.
+L'ancien SDK n'expose pas l'outil `googleSearch`, nécessaire aux résultats web d'Explorer.
+Aucun comportement ne change : mêmes modèles, mêmes prompts, même lecture des jetons, mêmes
+réessais. `gemini/client.ts` reste le seul fichier qui l'importe, et le charge par
+`await import()` au premier appel (environ 100 ms) au lieu du démarrage. L'hôte de l'API est
+figé dans le code, pour que les variables `GOOGLE_GEMINI_BASE_URL` ou
+`GOOGLE_GENAI_USE_VERTEXAI` ne détournent pas la clé. Le délai d'un appel annule désormais la
+requête HTTP : la connexion est fermée et la réponse n'est plus attendue. Un délai dépassé
+dont la durée contient « 429 » n'est plus classé en dépassement de quota. La recherche Google et la lecture du
+grounding sont préparées dans `client.ts`, sans aucun poste qui s'en serve.
+
 ### v0.23.39 — fonctionnel
 
 #### Explorer : une recherche par texte qui filtre vraiment, import après Google
