@@ -37,11 +37,22 @@ import {
   recipeAllergensFromDocs,
   recipeIngredientNames,
   referentialIdsFor,
+  unexaminedIngredientNames,
   type AllergenCandidate,
+  type AllergenIssue,
 } from "../nutrition/allergenExamination";
 import { readDocsByIds } from "../nutrition/firestoreBatch";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import {
+  BackfillReview,
+  namesList,
+  recipeReviewLabel,
+  shortErrorMessage,
+  type BackfillReviewItem,
+  type BackfillReviewList,
+  withoutReviewList,
+} from "./_backfillReview";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -102,6 +113,34 @@ export interface BackfillAllergensResponse {
   stoppedByErrors: boolean;
   /** Les deux phases ont parcouru leur collection : les curseurs sont remis au début. */
   completed: boolean;
+  /**
+   * Ingrédients en erreur ou sans réponse, recettes incomplètes ou en échec,
+   * nommés : la liste « à revoir » (`_backfillReview.ts`).
+   */
+  aRevoir: BackfillReviewList;
+}
+
+/** Ligne « à revoir » d'un ingrédient resté sans allergènes. */
+export function allergenIssueReviewItem(issue: AllergenIssue): BackfillReviewItem {
+  return {
+    kind: "ingredient",
+    id: issue.id,
+    label: issue.name,
+    reason:
+      issue.problem === "unanswered"
+        ? "Pas de réponse de l'IA"
+        : `Lot en échec : ${shortErrorMessage(issue.error ?? "")}`,
+  };
+}
+
+/**
+ * Raison « à revoir » d'une recette au résultat incomplet : les ingrédients
+ * jamais examinés, ou l'absence d'ingrédient nommé.
+ */
+export function incompleteRecipeReason(unexamined: readonly string[]): string {
+  if (unexamined.length === 0) return "Recette incomplète : aucun ingrédient nommé";
+  const verb = unexamined.length > 1 ? "non examinés" : "non examiné";
+  return `Recette incomplète : ${namesList(unexamined)} ${verb}`;
 }
 
 function emptyResponse(): BackfillAllergensResponse {
@@ -122,6 +161,7 @@ function emptyResponse(): BackfillAllergensResponse {
     stoppedByBudget: false,
     stoppedByErrors: false,
     completed: false,
+    aRevoir: { items: [], total: 0 },
   };
 }
 
@@ -138,6 +178,7 @@ async function runIngredientsPhase(
   ctx: AuthContext,
   bounds: Bounds,
   response: BackfillAllergensResponse,
+  review: BackfillReview,
   startAfter: string | null,
 ): Promise<string | null> {
   let cursor = startAfter;
@@ -183,6 +224,7 @@ async function runIngredientsPhase(
       response.ingredientsExamines += report.examined;
       response.ingredientsIgnores += report.alreadyExamined;
       response.ingredientsEnErreur += report.failed + report.unanswered;
+      for (const issue of report.issues) review.add(allergenIssueReviewItem(issue));
       consecutiveFailures = report.failed > 0 ? consecutiveFailures + 1 : 0;
       cursor = pending[pending.length - 1].docId;
       pending = [];
@@ -229,6 +271,7 @@ async function runRecipesPhase(
   ctx: AuthContext,
   bounds: Bounds,
   response: BackfillAllergensResponse,
+  review: BackfillReview,
   startAfter: string | null,
 ): Promise<string | null> {
   let cursor = startAfter;
@@ -280,7 +323,15 @@ async function runRecipesPhase(
 
       try {
         const computed = recipeAllergensFromDocs(data, docs);
-        if (!computed.complete) response.recettesIncompletes += 1;
+        if (!computed.complete) {
+          response.recettesIncompletes += 1;
+          review.add({
+            kind: "recipe",
+            id: doc.id,
+            label: recipeReviewLabel(doc.id, data),
+            reason: incompleteRecipeReason(unexaminedIngredientNames(data, docs)),
+          });
+        }
         if (
           data.allergens !== undefined &&
           recipeAllergensSignature(computed) === recipeAllergensSignature(data.allergens)
@@ -297,6 +348,12 @@ async function runRecipesPhase(
       } catch (e) {
         response.recettesEchouees += 1;
         consecutiveFailures += 1;
+        review.add({
+          kind: "recipe",
+          id: doc.id,
+          label: recipeReviewLabel(doc.id, data),
+          reason: `Échec du recalcul : ${shortErrorMessage(e)}`,
+        });
         await logError("Allergènes — échec sur une recette", {
           correlationId: ctx.correlationId,
           userId: ctx.userId,
@@ -361,6 +418,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
     const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
     const response = emptyResponse();
+    const review = new BackfillReview();
 
     const ingredientsStart = await getBackfillCursor({
       db,
@@ -373,6 +431,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
       ctx,
       bounds,
       response,
+      review,
       ingredientsStart,
     );
     await setBackfillCursor({
@@ -393,7 +452,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
         resumeFromCheckpoint,
         resetCheckpoint,
       });
-      const recipesCursor = await runRecipesPhase(db, ctx, bounds, response, recipesStart);
+      const recipesCursor = await runRecipesPhase(db, ctx, bounds, response, review, recipesStart);
       await setBackfillCursor({
         db,
         docId: ALLERGENS_RECIPES_CHECKPOINT_DOC_ID,
@@ -404,6 +463,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
     }
 
     response.completed = response.referentielParcouru && response.recettesParcourues;
+    response.aRevoir = review.toJSON();
 
     // Le compte rendu part à côté du curseur du référentiel : l'écran le
     // relit à l'ouverture, pour qui a quitté la page avant la fin du passage.
@@ -422,7 +482,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
       userId: ctx.userId,
       moduleType: "DESIGN",
       feature: FEATURE,
-      extra: { ...response, maxMinutes, maxIngredients, maxRecipes },
+      extra: { ...withoutReviewList(response), maxMinutes, maxIngredients, maxRecipes },
     });
 
     return response;

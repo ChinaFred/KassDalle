@@ -457,6 +457,14 @@ stateDiagram-v2
         </tbody>
       </table>
     </div>
+    <p>
+      Toutes les reprises d'Admin › Backfills (<code>backfill…Fn</code>) renvoient, en plus de
+      leurs compteurs, <code>aRevoir: { items, total }</code> : les ingrédients, unités, recettes
+      ou comptes que le passage n'a pas pu traiter, avec la raison, cent au plus dans l'ordre de
+      traitement (<code>callable/_backfillReview.ts</code>). L'écran les affiche dans une feuille
+      « À revoir » ; rien n'est stocké, sauf la recopie dans le <code>last_report</code> du point
+      de reprise.
+    </p>
     <span class="expect warn">
       <code>requireAdmin</code> et <code>requireEditor</code> lisent <code>users/{uid}</code> dans
       Firestore à chaque appel — rôle <b>et</b> révocation. <code>requireAuth</code> aussi depuis
