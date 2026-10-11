@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.37 — fonctionnel
+
+#### Durées estimées par l'IA
+
+Une recette à qui il manque la durée de préparation ou de cuisson reçoit une estimation de
+l'IA. La fiche l'affiche « ≈ Prép. 20 min », avec la mention « Durées estimées par l'IA,
+absentes de la recette d'origine. ». Explorer affiche « ≈ 45 min, estimé ». Une durée lue
+dans la recette, dans ses champs ou dans son texte, passe toujours avant l'estimation.
+
+Le filtre « Temps total » et le tri « Plus rapides » d'Explorer comptent les durées
+estimées, sauf si l'interrupteur « Compter les durées estimées » est décoché. Explorer lit
+aussi les durées écrites seulement dans le texte de la recette.
+
+Le backfill « Durées estimées » d'Admin › Backfills estime les recettes existantes, 160 par
+passage. À relancer tant que le compte rendu affiche « incomplet ».
+
+### v0.23.37 — technique
+
+#### Champ estimated_times, postes time_estimate
+
+Le champ racine `estimated_times` (`status`, `fingerprint`, `prep`, `cook`) est écrit par
+le serveur seul, depuis `onRecipeWritten` et `backfillEstimatedTimesFn`. Les règles le
+refusent à tout client. L'empreinte couvre le titre et le texte sans les lignes `>>` : une
+recette inchangée n'est jamais réestimée, et une réservation empêche deux appels
+simultanés. Deux postes d'IA : `time_estimate` et `backfill_time_estimate_batch` (lots de 8
+recettes d'un même auteur). Le backfill pose un verrou daté contre deux passages
+simultanés. La lecture des durées d'une recette (champs, puis métadonnées CookLang) est
+partagée par la fixture `cooklang_parsing.json`.
+
 ### v0.23.36 — fonctionnel
 
 #### Le fil d'icônes garde ses icônes pendant une traduction
