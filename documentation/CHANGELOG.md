@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-11
 
+### v0.23.29 — fonctionnel
+
+#### Nouveau planning : panneau, grille et cartes repliables
+
+Sur grand écran, l'écran « Nouveau planning » montre un panneau de 320 px à gauche. Il contient
+le cycle, les consignes du cycle (8 lignes visibles) et les boutons « Planifier avec l'IA » et
+« Valider », toujours à portée. Les créneaux occupent le reste de la largeur en colonnes de
+560 px au plus : trois colonnes sur un écran de 2 000 px. Sur téléphone, les consignes se
+replient en une ligne « Consignes du cycle · N règles ».
+
+Chaque créneau est une carte. Elle montre le jour, l'heure, le plat, puis une ligne de résumé :
+parts, durée, accompagnement, format. Le reste se range sous « Détails » : contraintes du jour,
+composants, conservation, origine du choix, redimensionnement s'il a eu lieu. Ce pli s'ouvre de
+lui-même quand le créneau porte un avertissement (entrée ou dessert à choisir, plat à préparer
+un autre jour). « Autre suggestion » reste visible ; les autres actions passent dans un menu ⋮,
+aussi ouvert par un clic droit. L'heure est un bouton de 48 px.
+
+« Contrainte locale du cycle » devient « Consignes du cycle ». Ctrl+S valide le planning, et
+quitter l'écran avec des repas non validés demande confirmation.
+
 ### v0.23.28 — fonctionnel
 
 #### Planning : variété des cuisines et des protéines dans la présélection
