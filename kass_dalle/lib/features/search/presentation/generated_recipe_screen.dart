@@ -179,8 +179,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     return leave == true;
   }
 
-  /// La question posée quand la navigation du shell (barre, menu latéral,
-  /// Ctrl/Cmd+K) quitte l'écran : elle quitte aussi l'Explorer du dessous.
+  /// La question posée quand la navigation du shell (barre, menu latéral)
+  /// quitte l'écran : elle quitte aussi l'Explorer du dessous. Ctrl/Cmd+K,
+  /// déjà sur l'Explorer, ne navigue pas et ne pose donc rien.
   ///
   /// Un seul dialogue. Si l'Explorer avait posé son garde, c'est sa question
   /// qui est posée : elle couvre cette recette et les autres idées non
