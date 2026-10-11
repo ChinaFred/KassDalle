@@ -265,7 +265,7 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports.
 
 **Étape 3 — Le brouillon.** La recette arrive en **brouillon** (`draft`), à relire et valider comme les autres (4.2, étape 4) :
-- Elle est rangée dans le livre **« Mes recettes du web »**, créé automatiquement au premier import par lien de l'utilisateur. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.
+- Elle est rangée dans le livre **« Mes recettes du web »**, créé automatiquement au premier import par lien de l'utilisateur. Sa couverture est l'image `FromTheWeb.png`, posée à l'ouverture suivante de la bibliothèque. C'est un livre système, comme « Mes recettes libres » : il se renomme mais ne se supprime pas (§6). Il est **privé** : seuls son propriétaire et un Admin le lisent. Ses recettes ont sa confidentialité ; les déplacer dans un livre partagé les rend visibles du groupe.
 - La photo principale de la page est reprise comme illustration, après modération (5.11). Tant que la modération n'a pas rendu son verdict, la recette est créée sans photo ; la photo s'ajoute quand la modération l'accepte. Refusée, elle ne s'ajoute jamais.
 - Le texte de la page est joint comme document original : « Voir l'original » l'ouvre, comme pour un texte collé.
 - La recette garde l'adresse de la page comme **source**, affichée sur la fiche (4.4).

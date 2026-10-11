@@ -78,6 +78,7 @@ class Book {
     if (isKassDalleBook) return 'assets/mycreations.png';
     if (isLibresBook) return 'assets/opensource.png';
     if (isSecretesBook) return 'assets/Secret.png';
+    if (isWebBook) return 'assets/FromTheWeb.png';
     return null;
   }
 

@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.23.33+380
+version: 0.23.34+381
 
 environment:
   sdk: ^3.11.4
@@ -112,6 +112,7 @@ flutter:
     - assets/mycreations.png
     - assets/opensource.png
     - assets/Secret.png
+    - assets/FromTheWeb.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
