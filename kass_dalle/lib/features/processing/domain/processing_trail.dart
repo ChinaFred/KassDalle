@@ -32,8 +32,17 @@ class ProcessingStep {
 /// **Cette liste est un miroir.** Si `STEP_ORDER` ou un branchement change
 /// côté serveur, le fil ment sans qu'aucune erreur ne le dise : il montrera un
 /// jalon qui n'arrive jamais, ou sautera une étape réellement traversée.
-/// `test/processing_trail_test.dart` fige les deux séquences.
-List<ProcessingStep> trailFor(ProcessingJobType type) {
+/// `test/processing_trail_test.dart` fige les séquences.
+///
+/// La traduction est conditionnelle : seule une recette écrite dans une autre
+/// langue la traverse. Son jalon n'apparaît que si [translated] est vrai — le
+/// champ `translated` du job, posé par le serveur en même temps que
+/// `current_step: "translate"`. Sans lui, l'étape tombait hors du fil et la
+/// ligne perdait toutes ses icônes le temps de la traduction.
+List<ProcessingStep> trailFor(
+  ProcessingJobType type, {
+  bool translated = false,
+}) {
   const envoi = ProcessingStep(
     'import',
     Icons.cloud_download_outlined,
@@ -41,6 +50,8 @@ List<ProcessingStep> trailFor(ProcessingJobType type) {
   );
   const lecture = ProcessingStep('gemini_call', Icons.auto_awesome, 'Lecture');
   const ecriture = ProcessingStep('save', Icons.save_outlined, 'Écriture');
+  const analyse = ProcessingStep('parse', Icons.article_outlined, 'Analyse');
+  const traduction = ProcessingStep('translate', Icons.translate, 'Traduction');
 
   switch (type) {
     case ProcessingJobType.bookCoverScan:
@@ -50,26 +61,39 @@ List<ProcessingStep> trailFor(ProcessingJobType type) {
 
     case ProcessingJobType.recipeUrlImport:
       // Une page web : lue, lue par l'IA seulement quand elle n'a pas de
-      // données structurées (le jalon est alors sauté), balisée, enrichie,
-      // enregistrée, puis sa photo passe en modération.
-      return const [
-        ProcessingStep('fetch', Icons.language_outlined, 'Page'),
+      // données structurées (le jalon est alors sauté), analysée, traduite au
+      // besoin, balisée, enrichie, enregistrée, puis sa photo passe en
+      // modération. `urlImport.ts` traduit APRÈS l'analyse.
+      return [
+        const ProcessingStep('fetch', Icons.language_outlined, 'Page'),
         lecture,
-        ProcessingStep('tagging', Icons.sell_outlined, 'Balisage'),
-        ProcessingStep('normalize', Icons.science_outlined, 'Ingrédients'),
+        analyse,
+        if (translated) traduction,
+        const ProcessingStep('tagging', Icons.sell_outlined, 'Balisage'),
+        const ProcessingStep(
+          'normalize',
+          Icons.science_outlined,
+          'Ingrédients',
+        ),
         ecriture,
-        ProcessingStep('design', Icons.photo_outlined, 'Photo'),
+        const ProcessingStep('design', Icons.photo_outlined, 'Photo'),
       ];
 
     case ProcessingJobType.recipeScan:
     case ProcessingJobType.bookDocumentScan:
-      return const [
+      // `recipeProcessor.ts` traduit AVANT l'analyse.
+      return [
         envoi,
         lecture,
-        ProcessingStep('parse', Icons.article_outlined, 'Analyse'),
-        ProcessingStep('design', Icons.photo_library_outlined, 'Photos'),
-        ProcessingStep('tagging', Icons.sell_outlined, 'Balisage'),
-        ProcessingStep('normalize', Icons.science_outlined, 'Ingrédients'),
+        if (translated) traduction,
+        analyse,
+        const ProcessingStep('design', Icons.photo_library_outlined, 'Photos'),
+        const ProcessingStep('tagging', Icons.sell_outlined, 'Balisage'),
+        const ProcessingStep(
+          'normalize',
+          Icons.science_outlined,
+          'Ingrédients',
+        ),
         ecriture,
       ];
   }
