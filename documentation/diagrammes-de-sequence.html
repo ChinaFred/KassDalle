@@ -3213,9 +3213,12 @@ sequenceDiagram
           M-->>F: prep_minutes, cook_minutes par recette
           loop chaque recette du lot
             F->>FS: transaction — estimated_times done, si l'empreinte n'a pas changé,<br/>composante déjà lue dans la recette mise à null
+            opt pas de réponse, aucune durée estimée, ou écriture refusée
+              F->>F: recette ajoutée à la liste à revoir
+            end
           end
         else échec ou réponse illisible
-          F->>F: logError, lot en erreur, le curseur le dépasse
+          F->>F: logError, lot en erreur, recettes ajoutées à la liste à revoir,<br/>le curseur le dépasse
         end
       end
     end
@@ -3226,8 +3229,8 @@ sequenceDiagram
   end
   F->>C: curseur (null si tout est parcouru), last_report
   F->>C: verrou levé (running_until null), s'il est toujours le sien
-  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur)
-  S-->>A: compte rendu chiffré, « relancer » si incomplet
+  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur), aRevoir (titre et raison)
+  S-->>A: compte rendu chiffré, « relancer » si incomplet,<br/>« Voir les N à revoir » ouvre la feuille, une ligne ouvre la fiche
 </pre>
       </div>
       <figcaption>

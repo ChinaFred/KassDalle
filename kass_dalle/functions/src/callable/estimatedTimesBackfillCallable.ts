@@ -44,9 +44,16 @@ import {
 import {
   TIME_ESTIMATE_BATCH_SIZE,
   estimateRecipeTimes,
+  type TimeEstimate,
   type TimeEstimateInput,
 } from "../gemini/timeEstimate";
 import { logError, logInfo } from "../logging";
+import {
+  BackfillReview,
+  shortErrorMessage,
+  withoutReviewList,
+  type BackfillReviewList,
+} from "./_backfillReview";
 import {
   decideEstimatedTimes,
   doneEstimatedTimes,
@@ -109,6 +116,12 @@ export interface BackfillEstimatedTimesResponse {
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
   /**
+   * Recettes à revoir, chacune avec son titre et la raison : lot en échec,
+   * pas de réponse de l'IA, aucune durée estimée, écriture refusée. Recopiée
+   * dans `last_report`, jamais dans les journaux.
+   */
+  aRevoir: BackfillReviewList;
+  /**
    * Vrai quand la collection a été parcourue en entier sans erreur. Le
    * curseur est remis au début dès qu'elle est parcourue, erreurs comprises.
    */
@@ -129,6 +142,7 @@ export function emptyEstimatedTimesResponse(): BackfillEstimatedTimesResponse {
     stoppedByBudget: false,
     stoppedByErrors: false,
     completed: false,
+    aRevoir: { items: [], total: 0 },
   };
 }
 
@@ -234,6 +248,29 @@ export class OwnerBatches<T> {
 }
 
 /**
+ * Pourquoi une recette d'un lot abouti reste à revoir, ou `null`.
+ * `answer` : la réponse du modèle pour elle ; `written` : le champ écrit.
+ */
+export function answerReviewReason(
+  answer: TimeEstimate | undefined,
+  written: { prep: number | null; cook: number | null },
+): string | null {
+  if (answer === undefined) return "Pas de réponse de l'IA pour cette recette";
+  if (written.prep == null && written.cook == null) return "L'IA n'a estimé aucune durée";
+  return null;
+}
+
+/** Raison d'une recette d'un lot dont l'appel a échoué. */
+export function batchFailureReason(err: unknown): string {
+  return `Lot en échec : ${shortErrorMessage(err)}`;
+}
+
+/** Raison d'une recette dont l'écriture a échoué. */
+export function writeFailureReason(err: unknown): string {
+  return `Écriture refusée : ${shortErrorMessage(err)}`;
+}
+
+/**
  * Soumet un lot (un seul propriétaire) au modèle et écrit chaque réponse,
  * recette par recette, dans une transaction qui vérifie que le contenu n'a
  * pas changé entretemps. Rend vrai si l'appel a abouti.
@@ -244,7 +281,15 @@ async function flushBatch(
   owner: string,
   batch: Candidate[],
   response: BackfillEstimatedTimesResponse,
+  review: BackfillReview,
 ): Promise<boolean> {
+  const toReview = (candidate: Candidate, reason: string) =>
+    review.add({
+      kind: "recipe",
+      id: candidate.ref.id,
+      label: candidate.input.titre || candidate.ref.id,
+      reason,
+    });
   let answers;
   try {
     answers = await estimateRecipeTimes(
@@ -262,11 +307,13 @@ async function flushBatch(
       errorDescription: e instanceof Error ? e.message : String(e),
       extra: { owner, recipeIds: batch.map((c) => c.ref.id) },
     });
+    for (const candidate of batch) toReview(candidate, batchFailureReason(e));
     return false;
   }
 
   for (const [index, candidate] of batch.entries()) {
-    const estimate = answers.get(index) ?? { prep: null, cook: null };
+    const answer = answers.get(index);
+    const estimate = answer ?? { prep: null, cook: null };
     try {
       const written = await db.runTransaction(async (tx) => {
         const snap = await tx.get(candidate.ref);
@@ -284,10 +331,14 @@ async function flushBatch(
         // Modifiée, ou estimée par le déclencheur, pendant l'appel : sa
         // prochaine écriture ou le prochain passage la reprendra si besoin.
         response.ignorees += 1;
-      } else if (written.prep == null && written.cook == null) {
-        response.sansEstimation += 1;
       } else {
-        response.estimees += 1;
+        const reason = answerReviewReason(answer, written);
+        if (reason) {
+          response.sansEstimation += 1;
+          toReview(candidate, reason);
+        } else {
+          response.estimees += 1;
+        }
       }
     } catch (e) {
       response.enErreur += 1;
@@ -299,6 +350,7 @@ async function flushBatch(
         errorDescription: e instanceof Error ? e.message : String(e),
         extra: { recipeId: candidate.ref.id, owner },
       });
+      toReview(candidate, writeFailureReason(e));
     }
   }
   return true;
@@ -472,6 +524,7 @@ async function runBackfill(
   const resumeFromCheckpoint = parseBoolean(data?.resumeFromCheckpoint, true);
   const resetCheckpoint = parseBoolean(data?.resetCheckpoint, false);
 
+  const review = new BackfillReview();
   const startCursor = await getBackfillCursor({
     db,
     docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
@@ -503,7 +556,7 @@ async function runBackfill(
         };
       });
     },
-    submit: (owner, batch) => flushBatch(db, ctx, owner, batch, response),
+    submit: (owner, batch) => flushBatch(db, ctx, owner, batch, response, review),
     batchSize: TIME_ESTIMATE_BATCH_SIZE,
     maxRecipes,
     canSubmit: () => Date.now() + BATCH_MARGIN_MS <= deadline,
@@ -524,6 +577,7 @@ async function runBackfill(
   // recette en erreur sera reprise par le passage suivant, qui repart du
   // début et ignore sans appel tout ce qui est déjà estimé.
   response.completed = response.collectionParcourue && response.enErreur === 0;
+  response.aRevoir = review.toJSON();
 
   // Le curseur revient au début quand tout est passé. Sinon il retient le
   // dernier document traité : un lot non soumis sera relu au prochain
@@ -543,7 +597,8 @@ async function runBackfill(
     userId: ctx.userId,
     moduleType: "DESIGN",
     feature: FEATURE,
-    extra: { ...response, maxMinutes, maxRecipes },
+    // Sans la liste : elle porte des titres de recettes privées.
+    extra: { ...withoutReviewList(response), maxMinutes, maxRecipes },
   });
 }
 

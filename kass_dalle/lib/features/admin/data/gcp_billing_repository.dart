@@ -484,8 +484,9 @@ class GcpBillingRepository {
   /// `backfill_time_estimate_batch`), la préparation et la cuisson des
   /// recettes qui n'en donnent pas. Une recette déjà estimée pour son contenu
   /// n'est ni redemandée ni refacturée. Réentrante, avec reprise sur point de
-  /// contrôle. Rend les compteurs tels quels ; les drapeaux valent 1 ou 0.
-  Future<Map<String, int>> backfillEstimatedTimes({
+  /// contrôle. Rend les compteurs (drapeaux à 1 ou 0) et la liste des
+  /// recettes à revoir (`aRevoir`).
+  Future<BackfillCounts> backfillEstimatedTimes({
     double maxMinutes = 8,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
@@ -501,18 +502,7 @@ class GcpBillingRepository {
       payload,
       timeout: const Duration(minutes: 9),
     );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    final out = <String, int>{};
-    for (final entry in data.entries) {
-      final value = entry.value;
-      if (value is num) {
-        out[entry.key] = value.toInt();
-      } else if (value is bool) {
-        out[entry.key] = value ? 1 : 0;
-      }
-    }
-    return out;
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
   /// KPIs courants de normalisation des référentiels.

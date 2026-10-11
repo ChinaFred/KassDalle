@@ -20,7 +20,10 @@ import {
 } from "../gemini/timeEstimate";
 import {
   OwnerBatches,
+  answerReviewReason,
   backfillLockHeld,
+  batchFailureReason,
+  writeFailureReason,
   boundedMaxRecipes,
   emptyEstimatedTimesResponse,
   recipeOwnerKey,
@@ -28,6 +31,7 @@ import {
   type ScannedDoc,
 } from "../callable/estimatedTimesBackfillCallable";
 import { TIME_ESTIMATE_BATCH_SIZE } from "../gemini/timeEstimate";
+import { withoutReviewList } from "../callable/_backfillReview";
 import {
   PENDING_TTL_MS,
   decideEstimatedTimes,
@@ -472,5 +476,38 @@ describe("backfill — parcours", () => {
     assert.equal(response.stoppedByDeadline, true);
     assert.equal(cursor, null);
     assert.equal(response.collectionParcourue, false);
+  });
+});
+
+describe("backfill — liste à revoir", () => {
+  test("pas de réponse de l'IA, ou aucune durée estimée : à revoir", () => {
+    assert.equal(
+      answerReviewReason(undefined, { prep: null, cook: null }),
+      "Pas de réponse de l'IA pour cette recette",
+    );
+    assert.equal(
+      answerReviewReason({ prep: null, cook: null }, { prep: null, cook: null }),
+      "L'IA n'a estimé aucune durée",
+    );
+    assert.equal(answerReviewReason({ prep: 20, cook: null }, { prep: 20, cook: null }), null);
+  });
+
+  test("lot en échec et écriture refusée citent l'erreur, courte", () => {
+    assert.equal(batchFailureReason(new Error("délai dépassé")), "Lot en échec : délai dépassé");
+    assert.match(writeFailureReason(new Error("x".repeat(500))), /^Écriture refusée : x+…$/);
+    assert.ok(writeFailureReason(new Error("x".repeat(500))).length < 160);
+  });
+
+  test("la réponse porte une liste vide, que le journal remplace par son total", () => {
+    const response = emptyEstimatedTimesResponse();
+    assert.deepEqual(response.aRevoir, { items: [], total: 0 });
+    response.aRevoir = {
+      items: [{ kind: "recipe", id: "r1", label: "Tarte privée", reason: "Écriture refusée : x" }],
+      total: 1,
+    };
+    const logged = withoutReviewList(response) as Record<string, unknown>;
+    assert.equal(logged.aRevoir, undefined);
+    assert.equal(logged.aRevoirTotal, 1);
+    assert.ok(!JSON.stringify(logged).includes("Tarte privée"));
   });
 });
