@@ -699,8 +699,7 @@ flowchart LR
         est traduite. Le brouillon arrive dans « Mes recettes du web », livre système privé qui ne
         se supprime pas. Il est créé avec les autres livres système, à l'ouverture de la
         bibliothèque, pour un éditeur ou un administrateur, avec sa couverture « From the web » ;
-        un lecteur ne le reçoit que par la reprise « Livres système des comptes » d'Admin ›
-        Backfills. Le texte de la page est joint comme document
+        un lecteur le reçoit à l'approbation de son compte. Le texte de la page est joint comme document
         original, et la source s'affiche sur la fiche, avec l'auteur quand la page le nomme ; la
         copie d'une recette importée la garde.
         La photo de la page s'ajoute quand la modération l'accepte : en attente, la recette est
@@ -871,7 +870,7 @@ flowchart LR
         le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble.
         <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
         chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
-        manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
+        manquent. Un compte approuvé depuis la v0.23.48 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
         compte rendu donne les comptes complétés, le nombre de livres créés, les comptes déjà à
         jour, ceux en attente ou révoqués, et les échecs.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand

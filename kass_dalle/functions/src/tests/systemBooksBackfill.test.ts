@@ -9,12 +9,8 @@ import assert from "node:assert/strict";
 
 import { Timestamp } from "firebase-admin/firestore";
 
-import {
-  SYSTEM_BOOK_TAGS,
-  isApprovedAccount,
-  missingSystemBooks,
-  systemBookDocument,
-} from "../callable/systemBooksBackfillCallable";
+import { SYSTEM_BOOK_TAGS, missingSystemBooks, systemBookDocument } from "../books/systemBooks";
+import { isApprovedAccount } from "../callable/systemBooksBackfillCallable";
 
 describe("livres système manquants", () => {
   test("aucun livre : les quatre manquent", () => {

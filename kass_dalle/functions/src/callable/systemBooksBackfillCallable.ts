@@ -22,11 +22,11 @@
  */
 
 import { onCall } from "firebase-functions/v2/https";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { getFirestore } from "firebase-admin/firestore";
 
-import { COLL_BOOKS, COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
+import { COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
-import { WEB_BOOK_TAG, findOrCreateWebBook } from "../pipeline/urlImport";
+import { ensureSystemBooksFor } from "../books/systemBooks";
 import { accessDenial, requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
@@ -47,84 +47,10 @@ const DEADLINE_MARGIN_MS = 45_000;
 /** Trois échecs de suite : une panne, pas trois comptes difficiles. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-/** Les tags internes des livres système, dans l'ordre où le client les crée. */
-export const SYSTEM_BOOK_TAGS = ["__kassdale_ia", "__libres", "__secretes", WEB_BOOK_TAG] as const;
-export type SystemBookTag = (typeof SYSTEM_BOOK_TAGS)[number];
-
-/** Les livres système absents de `books`, reconnus à leur tag. Pur, testé. */
-export function missingSystemBooks(books: readonly { tags?: unknown }[]): SystemBookTag[] {
-  const present = new Set<string>();
-  for (const book of books) {
-    if (!Array.isArray(book.tags)) continue;
-    for (const tag of book.tags) if (typeof tag === "string") present.add(tag);
-  }
-  return SYSTEM_BOOK_TAGS.filter((tag) => !present.has(tag));
-}
-
 /** Vrai pour un compte `reader`, `editor` ou `admin` non révoqué. Pur, testé. */
 export function isApprovedAccount(data: Record<string, unknown> | undefined): boolean {
   const role = typeof data?.role === "string" ? data.role.trim() : null;
   return accessDenial({ role, revoked: data?.is_revoked === true }, "approved") === null;
-}
-
-/**
- * Le document d'un livre système créé par le client, hors « Mes recettes du
- * web » (créé par `findOrCreateWebBook`). Mêmes champs, même texte que
- * `BookRepository.findOrCreate…Book`. Pur, testé.
- */
-export function systemBookDocument(
-  tag: Exclude<SystemBookTag, typeof WEB_BOOK_TAG>,
-  uid: string,
-  displayName: string,
-  now: Timestamp,
-): Record<string, unknown> {
-  const base = {
-    sous_titre: null,
-    editeur: null,
-    serie: null,
-    annee: null,
-    langue: "fr",
-    isbn: null,
-    url_couverture: null,
-    review_status: "validated",
-    created_by: uid,
-    created_at: now,
-    updated_at: now,
-    source_file_url: null,
-    source_file_name: null,
-    ai_processed_at: null,
-  };
-  switch (tag) {
-    case "__kassdale_ia":
-      return {
-        ...base,
-        titre: "Mes créations Kass'Dalle ✨",
-        auteur: "Kass'Dalle",
-        description:
-          "Recettes créées par l'intelligence artificielle Kass'Dalle. " +
-          "Vous pouvez modifier ce livre comme n'importe quel autre.",
-        tags: [tag, "ia", "kassdale"],
-        is_private: false,
-      };
-    case "__libres":
-      return {
-        ...base,
-        titre: "Mes recettes libres",
-        auteur: displayName,
-        description: "Mes recettes créées en dehors de tout livre.",
-        tags: [tag],
-        is_private: false,
-      };
-    case "__secretes":
-      return {
-        ...base,
-        titre: "Mes Recettes Secrètes",
-        auteur: displayName,
-        description: "Mes recettes privées — non visibles par la famille.",
-        tags: [tag],
-        is_private: true,
-      };
-  }
 }
 
 export interface BackfillSystemBooksResponse {
@@ -230,22 +156,13 @@ async function runSystemBooksPass(ctx: AuthContext): Promise<BackfillSystemBooks
     const uid = user.id;
     const displayName = (typeof data.display_name === "string" && data.display_name.trim()) || "";
     let created = 0;
+    const progress = { created: 0 };
     try {
-      const owned = await db.collection(COLL_BOOKS).where("created_by", "==", uid).get();
-      const missing = missingSystemBooks(owned.docs.map((d) => d.data()));
-      if (missing.length === 0) {
+      created = await ensureSystemBooksFor(uid, displayName, ctx, progress);
+      if (created === 0) {
         response.dejaAJour += 1;
         consecutiveFailures = 0;
         continue;
-      }
-      const now = Timestamp.now();
-      for (const tag of missing) {
-        if (tag === WEB_BOOK_TAG) {
-          await findOrCreateWebBook(uid, ctx);
-        } else {
-          await db.collection(COLL_BOOKS).add(systemBookDocument(tag, uid, displayName, now));
-        }
-        created += 1;
       }
       response.completes += 1;
       response.livresCrees += created;
@@ -254,6 +171,7 @@ async function runSystemBooksPass(ctx: AuthContext): Promise<BackfillSystemBooks
     } catch (e) {
       // Les livres déjà créés pour ce compte restent : le passage suivant
       // ne crée que ceux qui manquent encore.
+      created = progress.created;
       response.livresCrees += created;
       response.echoues += 1;
       consecutiveFailures += 1;

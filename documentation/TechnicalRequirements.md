@@ -341,9 +341,12 @@ Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Ils sont posés à l'o
 bibliothèque (`ensureSystemBooks`), pour un éditeur ou un administrateur seulement : un lecteur ne
 crée pas de recette, il n'a pas besoin des livres qui les reçoivent (les règles lui refusent
 d'ailleurs la création d'un livre), et il garde ceux qu'il avait. Les trois premiers sont créés
-par le client. La reprise *Admin › Backfills › Livres système des comptes*
-(`backfillSystemBooksFn`, §7.10) crée côté serveur ceux qui manquent à tout compte approuvé,
-lecteurs compris, avec les mêmes champs que le client et une couverture vide : l'écran affiche
+par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé, lecteurs compris
+(`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
+l'accès (`gainsAccess` : approbation d'un compte en attente, levée d'une révocation ; un échec est
+journalisé et n'empêche pas l'accès), et la reprise *Admin › Backfills › Livres système des
+comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.48. Mêmes
+champs que le client, couverture vide : l'écran affiche
 alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
 la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
 `pipeline/urlImport.ts`) : par `ensureWebBookFn` (`callable/urlImportCallable.ts`,

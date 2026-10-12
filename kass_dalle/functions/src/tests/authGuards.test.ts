@@ -15,7 +15,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { accessDenial, accountFromToken, mergeAccount, type AccountState } from "../callable/_auth";
-import { claimsFrom, shouldRevokeSessions } from "../triggers/userClaimsSync";
+import { claimsFrom, gainsAccess, shouldRevokeSessions } from "../triggers/userClaimsSync";
 import { founderRepair, isFounderEmail } from "../triggers/founderRole";
 import {
   APP_CHECK_MODES,
@@ -275,5 +275,29 @@ describe("syncUserClaims — sessions coupées quand le compte perd l'accès", (
 
   test("un document neuf déjà révoqué", () => {
     assert.equal(shouldRevokeSessions(claimsFrom(undefined), revoked, true), true);
+  });
+});
+
+describe("syncUserClaims — livres système créés quand le compte reçoit l'accès", () => {
+  const reader = claimsFrom({ role: "reader", is_revoked: false });
+  const revoked = claimsFrom({ role: "reader", is_revoked: true });
+  const pending = claimsFrom({ role: "pending", is_revoked: false });
+  const editor = claimsFrom({ role: "editor", is_revoked: false });
+  const none = claimsFrom(undefined);
+
+  test("approbation d'un compte en attente ou neuf", () => {
+    assert.equal(gainsAccess(pending, reader, true), true);
+    assert.equal(gainsAccess(none, editor, true), true);
+  });
+
+  test("levée d'une révocation", () => {
+    assert.equal(gainsAccess(revoked, reader, true), true);
+  });
+
+  test("changement entre rôles nommés, perte d'accès ou suppression : rien", () => {
+    assert.equal(gainsAccess(reader, editor, true), false);
+    assert.equal(gainsAccess(reader, revoked, true), false);
+    assert.equal(gainsAccess(pending, revoked, true), false);
+    assert.equal(gainsAccess(pending, reader, false), false);
   });
 });
