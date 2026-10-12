@@ -8,7 +8,10 @@
  * par le backfill `system_books` (`systemBooksBackfillCallable.ts`).
  *
  * Un livre est reconnu à son tag interne, quel que soit son titre : un livre
- * renommé n'est pas recréé. Les trois livres du client reprennent ses champs ;
+ * renommé n'est pas recréé. Un livre créé depuis la v0.23.49 porte un
+ * identifiant fixe (`systemBookId`) : le serveur et le client, qui peuvent
+ * tourner en même temps à l'approbation d'un éditeur, écrivent le même
+ * document au lieu de créer chacun le leur. Les trois livres du client reprennent ses champs ;
  * « Mes recettes du web » passe par `findOrCreateWebBook`. La couverture reste
  * vide : l'écran affiche l'image du livre système livrée avec l'application.
  */
@@ -93,6 +96,20 @@ export function systemBookDocument(
 }
 
 /**
+ * Identifiant fixe d'un livre système créé par le client ou par le serveur :
+ * `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`. Même forme que
+ * `_createSystemBook` (`book_repository.dart`) ; les règles Firestore
+ * réservent ces identifiants au compte qu'ils nomment. Pur, testé.
+ */
+export function systemBookId(
+  tag: Exclude<SystemBookTag, typeof WEB_BOOK_TAG>,
+  uid: string,
+): string {
+  const prefix = { __kassdale_ia: "kassdalle", __libres: "libres", __secretes: "secretes" }[tag];
+  return `${prefix}_${uid}`;
+}
+
+/**
  * Crée les livres système absents du compte [uid] et rend leur nombre.
  * `progress.created` compte les livres au fil de l'eau : sur une erreur,
  * l'appelant sait combien ont été créés avant elle. Lève à la première
@@ -111,10 +128,25 @@ export async function ensureSystemBooksFor(
   for (const tag of missing) {
     if (tag === WEB_BOOK_TAG) {
       await findOrCreateWebBook(uid, ctx);
-    } else {
-      await db.collection(COLL_BOOKS).add(systemBookDocument(tag, uid, displayName, now));
+      progress.created += 1;
+      continue;
     }
-    progress.created += 1;
+    // Identifiant fixe, créé en transaction : le client (`_createSystemBook`)
+    // écrit le même document. Si l'un l'a créé entre la lecture par tag et
+    // cette transaction, l'autre le retrouve et n'en crée pas un second.
+    const ref = db.collection(COLL_BOOKS).doc(systemBookId(tag, uid));
+    const created = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists) {
+        if (snap.get("created_by") !== uid) {
+          throw new Error(`Livre ${ref.id} existant mais étranger au compte`);
+        }
+        return false;
+      }
+      tx.create(ref, systemBookDocument(tag, uid, displayName, now));
+      return true;
+    });
+    if (created) progress.created += 1;
   }
   return progress.created;
 }

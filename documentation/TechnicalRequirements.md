@@ -349,7 +349,14 @@ par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé
 (`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
 l'accès (`gainsAccess` : approbation d'un compte en attente, levée d'une révocation ; un échec est
 journalisé et n'empêche pas l'accès), et la reprise *Admin › Backfills › Livres système des
-comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.49. Mêmes
+comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.49. Depuis la
+v0.23.49, ces trois livres ont un identifiant fixe, `kassdalle_{uid}`, `libres_{uid}` et
+`secretes_{uid}` (`systemBookId` côté serveur, `_createSystemBook` côté client) : à l'approbation
+d'un éditeur, le déclencheur et l'application peuvent tourner en même temps, et un identifiant
+aléatoire laissait chacun créer son livre, en double et non supprimable. Le serveur crée en
+transaction et retrouve un livre déjà posé par le client ; le client écrit le document par `set`,
+qui retombe sur celui du serveur. Les règles réservent ces identifiants au compte qu'ils nomment
+(§4). Les livres créés avant gardent leur identifiant aléatoire et restent reconnus à leur tag. Mêmes
 champs que le client, couverture vide : l'écran affiche
 alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
 la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
@@ -2095,8 +2102,13 @@ service cloud.firestore {
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
       // « Mes recettes du web » est créé par le serveur seul (`web_{uid}`).
+      // Les trois autres, sous `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`,
+      // par le seul compte qu'ils nomment (client et serveur écrivent le même document).
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !bookId.matches('web[0-9]*_.*')
+        && (!bookId.matches('(kassdalle|libres|secretes)_.*')
+            || bookId in ['kassdalle_' + request.auth.uid, 'libres_' + request.auth.uid,
+                          'secretes_' + request.auth.uid])
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()

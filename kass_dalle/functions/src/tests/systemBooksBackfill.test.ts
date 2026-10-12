@@ -9,7 +9,12 @@ import assert from "node:assert/strict";
 
 import { Timestamp } from "firebase-admin/firestore";
 
-import { SYSTEM_BOOK_TAGS, missingSystemBooks, systemBookDocument } from "../books/systemBooks";
+import {
+  SYSTEM_BOOK_TAGS,
+  missingSystemBooks,
+  systemBookDocument,
+  systemBookId,
+} from "../books/systemBooks";
 import { isApprovedAccount } from "../callable/systemBooksBackfillCallable";
 
 describe("livres système manquants", () => {
@@ -67,5 +72,13 @@ describe("document d'un livre système", () => {
     assert.equal(ia.is_private, false);
     assert.equal(ia.auteur, "Kass'Dalle");
     assert.deepEqual(ia.tags, ["__kassdale_ia", "ia", "kassdale"]);
+  });
+});
+
+describe("identifiant fixe d'un livre système", () => {
+  test("même forme que le client (_createSystemBook)", () => {
+    assert.equal(systemBookId("__kassdale_ia", "u1"), "kassdalle_u1");
+    assert.equal(systemBookId("__libres", "u1"), "libres_u1");
+    assert.equal(systemBookId("__secretes", "u1"), "secretes_u1");
   });
 });

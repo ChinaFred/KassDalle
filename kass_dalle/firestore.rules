@@ -432,10 +432,17 @@ service cloud.firestore {
       // Un client qui créait `web_{uid d'un autre}`, public, à son nom, y
       // faisait tomber les brouillons importés de cet autre compte. `web2_{uid}`
       // est le repli du serveur quand `web_{uid}` est occupé : même interdit.
-      // Les trois
-      // autres livres système restent créés par le client (`ensureSystemBooks`).
+      // Les trois autres livres système sont créés par le client
+      // (`ensureSystemBooks`) et par le serveur (`ensureSystemBooksFor`, à
+      // l'approbation du compte), sous un identifiant fixe :
+      // `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`. Seul le compte
+      // qu'il nomme le crée : un éditeur qui occupait `libres_{uid d'un autre}`
+      // à son nom empêcherait le serveur de créer le livre de cet autre compte.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !bookId.matches('web[0-9]*_.*')
+        && (!bookId.matches('(kassdalle|libres|secretes)_.*')
+            || bookId in ['kassdalle_' + request.auth.uid, 'libres_' + request.auth.uid,
+                          'secretes_' + request.auth.uid])
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()

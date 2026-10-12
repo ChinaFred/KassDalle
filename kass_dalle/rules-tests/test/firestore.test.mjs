@@ -830,6 +830,24 @@ describe("books", () => {
     );
   });
 
+  it("un éditeur ne crée pas le livre système d'un autre compte (libres_<uid>…)", async () => {
+    for (const prefix of ["kassdalle", "libres", "secretes"]) {
+      await assertFails(
+        db("editor")
+          .doc(`books/${prefix}_${OTHER}`)
+          .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: [], is_private: false }),
+      );
+    }
+  });
+
+  it("un éditeur crée ses propres livres système sous leur identifiant fixe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`books/libres_${EDITOR}`)
+        .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: ["__libres"], is_private: false }),
+    );
+  });
+
   it("un éditeur ne crée pas de livre portant le tag __web", async () => {
     await assertFails(
       db("editor")
