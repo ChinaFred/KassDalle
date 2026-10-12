@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -17,8 +19,13 @@ const _devBypassEmail = String.fromEnvironment(
   defaultValue: 'china.fred.75@gmail.com',
 );
 
-/// Nombre de renouvellements du jeton tentés quand ses claims sont en retard
-/// sur le document du compte.
+/// Renouvellements du jeton tentés avant d'émettre le document, quand ses
+/// claims sont en retard : deux, à [kTokenAlignDelay] d'intervalle, soit
+/// moins de 3 s d'attente.
+const kTokenAlignQuickAttempts = 2;
+
+/// Renouvellements tentés en tout, attente avant émission comprise. Ceux qui
+/// restent se font après l'émission, sans bloquer l'écran.
 const kTokenAlignAttempts = 8;
 
 /// Attente entre deux renouvellements.
@@ -39,10 +46,111 @@ bool tokenLagsBehind(Map<String, dynamic>? claims, AppUser user) {
   return role is String && role.isNotEmpty && role != user.role.name;
 }
 
+/// Ce que l'alignement a donné avant l'émission du document.
+enum TokenAlignStart {
+  /// Le jeton suit le document : rien à faire.
+  inStep,
+
+  /// Le jeton a rattrapé le document pendant l'attente courte.
+  aligned,
+
+  /// Toujours en retard : la suite continue après l'émission.
+  continuing,
+
+  /// Déjà tenté pour ce compte et cet état pendant la session : rien n'est
+  /// relancé (l'écart a été rapporté la première fois).
+  alreadyTried,
+}
+
+/// Aligne les claims du jeton sur le document du compte, une fois par
+/// session et par état (uid, rôle, révocation).
+///
+/// [start] attend au plus [kTokenAlignQuickAttempts] renouvellements, puis
+/// rend la main ; s'il faut continuer, les renouvellements restants tournent
+/// sans bloquer et appellent `onAligned` dès que le jeton suit. Au bout de
+/// [kTokenAlignAttempts], l'écart est rapporté par `onGiveUp`. Pas de boucle :
+/// un état déjà tenté n'est jamais relancé dans la session.
+class TokenClaimsAligner {
+  /// Lit les claims du jeton, renouvelé si [refresh].
+  final Future<Map<String, dynamic>?> Function({required bool refresh})
+  readClaims;
+  final Duration delay;
+  final int quickAttempts;
+  final int totalAttempts;
+  final Set<String> _tried = {};
+
+  TokenClaimsAligner({
+    required this.readClaims,
+    this.delay = kTokenAlignDelay,
+    this.quickAttempts = kTokenAlignQuickAttempts,
+    this.totalAttempts = kTokenAlignAttempts,
+  });
+
+  static String stateKey(AppUser user) =>
+      '${user.uid}|${user.role.name}|${user.isRevoked}';
+
+  /// Une erreur de l'attente courte remonte à l'appelant ; une erreur de la
+  /// suite, qui tourne après l'émission, passe par [onError].
+  Future<TokenAlignStart> start(
+    AppUser user, {
+    required void Function() onAligned,
+    required Future<void> Function(Map<String, dynamic>? claims) onGiveUp,
+    required Future<void> Function(Object error, StackTrace stackTrace) onError,
+  }) async {
+    final claims = await readClaims(refresh: false);
+    if (!tokenLagsBehind(claims, user)) return TokenAlignStart.inStep;
+    if (!_tried.add(stateKey(user))) return TokenAlignStart.alreadyTried;
+    final (quickOk, _) = await _refresh(user, quickAttempts, firstDelay: false);
+    if (quickOk) {
+      // Un état qui a fini par suivre peut être retenté plus tard (rôle
+      // changé puis rendu) ; seul un écart qui persiste ne l'est plus.
+      _tried.remove(stateKey(user));
+      return TokenAlignStart.aligned;
+    }
+    unawaited(() async {
+      try {
+        final (ok, last) = await _refresh(
+          user,
+          totalAttempts - quickAttempts,
+          firstDelay: true,
+        );
+        if (ok) {
+          _tried.remove(stateKey(user));
+          onAligned();
+        } else {
+          await onGiveUp(last);
+        }
+      } catch (e, st) {
+        await onError(e, st);
+      }
+    }());
+    return TokenAlignStart.continuing;
+  }
+
+  /// Jusqu'à [attempts] renouvellements espacés de [delay]. Rend `true` dès
+  /// que le jeton suit, avec les derniers claims lus.
+  Future<(bool, Map<String, dynamic>?)> _refresh(
+    AppUser user,
+    int attempts, {
+    required bool firstDelay,
+  }) async {
+    Map<String, dynamic>? claims;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0 || firstDelay) await Future<void>.delayed(delay);
+      claims = await readClaims(refresh: true);
+      if (!tokenLagsBehind(claims, user)) return (true, claims);
+    }
+    return (false, claims);
+  }
+}
+
 class AuthRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final ErrorReportService _errorReportService;
+  late final TokenClaimsAligner _aligner = TokenClaimsAligner(
+    readClaims: _readClaims,
+  );
 
   AuthRepository({
     FirebaseAuth? auth,
@@ -88,6 +196,8 @@ class AuthRepository {
 
         // Fallback robuste web: redirect fonctionne mieux que popup selon
         // navigateurs/extensions/réseaux (cookies tiers, bloqueurs, proxy).
+        // La page se recharge : la connexion se termine au démarrage suivant
+        // (`completeRedirectSignIn`, appelée par `main.dart`).
         await _auth.signInWithRedirect(provider);
         return null;
       }
@@ -139,6 +249,60 @@ class AuthRepository {
     return _upsertUser(user);
   }
 
+  /// Web : termine une connexion commencée par `signInWithRedirect` (repli
+  /// de [signInWithGoogle] quand la fenêtre surgissante échoue).
+  ///
+  /// La page est rechargée au retour de Google : sans cet appel au démarrage,
+  /// la session existe mais [_upsertUser] n'a pas tourné. Un compte neuf n'a
+  /// alors pas de document `users/{uid}` (rien d'autre ne le crée) et reste
+  /// sur l'écran de connexion ; un compte existant n'écrit pas `last_seen_at`,
+  /// dont dépend le retour d'un compte révoqué invité par e-mail. Sans
+  /// redirection en cours, `getRedirectResult` rend un résultat vide et rien
+  /// n'est écrit. Hors web : rien.
+  Future<AppUser?> completeRedirectSignIn() async {
+    if (!kIsWeb) return null;
+    try {
+      final result = await _auth.getRedirectResult();
+      final user = result.user;
+      if (user == null) return null;
+      return await _upsertUser(user);
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'auth_web_redirect_result',
+        error: e,
+        stackTrace: st,
+        context: {'step': 'getRedirectResult'},
+      );
+      return null;
+    }
+  }
+
+  /// Nouvelle connexion d'un compte révoqué, depuis l'écran de révocation.
+  ///
+  /// Sur mobile et desktop, la session en cours est d'abord fermée : ses
+  /// jetons ont été invalidés à la révocation, et sans cela la connexion
+  /// silencieuse reprendrait le dernier compte sans ouvrir le sélecteur. Sur
+  /// le web, la fenêtre Google s'ouvre de toute façon, et une attente avant
+  /// elle la ferait bloquer par le navigateur (geste utilisateur perdu). La
+  /// connexion passe ensuite par [signInWithGoogle], donc par [_upsertUser],
+  /// qui écrit `last_seen_at` : c'est cette écriture qui réveille
+  /// `applyRevokedInvitation`.
+  Future<AppUser?> signInAgainAfterRevocation() async {
+    if (kIsWeb) return signInWithGoogle();
+    try {
+      await signOut();
+    } catch (e, st) {
+      // La connexion qui suit remplace la session de toute façon.
+      await _errorReportService.reportError(
+        feature: 'auth_sign_out_before_sign_in',
+        error: e,
+        stackTrace: st,
+        context: {'step': 'signOut'},
+      );
+    }
+    return signInWithGoogle();
+  }
+
   Future<void> signOut() async {
     await Future.wait([
       _auth.signOut(),
@@ -148,49 +312,104 @@ class AuthRepository {
 
   /// Le compte [uid] en temps réel.
   ///
-  /// Chaque version du document attend que le jeton suive avant d'être
-  /// émise ([_alignTokenWith]) : un compte rétabli à sa reconnexion par une
+  /// Les claims du jeton sont posés par `syncUserClaims` quelques secondes
+  /// après l'écriture du document. Un compte rétabli à sa reconnexion par une
   /// invitation par e-mail (`applyRevokedInvitation`) garde sinon, jusqu'à
   /// une heure, un jeton dont le claim `revoked` vaut encore `true`, et les
   /// règles lui refusent tout alors que l'écran de révocation s'est fermé.
+  ///
+  /// Une version du document dont le jeton est en retard attend au plus deux
+  /// renouvellements (moins de 3 s) avant d'être émise : sans cette attente,
+  /// l'accueil ouvert par le routeur démarre ses lectures avec l'ancien jeton,
+  /// et les listes qui échouent ne repartent pas seules. Si le jeton n'a pas
+  /// suivi, le document est émis quand même, l'alignement continue sans
+  /// bloquer, et le document est émis une seconde fois quand le jeton suit :
+  /// les écrans qui lisent le compte se reconstruisent et relancent leurs
+  /// lectures. Une fois par session et par état ([TokenClaimsAligner]).
   Stream<AppUser?> watchAppUser(String uid) {
-    return _firestore
-        .collection('users')
-        .doc(uid)
-        .snapshots()
-        .map((doc) => doc.exists ? AppUser.fromFirestore(doc.data()!) : null)
-        .asyncMap((user) async {
-          if (user != null) await _alignTokenWith(user);
-          return user;
-        });
+    late final StreamController<AppUser?> controller;
+    StreamSubscription<AppUser?>? sub;
+    AppUser? latest;
+    controller = StreamController<AppUser?>(
+      onListen: () {
+        sub = _firestore
+            .collection('users')
+            .doc(uid)
+            .snapshots()
+            .map(
+              (doc) => doc.exists ? AppUser.fromFirestore(doc.data()!) : null,
+            )
+            .asyncMap((user) async {
+              if (user != null) {
+                await _alignTokenWith(
+                  user,
+                  onAligned: () {
+                    final now = latest;
+                    if (controller.isClosed || now == null) return;
+                    if (TokenClaimsAligner.stateKey(now) !=
+                        TokenClaimsAligner.stateKey(user)) {
+                      return;
+                    }
+                    // Nouvelle instance : le provider ne notifie pas une
+                    // valeur égale à la précédente.
+                    controller.add(now.copyWith());
+                  },
+                );
+              }
+              return user;
+            })
+            .listen(
+              (user) {
+                latest = user;
+                controller.add(user);
+              },
+              onError: controller.addError,
+              onDone: controller.close,
+            );
+      },
+      onCancel: () async {
+        await sub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
-  /// Renouvelle le jeton tant que ses claims sont en retard sur [user]
-  /// ([tokenLagsBehind]), au plus [kTokenAlignAttempts] fois : les claims
-  /// sont posés par `syncUserClaims` quelques secondes après l'écriture du
-  /// document. Au-delà, le document est émis quand même, et l'écart est
-  /// rapporté.
-  Future<void> _alignTokenWith(AppUser user) async {
+  Future<Map<String, dynamic>?> _readClaims({required bool refresh}) async {
+    final current = _auth.currentUser;
+    if (current == null) return null;
+    return (await current.getIdTokenResult(refresh)).claims;
+  }
+
+  /// Aligne le jeton sur [user] ([TokenClaimsAligner]). Un échec de lecture
+  /// du jeton, ou un écart qui persiste, est rapporté ; le document est émis
+  /// dans tous les cas.
+  Future<void> _alignTokenWith(
+    AppUser user, {
+    required void Function() onAligned,
+  }) async {
     final current = _auth.currentUser;
     if (current == null || current.uid != user.uid) return;
     try {
-      var claims = (await current.getIdTokenResult()).claims;
-      if (!tokenLagsBehind(claims, user)) return;
-      for (var attempt = 0; attempt < kTokenAlignAttempts; attempt++) {
-        if (attempt > 0) await Future<void>.delayed(kTokenAlignDelay);
-        claims = (await current.getIdTokenResult(true)).claims;
-        if (!tokenLagsBehind(claims, user)) return;
-      }
-      await _errorReportService.reportError(
-        feature: 'auth_token_claims_lag',
-        error: StateError('Claims du jeton toujours en retard sur le compte'),
-        context: {
-          'uid': user.uid,
-          'doc_role': user.role.name,
-          'doc_revoked': user.isRevoked,
-          'claim_role': claims?['role'],
-          'claim_revoked': claims?['revoked'],
-        },
+      await _aligner.start(
+        user,
+        onAligned: onAligned,
+        onGiveUp: (claims) => _errorReportService.reportError(
+          feature: 'auth_token_claims_lag',
+          error: StateError('Claims du jeton toujours en retard sur le compte'),
+          context: {
+            'uid': user.uid,
+            'doc_role': user.role.name,
+            'doc_revoked': user.isRevoked,
+            'claim_role': claims?['role'],
+            'claim_revoked': claims?['revoked'],
+          },
+        ),
+        onError: (e, st) => _errorReportService.reportError(
+          feature: 'auth_token_claims_lag',
+          error: e,
+          stackTrace: st,
+          context: {'uid': user.uid, 'step': 'getIdTokenResult (suite)'},
+        ),
       );
     } catch (e, st) {
       await _errorReportService.reportError(

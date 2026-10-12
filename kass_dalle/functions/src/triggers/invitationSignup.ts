@@ -49,8 +49,10 @@ import {
   asDate,
   groupInviteFor,
   isInvitableRole,
+  isOpenReturnInvitationFor,
   normalizeEmailKey,
   pickActiveInvitation,
+  staleReturnInvitations,
 } from "../invitations/rules";
 
 /** Vrai si le document décrit un compte qui attend un rôle. Pure, testée. */
@@ -238,6 +240,9 @@ export function isRevokedSignIn(
 /**
  * Reconnexion d'un compte révoqué invité de nouveau par e-mail.
  *
+ * Avant tout appel à Auth, une requête `target_uid == uid` vérifie qu'une
+ * invitation de retour active existe : sans elle, rien ne se passe.
+ *
  * L'administrateur a invité l'adresse d'un compte révoqué : l'invitation porte
  * `target: "revoked"` et l'uid du compte (`target_uid`). Le compte reste
  * révoqué jusqu'à ce que son titulaire se reconnecte. À cette connexion, le
@@ -252,7 +257,9 @@ export function isRevokedSignIn(
  *  - rétablit le compte (`is_revoked: false`) avec le rôle de l'invitation ;
  *  - ajoute son uid à `invited_ids` du groupe (`groupInviteFor`) : il accepte
  *    dans Groupes familiaux. Jamais d'entrée directe dans `member_ids`. Groupe
- *    supprimé : rôle seul, `group_missing: true` ;
+ *    supprimé : rôle seul, `group_missing: true`. Invitant sorti du groupe
+ *    (ni propriétaire ni membre, relu dans la transaction) : rôle seul,
+ *    `group_invite: "missing"` ;
  *  - passe l'invitation à `accepted`, avec `group_invite`.
  *
  * Le statut `accepted`, relu dans la transaction, empêche une seconde
@@ -269,6 +276,26 @@ export const applyRevokedInvitation = onDocumentUpdated(
     const before = event.data?.before?.data() as Record<string, unknown> | undefined;
     const after = event.data?.after?.data() as Record<string, unknown> | undefined;
     if (!isRevokedSignIn(before, after)) return;
+
+    // Filtre d'entrée : la plupart des connexions d'un compte révoqué n'ont
+    // aucune invitation de retour, et n'ont pas à coûter un appel Auth.
+    // Requête d'égalité sur un seul champ (index automatique, aucun index
+    // composite) ; le statut se lit ici, avec l'expiration.
+    try {
+      const forUid = await getFirestore()
+        .collection(COLL_INVITATIONS)
+        .where("target_uid", "==", uid)
+        .get();
+      const now = new Date();
+      if (!forUid.docs.some((d) => isOpenReturnInvitationFor(d.data(), uid, now))) return;
+    } catch (err) {
+      await logError({
+        message: `applyRevokedInvitation: lecture des invitations de retour impossible pour ${uid}`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+      });
+      return;
+    }
 
     let authEmail: string | undefined;
     let verified = false;
@@ -331,7 +358,11 @@ export const applyRevokedInvitation = onDocumentUpdated(
         const groupId = typeof chosen.data.group_id === "string" ? chosen.data.group_id : "";
         const groupRef = groupId ? db.collection(COLL_GROUPS).doc(groupId) : null;
         const groupSnap = groupRef ? await tx.get(groupRef) : null;
-        const groupInvite = groupInviteFor(groupSnap?.exists ? groupSnap.data() : null, uid);
+        const groupExists = groupSnap?.exists === true;
+        // L'invitant est relu dans le groupe : sorti entre l'envoi et le
+        // retour, il ne peut plus y inviter, et le serveur ne le fait pas à
+        // sa place (`missing`). Le rôle et le rétablissement restent.
+        const groupInvite = groupInviteFor(groupExists ? groupSnap?.data() : null, uid, inviterUid);
 
         tx.update(userRef, { is_revoked: false, role });
         if (groupInvite === "invited" && groupRef) {
@@ -341,7 +372,7 @@ export const applyRevokedInvitation = onDocumentUpdated(
           status: "accepted",
           accepted_uid: uid,
           accepted_at: Timestamp.fromDate(now),
-          group_missing: groupInvite === "missing",
+          group_missing: !groupExists,
           group_invite: groupInvite,
         });
         return { applied: true as const, invitationId: chosen.id, role, groupId, groupInvite };
@@ -396,3 +427,58 @@ export const applyRevokedInvitation = onDocumentUpdated(
     }
   },
 );
+
+/**
+ * Annule les invitations de retour devenues sans objet : le compte `uid`
+ * vient d'être rétabli (`isAccessRestored`). Appelée par `syncUserClaims`,
+ * qui voit passer toute écriture de `is_revoked` — pas de fonction déployée
+ * de plus.
+ *
+ * Laissée active, une invitation de retour rétablirait le compte après une
+ * nouvelle révocation, sans que l'administrateur de cette révocation le
+ * sache. Chaque invitation est relue dans sa propre transaction : seule une
+ * invitation encore active qui vise ce compte passe à `cancelled`
+ * (`cancelled_by: "system"`, motif lisible dans `last_error`). Celle
+ * qu'`applyRevokedInvitation` vient d'appliquer est déjà `accepted`.
+ *
+ * Une erreur est journalisée invitation par invitation et n'interrompt pas
+ * les autres.
+ */
+export async function cancelStaleReturnInvitations(uid: string, restoredAt: Date): Promise<void> {
+  const db = getFirestore();
+  const forUid = await db.collection(COLL_INVITATIONS).where("target_uid", "==", uid).get();
+  const { stale, reason } = staleReturnInvitations(
+    forUid.docs.map((d) => ({ ref: d.ref, id: d.id, data: d.data() })),
+    uid,
+    restoredAt,
+  );
+  for (const inv of stale) {
+    try {
+      const cancelled = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(inv.ref);
+        if (!isOpenReturnInvitationFor(snap.data(), uid, new Date())) return false;
+        tx.update(inv.ref, {
+          status: "cancelled",
+          cancelled_by: "system",
+          cancelled_at: Timestamp.now(),
+          last_error: reason,
+        });
+        return true;
+      });
+      if (cancelled) {
+        await logInfo({
+          message: `cancelStaleReturnInvitations: invitation de retour annulée (${reason})`,
+          userId: uid,
+          firestoreDocId: inv.id,
+        });
+      }
+    } catch (err) {
+      await logError({
+        message: `cancelStaleReturnInvitations: invitation de retour non annulée pour ${uid}`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+        firestoreDocId: inv.id,
+      });
+    }
+  }
+}

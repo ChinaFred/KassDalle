@@ -273,25 +273,60 @@ jamais un compte qui naît.
 une écriture où le compte est révoqué avant et après, et où `last_seen_at` change
 (`isRevokedSignIn`) : c'est l'écriture de connexion du client (`AuthRepository._upsertUser`),
 que les règles permettent au titulaire révoqué, puisqu'elle ne touche ni `role` ni `is_revoked`.
-Il lit l'adresse **Auth** (`getUser`, `emailVerified` exigé) et cherche l'invitation active de
+Il vérifie d'abord qu'une invitation de retour active vise ce compte (requête `target_uid ==
+uid`, statut et expiration lus dans le code : index automatique d'un seul champ, aucun index
+composite) ; sans elle, il s'arrête sans appeler Auth. Il lit ensuite l'adresse **Auth** (`getUser`, `emailVerified` exigé) et cherche l'invitation active de
 même `email_key` qui vise **ce** compte (`target: "revoked"`, `target_uid == uid`). Dans une
 transaction, il relit : le compte toujours révoqué et non fondateur, l'invitant (dernier envoi)
-encore `admin` non révoqué. Il écrit alors `is_revoked: false` et le `role` de l'invitation,
+encore `admin` non révoqué, et l'appartenance de l'invitant au groupe. Il écrit alors `is_revoked: false` et le `role` de l'invitation,
 ajoute l'uid à `invited_ids` du groupe — **jamais** à `member_ids` : l'invité accepte dans
 Groupes familiaux —, et passe l'invitation à `accepted` avec `group_invite`. Il n'écrit rien au
 groupe si le compte y est déjà membre ou invité, ou si 50 invitations y attendent (plafond de
-`boundedGroup`) ; groupe supprimé : rôle seul, `group_missing: true`. Le statut `accepted`, relu
+`boundedGroup`) ; groupe supprimé : rôle seul, `group_missing: true` ; invitant qui n'est plus
+ni propriétaire ni membre du groupe : rôle seul, `group_invite: "missing"`, `group_missing:
+false`. Le statut `accepted`, relu
 dans la transaction, empêche une seconde application. L'écriture réveille `syncUserClaims`
 (claims `revoked: false` et nouveau rôle, sans couper la session) et `syncPlanningReachOnRole`.
 
+**Invitation de retour sans objet.** Quand `is_revoked` passe de `true` à `false`,
+`syncUserClaims` annule les invitations de retour encore actives qui visent le compte
+(`cancelStaleReturnInvitations`, `triggers/invitationSignup.ts`) : `status: "cancelled"`,
+`cancelled_by: "system"`, `cancelled_at`, et `last_error` « Accès rétabli à la main :
+invitation sans objet. » (rétablissement dans l'onglet Comptes) ou « Accès rétabli par une
+autre invitation : invitation sans objet. » (une invitation de retour acceptée par ce compte à
+moins de 60 s du rétablissement). Laissée active, une telle invitation rétablirait le compte
+après une nouvelle révocation. Celle qu'`applyRevokedInvitation` applique est déjà `accepted`,
+dans la transaction qui rétablit le compte, et n'est pas reprise. Chaque invitation est relue
+dans sa transaction ; une erreur est journalisée et n'arrête pas les autres. Aucune fonction
+déployée de plus. Il n'existe pas de date de révocation sur `users/{uid}` : `applyRevokedInvitation`
+ne compare donc pas `last_sent_at` à la révocation, et cette annulation tient lieu de garde.
+
+**Écran de révocation.** `/login?revoked=true` dit « Votre accès a été révoqué. Contactez
+l'administrateur. Vous avez reçu une invitation ? Reconnectez-vous avec le compte Google de
+l'adresse invitée. » Le bouton passe par `AuthRepository.signInAgainAfterRevocation` : sur
+mobile et desktop, il ferme d'abord la session (le sélecteur de compte s'ouvre) ; sur le web, il
+ouvre directement la fenêtre Google. Dans les deux cas, `_upsertUser` écrit `last_seen_at`.
+L'écran se ferme seul quand le document n'est plus révoqué (le routeur suit `appUserProvider`).
+
+**Connexion web par redirection.** Quand la fenêtre surgissante échoue, `signInWithGoogle`
+retombe sur `signInWithRedirect`, et la page se recharge. Au démarrage web, `main.dart` appelle
+`AuthRepository.completeRedirectSignIn` : `getRedirectResult`, puis `_upsertUser` si une
+connexion revient. Sans cet appel, un compte neuf n'avait pas de document `users/{uid}` et
+restait sur l'écran de connexion, et un compte révoqué n'écrivait pas `last_seen_at`. Un échec
+est rapporté (`auth_web_redirect_result`).
+
 **Jeton en retard sur le document.** À sa reconnexion, le compte reçoit un jeton dont le claim
 `revoked` vaut encore `true` : les règles croient un jeton qui confirme une révocation. Le
-client ne laisse donc passer une nouvelle version de `users/{uid}` qu'après avoir renouvelé le
-jeton tant que ses claims sont en retard (`tokenLagsBehind` : jeton révoqué alors que le
-document ne l'est plus, ou rôle du jeton différent du rôle nommé du document), huit fois au plus
-à 1,5 s d'intervalle (`AuthRepository.watchAppUser`). L'écran de révocation reste affiché
-pendant ce temps, puis se ferme seul. Au-delà, le document passe quand même, et l'écart est
-rapporté (`auth_token_claims_lag`).
+client renouvelle le jeton quand ses claims sont en retard (`tokenLagsBehind` : jeton révoqué
+alors que le document ne l'est plus, ou rôle du jeton différent du rôle nommé du document), par
+`TokenClaimsAligner` dans `AuthRepository.watchAppUser`. Une version du document en retard
+attend au plus deux renouvellements à 1,5 s d'intervalle (moins de 3 s), puis est émise ; sans
+cette attente, l'accueil ouvert par le routeur démarrerait ses lectures avec l'ancien jeton.
+Si le jeton n'a pas suivi, l'alignement continue après l'émission (huit renouvellements en
+tout), et le document est émis une seconde fois quand le jeton suit, pour que les écrans qui
+lisent le compte relancent leurs lectures. Au-delà, l'écart est rapporté
+(`auth_token_claims_lag`). L'alignement a lieu une fois par session et par état du compte
+(uid, rôle, révocation) : un écart qui persiste n'est pas retenté à chaque version du document.
 
 **Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
 `admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
@@ -1242,15 +1277,15 @@ index simple).
 | `last_sent_by` | `String` | UID de l'administrateur du dernier envoi ; c'est son nom et son adresse que porte l'e-mail renvoyé |
 | `expires_at` | `Timestamp` | `last_sent_at` + 30 jours. Un renvoi la repousse |
 | `send_count` | `int` | Nombre d'envois |
-| `last_error` | `String?` | Raison lisible du dernier échec d'envoi (300 caractères au plus, partie locale des adresses masquée : `t***@gmail.com`), `null` après un envoi réussi. « Envoi en cours ou interrompu. » entre l'enregistrement et la réponse du serveur SMTP. Sur une invitation annulée par le serveur : « Adresse refusée par Gmail : … » |
+| `last_error` | `String?` | Raison lisible du dernier échec d'envoi (300 caractères au plus, partie locale des adresses masquée : `t***@gmail.com`), `null` après un envoi réussi. « Envoi en cours ou interrompu. » entre l'enregistrement et la réponse du serveur SMTP. Sur une invitation annulée par le serveur : « Adresse refusée par Gmail : … », ou « Accès rétabli à la main : invitation sans objet. » / « Accès rétabli par une autre invitation : invitation sans objet. » (invitation de retour, compte rétabli) |
 | `accepted_uid` | `String?` | Compte qui a reçu le rôle |
 | `accepted_at` | `Timestamp?` | Date de l'acceptation |
-| `cancelled_by` | `String?` | UID de l'administrateur qui a annulé, ou `system` quand le serveur SMTP a refusé définitivement l'adresse |
+| `cancelled_by` | `String?` | UID de l'administrateur qui a annulé, ou `system` quand le serveur SMTP a refusé définitivement l'adresse, ou quand une invitation de retour est devenue sans objet (compte rétabli, `syncUserClaims`) |
 | `cancelled_at` | `Timestamp?` | Date de l'annulation |
 | `group_missing` | `Boolean` | `true` si le groupe n'existait plus à l'acceptation : le rôle a été donné sans groupe |
 | `target` | `String` | Compte visé, fixé à la création : `new` (aucun compte sous l'adresse ; appliquée par `applyEmailInvitation`) ou `revoked` (compte révoqué ; appliquée par `applyRevokedInvitation`). Absent sur les invitations créées avant l'invitation des comptes révoqués : lu `new`. Aucun backfill |
 | `target_uid` | `String?` | Pour `target: "revoked"`, l'uid du compte révoqué visé. Seul ce compte peut l'appliquer, même si un autre compte avait la même clé d'adresse. `null` sinon |
-| `group_invite` | `String?` | Pour un compte révoqué revenu : `invited` (uid ajouté à `invited_ids`), `already_member`, `already_invited`, `full` (50 invitations en attente, rien écrit) ou `missing` (groupe supprimé). `null` sinon |
+| `group_invite` | `String?` | Pour un compte révoqué revenu : `invited` (uid ajouté à `invited_ids`), `already_member`, `already_invited`, `full` (50 invitations en attente, rien écrit) ou `missing` (groupe supprimé, ou invitant qui n'en est plus ni propriétaire ni membre : rien écrit). `null` sinon |
 
 **Statut effectif.** Une invitation `sent` ou `send_failed` dont `expires_at` est passée,
 égale à l'instant présent ou absente est **expirée** à la lecture, côté serveur
@@ -2918,8 +2953,10 @@ attente, l'administrateur peut le nommer à la main, et l'invitation reste activ
 `users/{uid}`) : voir §3.1, « Seconde exception ». Mêmes gardes (adresse Auth vérifiée,
 invitant encore admin, rôle invitable), mêmes journaux, préfixés `applyRevokedInvitation`.
 L'invitation n'est cherchée que pour une écriture de connexion d'un compte révoqué
-(`isRevokedSignIn`) ; un compte révoqué sans invitation qui se connecte coûte une lecture Auth
-et une requête, sans écriture. Un échec n'est pas rejoué : la connexion suivante relance le
+(`isRevokedSignIn`) ; un compte révoqué sans invitation de retour active qui se connecte coûte
+une requête `target_uid == uid`, sans appel Auth ni écriture. Rétabli autrement (onglet
+Comptes), le compte voit ses invitations de retour actives annulées par `syncUserClaims`
+(§3.1, « Invitation de retour sans objet »). Un échec n'est pas rejoué : la connexion suivante relance le
 déclencheur, et l'invitation reste active.
 
 **Claims et course entre deux déclencheurs.** La création du document (`pending`) et la pose

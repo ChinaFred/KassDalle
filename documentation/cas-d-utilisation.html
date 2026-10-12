@@ -906,8 +906,7 @@ flowchart LR
         adresse qui a déjà un compte actif ou en attente est refusée, avec le chemin à suivre
         (onglet Comptes, puis invitation de groupe). L'adresse d'un compte révoqué est acceptée :
         le formulaire le signale sous l'adresse (« Ce compte est révoqué. Son accès sera rétabli
-        à sa prochaine connexion avec cette adresse, et il devra accepter l'invitation au
-        groupe. »), et le compte reste révoqué jusqu'à sa reconnexion. Une invitation vaut trente jours depuis son dernier envoi ; vingt
+        à sa prochaine connexion avec cette adresse. »), et le compte reste révoqué jusqu'à sa reconnexion. Une invitation vaut trente jours depuis son dernier envoi ; vingt
         envois par administrateur et par jour.
         <b>La première connexion d'un invité</b> : la personne se connecte avec le compte Google de
         l'adresse invitée. Son compte naît en attente, et le serveur lui donne, quelques secondes
@@ -915,10 +914,15 @@ flowchart LR
         referme seule. Avec une autre adresse, ou si l'administrateur qui a envoyé l'invitation
         n'est plus administrateur, le compte reste en attente d'un rôle donné à la main.
         <b>Le retour d'un compte révoqué invité</b> : la personne se reconnecte avec le compte
-        Google de l'adresse invitée. L'écran « Votre accès a été révoqué » reste affiché quelques
-        secondes, puis se referme seul : le serveur a rétabli l'accès avec le rôle de
-        l'invitation, et l'invitation au groupe attend dans Groupes familiaux. Dans l'onglet
-        Invitations, la ligne devient « Acceptée … · accès rétabli ».
+        Google de l'adresse invitée. L'écran « Votre accès a été révoqué » lui dit de le faire
+        (« Vous avez reçu une invitation ? Reconnectez-vous avec le compte Google de l'adresse
+        invitée. ») : une session encore ouverte ne déclenche rien tant qu'il n'appuie pas sur
+        « Continuer avec Google ». L'écran reste affiché quelques secondes, puis se referme
+        seul : le serveur a rétabli l'accès avec le rôle de l'invitation, et l'invitation au
+        groupe attend dans Groupes familiaux, si l'administrateur de l'invitation est encore
+        membre du groupe. Dans l'onglet Invitations, la ligne devient « Acceptée … · accès
+        rétabli ». Un compte rétabli à la main dans l'onglet Comptes voit son invitation
+        annulée par le serveur (« Accès rétabli à la main : invitation sans objet. »).
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">

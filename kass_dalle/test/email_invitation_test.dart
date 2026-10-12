@@ -245,8 +245,53 @@ void main() {
     });
     expect(
       invitationSubtitle(full, EmailInvitationStatus.accepted),
-      'Lecteur · Les Kassbi · accès rétabli · groupe complet, invitation au '
-      'groupe à refaire',
+      'Lecteur · Les Kassbi · accès rétabli · groupe complet (50 invitations '
+      'en attente) : réinvitez-le dans le groupe quand une place se libère',
+    );
+    // Invitant sorti du groupe au retour du compte : rien d'écrit au groupe,
+    // qui existe toujours.
+    final left = EmailInvitation.fromFirestore('d', {
+      ..._doc(status: 'accepted'),
+      'target': 'revoked',
+      'group_invite': 'missing',
+      'group_missing': false,
+    });
+    expect(
+      invitationSubtitle(left, EmailInvitationStatus.accepted),
+      'Lecteur · Les Kassbi · accès rétabli · invitant sorti du groupe : '
+      'réinvitez-le dans le groupe',
+    );
+    final gone = EmailInvitation.fromFirestore('e', {
+      ..._doc(status: 'accepted'),
+      'target': 'revoked',
+      'group_invite': 'missing',
+      'group_missing': true,
+    });
+    expect(
+      invitationSubtitle(gone, EmailInvitationStatus.accepted),
+      'Lecteur · Les Kassbi · accès rétabli · groupe supprimé',
+    );
+    // En attente, la ligne dit que le compte visé est révoqué.
+    final pending = EmailInvitation.fromFirestore('f', {
+      ..._doc(),
+      'target': 'revoked',
+      'target_uid': 'gab',
+    });
+    for (final status in [
+      EmailInvitationStatus.sent,
+      EmailInvitationStatus.sendFailed,
+      EmailInvitationStatus.expired,
+    ]) {
+      expect(
+        invitationSubtitle(pending, status),
+        endsWith(' · compte révoqué'),
+        reason: status.name,
+      );
+    }
+    expect(
+      invitationSubtitle(pending, EmailInvitationStatus.sent),
+      'Lecteur · Les Kassbi · envoyée le 02/10, expire le 01/11 · compte '
+      'révoqué',
     );
     // Invitation antérieure au champ : compte neuf.
     expect(
@@ -311,7 +356,24 @@ void main() {
         'marie@gmail.com',
         InvitationOutcome.fromMap({'status': 'sent', 'target': 'new'}),
       ),
-      'Invitation envoyée à marie@gmail.com',
+      'Invitation envoyée à marie@gmail.com.',
+    );
+    expect(
+      invitationResentMessage('gabriel@gmail.com', back),
+      'Invitation renvoyée à gabriel@gmail.com — accès rétabli à sa prochaine '
+      'connexion.',
+    );
+    expect(
+      invitationResentMessage(
+        'marie@gmail.com',
+        InvitationOutcome.fromMap({'status': 'sent', 'target': 'new'}),
+      ),
+      'Invitation renvoyée à marie@gmail.com.',
+    );
+    expect(
+      kRevokedAccountHelper,
+      'Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion '
+      'avec cette adresse.',
     );
   });
 

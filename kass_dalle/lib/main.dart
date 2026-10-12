@@ -13,6 +13,7 @@ import 'core/services/app_check.dart';
 import 'core/services/error_report_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/auth/data/auth_repository.dart';
 import 'features/recipes/presentation/recipe_providers.dart';
 import 'core/widgets/provider_retry.dart';
 import 'firebase_options.dart';
@@ -58,6 +59,10 @@ void main() async {
 
   if (!kIsWeb) {
     await GoogleSignIn.instance.initialize();
+  } else {
+    // Retour d'une connexion par redirection : crée ou met à jour le
+    // document du compte. Les erreurs sont rapportées par la méthode.
+    unawaited(AuthRepository().completeRedirectSignIn());
   }
 
   runZonedGuarded(

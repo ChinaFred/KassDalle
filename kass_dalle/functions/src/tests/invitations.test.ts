@@ -16,6 +16,8 @@ import {
   INVITATION_MESSAGE_MAX,
   INVITATION_TTL_DAYS,
   ADDRESS_REJECTED_PREFIX,
+  RESTORED_BY_HAND_MESSAGE,
+  RESTORED_BY_OTHER_INVITATION_MESSAGE,
   GROUP_INVITED_MAX,
   TARGET_CHANGED_MESSAGE,
   accountDecision,
@@ -29,14 +31,17 @@ import {
   invitationTargetOf,
   expiryFrom,
   headerSafeName,
+  isAccessRestored,
   isActiveInvitation,
   isInvitableRole,
+  isOpenReturnInvitationFor,
   isPermanentRecipientRejection,
   maskEmails,
   normalizeEmailKey,
   pickActiveInvitation,
   readableSendError,
   resendRefusal,
+  staleReturnInvitations,
   targetUidOf,
 } from "../invitations/rules";
 import { MailNotConfiguredError, mailCredentials } from "../invitations/mailer";
@@ -345,6 +350,112 @@ describe("groupe au retour d'un compte révoqué", () => {
   test("groupe supprimé", () => {
     assert.equal(groupInviteFor(null, "g"), "missing");
     assert.equal(groupInviteFor(undefined, "g"), "missing");
+  });
+
+  test("invitant sorti du groupe : rien à écrire (missing)", () => {
+    const group = { owner_id: "o", member_ids: ["o", "m"], invited_ids: [] };
+    assert.equal(groupInviteFor(group, "g", "o"), "invited");
+    assert.equal(groupInviteFor(group, "g", "m"), "invited");
+    assert.equal(groupInviteFor(group, "g", "parti"), "missing");
+    assert.equal(groupInviteFor(group, "g", null), "missing");
+    assert.equal(groupInviteFor(group, "g", ""), "missing");
+    // Le compte déjà membre ou déjà invité le reste, quel que soit l'invitant.
+    assert.equal(
+      groupInviteFor({ ...group, member_ids: ["o", "g"] }, "g", "parti"),
+      "already_member",
+    );
+    assert.equal(groupInviteFor({ ...group, invited_ids: ["g"] }, "g", "parti"), "already_invited");
+  });
+});
+
+describe("invitations de retour sans objet", () => {
+  const now = new Date("2026-10-12T10:00:00Z");
+  const future = new Date("2026-11-01T00:00:00Z");
+  const open = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    data: {
+      status: "sent",
+      expires_at: future,
+      target: "revoked",
+      target_uid: "gab",
+      ...extra,
+    },
+  });
+
+  test("compte rétabli : révoqué avant, présent et non révoqué après", () => {
+    assert.equal(isAccessRestored({ is_revoked: true }, { is_revoked: false }), true);
+    assert.equal(isAccessRestored({ is_revoked: true }, {}), true);
+    assert.equal(isAccessRestored({ is_revoked: true }, { is_revoked: true }), false);
+    assert.equal(isAccessRestored({ is_revoked: false }, { is_revoked: false }), false);
+    assert.equal(isAccessRestored({ is_revoked: true }, undefined), false);
+    assert.equal(isAccessRestored(undefined, { is_revoked: false }), false);
+  });
+
+  test("invitation de retour ouverte : ce compte, active", () => {
+    assert.equal(isOpenReturnInvitationFor(open("a").data, "gab", now), true);
+    assert.equal(isOpenReturnInvitationFor(open("a").data, "autre", now), false);
+    assert.equal(
+      isOpenReturnInvitationFor(open("a", { status: "send_failed" }).data, "gab", now),
+      true,
+    );
+    assert.equal(
+      isOpenReturnInvitationFor(open("a", { status: "accepted" }).data, "gab", now),
+      false,
+    );
+    assert.equal(
+      isOpenReturnInvitationFor(open("a", { expires_at: new Date(0) }).data, "gab", now),
+      false,
+    );
+    assert.equal(
+      isOpenReturnInvitationFor(open("a", { target: "new", target_uid: null }).data, "gab", now),
+      false,
+    );
+  });
+
+  test("rétablissement à la main : les actives sont annulées", () => {
+    const { stale, reason } = staleReturnInvitations(
+      [
+        open("active"),
+        open("expiree", { expires_at: new Date(0) }),
+        open("annulee", { status: "cancelled" }),
+        open("autre", { target_uid: "autre" }),
+      ],
+      "gab",
+      now,
+    );
+    assert.deepEqual(
+      stale.map((s) => s.id),
+      ["active"],
+    );
+    assert.equal(reason, RESTORED_BY_HAND_MESSAGE);
+    assert.equal(reason, "Accès rétabli à la main : invitation sans objet.");
+  });
+
+  test("rétablissement par une invitation : elle est acceptée, les autres sont annulées", () => {
+    const accepted = open("appliquee", {
+      status: "accepted",
+      accepted_uid: "gab",
+      accepted_at: new Date(now.getTime() - 2_000),
+    });
+    const { stale, reason } = staleReturnInvitations([accepted], "gab", now);
+    assert.deepEqual(stale, []);
+    const other = staleReturnInvitations([accepted, open("doublon")], "gab", now);
+    assert.deepEqual(
+      other.stale.map((s) => s.id),
+      ["doublon"],
+    );
+    assert.equal(other.reason, RESTORED_BY_OTHER_INVITATION_MESSAGE);
+    assert.equal(reason, RESTORED_BY_OTHER_INVITATION_MESSAGE);
+    // Une acceptation ancienne n'explique pas ce rétablissement-ci.
+    const old = open("ancienne", {
+      status: "accepted",
+      accepted_uid: "gab",
+      accepted_at: new Date("2026-01-01T00:00:00Z"),
+    });
+    assert.equal(
+      staleReturnInvitations([old, open("x")], "gab", now).reason,
+      RESTORED_BY_HAND_MESSAGE,
+    );
   });
 });
 

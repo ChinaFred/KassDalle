@@ -3707,7 +3707,7 @@ sequenceDiagram
       revoked). Le titulaire se reconnecte avec le compte Google de cette adresse.
       <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
       (applyRevokedInvitation) → syncUserClaims · syncPlanningReachOnRole →
-      auth_repository.dart:watchAppUser (renouvellement du jeton)</span>
+      auth_repository.dart:watchAppUser (TokenClaimsAligner)</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -3724,31 +3724,41 @@ sequenceDiagram
   participant CL as syncUserClaims
   participant PR as syncPlanningReachOnRole
 
-  P->>C: connexion Google
-  C->>U: last_seen_at, display_name, photo_url (permis au titulaire révoqué)
-  C-->>P: « Votre accès a été révoqué », flux temps réel sur users/{uid}
+  P->>C: écran de révocation : « Vous avez reçu une invitation ? Reconnectez-vous… »
+  P->>C: Continuer avec Google (signInAgainAfterRevocation : déconnexion d'abord hors web)
+  C->>U: _upsertUser — last_seen_at, display_name, photo_url (permis au titulaire révoqué)
   U->>T: onDocumentUpdated — révoqué avant et après, last_seen_at changé ?
-  T->>AU: getUser(uid) — adresse, emailVerified
-  alt fondateur, adresse non vérifiée, ou aucune invitation active qui vise ce compte
-    T->>T: rien à faire (non vérifiée : logInfo)
-  else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
-    T->>U: transaction — relit le compte de l'invitant
-    T->>T: rien n'est appliqué (logInfo) ; compte révoqué, invitation inchangée
-  else invitation active, target revoked, target_uid = uid, invitant toujours admin
-    T->>U: transaction — relit : toujours révoqué, pas le fondateur ?
-    T->>G: transaction — le groupe existe ? déjà membre, déjà invité, 50 en attente ?
-    T->>U: is_revoked false, role = rôle de l'invitation
-    opt groupe existant, ni membre ni invité, moins de 50 invitations
-      T->>G: invited_ids + uid (jamais member_ids)
+  T->>I: where target_uid == uid — une invitation de retour active ?
+  alt aucune
+    T->>T: fin, sans appel Auth
+  else au moins une
+    T->>AU: getUser(uid) — adresse, emailVerified
+    alt fondateur, adresse non vérifiée, ou aucune invitation de même clé qui vise ce compte
+      T->>T: rien à faire (non vérifiée : logInfo)
+    else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
+      T->>U: transaction — relit le compte de l'invitant
+      T->>T: rien n'est appliqué (logInfo) ; compte révoqué, invitation inchangée
+    else invitation active, target revoked, target_uid = uid, invitant toujours admin
+      T->>U: transaction — relit : toujours révoqué, pas le fondateur ?
+      T->>G: transaction — le groupe existe ? invitant encore membre ? déjà membre, déjà invité, 50 en attente ?
+      T->>U: is_revoked false, role = rôle de l'invitation
+      opt groupe existant, invitant membre, compte ni membre ni invité, moins de 50 invitations
+        T->>G: invited_ids + uid (jamais member_ids)
+      end
+      T->>I: status accepted, accepted_uid, accepted_at, group_invite, group_missing
+      U->>CL: onDocumentWritten — claims {role, revoked false}, sans couper la session
+      CL->>I: invitations de retour encore actives de ce compte → cancelled (system)
+      U->>PR: onDocumentWritten — portée des plannings si l'éditeur peut partager
+      U-->>C: is_revoked false
+      loop au plus 2 renouvellements (moins de 3 s), une fois par session et par état
+        C->>AU: getIdTokenResult(forceRefresh)
+      end
+      C-->>P: l'écran de révocation se ferme, accueil ; l'invitation attend dans Groupes familiaux
+      opt jeton toujours en retard
+        C->>AU: jusqu'à 6 renouvellements de plus, sans bloquer
+        C-->>P: seconde émission du compte quand le jeton suit (sinon auth_token_claims_lag)
+      end
     end
-    T->>I: status accepted, accepted_uid, accepted_at, group_invite, group_missing
-    U->>CL: onDocumentWritten — claims {role, revoked false}, sans couper la session
-    U->>PR: onDocumentWritten — portée des plannings si l'éditeur peut partager
-    U-->>C: is_revoked false
-    loop tant que le jeton dit revoked true ou un autre rôle (8 fois, 1,5 s)
-      C->>AU: getIdTokenResult(forceRefresh)
-    end
-    C-->>P: l'écran de révocation se ferme, accueil ; l'invitation attend dans Groupes familiaux
   end
 </pre>
       </div>
@@ -3758,10 +3768,41 @@ sequenceDiagram
         l'invitation qui porte son uid (<code>target_uid</code>) s'applique : un autre compte de
         même clé d'adresse n'en profite pas, et <code>applyEmailInvitation</code> ignore les
         invitations de retour. Le statut <code>accepted</code>, relu dans la transaction,
-        empêche une seconde application. Le client attend que le jeton porte
-        <code>revoked: false</code> avant de quitter l'écran de révocation : les règles croient
-        un jeton qui confirme une révocation. Au-delà de huit essais, il passe quand même et
-        rapporte l'écart (<code>auth_token_claims_lag</code>).
+        empêche une seconde application. Un invitant sorti du groupe n'y fait pas inviter le
+        compte (<code>group_invite: "missing"</code>) ; le rôle est rendu quand même. Le client
+        attend au plus deux renouvellements du jeton avant d'émettre le compte, puis continue
+        sans bloquer et émet le compte une seconde fois quand le jeton suit.
+      </figcaption>
+    </figure>
+
+    <p class="sec-note">
+      Rétablissement à la main dans l'onglet Comptes : <code>syncUserClaims</code> voit
+      <code>is_revoked</code> passer de <code>true</code> à <code>false</code> et annule les
+      invitations de retour encore actives du compte.
+      <span class="path">admin_repository.dart → users/{uid} → triggers/userClaimsSync.ts →
+      triggers/invitationSignup.ts:cancelStaleReturnInvitations</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Admin
+  participant U as users/{uid}
+  participant CL as syncUserClaims
+  participant I as invitations
+  A->>U: is_revoked false (onglet Comptes)
+  U->>CL: onDocumentWritten — révoqué avant, rétabli après
+  CL->>I: where target_uid == uid
+  loop chaque invitation de retour encore active
+    CL->>I: transaction — relit, puis status cancelled, cancelled_by system, last_error
+  end
+  Note over I: « Accès rétabli à la main : invitation sans objet. »
+</pre>
+      </div>
+      <figcaption>
+        Laissée active, une invitation de retour rétablirait le compte après une nouvelle
+        révocation. Une erreur sur une invitation est journalisée et n'arrête pas les autres.
       </figcaption>
     </figure>
   </section>

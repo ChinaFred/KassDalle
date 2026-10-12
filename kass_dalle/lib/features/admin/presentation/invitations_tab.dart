@@ -108,12 +108,19 @@ String invitationSubtitle(
       final by = acceptedByName == null ? '' : 'par $acceptedByName';
       final when = at == null ? '' : 'le ${formatDayMonth(at)}';
       final detail = [by, when].where((s) => s.isNotEmpty).join(', ');
-      final missing = invitation.groupMissing ? ' · groupe supprimé' : '';
+      // `group_invite: missing` sans groupe supprimé : l'invitant avait
+      // quitté le groupe au retour du compte, rien n'a été écrit.
+      final missing = invitation.groupMissing
+          ? ' · groupe supprimé'
+          : invitation.groupInvite == 'missing'
+          ? ' · invitant sorti du groupe : réinvitez-le dans le groupe'
+          : '';
       final restored = invitation.targetsRevokedAccount
           ? ' · accès rétabli'
           : '';
       final full = invitation.groupInvite == 'full'
-          ? ' · groupe complet, invitation au groupe à refaire'
+          ? ' · groupe complet (50 invitations en attente) : réinvitez-le '
+                'dans le groupe quand une place se libère'
           : '';
       return '$head${detail.isEmpty ? '' : ' · $detail'}$restored$missing$full';
     case EmailInvitationStatus.cancelled:
@@ -130,7 +137,12 @@ String invitationSubtitle(
               ? 'expirée le ${formatDayMonth(expires)}'
               : 'expire le ${formatDayMonth(expires)}',
       ];
-      return parts.isEmpty ? head : '$head · ${parts.join(', ')}';
+      final revoked = invitation.targetsRevokedAccount
+          ? ' · compte révoqué'
+          : '';
+      return parts.isEmpty
+          ? '$head$revoked'
+          : '$head · ${parts.join(', ')}$revoked';
   }
 }
 
@@ -305,10 +317,7 @@ class _InvitationMenu extends ConsumerWidget {
           switch (outcome.kind) {
             case InvitationOutcomeKind.sent:
               context.showSuccessSnackBar(
-                outcome.restoresAccess
-                    ? 'Invitation renvoyée à ${invitation.email} — accès '
-                          'rétabli à sa prochaine connexion.'
-                    : 'Invitation renvoyée à ${invitation.email}',
+                invitationResentMessage(invitation.email, outcome),
               );
             case InvitationOutcomeKind.sendFailed:
               context.showErrorSnackBar(

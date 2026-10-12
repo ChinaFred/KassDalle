@@ -13,6 +13,12 @@ const _devAutoLogin = bool.fromEnvironment(
   defaultValue: true,
 );
 
+/// Message de l'écran de connexion d'un compte révoqué.
+const kRevokedLoginMessage =
+    "Votre accès a été révoqué. Contactez l'administrateur.\n"
+    'Vous avez reçu une invitation ? Reconnectez-vous avec le compte Google '
+    "de l'adresse invitée.";
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -80,7 +86,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Text(
-                                "Votre accès a été révoqué. Contactez l'administrateur.",
+                                kRevokedLoginMessage,
                                 style: TextStyle(
                                   color: Theme.of(
                                     context,
@@ -93,7 +99,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       _GoogleSignInButton(
                         onSignIn: () async {
                           final repo = ref.read(authRepositoryProvider);
-                          await repo.signInWithGoogle();
+                          // Compte révoqué : nouvelle session, pour écrire
+                          // `last_seen_at` et laisser choisir l'adresse
+                          // invitée. L'écran se ferme seul quand l'accès
+                          // revient (le routeur suit `appUserProvider`).
+                          if (isRevoked) {
+                            await repo.signInAgainAfterRevocation();
+                          } else {
+                            await repo.signInWithGoogle();
+                          }
                         },
                       ),
                     ],

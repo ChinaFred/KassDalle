@@ -302,7 +302,9 @@ export const GROUP_INVITED_MAX = 50;
  *  - `invited` : son uid entre dans `invited_ids`, il accepte dans Groupes ;
  *  - `already_member` / `already_invited` : rien à écrire ;
  *  - `full` : 50 invitations déjà en attente, rien à écrire ;
- *  - `missing` : groupe supprimé entre-temps.
+ *  - `missing` : groupe supprimé entre-temps, ou invitant (`inviterUid`) qui
+ *    n'en est plus ni propriétaire ni membre. Rien à écrire : l'invitant ne
+ *    peut plus inviter dans ce groupe, et le serveur n'invite pas à sa place.
  * Le compte révoqué n'entre jamais directement dans `member_ids`.
  */
 export type GroupInviteResult =
@@ -311,14 +313,90 @@ export type GroupInviteResult =
 export function groupInviteFor(
   group: Record<string, unknown> | undefined | null,
   uid: string,
+  inviterUid?: string | null,
 ): GroupInviteResult {
   if (!group) return "missing";
   const members = Array.isArray(group.member_ids) ? group.member_ids : [];
   if (group.owner_id === uid || members.includes(uid)) return "already_member";
   const invited = Array.isArray(group.invited_ids) ? group.invited_ids : [];
   if (invited.includes(uid)) return "already_invited";
+  if (inviterUid !== undefined) {
+    const inGroup =
+      typeof inviterUid === "string" &&
+      inviterUid.length > 0 &&
+      (group.owner_id === inviterUid || members.includes(inviterUid));
+    if (!inGroup) return "missing";
+  }
   if (invited.length >= GROUP_INVITED_MAX) return "full";
   return "invited";
+}
+
+/** Vrai si l'invitation stockée vise le compte révoqué `uid` et peut encore s'appliquer. */
+export function isOpenReturnInvitationFor(
+  data: Record<string, unknown> | undefined | null,
+  uid: string,
+  now: Date,
+): boolean {
+  return invitationFits(data, { kind: "revoked", uid }) && isActiveInvitation(data, now);
+}
+
+/**
+ * Vrai si l'écriture rétablit un compte : révoqué avant, présent et non
+ * révoqué après. Pure, testée.
+ */
+export function isAccessRestored(
+  before: Record<string, unknown> | undefined | null,
+  after: Record<string, unknown> | undefined | null,
+): boolean {
+  if (!before || !after) return false;
+  return before.is_revoked === true && after.is_revoked !== true;
+}
+
+/** Motif d'annulation d'une invitation de retour devenue sans objet : accès rétabli à la main. */
+export const RESTORED_BY_HAND_MESSAGE = "Accès rétabli à la main : invitation sans objet.";
+
+/** Motif d'annulation quand une autre invitation de retour a rétabli l'accès. */
+export const RESTORED_BY_OTHER_INVITATION_MESSAGE =
+  "Accès rétabli par une autre invitation : invitation sans objet.";
+
+/**
+ * Écart maximal entre le rétablissement d'un compte et l'acceptation d'une
+ * invitation de retour pour attribuer ce rétablissement à l'invitation.
+ * `applyRevokedInvitation` écrit les deux dans la même transaction : l'écart
+ * réel est la durée de la transaction.
+ */
+export const RESTORED_BY_INVITATION_WINDOW_MS = 60_000;
+
+/**
+ * Les invitations de retour à annuler quand le compte `uid` est rétabli, et
+ * le motif à écrire.
+ *
+ * Toute invitation encore active qui vise ce compte est sans objet une fois
+ * l'accès rendu : laissée active, elle le rétablirait après une nouvelle
+ * révocation. Celle qu'`applyRevokedInvitation` vient d'appliquer est déjà
+ * `accepted` (même transaction que le rétablissement) et n'est pas reprise.
+ * Le motif dit qui a rétabli : une invitation acceptée par ce compte à moins
+ * de `RESTORED_BY_INVITATION_WINDOW_MS` du rétablissement, sinon la main d'un
+ * administrateur (onglet Comptes). Pure, testée.
+ */
+export function staleReturnInvitations<T extends { id: string; data: Record<string, unknown> }>(
+  candidates: T[],
+  uid: string,
+  restoredAt: Date,
+): { stale: T[]; reason: string } {
+  const stale = candidates.filter((c) => isOpenReturnInvitationFor(c.data, uid, restoredAt));
+  const byInvitation = candidates.some((c) => {
+    if (c.data.status !== "accepted" || c.data.accepted_uid !== uid) return false;
+    if (invitationTargetOf(c.data) !== "revoked") return false;
+    const at = asDate(c.data.accepted_at)?.getTime();
+    return (
+      at !== undefined && Math.abs(at - restoredAt.getTime()) <= RESTORED_BY_INVITATION_WINDOW_MS
+    );
+  });
+  return {
+    stale,
+    reason: byInvitation ? RESTORED_BY_OTHER_INVITATION_MESSAGE : RESTORED_BY_HAND_MESSAGE,
+  };
 }
 
 /**

@@ -443,7 +443,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
                   ? kRevokedAccountHelper
                   : 'L\'adresse du compte Google qu\'il utilisera pour se '
                         'connecter.',
-              helperMaxLines: 3,
+              helperMaxLines: 4,
               errorText: _emailError,
               errorMaxLines: 3,
               border: const OutlineInputBorder(),
@@ -695,14 +695,20 @@ class _EmailPreview extends StatelessWidget {
 /// Aide sous l'adresse quand elle est celle d'un compte révoqué.
 const kRevokedAccountHelper =
     'Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion '
-    'avec cette adresse, et il devra accepter l\'invitation au groupe.';
+    'avec cette adresse.';
 
 /// Le message de succès d'un envoi : il annonce le rétablissement quand le
 /// serveur dit que l'invitation vise un compte révoqué.
 String invitationSentMessage(String email, InvitationOutcome outcome) =>
     outcome.restoresAccess
     ? 'Invitation envoyée à $email — accès rétabli à sa prochaine connexion.'
-    : 'Invitation envoyée à $email';
+    : 'Invitation envoyée à $email.';
+
+/// Le message de succès d'un renvoi, même forme que [invitationSentMessage].
+String invitationResentMessage(String email, InvitationOutcome outcome) =>
+    outcome.restoresAccess
+    ? 'Invitation renvoyée à $email — accès rétabli à sa prochaine connexion.'
+    : 'Invitation renvoyée à $email.';
 
 /// La ligne d'adresse du pied de l'e-mail, telle que la compose le serveur
 /// (`buildInvitationEmail`, `functions/src/invitations/rules.ts`).
