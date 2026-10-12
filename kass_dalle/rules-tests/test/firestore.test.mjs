@@ -1683,7 +1683,7 @@ describe("données personnelles — pending et révoqué", () => {
 
 // ── plannings partagés ───────────────────────────────────────────────────
 //
-// Depuis la v0.23.46, le lecteur ne planifie plus : il lit les plannings que
+// Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que
 // des éditeurs de ses groupes partagent avec lui. `planning_reach/{uid}` porte
 // la liste des propriétaires lisibles, écrite par le serveur seul.
 

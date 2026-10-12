@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.46 — fonctionnel
+### v0.23.47 — fonctionnel
 
 Le lecteur ne planifie plus : ni repas, ni cycle, ni préférences du planning, ni garnitures,
 ni liste des ingrédients du planning, ni conseil de conservation. Ces gestes lui sont masqués,
@@ -43,7 +43,7 @@ modifiable et sans ligne d'origine du choix. Une recette que le lecteur ne peut 
 s'affiche par son titre avec « Recette non partagée », sur le planning comme sur une fiche
 ouverte par lien. L'écran de réglages s'appelle partout « Préférences du planning ».
 
-### v0.23.46 — technique
+### v0.23.47 — technique
 
 Nouvelle collection `planning_reach/{uid}` (`uids`, `updated_at`) : les propriétaires dont
 `uid` lit le planning, écrite par le serveur seul (`triggers/planningReach.ts`). Elle est
@@ -66,6 +66,15 @@ pour lui-même ; `planning_reach` ne s'écrit par aucun client. `suggestMealPlan
 jamais une requête `in`, et résout la lisibilité des recettes des repas d'autrui par une
 lecture groupée. 17 tests de règles ajoutés, 4 réécrits ; tests Functions du calcul de la
 portée ; tests Dart du sélecteur, de la redirection et de l'écran.
+
+### v0.23.46 — technique
+
+#### Sauvegardes : état daté et région de restauration
+
+`TechnicalRequirements.md` dit maintenant que les sauvegardes de Firestore sont actives depuis
+le 11 octobre 2026, avec une première sauvegarde prête le 12, et que le versionnage de Storage
+l'est depuis le 12. La commande de restauration nomme la région `eur3` au lieu d'un
+paramètre à deviner. Le fichier `lifecycle.json` se crée dans `$env:TEMP`, plus dans le dépôt.
 
 ### v0.23.45 — fonctionnel
 

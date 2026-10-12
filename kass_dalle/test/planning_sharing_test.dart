@@ -6,7 +6,7 @@ import 'package:kass_dalle/features/planning/data/planning_visibility_store.dart
 import 'package:kass_dalle/features/planning/domain/planning_preferences.dart';
 import 'package:kass_dalle/features/planning/domain/planning_visibility.dart';
 
-/// Plannings partagés (v0.23.46) : le lecteur lit les plannings partagés, il
+/// Plannings partagés (v0.23.47) : le lecteur lit les plannings partagés, il
 /// ne planifie plus ; l'éditeur choisit les groupes qui voient le sien.
 void main() {
   group('plannings affichés par défaut', () {

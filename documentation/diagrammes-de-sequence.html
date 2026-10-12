@@ -1868,7 +1868,7 @@ sequenceDiagram
   U-->>B: périmètre choisi
   B->>FS: lit les repas de la fenêtre de variété
   B->>SP: résumés de recettes (portions, mainProtein et mainStarch compris), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
-  Note over SP: requireEditor (v0.23.46) : le lecteur ne planifie pas
+  Note over SP: requireEditor (v0.23.47) : le lecteur ne planifie pas
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
   SP->>PL: applyRecentlyServed puis preselect
@@ -3482,7 +3482,7 @@ sequenceDiagram
   <section>
     <h2 id="plannings-partages"><span class="n">34</span>Partager son planning, lire celui d'un autre</h2>
     <p class="sec-note">
-      Depuis la v0.23.46, le lecteur ne planifie plus : il lit les plannings que des éditeurs de
+      Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que des éditeurs de
       ses groupes partagent avec lui, en lecture seule. L'éditeur coche les groupes dans
       « Préférences du planning ». Le serveur en tire <code>planning_reach/{lecteur}</code>, que
       les règles Firestore relisent pour laisser lire <code>planned_meals</code>.

@@ -886,7 +886,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Plannings partagés (v0.23.46)
+    // Plannings partagés (v0.23.47)
     //
     // Un éditeur ou un administrateur coche, dans ses préférences de
     // planning, les groupes familiaux qui voient son planning
@@ -910,7 +910,7 @@ service cloud.firestore {
 
     // Repas planifiés
     //
-    // Planifier est un geste d'éditeur (v0.23.46) : un lecteur, un compte en
+    // Planifier est un geste d'éditeur (v0.23.47) : un lecteur, un compte en
     // attente ou révoqué relit et supprime ses repas antérieurs, il n'en crée
     // ni n'en modifie. `uid` est figé : un repas offert à un autre compte
     // apparaîtrait dans son planning. Les repas d'un planning partagé se
