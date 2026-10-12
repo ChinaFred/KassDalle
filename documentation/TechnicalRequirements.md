@@ -4612,6 +4612,10 @@ sauvegardes planifiées, gérées par Google Cloud, hors du code et hors du dép
 | quotidienne | 7 jours | une erreur vue dans la semaine |
 | hebdomadaire, le dimanche | 14 semaines (le maximum) | une erreur vue tard |
 
+**État.** Les deux planifications sont actives depuis le 11 octobre 2026. La première
+sauvegarde quotidienne date du 12 octobre 2026 (`READY`). Les sauvegardes sont rangées dans la
+région `eur3`, celle de la base.
+
 Une base n'accepte qu'une planification quotidienne et une hebdomadaire. Chaque sauvegarde
 est une copie complète de la base. Elle est facturée au Go stocké ; une restauration est
 facturée au Go restauré. Les fichiers de Storage (photos, scans) ne sont pas couverts : voir
@@ -4635,7 +4639,7 @@ La première sauvegarde apparaît dans les 24 heures :
 ce qu'il faut dans `(default)`.
 
 1. Choisir la sauvegarde (`gcloud firestore backups list --project=kassdale-6d948`) et noter son nom complet
-   `projects/kassdale-6d948/locations/<région>/backups/<id>`.
+   `projects/kassdale-6d948/locations/eur3/backups/<id>`.
 2. La restaurer dans une base neuve :
    `gcloud firestore databases restore --project=kassdale-6d948 --source-backup=<nom complet> --destination-database=restore-AAAAMMJJ`.
    Le temps de restauration dépend du volume, de quelques minutes à une heure.
@@ -4660,6 +4664,7 @@ d'exploitation, lancée à la main depuis le PC.
 Les sauvegardes de Firestore ne couvrent pas les fichiers : photos de recettes, scans,
 couvertures, fichiers importés. Le bucket `gs://kassdale-6d948.firebasestorage.app` garde donc
 les **versions** de ses objets : un fichier remplacé ou supprimé reste récupérable **30 jours**.
+Réglage actif depuis le 12 octobre 2026 (`versioning_enabled: true`, règle `Delete` à 30 jours).
 Au-delà, une règle de cycle de vie supprime l'ancienne version. Les anciennes versions sont
 facturées au Go comme les fichiers en ligne, pendant ces 30 jours.
 
@@ -4667,8 +4672,8 @@ Le réglage se fait une fois, depuis le PC, avec le compte propriétaire du proj
 
 ```powershell
 gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --versioning
-Set-Content -Path lifecycle.json -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
-gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file=lifecycle.json
+Set-Content -Path "$env:TEMP\lifecycle.json" -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
+gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file="$env:TEMP\lifecycle.json"
 gcloud storage buckets describe gs://kassdale-6d948.firebasestorage.app --format="yaml(versioning_enabled,lifecycle_config)"
 ```
 
