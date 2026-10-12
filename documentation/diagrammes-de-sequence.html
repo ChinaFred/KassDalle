@@ -938,15 +938,15 @@ sequenceDiagram
 
   opt « Chercher sur le web » (tous les rôles), puis « Ouvrir » ou « Voir sur Google »
     Note over S: section « Sur le web » : second diagramme
-    S-->>U: la page ouverte, ou google.com/search?q=texte recette, dans le navigateur
+    S-->>U: la page ouverte, ou google.com/search?q=texte recette<br/>(navigateur intégré sur Android et iOS, navigateur ailleurs)
     opt éditeur ou admin, navigateur ouvert
       Note over S: retour attendu, en mémoire ;<br/>« Ouvrir » y ajoute l'adresse de la carte
-      U->>S: revient dans l'application (onResume)
+      U->>S: revient dans l'application (onResume ; sur iOS, bandeau posé dès l'ouverture, sans annonce)
       alt page ouverte depuis sa carte
         S-->>U: bandeau, adresse de la carte et « Importer ce lien »,<br/>sans lire le presse-papiers
       else Android ou Windows
         S->>S: Clipboard.getData, première adresse http(s)
-        S-->>U: bandeau « Vous avez trouvé une recette ? Importez-la. »<br/>(en tête de liste sur téléphone, fixe sous le champ sur grand écran),<br/>« marmiton.org/recettes/blanq… » et « Importer ce lien », sinon « Coller le lien »
+        S-->>U: bandeau « Vous avez trouvé une recette ? Importez-la. »<br/>(sous la liste, hors d'elle ; carte ouverte ramenée en vue si le bandeau la couvre),<br/>« marmiton.org/recettes/blanq… » et « Importer ce lien », sinon « Coller le lien »
       else web ou iOS
         S-->>U: bandeau et « Coller le lien » (presse-papiers lu à l'appui)
       end
@@ -986,7 +986,7 @@ sequenceDiagram
     W-->>S: section « Sur le web » en chargement, 3 cartes d'attente
     W->>CF: query
     Note over CF: requireAuth ; requête nettoyée,<br/>200 caractères au plus
-    CF->>C: get(sha256 de la requête normalisée)
+    CF->>C: get(sha256 de « v2: » + requête normalisée)
     alt entrée de moins de 7 jours
       C-->>CF: pages, bloc de Google
       CF->>D: lit le compteur (sans l'incrémenter)
@@ -1002,9 +1002,9 @@ sequenceDiagram
         CF->>UU: jetons (résultat d'outil en entrée), appel ancré
         par jusqu'à 12 liens, en parallèle
           CF->>P: fetchPublicResource : redirections revérifiées, 1,5 Mo, 6 s
-          P-->>CF: adresse finale, og:title, description, JSON-LD (aucune image)
+          P-->>CF: adresse finale, og:title, description, JSON-LD, langue (aucune image)
         end
-        Note over CF: vidéos et réseaux sociaux écartés, https seul (2 048 car. au plus),<br/>dédoublonnage, 8 cartes ; page illisible : carte sans extrait ni badge
+        Note over CF: vidéos et réseaux sociaux écartés, https seul (2 048 car. au plus) ;<br/>pages en français, puis langue inconnue, puis autres (ordre de Google gardé) ;<br/>dédoublonnage, 8 cartes ; page illisible : carte sans extrait
         alt le modèle lève une erreur (moteur, quota fournisseur, plafond de dépense)
           CF->>D: transaction : count − 1 (place rendue)
           CF-->>W: unavailable (reason web_search_engine) ou resource-exhausted (reason ai_daily_budget)

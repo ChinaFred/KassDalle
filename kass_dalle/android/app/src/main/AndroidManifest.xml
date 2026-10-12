@@ -101,5 +101,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- url_launcher : supportsLaunchMode(LaunchMode.inAppBrowserView)
+             cherche un navigateur qui offre les Custom Tabs. Sans cette
+             déclaration, Android 11+ le lui cache, et les pages de
+             l'Explorer s'ouvriraient hors de l'application. -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
     </queries>
 </manifest>

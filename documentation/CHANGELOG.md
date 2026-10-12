@@ -20,6 +20,30 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.42 — fonctionnel
+
+« Chercher sur le web » donne la priorité aux recettes en français : Gemini cherche en
+français, et les pages rédigées en français passent en tête, l'anglais ne venant qu'en
+complément. Le badge « Import direct », qui ouvrait la page au lieu de l'importer, est retiré :
+chaque carte n'a plus qu'un bouton « Importer ». Sur Android et iOS, une page — et « Voir sur
+Google » — s'ouvre dans un navigateur intégré, au-dessus de l'application. Au retour, la liste
+garde sa position : le bandeau d'import qui apparaît se place sous la liste au lieu de
+s'insérer en tête et de tout décaler (136 px en test), tient sur une ligne sur téléphone, se
+masque quand le clavier est ouvert ou quand il laisserait moins de 120 px à la liste, et la
+carte ouverte est ramenée en vue si le bandeau la couvre.
+
+### v0.23.42 — technique
+
+Le serveur relève la langue de chaque page lue (`inLanguage` du JSON-LD, `<html lang>`,
+`og:locale`, sinon un indice d'adresse) et trie les résultats de façon stable avant la coupe à
+huit : français, langue inconnue, autre langue. La clé de `web_search_cache` passe en version 2
+(`sha256("v2:" + requête)`) : les entrées produites avec l'ancien prompt ne sont plus servies,
+et la règle d'expiration les efface sous 7 jours ; pendant ce délai, une requête déjà en cache
+rappelle le modèle une fois. Le client ouvre les pages par `openWebPage`
+(`LaunchMode.inAppBrowserView` sur Android et iOS, avec la requête `CustomTabsService` dans
+`AndroidManifest.xml`). Le champ `directImport` reste rendu et journalisé par le serveur, le
+client ne le lit plus.
+
 ### v0.23.41 — fonctionnel
 
 Explorer affiche les pages de recettes trouvées sur le web, sans quitter l'application. Le

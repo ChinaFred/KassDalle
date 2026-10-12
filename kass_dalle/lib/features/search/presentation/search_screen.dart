@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart'
     show Clipboard, ClipboardData, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,7 @@ import 'generated_recipe_screen.dart';
 import 'google_search_suggestions.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
+import 'web_page_opener.dart';
 
 /// L'écran Explorer (`/search`).
 ///
@@ -47,7 +50,8 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
@@ -76,6 +80,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// retour, sans lire le presse-papiers.
   Uri? _pendingBannerLink;
 
+  /// Vrai quand le bandeau est apparu au retour dans l'application : sa
+  /// phrase est alors annoncée. Faux quand il est posé à l'ouverture du
+  /// navigateur intégré d'iOS : rien n'est annoncé pendant que la page
+  /// couvre l'écran.
+  bool _bannerAnnounced = false;
+
+  /// Page « Sur le web » ouverte en dernier : sa carte est ramenée en vue au
+  /// retour si le bandeau la recouvre.
+  Uri? _openedWebLink;
+
+  /// Clavier ouvert, lu sur la vue elle-même : le `Scaffold` du shell, qui
+  /// porte l'écran dans son corps, retire `viewInsets` du `MediaQuery`.
+  bool _keyboardOpen = false;
+
+  /// Une clé par carte « Sur le web », pour la ramener en vue.
+  final Map<Uri, GlobalKey> _webCardKeys = {};
+
   /// Pages « Sur le web » dont l'import a été envoyé depuis leur carte.
   final Set<Uri> _importedWebLinks = {};
 
@@ -94,7 +115,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.initState();
     _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
     _lifecycle = AppLifecycleListener(onResume: _onResume);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _consumeFocusRequest());
+  }
+
+  bool _viewKeyboardOpen() => View.of(context).viewInsets.bottom > 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _keyboardOpen = _viewKeyboardOpen();
+  }
+
+  /// Le clavier s'ouvre ou se ferme : le bandeau d'import se masque ou
+  /// revient.
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final open = _viewKeyboardOpen();
+    if (open != _keyboardOpen) setState(() => _keyboardOpen = open);
   }
 
   @override
@@ -104,6 +143,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final guard = _leaveGuard;
     Future.microtask(() => notifier.clearIf(guard));
     _lifecycle.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -235,9 +275,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     final uri = googleRecipeSearchUri(asked);
     try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final mode = await openWebPage(uri);
       if (!mounted) return;
-      if (!opened) {
+      if (mode == null) {
         context.showErrorSnackBar('Impossible d\'ouvrir Google.');
         return;
       }
@@ -249,7 +289,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           _importBannerVisible = false;
           _bannerLink = null;
           _pendingBannerLink = null;
+          _openedWebLink = null;
         });
+        _revealBannerNowOnIos(mode);
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -267,7 +309,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// Windows, le presse-papiers est lu aussitôt ; sur le web et iOS, il ne
   /// l'est qu'à l'appui sur « Coller le lien » — le navigateur demande une
   /// permission, iOS affiche une alerte.
-  void _onResume() {
+  void _onResume() => _revealBanner(announce: true);
+
+  /// iOS : SFSafariViewController s'ouvre dans l'application, qui ne quitte
+  /// pas le premier plan ; aucun retour n'est signalé. Le bandeau est posé
+  /// tout de suite, sans annonce, et se voit à la fermeture de la page.
+  ///
+  /// Sa phrase n'est pas annoncée à la fermeture non plus, et c'est assumé :
+  /// ni le cycle de vie, ni url_launcher (dont l'appel rend la main au
+  /// premier chargement de la page, pas à sa fermeture) ne signalent cette
+  /// fermeture. Le bandeau reste lisible par le lecteur d'écran comme le
+  /// reste de l'écran.
+  void _revealBannerNowOnIos(LaunchMode mode) {
+    if (mode == LaunchMode.inAppBrowserView &&
+        PlatformUtils.hostPlatform == TargetPlatform.iOS) {
+      _revealBanner(announce: false);
+    }
+  }
+
+  /// Montre le bandeau attendu ; [announce] : sa phrase est annoncée.
+  void _revealBanner({required bool announce}) {
     if (!_awaitingGoogleReturn || !mounted) return;
     _awaitingGoogleReturn = false;
     final pending = _pendingBannerLink;
@@ -275,12 +336,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (!ref.read(canEditProvider)) return;
     setState(() {
       _importBannerVisible = true;
+      _bannerAnnounced = announce;
       _bannerLink = pending;
     });
     if (pending == null &&
         (PlatformUtils.isAndroidApp || PlatformUtils.isWindowsApp)) {
       unawaited(_readClipboardIntoBanner());
     }
+    // Après le rendu : le bandeau a pris sa place sous la liste.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealOpenedCard());
+  }
+
+  /// Ramène en vue la carte ouverte si le bandeau la recouvre ; ne bouge
+  /// pas la liste si elle est déjà visible.
+  void _revealOpenedCard() {
+    final link = _openedWebLink;
+    if (!mounted || link == null) return;
+    final target = _webCardKeys[link]?.currentContext;
+    if (target == null) return;
+    unawaited(
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      ),
+    );
   }
 
   /// « Chercher sur le web » : un appel par appui, jamais à la frappe.
@@ -309,20 +390,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// « Ouvrir », ou la carte touchée : la page dans le navigateur. Pour un
-  /// éditeur, le bandeau d'import l'attend au retour, adresse posée.
+  /// « Ouvrir », ou la carte touchée : la page dans le navigateur intégré
+  /// sur téléphone, dans le navigateur ailleurs (voir [openWebPage]). Pour
+  /// un éditeur, le bandeau d'import l'attend au retour, adresse posée.
   Future<void> _openWebResult(WebRecipeResult result) async {
     try {
-      final opened = await launchUrl(
-        result.url,
-        mode: LaunchMode.externalApplication,
-      );
+      final mode = await openWebPage(result.url);
       if (!mounted) return;
-      if (!opened) {
+      if (mode == null) {
         context.showErrorSnackBar('Impossible d\'ouvrir ${result.site}.');
         return;
       }
       _armWebReturn(result);
+      _revealBannerNowOnIos(mode);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'search.web.open',
@@ -346,6 +426,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _importBannerVisible = false;
       _bannerLink = null;
       _pendingBannerLink = result.url;
+      _openedWebLink = result.url;
     });
   }
 
@@ -647,20 +728,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final emptyLibrary =
         corpus.recipes.isEmpty && _query.isEmpty && prefs.filter.isEmpty;
 
-    final banner = canEdit && _importBannerVisible
-        ? _ImportBanner(
-            link: _bannerLink,
-            onImport: () => unawaited(_importFromBanner()),
-            onClose: _closeImportBanner,
-          )
-        : null;
+    // Le bandeau d'import se pose sous la liste, hors d'elle, sur toutes les
+    // tailles d'écran : il ne réduit la zone visible que par le bas, et rien
+    // ne bouge au-dessus de lui. Sur téléphone, il tient sur une ligne ;
+    // clavier ouvert, il est masqué pour laisser la liste visible.
+    // Variantes du bandeau, de la préférée à la plus petite : la première
+    // qui laisse sa place à la liste s'affiche (voir [_ListWithBanner]).
+    // Grand écran : complète, puis compacte ; téléphone : compacte.
+    _ImportBanner bannerVariant({required bool compact}) => _ImportBanner(
+      link: _bannerLink,
+      compact: compact,
+      announce: _bannerAnnounced,
+      onImport: () => unawaited(_importFromBanner()),
+      onClose: _closeImportBanner,
+    );
+    final banners = canEdit && _importBannerVisible && !_keyboardOpen
+        ? [
+            if (isWide) bannerVariant(compact: false),
+            bannerVariant(compact: true),
+          ]
+        : const <Widget>[];
 
     final list = _ResultList(
       scrollController: _scrollController,
-      // Téléphone : le bandeau d'import défile avec les résultats, en tête
-      // de liste, pour ne pas réduire la hauteur utile. Grand écran : il
-      // reste fixe sous le champ.
-      leading: isWide ? null : banner,
+      webCardKey: (url) => _webCardKeys.putIfAbsent(url, GlobalKey.new),
       outcome: outcome,
       prefs: prefs,
       corpus: corpus,
@@ -716,7 +807,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 field,
-                ?banner,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Wrap(
@@ -769,7 +859,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     prefs.copyWith(filter: prefs.filter.cleared),
                   ),
                 ),
-                Expanded(child: list),
+                Expanded(
+                  child: _ListWithBanner(list: list, banners: banners),
+                ),
               ],
             ),
           ),
@@ -796,7 +888,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onClearAll: () =>
               _updatePrefs(prefs.copyWith(filter: prefs.filter.cleared)),
         ),
-        Expanded(child: list),
+        Expanded(
+          child: _ListWithBanner(list: list, banners: banners),
+        ),
         _BottomActions(
           canEdit: canEdit,
           aiCorpusSize: aiCorpusSize,
@@ -1228,9 +1322,8 @@ class _WebExhaustedLine extends StatelessWidget {
 class _ResultList extends ConsumerWidget {
   final ScrollController scrollController;
 
-  /// Premier élément défilant, avant tout le reste : le bandeau d'import sur
-  /// téléphone ; nul sinon.
-  final Widget? leading;
+  /// La clé de la carte « Sur le web » d'une adresse, pour la ramener en vue.
+  final GlobalKey Function(Uri url) webCardKey;
   final RecipeFilterOutcome outcome;
   final ExplorePreferences prefs;
   final ExploreCorpus corpus;
@@ -1269,7 +1362,7 @@ class _ResultList extends ConsumerWidget {
 
   const _ResultList({
     required this.scrollController,
-    required this.leading,
+    required this.webCardKey,
     required this.outcome,
     required this.prefs,
     required this.corpus,
@@ -1302,7 +1395,6 @@ class _ResultList extends ConsumerWidget {
     final sectioned = outcome.sections.isNotEmpty;
 
     final head = <Widget>[
-      ?leading,
       ..._rankingSection(context, ref, ranking),
       ..._ideasSection(context, ref, ideas),
       ..._webSection(context, ref, web),
@@ -1509,6 +1601,7 @@ class _ResultList extends ConsumerWidget {
           ),
           for (final r in response.results)
             WebResultTile(
+              key: webCardKey(r.url),
               result: r,
               canImport: canEdit,
               imported: importedWebLinks.contains(r.url),
@@ -1972,17 +2065,208 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
+/// Hauteur que la liste garde au moins quand le bandeau d'import s'affiche.
+const double importBannerMinListHeight = 120;
+
+/// La liste, et sous elle le bandeau d'import s'il y en a un.
+///
+/// [banners] : les variantes du bandeau, de la préférée à la plus petite.
+/// S'affiche la première dont la hauteur réelle — mesurée par
+/// [_FirstThatFits], quelle que soit la taille du texte — laisse au moins
+/// [importBannerMinListHeight] à la liste ; aucune si aucune ne tient. Le
+/// bandeau n'écrase jamais la liste.
+///
+/// Une variante non affichée ne reçoit ni focus ni activation
+/// (`ExcludeFocus`) : Tab ne s'arrête pas sur un bouton invisible. La liste
+/// reste le premier enfant d'un même arbre : son état, défilement compris,
+/// survit à l'apparition du bandeau.
+class _ListWithBanner extends StatefulWidget {
+  final Widget list;
+  final List<Widget> banners;
+
+  const _ListWithBanner({required this.list, required this.banners});
+
+  @override
+  State<_ListWithBanner> createState() => _ListWithBannerState();
+}
+
+class _ListWithBannerState extends State<_ListWithBanner> {
+  /// Variante affichée au dernier rendu ; `null` : aucune.
+  int? _shown;
+
+  void _onShown(int? index) {
+    if (mounted && index != _shown) setState(() => _shown = index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final banners = widget.banners;
+    // Sans bandeau, le choix suivant repart de zéro (nouveau rendu).
+    if (banners.isEmpty) _shown = null;
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: widget.list),
+          if (banners.isNotEmpty)
+            _FirstThatFits(
+              maxHeight: constraints.maxHeight - importBannerMinListHeight,
+              onShown: _onShown,
+              children: [
+                for (var i = 0; i < banners.length; i++)
+                  ExcludeFocus(excluding: _shown != i, child: banners[i]),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Affiche le premier de ses enfants dont la hauteur tient dans
+/// [maxHeight], et aucun autre : ceux qui ne sont pas retenus ne prennent
+/// ni place, ni peinture, ni toucher, ni sémantique. Le choix est rendu à
+/// [onShown] après le rendu, pour le focus.
+class _FirstThatFits extends MultiChildRenderObjectWidget {
+  final double maxHeight;
+  final ValueChanged<int?> onShown;
+
+  const _FirstThatFits({
+    required this.maxHeight,
+    required this.onShown,
+    required super.children,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFirstThatFits(maxHeight, onShown);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFirstThatFits renderObject,
+  ) {
+    renderObject
+      ..maxHeight = maxHeight
+      ..onShown = onShown;
+  }
+}
+
+class _FirstThatFitsParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderFirstThatFits extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _FirstThatFitsParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _FirstThatFitsParentData> {
+  _RenderFirstThatFits(this._maxHeight, this.onShown);
+
+  double _maxHeight;
+  ValueChanged<int?> onShown;
+  RenderBox? _chosen;
+  int? _reported;
+
+  set maxHeight(double value) {
+    if (value == _maxHeight) return;
+    _maxHeight = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _FirstThatFitsParentData) {
+      child.parentData = _FirstThatFitsParentData();
+    }
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    var child = firstChild;
+    while (child != null) {
+      final size = child.getDryLayout(constraints);
+      if (size.height <= _maxHeight) return size;
+      child = childAfter(child);
+    }
+    return constraints.constrain(Size(constraints.maxWidth, 0));
+  }
+
+  @override
+  void performLayout() {
+    RenderBox? chosen;
+    int? index;
+    var i = 0;
+    var child = firstChild;
+    while (child != null) {
+      child.layout(constraints, parentUsesSize: true);
+      (child.parentData! as _FirstThatFitsParentData).offset = Offset.zero;
+      if (chosen == null && child.size.height <= _maxHeight) {
+        chosen = child;
+        index = i;
+      }
+      i++;
+      child = childAfter(child);
+    }
+    if (chosen != _chosen) markNeedsSemanticsUpdate();
+    _chosen = chosen;
+    size = chosen?.size ?? constraints.constrain(Size(constraints.maxWidth, 0));
+    if (index != _reported) {
+      _reported = index;
+      final report = onShown;
+      SchedulerBinding.instance.addPostFrameCallback((_) => report(index));
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final chosen = _chosen;
+    if (chosen != null) context.paintChild(chosen, offset);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final chosen = _chosen;
+    if (chosen == null) return false;
+    return result.addWithPaintOffset(
+      offset: Offset.zero,
+      position: position,
+      hitTest: (result, transformed) =>
+          chosen.hitTest(result, position: transformed),
+    );
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    final chosen = _chosen;
+    if (chosen != null) visitor(chosen);
+  }
+}
+
+/// Phrase du bandeau d'import, grand écran.
+const importBannerSentence = 'Vous avez trouvé une recette ? Importez-la.';
+
+/// Phrase du bandeau d'import, sur une ligne, téléphone.
+const importBannerShortSentence = 'Une recette trouvée ?';
+
 /// « Vous avez trouvé une recette ? Importez-la. » : au retour de Google,
 /// pour un éditeur ou un administrateur.
+///
+/// [compact] (téléphone) : une seule ligne — phrase courte tronquée, bouton,
+/// croix — pour ne jamais prendre la hauteur de la liste.
 class _ImportBanner extends StatelessWidget {
-  /// Adresse lue dans le presse-papiers ; nulle sur le web et iOS, ou quand
-  /// le presse-papiers n'en contient pas.
+  /// Adresse de la carte ouverte, ou lue dans le presse-papiers ; nulle sur
+  /// le web et iOS après « Voir sur Google », ou quand le presse-papiers
+  /// n'en contient pas.
   final Uri? link;
+  final bool compact;
+
+  /// Vrai : la phrase s'annonce à l'apparition (`liveRegion`).
+  final bool announce;
   final VoidCallback onImport;
   final VoidCallback onClose;
 
   const _ImportBanner({
     required this.link,
+    required this.compact,
+    required this.announce,
     required this.onImport,
     required this.onClose,
   });
@@ -1992,8 +2276,64 @@ class _ImportBanner extends StatelessWidget {
     final theme = Theme.of(context);
     final fg = theme.colorScheme.onSecondaryContainer;
     final link = this.link;
+    final buttonLabel = link != null ? 'Importer ce lien' : 'Coller le lien';
+    final buttonIcon = link != null ? Icons.link : Icons.content_paste;
+    final close = IconButton(
+      tooltip: 'Fermer',
+      icon: Icon(Icons.close, color: fg),
+      onPressed: onClose,
+    );
+
+    // Seule la phrase s'annonce à l'apparition du bandeau, pas chaque bouton
+    // de la carte ; et pas quand il est posé sous une page qui couvre
+    // l'écran (iOS).
+    Widget sentence(String text, {int? maxLines}) => Semantics(
+      liveRegion: announce,
+      child: Text(
+        text,
+        maxLines: maxLines,
+        overflow: maxLines == null ? null : TextOverflow.ellipsis,
+        style: theme.textTheme.titleSmall?.copyWith(color: fg),
+      ),
+    );
+
+    if (compact) {
+      return Card(
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        color: theme.colorScheme.secondaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: sentence(importBannerShortSentence, maxLines: 1),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                flex: 4,
+                child: Tooltip(
+                  message: link == null ? buttonLabel : shortLinkLabel(link),
+                  child: FilledButton.icon(
+                    onPressed: onImport,
+                    icon: Icon(buttonIcon, size: AppIconSize.small),
+                    label: Text(
+                      buttonLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+              close,
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       color: theme.colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 4, 12),
@@ -2006,17 +2346,7 @@ class _ImportBanner extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Seule la phrase s'annonce à l'apparition du
-                      // bandeau, pas chaque bouton de la carte.
-                      Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          'Vous avez trouvé une recette ? Importez-la.',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: fg,
-                          ),
-                        ),
-                      ),
+                      sentence(importBannerSentence),
                       if (link != null)
                         Text(
                           shortLinkLabel(link),
@@ -2027,11 +2357,7 @@ class _ImportBanner extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Fermer',
-                  icon: Icon(Icons.close, color: fg),
-                  onPressed: onClose,
-                ),
+                close,
               ],
             ),
             Wrap(
@@ -2040,13 +2366,8 @@ class _ImportBanner extends StatelessWidget {
               children: [
                 FilledButton.icon(
                   onPressed: onImport,
-                  icon: Icon(
-                    link != null ? Icons.link : Icons.content_paste,
-                    size: AppIconSize.small,
-                  ),
-                  label: Text(
-                    link != null ? 'Importer ce lien' : 'Coller le lien',
-                  ),
+                  icon: Icon(buttonIcon, size: AppIconSize.small),
+                  label: Text(buttonLabel),
                 ),
               ],
             ),
