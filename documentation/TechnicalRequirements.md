@@ -354,8 +354,12 @@ v0.23.49, ces trois livres ont un identifiant fixe, `kassdalle_{uid}`, `libres_{
 `secretes_{uid}` (`systemBookId` côté serveur, `_createSystemBook` côté client) : à l'approbation
 d'un éditeur, le déclencheur et l'application peuvent tourner en même temps, et un identifiant
 aléatoire laissait chacun créer son livre, en double et non supprimable. Le serveur crée en
-transaction et retrouve un livre déjà posé par le client ; le client écrit le document par `set`,
-qui retombe sur celui du serveur. Les règles réservent ces identifiants au compte qu'ils nomment
+transaction et retrouve un livre déjà posé par le client ; le client aussi, et ne réécrit jamais
+un livre existant : hors ligne, un `set` mis en file aurait remplacé à la reconnexion un livre que
+le cache ne montrait pas, `is_private` compris. Pour cette transaction, les règles laissent un
+éditeur lire son propre identifiant fixe encore absent (`ownSystemBookId`). Un identifiant occupé
+par un autre document (étranger au compte, ou livre sans le tag) est journalisé et n'empêche pas
+la création des autres livres. Les règles réservent ces identifiants au compte qu'ils nomment
 (§4). Les livres créés avant gardent leur identifiant aléatoire et restent reconnus à leur tag. Mêmes
 champs que le client, couverture vide : l'écran affiche
 alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
@@ -2104,11 +2108,11 @@ service cloud.firestore {
       // « Mes recettes du web » est créé par le serveur seul (`web_{uid}`).
       // Les trois autres, sous `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`,
       // par le seul compte qu'ils nomment (client et serveur écrivent le même document).
+      // Son propre livre système encore absent se lit : le client le crée en transaction.
+      allow get: if isEditor() && resource == null && ownSystemBookId();
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !bookId.matches('web[0-9]*_.*')
-        && (!bookId.matches('(kassdalle|libres|secretes)_.*')
-            || bookId in ['kassdalle_' + request.auth.uid, 'libres_' + request.auth.uid,
-                          'secretes_' + request.auth.uid])
+        && (!bookId.matches('(kassdalle|libres|secretes)_.*') || ownSystemBookId())
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()

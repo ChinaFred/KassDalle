@@ -43,8 +43,9 @@ client la dépose à la prochaine ouverture de la bibliothèque par leur propri�
 Les trois livres créés par le client et par le serveur ont désormais un identifiant fixe,
 `kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` : à l'approbation d'un éditeur, le
 déclencheur et l'application pouvaient créer chacun le leur, et un livre système en double ne se
-supprime pas. Le serveur crée en transaction, le client écrit le même document. `firestore.rules`
-réserve ces identifiants au compte qu'ils nomment. Tests : `tests/systemBooksBackfill.test.ts`,
+supprime pas. Le serveur et le client créent en transaction et ne réécrivent jamais un livre
+existant. `firestore.rules` réserve ces identifiants au compte qu'ils nomment, et laisse un éditeur
+lire son propre identifiant encore absent, lecture qu'exige la transaction du client. Tests : `tests/systemBooksBackfill.test.ts`,
 `tests/authGuards.test.ts`, `rules-tests/test/firestore.test.mjs`.
 
 ### v0.23.48 — fonctionnel

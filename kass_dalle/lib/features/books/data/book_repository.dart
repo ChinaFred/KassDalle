@@ -162,11 +162,21 @@ class BookRepository {
   /// Le serveur crée aussi ces livres, à l'approbation du compte. Avec un
   /// identifiant aléatoire, les deux pouvaient créer chacun le leur au même
   /// moment, et un livre système en double ne se supprime pas. Sous un
-  /// identifiant fixe, la seconde écriture retombe sur le même document. Les
-  /// règles Firestore réservent ces identifiants au compte qu'ils nomment.
+  /// identifiant fixe, le second retrouve le document du premier. Les règles
+  /// Firestore réservent ces identifiants au compte qu'ils nomment.
+  ///
+  /// En transaction, et non par un simple `set` : hors ligne, ou sur un
+  /// appareil au cache vide, la lecture par tag ne trouve pas un livre qui
+  /// existe sur le serveur. Un `set` mis en file l'aurait remplacé à la
+  /// reconnexion — titre, couverture, et `is_private` remis à `false`, ce
+  /// qui rend partagées les recettes d'un livre rendu privé. Une transaction
+  /// lit le serveur, et échoue hors ligne au lieu d'écrire.
   Future<String> _createSystemBook(String prefix, String uid, Book book) async {
     final ref = _col.doc('${prefix}_$uid');
-    await ref.set(book.toFirestore());
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) tx.set(ref, book.toFirestore());
+    });
     return ref.id;
   }
 

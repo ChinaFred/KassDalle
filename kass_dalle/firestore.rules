@@ -424,8 +424,18 @@ service cloud.firestore {
                    resource.data.tags.toSet().intersection(systemTags().toSet())));
       }
 
+      /// L'identifiant fixe d'un livre système du compte appelant.
+      function ownSystemBookId() {
+        return bookId in ['kassdalle_' + request.auth.uid, 'libres_' + request.auth.uid,
+                          'secretes_' + request.auth.uid];
+      }
+
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
+      // Son propre livre système encore absent se lit : le client le crée en
+      // transaction (`_createSystemBook`), qui lit avant d'écrire. Sans cette
+      // lecture, la règle ci-dessus échoue sur `resource == null`.
+      allow get: if isEditor() && resource == null && ownSystemBookId();
       // « Mes recettes du web » est créé par le serveur seul, sous `web_{uid}`
       // (`ensureWebBookFn` à l'ouverture de la bibliothèque ; le premier import
       // par lien reste un filet).
@@ -440,9 +450,7 @@ service cloud.firestore {
       // à son nom empêcherait le serveur de créer le livre de cet autre compte.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !bookId.matches('web[0-9]*_.*')
-        && (!bookId.matches('(kassdalle|libres|secretes)_.*')
-            || bookId in ['kassdalle_' + request.auth.uid, 'libres_' + request.auth.uid,
-                          'secretes_' + request.auth.uid])
+        && (!bookId.matches('(kassdalle|libres|secretes)_.*') || ownSystemBookId())
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()

@@ -19,6 +19,7 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
 import { COLL_BOOKS } from "../config";
+import { logError } from "../logging";
 import { WEB_BOOK_TAG, findOrCreateWebBook } from "../pipeline/urlImport";
 
 /** Les tags internes des livres système, dans l'ordre où le client les crée. */
@@ -135,18 +136,31 @@ export async function ensureSystemBooksFor(
     // écrit le même document. Si l'un l'a créé entre la lecture par tag et
     // cette transaction, l'autre le retrouve et n'en crée pas un second.
     const ref = db.collection(COLL_BOOKS).doc(systemBookId(tag, uid));
-    const created = await db.runTransaction(async (tx) => {
+    const outcome = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      if (snap.exists) {
-        if (snap.get("created_by") !== uid) {
-          throw new Error(`Livre ${ref.id} existant mais étranger au compte`);
-        }
-        return false;
+      if (!snap.exists) {
+        tx.create(ref, systemBookDocument(tag, uid, displayName, now));
+        return "created" as const;
       }
-      tx.create(ref, systemBookDocument(tag, uid, displayName, now));
-      return true;
+      if (snap.get("created_by") !== uid) return "foreign" as const;
+      const tags = snap.get("tags");
+      return Array.isArray(tags) && tags.includes(tag)
+        ? ("present" as const)
+        : ("untagged" as const);
     });
-    if (created) progress.created += 1;
+    if (outcome === "created") {
+      progress.created += 1;
+    } else if (outcome !== "present") {
+      // Un document occupe l'identifiant sans être ce livre : étranger au
+      // compte (posé avant la règle qui réserve ces identifiants), ou livre
+      // ordinaire du compte sans le tag. Journalisé, et les autres livres
+      // système sont tout de même créés.
+      await logError({
+        message: `Livre système ${ref.id} non créé : identifiant occupé (${outcome})`,
+        ...ctx,
+        extra: { bookId: ref.id, tag, outcome },
+      });
+    }
   }
   return progress.created;
 }
