@@ -9,7 +9,7 @@
  * `aRevoir: { items, total }` dans sa réponse, construit par ce collecteur.
  *
  * La liste vit dans la réponse du passage. Elle n'est recopiée que dans le
- * `last_report` du point de reprise, quand le backfill en écrit un. Elle ne
+ * `last_report` de l'état du backfill (`backfills/runner.ts`). Elle ne
  * part jamais dans les journaux : elle porte des noms de comptes et des titres
  * de recettes privées. Les journaux reçoivent `withoutReviewList`.
  *

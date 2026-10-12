@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.45 — fonctionnel
+### v0.23.46 — fonctionnel
 
 La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image
 analysée vaut un appel, et son coût s'ajoute à la dépense du jour. Plafond atteint, l'image
@@ -28,7 +28,7 @@ n'est pas publiée et l'écran affiche le message du plafond ; une photo de page
 lien est laissée de côté et la recette est créée sans elle. La relance des images en attente
 par l'administrateur n'est pas concernée.
 
-### v0.23.45 — technique
+### v0.23.46 — technique
 
 Cinq corrections issues de l'audit `securite`.
 
@@ -55,6 +55,43 @@ Cinq corrections issues de l'audit `securite`.
 - **Fondateur** : `isFounder()` exige `email_verified` et une connexion Google ;
   `isFounderAccount` applique le même contrôle dans `enforceFounderRole` et pour le
   multiplicateur de plafond (`founderUid`).
+
+### v0.23.45 — fonctionnel
+
+Admin › Backfills range ses neuf reprises en trois sections : « Récurrents », « Ponctuels à
+lancer » et « Ponctuels terminés ». Chaque tuile affiche l'état de son dernier passage, lu en
+direct : terminé, incomplet, en erreur, en cours. Un backfill récurrent se programme depuis
+l'écran, par jours et heure de Paris ; un passage incomplet reprend l'heure suivante, jusqu'à
+la fin ou jusqu'au plafond de dépense. « Reprendre la nutrition » passe toujours tous les jours
+à 5 h, réglable désormais. Un ponctuel passé sans reste est marqué terminé et descend en bas ;
+l'administrateur peut aussi le marquer ou le remettre à lancer par le menu ⋮. Lancer un
+backfill ne bloque plus l'écran, et deux passages du même backfill ne tournent jamais ensemble.
+
+### v0.23.45 — technique
+
+Chaque backfill est classé dans deux registres, `functions/src/backfills/registry.ts` et
+`backfill_registry.dart`. `runBackfillPass` (`backfills/runner.ts`) pose un verrou par backfill
+et écrit l'état dans `app_config/backfill_run_<clé>` : statut, origine, compte rendu complet,
+`termine_*` pour un ponctuel. Le compte rendu ne s'écrit plus à côté du curseur
+(`setBackfillCursor` perd `lastReport`) ; `backfill_reports_repository.dart` et ses deux
+providers sont remplacés par `backfill_status_repository.dart`. La tâche `scheduledNutritionCatchUp`
+est retirée et remplacée par `scheduledBackfills`, horaire, qui lance les récurrents échus
+d'après `app_config/backfill_schedules` ; le défaut de la nutrition (5 h, 20 recettes, bornes
+de patience) vit dans les deux registres (`defaultSchedule`), la tâche l'écrit au premier tick,
+et l'écran l'affiche « (par défaut) » d'ici là. La passe de
+chaque récurrent sort de son callable pour être appelée aussi par la tâche ; en reprise,
+l'enrichissement des référentiels saute la phase des unités. Un passage programmé qui appelle
+un modèle est imputé au plafond **de base** de l'administrateur qui l'a programmé, sans le
+multiplicateur du compte (`runWithBaseBudgetCap`), et ne part pas si cet auteur n'est plus
+administrateur ; la nutrition reste imputée au propriétaire de chaque recette.
+L'enrichissement des référentiels et la réparation du sel partagent un verrou. Les règles
+Firestore refusent l'écriture client sur `app_config/backfill_schedules` et
+`app_config/backfill_run_*`, administrateur compris (tests dans `rules-tests`). La fixture
+`backfill_schedule.json` verrouille le registre et la lecture stricte d'une programmation des
+deux côtés ; l'échéance du verrou est écrite par le serveur (`en_cours_expire_le`). Deux callables admin s'ajoutent, `setBackfillScheduleFn` et `setBackfillDoneFn`. Les
+callables existants gardent nom et contrat ; leur réponse gagne `termineAuto`, leur requête
+`appVersion`, et un passage déjà en cours renvoie `failed-precondition`. `backfillShoppingFn`
+ne déclare plus les deux secrets d'IA, qu'il n'utilisait pas.
 
 ### v0.23.44 — technique
 

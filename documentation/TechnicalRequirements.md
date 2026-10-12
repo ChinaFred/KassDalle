@@ -237,7 +237,7 @@ Créée automatiquement à la première connexion Google.
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
-| `free_recipe_cover_url` | `String?` | Couverture choisie pour « Mes recettes libres ». Écrite par `auth_repository.dart` : l'image passe par la modération, qui la publie sous `users/{uid}/free_recipe_cover_*.jpg` ; le fichier précédent est supprimé au remplacement. Les règles n'admettent que `null` ou une adresse de téléchargement du bucket du projet sous `users/` (`coverUrlOk`, 500 caractères au plus, v0.23.45) ; `syncUserClaims` écarte toute autre valeur à la recopie dans `user_profiles` (`publicCoverUrl`) |
+| `free_recipe_cover_url` | `String?` | Couverture choisie pour « Mes recettes libres ». Écrite par `auth_repository.dart` : l'image passe par la modération, qui la publie sous `users/{uid}/free_recipe_cover_*.jpg` ; le fichier précédent est supprimé au remplacement. Les règles n'admettent que `null` ou une adresse de téléchargement du bucket du projet sous `users/` (`coverUrlOk`, 500 caractères au plus, v0.23.46) ; `syncUserClaims` écarte toute autre valeur à la recopie dans `user_profiles` (`publicCoverUrl`) |
 | `import_illustrations` | `Boolean` | Défaut de la case « Extraire les illustrations » de l'écran d'import. Absent = `true`. Écrit par **Préférences** (`features/auth/presentation/preferences_screen.dart`), lu par `UserPreferencesRepository`. C'est un **défaut**, pas un verrou : chaque import peut le changer pour lui seul, sans que ce choix remonte ici. |
 
 **Nom préféré et nom Google :** `display_name` est réécrit à chaque connexion depuis le compte
@@ -252,7 +252,7 @@ ou inconnu est relu comme `pending` par `AppUser.fromFirestore` : le repli ferme
 
 **Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
 `admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
-et non par le champ `email` du document, qu'un client a pu écrire. Depuis v0.23.45, l'adresse
+et non par le champ `email` du document, qu'un client a pu écrire. Depuis v0.23.46, l'adresse
 doit être vérifiée (`emailVerified`) et le compte rattaché à une connexion Google
 (`providerData[].providerId == 'google.com'`) : `isFounderAccount`, qui sert aussi au
 multiplicateur de plafond (`founderUid`, `ai/budget.ts`). Les règles exigent l'équivalent sur le
@@ -1469,7 +1469,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée (résultat d'outil de la recherche Google compris), de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `grounded_search_count` (`int`, 0 ou 1 : appel ancré dans la recherche Google, facturé à l'appel ; absent des lignes antérieures à octobre 2026, lu comme 0), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
-| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la modération, `dailyCalls`, depuis v0.23.45), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
+| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la modération, `dailyCalls`, depuis v0.23.46), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
 | `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
@@ -1480,7 +1480,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 - `dead_letters/{jobId}` : job d'import abandonné après trois tentatives, avec son motif et
   son étape. Relancé ou purgé depuis *Admin › File d'échecs*.
 - `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
-  `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.45, carte
+  `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.46, carte
   avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
   échec côté client laisse une trace : `debugPrint` est invisible en production.
 
@@ -1504,20 +1504,20 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 jour où la politique en vigueur a été recopiée dans une première configuration.
 Elle empêche cette configuration de revenir après une suppression volontaire.
 
-Sept documents de plus ne décident rien : ce sont les **points de reprise** des
+Des documents de plus ne décident rien : ce sont les **points de reprise** des
 backfills (§7.10). Le serveur les écrit via `setBackfillCursor`
 (`callable/_backfillCursor.ts`). Aucun code client ne les écrit, mais les règles
 Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 
 | Document | Écrit par |
 |---|---|
-| `nutrition_catch_up_checkpoint` | `backfillNutritionFn` |
+| `nutrition_catch_up_checkpoint` | `backfillNutritionFn`, passage manuel seulement : le passage programmé repart du début à chaque fois, comme l'ancienne tâche de 5 h |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn` |
-| `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel, et compte rendu du dernier passage (`last_report`) |
+| `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel |
 | `allergens_recipes_backfill_checkpoint` | `backfillAllergensFn` — curseur du recalcul des recettes |
-| `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn` — curseur du parcours des recettes, compte rendu du dernier passage (`last_report`), et verrou du passage en cours (`running_until` : `Timestamp`, heure d'expiration, délai maximal de la fonction ; `running_id` : identifiant du passage qui le tient). Le verrou est posé en transaction au début, levé à la fin ; un lancement pendant qu'il est valide rend `dejaEnCours: true` sans rien faire |
+| `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn` — curseur du parcours des recettes, et verrou propre aux durées estimées (`running_until` : `Timestamp`, heure d'expiration, délai maximal de la fonction ; `running_id` : identifiant du passage qui le tient). Le verrou est posé en transaction au début, levé à la fin ; un lancement pendant qu'il est valide rend `dejaEnCours: true` sans rien faire |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
@@ -1529,7 +1529,53 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | compte rendu du dernier passage, avec `finished_at` (heure serveur). Écrit par `backfillShoppingFn`, `backfillRecipeRolesFn` et `backfillRecipeProteinFn`. L'écran Admin › Backfills relit à l'ouverture ceux du rôle des recettes et de la protéine des plats (`backfill_reports_repository.dart`) : un passage dure plusieurs minutes, et son résultat affiché en fin de traitement n'était pas lu. Celui des produits d'achat n'est lu par aucun écran. `backfillAllergensFn` écrit aussi le sien, dans `allergens_ingredients_backfill_checkpoint`, et `backfillEstimatedTimesFn` dans `estimated_times_backfill_checkpoint`. Le compte rendu recopie la liste `aRevoir` du passage (§7.10) |
+| `last_report` | `Map?` | ancien compte rendu du dernier passage, écrit jusqu'en v0.23.44 par cinq backfills. Depuis v0.23.45, le compte rendu part dans l'état du backfill (`backfill_run_<clé>`, ci-dessous) ; le champ reste dans les documents existants, plus rien ne l'écrit ni ne le lit |
+
+**État et programmation des backfills** (v0.23.45). Chaque backfill d'Admin › Backfills
+est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
+et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
+`nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
+récurrents ; `recipe_protein`, `estimated_times`, `refresh_sodium`, `planning_defaults` —
+ponctuels). Deux sortes de documents, écrits par le serveur seul — les règles refusent
+l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
+(administrateurs seulement) :
+
+`backfill_run_<clé>` — l'état d'un backfill, écrit par `backfills/runner.ts` à chaque passage,
+manuel ou programmé, et par `setBackfillDoneFn`. Un backfill jamais lancé n'a pas de document.
+L'écran les lit par la requête `doc_type == "backfill_run"`.
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `doc_type` | `String` | toujours `backfill_run` |
+| `key` | `String` | clé du registre |
+| `dernier_passage_statut` | `String` | `en_cours` (verrou posé) \| `termine` \| `incomplet` \| `erreur` |
+| `en_cours_depuis` | `Timestamp?` | pose du verrou |
+| `en_cours_expire_le` | `Timestamp?` | échéance du verrou, `en_cours_depuis` + dix minutes (`BACKFILL_LOCK_TTL_MS`). Passée, le verrou est celui d'un passage interrompu : il se reprend, et l'écran affiche « En erreur — passage interrompu ». Le client compare l'heure à cette échéance et ne connaît pas la durée |
+| `en_cours_id`, `en_cours_origine`, `en_cours_par_uid` | `String?` | identifiant du passage qui tient le verrou, son origine, son auteur ; remis à `null` à la fin |
+| `dernier_passage_le` | `Timestamp?` | fin du dernier passage |
+| `dernier_passage_origine` | `String?` | `manuel` \| `programme` |
+| `dernier_passage_erreur` | `String?` | message court quand le passage a levé une erreur, ou « L'auteur de la programmation n'est plus administrateur. » quand un passage programmé a été refusé pour cette raison |
+| `arret_plafond` | `bool` | le dernier passage s'est arrêté au plafond de dépense quotidien |
+| `reprise_due` | `bool` | un passage programmé est resté incomplet sans toucher le plafond, ou n'a pas tenu dans le tick : la tâche horaire le reprend à l'heure suivante |
+| `dernier_creneau` | `String?` | créneau (`AAAA-MM-JJTHH`, heure de Paris) du dernier passage programmé : un créneau ne part qu'une fois |
+| `last_report` | `Map?` | réponse complète du dernier passage, liste `aRevoir` comprise (§7.10) |
+| `last_correlation_id` | `String?` | fil de journaux du dernier passage |
+| `termine_le`, `termine_version`, `termine_par`, `termine_par_uid` | `Timestamp?`, `String?`, `String?`, `String?` | ponctuel terminé : date, version de l'application qui a lancé ou marqué (`0.23.43`, envoyée par le client, `null` si absente), `auto` (passage sans aucun reste : tout parcouru, 0 restant, 0 à revoir) ou `manuel` (marqué depuis l'écran). Retirés par « Remettre à lancer » |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+`backfill_schedules` — la programmation des récurrents, une entrée par clé, écrite par
+`setBackfillScheduleFn` : `{ enabled: bool, days: int[] (ISO, lundi = 1), hour: int (0–23),
+timezone: "Europe/Paris", programme_par_uid: String, updated_at: Timestamp }`.
+`programme_par_uid` est l'administrateur qui a enregistré : les passages programmés qui
+appellent un modèle lui sont imputés (plafond quotidien de base, §7.10). Lecture stricte des
+deux côtés (`parseSchedule`, `BackfillSchedule.fromMap`, fixture `backfill_schedule.json`) :
+jours et heure entiers, sans conversion ; une entrée illisible vaut « non programmé ». Sans
+entrée pour `nutrition`, le défaut du registre s'applique (`defaultSchedule` : tous les jours
+à 5 h), et `scheduledBackfills` l'écrit (`programme_par_uid: null`) au premier tick. Avant ce
+tick, l'écran l'affiche « Tous les jours à 5 h (par défaut) » et l'éditeur en part : un
+« Enregistrer » ne coupe pas le rattrapage quotidien. Le défaut est dans les deux registres,
+vérifié par la fixture. Une écriture du défaut en échec est journalisée (`logError`) sans
+abandonner le tick. Aucune migration manuelle.
 
 ---
 
@@ -1807,7 +1853,7 @@ service cloud.firestore {
       return 'china.fred.75@gmail.com';
     }
 
-    // Adresse vérifiée et connexion Google (v0.23.45) : l'adresse seule
+    // Adresse vérifiée et connexion Google (v0.23.46) : l'adresse seule
     // suffisait, quel que soit le fournisseur.
     function isFounder() {
       return isAuthenticated() && 'email' in request.auth.token
@@ -1844,7 +1890,7 @@ service cloud.firestore {
       }
       // Couverture « Recette libre » : nulle, ou une adresse de téléchargement
       // du bucket du projet sous `users/`, où seule la modération dépose
-      // (v0.23.45). Recopiée dans `user_profiles`, lu par toute la famille.
+      // (v0.23.46). Recopiée dans `user_profiles`, lu par toute la famille.
       function coverUrlOk() {
         let url = request.resource.data.get('free_recipe_cover_url', null);
         return url == null
@@ -2091,8 +2137,8 @@ service cloud.firestore {
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
-| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.45) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.46) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
+| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -2202,7 +2248,7 @@ Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `sync
 **Un `book_id` contenant « / » est refusé** par `bookCheck` ; côté serveur,
 `expectedPrivacy` le traite comme un livre introuvable et le signale par `logError`.
 
-**La normalisation écrit dans le référentiel partagé** (v0.23.45).
+**La normalisation écrit dans le référentiel partagé** (v0.23.46).
 `normalizeRecipeReferentialsFn` crée et enrichit des fiches `nutrition_ingredients` à partir
 des noms reçus. `assertCanNormalizeReferentials` (`callable/_recipeAccess.ts`, décision pure
 `referentialNormalizationDenial` testée) la réserve à l'éditeur et à l'administrateur
@@ -2639,7 +2685,7 @@ serveur en cours.
 Mêmes réservations pour les quatre chemins qui n'empruntent pas `callModel` : la production
 d'image (`runImageModel`), l'amélioration d'illustration (`enhanceCulinaryImage`, jusque-là
 hors plafond), le bac à sable (`askModel` sur un modèle choisi) et la modération d'images
-(`moderateAndPromote`, depuis v0.23.45). La modération réserve une place **par image analysée**,
+(`moderateAndPromote`, depuis v0.23.46). La modération réserve une place **par image analysée**,
 au coût connu d'avance — unités Cloud Vision fois le prix de l'unité, lus dans la grille
 (`visionAnalysisCostUsd`, option `estimateUsd` de `reserveDailyBudget`) — et `recordUsage`
 compte une image pour un appel (`dailyCalls`). `assertWithinDailyBudget`
@@ -3698,7 +3744,7 @@ remontée.
 | `error_type` | `string` | le type Dart de l'exception (`TimeoutException`, `FirebaseException`) |
 | `error_message` | `string` | `error.toString()` |
 | `stack_trace` | `string?` | **tronquée à 2 000 caractères** |
-| `context` | `string` | les paramètres au moment de l'erreur, en **JSON** (v0.23.45) : chaque valeur passée en texte de 500 caractères au plus, 4 000 caractères en tout, les entrées qui ne tiennent plus comptées sous `_omis`. Les rapports antérieurs portent une carte, que la lecture accepte toujours |
+| `context` | `string` | les paramètres au moment de l'erreur, en **JSON** (v0.23.46) : chaque valeur passée en texte de 500 caractères au plus, 4 000 caractères en tout, les entrées qui ne tiennent plus comptées sous `_omis`. Les rapports antérieurs portent une carte, que la lecture accepte toujours |
 
 Les longueurs sont bornées par le client (`ErrorReport.toFirestore`) : `feature`,
 `error_type` et `job_id` à 200 caractères, `app_version` à 50, `error_message` à 4 000.
@@ -3798,7 +3844,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
 | `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
 | `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
-| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.23.45) : éditeur ou admin, ou lecteur créateur de la recette `recipeId` (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
+| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.23.46) : éditeur ou admin, ou lecteur créateur de la recette `recipeId` (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
 
 **Liste blanche.** `refineRecipeFn`, `searchRecipesFn`, `suggestMealPlanFn` et
 `generateRecipeConceptFn` passent au générateur un objet construit par
@@ -3949,28 +3995,98 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler) et sept reprises manuelles. Aucune n'est
-déclenchée par un utilisateur ; toutes journalisent sous leur propre `correlationId`.
+Trois tâches planifiées (Cloud Scheduler), huit reprises manuelles et deux réglages. Aucune
+tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
+`correlationId`.
 
 | Fonction | Cadence | Ce qu'elle fait |
 |---|---|---|
-| `scheduledNutritionCatchUp` | `0 5 * * *` — chaque jour à 5 h | reprend les recettes dont la nutrition n'a pas abouti. Cinq tentatives au plus par liste d'ingrédients (`nutrition_catch_up_attempts`), remises à zéro dès qu'une entrée change. C'est ce compteur qui transforme un échec permanent en dépense finie |
+| `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
-| `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais |
-| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients |
-| `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise et compte rendu dans `app_config/shopping_products_backfill_checkpoint` |
+| `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients) ; le passage programmé les garde |
+| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) |
+| `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
-| `backfillEstimatedTimesFn` | `admin` | un seul passage à la fois : verrou daté `running_until` sur le point de reprise, posé en transaction, levé à la fin, expiré au bout de 540 s ; un second lancement rend « déjà en cours » (`dejaEnCours`) sans appel. Parcourt `recipes` et soumet au modèle, par lots de huit recettes **d'un même `created_by`** — le texte d'un compte ne partage jamais un prompt avec celui d'un autre — (poste `backfill_time_estimate_batch`, 160 recettes par appel par défaut, 8 au moins, 400 au plus ; quota atteint, les groupes en attente partent avant l'arrêt si le délai le permet), les recettes de type `recipe` à qui il manque une durée de préparation ou de cuisson et qui ne portent pas d'estimation pour leur contenu actuel (`decideEstimatedTimes`). Une recette dont les durées sont lues, ou déjà estimée, n'est ni redemandée ni refacturée. Chaque réponse s'écrit dans une transaction qui revérifie l'empreinte : une recette modifiée pendant l'appel est ignorée. S'arrête après trois lots en échec de suite. Un lot en échec ne bloque pas le parcours : le curseur le dépasse, et `completed` reste faux tant qu'un passage compte une erreur ; une fois la collection parcourue, le curseur revient au début, et le passage suivant reprend les recettes en erreur en ignorant sans appel celles déjà estimées. Compte rendu : examinées, estimées, sans estimation, ignorées, hors recette, en erreur, et la liste `aRevoir` des recettes non estimées (voir « Liste à revoir » ci-dessous), recopiée dans `last_report`. Point de reprise dans `app_config/estimated_times_backfill_checkpoint`. À lancer une fois après le déploiement qui introduit les durées estimées — Admin › Backfills, « Durées estimées » |
+| `backfillEstimatedTimesFn` | `admin` | un seul passage à la fois : verrou daté `running_until` sur le point de reprise, posé en transaction, levé à la fin, expiré au bout de 540 s ; un second lancement rend « déjà en cours » (`dejaEnCours`) sans appel. Parcourt `recipes` et soumet au modèle, par lots de huit recettes **d'un même `created_by`** — le texte d'un compte ne partage jamais un prompt avec celui d'un autre — (poste `backfill_time_estimate_batch`, 160 recettes par appel par défaut, 8 au moins, 400 au plus ; quota atteint, les groupes en attente partent avant l'arrêt si le délai le permet), les recettes de type `recipe` à qui il manque une durée de préparation ou de cuisson et qui ne portent pas d'estimation pour leur contenu actuel (`decideEstimatedTimes`). Une recette dont les durées sont lues, ou déjà estimée, n'est ni redemandée ni refacturée. Chaque réponse s'écrit dans une transaction qui revérifie l'empreinte : une recette modifiée pendant l'appel est ignorée. S'arrête après trois lots en échec de suite. Un lot en échec ne bloque pas le parcours : le curseur le dépasse, et `completed` reste faux tant qu'un passage compte une erreur ; une fois la collection parcourue, le curseur revient au début, et le passage suivant reprend les recettes en erreur en ignorant sans appel celles déjà estimées. Compte rendu : examinées, estimées, sans estimation, ignorées, hors recette, en erreur, et la liste `aRevoir` des recettes non estimées (voir « Liste à revoir » ci-dessous), recopiée dans le `last_report` de l'état du backfill. Point de reprise dans `app_config/estimated_times_backfill_checkpoint`. À lancer une fois après le déploiement qui introduit les durées estimées — Admin › Backfills, « Durées estimées » |
 | `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
-| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise et compte rendu dans `app_config/recipe_roles_backfill_checkpoint` |
-| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise et compte rendu dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
+| `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
+
+| Réglage | Réservé à | Ce qu'il écrit |
+|---|---|---|
+| `setBackfillScheduleFn` | `admin` | `{ key, enabled, days, hour }` → l'entrée `key` de `app_config/backfill_schedules`, avec `timezone` et `programme_par_uid` (l'appelant). Refuse un ponctuel (`failed-precondition`), une clé inconnue, une heure ou un jour qui n'est pas un entier dans sa plage (chaîne, booléen, `null`, décimal compris), aucun jour quand `enabled` (`invalid-argument`) |
+| `setBackfillDoneFn` | `admin` | `{ key, done, appVersion }` → pose (`termine_par: "manuel"`) ou retire `termine_*` sur `app_config/backfill_run_<clé>`. Ponctuels seulement |
+
+**Backfills ponctuels et récurrents** (v0.23.45). Chaque backfill est classé dans
+`backfills/registry.ts` (§3.13). Toutes les reprises ci-dessus passent par
+`runBackfillPass` (`backfills/runner.ts`), qui :
+
+- pose un **verrou** par backfill, en transaction, sur `app_config/backfill_run_<clé>` : un
+  second passage du même backfill — un double clic, un autre appareil, la tâche horaire — est
+  refusé, `failed-precondition`, et l'écran affiche le message du serveur. Deux backfills
+  différents tournent ensemble, sauf ceux d'un même `LOCK_GROUPS` (`backfills/registry.ts`) :
+  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients, et
+  l'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
+  des deux). Un verrou dont l'échéance est passée est repris ;
+- enregistre l'issue : statut, origine, date, compte rendu complet (`last_report`), ou le
+  message de l'erreur, puis relève l'erreur ;
+- pour un **ponctuel**, pose `termine_*` (`termine_par: "auto"`) quand le passage finit sans
+  aucun reste : collection parcourue, 0 restant, 0 élément à revoir (`shouldAutoMarkDone`). Un
+  reste inconnu (décompte impossible) n'est pas un reste nul. La réponse du callable porte alors
+  `termineAuto: true`.
+
+Les callables gardent leur nom et leur contrat ; la réponse gagne `termineAuto`, la requête
+accepte `appVersion`. La passe de chaque récurrent est sortie du callable dans une fonction
+appelable sans requête (`runNutritionBackfillPass`, `runEnrichReferentialsPass`,
+`runAllergensPass`, `runRecipeRolesPass`, `runShoppingPass`) : le callable et
+`scheduledBackfills` appellent la même.
+
+**Passage programmé.** À chaque tick, `scheduledBackfills` lit les programmations et les
+états, écrit le défaut de la nutrition s'il manque, puis lance en séquence les récurrents échus, chacun borné par ce qui reste des 540 s de
+la fonction (huit minutes et demie au plus, trois minutes au moins). Ce qui ne tient pas est
+marqué `reprise_due` et part au tick suivant. Un passage incomplet reprend l'heure suivante,
+depuis son point de reprise, jusqu'à la fin. Un créneau tombé pendant un passage manuel est
+reporté d'une heure. Bornes par passage : nutrition 20 recettes, bornes de patience **actives**,
+sans point de reprise (le comportement de l'ancienne tâche de 5 h) ; rôle des recettes 40
+recettes ; allergènes 400 ingrédients et 500 recettes ; produits d'achat 500 recettes ;
+enrichissement des référentiels, le délai seul — et en reprise à l'heure suivante, sans la
+phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parcourir).
+
+**Auteur de la programmation.** Avant chaque passage programmé, le rôle de
+`programme_par_uid` est relu sur son document (`isAdminAccount`) : un compte qui n'est plus
+administrateur — rétrogradé ou révoqué — n'a plus de passage imputé en son nom. Le passage ne
+part pas, l'état passe en `erreur` avec « L'auteur de la programmation n'est plus
+administrateur. », `reprise_due` à faux, et un `logWarn` le trace. Un administrateur
+reprogramme le backfill pour le relancer. Sans auteur (défaut de la nutrition), rien à
+vérifier.
+
+**Plafond de dépense.** Un passage programmé qui appelle un modèle est imputé à
+l'administrateur qui a enregistré la programmation (`programme_par_uid`) : ses appels passent par
+`callModel` sous cet uid, et `assertWithinDailyBudget` est consulté avant le passage, puis relu
+s'il s'arrête avant la fin (un `logWarn` trace un plafond atteint en cours de passage). C'est le
+plafond de **base** : le passage tourne dans `runWithBaseBudgetCap` (`ai/callOrigin.ts`), et
+`effectiveBudgetMultiplier` (`ai/budget.ts`) y rend 1 au lieu du multiplicateur du compte —
+un passage que personne ne surveille ne profite pas de la marge du fondateur (×100). Plafond atteint : statut « incomplet », `arret_plafond: true`, et la
+reprise attend le **prochain créneau**, pas l'heure suivante. **Exception assumée : la
+nutrition** impute chaque recette à son propriétaire (`recipeBudgetUserId`), comme l'ancienne
+tâche — le calcul sert la recette de quelqu'un, et c'est le compte que `syncRecipeNutrition`
+débite ; elle garde aussi les multiplicateurs de ces comptes. Aucun poste de coût nouveau : les passages programmés s'imputent aux postes de leurs
+backfills (`backfill_recipe_roles`, `backfill_allergens`,
+`backfill_enrich_referentials_per100g`, et ceux de la chaîne nutrition).
+
+Cloud Tasks n'est pas utilisé : chaque backfill a déjà son point de reprise et son verrou, et
+une tâche horaire qui reprend où le passage s'est arrêté suffit, sans file à créer ni à
+surveiller.
+
+Journaux : la tâche écrit sous `backfill_programme`, chaque passage programmé sous
+`backfill_programme:<clé>` (la nutrition garde `rattrapage_nutrition`).
 
 **Liste « à revoir ».** Chaque reprise manuelle renvoie, en plus de ses compteurs, le champ
 `aRevoir: { items, total }` : les éléments que le passage n'a pas pu traiter, nommés. Une
@@ -3978,8 +4094,8 @@ entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `r
 `account` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
 `reason` la raison en français simple. Le collecteur commun, `callable/_backfillReview.ts`
 (`BackfillReview`), garde les cent premières entrées dans l'ordre de traitement ; `total`
-compte au-delà. La liste n'est pas stockée : elle vit dans la réponse du passage, et n'est
-recopiée que dans le `last_report` du point de reprise quand le backfill en écrit un (§3.13).
+compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée que dans le
+`last_report` de l'état du backfill, `app_config/backfill_run_<clé>` (§3.13).
 
 | Reprise | Ce que la liste nomme |
 |---|---|
@@ -3993,9 +4109,10 @@ recopiée que dans le `last_report` du point de reprise quand le backfill en éc
 | `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'uid — jamais l'adresse |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
-absent, il vaut `null` et l'écran n'affiche que les compteurs. Un backfill ajouté à Admin ›
-Backfills renvoie `aRevoir` par ce collecteur et se branche dans `_runBackfill` par le
-paramètre `failuresOf`.
+absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
+dernier passage dans `last_report` (lien « Voir les N à revoir »). Un backfill ajouté à Admin ›
+Backfills renvoie `aRevoir` par ce collecteur, s'inscrit aux deux registres et se branche dans
+`_runPass` de l'écran.
 
 La liste ne part jamais dans les journaux : elle porte des noms de comptes et des titres de
 recettes privées. Le `logInfo` de fin de passage reçoit le compte rendu par
@@ -5003,7 +5120,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
-| `/admin/backfills` | `AdminBackfillsScreen` | lancer une reprise |
+| `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
 
@@ -5302,7 +5419,7 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
   `recipe_illustration` (créateur ou admin, sinon `permission-denied` pour le lot). Pour
   chaque image : téléchargement, `scanUpload()` (le format d'abord : inutile d'envoyer un
   exécutable renommé à un moteur d'analyse), origine retenue (`resolveImageOrigin`), puis
-  réservation dans le plafond quotidien du compte (`withDailyBudget`, v0.23.45) →
+  réservation dans le plafond quotidien du compte (`withDailyBudget`, v0.23.46) →
   `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
   Plafond atteint : `resource-exhausted`.
   Rend `{ results: [{ moderationId, status, reason, url }] }`, dans l'ordre des `items`.
@@ -5435,7 +5552,7 @@ ni du repli « appels sans montant » : le montant est calculable, il doit être
 - **`ai_usage` et `ai_daily_spend`** reçoivent la ligne comme n'importe quel appel : c'est
   ce qui alimente *Admin › Dépense par utilisateur*, donc le nombre d'analyses demandées
   par personne.
-- **Dans le plafond quotidien** (v0.23.45). La modération en était exclue, pour ne jamais
+- **Dans le plafond quotidien** (v0.23.46). La modération en était exclue, pour ne jamais
   empêcher de publier une image légitime. Un compte pouvait alors déposer une image en
   quarantaine et rappeler `moderateAndPromoteImagesFn` en boucle : chaque appel déclenchait
   une analyse facturée, sans limite (audit sécurité, « Moyenne »). `moderateAndPromote`

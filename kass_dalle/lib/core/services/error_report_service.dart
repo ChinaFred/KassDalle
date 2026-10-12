@@ -122,7 +122,7 @@ class ErrorReport {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  /// Le contexte relu : une chaîne JSON depuis la v0.23.45, une carte avant.
+  /// Le contexte relu : une chaîne JSON depuis la v0.23.46, une carte avant.
   static Map<String, dynamic> _parseContext(dynamic raw) {
     if (raw is Map) {
       return raw.map((key, value) => MapEntry(key.toString(), value));

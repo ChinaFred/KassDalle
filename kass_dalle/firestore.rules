@@ -727,10 +727,19 @@ service cloud.firestore {
         : scansKeyFor(request.time.year(), request.time.month() - 1);
     }
 
+    // État et programmation des backfills (`backfill_run_<clé>`,
+    // `backfill_schedules`) : écrits par le serveur seul, après contrôle de
+    // forme (`setBackfillScheduleFn`, `setBackfillDoneFn`, `runBackfillPass`).
+    // Un administrateur qui les écrirait directement pourrait programmer un
+    // passage imputé au plafond d'un autre compte, ou lever un verrou.
+    function isServerOnlyConfig(docId) {
+      return docId == 'backfill_schedules' || docId.matches('backfill_run_.*');
+    }
+
     match /app_config/{docId} {
       allow read: if isAdmin() ||
                      (isApproved() && (docId == 'usage' || docId == 'ai_pricing'));
-      allow write: if isAdmin() || (
+      allow write: if (isAdmin() && !isServerOnlyConfig(docId)) || (
         isApproved() && docId == 'usage' &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['storage_bytes', 'updated_at', currentScansKey(), previousScansKey()])

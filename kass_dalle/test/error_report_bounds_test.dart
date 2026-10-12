@@ -15,7 +15,7 @@ void main() {
     id: '',
     userId: 'u1',
     timestamp: DateTime.utc(2026, 10, 12),
-    appVersion: '0.23.45+392',
+    appVersion: '0.23.46+393',
     feature: 'test',
     errorType: 'StateError',
     errorMessage: message,
