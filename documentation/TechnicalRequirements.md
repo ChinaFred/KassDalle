@@ -199,6 +199,8 @@ firestore/
 │   └── origine/texte                              ← texte d'avant traduction, écrit par le serveur seul
 ├── recipe_ratings/{uid}_{recipeId}/
 ├── groups/{groupId}/
+├── invitations/{invitationId}/                    ← invitations par e-mail, écrites par le serveur seul
+├── invitation_sends_daily/{uid}_{AAAA-MM-JJ}/     ← compteur du plafond d'envois d'invitations
 ├── processing_jobs/{jobId}/
 ├── dead_letters/{jobId}/
 ├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
@@ -249,6 +251,15 @@ compte Google change de nom.
 **Rôle à la création :** forcé à `pending` **par les règles**, avec `is_revoked == false` et
 `email == request.auth.token.email`. Le client ne choisit ni le rôle, ni l'identité. Un rôle absent
 ou inconnu est relu comme `pending` par `AppUser.fromFirestore` : le repli ferme.
+
+**Exception décidée par le serveur — l'invitation par e-mail :** le déclencheur
+`applyEmailInvitation` (`triggers/invitationSignup.ts`, `onDocumentCreated` sur `users/{uid}`)
+lit l'adresse du compte **Auth** (`getUser`), exige `emailVerified`, et cherche une invitation
+active de même `email_key` (§3.5 ter). S'il en trouve une et que le document est encore
+`pending` et non révoqué (relu dans la transaction), il écrit `role` (`reader` ou `editor`),
+ajoute l'uid à `member_ids` du groupe et passe l'invitation à `accepted`, dans une seule
+transaction. Le fondateur n'est jamais concerné. Le document est toujours créé `pending` par
+le client : le rôle arrive une à quelques secondes plus tard.
 
 **Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
 `admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
@@ -1171,6 +1182,56 @@ et un administrateur.
 
 ---
 
+### 3.5 ter Collection `invitations` — invitations par e-mail
+
+Une invitation envoyée par un administrateur à une personne qui n'a pas encore de compte.
+Écrite par le serveur seul (`manageInvitationFn`, `applyEmailInvitation`) ; lue par un
+administrateur (Admin › Gestion des utilisateurs › Invitations, tri `created_at` décroissant,
+index simple).
+
+| Champ | Type | Description |
+|---|---|---|
+| `email` | `String` | Adresse saisie, espaces retirés, minuscules. C'est elle qui reçoit l'e-mail |
+| `email_key` | `String` | Clé de comparaison (`normalizeEmailKey`, `functions/src/invitations/rules.ts`) : minuscules ; pour `gmail.com` et `googlemail.com`, points et suffixe `+…` de la partie locale retirés, `googlemail.com` → `gmail.com`. Logique serveur seule, sans jumeau Dart |
+| `role` | `String` | `reader` ou `editor`. Jamais `admin` : la callable le refuse |
+| `group_id` | `String` | Groupe que l'invité rejoindra |
+| `group_name` | `String` | Nom du groupe au moment de l'invitation, pour l'e-mail et la liste |
+| `message` | `String` | Message de l'administrateur, 500 caractères au plus ; vide → message par défaut |
+| `invited_by` | `String` | UID de l'administrateur qui a créé l'invitation |
+| `invited_by_name` | `String` | Son nom (préféré, sinon Google, sinon adresse) |
+| `status` | `String` | `sent` \| `send_failed` \| `accepted` \| `cancelled`. `expired` n'est jamais écrit |
+| `created_at` | `Timestamp` | Création |
+| `last_sent_at` | `Timestamp` | Dernier envoi (création ou renvoi) |
+| `last_sent_by` | `String` | UID de l'administrateur du dernier envoi ; c'est son nom et son adresse que porte l'e-mail renvoyé |
+| `expires_at` | `Timestamp` | `last_sent_at` + 30 jours. Un renvoi la repousse |
+| `send_count` | `int` | Nombre d'envois |
+| `last_error` | `String?` | Raison lisible du dernier échec d'envoi (300 caractères au plus), `null` après un envoi réussi. « Envoi en cours ou interrompu. » entre l'enregistrement et la réponse du serveur SMTP |
+| `accepted_uid` | `String?` | Compte qui a reçu le rôle |
+| `accepted_at` | `Timestamp?` | Date de l'acceptation |
+| `cancelled_by` | `String?` | Administrateur qui a annulé |
+| `cancelled_at` | `Timestamp?` | Date de l'annulation |
+| `group_missing` | `Boolean` | `true` si le groupe n'existait plus à l'acceptation : le rôle a été donné sans groupe |
+
+**Statut effectif.** Une invitation `sent` ou `send_failed` dont `expires_at` est passée (ou
+absente) est **expirée** à la lecture, côté serveur (`effectiveStatus`) comme côté client
+(`EmailInvitation.statusAt`). Aucune tâche planifiée. Une invitation **active** est `sent` ou
+`send_failed`, non expirée : elle seule donne un rôle. Une seule invitation active par
+`email_key`, contrôlée dans la transaction de création et de renvoi.
+
+**Enregistrer avant d'envoyer.** La callable écrit l'invitation (`status: send_failed`,
+`last_error: "Envoi en cours ou interrompu."`), puis envoie l'e-mail, puis écrit `sent` ou
+`send_failed` avec la raison. Une fonction interrompue pendant l'envoi laisse donc une
+invitation visible et renvoyable, jamais une invitation fantôme.
+
+**Migration :** aucune. La collection naît vide, rien n'est à reprendre.
+
+`invitation_sends_daily/{uid}_{AAAA-MM-JJ}` (jour UTC) : `uid` `String`, `day` `String`,
+`count` `int`, `updated_at` `Timestamp`. Compteur du plafond de 20 envois (créations et
+renvois) par administrateur et par jour, incrémenté dans la transaction qui enregistre
+l'envoi. Écrit par les Functions seules, lu par un administrateur.
+
+---
+
 ### 3.6 Sous-collection `recipes/{recipeId}/annotations`
 
 | Champ | Type | Description |
@@ -2080,6 +2141,7 @@ service cloud.firestore {
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 | `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
+| `invitations` · `invitation_sends_daily` | admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn` et `applyEmailInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; editor, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
@@ -2094,7 +2156,10 @@ ne lit rien de moi, et je ne lis rien de lui. Un membre sorti d'un groupe est tr
 compte supprimé : dès que `syncGroupReach` a réécrit les portées, il ne lit plus les livres du
 groupe, et le groupe ne lit plus les siens. Il garde ses propres documents. L'administrateur lit
 tout, comme avant. On n'entre dans un groupe qu'en acceptant une invitation (§3.5) : sans cela,
-le cloisonnement se contournait en ajoutant n'importe quel compte à son propre groupe. Le
+le cloisonnement se contournait en ajoutant n'importe quel compte à son propre groupe. Seule
+exception, écrite par le serveur et non par une règle : `applyEmailInvitation` ajoute un compte
+**neuf** au groupe de l'invitation par e-mail qu'un administrateur, propriétaire ou membre de ce
+groupe, a envoyée à son adresse (§3.5 ter). Le
 cloisonnement existait déjà côté client (`groupMemberIdsProvider`) ; une
 requête Firestore directe le contournait.
 
@@ -2494,6 +2559,10 @@ Firebase Auth state listener
     │                   │ → Créer document users/{uid}     │
     │                   │   role = 'pending' (imposé par   │
     │                   │   les règles) → salle d'attente  │
+    │                   │ Adresse invitée par e-mail ?     │
+    │                   │ → applyEmailInvitation pose le   │
+    │                   │   rôle et le groupe ; la salle   │
+    │                   │   d'attente se referme seule     │
     │                   └──────────────────────────────────┘
     │                        │
     └─ Connecté ──────────── ▼
@@ -2546,6 +2615,93 @@ le fondateur. Aucun parcours client n'écrit `email` après la création : `_ups
 (`auth_repository.dart`) ne met à jour que `last_seen_at`, `photo_url` et `display_name`. Le
 serveur (Admin SDK) reste libre. Côté serveur, le multiplicateur du fondateur ne lit pas ce
 champ : `founderUid()` le résout depuis Auth.
+
+### Invitations par e-mail
+
+Un administrateur invite une personne qui n'a pas encore de compte. À sa première connexion
+Google sous l'adresse invitée, le compte reçoit le rôle et entre dans le groupe. Aucun appel de
+modèle : ce n'est pas un poste d'IA.
+
+**`manageInvitationFn`** (`callable/invitationsCallable.ts`, `onCall`, `requireAdmin` — admin
+non révoqué, App Check selon la politique) aiguille sur `action` :
+
+| `action` | Entrée | Ce que le serveur vérifie, puis fait |
+|---|---|---|
+| `create` | `email`, `role`, `groupId`, `message` | `role` vaut `reader` ou `editor` (`admin` → `invalid-argument`) ; adresse de forme valide (`cleanEmail`, `normalizeEmailKey`) ; groupe existant dont l'appelant est propriétaire ou membre ; aucun compte `users` dont la clé d'adresse est la même (parcours de `users`, trois champs, comparaison sur `email_key` : une requête d'égalité ne retrouverait pas `jean.dupont@gmail.com` saisi `jeandupont@gmail.com`) ; puis, dans une transaction : aucune invitation active de même `email_key`, moins de 20 envois du jour (`invitation_sends_daily`), écriture de l'invitation et du compteur. L'e-mail part ensuite |
+| `resend` | `invitationId` | invitation ni acceptée ni annulée (une expirée se renvoie), aucun compte né entre-temps sous cette adresse, aucune autre invitation active pour elle, plafond du jour ; `last_sent_at`, `expires_at` (+30 jours), `send_count`, `last_sent_by` mis à jour, puis envoi |
+| `cancel` | `invitationId` | invitation non acceptée ; `status: cancelled`, `cancelled_by`, `cancelled_at` |
+
+Réponses : `{status: "sent", invitationId}`, `{status: "send_failed", invitationId, error}`,
+`{status: "cancelled", invitationId}`, ou un refus métier `{status: "refused", reason, message,
+field, invitationId?, existingUid?}` — `reason` parmi `invalid_email`, `group_required`,
+`group_missing`, `group_not_member`, `account_active`, `account_pending`, `account_revoked`,
+`founder`, `duplicate`, `daily_limit`, `not_found`, `not_resendable`, `not_cancellable` ;
+`field` (`email`, `group` ou `null`) dit sous quel champ le formulaire affiche le message.
+Un refus n'est pas une exception : le client l'affiche sans rapport d'erreur. `existingUid`
+accompagne `account_pending` : le formulaire propose alors « Lui donner ce rôle maintenant »,
+qui passe par `AdminRepository.updateRole`, le geste de l'onglet Comptes.
+
+**Enregistrer, puis envoyer.** Un échec SMTP ou un secret vide ne lève pas : l'invitation passe
+en `send_failed` avec `last_error` lisible (une ligne, 300 caractères ; « Envoi d'e-mail non
+configuré. » pour un secret vide), l'erreur est journalisée (`logError`, `firestoreDocId` =
+l'invitation), et la réponse est `send_failed`. Le client signale l'échec à l'utilisateur et
+le rapporte (`ErrorReportService`, feature `admin.invitations`).
+
+**L'e-mail** (`invitations/rules.ts` → `buildInvitationEmail`, envoi par
+`invitations/mailer.ts`). SMTP Gmail (`smtp.gmail.com:465`, TLS) par `nodemailer`, chargé par
+`await import()` au premier envoi, transport mémorisé pour l'instance. Expéditeur : l'adresse
+de `GMAIL_SENDER`, nom affiché « {Admin} via Kass'Dalle » ; `Reply-To` : l'adresse de
+l'administrateur qui envoie. Objet : « {Admin} t'invite dans « {Groupe} » sur Kass'Dalle ».
+Corps en texte et en HTML simple : le message (échappé dans le HTML, comme le nom de l'admin et
+celui du groupe), un bouton « Ouvrir Kass'Dalle » vers `https://kassdale-6d948.web.app`, le lien
+de l'APK (`/app-release.apk`, servi par le Hosting), « Connecte-toi avec le compte Google
+{adresse}. Avec une autre adresse, ton accès devra être validé à la main. », la date
+d'expiration (jj/mm/aaaa, heure de Paris) et la signature. Le nom de l'en-tête `From` est
+nettoyé (`headerSafeName` : ni retour à la ligne, ni guillemet, ni chevron) ; l'adresse
+destinataire a passé `cleanEmail`, qui refuse espace, virgule, chevron et retour à la ligne.
+
+**`applyEmailInvitation`** (`triggers/invitationSignup.ts`, `onDocumentCreated` sur
+`users/{uid}`) : voir §3.1, « Exception décidée par le serveur ». Échec journalisé, sans
+nouvelle tentative : le compte reste en attente, l'administrateur peut le nommer à la main,
+et l'invitation reste active.
+
+**Claims et course entre deux déclencheurs.** La création du document (`pending`) et la pose
+du rôle par `applyEmailInvitation`, une seconde plus tard, réveillent deux exécutions de
+`syncUserClaims` dont l'ordre n'est pas garanti. Si celle de la création passait en dernier,
+elle écrivait le claim `pending` et supprimait le profil public d'un compte déjà nommé.
+`syncUserClaims` relit donc le document au moment d'agir, quand l'événement change le rôle ou
+la révocation (`currentUserData`), et écrit claims et profil d'après cet état ; une écriture qui
+ne touche ni l'un ni l'autre (`last_seen_at`) ne coûte pas de lecture de plus. Le jeton du
+client, émis à la connexion, ne porte pas encore de claim de rôle : les règles lisent alors le
+document (`roleOf()`), et la salle d'attente se referme dès que le flux de `users/{uid}`
+apporte le rôle.
+
+**Secrets.** `GMAIL_SENDER` (l'adresse Gmail expéditrice) et `GMAIL_APP_PASSWORD` (son mot de
+passe d'application), déclarés par `defineSecret` (`config.ts`) et attachés à
+`manageInvitationFn` seule. Un secret déclaré mais absent de Secret Manager fait échouer **tout**
+le déploiement des Functions : les deux doivent exister avant de fusionner. Création :
+
+1. sur le compte Google expéditeur, activer la validation en deux étapes (myaccount.google.com
+   › Sécurité) ;
+2. myaccount.google.com/apppasswords : créer un mot de passe d'application nommé
+   « Kass'Dalle », et copier les seize lettres (les espaces affichés sont retirés à l'usage) ;
+3. `firebase functions:secrets:set GMAIL_SENDER --project kassdale-6d948`, saisir l'adresse ;
+4. `firebase functions:secrets:set GMAIL_APP_PASSWORD --project kassdale-6d948`, saisir le mot
+   de passe d'application.
+
+Une valeur vide (ou un seul espace) est acceptée par le déploiement : chaque envoi rend alors
+« Envoi d'e-mail non configuré », et l'invitation est enregistrée. Révoquer le mot de passe
+d'application coupe l'envoi sans redéploiement ; le remplacer demande un
+`functions:secrets:set` puis un redéploiement de `manageInvitationFn` (une version de secret est
+figée au déploiement). Gmail limite l'envoi à environ 500 destinataires par jour pour un compte
+personnel : le plafond de 20 envois par administrateur en reste loin.
+
+**Client.** `InvitationsRepository` (`features/admin/data/`) lit `invitations` par
+`orderBy('created_at', descending: true)` et appelle la callable ; `emailInvitationsProvider`
+et `invitationsRepositoryProvider` vivent dans `admin_providers.dart` ; le modèle
+`EmailInvitation` (`features/admin/domain/email_invitation.dart`) calcule le statut effectif
+(`statusAt`). Le client ne fait qu'un contrôle de forme de l'adresse (`looksLikeEmail`) : la
+normalisation est une logique serveur seule, sans fixture partagée.
 
 ---
 
@@ -4464,8 +4620,11 @@ GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`.
 - `Cloud Run Admin` (Functions de 2e génération) ;
 - `Service Account User`, sur le compte d'exécution des fonctions ;
 - `Artifact Registry Administrator` ;
-- `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY` et `ANTHROPIC_API_KEY`, et
-  la CLI accorde au compte d'exécution l'accès à ces secrets ;
+- `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
+  `GMAIL_SENDER` et `GMAIL_APP_PASSWORD`, et la CLI accorde au compte d'exécution l'accès à ces
+  secrets. Le workflow ne transporte aucune valeur de secret : il n'a rien à connaître de plus
+  pour un secret ajouté, mais le secret doit exister dans Secret Manager avant le déploiement
+  qui le déclare (§5, « Invitations par e-mail ») ;
 - `Cloud Scheduler Admin` (fonctions planifiées) ;
 - `Cloud Tasks Admin` : `recipeProcessor` est une fonction de file Cloud Tasks, et la CLI lit et
   met à jour sa file (`cloudtasks.queues.get`, `cloudtasks.queues.update`).
@@ -4872,6 +5031,7 @@ functions/src/
 ├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
 ├── gemini/        # client Gemini, transcription, balisage, fidélité, prompts par poste
 ├── illustrations/ # extraction en six étapes, écriture, journal de coût
+├── invitations/   # invitations par e-mail : règles pures (clé d'adresse, statut, e-mail), envoi SMTP
 ├── moderation/    # décision pure, moteur Cloud Vision, promotion
 ├── nutrition/     # per100g, conversions, référentiels, huile de friture
 ├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
@@ -4879,13 +5039,13 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, applyEmailInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 
 ---
 
-### 13.1 Carte de navigation — les 44 routes
+### 13.1 Carte de navigation — les 45 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -4943,7 +5103,8 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | Route | Écran | Ce qu'on y fait |
 |---|---|---|
 | `/admin` | `AdminHubScreen` | le sommaire de l'administration |
-| `/admin/users` | `AdminScreen` | nommer, changer de rôle, révoquer |
+| `/admin/users` | `AdminScreen` | onglets « Comptes » (nommer, changer de rôle, révoquer) et « Invitations » (liste, renvoi, annulation) |
+| `/admin/users/invite` | `InviteByEmailScreen` | inviter un proche par e-mail (`manageInvitationFn`, §5) ; formulaire, donc exclu de la pleine largeur de `/admin` (`_wantsFullWidth`, `app_shell.dart`) : la coquille pose `ReadableWidth` |
 | `/admin/costs` | `MonthlyCostsScreen` | la dépense d'IA par mois et par poste |
 | `/admin/ai-spend` | `AiSpendScreen` | la dépense par compte et par service, et le plafond |
 | `/admin/ai-routing` | `AiRoutingScreen` | quel moteur sert quel poste |

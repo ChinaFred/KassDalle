@@ -16,6 +16,7 @@ import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
+import '../../features/admin/presentation/invite_by_email_screen.dart';
 import '../../features/admin/presentation/admin_backfills_screen.dart';
 import '../../features/admin/presentation/admin_data_quality_screen.dart';
 import '../../features/admin/presentation/monthly_costs_screen.dart';
@@ -73,6 +74,7 @@ class AppRoutes {
   static const processing = '/processing';
   static const admin = '/admin';
   static const adminUsers = '/admin/users';
+  static const adminUsersInvite = '/admin/users/invite';
   static const adminCosts = '/admin/costs';
   static const adminBackfills = '/admin/backfills';
   static const adminReferentials = '/admin/referentials';
@@ -357,6 +359,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'users',
                 builder: (context, state) => const AdminScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'invite',
+                    builder: (context, state) => const InviteByEmailScreen(),
+                  ),
+                ],
               ),
               GoRoute(
                 path: 'costs',

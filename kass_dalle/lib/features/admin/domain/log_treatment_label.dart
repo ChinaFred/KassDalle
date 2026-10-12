@@ -105,6 +105,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'configurations_routage': 'Configurations de routage IA',
   'app_check_policy': 'Attestation de l\'application',
   'ai_budget_policy': 'Plafonds de dépense IA',
+  'invitation': 'Invitation par e-mail',
   'couts_gcp': 'Coûts d\'infrastructure',
   'gcp-costs': 'Coûts d\'infrastructure',
   'couts_mensuels': 'Coûts du mois',

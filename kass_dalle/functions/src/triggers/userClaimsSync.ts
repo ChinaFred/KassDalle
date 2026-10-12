@@ -34,8 +34,9 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
-import { REGION } from "../config";
+import { COLL_USERS, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { syncPublicProfile } from "./userPublicProfile";
 
@@ -95,13 +96,52 @@ async function revokeSessions(uid: string, reason: string): Promise<void> {
   }
 }
 
+/**
+ * Le document `users/{uid}` relu au moment d'agir. Un échec de lecture se
+ * journalise et retombe sur l'instantané de l'événement ; un document supprimé
+ * entre-temps aussi (l'exécution de la suppression fera le ménage).
+ */
+async function currentUserData(
+  uid: string,
+  fallback: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  try {
+    const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
+    return snap.exists
+      ? ((snap.data() as Record<string, unknown> | undefined) ?? fallback)
+      : fallback;
+  } catch (err) {
+    await logError({
+      message: `syncUserClaims: relecture du document impossible pour ${uid}`,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: uid,
+    });
+    return fallback;
+  }
+}
+
 export const syncUserClaims = onDocumentWritten(
   { document: "users/{uid}", region: REGION },
   async (event) => {
     const uid = event.params.uid;
-    const afterData = event.data?.after?.exists
+    const eventAfter = event.data?.after?.exists
       ? (event.data.after.data() as Record<string, unknown> | undefined)
       : undefined;
+    // Ce qui est écrit (profil, claims) vient du document tel qu'il est
+    // maintenant, pas de l'instantané de l'événement : deux écritures
+    // rapprochées réveillent deux exécutions dont l'ordre n'est pas garanti.
+    // C'est le cas d'une invitation par e-mail (création `pending`, puis rôle
+    // posé par `applyEmailInvitation` une seconde plus tard) : si l'exécution
+    // de la création passait en dernier, elle remettait le claim `pending` et
+    // effaçait le profil public d'un compte déjà nommé.
+    // La relecture n'a lieu que si l'événement change le rôle ou la
+    // révocation : une connexion ordinaire (`last_seen_at`) n'en coûte pas.
+    const eventBefore = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const authorityMoved = !sameClaims(claimsFrom(eventBefore), claimsFrom(eventAfter));
+    const afterData =
+      eventAfter !== undefined && authorityMoved
+        ? await currentUserData(uid, eventAfter)
+        : eventAfter;
 
     try {
       const outcome = await syncPublicProfile(uid, afterData);
@@ -116,13 +156,13 @@ export const syncUserClaims = onDocumentWritten(
       });
     }
 
-    const before = claimsFrom(event.data?.before?.data() as Record<string, unknown> | undefined);
-    const after = claimsFrom(event.data?.after?.data() as Record<string, unknown> | undefined);
+    const before = claimsFrom(eventBefore);
+    const after = claimsFrom(afterData);
 
     // Rien à faire si ni le rôle ni la révocation n'ont bougé : ce déclencheur
     // se réveille à chaque écriture sur le document, y compris pour des champs
     // sans rapport.
-    if (sameClaims(before, after)) return;
+    if (!authorityMoved) return;
 
     const afterExists = event.data?.after?.exists === true;
 

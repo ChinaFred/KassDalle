@@ -1,7 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'admin_providers.dart';
+import 'invitations_tab.dart';
+import '../../../core/router/app_router.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../auth/presentation/preferred_name_dialog.dart';
@@ -10,7 +13,9 @@ import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/theme/app_icon_size.dart';
 
-/// Page de gestion des utilisateurs (rôles, révocation).
+/// Page de gestion des utilisateurs : onglet « Comptes » (rôles,
+/// révocation) et onglet « Invitations » (invitations par e-mail). Le bouton
+/// « Inviter par e-mail » ouvre le formulaire depuis les deux onglets.
 ///
 /// Les autres entrées d'administration (Usage IA, erreurs, DLQ, logs,
 /// téléchargement APK) sont regroupées dans `AdminHubScreen`.
@@ -21,42 +26,95 @@ class AdminScreen extends ConsumerStatefulWidget {
   ConsumerState<AdminScreen> createState() => _AdminScreenState();
 }
 
-class _AdminScreenState extends ConsumerState<AdminScreen> {
+class _AdminScreenState extends ConsumerState<AdminScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this);
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openInviteForm() async {
+    final recorded = await context.push<bool>(AppRoutes.adminUsersInvite);
+    if (recorded == true && mounted) _tabs.animateTo(1);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final usersCount = ref.watch(allUsersProvider).value?.length;
+    final invitations = ref.watch(emailInvitationsProvider).value;
+    final pendingCount = invitations == null
+        ? null
+        : pendingInvitationCount(invitations, DateTime.now());
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Gestion des utilisateurs'),
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: [
+            Tab(text: usersCount == null ? 'Comptes' : 'Comptes ($usersCount)'),
+            Tab(
+              text: pendingCount == null
+                  ? 'Invitations'
+                  : 'Invitations ($pendingCount en attente)',
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openInviteForm,
+        icon: const Icon(Icons.forward_to_inbox_outlined),
+        label: const Text('Inviter par e-mail'),
+      ),
+      body: TabBarView(
+        controller: _tabs,
+        children: const [_AccountsTab(), InvitationsTab()],
+      ),
+    );
+  }
+}
+
+/// Onglet « Comptes » : tous les comptes, ceux qui attendent un rôle d'abord.
+class _AccountsTab extends ConsumerWidget {
+  const _AccountsTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final usersAsync = ref.watch(allUsersProvider);
     final currentUser = ref.watch(appUserProvider).value;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Gestion des utilisateurs')),
-      body: usersAsync.when(
-        loading: () => const AppLoadingState(),
-        error: (e, _) => AppErrorState(
-          error: e,
-          onRetry: () => ref.invalidate(allUsersProvider),
-        ),
-        data: (users) {
-          if (users.isEmpty) {
-            return const Center(child: Text('Aucun utilisateur.'));
-          }
-          final pending = users.where((u) => u.isPending).length;
-          return Column(
-            children: [
-              if (pending > 0) _PendingBanner(count: pending),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: users.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, i) => _UserTile(
-                    user: users[i],
-                    isSelf: users[i].uid == currentUser?.uid,
-                  ),
+    return usersAsync.when(
+      loading: () => const AppLoadingState(),
+      error: (e, _) => AppErrorState(
+        error: e,
+        onRetry: () => ref.invalidate(allUsersProvider),
+      ),
+      data: (users) {
+        if (users.isEmpty) {
+          return const Center(child: Text('Aucun utilisateur.'));
+        }
+        final pending = users.where((u) => u.isPending).length;
+        return Column(
+          children: [
+            if (pending > 0) _PendingBanner(count: pending),
+            Expanded(
+              child: ListView.separated(
+                // Le bouton flottant ne couvre pas la dernière ligne.
+                padding: const EdgeInsets.only(bottom: 88),
+                itemCount: users.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, i) => _UserTile(
+                  user: users[i],
+                  isSelf: users[i].uid == currentUser?.uid,
                 ),
               ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

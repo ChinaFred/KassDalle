@@ -37,6 +37,20 @@ export const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
  */
 export const ANTHROPIC_ADMIN_KEY = defineSecret("ANTHROPIC_ADMIN_KEY");
 
+/**
+ * Compte Gmail expéditeur des invitations par e-mail, et son mot de passe
+ * d'application (Secret Manager).
+ *
+ * Attachés à la seule `manageInvitationFn`. Un secret déclaré et attaché mais
+ * absent de Secret Manager fait échouer tout le déploiement : les deux doivent
+ * exister avant le premier déploiement qui les déclare (procédure dans
+ * TechnicalRequirements.md, « Invitations par e-mail »). Une valeur vide est
+ * tolérée : l'envoi est alors refusé avec « Envoi d'e-mail non configuré »,
+ * l'invitation reste enregistrée.
+ */
+export const GMAIL_SENDER = defineSecret("GMAIL_SENDER");
+export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
+
 // ── Région ───────────────────────────────────────────────────────────────────
 
 /**
@@ -136,6 +150,19 @@ export const COLL_GROUPS = "groups";
  * cloisonner livres et recettes. Écrite par le serveur seul.
  */
 export const COLL_GROUP_REACH = "group_reach";
+/**
+ * Invitations par e-mail — `invitations/{id}`. Écrites par les Functions
+ * seulement (`manageInvitationFn`, `applyEmailInvitation`), lues par un
+ * administrateur.
+ */
+export const COLL_INVITATIONS = "invitations";
+
+/**
+ * Envois d'invitations du jour, par administrateur — `{uid}_{AAAA-MM-JJ}`
+ * (jour UTC). Compteur du plafond quotidien de `manageInvitationFn`, sur le
+ * modèle de `url_import_daily`. Écrit par les Functions seulement.
+ */
+export const COLL_INVITATION_SENDS_DAILY = "invitation_sends_daily";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 
 /**

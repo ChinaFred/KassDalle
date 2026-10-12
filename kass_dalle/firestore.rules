@@ -862,6 +862,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Invitations par e-mail. Elles portent l'adresse d'une personne qui n'a
+    // pas encore de compte, et décident du rôle qu'elle recevra à sa première
+    // connexion : seul un administrateur les lit, et seules les Cloud
+    // Functions les écrivent (`manageInvitationFn`, `applyEmailInvitation`).
+    // Ouvertes à l'écriture, elles laisseraient un compte s'inviter lui-même
+    // sous une autre adresse avec le rôle de son choix.
+    match /invitations/{invitationId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Envois d'invitations du jour, par administrateur — le compteur du
+    // plafond de vingt envois. Écrit par les Cloud Functions seulement.
+    match /invitation_sends_daily/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Cache partagé des recherches web (sept jours). Lu et écrit par les Cloud
     // Functions seulement : ouvert au client, il laisserait servir à toute la
     // famille des pages choisies par un seul compte, sans appel ni décompte.

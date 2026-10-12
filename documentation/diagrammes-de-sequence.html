@@ -175,6 +175,8 @@
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
       <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
+      <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
+      <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
     </ol>
   </nav>
 
@@ -1788,6 +1790,7 @@ sequenceDiagram
   CF-->>N: permission-denied
 
   A->>FS: attribue un premier rôle — reader
+  Note over A,FS: ou applyEmailInvitation, si l'adresse avait été<br/>invitée par e-mail (séquence 34)
   FS->>SY: onDocumentWritten
   SY->>UP: crée le profil public — nom, couverture des recettes libres
   SY->>AU: setCustomUserClaims { role, revoked }
@@ -3365,6 +3368,129 @@ sequenceDiagram
           <code>created_by</code> : le texte saisi par un compte ne partage jamais un prompt avec
           celui d'un autre.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-email"><span class="n">33</span>Inviter un proche par e-mail</h2>
+    <p class="sec-note">
+      Un administrateur invite une personne qui n'a pas encore de compte. Aucun appel de modèle.
+      <span class="path">admin_screen.dart → invite_by_email_screen.dart → InvitationsRepository.create →
+      callable/invitationsCallable.ts (manageInvitationFn) → invitations/mailer.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant S as InviteByEmailScreen
+  participant F as manageInvitationFn
+  participant G as groups
+  participant U as users
+  participant I as invitations
+  participant D as invitation_sends_daily
+  participant M as SMTP Gmail (nodemailer)
+
+  A->>S: « Inviter par e-mail » : adresse, rôle, groupe, message
+  S->>S: forme de l'adresse (looksLikeEmail)
+  S->>F: action create
+  F->>F: requireAdmin ; rôle reader ou editor (admin : invalid-argument)
+  F->>G: groupe existant, appelant propriétaire ou membre ?
+  F->>U: parcours email, role, is_revoked — même clé d'adresse ?
+  alt compte existant
+    F-->>S: refused (account_active, account_pending + existingUid, account_revoked, founder)
+    S-->>A: message sous l'adresse ; « Lui donner ce rôle maintenant » si en attente
+  else adresse libre
+    F->>I: transaction — invitation active de même email_key ?
+    F->>D: transaction — moins de 20 envois aujourd'hui ?
+    alt doublon ou plafond
+      F-->>S: refused (duplicate + invitationId, daily_limit)
+      S-->>A: message ; « Renvoyer l'invitation » pour un doublon
+    else
+      F->>D: count + 1
+      F->>I: création, status send_failed, last_error « Envoi en cours ou interrompu. »
+      F->>M: e-mail « {Admin} via Kass'Dalle », Reply-To de l'admin
+      alt envoyé
+        F->>I: status sent, last_error null
+        F-->>S: sent
+        S-->>A: « Invitation envoyée à … », onglet Invitations
+      else échec SMTP ou secret vide
+        F->>F: logError
+        F->>I: status send_failed, last_error lisible
+        F-->>S: send_failed
+        S-->>A: « E-mail non envoyé. L'invitation est enregistrée… »
+      end
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>L'invitation est écrite avant l'e-mail.</b> Une panne SMTP, un mot de passe
+        d'application révoqué ou une fonction interrompue laisse une invitation visible dans
+        l'onglet Invitations, en « Envoi échoué », que l'administrateur renvoie. Un renvoi
+        (<code>action resend</code>) suit le même chemin à partir de l'étape du compteur : il
+        repousse l'expiration de trente jours et compte dans les vingt envois du jour.
+        Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
+        déjà reçu ne donne plus de rôle.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-connexion"><span class="n">34</span>Première connexion d'un invité</h2>
+    <p class="sec-note">
+      La personne invitée ouvre le lien de l'e-mail et se connecte avec le compte Google de
+      l'adresse invitée.
+      <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
+      (applyEmailInvitation) → syncUserClaims · syncGroupReach</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor P as Proche invité
+  participant C as Client Flutter
+  participant U as users/{uid}
+  participant T as applyEmailInvitation
+  participant AU as Firebase Auth
+  participant I as invitations
+  participant G as groups
+  participant CL as syncUserClaims
+  participant R as syncGroupReach
+
+  P->>C: connexion Google
+  C->>U: création role pending (imposé par les règles)
+  C-->>P: salle d'attente (/pending), flux temps réel sur users/{uid}
+  U->>T: onDocumentCreated
+  T->>AU: getUser(uid) — adresse, emailVerified
+  alt fondateur, adresse non vérifiée, ou aucune invitation active
+    T->>T: rien à faire (non vérifiée : logInfo)
+  else invitation active de même email_key
+    T->>U: transaction — relit : toujours pending et non révoqué ?
+    T->>G: transaction — le groupe existe ?
+    T->>U: role = rôle de l'invitation
+    opt groupe existant
+      T->>G: member_ids + uid, invited_ids − uid
+    end
+    T->>I: status accepted, accepted_uid, accepted_at, group_missing
+    U->>CL: onDocumentWritten — relit le document, claims {role}, profil public
+    G->>R: onDocumentWritten — portée group_reach des membres
+    U-->>C: rôle reçu
+    C-->>P: la salle d'attente se referme, accueil
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le serveur décide, sur l'adresse du compte Auth.</b> Le client ne lit pas les
+        invitations et ne peut pas se donner de rôle : la règle de création de
+        <code>users/{uid}</code> impose toujours <code>pending</code>. Le rôle arrive une à
+        quelques secondes plus tard. Deux exécutions de <code>syncUserClaims</code> se
+        croisent (création, puis rôle) : chacune relit le document avant d'écrire, si bien que la
+        dernière à passer écrit l'état final. Avec une autre adresse Google, le compte reste en
+        attente, et l'administrateur le nomme dans l'onglet Comptes.
       </figcaption>
     </figure>
   </section>
