@@ -464,7 +464,10 @@ function toJsonLdRecipe(obj: Record<string, unknown>): JsonLdRecipe {
   };
 }
 
-/** Longueur maximale du nom d'auteur gardé. Au-delà, il est coupé. */
+/**
+ * Longueur maximale du nom d'auteur gardé. Au-delà, la liste est coupée au
+ * dernier nom entier qui tient, suivie de « … ».
+ */
 export const SOURCE_AUTHOR_MAX_CHARS = 120;
 
 /**
@@ -486,15 +489,20 @@ export function readAuthor(value: unknown): string | null {
       const n = (v as Record<string, unknown>).name;
       if (typeof n === "string") name = cleanText(n);
     }
+    // Caractères de largeur nulle et de contrôle bidirectionnel : ils
+    // retourneraient ou masqueraient le texte affiché sur la fiche.
+    name = name.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "").trim();
     // Une adresse n'est pas un nom : certains sites mettent la page de l'auteur.
     if (name && !/^https?:\/\//i.test(name) && !names.includes(name)) names.push(name);
   };
   visit(value, 0);
   if (names.length === 0) return null;
   const joined = names.join(", ");
-  return joined.length > SOURCE_AUTHOR_MAX_CHARS
-    ? joined.slice(0, SOURCE_AUTHOR_MAX_CHARS).trimEnd()
-    : joined;
+  if (joined.length <= SOURCE_AUTHOR_MAX_CHARS) return joined;
+  // Une coupe au milieu d'un nom se lirait comme un nom complet.
+  const head = joined.slice(0, SOURCE_AUTHOR_MAX_CHARS - 1);
+  const lastComma = head.lastIndexOf(", ");
+  return `${(lastComma > 0 ? head.slice(0, lastComma) : head).trimEnd()}…`;
 }
 
 /** Bornes d'une valeur nutritionnelle par portion : au-delà, elle est écartée. */

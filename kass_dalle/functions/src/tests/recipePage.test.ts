@@ -176,8 +176,15 @@ describe("auteur", () => {
 
   test("balises retirées, longueur bornée", () => {
     assert.equal(readAuthor("<b>Marie</b> &amp; Paul"), "Marie & Paul");
+    assert.equal(readAuthor({ name: "\u202Eabc\u200B def\u2066" }), "abc def");
+    assert.equal(readAuthor("\u200B\u202E"), null);
     const long = readAuthor("a".repeat(500));
     assert.equal(long?.length, SOURCE_AUTHOR_MAX_CHARS);
+    assert.ok(long?.endsWith("…"));
+    const names = Array.from({ length: 20 }, (_, i) => ({ name: `Auteur numéro ${i}` }));
+    const cut = readAuthor(names) ?? "";
+    assert.ok(cut.length <= SOURCE_AUTHOR_MAX_CHARS);
+    assert.match(cut, /Auteur numéro \d+…$/);
   });
 });
 

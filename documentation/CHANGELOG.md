@@ -23,8 +23,8 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 ### v0.23.42 — fonctionnel
 
 La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page
-le nomme dans ses données structurées : une ligne « Recette de Marie Dupont » au-dessus du lien
-« Source : <site> ». La copie d'une recette importée garde son auteur. Les recettes importées
+le nomme dans ses données structurées : une ligne « Par Marie Dupont » au-dessus du lien
+« Source : <site> ». Elle ne s'affiche pas quand l'auteur annoncé est le site lui-même. La copie d'une recette importée garde son auteur. Les recettes importées
 avant cette version n'ont pas d'auteur : il faudrait relire chaque page pour le retrouver.
 
 ### v0.23.42 — technique

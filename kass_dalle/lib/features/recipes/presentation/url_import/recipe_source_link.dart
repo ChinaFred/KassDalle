@@ -46,7 +46,8 @@ Future<void> openExternalPage(
 /// de la saisie n'a que l'adresse —, le lien porte l'hôte de l'adresse.
 ///
 /// [author] est l'auteur annoncé par la page (`source_author`). Présent, il
-/// s'affiche sur une ligne « Recette de … » au-dessus du lien.
+/// s'affiche sur une ligne « Par … » au-dessus du lien, sauf quand il répète
+/// le nom du site (un site qui se déclare lui-même auteur).
 class RecipeSourceLink extends StatelessWidget {
   const RecipeSourceLink({
     super.key,
@@ -66,6 +67,17 @@ class RecipeSourceLink extends StatelessWidget {
   /// écrans étroits où la place manque, comme la saisie manuelle.
   final bool compact;
 
+  /// « Marmiton » face à « marmiton.org » : le même nom, sans casse, sans
+  /// `www.` et sans l'extension du domaine.
+  static bool _sameAsSite(String author, String site) {
+    String key(String s) => s
+        .toLowerCase()
+        .replaceFirst(RegExp(r'^www\.'), '')
+        .replaceFirst(RegExp(r'\.[a-z]{2,}$'), '')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return key(author) == key(site);
+  }
+
   Future<void> _copy(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: url));
     if (context.mounted) context.showSuccessSnackBar('Adresse copiée');
@@ -77,19 +89,16 @@ class RecipeSourceLink extends StatelessWidget {
     final theme = Theme.of(context);
     final label = (site ?? '').isNotEmpty ? site! : Uri.parse(url.trim()).host;
     final authorName = (author ?? '').trim();
+    final showAuthor = authorName.isNotEmpty && !_sameAsSite(authorName, label);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (authorName.isNotEmpty)
-            Text(
-              'Recette de $authorName',
-              style: theme.textTheme.bodyMedium,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+          // Pas de coupe : le serveur borne déjà le nom à 120 caractères.
+          if (showAuthor)
+            Text('Par $authorName', style: theme.textTheme.bodyMedium),
           Row(
             children: [
               Text(prefix, style: theme.textTheme.bodyMedium),

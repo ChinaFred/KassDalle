@@ -322,7 +322,7 @@ void main() {
         tester.getSize(find.byType(InkWell).first).height,
         greaterThanOrEqualTo(48),
       );
-      expect(find.textContaining('Recette de'), findsNothing);
+      expect(find.textContaining('Par '), findsNothing);
     });
 
     testWidgets('l\'auteur de la page au-dessus du lien', (tester) async {
@@ -337,8 +337,25 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Recette de Marie Dupont'), findsOneWidget);
+      expect(find.text('Par Marie Dupont'), findsOneWidget);
       expect(find.text('site.fr'), findsOneWidget);
+    });
+
+    testWidgets('un auteur qui répète le nom du site ne s\'affiche pas', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: RecipeSourceLink(
+              url: 'https://www.marmiton.org/quiche',
+              site: 'marmiton.org',
+              author: 'Marmiton',
+            ),
+          ),
+        ),
+      );
+      expect(find.textContaining('Par '), findsNothing);
     });
 
     testWidgets('sans nom de site, le lien porte l\'hôte de l\'adresse', (
