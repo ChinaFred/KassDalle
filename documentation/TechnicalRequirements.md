@@ -1230,8 +1230,10 @@ propriétaire se lisent aussi, en lecture seule, par les comptes de `planning_re
 quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
 `planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais une requête `in`.
 Le client n'affiche sur un repas d'autrui ni `justification`, ni `choice_source`, ni
-menu, ni heure modifiable. Le planning partagé couvre les 90 derniers jours et la suite ;
-l'archive plus ancienne ne se lit que pour son propre planning. Sa recette se résout par une lecture groupée
+menu, ni heure modifiable. L'écran d'un planning partagé couvre les 90 derniers jours et la suite ;
+il ne propose l'archive plus ancienne que pour son propre planning. C'est une limite du
+client : la règle ne borne pas `planned_at`, et l'audience peut lire tout l'historique du
+propriétaire par une requête directe. Sa recette se résout par une lecture groupée
 (`readableRecipeIds`, lots de 30, repli recette par recette sur refus) : une recette refusée
 s'affiche par `recipe_titre` avec « Recette non partagée », sans élargir la lecture des
 recettes. Les refus d'un lot sont remontés une fois par lot au rapport d'erreurs
@@ -1241,9 +1243,9 @@ s'ouvre quand même : la fiche affiche « Recette non partagée » sur un refus.
 **Champs lisibles par l'audience (décision provisoire, v0.23.44).** La règle de lecture
 porte sur le document entier : un compte de `planning_reach` lit tous les champs d'un repas
 partagé, dont `justification`, `choice_source`, `dismissed_recipe_ids` et
-`components[].justification`. Le client ne les affiche pas sur un repas d'autrui. Ce n'est
+`components[].justification`, sur tout l'historique du propriétaire. Le client ne les affiche pas sur un repas d'autrui. Ce n'est
 pas une protection : un client modifié les lit. Ce choix est accepté et documenté en
-attendant une décision. 
+attendant une décision.
 
 | Champ | Type | Description |
 |---|---|---|

@@ -886,7 +886,7 @@ service cloud.firestore {
     // les repas, en lecture seule. Les règles ne peuvent ni parcourir les
     // groupes ni lire le rôle du propriétaire : elles lisent cette liste
     // toute faite (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`
-    // et `syncUserClaims`).
+    // et `syncPlanningReachOnRole`).
     //
     // Une requête du client reste prouvable : elle filtre `uid == owner` sur
     // un seul propriétaire, et la règle vérifie la valeur contre la liste.
