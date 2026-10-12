@@ -270,6 +270,8 @@ class _PricingTile extends StatelessWidget {
       // comme un moteur gratuit.
       if (pricing.analyzedImagePerUnit > 0)
         'image analysée ${pricing.analyzedImagePerUnit} \$ l\'unité',
+      if (pricing.groundedSearchPerUnit > 0)
+        'recherche Google ${pricing.groundedSearchPerUnit} \$ l\'appel',
     ];
     final promo = pricing.introductory;
 
@@ -354,6 +356,11 @@ class _PricingDialogState extends State<_PricingDialog> {
   /// qu'on efface.
   late final TextEditingController _analyzedCtrl;
 
+  /// Prix d'un appel ancré dans la recherche Google. Même raison que
+  /// [_analyzedCtrl] : un champ absent du formulaire serait remis à zéro à
+  /// chaque enregistrement de la ligne.
+  late final TextEditingController _groundedCtrl;
+
   /// Promotion : elle est désormais saisissable, et surtout **supprimable**.
   ///
   /// Elle ne l'était pas, au motif qu'une date mal saisie transformerait une
@@ -383,6 +390,11 @@ class _PricingDialogState extends State<_PricingDialog> {
           ? '${c!.analyzedImagePerUnit}'
           : '',
     );
+    _groundedCtrl = TextEditingController(
+      text: (c?.groundedSearchPerUnit ?? 0) > 0
+          ? '${c!.groundedSearchPerUnit}'
+          : '',
+    );
     final promo = c?.introductory;
     _promoOn = promo != null;
     _promoInputCtrl = TextEditingController(
@@ -403,6 +415,7 @@ class _PricingDialogState extends State<_PricingDialog> {
     _outputCtrl.dispose();
     _imageCtrl.dispose();
     _analyzedCtrl.dispose();
+    _groundedCtrl.dispose();
     _promoInputCtrl.dispose();
     _promoOutputCtrl.dispose();
     _promoUntilCtrl.dispose();
@@ -431,6 +444,8 @@ class _PricingDialogState extends State<_PricingDialog> {
         double.tryParse(_imageCtrl.text.trim().replaceAll(',', '.')) ?? 0;
     final analyzed =
         double.tryParse(_analyzedCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    final grounded =
+        double.tryParse(_groundedCtrl.text.trim().replaceAll(',', '.')) ?? 0;
     // La franchise mensuelle est reconduite telle quelle, sans champ de saisie.
     // Elle vit dans la grille, mais **rien ne la déduit encore** : lui donner
     // un champ ferait croire à un réglage qui n'agit sur aucun montant. La
@@ -491,6 +506,7 @@ class _PricingDialogState extends State<_PricingDialog> {
         imageOutputPerUnit: image < 0 ? 0 : image,
         analyzedImagePerUnit: analyzed < 0 ? 0 : analyzed,
         freeUnitsPerMonth: freeUnits,
+        groundedSearchPerUnit: grounded < 0 ? 0 : grounded,
         introductory: promo,
       ),
     ));
@@ -545,6 +561,17 @@ class _PricingDialogState extends State<_PricingDialog> {
                 'Cloud Vision facture à l\'unité de fonctionnalité, pas au '
                 'jeton : une image analysée en coûte deux, SafeSearch et Label. '
                 'Laissé vide, un moteur de ce type est chiffré à zéro.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              _NumberField(
+                controller: _groundedCtrl,
+                label: 'Recherche Google (\$ / appel ancré, vide si aucune)',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Facturée en plus des jetons, par appel qui a interrogé Google. '
+                'La franchise quotidienne de Google n\'est pas déduite.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 4),

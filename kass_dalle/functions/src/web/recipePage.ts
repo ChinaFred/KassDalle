@@ -677,15 +677,20 @@ function toPlainText(fragment: string): string {
     .join("\n");
 }
 
+/** Titre d'une page : `og:title`, sinon `<title>`, sinon `null`. */
+export function pageTitleOf(html: string): string | null {
+  const titleElement = elements(html, "title")[0];
+  return metaContent(html, "og:title") ?? (titleElement ? cleanText(titleElement[1]) : null);
+}
+
 /** Lit une page HTML entière. `pageUrl` sert à rendre les images absolues. */
 export function parseRecipePage(html: string, pageUrl: string): ParsedRecipePage {
   const { recipes, invalidBlocks } = extractJsonLdRecipes(html);
-  const titleElement = elements(html, "title")[0];
   return {
     recipes: recipes.map((r) => ({ ...r, image: absoluteHttpUrl(r.image, pageUrl) })),
     invalidBlocks,
     htmlLang: htmlLangOf(html),
-    title: metaContent(html, "og:title") ?? (titleElement ? cleanText(titleElement[1]) : null),
+    title: pageTitleOf(html),
     ogImage: absoluteHttpUrl(metaContent(html, "og:image"), pageUrl),
     mainText: extractMainText(html),
   };

@@ -28,6 +28,7 @@ describe("lecture d'une entrée saisie", () => {
       imageOutputPerUnit: 0.02,
       analyzedImagePerUnit: 0,
       freeUnitsPerMonth: 0,
+      groundedSearchPerUnit: 0,
     });
   });
 

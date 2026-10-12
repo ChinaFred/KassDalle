@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.23.40+387
+version: 0.23.41+388
 
 environment:
   sdk: ^3.11.4
@@ -80,6 +80,18 @@ dependencies:
   # sable — voir `sandbox_text_recognition.dart`. Aucun appel serveur, aucun
   # coût : `google_mlkit_commons` (InputImage) arrive en transitif.
   google_mlkit_text_recognition: ^0.17.1
+  # Bloc « Suggestions de recherche » de Google, sous « Sur le web » dans
+  # Explorer, sur Android, iOS et macOS : JavaScript coupé, toute navigation
+  # renvoyée au navigateur. Paquet officiel de l'équipe Flutter ;
+  # webview_flutter_android 4.12.1+ suit le Kotlin intégré d'AGP, comme
+  # google_mlkit_text_recognition. Linux : repli en puces.
+  webview_flutter: ^4.14.1
+  # Le même bloc sous Windows, par WebView2. Paquet tiers (jnschulze), dernière
+  # version publiée en février 2024 ; son build télécharge nuget.exe et le SDK
+  # WebView2 (NuGet). Sans réglage JavaScript ni délégué de navigation : la
+  # page interdit les scripts par CSP, et une navigation est défaite à son
+  # signalement. Sans WebView2 Runtime sur le poste, repli en puces.
+  webview_windows: ^0.4.0
 
 dev_dependencies:
   flutter_test:

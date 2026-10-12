@@ -144,8 +144,8 @@ class GeneratedRecipeSuggestion {
   });
 }
 
-/// Adresse de « Chercher sur Google » : le texte tel quel, plus « recette ».
-/// Aucun appel d'IA.
+/// Adresse de « Voir sur Google » (section « Sur le web ») : le texte tel
+/// quel, plus « recette ». Aucun appel d'IA.
 Uri googleRecipeSearchUri(String query) =>
     Uri.https('www.google.com', '/search', {'q': '${query.trim()} recette'});
 

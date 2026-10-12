@@ -94,6 +94,15 @@ export interface UsageEntry {
    */
   analyzedImageUnits?: number;
   /**
+   * Appels ancrés dans la recherche Google : 1 quand l'appel a interrogé
+   * Google, 0 sinon.
+   *
+   * Google facture gemini-2.5-flash au prompt ancré, en plus des jetons. Écrit
+   * sur la ligne pour qu'un rechiffrage le retrouve, compté au mois pour qu'on
+   * le rapproche de la facture.
+   */
+  groundedSearchCount?: number;
+  /**
    * Coût imposé, pour un poste dont le prix ne se déduit pas des jetons
    * (scan de sécurité facturé à l'unité, par exemple). Sinon, il est calculé
    * depuis la grille tarifaire.
@@ -171,6 +180,8 @@ export function buildMonthlyAggregate(args: {
    * mois a consommées, et les unités offertes ne peuvent pas être déduites.
    */
   analyzedImageUnits: number;
+  /** Appels ancrés dans la recherche Google, facturés à l'appel. */
+  groundedSearchCount?: number;
   costIncrement: number;
 }): Record<string, unknown> {
   const {
@@ -190,6 +201,7 @@ export function buildMonthlyAggregate(args: {
     analyzedImageUnits,
     costIncrement,
   } = args;
+  const groundedSearchCount = args.groundedSearchCount ?? 0;
 
   return {
     period,
@@ -214,6 +226,10 @@ export function buildMonthlyAggregate(args: {
     // Ce compteur porte la seconde, et lui seul permet de déduire au mois les
     // unités qu'un fournisseur offre.
     total_analyzed_image_units: FieldValue.increment(analyzedImageUnits),
+    // Appels ancrés dans Google : facturés à l'appel, en plus des jetons. Le
+    // compteur sert à rapprocher l'estimé de la ligne « Grounding » de la
+    // facture Google.
+    total_grounded_searches: FieldValue.increment(groundedSearchCount),
     total_cost_usd: FieldValue.increment(costIncrement),
     // Des cartes IMBRIQUÉES, et non des clés pointées.
     //
@@ -236,6 +252,7 @@ export function buildMonthlyAggregate(args: {
         thinking_tokens: FieldValue.increment(thinkingTokens),
         image_outputs: FieldValue.increment(imageOutputCount),
         analyzed_image_units: FieldValue.increment(analyzedImageUnits),
+        grounded_searches: FieldValue.increment(groundedSearchCount),
         cost_usd: FieldValue.increment(costIncrement),
         // La ventilation par moteur DANS le poste est ce qui permet de juger
         // une bascule : sans elle, on voit le coût monter sans savoir lequel
@@ -270,6 +287,7 @@ export function buildMonthlyAggregate(args: {
         // et il l'offre sur un produit, pas sur un poste fonctionnel. Compter
         // les unités ailleurs obligerait à les recomposer pour les déduire.
         analyzed_image_units: FieldValue.increment(analyzedImageUnits),
+        grounded_searches: FieldValue.increment(groundedSearchCount),
       },
     },
     by_user: {
@@ -340,6 +358,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   const cacheReadTokens = Math.max(0, Math.round(entry.cacheReadInputTokens ?? 0));
   const imageOutputCount = Math.max(0, Math.round(entry.imageOutputCount ?? 0));
   const analyzedImageUnits = Math.max(0, Math.round(entry.analyzedImageUnits ?? 0));
+  const groundedSearchCount = Math.max(0, Math.round(entry.groundedSearchCount ?? 0));
   // Les jetons de cache comptent dans le total : ce sont des jetons de prompt
   // réellement facturés, pas une métadonnée. Les omettre ferait apparaître un
   // appel plus léger qu'il ne l'a été.
@@ -369,6 +388,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         cacheReadInputTokens: cacheReadTokens,
         imageOutputCount,
         analyzedImageUnits,
+        groundedSearchCount,
         at: now,
         // Grille en vigueur : un tarif corrigé depuis Admin chiffre l'appel
         // suivant, sans attendre un déploiement.
@@ -411,6 +431,9 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     // sans ses unités : le coût de la modération tombait à zéro, et le mois
     // reconstruit se lisait comme un mois sans modération.
     analyzed_image_units: analyzedImageUnits,
+    // Même raison : sans lui, un rechiffrage relirait l'appel sans sa
+    // recherche Google, et le mois reconstruit perdrait son prix.
+    grounded_search_count: groundedSearchCount,
     estimated_cost_usd: costUsd,
     // Faux ne veut rien dire ici : le champ n'existe que sur les appels
     // passés pendant une panne de grille, et c'est lui qui les rend
@@ -469,6 +492,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         cacheReadTokens,
         imageOutputCount,
         analyzedImageUnits,
+        groundedSearchCount,
         costIncrement,
       }),
       { merge: true },

@@ -365,6 +365,8 @@ interface PricingRow {
   inputPerMillion: number;
   outputPerMillion: number;
   imageOutputPerUnit: number;
+  /** Facultatif : prix d'une requête ancrée dans la recherche Google. */
+  groundedSearchPerUnit?: number;
   introductory?: { inputPerMillion: number; outputPerMillion: number; until: string };
 }
 
@@ -390,6 +392,8 @@ interface PricingFixture {
     imageOutputCount: number;
     /** Facultatif : unités facturées à l'unité pour une image analysée. */
     analyzedImageUnits?: number;
+    /** Facultatif : appels ancrés dans la recherche Google. */
+    groundedSearchCount?: number;
     usd: number;
     why: string;
   }[];
@@ -406,6 +410,11 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
     assert.equal(actual.inputPerMillion, expected.inputPerMillion, `${label} — entrée`);
     assert.equal(actual.outputPerMillion, expected.outputPerMillion, `${label} — sortie`);
     assert.equal(actual.imageOutputPerUnit ?? 0, expected.imageOutputPerUnit, `${label} — image`);
+    assert.equal(
+      actual.groundedSearchPerUnit ?? 0,
+      expected.groundedSearchPerUnit ?? 0,
+      `${label} — recherche Google`,
+    );
   }
 
   describe("table des tarifs", () => {
@@ -467,6 +476,7 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
           cacheReadInputTokens: cacheRead,
           imageOutputCount: c.imageOutputCount,
           analyzedImageUnits: c.analyzedImageUnits ?? 0,
+          groundedSearchCount: c.groundedSearchCount ?? 0,
           at: new Date(c.at),
         });
         assert.ok(Math.abs(actual - c.usd) < 1e-9, `attendu ${c.usd}, obtenu ${actual}`);

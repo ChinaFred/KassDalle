@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kass_dalle/core/services/gemini_service.dart'
+    show GeminiCallableException;
 import 'package:kass_dalle/core/widgets/app_states.dart';
 import 'package:kass_dalle/core/widgets/error_message.dart';
 
@@ -73,6 +75,29 @@ void main() {
 
     test('une erreur nulle ne fait pas planter le message', () {
       expect(describeError(null).title, isNotEmpty);
+    });
+
+    test('une erreur de callable d\'IA est lue par son code', () {
+      // SDK : `resource-exhausted` ; appel HTTP du web : `resource_exhausted`.
+      for (final code in ['resource-exhausted', 'resource_exhausted']) {
+        expect(
+          describeError(GeminiCallableException(code, 'x', null)).title,
+          'Quota atteint',
+        );
+      }
+      final denied = describeError(
+        GeminiCallableException('permission-denied', 'x', null),
+      );
+      expect(denied.title, 'Accès refusé');
+      expect(denied.retryable, isFalse);
+      expect(
+        describeError(GeminiCallableException('unavailable', 'x', null)).title,
+        'Connexion perdue',
+      );
+      expect(
+        describeError(GeminiCallableException('internal', 'x', null)).title,
+        'Une erreur inattendue est survenue',
+      );
     });
   });
 
@@ -154,6 +179,19 @@ void main() {
 
       expect(find.text('Coûts GCP indisponibles'), findsOneWidget);
       expect(find.text('Connexion perdue'), findsNothing);
+    });
+
+    testWidgets('un conseil fourni par l\'écran prend le pas', (tester) async {
+      await _pump(
+        tester,
+        AppErrorState(
+          error: _firebaseError('unavailable'),
+          advice: 'Le moteur de recherche est saturé.',
+        ),
+      );
+
+      expect(find.text('Le moteur de recherche est saturé.'), findsOneWidget);
+      expect(find.textContaining('connexion internet'), findsNothing);
     });
   });
 

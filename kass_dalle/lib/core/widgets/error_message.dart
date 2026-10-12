@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 
+import '../services/gemini_service.dart' show GeminiCallableException;
+
 /// Traduction d'une exception en phrase lisible par la famille.
 ///
 /// Quatorze écrans affichaient `Center(child: Text('Erreur : $e'))`. Un cousin
@@ -12,6 +14,8 @@ import 'package:firebase_core/firebase_core.dart';
 ///
 /// Les exceptions Firebase (Firestore, Storage, Functions, Auth) héritent
 /// toutes de [FirebaseException] : un seul aiguillage sur `code` les couvre.
+/// Les callables d'IA passent par `GeminiService`, qui rend une
+/// [GeminiCallableException] portant le même code.
 class ErrorMessage {
   /// Titre court, affiché en gras.
   final String title;
@@ -32,8 +36,14 @@ class ErrorMessage {
 }
 
 /// Le code d'erreur porté par l'exception, quel que soit le service Firebase.
+///
+/// Une [GeminiCallableException] venue de l'appel HTTP du web porte le code
+/// en `resource_exhausted` : il est ramené à la forme du SDK.
 String _codeOf(Object error) {
   if (error is FirebaseException) return error.code.toLowerCase();
+  if (error is GeminiCallableException) {
+    return error.code.toLowerCase().replaceAll('_', '-');
+  }
   return '';
 }
 

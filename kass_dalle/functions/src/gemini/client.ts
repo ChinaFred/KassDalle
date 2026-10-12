@@ -71,6 +71,18 @@ export function thinkingTokensOf(usage: GeminiUsage | undefined): number {
   return Math.max(0, declared, derived);
 }
 
+/**
+ * Jetons d'entrée facturés d'un appel : le prompt, plus le résultat d'outil.
+ *
+ * Google facture le résultat de la recherche relu par le modèle
+ * (`toolUsePromptTokenCount`) au tarif d'entrée. [thinkingTokensOf] le retire
+ * déjà du raisonnement ; sans cette somme, il ne serait compté nulle part.
+ */
+export function inputTokensOf(usage: GeminiUsage | undefined): number {
+  if (!usage) return 0;
+  return (usage.promptTokenCount ?? 0) + (usage.toolUsePromptTokenCount ?? 0);
+}
+
 export interface GeminiInlineData {
   mimeType?: string;
   data?: string;
@@ -317,9 +329,10 @@ export interface GeminiCallContext {
    * Autorise le modèle à interroger Google Search (grounding). Les pages
    * citées reviennent dans [GeminiResponse.grounding].
    *
-   * Aucun poste ne s'en sert encore. Avant le premier : la recherche est
-   * facturée à la requête, en plus des jetons, et `ai/pricing.ts` ne sait pas
-   * encore la compter — un poste qui l'active sans cela sous-estime son coût.
+   * Un seul poste s'en sert : `web_recipe_search` (`gemini/webRecipeSearch.ts`).
+   * La recherche est facturée à l'appel ancré, en plus des jetons : le poste
+   * qui l'active passe `groundedSearchCount` à `recordUsage`, et compte le
+   * résultat d'outil en entrée ([inputTokensOf]).
    */
   googleSearch?: boolean;
 }
@@ -421,7 +434,7 @@ export async function callGemini(
         model: GEMINI_MODEL,
         feature: ctx.feature,
         extra: {
-          inputTokens: usage?.promptTokenCount,
+          inputTokens: inputTokensOf(usage),
           outputTokens: usage?.candidatesTokenCount,
           thinkingTokens: thinkingTokensOf(usage),
           totalTokens: usage?.totalTokenCount,

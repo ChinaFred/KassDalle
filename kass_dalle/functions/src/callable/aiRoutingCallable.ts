@@ -261,6 +261,18 @@ export const ROUTABLE_FEATURES: Array<{
 
   // ── Recherche ─────────────────────────────────────────────────────────────
   { id: "search", label: "Recherche dans la collection", group: "Recherche" },
+  // « Chercher sur le web » (Explorer). L'appel ne passe pas par `callModel` :
+  // il a besoin de l'outil de recherche Google et des pages qu'il cite, que
+  // seul Gemini rend. Le poste figure ici pour son plafond de raisonnement et
+  // pour être visible sur l'écran, verrouillé comme la modération.
+  {
+    id: "web_recipe_search",
+    label: "Recherche de pages de recettes sur le web",
+    group: "Recherche",
+    providers: ["gemini"],
+    lockedReason:
+      "Seul Gemini cherche dans Google et rend les pages trouvées avec le bloc de suggestions que Google impose d'afficher.",
+  },
   // `web_search_query` (« Formulation d'une requête web ») est parti avec la
   // refonte de l'écran Explorer (lot 2) : « Chercher sur Google » envoie le
   // texte tel quel, sans appel d'IA. Le poste reste au catalogue comptable.
@@ -461,7 +473,8 @@ export const getAiPricingFn = onCall(callableOpts, async (req) => {
           base.outputPerMillion !== entry.outputPerMillion ||
           (base.imageOutputPerUnit ?? 0) !== (entry.imageOutputPerUnit ?? 0) ||
           (base.analyzedImagePerUnit ?? 0) !== (entry.analyzedImagePerUnit ?? 0) ||
-          (base.freeUnitsPerMonth ?? 0) !== (entry.freeUnitsPerMonth ?? 0),
+          (base.freeUnitsPerMonth ?? 0) !== (entry.freeUnitsPerMonth ?? 0) ||
+          (base.groundedSearchPerUnit ?? 0) !== (entry.groundedSearchPerUnit ?? 0),
         builtin: base != null,
       };
     }),
@@ -479,6 +492,8 @@ interface SetAiPricingRequest {
     analyzed_image_per_unit?: number;
     /** Unités offertes par mois, déduites au mois et non sur l'appel. */
     free_units_per_month?: number;
+    /** Appel ancré dans la recherche Google, facturé en plus des jetons. */
+    grounded_search_per_unit?: number;
     introductory?: {
       input_per_million?: number;
       output_per_million?: number;

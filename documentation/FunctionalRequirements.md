@@ -50,8 +50,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 | Rôle | Accès |
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
-| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis le bandeau d'Explorer au retour de Google et par « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. |
-| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur Google » ; « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour de Google. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis une page « Sur le web » d'Explorer, le bandeau au retour du navigateur et « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur le web » : il voit les pages trouvées et les ouvre dans son navigateur, sans badge « Import direct » ni bouton « Importer ». « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour du navigateur. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
@@ -238,9 +238,11 @@ celles d'une recette privée, par son créateur et un Admin seulement — et par
 
 **Qui :** Editor ou Admin. Le Reader n'importe pas : les points d'entrée lui sont masqués.
 
-**Points d'entrée.** Cinq chemins ouvrent la même boîte « Importer depuis un lien » :
+**Points d'entrée.** Six chemins ouvrent la même boîte « Importer depuis un lien » :
 - « Importer depuis un lien », dans **Explorer** (5.5) ;
-- le **bandeau d'Explorer au retour de Google** (5.5) : « Vous avez trouvé une recette ?
+- **« Importer »** sur une page de la section « Sur le web » d'Explorer (5.5), adresse
+  posée ;
+- le **bandeau d'Explorer au retour du navigateur** (5.5) : « Vous avez trouvé une recette ?
   Importez-la. » ;
 - **« Partager vers Kass'Dalle »**, sur Android : depuis le navigateur ou une autre
   application, le menu de partage du téléphone propose Kass'Dalle ;
@@ -411,16 +413,17 @@ privait le titre de la place dont il manquait.
 
 Écran dédié `/search`, intitulé **Explorer**. Il sert d'abord à parcourir et filtrer la
 bibliothèque, sur l'appareil, sans IA. Quatre actions vont plus loin, chacune sur un bouton :
-« Chercher avec l'IA », « Imaginer 3 recettes », « Chercher sur Google » et « Importer depuis
-un lien » (4.6). Aucune ne part toute seule.
+« Chercher avec l'IA », « Imaginer 3 recettes », « Chercher sur le web » et « Importer depuis
+un lien » (4.6). Aucune ne part toute seule : ni à la frappe, ni sur Entrée.
 
 | Action | Qui | Appel d'IA |
 |---|---|---|
 | Liste, champ de texte, filtres, tri | tous les rôles | aucun |
 | **Chercher avec l'IA** | Editor, Admin | un appel par appui |
 | **Imaginer 3 recettes** | Editor, Admin | trois appels, plus un par doublon rejoué |
-| **Chercher sur Google** | tous les rôles | aucun |
-| **Importer depuis un lien**, bandeau au retour de Google | Editor, Admin | voir 4.6 |
+| **Chercher sur le web** | tous les rôles | un appel par appui, hors cache ; 50 recherches par jour et par compte |
+| **Voir sur Google** (dans « Sur le web ») | tous les rôles | aucun |
+| **Importer depuis un lien**, « Importer » d'une page web, bandeau au retour du navigateur | Editor, Admin | voir 4.6 |
 
 **À l'ouverture**, l'écran montre la liste des recettes du périmètre : « Mes recettes »,
 « Ma famille », « Mes brouillons ». Rien n'est envoyé à l'IA.
@@ -544,29 +547,84 @@ lui interdisant les titres déjà rendus ; si le doublon persiste, elle est aban
   demande confirmation : « Quitter sans enregistrer ? », « Rester » ou « Quitter ». La
   question est posée au retour comme à un changement d'écran par la navigation.
 
-**Chercher sur Google** (tous les rôles). Le bouton ouvre une recherche Google avec le texte
-du champ suivi du mot « recette ». Aucun appel d'IA : le texte n'est pas reformulé. Rien n'est téléchargé, rien n'est analysé.
+**Chercher sur le web** (tous les rôles). Le bouton cherche sur Google des pages de recettes
+pour le texte du champ, et les affiche dans Explorer, section **« Sur le web »**, sous les
+sections de l'IA et au-dessus des recettes de la bibliothèque. La liste défile jusqu'à la
+section.
+- Sans texte, rien ne part : le champ prend le focus et dit « Écrivez ce que vous cherchez
+  sur le web. ». Au-delà de 200 caractères, la recherche est refusée : la section « Sur le
+  web » affiche « La recherche dépasse 200 caractères. », sans « Réessayer ». Le filtre de
+  la bibliothèque, qui lit le même champ, n'a pas de limite. Le bouton n'est inactif que
+  pendant une recherche en cours.
+- Jusqu'à **8 pages**, chacune sur une carte : l'icône d'un globe, titre, site réel de la
+  page, extrait. Aucune photo de la page n'est affichée, sur aucune plateforme : la charger
+  depuis l'appareil donnerait l'adresse IP du lecteur au site, et montrerait une image qui
+  n'est pas passée par la modération (même règle que les images extérieures, 5.11 « Seules
+  les images de l'application s'affichent »). Les vidéos et les
+  réseaux sociaux (YouTube, TikTok, Instagram, Facebook, Pinterest) sont exclus ; une même
+  page n'apparaît qu'une fois.
+- **Ouvrir** (tous les rôles), ou toucher la carte : la page s'ouvre dans le navigateur, hors
+  de l'application. Sur le web, le titre est un lien (clic du milieu, menu du navigateur),
+  sans arrêt de focus de plus que la carte ; sur un ordinateur, le clic droit propose
+  « Ouvrir dans le navigateur », « Copier le lien » (« Lien copié. ») et « Importer ».
+- **Importer** (Editor, Admin) ouvre la boîte « Importer depuis un lien » (4.6), adresse
+  posée. Une fois l'import envoyé, la carte affiche « Import envoyé ». Le badge **« Import
+  direct »** signale une page qui décrit sa recette de façon structurée : l'import sera
+  fidèle. Un Reader ne voit ni le badge ni « Importer ».
+- Sous les cartes, le bloc « Suggestions de recherche » de Google, tel que Google le rend —
+  sur Android, iOS, le web et Windows ; sous Windows sans le composant WebView2 de
+  Microsoft, les requêtes lancées par Google en puces. Puis « Vidéos et
+  réseaux sociaux exclus. » et **Voir sur Google**, qui ouvre la recherche Google du texte
+  suivi de « recette », sans appel d'IA. Ce pied reste affiché quand aucune page n'est
+  trouvée et après une erreur.
+- Sous le titre de la section : « « texte » · Il vous reste N recherches aujourd'hui. ». Une
+  recherche déjà faite par un membre dans les sept derniers jours est servie sans nouvel
+  appel et n'est pas décomptée : « Recherche déjà faite, non décomptée. ».
+- **50 recherches par jour et par compte.** Au-delà, une carte le dit : « Vous avez fait vos
+  50 recherches web d'aujourd'hui. Le compteur repart demain. », avec « Voir sur Google ».
+  Quand il ne reste aucune recherche, « Il ne vous reste aucune recherche aujourd'hui. »
+  s'affiche aussi sous le bouton — pour le Reader sur téléphone et sur grand écran ;
+  l'Editor sur téléphone la lit dans « Aller plus loin ». Le bouton reste actif : une
+  recherche déjà faite par un membre peut encore être servie.
+- **Budget d'IA du jour atteint** (plafonds quotidiens de dépense, 5.6) : une carte du même genre,
+  « Le budget d'IA du jour est atteint. La recherche web revient demain. », avec « Voir sur
+  Google », sans « Réessayer ».
+- Une recherche qui échoue avant que le moteur ait répondu (moteur indisponible ou saturé)
+  ne compte pas : la section affiche le message du serveur et « Réessayer ». Une réponse du
+  moteur qui ne contient aucune recherche a été facturée : elle compte. Hors connexion :
+  « Connexion perdue » et « Réessayer ». Une requête refusée par le serveur affiche son
+  message, sans « Réessayer ».
+- Aucune page trouvée : « Aucune page de recette trouvée », en un encart resserré, suivi du
+  pied avec « Voir sur Google ». Le texte
+  a changé depuis la recherche : « Recherche modifiée depuis la demande. », avec « Relancer ».
+  « Effacer » ferme la section. Rien n'est enregistré : la section disparaît avec l'écran.
 
-**Au retour de Google** (Editor, Admin), Explorer affiche un bandeau : « Vous avez trouvé une
-recette ? Importez-la. ». Sur téléphone, il est le premier élément de la liste des résultats
-et défile avec elle ; sur grand écran, il reste fixe sous le champ.
-- Sur Android et Windows, le presse-papiers est lu au retour. S'il contient une adresse web,
-  le bandeau la montre en abrégé (« marmiton.org/recettes/blanq… ») avec « Importer ce
-  lien » ; sinon il propose « Coller le lien ».
+**Au retour du navigateur** (Editor, Admin), après « Ouvrir » sur une carte ou « Voir sur
+Google », Explorer affiche un bandeau : « Vous avez trouvé une recette ? Importez-la. ». Sur
+téléphone, il est le premier élément de la liste des résultats et défile avec elle ; sur
+grand écran, il reste fixe sous le champ.
+- Après « Ouvrir » sur une carte, le bandeau porte l'adresse de cette page, avec « Importer
+  ce lien » ; le presse-papiers n'est pas lu.
+- Après « Voir sur Google », sur Android et Windows, le presse-papiers est lu au retour.
+  S'il contient une adresse web, le bandeau la montre en abrégé
+  (« marmiton.org/recettes/blanq… ») avec « Importer ce lien » ; sinon il propose « Coller
+  le lien ».
 - Sur le web et iOS, le presse-papiers n'est pas lu au retour : « Coller le lien » le lit au
   moment de l'appui.
 - Le bouton ouvre la boîte « Importer depuis un lien » (4.6), adresse posée s'il y en a
   une, champ vide sinon. Rien ne part avant « Importer ».
 - Le bandeau disparaît à la croix « Fermer », quand l'import est envoyé, ou en quittant
-  Explorer. « Annuler » dans la boîte le laisse. Une nouvelle recherche Google le réarme.
-  Google n'a pas pu s'ouvrir : pas de bandeau. Un Reader ne le voit jamais.
+  Explorer. « Annuler » dans la boîte le laisse. Une nouvelle ouverture du navigateur le
+  réarme. Le navigateur n'a pas pu s'ouvrir : pas de bandeau. Un Reader ne le voit jamais.
 
 **Disposition.** Sur téléphone, une barre en bas porte « Chercher avec l'IA » et « Aller plus
-loin », qui ouvre les autres actions. Sur grand écran, les filtres occupent un panneau à
-gauche et la liste le reste de la largeur ; « Importer depuis un lien » est un bouton texte
-en fin de rangée des actions. Un Reader ne voit ni « Chercher avec l'IA », ni
+loin », qui ouvre les autres actions, dont « Chercher sur le web » (« Jusqu'à 8 pages de
+recettes, affichées ici. », suivi du nombre de recherches restantes quand il est connu). Sur
+grand écran, les filtres occupent un panneau à gauche et la liste le reste de la largeur ;
+« Chercher sur le web » est dans la rangée des actions, « Importer depuis un lien » est un
+bouton texte en fin de rangée. Un Reader ne voit ni « Chercher avec l'IA », ni
 « Imaginer 3 recettes », ni « Importer depuis un lien », ni la source « Mes brouillons » : sa
-barre du bas porte directement « Chercher sur Google ». « Chercher avec l'IA » est inactif
+barre du bas porte directement « Chercher sur le web ». « Chercher avec l'IA » est inactif
 pendant un classement en cours et quand les filtres ne retiennent aucune recette ;
 « Imaginer 3 recettes » l'est pendant une rédaction en cours.
 
@@ -923,11 +981,11 @@ déjà transmise continue de fonctionner.
 - Authentification Google, sas d'entrée `pending`, rôles et révocation
 - CRUD livres et recettes, groupes familiaux
 - Import (photo, PDF, DOCX, texte collé, lien vers une page web) → CookLang, par un pipeline asynchrone ; la source d'une recette importée depuis un lien s'affiche sur sa fiche
-- Import d'un lien depuis le bandeau d'Explorer au retour de Google, et par « Partager vers Kass'Dalle » sur Android
+- Import d'un lien depuis une page « Sur le web » d'Explorer, depuis le bandeau au retour du navigateur, et par « Partager vers Kass'Dalle » sur Android
 - Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
-- Explorer : liste filtrée sur l'appareil (texte rangé en sections — titre, cuisine, type ou thème, ingrédients principaux —, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Chercher avec l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur Google »
+- Explorer : liste filtrée sur l'appareil (texte rangé en sections — titre, cuisine, type ou thème, ingrédients principaux —, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Chercher avec l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur le web » (jusqu'à 8 pages de recettes trouvées par Google, à ouvrir ou à importer)
 - Durées estimées par l'IA pour les recettes qui n'en donnent pas : « ≈ » sur la fiche et dans la liste d'Explorer, comptées dans le filtre « Temps total » et le tri « Plus rapides » si le lecteur le veut
 - Annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation

@@ -730,7 +730,7 @@ void main() {
     });
   });
 
-  test('Chercher sur Google : le texte tel quel, plus « recette »', () {
+  test('Voir sur Google : le texte tel quel, plus « recette »', () {
     final uri = googleRecipeSearchUri(' tarte tatin ');
     expect(uri.host, 'www.google.com');
     expect(uri.queryParameters['q'], 'tarte tatin recette');

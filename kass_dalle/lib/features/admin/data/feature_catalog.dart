@@ -77,6 +77,9 @@ const kFeatureProcess = <String, String>{
   'backfill_recipe_protein': 'Planning et courses',
   'inline_meal_role_classification': 'Planning et courses',
   'search': 'Recherche',
+  // « Chercher sur le web » (Explorer) : recherche Google ancrée, facturée
+  // à l'appel en plus des jetons.
+  'web_recipe_search': 'Recherche',
   'upload_security_scan': 'Sécurité',
   'image_moderation': 'Sécurité',
   'image_moderation_batch': 'Sécurité',
@@ -210,6 +213,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Recherche sémantique dans le livre de recettes par ingrédients, '
         'envies, contexte ou contraintes alimentaires.',
+  ),
+  'web_recipe_search': FeatureInfo(
+    label: 'Recherche de pages de recettes sur le web',
+    description:
+        '« Chercher sur le web » dans Explorer : Gemini cherche dans Google '
+        "jusqu'à huit pages de recettes. Facturé en jetons, plus un prix par "
+        'appel ancré dans la recherche Google. Une recherche servie par le '
+        "cache partagé n'appelle pas le modèle.",
   ),
   'book_cover': FeatureInfo(
     label: 'Couverture de livre',

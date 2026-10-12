@@ -15,7 +15,12 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG, GEMINI_API_KEY, GEMINI_MODEL } from "../config";
 import { logDebug, logError, logInfo, logWarn, newCallId } from "../logging";
-import { callGemini, textPart as geminiTextPart, thinkingTokensOf } from "../gemini/client";
+import {
+  callGemini,
+  inputTokensOf,
+  textPart as geminiTextPart,
+  thinkingTokensOf,
+} from "../gemini/client";
 import {
   ANTHROPIC_MODEL,
   anthropicApiKey,
@@ -392,7 +397,10 @@ async function callProvider(args: {
     thinkingBudget: resolveThinkingBudget(args.policy, args.ctx.feature),
   });
 
-  const input = result.usageMetadata?.promptTokenCount ?? 0;
+  // Le résultat d'outil compte en entrée : aucun poste routé n'active la
+  // recherche Google aujourd'hui, mais le jour où l'un le fera, ses jetons
+  // seront facturés et doivent l'être ici aussi.
+  const input = inputTokensOf(result.usageMetadata);
   const output = result.usageMetadata?.candidatesTokenCount ?? 0;
   const thinking = thinkingTokensOf(result.usageMetadata);
   return {

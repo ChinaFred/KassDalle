@@ -545,7 +545,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
 | `unit_to_grams.json` | conversion en grammes, et quantité absente (pincée, assaisonnements) | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
-| `ai_pricing.json` | résolution d'un modèle et coût d'un appel — **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
+| `ai_pricing.json` | résolution d'un modèle et coût d'un appel — jetons, images, recherche Google ancrée ; **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | format du repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de préparation, fenêtre de variété, présélection — **serveur seul**, sauf les constantes et le prédicat d'activité de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur), que le client rejoue | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |

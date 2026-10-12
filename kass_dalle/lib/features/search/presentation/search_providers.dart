@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
+import '../../admin/presentation/admin_providers.dart'
+    show errorReportServiceProvider;
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/data/book_repository.dart';
 import '../../groups/presentation/group_providers.dart';
@@ -12,6 +14,7 @@ import '../../recipes/domain/recipe_filter.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../data/explore_preferences_repository.dart';
 import '../domain/search_models.dart';
+import '../domain/web_search.dart';
 
 // ── Préférence du lecteur : sources, filtres, tri ─────────────────────────────
 
@@ -243,6 +246,76 @@ class AiRankingNotifier extends Notifier<AiRankingState> {
 final aiRankingProvider =
     NotifierProvider.autoDispose<AiRankingNotifier, AiRankingState>(
       AiRankingNotifier.new,
+    );
+
+// ── « Chercher sur le web » ──────────────────────────────────────────────────
+
+/// La section « Sur le web ».
+///
+/// Un appel par appui, jamais à la frappe. En mémoire seulement : rien
+/// d'enregistré, et rien à perdre en quittant l'écran. Une réponse arrivée
+/// après une nouvelle demande est ignorée.
+class WebSearchNotifier extends Notifier<WebSearchState> {
+  @override
+  WebSearchState build() => const WebSearchIdle();
+
+  Future<void> search(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    // Une recherche déjà en cours ne repart pas : un second appui
+    // décompterait une seconde recherche pour la même réponse.
+    if (state is WebSearchLoading) return;
+    final remaining = state.remaining;
+    final loading = WebSearchLoading(trimmed, remaining: remaining);
+    state = loading;
+    try {
+      final response = await ref
+          .read(geminiServiceProvider)
+          .searchWebRecipes(trimmed);
+      if (!identical(state, loading)) return;
+      state = WebSearchSuccess(response);
+    } on WebSearchQuotaExceeded catch (e) {
+      // Attendu : la carte du quota le dit, ce n'est pas une panne.
+      if (identical(state, loading)) {
+        state = WebSearchQuotaReached(trimmed, limit: e.limit);
+      }
+    } on WebSearchAiBudgetExceeded {
+      // Attendu, et journalisé par le serveur : la carte du budget le dit.
+      if (identical(state, loading)) {
+        state = WebSearchBudgetReached(trimmed, remaining: remaining);
+      }
+    } on WebSearchQueryRefused catch (e) {
+      // La requête de l'utilisateur, pas une panne : le message le dit.
+      if (identical(state, loading)) {
+        state = WebSearchError(trimmed, e, remaining: remaining);
+      }
+    } on WebSearchEngineUnavailable catch (e) {
+      // Attendu, et journalisé par le serveur (`logError` de la panne du
+      // moteur) : la carte d'erreur propose « Réessayer ».
+      if (identical(state, loading)) {
+        state = WebSearchError(trimmed, e, remaining: remaining);
+      }
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'search.web',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'query_length': trimmed.length},
+        service: ref.read(errorReportServiceProvider),
+      );
+      if (identical(state, loading)) {
+        state = WebSearchError(trimmed, e, remaining: remaining);
+      }
+    }
+  }
+
+  /// Ferme la section. Le nombre de recherches restantes reste connu.
+  void close() => state = WebSearchIdle(remaining: state.remaining);
+}
+
+final webSearchProvider =
+    NotifierProvider.autoDispose<WebSearchNotifier, WebSearchState>(
+      WebSearchNotifier.new,
     );
 
 // ── « Imaginer 3 recettes » ──────────────────────────────────────────────────

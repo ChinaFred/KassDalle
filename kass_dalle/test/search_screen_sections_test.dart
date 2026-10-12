@@ -10,15 +10,31 @@ import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 import 'package:kass_dalle/features/recipes/domain/url_import.dart';
 import 'package:kass_dalle/features/recipes/presentation/recipe_providers.dart';
 import 'package:kass_dalle/features/search/domain/search_models.dart';
+import 'package:kass_dalle/features/search/domain/web_search.dart';
 import 'package:kass_dalle/features/search/presentation/search_providers.dart';
 import 'package:kass_dalle/features/search/presentation/search_screen.dart';
 
 /// L'écran Explorer avec du texte : sections, compteur total, ligne des
-/// petits ingrédients, et le bandeau d'import au retour de Google.
+/// petits ingrédients, et le bandeau d'import au retour du navigateur.
 class _FakeService extends GeminiService {
   @override
   Future<UrlImportQuota> getUrlImportQuota() async =>
       const UrlImportQuota(limit: 10, used: 0, remaining: 10);
+
+  @override
+  Future<WebSearchResponse> searchWebRecipes(String query) async =>
+      WebSearchResponse(
+        query: query,
+        results: [
+          WebRecipeResult(
+            url: Uri.parse('https://www.le-site.fr/blanquette'),
+            title: 'Blanquette de veau',
+            site: 'le-site.fr',
+            directImport: true,
+          ),
+        ],
+        remaining: 49,
+      );
 }
 
 Recipe _recipe(
@@ -157,10 +173,28 @@ void main() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
     });
 
-    Future<void> leaveAndComeBack(WidgetTester tester) async {
+    /// Recherche web, puis [leave] : « Voir sur Google » (défaut) ou
+    /// « Ouvrir » sur la carte. Puis retour dans l'application.
+    Future<void> leaveAndComeBack(
+      WidgetTester tester, {
+      String leave = 'Voir sur Google',
+    }) async {
       await tester.enterText(find.byType(TextField), 'blanquette');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Chercher sur Google'));
+      await tester.tap(find.text('Chercher sur le web'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text(leave),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const PageStorageKey('explore-results')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(leave).first);
       await tester.pumpAndSettle();
       for (final state in [
         AppLifecycleState.inactive,
@@ -207,6 +241,24 @@ void main() {
       );
     });
 
+    testWidgets(
+      'éditeur : la page ouverte depuis sa carte est dans le bandeau',
+      (tester) async {
+        await _pump(tester);
+        clipboard = 'https://ailleurs.example/autre';
+        await leaveAndComeBack(tester, leave: 'Ouvrir');
+        expect(
+          find.text('Vous avez trouvé une recette ? Importez-la.'),
+          findsOneWidget,
+        );
+        // L'adresse de la carte, pas celle du presse-papiers.
+        expect(find.text('Importer ce lien'), findsOneWidget);
+        await tester.tap(find.text('Importer ce lien'));
+        await tester.pumpAndSettle();
+        expect(find.text('https://www.le-site.fr/blanquette'), findsOneWidget);
+      },
+    );
+
     testWidgets('téléphone : le bandeau défile en tête des résultats', (
       tester,
     ) async {
@@ -224,6 +276,18 @@ void main() {
       tester.view.physicalSize = const Size(400, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      await tester.pumpAndSettle();
+      // La liste a défilé jusqu'à « Voir sur Google » : retour en tête.
+      await tester.scrollUntilVisible(
+        find.text(sentence),
+        -200,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const PageStorageKey('explore-results')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pumpAndSettle();
       // Téléphone : premier élément de la liste, qui défile avec elle.
       expect(

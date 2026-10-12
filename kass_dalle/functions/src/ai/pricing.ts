@@ -62,6 +62,16 @@ export interface AiModelPricing {
   analyzedImagePerUnit?: number;
   /** Unités offertes par mois — déduites au mois, jamais sur la ligne d'appel. */
   freeUnitsPerMonth?: number;
+  /**
+   * Prix d'un appel ANCRÉ dans la recherche Google (outil `googleSearch`),
+   * facturé en plus des jetons.
+   *
+   * Google facture gemini-2.5-flash au prompt ancré — un appel qui a lancé au
+   * moins une recherche —, pas à la recherche lancée. La franchise quotidienne
+   * de Google (1 500 prompts ancrés par jour) n'est pas déduite : elle se lit
+   * comme un écart entre l'estimé et le facturé.
+   */
+  groundedSearchPerUnit?: number;
   introductory?: AiIntroductoryPricing;
 }
 
@@ -73,7 +83,15 @@ const DEFAULT_PRICING: AiModelPricing = {
 
 const PRICING_TABLE: Record<string, AiModelPricing> = {
   // ── Google Gemini ────────────────────────────────────────────────────────
-  "gemini-2.5-flash": { inputPerMillion: 0.3, outputPerMillion: 2.5, imageOutputPerUnit: 0 },
+  // La recherche Google ancrée se facture 35 $ les mille prompts ancrés, au-delà
+  // d'une franchise de 1 500 par jour (page des prix de Google, relevée le 12
+  // octobre 2026 ; à revérifier contre la facture du premier mois).
+  "gemini-2.5-flash": {
+    inputPerMillion: 0.3,
+    outputPerMillion: 2.5,
+    imageOutputPerUnit: 0,
+    groundedSearchPerUnit: 0.035,
+  },
   // Ancien modèle image du projet, conservé pour les mois déjà consommés : leurs
   // lignes portent cet identifiant, et sans l'entrée elles se reliraient au
   // tarif par défaut, images comprises — c'est-à-dire à zéro.
@@ -188,6 +206,7 @@ export function parsePricingEntry(raw: unknown): AiModelPricing | null {
     imageOutputPerUnit: num(o.image_output_per_unit) ?? 0,
     analyzedImagePerUnit: num(o.analyzed_image_per_unit) ?? 0,
     freeUnitsPerMonth: num(o.free_units_per_month) ?? 0,
+    groundedSearchPerUnit: num(o.grounded_search_per_unit) ?? 0,
   };
 
   const promoRaw = o.introductory;
@@ -205,6 +224,29 @@ export function parsePricingEntry(raw: unknown): AiModelPricing | null {
   return entry;
 }
 
+/**
+ * Prix à l'unité connus du code et absents d'une entrée déjà en base.
+ *
+ * Pure, testée. Ne couvre que `grounded_search_per_unit`, le seul prix ajouté
+ * après l'amorçage de la grille ; un champ présent, même à zéro, n'est jamais
+ * repris.
+ */
+export function missingUnitPriceFields(
+  raw: Record<string, unknown>,
+  builtin: Record<string, AiModelPricing>,
+): Array<{ model: string; field: "grounded_search_per_unit"; value: number }> {
+  const out: Array<{ model: string; field: "grounded_search_per_unit"; value: number }> = [];
+  for (const [model, entry] of Object.entries(builtin)) {
+    const stored = raw[model];
+    if (!stored || typeof stored !== "object") continue;
+    const value = entry.groundedSearchPerUnit ?? 0;
+    if (value > 0 && !("grounded_search_per_unit" in (stored as Record<string, unknown>))) {
+      out.push({ model, field: "grounded_search_per_unit", value });
+    }
+  }
+  return out;
+}
+
 /** Rend une entrée sous sa forme Firestore. */
 export function pricingEntryToMap(entry: AiModelPricing): Record<string, unknown> {
   return {
@@ -213,6 +255,7 @@ export function pricingEntryToMap(entry: AiModelPricing): Record<string, unknown
     image_output_per_unit: entry.imageOutputPerUnit ?? 0,
     analyzed_image_per_unit: entry.analyzedImagePerUnit ?? 0,
     free_units_per_month: entry.freeUnitsPerMonth ?? 0,
+    grounded_search_per_unit: entry.groundedSearchPerUnit ?? 0,
     introductory: entry.introductory
       ? {
           input_per_million: entry.introductory.inputPerMillion,
@@ -280,10 +323,15 @@ export function effectivePricingIn(
   // dans le doute, on facture au tarif catalogue.
   if (!Number.isFinite(until) || at.getTime() >= until) return pricing;
 
+  // Une promotion porte sur les jetons : les prix à l'unité restent ceux du
+  // catalogue.
   return {
     inputPerMillion: promo.inputPerMillion,
     outputPerMillion: promo.outputPerMillion,
     imageOutputPerUnit: pricing.imageOutputPerUnit,
+    analyzedImagePerUnit: pricing.analyzedImagePerUnit,
+    freeUnitsPerMonth: pricing.freeUnitsPerMonth,
+    groundedSearchPerUnit: pricing.groundedSearchPerUnit,
   };
 }
 
@@ -318,6 +366,8 @@ export function estimateAiCostUsd(args: {
   imageOutputCount?: number;
   /** Unités facturées à l'unité pour une image analysée (Cloud Vision). */
   analyzedImageUnits?: number;
+  /** Appels ancrés dans la recherche Google : 0 ou 1 par appel. */
+  groundedSearchCount?: number;
   /**
    * Instant de l'appel. Un appel se facture au tarif en vigueur **quand il a
    * eu lieu**, jamais au tarif du jour où on relit le rapport : sans cela, une
@@ -334,6 +384,7 @@ export function estimateAiCostUsd(args: {
   const pricing = effectivePricingIn(table, args.model, args.at ?? new Date());
   const images = args.imageOutputCount ?? 0;
   const analyzedUnits = args.analyzedImageUnits ?? 0;
+  const groundedSearches = args.groundedSearchCount ?? 0;
   const cacheWrite = args.cacheCreationInputTokens ?? 0;
   const cacheRead = args.cacheReadInputTokens ?? 0;
   return (
@@ -342,7 +393,8 @@ export function estimateAiCostUsd(args: {
     (cacheRead / 1e6) * pricing.inputPerMillion * CACHE_READ_MULTIPLIER +
     (args.outputTokens / 1e6) * pricing.outputPerMillion +
     images * (pricing.imageOutputPerUnit ?? 0) +
-    analyzedUnits * (pricing.analyzedImagePerUnit ?? 0)
+    analyzedUnits * (pricing.analyzedImagePerUnit ?? 0) +
+    groundedSearches * (pricing.groundedSearchPerUnit ?? 0)
   );
 }
 
@@ -528,19 +580,33 @@ export async function loadAiPricingTable(): Promise<Record<string, AiModelPricin
   // libellé promet. L'entrée supprimée réapparaît au tarif d'amorçage, au lieu
   // de disparaître de l'écran en laissant le modèle au tarif par défaut.
   const missing = Object.entries(builtinPricingTable()).filter(([model]) => !(model in raw));
-  if (missing.length > 0) {
+  // Même règle, au niveau d'un champ : un prix à l'unité ajouté au code après
+  // l'amorçage (la recherche Google, en octobre 2026) n'existe pas sur l'entrée
+  // déjà en base, et s'y lirait zéro. Seul un champ ABSENT est semé ; un zéro
+  // saisi depuis l'écran est une décision et reste tel quel.
+  const missingFields = missingUnitPriceFields(raw, builtinPricingTable());
+  if (missing.length > 0 || missingFields.length > 0) {
     const models: Record<string, unknown> = {};
     for (const [model, entry] of missing) {
       models[model] = pricingEntryToMap(entry);
       table[model] = entry;
+    }
+    for (const { model, field, value } of missingFields) {
+      models[model] = { ...((models[model] as Record<string, unknown>) ?? {}), [field]: value };
+      if (table[model] && field === "grounded_search_per_unit") {
+        table[model] = { ...table[model], groundedSearchPerUnit: value };
+      }
     }
     try {
       await getFirestore()
         .collection(COLL_APP_CONFIG)
         .doc(AI_PRICING_DOC_ID)
         .set({ models, completed_at: new Date().toISOString() }, { merge: true });
-      await logInfo("Grille tarifaire complétée : modèles du code absents de la grille", {
-        extra: { models: missing.map(([model]) => model) },
+      await logInfo("Grille tarifaire complétée : modèles ou prix du code absents de la grille", {
+        extra: {
+          models: missing.map(([model]) => model),
+          fields: missingFields.map(({ model, field }) => `${model}.${field}`),
+        },
       });
     } catch (err) {
       // L'écriture manquée n'invalide pas la lecture : la table rendue porte

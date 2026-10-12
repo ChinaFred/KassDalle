@@ -21,6 +21,7 @@ import 'error_report_service.dart';
 import '../../features/recipes/data/book_import_analysis.dart';
 import '../../features/recipes/domain/recipe.dart';
 import '../../features/recipes/domain/url_import.dart';
+import '../../features/search/domain/web_search.dart';
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
@@ -634,6 +635,55 @@ class GeminiService {
     final data = await _call('getUrlImportQuotaFn', const <String, dynamic>{});
     return UrlImportQuota.fromMap(Map<String, dynamic>.from(data as Map));
   }
+
+  /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par
+  /// Google pour [query], tous rôles.
+  ///
+  /// Traduit les refus attendus du serveur, que l'écran distingue d'une
+  /// panne (voir [webSearchErrorFrom]) ; relance toute autre erreur.
+  Future<WebSearchResponse> searchWebRecipes(String query) async {
+    try {
+      final data = await _call('searchWebRecipesFn', {'query': query});
+      return WebSearchResponse.fromMap(Map<String, dynamic>.from(data as Map));
+    } on GeminiCallableException catch (e) {
+      final known = webSearchErrorFrom(e);
+      if (known != null) throw known;
+      rethrow;
+    }
+  }
+}
+
+/// Le code d'une erreur de callable, sous sa forme du SDK : le SDK rend
+/// `resource-exhausted`, l'appel HTTP du web `resource_exhausted`.
+String callableErrorCode(GeminiCallableException e) =>
+    e.code.toLowerCase().replaceAll('_', '-');
+
+/// Les refus de `searchWebRecipesFn` que l'écran affiche à sa façon, ou
+/// `null` pour toute autre erreur :
+///
+/// - [WebSearchQuotaExceeded] : plafond de recherches du jour ;
+/// - [WebSearchAiBudgetExceeded] : plafond de dépense d'IA du jour ;
+/// - [WebSearchQueryRefused] : requête vide ou trop longue ;
+/// - [WebSearchEngineUnavailable] : moteur en panne ou saturé.
+///
+/// Chacun se reconnaît à `details.reason`, posé par le serveur : un
+/// `unavailable` sans raison est une coupure réseau, pas le moteur.
+Exception? webSearchErrorFrom(GeminiCallableException e) {
+  final details = e.details;
+  final reason = details is Map ? details['reason'] : null;
+  final message = e.message.trim();
+  switch ((callableErrorCode(e), reason)) {
+    case ('resource-exhausted', webSearchQuotaReason):
+      final limit = (details as Map)['limit'];
+      return WebSearchQuotaExceeded(limit: (limit as num?)?.toInt());
+    case ('resource-exhausted', webSearchAiBudgetReason):
+      return WebSearchAiBudgetExceeded(message);
+    case ('invalid-argument', webSearchQueryReason) when message.isNotEmpty:
+      return WebSearchQueryRefused(message);
+    case ('unavailable', webSearchEngineReason) when message.isNotEmpty:
+      return WebSearchEngineUnavailable(message);
+  }
+  return null;
 }
 
 /// Ce qu'un texte libre rend une fois lu, balisé et vérifié par le serveur.

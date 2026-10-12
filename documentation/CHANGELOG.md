@@ -18,6 +18,36 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-12
+
+### v0.23.41 — fonctionnel
+
+Explorer affiche les pages de recettes trouvées sur le web, sans quitter l'application. Le
+bouton « Chercher sur le web » remplace « Chercher sur Google » et lance une recherche par
+appui, jamais à la frappe. Jusqu'à 8 pages s'affichent dans une section « Sur le web » : titre,
+site, extrait, et le badge « Import direct » quand la page décrit sa recette de façon
+structurée. Tous les rôles peuvent chercher et ouvrir une page dans le navigateur ; l'éditeur
+et l'administrateur peuvent aussi l'importer. Vidéos et réseaux sociaux (YouTube, TikTok,
+Instagram, Facebook, Pinterest) sont exclus. Chaque compte a 50 recherches par jour ; une
+recherche déjà faite par quelqu'un dans les 7 derniers jours est servie sans décompte. Les
+cartes affichent une icône et aucune image venue des sites, pour ne pas transmettre l'adresse
+IP du lecteur ni afficher une image non modérée. Le bloc de suggestions de Google s'affiche
+tel quel, comme l'exigent ses conditions. « Voir sur Google » reste disponible.
+
+### v0.23.41 — technique
+
+Nouvelle callable `searchWebRecipesFn` : Gemini avec l'outil `googleSearch`, liens de Google
+résolus jusqu'à l'adresse réelle par `safeFetch`, pages lues pour le titre, l'extrait et le
+badge schema.org. Nouveau poste `web_recipe_search`, verrouillé sur Gemini. La grille
+tarifaire gagne un prix par appel ancré (`grounded_search_per_unit`, semé à 0,035 $, à
+revérifier contre la facture), et les jetons du résultat de recherche sont comptés en entrée ;
+la fixture `ai_pricing.json` couvre ces cas des deux côtés. Deux collections serveur :
+`web_search_daily` (compteur, lisible par son titulaire) et `web_search_cache` (7 jours, TTL
+déclaré dans `firestore.indexes.json`, aucun accès client). La place du jour est rendue
+seulement si l'appel au modèle échoue. Nouveaux paquets : `webview_flutter` (Android, iOS,
+macOS) et `webview_windows` (Windows, build non vérifié par la CI) ; iframe sans script sur le
+web. `describeError` lit désormais le code de `GeminiCallableException`.
+
 ## 2026-10-11
 
 ### v0.23.40 — technique
