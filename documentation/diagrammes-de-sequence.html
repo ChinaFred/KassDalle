@@ -176,6 +176,7 @@
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
       <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
       <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
+      <li><a href="#plannings-partages">Partager son planning, lire celui d'un autre</a></li>
     </ol>
   </nav>
 
@@ -1859,7 +1860,7 @@ sequenceDiagram
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor U as Lecteur
+  actor U as Éditeur
   participant B as BatchPlanningScreen
   participant SP as suggestMealPlanFn
   participant FS as Firestore
@@ -1872,6 +1873,7 @@ sequenceDiagram
   U-->>B: périmètre choisi
   B->>FS: lit les repas de la fenêtre de variété
   B->>SP: résumés de recettes (portions, mainProtein et mainStarch compris), créneaux, contraintes,<br/>alreadyAssigned, recentlyServed, slotDismissed
+  Note over SP: requireEditor (v0.23.47) : le lecteur ne planifie pas
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
   SP->>PL: applyRecentlyServed puis preselect
@@ -3477,6 +3479,76 @@ sequenceDiagram
           <b>Qui est facturé.</b> Un passage programmé qui appelle un modèle est imputé à
           l'administrateur qui a enregistré la programmation ; la nutrition, au propriétaire de
           chaque recette.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="plannings-partages"><span class="n">34</span>Partager son planning, lire celui d'un autre</h2>
+    <p class="sec-note">
+      Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que des éditeurs de
+      ses groupes partagent avec lui, en lecture seule. L'éditeur coche les groupes dans
+      « Préférences du planning ». Le serveur en tire <code>planning_reach/{lecteur}</code>, que
+      les règles Firestore relisent pour laisser lire <code>planned_meals</code>.
+      <span class="path">planning_config_screen.dart → planning_config/{uid} →
+      syncPlanningReachOnConfig · syncGroupReach · syncPlanningReachOnRole → triggers/planningReach.ts →
+      planning_reach/{uid} → planning_providers.dart → planning_screen.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor E as Éditeur (Marie)
+  actor L as Lecteur (Paul)
+  participant C as PlanningConfigScreen
+  participant PC as planning_config/{marie}
+  participant T as syncPlanningReachOnConfig
+  participant PR as planning_reach/{paul}
+  participant S as PlanningScreen
+  participant PM as planned_meals
+  participant R as recipes
+
+  E->>C: Partager mon planning — coche « Famille »
+  C->>PC: Enregistrer — shared_group_ids [famille]
+  Note over C,PC: règles : isEditor(), liste de 50 au plus
+  PC-->>T: onDocumentWritten, retry: true
+  T->>T: groupes ajoutés ou retirés → leurs membres, hors Marie
+  T->>PR: transaction par membre — relit ses groupes,<br/>puis planning_config et users de chaque autre membre
+  Note over T,PR: Marie y figure si elle est éditeur ou admin non révoqué,<br/>et membre avec Paul d'un groupe coché
+  opt un groupe change de membres, ou Marie change de rôle
+    Note over PR: syncGroupReach et syncPlanningReachOnRole (retry: true)<br/>recalculent la même portée (suspendue si Marie n'est plus éditeur)
+  end
+
+  L->>S: ouvre le planning
+  S->>PR: watchPlanningReach
+  PR-->>S: uids [marie]
+  S->>S: sélecteur « Plannings affichés » — lecteur : partagés cochés,<br/>éditeur : son planning seul ; l'écart au défaut vit sur l'appareil
+  loop un flux par planning affiché
+    S->>PM: uid == marie, planned_at sur 90 jours
+    Note over PM: règles : isApproved() et marie dans planning_reach/{paul}
+    PM-->>S: repas de Marie, ou erreur isolée — bandeau « Réessayer »
+  end
+  S->>R: readableRecipeIds — lots de 30, repli recette par recette
+  R-->>S: recettes lisibles ; les autres : titre et « Recette non partagée »
+  S->>L: une liste par jour — « Vous » d'abord, puis par prénom ;<br/>ni menu, ni heure modifiable, ni ligne d'origine
+  opt Marie retire le groupe
+    PR-->>S: uids sans marie
+    S->>L: « Le planning de Marie n'est plus partagé avec vous. »
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Aucun backfill.</b> Sans <code>shared_group_ids</code>, rien n'est partagé ; sans
+        <code>planning_reach</code>, rien ne se lit. <b>Le partage n'est pas réciproque</b> et
+        ne passe que par les membres (<code>owner_id</code>, <code>member_ids</code>), jamais par
+        les invités. L'écran n'affiche sur un repas d'autrui ni sa justification ni l'origine du
+        choix. Ces champs restent lisibles par l'audience dans le document : le masquage n'est
+        pas une protection (décision provisoire, voir TechnicalRequirements §3.7).
+        <span class="expect">
+          <b>Pas de requête <code>in</code>.</b> Un flux par propriétaire : un planning qui cesse
+          d'être partagé fait tomber son seul flux, pas les autres.
         </span>
       </figcaption>
     </figure>

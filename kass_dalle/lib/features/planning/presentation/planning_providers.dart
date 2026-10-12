@@ -7,7 +7,9 @@ import '../../../core/services/error_report_service.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../auth/domain/user_profile.dart';
 import '../data/planning_refusals_repository.dart';
+import '../data/planning_visibility_store.dart';
 import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
@@ -18,6 +20,7 @@ import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
+import '../domain/planning_visibility.dart';
 import '../domain/recipe_search_scope.dart';
 
 // ── Repository ─────────────────────────────────────────────────────────────────
@@ -61,11 +64,37 @@ class PlanningRepository {
   static const historyWindow = Duration(days: 90);
 
   /// Stream des repas planifiés de l'utilisateur, triés par date.
-  Stream<List<PlannedMeal>> watchMeals() {
+  Stream<List<PlannedMeal>> watchMeals() => _watchMealsOf(_uid);
+
+  /// Stream des repas d'un autre compte qui partage son planning avec
+  /// l'utilisateur, en lecture seule.
+  ///
+  /// Un flux par planning, filtré sur `uid == ownerUid` : les règles
+  /// Firestore vérifient cette égalité contre `planning_reach/{moi}`. Une
+  /// requête `in` sur plusieurs comptes serait refusée en entier dès qu'un
+  /// seul cesse de partager ; ici, seul son flux tombe en erreur.
+  ///
+  /// L'erreur est remontée au rapport puis transmise : l'écran l'affiche
+  /// sous le nom du planning, sans masquer les autres.
+  Stream<List<PlannedMeal>> watchSharedMeals(String ownerUid) {
+    return _watchMealsOf(ownerUid).handleError((Object e, StackTrace st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'planning_shared_meals',
+          error: e,
+          stackTrace: st,
+          context: {'uid': _uid, 'owner_uid': ownerUid},
+        ),
+      );
+      Error.throwWithStackTrace(e, st);
+    });
+  }
+
+  Stream<List<PlannedMeal>> _watchMealsOf(String ownerUid) {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day).subtract(historyWindow);
     return _col
-        .where('uid', isEqualTo: _uid)
+        .where('uid', isEqualTo: ownerUid)
         .where('planned_at', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
         .orderBy('planned_at')
         .snapshots()
@@ -74,6 +103,86 @@ class PlanningRepository {
               .map((d) => PlannedMeal.fromFirestore(d.id, d.data()))
               .toList(),
         );
+  }
+
+  // ── Plannings partagés ──────────────────────────────────────────────────────
+
+  /// Les comptes dont l'utilisateur peut lire le planning :
+  /// `planning_reach/{uid}.uids`, tenu par le serveur seul.
+  ///
+  /// Document absent (aucun partage, ou pas encore calculé) : vide. Jamais
+  /// l'utilisateur lui-même.
+  Stream<Set<String>> watchPlanningReach() {
+    return _db
+        .collection('planning_reach')
+        .doc(_uid)
+        .snapshots()
+        .map((doc) {
+          final raw = doc.data()?['uids'];
+          if (raw is! List) return <String>{};
+          return raw.whereType<String>().where((id) => id != _uid).toSet();
+        })
+        .handleError((Object e, StackTrace st) {
+          unawaited(
+            _errorReportService.reportError(
+              feature: 'planning_reach',
+              error: e,
+              stackTrace: st,
+              context: {'uid': _uid},
+            ),
+          );
+          Error.throwWithStackTrace(e, st);
+        });
+  }
+
+  /// Parmi [ids], les recettes que l'utilisateur peut lire, par lots de 30.
+  ///
+  /// Sert au planning partagé : le repas d'un autre membre peut pointer une
+  /// recette privée, un brouillon, un livre non partagé, ou une recette
+  /// supprimée. On ne l'ouvre pas, on l'affiche par son titre avec
+  /// « Recette non partagée ». Un lot refusé par les règles se relit recette
+  /// par recette. Les refus sont attendus mais pas tus : un seul rapport par
+  /// lot (`planning.shared_recipe_denied`), avec leur nombre et la première
+  /// recette refusée. Toute autre erreur est relancée.
+  Future<Set<String>> readableRecipeIds(Iterable<String> ids) async {
+    final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
+    final readable = <String>{};
+    for (var i = 0; i < unique.length; i += 30) {
+      final chunk = unique.sublist(i, (i + 30).clamp(0, unique.length));
+      try {
+        final snap = await _db
+            .collection('recipes')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        readable.addAll(snap.docs.map((d) => d.id));
+      } on FirebaseException catch (e, st) {
+        if (e.code != 'permission-denied') rethrow;
+        final denied = <String>[];
+        for (final id in chunk) {
+          try {
+            final doc = await _db.collection('recipes').doc(id).get();
+            if (doc.exists) readable.add(id);
+          } on FirebaseException catch (refusal) {
+            if (refusal.code != 'permission-denied') rethrow;
+            denied.add(id);
+          }
+        }
+        unawaited(
+          _errorReportService.reportError(
+            feature: 'planning.shared_recipe_denied',
+            error: e,
+            stackTrace: st,
+            context: {
+              'uid': _uid,
+              'batch_size': chunk.length,
+              'denied_count': denied.length,
+              if (denied.isNotEmpty) 'first_denied_recipe_id': denied.first,
+            },
+          ),
+        );
+      }
+    }
+    return readable;
   }
 
   /// Ajoute un repas planifié.
@@ -461,6 +570,171 @@ final plannedMealsProvider = StreamProvider.autoDispose<List<PlannedMeal>>((
   if (repo == null) return const Stream.empty();
   return repo.watchMeals();
 });
+
+/// Les comptes dont l'utilisateur peut lire le planning
+/// (`planning_reach/{uid}`). Vide sans compte.
+final planningReachProvider = StreamProvider.autoDispose<Set<String>>((ref) {
+  final repo = ref.watch(planningRepositoryProvider);
+  if (repo == null) return Stream.value(const <String>{});
+  return repo.watchPlanningReach();
+});
+
+/// Les repas d'un planning partagé avec l'utilisateur, un flux par
+/// propriétaire : l'erreur de l'un ne masque pas les autres.
+final sharedPlannedMealsProvider = StreamProvider.autoDispose
+    .family<List<PlannedMeal>, String>((ref, ownerUid) {
+      final repo = ref.watch(planningRepositoryProvider);
+      if (repo == null) return Stream.value(const <PlannedMeal>[]);
+      return repo.watchSharedMeals(ownerUid);
+    });
+
+// ── Plannings affichés ────────────────────────────────────────────────────────
+
+final planningVisibilityStoreProvider = Provider<PlanningVisibilityStore>(
+  (_) => const SharedPreferencesPlanningVisibilityStore(),
+);
+
+/// Le rapporteur d'erreurs de la mémoire des bascules, remplaçable dans les
+/// tests : `ErrorReportService` lit `FirebaseAuth.instance`.
+final planningVisibilityErrorReportProvider = Provider<ErrorReportService>(
+  (_) => ErrorReportService(),
+);
+
+/// Les plannings basculés par rapport au défaut du rôle, lus sur l'appareil.
+/// Vide tant que rien n'est lu, et quand rien ne peut l'être.
+final planningVisibilityProvider =
+    AsyncNotifierProvider.autoDispose<PlanningVisibilityNotifier, Set<String>>(
+      PlanningVisibilityNotifier.new,
+    );
+
+class PlanningVisibilityNotifier extends AsyncNotifier<Set<String>> {
+  ({String uid, bool canPlan})? _account;
+
+  @override
+  Future<Set<String>> build() async {
+    final account = ref.watch(
+      appUserProvider.select((user) {
+        final u = user.value;
+        return u == null ? null : (uid: u.uid, canPlan: u.canEdit);
+      }),
+    );
+    _account = account;
+    if (account == null) return <String>{};
+    try {
+      return await ref
+          .read(planningVisibilityStoreProvider)
+          .load(uid: account.uid, canPlan: account.canPlan);
+    } catch (e, st) {
+      reportUnexpectedError(
+        feature: 'planning_visibility_load',
+        error: e,
+        stackTrace: st,
+        userId: account.uid,
+        service: ref.read(planningVisibilityErrorReportProvider),
+      );
+      return <String>{};
+    }
+  }
+
+  /// Affiche ou masque le planning [ownerUid]. L'écran suit tout de suite ;
+  /// un échec de la mémorisation ne reprend pas ce qui est affiché, le choix
+  /// sera seulement oublié à la prochaine ouverture.
+  Future<void> toggle(String ownerUid) async {
+    final account = _account;
+    if (account == null) return;
+    final next = togglePlanning(state.value ?? const {}, ownerUid);
+    state = AsyncData(next);
+    try {
+      await ref
+          .read(planningVisibilityStoreProvider)
+          .save(next, uid: account.uid, canPlan: account.canPlan);
+    } catch (e, st) {
+      reportUnexpectedError(
+        feature: 'planning_visibility_save',
+        error: e,
+        stackTrace: st,
+        userId: account.uid,
+        context: {'owner_uid': ownerUid},
+        service: ref.read(planningVisibilityErrorReportProvider),
+      );
+    }
+  }
+}
+
+/// Une entrée du sélecteur « Plannings affichés ».
+class PlanningOwnerOption {
+  final String uid;
+
+  /// Le prénom du propriétaire, ou « Membre » ; non utilisé pour le sien.
+  final String name;
+  final bool isMine;
+  final bool shown;
+
+  const PlanningOwnerOption({
+    required this.uid,
+    required this.name,
+    required this.isMine,
+    required this.shown,
+  });
+
+  /// « Mon planning », « Planning de Marie ».
+  String get title => isMine ? 'Mon planning' : 'Planning de $name';
+
+  /// « Moi », « Marie » : le libellé court du bouton-puce.
+  String get shortName => isMine ? 'Moi' : name;
+}
+
+/// Les entrées du sélecteur, dans l'ordre : « Mon planning », puis les
+/// plannings partagés par ordre alphabétique des prénoms.
+///
+/// « Mon planning » n'est offert au lecteur que s'il lui reste au moins un
+/// repas : il ne planifie plus, il garde ses repas antérieurs.
+final planningOwnerOptionsProvider =
+    Provider.autoDispose<AsyncValue<List<PlanningOwnerOption>>>((ref) {
+      final me = ref.watch(appUserProvider).value;
+      if (me == null) return const AsyncData([]);
+      final canPlan = me.canEdit;
+      final toggled = ref.watch(planningVisibilityProvider);
+      final myMeals = ref.watch(plannedMealsProvider);
+      final reach = ref.watch(planningReachProvider);
+      if (!toggled.hasValue) return const AsyncLoading();
+      // Le lecteur attend de savoir s'il lui reste des repas et ce qu'on
+      // partage avec lui ; l'éditeur voit les siens sans attendre.
+      if (!canPlan && (!myMeals.hasValue && !myMeals.hasError)) {
+        return const AsyncLoading();
+      }
+      if (!canPlan && (!reach.hasValue && !reach.hasError)) {
+        return const AsyncLoading();
+      }
+      final offerMine = canPlan || (myMeals.value?.isNotEmpty ?? false);
+      final names = <String, String>{
+        for (final uid in reach.value ?? const <String>{})
+          uid: ref.watch(memberNameProvider(uid)) ?? UserProfile.fallbackName,
+      };
+      final others = names.keys.toList()
+        ..sort((a, b) {
+          final byName = names[a]!.toLowerCase().compareTo(
+            names[b]!.toLowerCase(),
+          );
+          return byName != 0 ? byName : a.compareTo(b);
+        });
+      final available = [if (offerMine) me.uid, ...others];
+      final shown = displayedPlannings(
+        available: available,
+        myUid: me.uid,
+        canPlan: canPlan,
+        toggled: toggled.value!,
+      ).toSet();
+      return AsyncData([
+        for (final uid in available)
+          PlanningOwnerOption(
+            uid: uid,
+            name: uid == me.uid ? 'Vous' : names[uid]!,
+            isMine: uid == me.uid,
+            shown: shown.contains(uid),
+          ),
+      ]);
+    });
 
 final planningPreferencesProvider =
     StreamProvider.autoDispose<PlanningPreferences>((ref) {

@@ -886,6 +886,19 @@ classDiagram
     +String calendarId
     +String calendarName
     +int varietyWindowWeeks
+    +List~String~ sharedGroupIds
+  }
+
+  class PlanningReach {
+    +List~String~ uids
+    +DateTime updatedAt
+  }
+
+  class PlanningOwnerOption {
+    +String uid
+    +String name
+    +bool isMine
+    +bool shown
   }
 
   class DayConstraint {
@@ -1125,6 +1138,9 @@ classDiagram
   RecipeSearchScope --> RecipeSource : sources
   MealIdea ..> Recipe : retenue, rédigée en recette validée
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
+  PlanningPreferences ..> PlanningReach : sharedGroupIds, recalculé par le serveur
+  PlanningReach ..> PlannedMeal : uids, lecture seule
+  PlanningReach ..> PlanningOwnerOption : un planning proposé par propriétaire
   DayConstraint --> MealFormat : plat seul par défaut, sinon entrée, dessert ou léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
@@ -1136,9 +1152,21 @@ classDiagram
 </pre>
       </div>
       <figcaption>
-        <b><code>planning_config/{uid}</code> — un document par personne</b>, lisible et
-        modifiable par elle seule. C'est l'application directe de la règle : un état propre à un
-        utilisateur vit sous cet utilisateur, jamais dans le document commun.
+        <b><code>planning_config/{uid}</code> — un document par personne</b>, lisible par elle
+        seule et modifiable par elle si elle est éditeur ou administrateur (v0.23.47). C'est
+        l'application directe de la règle : un état propre à un utilisateur vit sous cet
+        utilisateur, jamais dans le document commun.
+        <span class="expect">
+          <b>Partager son planning</b> (v0.23.47) : <code>sharedGroupIds</code> liste les groupes
+          dont les membres lisent ce planning. <b><code>PlanningReach</code> n'a pas de classe
+          Dart</b> : c'est le document <code>planning_reach/{uid}</code>, les propriétaires dont
+          le compte lit les <code>PlannedMeal</code>, écrit par le serveur seul et relu par les
+          règles Firestore. Le client le lit en <code>Set&lt;String&gt;</code>
+          (<code>PlanningRepository.watchPlanningReach</code>) et en tire les
+          <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
+          décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
+          (<code>PlanningVisibilityStore</code>), jamais dans Firestore.
+        </span>
         <span class="expect">
           <b><code>MealPrepContext</code> n'est jamais stocké.</b> Il est construit par l'écran de
           planning et voyage vers la fiche recette <b>en paramètres d'URL</b>

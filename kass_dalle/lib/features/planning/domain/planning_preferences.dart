@@ -125,9 +125,14 @@ class DayConstraint {
 /// variété que le modèle d'IA lit à chaque génération.
 ///
 /// Sans goût personnel : ni régime, ni cuisine imposée au-delà d'une base
-/// française. Chacun le retouche dans Paramètres du planning. C'est aussi le
+/// française. Chacun le retouche dans Préférences du planning. C'est aussi le
 /// texte que le backfill « Contraintes de variété par défaut » pose sur les
 /// comptes existants — le client l'envoie, le serveur n'en garde pas de copie.
+///
+/// Le texte cite encore « Paramètres du planning », l'ancien nom de l'écran :
+/// il est stocké tel quel chez chaque compte, et le backfill reconnaît un
+/// compte déjà traité à ce texte exact. Le changer ferait ajouter une seconde
+/// copie au prochain passage.
 const kDefaultGlobalConstraints =
     'VARIÉTÉ SUR LA SEMAINE (texte proposé par Kass\'Dalle, à modifier '
     'librement dans Paramètres du planning) :\n'
@@ -181,6 +186,16 @@ class PlanningPreferences {
   /// fétiches ne veut pas la même fenêtre qu'un corpus de deux cents.
   final int varietyWindowWeeks;
 
+  /// Groupes familiaux qui voient ce planning, en lecture seule
+  /// (`shared_group_ids`). Vide par défaut : rien n'est partagé tant que le
+  /// compte n'a rien coché.
+  ///
+  /// Le serveur en tire `planning_reach/{uid}` des membres de ces groupes
+  /// (déclencheur `syncPlanningReachOnConfig`). Un groupe disparu ou quitté
+  /// est ignoré ; un compte qui n'est plus éditeur ne partage rien, et ses
+  /// groupes restent ici, prêts pour le jour où il le redevient.
+  final List<String> sharedGroupIds;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
@@ -193,6 +208,7 @@ class PlanningPreferences {
     this.calendarId = 'primary',
     this.calendarName = 'Principal',
     this.varietyWindowWeeks = kVarietyWindowDefaultWeeks,
+    this.sharedGroupIds = const [],
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -222,7 +238,24 @@ class PlanningPreferences {
       varietyWindowWeeks: clampVarietyWindow(
         data['variety_window_weeks'] as int? ?? kVarietyWindowDefaultWeeks,
       ),
+      sharedGroupIds: sharedGroupIdsFrom(data['shared_group_ids']),
     );
+  }
+
+  /// Plafond de `shared_group_ids`, le même que celui des règles Firestore.
+  static const maxSharedGroups = 50;
+
+  /// Lit `shared_group_ids` : les chaînes non vides, sans doublon, dans
+  /// l'ordre. Une valeur mal formée vaut une liste vide.
+  static List<String> sharedGroupIdsFrom(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <String>[];
+    for (final value in raw) {
+      if (value is String && value.isNotEmpty && !out.contains(value)) {
+        out.add(value);
+      }
+    }
+    return out;
   }
 
   Map<String, dynamic> toFirestore() => {
@@ -240,6 +273,7 @@ class PlanningPreferences {
     'calendar_id': calendarId,
     'calendar_name': calendarName,
     'variety_window_weeks': varietyWindowWeeks,
+    'shared_group_ids': sharedGroupIds,
   };
 
   PlanningPreferences copyWith({
@@ -255,6 +289,7 @@ class PlanningPreferences {
     String? calendarId,
     String? calendarName,
     int? varietyWindowWeeks,
+    List<String>? sharedGroupIds,
   }) => PlanningPreferences(
     mealsPerCycle: mealsPerCycle ?? this.mealsPerCycle,
     cycleStartDay: cycleStartDay ?? this.cycleStartDay,
@@ -272,6 +307,7 @@ class PlanningPreferences {
     varietyWindowWeeks: clampVarietyWindow(
       varietyWindowWeeks ?? this.varietyWindowWeeks,
     ),
+    sharedGroupIds: sharedGroupIds ?? this.sharedGroupIds,
   );
 
   /// Heure retenue pour un jour de la semaine : la sienne s'il en a une, celle

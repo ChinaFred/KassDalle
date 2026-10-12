@@ -8,7 +8,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planning_history.dart';
@@ -29,6 +31,7 @@ import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_week.dart';
 import '../services/calendar_service.dart';
+import 'planning_owner_selector.dart';
 import 'planning_period_calendar.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
@@ -45,8 +48,19 @@ import '../../../core/theme/app_icons.dart';
 /// Choix proposé quand « Autre suggestion » n'a plus de recette.
 enum _ExhaustedChoice { pick, conceive }
 
+/// L'écran du planning : les repas de l'utilisateur, et ceux des plannings
+/// que d'autres membres de ses groupes partagent avec lui, en lecture seule.
+///
+/// Un éditeur ou un administrateur planifie. Un lecteur ne planifie plus
+/// (v0.23.47) : il lit les plannings partagés avec lui, et ne garde sur ses
+/// repas antérieurs que « Supprimer ».
 class PlanningScreen extends ConsumerStatefulWidget {
-  const PlanningScreen({super.key});
+  /// Vrai quand un lecteur arrive ici renvoyé d'un écran de planification
+  /// (`/planning/batch`, `/planning/config`, `/planning/staples`) : l'écran
+  /// lui dit pourquoi.
+  final bool showReservedNotice;
+
+  const PlanningScreen({super.key, this.showReservedNotice = false});
 
   @override
   ConsumerState<PlanningScreen> createState() => _PlanningScreenState();
@@ -112,6 +126,41 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// court pour que la navigation vers le passé ait une fin. Sans borne, la
   /// flèche continuerait indéfiniment sur des mois vides.
   static const _archiveDepth = Duration(days: 730);
+
+  /// Lisibilité, pour l'utilisateur, des recettes des repas d'autrui : vrai
+  /// si la recette s'ouvre, faux si elle n'est pas partagée avec lui. Une
+  /// recette absente n'est pas encore résolue.
+  final Map<String, bool> _readableRecipes = {};
+  final Set<String> _readablePending = {};
+
+  /// Recettes dont la résolution a échoué : pas de nouvel essai avant un
+  /// rafraîchissement, l'écran les montre sans lien ni cadenas.
+  final Set<String> _readableFailed = {};
+
+  /// Vrai quand « Mon planning » est affiché : l'archive n'est lue que dans
+  /// ce cas.
+  bool _mineShown = true;
+
+  /// Prénoms des plannings partagés au dernier affichage, pour dire lequel
+  /// cesse de l'être.
+  Map<String, String> _ownerNames = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showReservedNotice) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.showSnackBar(
+          'Planification réservée aux éditeurs. Demandez à un '
+          'administrateur de vous nommer éditeur.',
+        );
+        // L'adresse perd son paramètre : un rafraîchissement de la page ne
+        // répète pas le message.
+        GoRouter.maybeOf(context)?.go('/planning');
+      });
+    }
+  }
 
   Future<void> _loadRecipesIfNeeded() async {
     if (_recipesLoaded) return;
@@ -927,16 +976,102 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mealsAsync = ref.watch(plannedMealsProvider);
+    final myMealsAsync = ref.watch(plannedMealsProvider);
+    final canPlan = ref.watch(canEditProvider);
+    final myUid = ref.watch(appUserProvider).value?.uid;
     // Garder le provider de préférences vivant pour que ref.read() dans les
     // callbacks d'export ait toujours la valeur Firestore à jour.
     ref.watch(planningPreferencesProvider);
     // Les garnitures aussi : « Changer la recette » compose l'accompagnement
-    // depuis ce que le compte a sous la main, lu ici pour être prêt.
-    ref.watch(myStaplesProvider);
+    // depuis ce que le compte a sous la main, lu ici pour être prêt. Le
+    // lecteur ne planifie pas : il n'en a pas besoin.
+    if (canPlan) ref.watch(myStaplesProvider);
+    ref.listen(planningReachProvider, _onReachChanged);
     final theme = Theme.of(context);
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+
+    final optionsAsync = ref.watch(planningOwnerOptionsProvider);
+    final options = optionsAsync.value ?? const <PlanningOwnerOption>[];
+    final mineShown = options.any((o) => o.isMine && o.shown);
+    final shownOthers = [
+      for (final o in options)
+        if (!o.isMine && o.shown) o,
+    ];
+    _mineShown = mineShown;
+    _ownerNames = {
+      for (final o in options)
+        if (!o.isMine) o.uid: o.name,
+    };
+
+    // Un flux par planning partagé affiché : l'erreur de l'un ne masque pas
+    // les autres.
+    final sharedMeals = <PlannedMeal>[];
+    final failed = <PlanningOwnerOption>[];
+    var sharedLoading = false;
+    for (final owner in shownOthers) {
+      final async = ref.watch(sharedPlannedMealsProvider(owner.uid));
+      if (async.hasValue) {
+        sharedMeals.addAll(async.value!);
+      } else if (async.hasError) {
+        failed.add(owner);
+      } else {
+        sharedLoading = true;
+      }
+    }
+    final reachAsync = ref.watch(planningReachProvider);
+
+    // Mes repas : le flux temps réel ne remonte que quatre-vingt-dix jours ;
+    // les mois plus anciens sont lus à la demande. On les réunit ici, en
+    // écartant les doublons : un mois d'archive peut chevaucher le flux.
+    final myMeals = mineShown
+        ? <String, PlannedMeal>{
+            for (final m in myMealsAsync.value ?? const <PlannedMeal>[])
+              m.id: m,
+            for (final month in _archive.values)
+              for (final m in month) m.id: m,
+          }.values.toList()
+        : const <PlannedMeal>[];
+    // La liste des ingrédients et l'export ne portent que sur mes repas, et
+    // sont réservés à qui planifie.
+    final canShop = canPlan && myMeals.isNotEmpty;
+
+    final showSelector = options.length > 1 || (!canPlan && options.isNotEmpty);
+
+    final view = _PlanningView(
+      myUid: myUid,
+      canPlan: canPlan,
+      mineShown: mineShown,
+      othersShown: shownOthers.isNotEmpty,
+      names: {for (final o in options) o.uid: o.isMine ? 'Vous' : o.name},
+      selectorOnWide: isWide && showSelector,
+    );
+
+    final Widget content;
+    if ((!myMealsAsync.hasValue && !myMealsAsync.hasError) ||
+        (!optionsAsync.hasValue && !optionsAsync.hasError)) {
+      content = const AppLoadingState();
+    } else if (myMealsAsync.hasError && !myMealsAsync.hasValue) {
+      content = AppErrorState(
+        error: myMealsAsync.error,
+        onRetry: _refreshMeals,
+      );
+    } else {
+      content = _buildContent(
+        context,
+        theme,
+        view,
+        meals: [...myMeals, ...sharedMeals],
+        isWide: isWide,
+        sharedLoading: sharedLoading,
+        // Une portée en erreur n'est pas une portée vide.
+        reachEmpty:
+            reachAsync.hasValue && (reachAsync.value ?? const {}).isEmpty,
+        reachFailed: reachAsync.hasError && !reachAsync.hasValue,
+        anyShown: options.any((o) => o.shown),
+        mineOffered: options.any((o) => o.isMine),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -946,25 +1081,26 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           if (isWide) ...[
             // Sur grand écran, le bouton rejoint la barre : il ne flotte plus
             // au-dessus des repas.
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.icon(
-                onPressed: () => context.push('/planning/batch'),
-                icon: const Icon(Icons.auto_awesome_outlined),
-                label: const Text('Nouveau planning'),
+            if (canPlan)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilledButton.icon(
+                  onPressed: () => context.push('/planning/batch'),
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('Nouveau planning'),
+                ),
               ),
-            ),
             // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Actualiser le planning',
               onPressed: _refreshMeals,
             ),
-            if (mealsAsync.value?.isNotEmpty == true) ...[
+            if (canShop) ...[
               IconButton(
                 icon: const Icon(Icons.shopping_cart_outlined),
                 tooltip: 'Liste des ingrédients',
-                onPressed: () => _showIngredientsList(mealsAsync.value!),
+                onPressed: () => _showIngredientsList(myMeals),
               ),
               // La même icône que sur chaque repas et chaque créneau : un
               // geste, une icône. Elle reste distincte de celle du calendrier
@@ -972,26 +1108,23 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               IconButton(
                 icon: const Icon(AppIcons.calendarExport),
                 tooltip: 'Exporter le planning vers le calendrier',
-                onPressed: () => _exportAllToCalendar(mealsAsync.value!),
+                onPressed: () => _exportAllToCalendar(myMeals),
               ),
             ],
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Paramètres du planning',
-              onPressed: () => context.push('/planning/config'),
-            ),
+            if (canPlan)
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Préférences du planning',
+                onPressed: () => context.push('/planning/config'),
+              ),
           ] else ...[
             PopupMenuButton<int>(
               tooltip: 'Actions',
               onSelected: (value) {
-                if (value == 0) context.push('/planning/config');
+                if (value == 0 && canPlan) context.push('/planning/config');
                 if (value == 3) _chooseDates();
-                if (value == 1 && mealsAsync.value?.isNotEmpty == true) {
-                  _showIngredientsList(mealsAsync.value!);
-                }
-                if (value == 2 && mealsAsync.value?.isNotEmpty == true) {
-                  _exportAllToCalendar(mealsAsync.value!);
-                }
+                if (value == 1 && canShop) _showIngredientsList(myMeals);
+                if (value == 2 && canShop) _exportAllToCalendar(myMeals);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(
@@ -1002,15 +1135,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
-                const PopupMenuItem(
-                  value: 0,
-                  child: ListTile(
-                    leading: Icon(Icons.settings_outlined),
-                    title: Text('Paramètres'),
-                    contentPadding: EdgeInsets.zero,
+                if (canPlan)
+                  const PopupMenuItem(
+                    value: 0,
+                    child: ListTile(
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Préférences du planning'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
-                ),
-                if (mealsAsync.value?.isNotEmpty == true) ...[
+                if (canShop) ...[
                   const PopupMenuItem(
                     value: 1,
                     child: ListTile(
@@ -1033,7 +1167,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ],
         ],
       ),
-      floatingActionButton: isWide
+      floatingActionButton: isWide || !canPlan
           ? null
           : AnimatedSlide(
               offset: _fabHidden ? const Offset(0, 2) : Offset.zero,
@@ -1047,12 +1181,207 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                 label: const Text('Nouveau planning'),
               ),
             ),
-      body: RefreshIndicator(
-        onRefresh: _refreshMeals,
-        child: mealsAsync.when(
-          loading: () => const AppLoadingState(),
-          error: (e, _) => AppErrorState(error: e, onRetry: _refreshMeals),
-          data: (meals) => _buildPeriod(context, theme, meals, isWide),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!isWide && showSelector) const PlanningOwnersChipRow(),
+          // Mes repas sont là ; les plannings partagés arrivent encore.
+          if (sharedLoading && myMealsAsync.hasValue)
+            const LinearProgressIndicator(),
+          if (reachAsync.hasError && !reachAsync.hasValue)
+            _PlanningReadFailure(
+              message: 'Les plannings partagés n\'ont pas pu être lus.',
+              onRetry: () => ref.invalidate(planningReachProvider),
+            ),
+          for (final owner in failed)
+            _PlanningReadFailure(
+              message: 'Le planning de ${owner.name} n\'a pas pu être lu.',
+              onRetry: () =>
+                  ref.invalidate(sharedPlannedMealsProvider(owner.uid)),
+            ),
+          Expanded(
+            child: RefreshIndicator(onRefresh: _refreshMeals, child: content),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Un planning partagé a cessé de l'être : l'entrée quitte le sélecteur,
+  /// et l'écran le dit une fois.
+  void _onReachChanged(
+    AsyncValue<Set<String>>? previous,
+    AsyncValue<Set<String>> next,
+  ) {
+    final before = previous?.value;
+    final after = next.value;
+    if (before == null || after == null || !mounted) return;
+    for (final uid in before.difference(after)) {
+      final name = _ownerNames[uid] ?? UserProfile.fallbackName;
+      context.showSnackBar(
+        'Le planning de $name n\'est plus partagé avec vous.',
+      );
+    }
+  }
+
+  /// Ce qu'affiche le corps une fois les repas lus : un état vide, ou la
+  /// période.
+  Widget _buildContent(
+    BuildContext context,
+    ThemeData theme,
+    _PlanningView view, {
+    required List<PlannedMeal> meals,
+    required bool isWide,
+    required bool sharedLoading,
+    required bool reachEmpty,
+    required bool reachFailed,
+    required bool anyShown,
+    required bool mineOffered,
+  }) {
+    if (!anyShown) {
+      // Les plannings partagés n'ont pas pu être lus : le dire, pas
+      // prétendre que personne ne partage.
+      if (reachFailed) {
+        return _withSelectorOnWide(
+          view,
+          AppErrorState(
+            error: ref.read(planningReachProvider).error,
+            title: 'Les plannings partagés n\'ont pas pu être lus',
+            onRetry: () => ref.invalidate(planningReachProvider),
+          ),
+        );
+      }
+      if (!view.canPlan && reachEmpty) {
+        return _withSelectorOnWide(
+          view,
+          _buildReaderWithoutShares(hasOwnMeals: mineOffered),
+        );
+      }
+      return _withSelectorOnWide(
+        view,
+        AppEmptyState(
+          icon: Icons.visibility_off_outlined,
+          title: 'Aucun planning affiché.',
+          // Sur grand écran, la carte « Plannings affichés » est déjà là.
+          action: view.selectorOnWide
+              ? null
+              : FilledButton.icon(
+                  onPressed: () => showPlanningOwnersSheet(context),
+                  icon: const Icon(Icons.people_outline),
+                  label: const Text('Choisir les plannings'),
+                ),
+        ),
+      );
+    }
+    // Seuls des plannings partagés sont affichés, et ils arrivent encore :
+    // des jours « Rien de prévu » seraient faux.
+    if (sharedLoading && !view.mineShown) return const AppLoadingState();
+    if (meals.isEmpty && view.canPlan && view.mineShown && !sharedLoading) {
+      return _withSelectorOnWide(view, _buildPlannerEmptyState(theme));
+    }
+    return _buildPeriod(context, theme, meals, isWide, view);
+  }
+
+  /// Sur grand écran, la carte des plannings reste visible au-dessus d'un
+  /// état vide : c'est d'elle que vient la solution.
+  Widget _withSelectorOnWide(_PlanningView view, Widget child) {
+    if (!view.selectorOnWide) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(width: 360, child: PlanningOwnersCard()),
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  /// Un lecteur à qui personne ne partage de planning : sans groupe, on lui
+  /// dit d'en rejoindre un ; membre, on lui dit qui peut partager.
+  ///
+  /// Un lecteur qui garde d'anciens repas apprend où les retrouver.
+  Widget _buildReaderWithoutShares({required bool hasOwnMeals}) {
+    const ownMealsHint =
+        'Cochez « Mon planning » pour revoir vos anciens repas.';
+    final groups = ref.watch(myGroupsProvider);
+    if (!groups.hasValue && !groups.hasError) return const AppLoadingState();
+    if (groups.hasError && !groups.hasValue) {
+      return AppErrorState(
+        error: groups.error,
+        title: 'Vos groupes familiaux n\'ont pas pu être lus',
+        onRetry: () => ref.invalidate(myGroupsProvider),
+      );
+    }
+    if ((groups.value ?? const []).isEmpty) {
+      return AppEmptyState(
+        icon: Icons.group_outlined,
+        title: 'Vous ne faites partie d\'aucun groupe familial.',
+        message: hasOwnMeals
+            ? 'Rejoignez le groupe de votre famille pour voir ses plannings. '
+                  '$ownMealsHint'
+            : 'Rejoignez le groupe de votre famille pour voir ses plannings.',
+        action: FilledButton.icon(
+          onPressed: () => context.push('/groups'),
+          icon: const Icon(Icons.group_outlined),
+          label: const Text('Voir les groupes familiaux'),
+        ),
+      );
+    }
+    return AppEmptyState(
+      icon: Icons.calendar_today_outlined,
+      title: 'Aucun planning n\'est partagé avec vous.',
+      message: hasOwnMeals
+          ? 'Un membre de votre groupe peut partager le sien depuis les '
+                'préférences de son planning. $ownMealsHint'
+          : 'Un membre de votre groupe peut partager le sien depuis les '
+                'préférences de son planning.',
+    );
+  }
+
+  /// Le planning vide de qui planifie : créer un planning, ou régler ses
+  /// préférences.
+  Widget _buildPlannerEmptyState(ThemeData theme) {
+    return Center(
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: AppIconSize.hero,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Aucun repas planifié',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Bouton principal
+            FilledButton.icon(
+              onPressed: () => context.push('/planning/batch'),
+              icon: const Icon(Icons.auto_awesome_outlined),
+              label: const Text('Générer un nouveau planning'),
+            ),
+            const SizedBox(height: 12),
+            // Accès direct aux préférences
+            OutlinedButton.icon(
+              onPressed: () => context.push('/planning/config'),
+              icon: const Icon(Icons.tune_outlined),
+              label: const Text('Préférences du planning'),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Vous pouvez aussi planifier un repas isolé\ndepuis la page d\'une recette (icône 📅).',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1061,72 +1390,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// L'écran : le calendrier, puis les jours de la période choisie.
   ///
   /// Aucun document n'est créé pour cette vue : elle range par jour les repas
-  /// du flux temps réel et ceux de l'archive déjà lue. Une semaine est une
-  /// lecture, pas un porteur.
+  /// des plannings affichés et ceux de l'archive déjà lue. Une semaine est
+  /// une lecture, pas un porteur.
   Widget _buildPeriod(
     BuildContext context,
     ThemeData theme,
-    List<PlannedMeal> live,
+    List<PlannedMeal> meals,
     bool isWide,
+    _PlanningView view,
   ) {
-    // Le flux temps réel ne remonte que quatre-vingt-dix jours ; les mois plus
-    // anciens sont lus à la demande. On les réunit ici, en écartant les
-    // doublons : un mois d'archive peut chevaucher le flux.
-    final meals = <String, PlannedMeal>{
-      for (final m in live) m.id: m,
-      for (final month in _archive.values)
-        for (final m in month) m.id: m,
-    }.values.toList();
-
-    if (meals.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.calendar_today_outlined,
-                size: AppIconSize.hero,
-                color: theme.colorScheme.onSurfaceVariant.withValues(
-                  alpha: 0.4,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Aucun repas planifié',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Bouton principal
-              FilledButton.icon(
-                onPressed: () => context.push('/planning/batch'),
-                icon: const Icon(Icons.auto_awesome_outlined),
-                label: const Text('Générer un nouveau planning'),
-              ),
-              const SizedBox(height: 12),
-              // Accès direct aux préférences
-              OutlinedButton.icon(
-                onPressed: () => context.push('/planning/config'),
-                icon: const Icon(Icons.tune_outlined),
-                label: const Text('Configurer mes préférences'),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Vous pouvez aussi planifier un repas isolé\ndepuis la page d\'une recette (icône 📅).',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final cycleStartDay =
@@ -1182,7 +1454,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             }),
     );
 
-    final days = _buildPeriodDays(theme, meals, period, today, isWide);
+    final days = _buildPeriodDays(theme, meals, period, today, isWide, view);
 
     if (isWide) {
       return Row(
@@ -1192,7 +1464,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             width: 360,
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(top: 8),
-              child: calendar,
+              child: view.selectorOnWide
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [const PlanningOwnersCard(), calendar],
+                    )
+                  : calendar,
             ),
           ),
           const VerticalDivider(width: 1),
@@ -1311,12 +1588,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   /// Les jours de la période lue, vides compris : un jour libre est une
   /// information, et l'endroit où poser une recette.
+  ///
+  /// Une seule liste par jour : mes repas d'abord, puis ceux des autres par
+  /// ordre alphabétique de leur prénom, par heure à l'intérieur.
   Widget _buildPeriodDays(
     ThemeData theme,
     List<PlannedMeal> meals,
     PlanningPeriod period,
     DateTime today,
     bool isWide,
+    _PlanningView view,
   ) {
     final grouped = <DateTime, List<PlannedMeal>>{};
     final prepared = <DateTime, List<PlannedMeal>>{};
@@ -1328,10 +1609,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       }
     }
     for (final list in grouped.values) {
-      list.sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+      list.sort(view.compare);
     }
 
     _dayKeys.removeWhere((day, _) => !period.contains(day));
+    _resolveSharedRecipes(meals, period, view);
+
+    final locked = {
+      for (final e in _readableRecipes.entries)
+        if (!e.value) e.key,
+    };
 
     // Une colonne construite d'un bloc, pas une liste paresseuse : un appui
     // sur un jour lointain du bandeau doit trouver ce jour pour y descendre,
@@ -1358,34 +1645,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                   isToday: day == today,
                   isPast: day.isBefore(today),
                 ),
-                if ((grouped[day] ?? const []).isEmpty)
-                  PlanningEmptyDayRow(
-                    isPast: day.isBefore(today),
-                    onPick: day.isBefore(today)
-                        ? null
-                        : () => _addMealOnDay(day),
-                  ),
-                for (final meal in grouped[day] ?? const <PlannedMeal>[])
-                  PlanningMealTile(
-                    meal: meal,
-                    isPast: day.isBefore(today),
-                    aiLoading:
-                        _aiLoadingIds.contains(meal.id) ||
-                        _storageLoadingIds.contains(meal.id),
-                    isWide: isWide,
-                    onDelete: () => _deleteMeal(meal),
-                    onChangeRecipe: () => _changeRecipe(meal),
-                    onReschedule: () => _rescheduleMeal(meal),
-                    onAddComponent: () => _addComponent(meal),
-                    onRemoveComponent: (c) => _removeComponent(meal, c),
-                    onClearRecipe: () => _clearRecipe(meal),
-                    onOtherSuggestion: () => _otherSuggestion(meal),
-                    onStorageAdvice: () => _showStorageAdvice(meal),
-                    onTimeChanged: () => _changeTime(meal),
-                    onExportToCalendar: () => _exportMealToCalendar(meal),
-                    onTap: _openRecipeFor(meal),
-                    onComponentTap: (c) => _openComponentRecipe(meal, c),
-                  ),
+                ..._buildDayMeals(
+                  day: day,
+                  isPast: day.isBefore(today),
+                  meals: grouped[day] ?? const [],
+                  isWide: isWide,
+                  view: view,
+                  locked: locked,
+                ),
                 // Ce qui se prépare ce jour-là pour être mangé plus tard : le
                 // calendrier le signale par une pastille creuse, la liste dit
                 // quoi et pour quand.
@@ -1418,10 +1685,24 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                         size: AppIconSize.small,
                       ),
                       title: Text(meal.recipeTitre),
-                      subtitle: Text(
-                        'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // La même ligne que la tuile du repas : la recette
+                          // d'un autre membre peut ne pas se lire.
+                          if (!view.isMine(meal) &&
+                              locked.contains(meal.recipeId))
+                            const PlanningRecipeNotSharedLine(),
+                          Text(
+                            [
+                              if (view.labelsOwners) view.nameOf(meal.uid),
+                              'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+                            ].join(' · '),
+                          ),
+                        ],
                       ),
-                      onTap: _openRecipeFor(meal),
+                      onTap: _openRecipeIfReadable(meal, view),
                     ),
                 ],
               ],
@@ -1429,6 +1710,176 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         ],
       ),
     );
+  }
+
+  /// Les repas d'un jour, et la ligne « Rien de prévu » quand il le faut.
+  ///
+  /// La ligne qui propose « Choisir une recette » porte sur MES repas : elle
+  /// vient avant ceux des autres. Le lecteur, qui ne planifie pas, lit
+  /// seulement « Rien de prévu » un jour sans aucun repas.
+  List<Widget> _buildDayMeals({
+    required DateTime day,
+    required bool isPast,
+    required List<PlannedMeal> meals,
+    required bool isWide,
+    required _PlanningView view,
+    required Set<String> locked,
+  }) {
+    final mine = [
+      for (final m in meals)
+        if (view.isMine(m)) m,
+    ];
+    final others = [
+      for (final m in meals)
+        if (!view.isMine(m)) m,
+    ];
+    final Widget? emptyRow;
+    if (view.canPlan && view.mineShown && mine.isEmpty) {
+      emptyRow = PlanningEmptyDayRow(
+        isPast: isPast,
+        label: view.othersShown ? 'Rien de prévu pour vous' : 'Rien de prévu',
+        onPick: isPast ? null : () => _addMealOnDay(day),
+      );
+    } else if (meals.isEmpty) {
+      emptyRow = PlanningEmptyDayRow(isPast: isPast);
+    } else {
+      emptyRow = null;
+    }
+    return [
+      ?emptyRow,
+      for (final meal in mine) _buildMyMeal(meal, isPast, isWide, view),
+      for (final meal in others)
+        PlanningMealTile(
+          meal: meal,
+          isPast: isPast,
+          aiLoading: false,
+          isWide: isWide,
+          readOnly: true,
+          ownerName: view.nameOf(meal.uid),
+          lockedRecipeIds: locked,
+          // Pendant la résolution, un composant-recette ne s'ouvre pas plus
+          // que le plat.
+          openableRecipeIds: {
+            for (final c in meal.components)
+              if (_canOpenShared(c.recipeId)) c.recipeId!,
+          },
+          onTap: _openRecipeIfReadable(meal, view),
+          onComponentTap: (c) => _openComponentRecipe(meal, c),
+        ),
+    ];
+  }
+
+  /// Un de mes repas. Qui planifie a toutes les actions ; le lecteur ne
+  /// garde que « Supprimer ».
+  Widget _buildMyMeal(
+    PlannedMeal meal,
+    bool isPast,
+    bool isWide,
+    _PlanningView view,
+  ) {
+    if (!view.canPlan) {
+      return PlanningMealTile(
+        meal: meal,
+        isPast: isPast,
+        aiLoading: false,
+        isWide: isWide,
+        ownerName: view.labelsOwners ? view.nameOf(meal.uid) : null,
+        onDelete: () => _deleteMeal(meal),
+        onTap: _openRecipeFor(meal),
+        onComponentTap: (c) => _openComponentRecipe(meal, c),
+      );
+    }
+    return PlanningMealTile(
+      meal: meal,
+      isPast: isPast,
+      aiLoading:
+          _aiLoadingIds.contains(meal.id) ||
+          _storageLoadingIds.contains(meal.id),
+      isWide: isWide,
+      ownerName: view.labelsOwners ? view.nameOf(meal.uid) : null,
+      onDelete: () => _deleteMeal(meal),
+      onChangeRecipe: () => _changeRecipe(meal),
+      onReschedule: () => _rescheduleMeal(meal),
+      onAddComponent: () => _addComponent(meal),
+      onRemoveComponent: (c) => _removeComponent(meal, c),
+      onClearRecipe: () => _clearRecipe(meal),
+      onOtherSuggestion: () => _otherSuggestion(meal),
+      onStorageAdvice: () => _showStorageAdvice(meal),
+      onTimeChanged: () => _changeTime(meal),
+      onExportToCalendar: () => _exportMealToCalendar(meal),
+      onTap: _openRecipeFor(meal),
+      onComponentTap: (c) => _openComponentRecipe(meal, c),
+    );
+  }
+
+  /// La fiche d'un repas, si son plat se lit : les miens toujours, ceux des
+  /// autres une fois leur recette résolue et lisible.
+  VoidCallback? _openRecipeIfReadable(PlannedMeal meal, _PlanningView view) {
+    if (view.isMine(meal)) return _openRecipeFor(meal);
+    if (!_canOpenShared(meal.recipeId)) return null;
+    return _openRecipeFor(meal);
+  }
+
+  /// La recette d'un repas d'autrui s'ouvre-t-elle ? Oui si elle se lit ;
+  /// oui aussi quand la résolution a échoué : la fiche dit elle-même
+  /// « Recette non partagée » sur un refus. Non tant qu'elle se résout.
+  bool _canOpenShared(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return _readableRecipes[id] == true || _readableFailed.contains(id);
+  }
+
+  /// Résout, par une lecture groupée, la lisibilité des recettes des repas
+  /// d'autrui dans [period]. On n'élargit pas la lecture des recettes : une
+  /// recette refusée s'affiche par son titre, « Recette non partagée ».
+  void _resolveSharedRecipes(
+    List<PlannedMeal> meals,
+    PlanningPeriod period,
+    _PlanningView view,
+  ) {
+    final ids =
+        <String>{
+          for (final m in meals)
+            if (!view.isMine(m) &&
+                period.contains(PlanningPeriodCalendar.dayOf(m.plannedAt))) ...[
+              if (m.recipeId != null && m.recipeId!.isNotEmpty) m.recipeId!,
+              for (final c in m.components)
+                if (c.isRecipe && (c.recipeId ?? '').isNotEmpty) c.recipeId!,
+            ],
+        }..removeWhere(
+          (id) =>
+              _readableRecipes.containsKey(id) ||
+              _readablePending.contains(id) ||
+              _readableFailed.contains(id),
+        );
+    if (ids.isEmpty) return;
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    _readablePending.addAll(ids);
+    // Après le rendu : l'écran se met à jour quand la lecture revient.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final readable = await repo.readableRecipeIds(ids);
+        if (!mounted) return;
+        setState(() {
+          for (final id in ids) {
+            _readableRecipes[id] = readable.contains(id);
+          }
+          _readablePending.removeAll(ids);
+        });
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.resolveSharedRecipes',
+          error: e,
+          stackTrace: stackTrace,
+          context: {'recipe_count': ids.length},
+        );
+        if (!mounted) return;
+        setState(() {
+          _readablePending.removeAll(ids);
+          _readableFailed.addAll(ids);
+        });
+      }
+    });
   }
 
   /// Pose une recette sur un jour libre de la période lue.
@@ -1521,6 +1972,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// Les mois couverts par le flux temps réel ne sont pas relus : ils arrivent
   /// déjà, et les relire les paierait deux fois.
   Future<void> _loadArchiveMonth(DateTime month) async {
+    // L'archive ne porte que sur mes repas : inutile de la lire quand « Mon
+    // planning » n'est pas affiché.
+    if (!_mineShown) return;
     final key = PlanningPeriodCalendar.monthOf(month);
     if (_archive.containsKey(key) || _archiveLoading.contains(key)) return;
 
@@ -1558,7 +2012,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   /// Recharge le planning : geste de rafraîchissement et bouton Réessayer.
   Future<void> _refreshMeals() async {
+    setState(() {
+      _readableRecipes.clear();
+      _readableFailed.clear();
+    });
     ref.invalidate(plannedMealsProvider);
+    ref.invalidate(planningReachProvider);
+    ref.invalidate(sharedPlannedMealsProvider);
     await ref.read(plannedMealsProvider.future);
   }
 
@@ -1581,6 +2041,90 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       recipeLocationFor(
         recipeId: recipeId,
         targetPortions: meal.portionsForComponents,
+      ),
+    );
+  }
+}
+
+/// Ce que la liste du planning sait des plannings affichés.
+class _PlanningView {
+  final String? myUid;
+  final bool canPlan;
+  final bool mineShown;
+  final bool othersShown;
+
+  /// Prénom de chaque propriétaire affiché ; « Vous » pour le compte.
+  final Map<String, String> names;
+
+  /// Grand écran avec plusieurs plannings proposés : la carte « Plannings
+  /// affichés » est posée au-dessus du calendrier.
+  final bool selectorOnWide;
+
+  const _PlanningView({
+    required this.myUid,
+    required this.canPlan,
+    required this.mineShown,
+    required this.othersShown,
+    required this.names,
+    required this.selectorOnWide,
+  });
+
+  bool isMine(PlannedMeal meal) => meal.uid == myUid;
+
+  /// Pas d'étiquette quand seul « Mon planning » est affiché.
+  bool get labelsOwners => othersShown;
+
+  String nameOf(String uid) =>
+      uid == myUid ? 'Vous' : (names[uid] ?? UserProfile.fallbackName);
+
+  /// Mes repas d'abord, puis les autres par prénom, puis par heure.
+  int compare(PlannedMeal a, PlannedMeal b) {
+    final mineA = isMine(a), mineB = isMine(b);
+    if (mineA != mineB) return mineA ? -1 : 1;
+    if (!mineA) {
+      final byName = nameOf(
+        a.uid,
+      ).toLowerCase().compareTo(nameOf(b.uid).toLowerCase());
+      if (byName != 0) return byName;
+      final byUid = a.uid.compareTo(b.uid);
+      if (byUid != 0) return byUid;
+    }
+    return a.plannedAt.compareTo(b.plannedAt);
+  }
+}
+
+/// Un planning partagé illisible : le dire sous son nom, sans masquer les
+/// autres, et proposer de réessayer.
+class _PlanningReadFailure extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _PlanningReadFailure({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // Région vive : le lecteur d'écran annonce l'échec sans qu'on y aille.
+    return Semantics(
+      liveRegion: true,
+      child: Material(
+        color: scheme.errorContainer,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline, color: scheme.onErrorContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: scheme.onErrorContainer),
+                ),
+              ),
+              TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,8 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/presentation/leave_guard.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../groups/domain/family_group.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
@@ -14,9 +20,12 @@ import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 
-/// Écran de configuration du planning de repas (Axe C).
+/// « Préférences du planning » : cycle, contraintes, Calendar, et les groupes
+/// qui voient le planning (« Partager mon planning »).
 ///
-/// Accessible depuis le bouton paramètres de [PlanningScreen].
+/// Accessible depuis le bouton paramètres de [PlanningScreen]. Réservé aux
+/// éditeurs et administrateurs : `resolveRedirect` y renvoie le lecteur vers
+/// le planning.
 class PlanningConfigScreen extends ConsumerStatefulWidget {
   const PlanningConfigScreen({super.key});
 
@@ -35,9 +44,26 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   final Map<int, TextEditingController> _maxPrepControllers = {};
   final Map<int, TextEditingController> _targetPortionsControllers = {};
 
+  /// Les préférences telles que chargées, sous une forme comparable : ce qui
+  /// en diffère au moment de partir est une modification non enregistrée.
+  String? _loadedSnapshot;
+
+  /// Vrai une fois enregistré : quitter ne perd plus rien.
+  bool _saved = false;
+
+  // Garde de sortie : la barre de navigation et le menu latéral appellent
+  // `context.go`, que `PopScope` ne voit pas (voir `leave_guard.dart`).
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+
   @override
   void initState() {
     super.initState();
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    // Après le rendu : un provider ne se modifie pas pendant la construction.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _leaveGuardNotifier.set(_leaveGuard);
+    });
     // Initialiser les controllers pour les 7 jours
     for (int d = 1; d <= 7; d++) {
       _notesControllers[d] = TextEditingController();
@@ -48,6 +74,10 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 
   @override
   void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
     _globalConstraintsCtrl.dispose();
     for (final c in _notesControllers.values) {
       c.dispose();
@@ -78,6 +108,68 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         _notesControllers[d]!.text = c.notes;
       }
     }
+    _loadedSnapshot = _snapshot(_buildPrefs());
+  }
+
+  /// Forme comparable des préférences : clés triées, pour que deux contenus
+  /// égaux donnent la même chaîne quel que soit l'ordre de lecture.
+  static String _snapshot(PlanningPreferences prefs) {
+    Object? canonical(Object? value) {
+      if (value is Map) {
+        final keys = value.keys.map((k) => k.toString()).toList()..sort();
+        return {for (final k in keys) k: canonical(value[k])};
+      }
+      if (value is List) return [for (final v in value) canonical(v)];
+      return value;
+    }
+
+    return jsonEncode(canonical(prefs.toFirestore()));
+  }
+
+  bool get _dirty =>
+      !_saved &&
+      _prefs != null &&
+      _loadedSnapshot != null &&
+      _snapshot(_buildPrefs()) != _loadedSnapshot;
+
+  /// Vrai quand l'écran peut être quitté : rien à perdre, ou l'utilisateur
+  /// accepte d'abandonner ses modifications.
+  Future<bool> _confirmLeave() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitter sans enregistrer ?'),
+        content: const Text(
+          'Vos modifications des préférences du planning seront perdues.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Rester'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitter'),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  Future<void> _leaveAfterConfirmation() async {
+    if (!await _confirmLeave() || !mounted) return;
+    _saved = true; // la question est posée : le retour suivant passe
+    Navigator.of(context).pop();
+  }
+
+  void _toggleSharedGroup(String groupId, bool shared) {
+    setState(() {
+      final ids = [..._prefs!.sharedGroupIds]..remove(groupId);
+      if (shared) ids.add(groupId);
+      _prefs = _prefs!.copyWith(sharedGroupIds: ids);
+    });
   }
 
   DayConstraint _buildConstraint(int weekday) {
@@ -197,6 +289,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     try {
       final repo = ref.read(planningRepositoryProvider);
       await repo?.savePreferences(_buildPrefs());
+      _saved = true;
       if (mounted) {
         context.showSuccessSnackBar('Préférences enregistrées');
         Navigator.pop(context);
@@ -223,7 +316,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Configuration du planning')),
+        appBar: AppBar(title: const Text('Préférences du planning')),
         body: AppErrorState(
           error: e,
           onRetry: () => ref.invalidate(planningPreferencesOnceProvider),
@@ -240,9 +333,23 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     if (_prefs == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    return PopScope(
+      // Toujours retenu : la question ne se pose que s'il y a quelque chose à
+      // perdre, ce que seul le moment du départ sait (les champs de texte ne
+      // reconstruisent pas l'écran).
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _leaveAfterConfirmation();
+      },
+      child: _buildForm(),
+    );
+  }
+
+  Widget _buildForm() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Configuration du planning'),
+        title: const Text('Préférences du planning'),
         centerTitle: false,
         actions: [
           if (_saving)
@@ -260,6 +367,16 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
+          // Partager mon planning : qui le voit, en lecture seule.
+          _CollapsibleSection(
+            icon: Icons.people_outline,
+            title: 'Partager mon planning',
+            child: _SharingSection(
+              sharedGroupIds: _prefs!.sharedGroupIds,
+              onChanged: _toggleSharedGroup,
+            ),
+          ),
+          const SizedBox(height: 8),
           // 1. Contraintes globales
           _CollapsibleSection(
             icon: Icons.comment_outlined,
@@ -385,6 +502,89 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 }
 
 // ── Widgets locaux ──────────────────────────────────────────────────────────────
+
+/// « Partager mon planning » : une case par groupe dont l'utilisateur est
+/// membre, propriétaire compris. Rien n'est coché par défaut.
+class _SharingSection extends ConsumerWidget {
+  final List<String> sharedGroupIds;
+  final void Function(String groupId, bool shared) onChanged;
+
+  const _SharingSection({
+    required this.sharedGroupIds,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final groupsAsync = ref.watch(myGroupsProvider);
+    final invitations = ref.watch(pendingInvitationsCountProvider);
+    final groups = groupsAsync.value ?? const <FamilyGroup>[];
+    final hint = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final toGroups = OutlinedButton.icon(
+      onPressed: () => context.push('/groups'),
+      icon: const Icon(Icons.group_outlined),
+      label: const Text('Voir les groupes familiaux'),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Les membres des groupes cochés voient vos repas, sans pouvoir '
+            'les modifier. Ils ne voient ni vos courses, ni vos préférences. '
+            'Un membre qui rejoint plus tard un groupe coché verra aussi '
+            'votre planning.',
+            style: hint,
+          ),
+          const SizedBox(height: 8),
+          if (!groupsAsync.hasValue && !groupsAsync.hasError)
+            const LinearProgressIndicator()
+          else if (groupsAsync.hasError && !groupsAsync.hasValue)
+            AppErrorState(
+              error: groupsAsync.error,
+              compact: true,
+              onRetry: () => ref.invalidate(myGroupsProvider),
+            )
+          else if (groups.isEmpty)
+            Text('Vous ne faites partie d\'aucun groupe familial.')
+          else
+            for (final group in groups)
+              CheckboxListTile(
+                value: sharedGroupIds.contains(group.id),
+                onChanged: (v) => onChanged(group.id, v ?? false),
+                title: Text(group.name),
+                subtitle: Text(_membersLabel(group)),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+          if (invitations > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              invitations == 1
+                  ? 'Vous avez 1 invitation en attente.'
+                  : 'Vous avez $invitations invitations en attente.',
+            ),
+          ],
+          if (groupsAsync.hasValue && (groups.isEmpty || invitations > 0)) ...[
+            const SizedBox(height: 8),
+            toGroups,
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// « 3 membres », propriétaire compris.
+  static String _membersLabel(FamilyGroup group) {
+    final count = {group.ownerId, ...group.memberIds}.length;
+    return count == 1 ? '1 membre' : '$count membres';
+  }
+}
 
 /// Section repliable générique utilisée dans PlanningConfigScreen.
 class _CollapsibleSection extends StatefulWidget {

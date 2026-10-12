@@ -20,41 +20,61 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.46 — fonctionnel
+### v0.23.47 — fonctionnel
 
-La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image
-analysée vaut un appel, et son coût s'ajoute à la dépense du jour. Plafond atteint, l'image
-n'est pas publiée et l'écran affiche le message du plafond ; une photo de page importée par
-lien est laissée de côté et la recette est créée sans elle. La relance des images en attente
-par l'administrateur n'est pas concernée.
+Le lecteur ne planifie plus : ni repas, ni cycle, ni préférences du planning, ni garnitures,
+ni liste des ingrédients du planning, ni conseil de conservation. Ces gestes lui sont masqués,
+et `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient au planning avec
+« Planification réservée aux éditeurs ». Ses repas antérieurs restent visibles et
+supprimables : « Mon planning » reste dans son sélecteur tant qu'il lui reste un repas, décoché
+par défaut.
+
+Un éditeur ou un administrateur partage son planning depuis « Préférences du planning »,
+section « Partager mon planning » : une case par groupe familial dont il est membre, rien de
+coché par défaut. Les membres des groupes cochés voient ses repas en lecture seule, sans ses
+courses ni ses préférences. Le partage n'est pas réciproque. Il est suspendu quand le
+propriétaire n'est plus éditeur, et reprend s'il le redevient.
+
+L'écran du planning affiche « Plannings affichés » : un bouton-puce sous la barre sur un
+téléphone, une carte au-dessus du calendrier sur grand écran. Le lecteur voit par défaut tous
+les plannings partagés avec lui, l'éditeur son planning seul ; l'appareil mémorise les
+changements. Chaque repas d'autrui porte le prénom de son propriétaire, sans menu, sans heure
+modifiable et sans ligne d'origine du choix. Une recette que le lecteur ne peut pas lire
+s'affiche par son titre avec « Recette non partagée », sur le planning comme sur une fiche
+ouverte par lien. L'écran de réglages s'appelle partout « Préférences du planning ».
+
+### v0.23.47 — technique
+
+Nouvelle collection `planning_reach/{uid}` (`uids`, `updated_at`) : les propriétaires dont
+`uid` lit le planning, écrite par le serveur seul (`triggers/planningReach.ts`). Elle est
+recalculée par `syncGroupReach` (composition d'un groupe), par le nouveau déclencheur
+`syncPlanningReachOnConfig` (`planning_config/{uid}.shared_group_ids`) et par le nouveau
+déclencheur `syncPlanningReachOnRole` (rôle ou révocation du propriétaire, `retry: true`).
+`membersOf` et `sameReach` passent dans `triggers/groupMembers.ts`. Les champs d'un repas
+partagé (`justification`, `choice_source`, `dismissed_recipe_ids`) sont lisibles par
+l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision
+provisoire). Nouveau champ
+`planning_config.shared_group_ids` (`List<String>`, 50 au plus). Aucun backfill : sans
+`shared_group_ids` rien n'est partagé.
+
+`firestore.rules` : `planned_meals` se lit aussi par un compte nommé dont `planning_reach`
+contient le propriétaire (`canReadPlanningOf`) ; création et modification exigent
+`isEditor()`, la suppression reste au propriétaire. `planning_config` s'écrit par un éditeur
+pour lui-même ; `planning_reach` ne s'écrit par aucun client. `suggestMealPlanFn`,
+`suggestStorageAdviceFn` et `consolidateShoppingListFn` passent de `requireAuth` à
+`requireEditor`. Le client ouvre un flux Firestore par planning affiché (`uid == propriétaire`),
+jamais une requête `in`, et résout la lisibilité des recettes des repas d'autrui par une
+lecture groupée. 17 tests de règles ajoutés, 4 réécrits ; tests Functions du calcul de la
+portée ; tests Dart du sélecteur, de la redirection et de l'écran.
 
 ### v0.23.46 — technique
 
-Cinq corrections issues de l'audit `securite`.
+#### Sauvegardes : état daté et région de restauration
 
-- **Cloud Vision dans le plafond quotidien.** `moderateAndPromote` réserve une place par image
-  analysée (`withDailyBudget`), au coût de l'analyse lu dans la grille tarifaire
-  (`visionAnalysisCostUsd`, nouvelle option `estimateUsd` de `reserveDailyBudget`). Un compte
-  pouvait rappeler `moderateAndPromoteImagesFn` en boucle sur sa quarantaine, chaque appel
-  déclenchant une analyse facturée. Refus : `resource-exhausted`. `recordUsage` accepte
-  `dailyCalls` : une image analysée compte pour un appel dans `ai_daily_spend` (un lot de
-  vingt-cinq images en comptait un). Les analyses déjà faites d'un lot interrompu sont
-  enregistrées en `finally`. `retryPendingModerationFn` (admin) reste hors plafond.
-- **`normalizeRecipeReferentialsFn`** écrit dans `nutrition_ingredients` : réservée à
-  l'éditeur, et au lecteur créateur de la recette `recipeId`
-  (`assertCanNormalizeReferentials`). `requireEditor` seul aurait cassé l'enregistrement
-  d'une recette par son lecteur créateur, que les règles permettent.
-- **`free_recipe_cover_url`** : les règles n'admettent que `null` ou une adresse de
-  téléchargement du bucket du projet sous `users/`, 500 caractères au plus (`coverUrlOk`) ;
-  `publicCoverUrl` écarte toute autre valeur à la recopie dans `user_profiles`.
-- **`error_reports`** : liste fermée des neuf champs, `user_id` égal à l'appelant, longueurs
-  bornées (`isErrorReport`). `context` devient une chaîne JSON, seule forme mesurable par
-  une règle ; le client tronque chaque champ à la moitié de la borne. Les rapports anciens
-  (contexte en carte) se relisent toujours. Un client antérieur à cette version, qui écrit
-  encore une carte, voit ses rapports refusés jusqu'à sa mise à jour.
-- **Fondateur** : `isFounder()` exige `email_verified` et une connexion Google ;
-  `isFounderAccount` applique le même contrôle dans `enforceFounderRole` et pour le
-  multiplicateur de plafond (`founderUid`).
+`TechnicalRequirements.md` dit maintenant que les sauvegardes de Firestore sont actives depuis
+le 11 octobre 2026, avec une première sauvegarde prête le 12, et que le versionnage de Storage
+l'est depuis le 12. La commande de restauration nomme la région `eur3` au lieu d'un
+paramètre à deviner. Le fichier `lifecycle.json` se crée dans `$env:TEMP`, plus dans le dépôt.
 
 ### v0.23.45 — fonctionnel
 
