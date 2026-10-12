@@ -197,7 +197,7 @@ String? resolveRedirect({
     return AppRoutes.home;
   }
 
-  // Planifier est réservé aux éditeurs (v0.23.44) : le lecteur lit les
+  // Planifier est réservé aux éditeurs (v0.23.45) : le lecteur lit les
   // plannings partagés avec lui, il n'en crée pas. Les écrans de création,
   // de préférences et de garnitures le renvoient au planning, qui dit
   // pourquoi (voir [kPlanningReservedParam]).

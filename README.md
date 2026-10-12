@@ -71,3 +71,9 @@ Tout est dans [`documentation/`](documentation/) — sommaire :
 - **Windows** : `flutter build windows --release`, copié dans `Release/desktop`. Construit à la
   main, hors `deploy.ps1`, et non distribué en ligne
 - **iOS** : déclaré dans le dépôt, jamais construit — voir `TechnicalRequirements.md` § 12
+
+## Licence
+
+Code source consultable, **tous droits réservés**. Le dépôt peut être lu et forké sur GitHub
+pour proposer une contribution. Toute autre utilisation, copie, redistribution ou œuvre
+dérivée demande l'accord écrit du titulaire. Conditions complètes : [`LICENSE`](LICENSE).

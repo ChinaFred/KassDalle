@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.44 — fonctionnel
+### v0.23.45 — fonctionnel
 
 Le lecteur ne planifie plus : ni repas, ni cycle, ni préférences du planning, ni garnitures,
 ni liste des ingrédients du planning, ni conseil de conservation. Ces gestes lui sont masqués,
@@ -43,7 +43,7 @@ modifiable et sans ligne d'origine du choix. Une recette que le lecteur ne peut 
 s'affiche par son titre avec « Recette non partagée », sur le planning comme sur une fiche
 ouverte par lien. L'écran de réglages s'appelle partout « Préférences du planning ».
 
-### v0.23.44 — technique
+### v0.23.45 — technique
 
 Nouvelle collection `planning_reach/{uid}` (`uids`, `updated_at`) : les propriétaires dont
 `uid` lit le planning, écrite par le serveur seul (`triggers/planningReach.ts`). Elle est
@@ -66,6 +66,16 @@ pour lui-même ; `planning_reach` ne s'écrit par aucun client. `suggestMealPlan
 jamais une requête `in`, et résout la lisibilité des recettes des repas d'autrui par une
 lecture groupée. 17 tests de règles ajoutés, 4 réécrits ; tests Functions du calcul de la
 portée ; tests Dart du sélecteur, de la redirection et de l'écran.
+
+### v0.23.44 — technique
+
+La CI ne se rejoue plus en entier sur le push qui fusionne une PR. Un job « Déjà testé en
+PR » compare l'arbre du commit poussé à celui de la tête de la PR, vérifie que cette tête
+contient la `master` d'avant le push et qu'une CI de PR a réussi dessus. Les jobs Flutter,
+Functions et Règles sont alors sautés ; seul le contrôle de version tourne. Sur les cent
+dernières exécutions, ces jobs en double représentaient environ 400 minutes Actions
+facturées sur 1 450. Le dépôt reçoit aussi un fichier `LICENSE` propriétaire : code
+consultable, tous droits réservés, en vue d'un passage du dépôt en public.
 
 ### v0.23.43 — fonctionnel
 

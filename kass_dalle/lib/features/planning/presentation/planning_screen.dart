@@ -52,7 +52,7 @@ enum _ExhaustedChoice { pick, conceive }
 /// que d'autres membres de ses groupes partagent avec lui, en lecture seule.
 ///
 /// Un éditeur ou un administrateur planifie. Un lecteur ne planifie plus
-/// (v0.23.44) : il lit les plannings partagés avec lui, et ne garde sur ses
+/// (v0.23.45) : il lit les plannings partagés avec lui, et ne garde sur ses
 /// repas antérieurs que « Supprimer ».
 class PlanningScreen extends ConsumerStatefulWidget {
   /// Vrai quand un lecteur arrive ici renvoyé d'un écran de planification

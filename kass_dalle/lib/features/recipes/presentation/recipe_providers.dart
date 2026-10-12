@@ -37,7 +37,7 @@ final storageRepositoryProvider = Provider<StorageRepository>((ref) {
 /// Le créateur ou un administrateur : miroir de `assertCanModifyRecipe` côté
 /// Functions, qui refuse les autres comptes avant tout appel de modèle.
 ///
-/// Jamais un lecteur : depuis la v0.23.44, il ne planifie plus, et
+/// Jamais un lecteur : depuis la v0.23.45, il ne planifie plus, et
 /// `suggestStorageAdviceFn` exige le rôle éditeur. La fiche lui montre le
 /// conseil déjà stocké, ou rien.
 ///

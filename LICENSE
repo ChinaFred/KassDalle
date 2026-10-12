@@ -1,0 +1,60 @@
+Kass'Dalle — Licence propriétaire, tous droits réservés
+
+Copyright (c) 2026 ChinaFred (titulaire du dépôt GitHub ChinaFred/KassDalle).
+Tous droits réservés.
+
+1. Objet
+
+Ce dépôt contient le code source, la documentation, les données d'essai, les
+prompts, les images et tout autre contenu de l'application Kass'Dalle
+(ci-après « le Logiciel »). Le Logiciel est publié pour être consulté. Sa
+publication ne vaut ni cession, ni licence d'utilisation, sauf ce que
+l'article 2 autorise.
+
+2. Ce qui est autorisé
+
+Toute personne peut, sans contrepartie :
+  a) consulter le Logiciel sur GitHub ;
+  b) le forker sur GitHub, comme le prévoient les conditions d'utilisation
+     de GitHub, dans le seul but de le consulter ou de proposer une
+     contribution au dépôt d'origine par une pull request.
+
+3. Ce qui est interdit sans accord écrit du titulaire
+
+  a) utiliser, exécuter, compiler ou déployer le Logiciel, en tout ou en
+     partie, pour un usage personnel, commercial ou non commercial ;
+  b) le copier, le reproduire ou le redistribuer, modifié ou non, hors des
+     cas de l'article 2 ;
+  c) en créer une œuvre dérivée, ou en reprendre des parties dans un autre
+     logiciel ;
+  d) l'héberger ou le proposer comme service, y compris en ligne ;
+  e) l'utiliser, lui ou son contenu, pour entraîner, évaluer ou affiner un
+     modèle d'intelligence artificielle ;
+  f) retirer ou modifier cette licence ou les mentions de droits d'auteur.
+
+4. Contributions
+
+Une personne qui propose une contribution (pull request, correctif,
+suggestion) accorde au titulaire, sans contrepartie, le droit perpétuel et
+mondial de l'utiliser, la modifier et la redistribuer sous les conditions de
+son choix. Elle garantit qu'elle a le droit de la céder.
+
+5. Marques et services tiers
+
+Le nom « Kass'Dalle » et son logo restent la propriété du titulaire. Les
+bibliothèques tierces gardent leur propre licence. Les identifiants de
+projets Firebase et Google Cloud présents dans le dépôt ne donnent aucun
+droit d'accès à ces services.
+
+6. Absence de garantie
+
+Le Logiciel est fourni « tel quel », sans garantie d'aucune sorte. Le
+titulaire n'est responsable d'aucun dommage lié à sa consultation ou à un
+usage interdit.
+
+7. Droit applicable
+
+Cette licence est régie par le droit français. Tout litige relève des
+tribunaux français compétents.
+
+Pour toute demande d'autorisation, ouvrir une issue sur le dépôt GitHub.
