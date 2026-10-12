@@ -523,8 +523,11 @@ flowchart LR
         « Recette non partagée », et ne s'ouvre pas. Sa note sur une recette ne pèse pas sur
         les suggestions du propriétaire.
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
-        propriétaire cherche une personne par son nom (« Rechercher une personne à inviter… ») et
-        l'invite (« Inviter dans le groupe ») ; il peut annuler tant que l'invitation attend
+        propriétaire cherche une personne par son nom (« Rechercher une personne à inviter… »),
+        ou par son adresse e-mail complète : celle-ci part au serveur
+        (<code>findMemberByEmailFn</code>), qui ne rend que le compte approuvé dont l'adresse est
+        exactement celle saisie, sans l'adresse, trente recherches par jour au plus. Il l'invite
+        ensuite (« Inviter dans le groupe ») ; il peut annuler tant que l'invitation attend
         (« Invitations en attente (n) »). L'invité voit un badge sur le chip de son compte et sur
         « Groupes familiaux » dans le menu, puis « Invitations reçues » en tête de l'écran Groupes.
         « Accepter » demande une confirmation, « Rejoindre « X » ? », qui dit que les membres

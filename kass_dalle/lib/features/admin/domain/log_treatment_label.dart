@@ -111,6 +111,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'app_check_policy': 'Attestation de l\'application',
   'ai_budget_policy': 'Plafonds de dépense IA',
   'invitation': 'Invitation par e-mail',
+  'recherche_membre_adresse': 'Recherche d\'un membre par adresse',
   'couts_gcp': 'Coûts d\'infrastructure',
   'gcp-costs': 'Coûts d\'infrastructure',
   'couts_mensuels': 'Coûts du mois',

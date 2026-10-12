@@ -201,6 +201,7 @@ firestore/
 ├── groups/{groupId}/
 ├── invitations/{invitationId}/                    ← invitations par e-mail, écrites par le serveur seul
 ├── invitation_sends_daily/{uid}_{AAAA-MM-JJ}/     ← compteur du plafond d'envois d'invitations
+├── member_email_search_daily/{uid}_{AAAA-MM-JJ}/  ← compteur du plafond de recherches de membre par adresse
 ├── processing_jobs/{jobId}/
 ├── dead_letters/{jobId}/
 ├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
@@ -1244,6 +1245,12 @@ une invitation fantôme.
 `count` `int`, `updated_at` `Timestamp`. Compteur du plafond de 20 envois (créations et
 renvois) par administrateur et par jour, incrémenté dans la transaction qui enregistre
 l'envoi. Écrit par les Functions seules, lu par un administrateur.
+
+`member_email_search_daily/{uid}_{AAAA-MM-JJ}` (jour UTC) : `uid` `String`, `day` `String`,
+`count` `int`, `updated_at` `Timestamp`. Compteur du plafond de 30 recherches d'un membre par
+adresse (`findMemberByEmailFn`) par compte et par jour, incrémenté dans une transaction avant
+la recherche, que le compte soit trouvé ou non. N'enregistre aucune adresse. Écrit par les
+Functions seules, lu par personne côté client. **Migration :** aucune, la collection naît vide.
 
 ---
 
@@ -2294,6 +2301,7 @@ service cloud.firestore {
 | `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
 | `invitations` · `invitation_sends_daily` | admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn` et `applyEmailInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; editor, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
+| `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
@@ -2705,7 +2713,9 @@ La lecture de `users/{uid}` d'autrui par un éditeur est fermée depuis la v0.23
 Firestore ne filtre pas les champs d'une lecture : les écrans qui affichaient un nom — file de
 travail, relecture d'un brouillon, détail et liste des recettes, bibliothèque, membres d'un
 groupe — lisent désormais le profil public `user_profiles/{uid}` (§3.1 bis), et la recherche de
-membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, par nom seulement.
+membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, par nom. La
+recherche par adresse exacte passe par la callable `findMemberByEmailFn` (§5, « Recherche d'un
+membre par adresse ») : le client ne lit toujours aucune adresse.
 
 ---
 
@@ -2910,6 +2920,51 @@ L'aperçu suit chaque frappe (`ListenableBuilder` sur les deux contrôleurs). L'
 « Invitations (n) », n invitations en attente ; chaque ligne porte sa puce de statut en tête du
 sous-titre et un seul menu, où « Copier le lien » n'apparaît que si l'invitation peut être
 renvoyée.
+
+### Recherche d'un membre par adresse
+
+Le propriétaire d'un groupe cherche un compte existant à inviter par son adresse e-mail
+complète. `users/{uid}` n'est pas lisible par lui (§4) : le serveur fait la recherche. Aucun
+appel de modèle : ce n'est pas un poste d'IA.
+
+**`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireAuth` —
+compte approuvé, non révoqué, App Check selon la politique ; traitement
+`recherche_membre_adresse`). Entrée `{groupId, email}`. Le serveur vérifie, dans cet ordre :
+
+1. `groupId` lisible (`readGroupId` : non vide, 128 caractères au plus, sans `/`), sinon
+   `invalid-argument` ;
+2. adresse de forme valide après espaces retirés et minuscules (`cleanEmail`), sinon
+   `invalid-argument` « Adresse e-mail invalide. » ;
+3. groupe existant (`not-found` « Ce groupe n'existe plus. ») dont l'appelant est
+   **propriétaire** (`searcherDenial`, `permission-denied`) — le propriétaire seul invite
+   (`isManagement` dans `firestore.rules`) ;
+4. moins de 30 recherches du jour UTC pour l'appelant : transaction sur
+   `member_email_search_daily/{uid}_{AAAA-MM-JJ}`, incrémentée avant la recherche, trouvée ou
+   non ; au-delà, `resource-exhausted` « Trop de recherches aujourd'hui. Réessayez demain. »
+   et un `logWarn`.
+
+Puis `users` est parcourue (cinq champs : `email`, `role`, `is_revoked`, `display_name`,
+`preferred_name`), comme `existingAccountFor` des invitations : une requête d'égalité
+manquerait une adresse stockée avec des majuscules. `findAccountByEmail`
+(`invitations/memberSearch.ts`) retient le premier compte dont `cleanEmail(users.email)` vaut
+l'adresse saisie, non révoqué et doté d'un profil public (`publicProfileFrom` : rôle `reader`,
+`editor` ou `admin`). La correspondance est **stricte** : pas de clé normalisée Gmail
+(`normalizeEmailKey`), qui ferait trouver un compte sous une autre écriture de l'adresse que
+celle saisie.
+
+Réponse : `{found: false}`, ou `{found: true, uid, displayName, preferredName}` — les deux noms
+de `user_profiles/{uid}`, déjà lisibles par tout compte approuvé. Jamais l'adresse, jamais le
+rôle. Un compte en attente ou révoqué répond `{found: false}`, comme une adresse inconnue. Le
+journal (`logInfo`) nomme le groupe et l'issue, jamais l'adresse. Une erreur Firestore est
+journalisée (`logError`) et rendue `internal`.
+
+Client : `GroupRepository.findMemberByEmail(groupId, email)` appelle la callable et lit la
+réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart`) ;
+`resource-exhausted` devient `MemberSearchLimitReached`. Toute erreur est signalée
+(`ErrorReportService`, feature `group_search_email`, contexte `group_id` et issue, sans
+l'adresse). Dans la feuille « Gérer les membres », une saisie qui contient `@` suspend la
+recherche par nom ; une adresse complète (`looksLikeEmail`) part à la validation de la saisie
+ou au bouton « Chercher cette adresse », jamais à chaque frappe.
 
 ---
 

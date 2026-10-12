@@ -926,6 +926,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Recherches d'un membre par adresse du jour, par compte — le compteur du
+    // plafond de trente recherches de `findMemberByEmailFn`. Écrit par les
+    // Cloud Functions seulement, lu par personne côté client : ouvert en
+    // écriture, il laisserait remettre son compteur à zéro et essayer des
+    // adresses sans borne.
+    match /member_email_search_daily/{docId} {
+      allow read, write: if false;
+    }
+
     // Cache partagé des recherches web (sept jours). Lu et écrit par les Cloud
     // Functions seulement : ouvert au client, il laisserait servir à toute la
     // famille des pages choisies par un seul compte, sans appel ni décompte.

@@ -121,6 +121,9 @@ export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 // monte les secrets GMAIL_SENDER et GMAIL_APP_PASSWORD ; nodemailer se charge
 // au premier envoi.
 export { manageInvitationFn } from "./callable/invitationsCallable";
+// Recherche d'un membre à inviter dans un groupe, par son adresse exacte :
+// réservée au propriétaire du groupe, trente recherches par jour.
+export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/family_group.dart';
+import '../domain/member_email_search.dart';
 import 'group_providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -309,7 +310,9 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
   /// liste et l'état vide correspondent toujours à la saisie affichée.
   Future<void> _search(String query) async {
     final q = query.trim();
-    if (q.isEmpty) {
+    // Une adresse ne se cherche pas à chaque frappe : elle part à la
+    // validation ([_searchByEmail]), chaque recherche étant comptée.
+    if (q.isEmpty || isEmailLikeQuery(q)) {
       setState(() {
         _searchResults = [];
         _searchedQuery = null;
@@ -330,6 +333,37 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       if (!mounted || _searchController.text.trim() != q) return;
       setState(() => _searching = false);
       context.showErrorSnackBar('Recherche impossible : $e');
+    }
+  }
+
+  /// Recherche par adresse exacte, sur validation de la saisie ou par le
+  /// bouton dédié. Le résultat prend la place des résultats par nom : même
+  /// liste, même bouton « Inviter dans le groupe », même filtrage des membres
+  /// et des invités.
+  Future<void> _searchByEmail(String groupId) async {
+    final q = _searchController.text.trim();
+    if (!isCompleteEmailQuery(q) || _searching) return;
+    setState(() => _searching = true);
+    try {
+      final found = await ref
+          .read(groupRepositoryProvider)
+          .findMemberByEmail(groupId, q);
+      if (!mounted || _searchController.text.trim() != q) return;
+      setState(() {
+        _searchResults = found == null ? [] : [found];
+        _searchedQuery = q;
+        _searching = false;
+      });
+    } on MemberSearchLimitReached {
+      // Signalée au rapport d'erreurs par GroupRepository.
+      if (!mounted) return;
+      setState(() => _searching = false);
+      context.showErrorSnackBar(MemberSearchLimitReached.message);
+    } catch (_) {
+      // Signalée au rapport d'erreurs par GroupRepository.
+      if (!mounted) return;
+      setState(() => _searching = false);
+      context.showErrorSnackBar('Recherche impossible. Réessayez.');
     }
   }
 
@@ -419,6 +453,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     final typed = _searchController.text.trim();
     final searchDone =
         !_searching && typed.isNotEmpty && _searchedQuery == typed;
+    final emailQuery = isEmailLikeQuery(typed);
+    final completeEmail = isCompleteEmailQuery(typed);
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.65,
@@ -458,6 +494,14 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                           )
                         : const Icon(Icons.search),
                     trailing: [
+                      if (completeEmail)
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward),
+                          tooltip: 'Chercher cette adresse',
+                          onPressed: _searching
+                              ? null
+                              : () => _searchByEmail(group.id),
+                        ),
                       if (_searchController.text.isNotEmpty)
                         IconButton(
                           icon: const Icon(Icons.clear),
@@ -466,8 +510,20 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                         ),
                     ],
                     onChanged: _search,
+                    onSubmitted: (_) => _searchByEmail(group.id),
                   ),
                 ),
+                if (emailQuery && !searchDone && !_searching)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      completeEmail
+                          ? 'Validez la saisie ou appuyez sur la flèche pour '
+                                'chercher cette adresse.'
+                          : 'Saisissez l\'adresse e-mail complète.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 if (candidates.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -506,9 +562,15 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(
                       _searchResults.isEmpty
-                          ? 'Aucun membre trouvé pour « $typed ». La recherche '
-                                'se fait par nom. Un compte en attente de '
-                                'validation n\'apparaît qu\'une fois validé.'
+                          ? (emailQuery
+                                ? 'Aucun compte pour cette adresse. Un compte '
+                                      'en attente de validation n\'apparaît '
+                                      'qu\'une fois validé.'
+                                : 'Aucun membre trouvé pour « $typed ». '
+                                      'Cherchez par nom, ou par adresse '
+                                      'e-mail complète. Un compte en attente '
+                                      'de validation n\'apparaît qu\'une fois '
+                                      'validé.')
                           : 'Les personnes trouvées pour « $typed » sont déjà '
                                 'membres ou invitées.',
                       style: Theme.of(context).textTheme.bodySmall,
