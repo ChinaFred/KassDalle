@@ -703,6 +703,7 @@ class RecipeRepository {
       // d'où vient le texte, quelle que soit la copie.
       sourceUrl: recipe.sourceUrl,
       sourceSite: recipe.sourceSite,
+      sourceAuthor: recipe.sourceAuthor,
     );
     return createRecipe(copy);
   }
