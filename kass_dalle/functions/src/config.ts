@@ -174,6 +174,22 @@ export const COLL_SCAN_SPEND = "scan_spend";
  * Écrit par les Functions seulement.
  */
 export const COLL_URL_IMPORT_DAILY = "url_import_daily";
+
+/**
+ * Recherches web du jour, par compte — `{uid}_{AAAA-MM-JJ}` (jour UTC).
+ *
+ * Compteur du plafond quotidien de `searchWebRecipesFn`, sur le modèle de
+ * `url_import_daily`. Écrit par les Functions seulement ; le titulaire le lit.
+ */
+export const COLL_WEB_SEARCH_DAILY = "web_search_daily";
+
+/**
+ * Cache partagé des recherches web — `{sha256 de la requête normalisée}`.
+ *
+ * Sept jours. Ne porte rien de propre à un compte : la requête, les pages
+ * trouvées, le bloc de suggestions de Google. Aucun accès client.
+ */
+export const COLL_WEB_SEARCH_CACHE = "web_search_cache";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 /**

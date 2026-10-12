@@ -1,12 +1,16 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/link.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/explore_facets.dart';
 import '../domain/search_models.dart';
+import '../domain/web_search.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 // ── Tuile résultat de recherche ───────────────────────────────────────────────
@@ -498,6 +502,312 @@ class _TagChip extends StatelessWidget {
         label,
         style: theme.textTheme.labelSmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+// ── « Sur le web » : une page de recette trouvée par Google ─────────────────
+
+/// Côté de l'icône d'une page web.
+const double webResultThumbnailSize = 64;
+
+/// Une page de recette trouvée sur le web : icône, titre, site, extrait,
+/// badge « Import direct », et les actions « Ouvrir » et « Importer ».
+///
+/// Toucher la carte l'ouvre dans le navigateur, comme « Ouvrir ». Sur le web,
+/// le titre est un vrai lien (clic du milieu, menu du navigateur) ; il n'est
+/// pas un arrêt de focus de plus : au clavier, la carte suffit. Sur un
+/// ordinateur, le clic droit ouvre un menu.
+class WebResultTile extends StatelessWidget {
+  final WebRecipeResult result;
+
+  /// Éditeur ou administrateur : badge, « Importer » et menu « Importer ».
+  final bool canImport;
+
+  /// Vrai une fois l'import envoyé depuis cette carte.
+  final bool imported;
+  final VoidCallback onOpen;
+  final VoidCallback? onImport;
+  final VoidCallback onCopyLink;
+
+  /// Sur le web, le lien du titre vient d'être suivi par le navigateur : la
+  /// page s'ouvre sans [onOpen], et l'écran arme le retour (bandeau
+  /// d'import).
+  final VoidCallback? onLinkFollowed;
+
+  const WebResultTile({
+    super.key,
+    required this.result,
+    required this.canImport,
+    required this.onOpen,
+    required this.onCopyLink,
+    this.onImport,
+    this.onLinkFollowed,
+    this.imported = false,
+  });
+
+  Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem(
+          value: 'open',
+          child: Text('Ouvrir dans le navigateur'),
+        ),
+        const PopupMenuItem(value: 'copy', child: Text('Copier le lien')),
+        if (canImport && onImport != null && !imported)
+          const PopupMenuItem(value: 'import', child: Text('Importer')),
+      ],
+    );
+    switch (choice) {
+      case 'open':
+        onOpen();
+      case 'copy':
+        onCopyLink();
+      case 'import':
+        onImport?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.bold,
+    );
+    final title = Text(
+      result.title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: titleStyle,
+    );
+
+    final texts = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Sur le web, le titre est une ancre : le navigateur propose ses
+        // propres gestes (nouvel onglet, copier le lien). Hors du focus :
+        // l'ancre a `tabIndex = -1`, et la carte porte déjà « Ouvrir ».
+        if (kIsWeb)
+          Link(
+            uri: result.url,
+            target: LinkTarget.blank,
+            builder: (context, followLink) => InkWell(
+              canRequestFocus: false,
+              onTap: followLink == null
+                  ? null
+                  : () {
+                      onLinkFollowed?.call();
+                      followLink();
+                    },
+              child: title,
+            ),
+          )
+        else
+          title,
+        const SizedBox(height: 2),
+        Text(
+          result.site,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: muted,
+        ),
+        if (result.snippet case final snippet?) ...[
+          const SizedBox(height: 4),
+          Text(
+            snippet,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (canImport && result.directImport)
+          Tooltip(
+            message:
+                'Cette page décrit sa recette de façon structurée : '
+                'l\'import sera fidèle.',
+            child: Chip(
+              avatar: const Icon(Icons.bolt, size: AppIconSize.inline),
+              label: const Text('Import direct'),
+              labelStyle: theme.textTheme.labelSmall,
+              backgroundColor: theme.colorScheme.secondaryContainer,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        Tooltip(
+          message: 'Ouvrir ${result.site} dans le navigateur',
+          child: TextButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
+            label: const Text('Ouvrir'),
+          ),
+        ),
+        if (canImport)
+          imported
+              ? Chip(
+                  avatar: const Icon(Icons.check, size: AppIconSize.inline),
+                  label: const Text('Import envoyé'),
+                  labelStyle: theme.textTheme.labelSmall,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                )
+              : Tooltip(
+                  message: 'Importer cette recette dans vos brouillons',
+                  child: FilledButton.tonalIcon(
+                    onPressed: onImport,
+                    icon: const Icon(Icons.link, size: AppIconSize.small),
+                    label: const Text('Importer'),
+                  ),
+                ),
+      ],
+    );
+
+    Widget card = Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const WebResultThumbnail(),
+                  const SizedBox(width: 12),
+                  // Le libellé de la carte dit déjà titre et site : les
+                  // textes ne sont pas relus une seconde fois.
+                  Expanded(child: ExcludeSemantics(child: texts)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              actions,
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (PlatformUtils.isDesktop) {
+      card = GestureDetector(
+        onSecondaryTapDown: (details) =>
+            _showContextMenu(context, details.globalPosition),
+        child: card,
+      );
+    }
+
+    return Semantics(
+      container: true,
+      label: result.semanticLabel(canImport: canImport),
+      child: card,
+    );
+  }
+}
+
+/// L'icône d'une page web, 64 × 64, décorative.
+///
+/// Jamais d'image de la page, sur aucune plateforme : une vignette tierce
+/// chargée par l'appareil donnerait l'adresse IP du lecteur au site, et
+/// afficherait une image que la modération n'a pas vue. Seul
+/// `AppNetworkImage` affiche une image réseau.
+class WebResultThumbnail extends StatelessWidget {
+  const WebResultThumbnail({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ExcludeSemantics(
+      child: Container(
+        width: webResultThumbnailSize,
+        height: webResultThumbnailSize,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.public,
+          size: AppIconSize.medium,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// Carte d'attente d'une page web, de la hauteur d'une [WebResultTile].
+class WebResultPlaceholderTile extends StatelessWidget {
+  const WebResultPlaceholderTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget bar(double widthFactor) => FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+    );
+    // Muette : « Recherche de pages de recettes… », au-dessus, est annoncé ;
+    // trois cartes vides répétées n'apprennent rien de plus.
+    return ExcludeSemantics(
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const WebResultThumbnail(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        bar(0.7),
+                        const SizedBox(height: 8),
+                        bar(0.4),
+                        const SizedBox(height: 8),
+                        bar(0.95),
+                        const SizedBox(height: 6),
+                        bar(0.8),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              // Hauteur de la rangée d'actions d'une vraie carte.
+              const SizedBox(height: 44),
+            ],
+          ),
         ),
       ),
     );

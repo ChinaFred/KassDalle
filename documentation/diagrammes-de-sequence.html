@@ -870,10 +870,11 @@ sequenceDiagram
       L'écran charge les recettes des sources choisies, puis filtre sur l'appareil à chaque
       frappe, sans IA, en sections quand du texte est tapé. Le classement par l'IA ne part que
       sur « Chercher avec l'IA », pour un éditeur ou un administrateur, avec comme corpus les
-      recettes retenues par les filtres sans le texte. Au retour de Google, un éditeur voit le
-      bandeau d'import.
+      recettes retenues par les filtres sans le texte. « Chercher sur le web », pour tous les
+      rôles, affiche des pages trouvées par Google (second diagramme). Au retour du navigateur,
+      un éditeur voit le bandeau d'import.
       <span class="path">search_screen.dart, search_providers.dart (exploreCorpusProvider,
-      AiRankingNotifier), recipes/domain/recipe_filter.dart</span>
+      AiRankingNotifier, WebSearchNotifier), recipes/domain/recipe_filter.dart</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -935,12 +936,15 @@ sequenceDiagram
     end
   end
 
-  opt « Chercher sur Google »
-    S-->>U: google.com/search?q=texte recette, sans appel d'IA
-    opt éditeur ou admin, Google ouvert
-      Note over S: retour attendu, en mémoire
+  opt « Chercher sur le web » (tous les rôles), puis « Ouvrir » ou « Voir sur Google »
+    Note over S: section « Sur le web » : second diagramme
+    S-->>U: la page ouverte, ou google.com/search?q=texte recette, dans le navigateur
+    opt éditeur ou admin, navigateur ouvert
+      Note over S: retour attendu, en mémoire ;<br/>« Ouvrir » y ajoute l'adresse de la carte
       U->>S: revient dans l'application (onResume)
-      alt Android ou Windows
+      alt page ouverte depuis sa carte
+        S-->>U: bandeau, adresse de la carte et « Importer ce lien »,<br/>sans lire le presse-papiers
+      else Android ou Windows
         S->>S: Clipboard.getData, première adresse http(s)
         S-->>U: bandeau « Vous avez trouvé une recette ? Importez-la. »<br/>(en tête de liste sur téléphone, fixe sous le champ sur grand écran),<br/>« marmiton.org/recettes/blanq… » et « Importer ce lien », sinon « Coller le lien »
       else web ou iOS
@@ -956,7 +960,82 @@ sequenceDiagram
         <b>La liste locale reste utilisable pendant le classement</b> : le chargement n'occupe que
         la section de l'IA. Une erreur s'y affiche avec « Réessayer », qui relance la même
         demande. Le lecteur (<code>reader</code>) n'a ni le bouton ni la callable : il garde la
-        liste, les filtres et Google.
+        liste, les filtres et « Chercher sur le web ».
+      </figcaption>
+    </figure>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Membre (tous les rôles)
+  participant S as SearchScreen
+  participant W as WebSearchNotifier
+  participant CF as searchWebRecipesFn
+  participant C as web_search_cache
+  participant D as web_search_daily
+  participant G as Gemini + Google Search
+  participant P as Pages des sites
+  participant UU as recordUsage
+
+  U->>S: « Chercher sur le web » (appui seulement)
+  alt champ vide
+    S-->>U: focus, « Écrivez ce que vous cherchez sur le web. »
+  else texte présent
+    S->>W: search(texte)
+    W-->>S: section « Sur le web » en chargement, 3 cartes d'attente
+    W->>CF: query
+    Note over CF: requireAuth ; requête nettoyée,<br/>200 caractères au plus
+    CF->>C: get(sha256 de la requête normalisée)
+    alt entrée de moins de 7 jours
+      C-->>CF: pages, bloc de Google
+      CF->>D: lit le compteur (sans l'incrémenter)
+      CF-->>W: fromCache: true, remaining
+    else pas d'entrée
+      CF->>D: transaction : count < 50 × multiplicateur ? count + 1
+      alt plafond atteint
+        CF-->>W: resource-exhausted, reason web_search_daily_quota
+        W-->>S: carte « Vous avez fait vos 50 recherches web d'aujourd'hui. »
+      else place réservée
+        CF->>G: prompt + outil googleSearch, sous withDailyBudget
+        G-->>CF: pages citées (liens de redirection), requêtes, bloc de suggestions
+        CF->>UU: jetons (résultat d'outil en entrée), appel ancré
+        par jusqu'à 12 liens, en parallèle
+          CF->>P: fetchPublicResource : redirections revérifiées, 1,5 Mo, 6 s
+          P-->>CF: adresse finale, og:title, description, JSON-LD (aucune image)
+        end
+        Note over CF: vidéos et réseaux sociaux écartés, https seul (2 048 car. au plus),<br/>dédoublonnage, 8 cartes ; page illisible : carte sans extrait ni badge
+        alt le modèle lève une erreur (moteur, quota fournisseur, plafond de dépense)
+          CF->>D: transaction : count − 1 (place rendue)
+          CF-->>W: unavailable (reason web_search_engine) ou resource-exhausted (reason ai_daily_budget)
+          W-->>S: message du serveur et « Réessayer », ou carte du budget d'IA
+        else réponse sans aucune recherche ancrée
+          Note over CF: appel facturé : la place reste prise
+          CF-->>W: unavailable (reason web_search_engine)
+          W-->>S: message du serveur et « Réessayer »
+        else pages trouvées
+          CF->>C: set, sept jours (si au moins une page)
+          CF-->>W: pages, bloc de Google, remaining
+        end
+      end
+    end
+    W-->>S: « N pages trouvées », cartes, bloc de suggestions, « Voir sur Google »
+  end
+  opt éditeur ou admin : « Importer » sur une carte
+    S-->>U: boîte « Importer depuis un lien », adresse posée (séquence 31)
+    U->>S: Importer
+    S-->>U: la carte affiche « Import envoyé »
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le cache ne décompte rien, et seul un appel de modèle en erreur rend sa place</b> :
+        dès que le modèle a répondu, l'appel est facturé et la recherche compte parmi les 50 du
+        jour, même sans recherche ancrée ni page retenue. Aucune image des pages n'est relevée :
+        la carte montre une icône. Le texte des pages ne
+        sert qu'aux champs de la carte et n'entre dans aucun prompt. Le coût de l'appel compte
+        les jetons, le résultat de la recherche relu par le modèle, et un prix par appel ancré
+        (<code>grounded_search_per_unit</code> de la grille).
       </figcaption>
     </figure>
     <span class="expect">

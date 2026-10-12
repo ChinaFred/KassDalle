@@ -38,6 +38,16 @@ export type FetchFailure =
   | "too_large"; // au-delà de la taille admise
 
 export class WebFetchError extends Error {
+  /**
+   * Dernière adresse demandée avant l'échec, redirections suivies. Posée par
+   * `fetchPublicResource`.
+   *
+   * La recherche web en a besoin : un lien de Google est une redirection, et
+   * une page qui refuse d'être lue (403) a tout de même révélé son adresse
+   * réelle. Elle n'est sûre que si l'échec n'est pas un refus (`refused`).
+   */
+  lastUrl: string | null = null;
+
   constructor(
     readonly failure: FetchFailure,
     detail: string,
@@ -250,8 +260,8 @@ export async function fetchPublicResource(
     timedOut = true;
     controller.abort();
   }, opts.timeoutMs);
+  let url = startUrl;
   try {
-    let url = startUrl;
     for (let hop = 0; ; hop++) {
       assertAcceptableUrl(url);
       const { res } = await requestOnce(url, opts, controller.signal);
@@ -288,7 +298,9 @@ export async function fetchPublicResource(
   } catch (err) {
     // Rien n'est avalé : l'erreur est classée et relancée, l'appelant la
     // journalise avec son contexte.
-    throw classifyNetworkError(err, timedOut);
+    const classified = classifyNetworkError(err, timedOut);
+    classified.lastUrl ??= url.toString();
+    throw classified;
   } finally {
     clearTimeout(timer);
   }

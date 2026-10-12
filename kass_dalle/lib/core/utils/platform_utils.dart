@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, kIsWeb;
 
 class PlatformUtils {
   PlatformUtils._();
@@ -25,6 +25,21 @@ class PlatformUtils {
   static bool get isWindowsApp => !kIsWeb && Platform.isWindows;
 
   static bool get hasCameraSupport => isMobile || kIsWeb;
+
+  /// Le système qui fait tourner l'application native, lu par `dart:io` ;
+  /// `null` sur le web.
+  ///
+  /// Distinct de `defaultTargetPlatform`, que les tests remplacent (Android
+  /// par défaut) : un choix de plugin natif suit le vrai système.
+  static TargetPlatform? get hostPlatform {
+    if (kIsWeb) return null;
+    if (Platform.isAndroid) return TargetPlatform.android;
+    if (Platform.isIOS) return TargetPlatform.iOS;
+    if (Platform.isMacOS) return TargetPlatform.macOS;
+    if (Platform.isWindows) return TargetPlatform.windows;
+    if (Platform.isLinux) return TargetPlatform.linux;
+    return TargetPlatform.fuchsia;
+  }
 
   // ── Seuils de largeur ───────────────────────────────────────────────────
   //

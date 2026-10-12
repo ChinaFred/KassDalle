@@ -124,6 +124,14 @@ describe("agrégat mensuel — la forme", () => {
     assert.equal(doc.period, "2026-08");
   });
 
+  test("les recherches Google ancrées sont comptées au mois, au poste et au modèle", () => {
+    const doc = appel({ feature: "web_recipe_search", groundedSearchCount: 1 });
+    const chemins = aggregateKeyPaths(doc);
+    assert.ok(Object.prototype.hasOwnProperty.call(doc, "total_grounded_searches"));
+    assert.ok(chemins.includes("by_feature.web_recipe_search.grounded_searches"));
+    assert.ok(chemins.includes("by_model.claude-sonnet-5.grounded_searches"));
+  });
+
   test("un identifiant de modèle assaini ne casse plus la carte", () => {
     // `gemini-2.5-flash` porte des points : employé tel quel comme clé de
     // carte, il créerait trois niveaux d'imbrication au lieu d'un.

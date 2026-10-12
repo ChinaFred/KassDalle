@@ -461,6 +461,7 @@ export const getMonthlyCostsFn = onCall(
           thinkingTokens: toNumber(ai.total_thinking_tokens),
           imageOutputs: toNumber(ai.total_image_outputs),
           analyzedImageUnits: toNumber(ai.total_analyzed_image_units),
+          groundedSearches: toNumber(ai.total_grounded_searches),
           // `totalCostUsd` reste BRUT, et les ventilations avec lui : elles
           // comptent des appels, et un appel a coûté ce qu'il a coûté. L'avoir
           // est rendu à part, avec son détail, pour que l'écran le pose sur une
@@ -650,6 +651,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
         total_cache_read_input_tokens: 0,
         total_image_outputs: 0,
         total_analyzed_image_units: 0,
+        total_grounded_searches: 0,
         total_cost_usd: 0,
       };
       const byFeature: Record<string, Record<string, unknown>> = {};
@@ -693,6 +695,10 @@ export const rebuildAiUsageMonthlyFn = onCall(
           // un appel Cloud Vision à zéro — le coût de la modération
           // disparaissait du mois reconstruit sans qu'aucune erreur ne sorte.
           const analyzedUnits = toNumber(d.analyzed_image_units);
+          // Appels ancrés dans la recherche Google : même règle que les unités
+          // d'image analysée, facturés à l'appel et absents des lignes écrites
+          // avant octobre 2026.
+          const groundedSearches = toNumber(d.grounded_search_count);
           // Le coût figé à l'appel fait foi. Il n'est recalculé que s'il est
           // absent — les lignes les plus anciennes n'en portaient pas. Le
           // recalcul se fait alors au tarif en vigueur **le jour de l'appel** :
@@ -718,6 +724,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
                 cacheReadInputTokens: cacheRead,
                 imageOutputCount: images,
                 analyzedImageUnits: analyzedUnits,
+                groundedSearchCount: groundedSearches,
                 at: calledAt,
                 table: pricingTable,
               });
@@ -741,6 +748,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
             toNumber(doc.total_cache_read_input_tokens) + cacheRead;
           doc.total_image_outputs = toNumber(doc.total_image_outputs) + images;
           doc.total_analyzed_image_units = toNumber(doc.total_analyzed_image_units) + analyzedUnits;
+          doc.total_grounded_searches = toNumber(doc.total_grounded_searches) + groundedSearches;
           doc.total_cost_usd = toNumber(doc.total_cost_usd) + cost;
 
           const f = (byFeature[feature] ??= {
@@ -750,6 +758,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
             thinking_tokens: 0,
             image_outputs: 0,
             analyzed_image_units: 0,
+            grounded_searches: 0,
             cost_usd: 0,
             by_provider: {},
           });
@@ -759,6 +768,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           f.thinking_tokens = toNumber(f.thinking_tokens) + thinking;
           f.image_outputs = toNumber(f.image_outputs) + images;
           f.analyzed_image_units = toNumber(f.analyzed_image_units) + analyzedUnits;
+          f.grounded_searches = toNumber(f.grounded_searches) + groundedSearches;
           f.cost_usd = toNumber(f.cost_usd) + cost;
           const fp = f.by_provider as Record<string, Record<string, number>>;
           const fpp = (fp[provider] ??= {
@@ -798,10 +808,16 @@ export const rebuildAiUsageMonthlyFn = onCall(
           // une franchise, et il l'offre sur un produit. La déduire depuis les
           // postes obligerait à recomposer les unités d'un modèle éclaté entre
           // plusieurs d'entre eux.
-          const m = (byModel[modelKey] ??= { calls: 0, cost_usd: 0, analyzed_image_units: 0 });
+          const m = (byModel[modelKey] ??= {
+            calls: 0,
+            cost_usd: 0,
+            analyzed_image_units: 0,
+            grounded_searches: 0,
+          });
           m.calls += 1;
           m.cost_usd += cost;
           m.analyzed_image_units += analyzedUnits;
+          m.grounded_searches += groundedSearches;
 
           const u = (byUser[uid] ??= { calls: 0, cost_usd: 0, by_feature: {} });
           (u.calls as number) += 1;

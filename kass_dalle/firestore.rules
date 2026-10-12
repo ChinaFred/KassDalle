@@ -841,6 +841,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Recherches web du jour, par compte — le compteur du plafond quotidien de
+    // `searchWebRecipesFn`. Même règle que `url_import_daily` : écrit par les
+    // Cloud Functions, lu par son titulaire.
+    match /web_search_daily/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Cache partagé des recherches web (sept jours). Lu et écrit par les Cloud
+    // Functions seulement : ouvert au client, il laisserait servir à toute la
+    // famille des pages choisies par un seul compte, sans appel ni décompte.
+    match /web_search_cache/{key} {
+      allow read, write: if false;
+    }
+
     // Dépense d'IA par scan — le compteur, et le plafond d'un import de livre.
     // Écrite par les Cloud Functions ; ouverte au client, elle laisserait relever
     // son propre plafond.

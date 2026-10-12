@@ -121,6 +121,10 @@ class AppErrorState extends StatefulWidget {
   /// Remplace le titre déduit de l'exception quand l'écran sait mieux.
   final String? title;
 
+  /// Remplace le conseil déduit de l'exception — un message écrit par le
+  /// serveur pour l'utilisateur, par exemple.
+  final String? advice;
+
   /// Présentation resserrée pour un encart dans une page, plutôt qu'un écran
   /// entier.
   final bool compact;
@@ -130,6 +134,7 @@ class AppErrorState extends StatefulWidget {
     required this.error,
     this.onRetry,
     this.title,
+    this.advice,
     this.compact = false,
   });
 
@@ -174,7 +179,7 @@ class _AppErrorStateState extends State<AppErrorState> {
           ),
           const SizedBox(height: 8),
           Text(
-            described.advice,
+            widget.advice ?? described.advice,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,

@@ -1326,6 +1326,38 @@ classDiagram
     +String variantLabel
   }
 
+  class WebSearchState {
+    &lt;&lt;abstract&gt;&gt;
+    +int? remaining
+  }
+  class WebSearchSuccess {
+    +WebSearchResponse response
+  }
+  class WebSearchQuotaReached {
+    +String query
+    +int? limit
+  }
+  class WebSearchBudgetReached {
+    +String query
+  }
+  class WebSearchResponse {
+    +String query
+    +List~WebRecipeResult~ results
+    +String? searchEntryPointHtml
+    +List~String~ webSearchQueries
+    +bool fromCache
+    +int? limit
+    +int? remaining
+  }
+  class WebRecipeResult {
+    +Uri url
+    +String title
+    +String site
+    +String? snippet
+    +bool directImport
+    +semanticLabel(canImport) String
+  }
+
   ExplorePreferences --> SearchParams
   ExplorePreferences --> RecipeFilter
   ExplorePreferences --> RecipeSort
@@ -1348,6 +1380,14 @@ classDiagram
   AiIdeasState &lt;|-- AiIdeasSuccess
   AiIdeasState &lt;|-- AiIdeasError
   AiIdeasSuccess "1" --> "0..3" GeneratedRecipeSuggestion
+  WebSearchState &lt;|-- WebSearchIdle
+  WebSearchState &lt;|-- WebSearchLoading
+  WebSearchState &lt;|-- WebSearchSuccess
+  WebSearchState &lt;|-- WebSearchError
+  WebSearchState &lt;|-- WebSearchQuotaReached
+  WebSearchState &lt;|-- WebSearchBudgetReached
+  WebSearchSuccess --> WebSearchResponse
+  WebSearchResponse "1" --> "0..8" WebRecipeResult
 </pre>
       </div>
       <figcaption>
@@ -1368,9 +1408,18 @@ classDiagram
         <span class="expect">
           <b>Un résultat de l'IA porte son motif</b> — <code>reason</code> pour une recette
           choisie, <code>justification</code> pour une recette imaginée. Une recette de la liste
-          locale n'en a pas : <code>reason</code> est nul. « Chercher sur Google » n'a pas de
+          locale n'en a pas : <code>reason</code> est nul. « Voir sur Google » n'a pas de
           modèle : une adresse construite à partir du texte, sans appel d'IA.
         </span>
+        <code>WebRecipeResult</code> (<code>features/search/domain/web_search.dart</code>) est une
+        page trouvée par « Chercher sur le web » : son adresse est en https, revérifiée par
+        <code>fromMap</code>. Elle n'a pas de vignette : la carte montre une icône, parce
+        qu'une image tierce chargée par l'appareil donnerait l'adresse IP du lecteur au site et
+        afficherait une image non modérée. <code>WebSearchBudgetReached</code> est le plafond de
+        dépense d'IA du jour, distinct du plafond de recherches
+        (<code>WebSearchQuotaReached</code>). Elle n'existe qu'en mémoire, comme tout l'état de la section ;
+        le cache partagé (<code>web_search_cache</code>) vit côté serveur et le client ne le lit
+        pas. <code>remaining</code> est nul tant que le serveur n'a pas répondu une fois.
       </figcaption>
     </figure>
   </section>

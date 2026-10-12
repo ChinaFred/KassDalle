@@ -50,6 +50,12 @@ class AiModelPricing {
   /// Unités offertes par mois — déduites AU MOIS, jamais sur la ligne d'appel.
   final int freeUnitsPerMonth;
 
+  /// Prix d'un appel ANCRÉ dans la recherche Google, facturé en plus des
+  /// jetons. Google facture gemini-2.5-flash au prompt ancré (un appel qui a
+  /// lancé au moins une recherche) ; sa franchise quotidienne n'est pas
+  /// déduite ici.
+  final double groundedSearchPerUnit;
+
   /// Promotion en cours, quand le fournisseur en accorde une.
   final AiIntroductoryPricing? introductory;
 
@@ -59,6 +65,7 @@ class AiModelPricing {
     this.imageOutputPerUnit = 0.0,
     this.analyzedImagePerUnit = 0.0,
     this.freeUnitsPerMonth = 0,
+    this.groundedSearchPerUnit = 0.0,
     this.introductory,
   });
 }
@@ -125,6 +132,7 @@ class AiPricing {
       imageOutputPerUnit: pricing.imageOutputPerUnit,
       analyzedImagePerUnit: pricing.analyzedImagePerUnit,
       freeUnitsPerMonth: pricing.freeUnitsPerMonth,
+      groundedSearchPerUnit: pricing.groundedSearchPerUnit,
     );
   }
 
@@ -142,7 +150,8 @@ class AiPricing {
   static const cacheWriteMultiplier = 1.25;
   static const cacheReadMultiplier = 0.1;
 
-  /// Coût en USD pour un nombre de tokens et d'images donnés.
+  /// Coût en USD pour un nombre de tokens, d'images et de recherches Google
+  /// donnés.
   ///
   /// [at] est l'instant de l'appel : il se facture au tarif en vigueur **quand
   /// il a eu lieu**, jamais au tarif du jour où on relit le rapport.
@@ -154,6 +163,7 @@ class AiPricing {
     int cacheReadInputTokens = 0,
     int imageOutputCount = 0,
     int analyzedImageUnits = 0,
+    int groundedSearchCount = 0,
     DateTime? at,
     required Map<String, AiModelPricing> table,
   }) {
@@ -165,6 +175,7 @@ class AiPricing {
         (cacheReadInputTokens / 1e6) * p.inputPerMillion * cacheReadMultiplier +
         (outputTokens / 1e6) * p.outputPerMillion +
         imageOutputCount * p.imageOutputPerUnit +
-        analyzedImageUnits * p.analyzedImagePerUnit;
+        analyzedImageUnits * p.analyzedImagePerUnit +
+        groundedSearchCount * p.groundedSearchPerUnit;
   }
 }

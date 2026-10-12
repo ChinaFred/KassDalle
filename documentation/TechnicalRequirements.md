@@ -212,6 +212,8 @@ firestore/
 ├── ai_daily_spend/{uid}_{AAAA-MM-JJ}/
 ├── scan_spend/{scanId}/                           ← compteur et plafond d'un import de livre
 ├── url_import_daily/{uid}_{AAAA-MM-JJ}/           ← compteur du plafond d'imports par lien
+├── web_search_daily/{uid}_{AAAA-MM-JJ}/           ← compteur du plafond de recherches web
+├── web_search_cache/{sha256}/                     ← cache partagé des recherches web, 7 jours
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
@@ -557,7 +559,7 @@ revenait à additionner trois unités différentes.
 |---|---|---|
 | `ai_usage/{auto}` | la ligne d'appel, avec `provider`, `model`, jetons, coût figé, `correlation_id`, `period` | réconciliation, audit |
 | `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
-| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`, `analyzed_image_units`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
+| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`, `analyzed_image_units`, `grounded_searches`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
 
 **La grille tarifaire peut rester périmée sans lever d'erreur.** Claude Sonnet 5
 portait un tarif d'introduction (2,00 / 10,00 au lieu de 3,00 / 15,00) censé
@@ -633,17 +635,49 @@ connexion est fermée et la réponse n'est plus attendue. Le client est construi
 ignore donc `GOOGLE_GEMINI_BASE_URL` et `GOOGLE_GENAI_USE_VERTEXAI`, qui sinon pourraient
 envoyer la clé vers un autre hôte.
 
-**Recherche Google (grounding), préparée mais inutilisée.**
+**Recherche Google (grounding).**
 `GeminiCallContext.googleSearch` ajoute l'outil `{ googleSearch: {} }` à la
 requête, et `toGeminiResponse()` remplit `GeminiResponse.grounding` depuis le
 `groundingMetadata` du premier candidat : `sources` (`groundingChunks[].web` —
 URI obligatoire, doublons retirés, titre facultatif), `webSearchQueries`, et
 `searchEntryPointHtml` (`searchEntryPoint.renderedContent`, le bloc de
-suggestions Google à afficher avec la réponse). Aucun poste ne pose
-`googleSearch`, et `callModel` ne le transmet pas. Avant le premier poste qui
-l'active : la recherche est facturée à la requête en plus des jetons, et la
-grille (`ai/pricing.ts`, `app_config/ai_pricing`) ne sait pas encore la
-compter.
+suggestions Google à afficher avec la réponse). Un seul poste le pose :
+`web_recipe_search` (« Chercher sur le web », voir *L'écran Explorer*), qui appelle
+`callGemini` directement ; `callModel` ne transmet pas `googleSearch`.
+
+Le grounding se facture à deux titres :
+
+- **Les jetons.** Le résultat de la recherche relu par le modèle
+  (`toolUsePromptTokenCount`) est facturé au tarif d'entrée. `inputTokensOf()`
+  (`gemini/client.ts`) l'ajoute à `promptTokenCount` ; `thinkingTokensOf()` le
+  retire du raisonnement. Le routeur emploie la même somme, pour le jour où un poste
+  routé activerait l'outil.
+- **L'appel ancré.** Google facture gemini-2.5-flash au *prompt ancré* : 35 $ les
+  mille, soit 0,035 $ l'appel qui a lancé au moins une recherche, au-delà d'une
+  franchise de 1 500 prompts ancrés par jour, partagée avec Flash-Lite. La grille
+  porte ce prix dans `grounded_search_per_unit` (`groundedSearchPerUnit` en
+  TypeScript et en Dart), semé à 0,035 sur `gemini-2.5-flash` et éditable dans
+  Admin › Comptabilité › Grille tarifaire. **Tarif relevé sur la page des prix de
+  Google le 12 octobre 2026, à revérifier contre la facture du premier mois.**
+  `recordUsage` reçoit `groundedSearchCount` (1 quand la réponse porte au moins une
+  requête ou une page citée, 0 sinon) et l'écrit sur la ligne
+  (`grounded_search_count`), dans l'agrégat (`total_grounded_searches`,
+  `by_feature.*.grounded_searches`, `by_model.*.grounded_searches`) et dans le coût
+  (`estimateAiCostUsd`). La reconstruction des agrégats relit
+  `grounded_search_count` pour rechiffrer.
+
+**La franchise quotidienne de Google n'est pas déduite.** Elle est comptée par jour et
+par projet, et l'application ne fait jamais 1 500 recherches par jour : tant que le
+volume reste sous ce seuil, l'estimé porte 0,035 $ par recherche que Google ne facture
+pas. L'écart apparaît du côté « estimé supérieur au facturé » de la réconciliation, sur
+la ligne Gemini ; `total_grounded_searches × 0,035 $` l'explique, et il se lit mois par
+mois dans `ai_usage_monthly`.
+
+**Un prix ajouté après l'amorçage est semé champ par champ.** `loadAiPricingTable` ne
+semait que les modèles absents de la grille. `missingUnitPriceFields()` sème aussi
+`grounded_search_per_unit` sur une entrée existante qui ne porte pas ce champ ; un zéro
+saisi depuis l'écran est un champ présent et n'est jamais recouvert. Sans cela,
+`gemini-2.5-flash`, présent en base depuis l'amorçage, aurait lu un prix de recherche nul.
 
 **Une mesure du poids réel** : sur août 2026, Google a facturé 2 457 734 jetons
 de sortie Gemini là où l'application en comptait 323 900. Les 2 133 834
@@ -1425,9 +1459,9 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 
 | Collection | Contenu |
 |---|---|
-| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
+| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée (résultat d'outil de la recherche Google compris), de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `grounded_search_count` (`int`, 0 ou 1 : appel ancré dans la recherche Google, facturé à l'appel ; absent des lignes antérieures à octobre 2026, lu comme 0), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
-| `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
+| `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
 | `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
@@ -1451,7 +1485,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | Document | Ce qu'il décide |
 |---|---|
 | `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion |
-| `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage |
+| `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage. Par modèle (`models.{id}`) : `input_per_million`, `output_per_million`, `image_output_per_unit`, `analyzed_image_per_unit`, `free_units_per_month`, `grounded_search_per_unit` (`Number`, prix d'un appel ancré dans la recherche Google), `introductory` |
 | `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
 | `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
@@ -1548,6 +1582,26 @@ pourquoi.
 
 ### 3.14 Le reste
 
+- `web_search_daily/{uid}_{AAAA-MM-JJ}` : le compteur du plafond de « Chercher sur le web »
+  (`uid` `String`, `day` `String`, `count` `int`, `updated_at` `Timestamp`), jour UTC comme
+  `ai_daily_spend`. `searchWebRecipesFn` le réserve dans une transaction avant l'appel de
+  modèle et le décrémente, dans une seconde transaction, si l'appel de modèle lève une
+  erreur (moteur, quota du fournisseur, plafond de dépense). Une réponse rendue par le
+  modèle garde sa place, même sans recherche ancrée ni page retenue : elle est facturée. Écrit par
+  les Functions seules ; le titulaire et l'administrateur le lisent.
+- `web_search_cache/{sha256}` : le cache partagé des recherches web. Clé : SHA-256 de la
+  requête en minuscules, espaces resserrées, accents gardés (`webSearchCacheKey`). Champs :
+  `query` (`String`, la requête normalisée), `results` (`List<Map>` : `url`, `title`,
+  `site`, `snippet?`, `directImport` — adresses https de 2 048 caractères au plus ; aucune
+  vignette, une entrée plus ancienne qui porte encore `imageUrl` se relit sans ce champ),
+  `search_entry_point_html` (`String?`), `web_search_queries` (`List<String>`), `cached_at`
+  et `expires_at` (`Timestamp`, sept jours). Rien de propre à un compte. Lu et écrit par
+  `searchWebRecipesFn` seule ; une entrée de plus de sept jours est ignorée à la lecture.
+  Une politique TTL sur `expires_at` (`firestore.indexes.json` › `fieldOverrides`, active
+  au déploiement des index) supprime les entrées périmées ; la suppression TTL peut
+  tarder de quelques heures, d'où le contrôle de fraîcheur à la lecture. Une
+  recherche sans page retenue n'est pas mise en cache. Aucune reprise de données : la
+  collection naît vide.
 - `url_import_daily/{uid}_{AAAA-MM-JJ}` : le compteur du plafond d'imports par lien (`uid`,
   `day`, `count`, `updated_at`), jour UTC comme `ai_daily_spend`. Incrémenté par
   `importRecipeFromUrlFn` dans la même transaction que la création du job, relu par
@@ -2006,6 +2060,8 @@ service cloud.firestore {
 | `ai_usage` · `ai_daily_spend` | admin, ou le compte concerné | **serveur seul** — un client pouvait autrefois y inscrire des dépenses imaginaires que la réconciliation aurait présentées comme réelles |
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
+| `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
+| `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
@@ -2969,22 +3025,179 @@ sélecteur du planning) :
   (`recipe_ratings` filtrées sur son uid), pas une moyenne familiale.
 - **Préférence** : sources, filtres et tri sous `users/{uid}/preferences/explore_filters` (§3).
 
-L'IA ne part que sur un bouton, et jamais pour un `reader` :
+L'IA ne part que sur un bouton. Le `reader` n'a que « Chercher sur le web » :
 
 | Bouton | Callable | Poste | Garde | Ce qui part |
 |---|---|---|---|---|
 | « Chercher avec l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
 | « Imaginer 3 recettes » | `generateRecipeFn` ×3 (+ une relance par doublon) | `generate` | `requireEditor` | le texte du champ seul ; douze résumés du corpus et l'observation locale tirée des notes |
-| « Chercher sur Google » | — | — | — | aucun appel : `google.com/search?q=<texte> recette` (`googleRecipeSearchUri`) |
+| « Chercher sur le web » | `searchWebRecipesFn` | `web_recipe_search` | `requireAuth` (tous les rôles approuvés) | le texte du champ seul, nettoyé et borné à 200 caractères ; aucun appel quand le cache partagé a la réponse |
+| « Voir sur Google » (section « Sur le web ») | — | — | — | aucun appel : `google.com/search?q=<texte> recette` (`googleRecipeSearchUri`) |
 
-**Retour de Google : bandeau d'import** (éditeur et admin). Quand `launchUrl` a ouvert Google,
-l'écran note en mémoire qu'un retour est attendu (`_awaitingGoogleReturn`). Au retour,
+**« Chercher sur le web »** (`searchWebRecipesFn`, `callable/webSearchCallable.ts`,
+`requireAuth`, 90 s, 512 Mio, secret `GEMINI_API_KEY`). L'enchaînement vit dans
+`web/webSearchFlow.ts` (`runWebSearch`, testé sans Firestore) :
+
+1. **Requête** : `readWebSearchQuery` retire les caractères de contrôle, resserre les
+   espaces, refuse un texte vide ou de plus de 200 caractères (`invalid-argument`,
+   `details: { reason: "web_search_query" }`) — refus, jamais troncature. Le refus est
+   journalisé avant d'être levé (`logWarn`, longueur mesurée et borne seulement, jamais le
+   texte). Le client ne vérifie pas la borne : il affiche le message du refus
+   (`WebSearchQueryRefused`), et la règle n'existe qu'une fois. Le champ d'Explorer sert
+   aussi au filtre local, qui n'a pas de limite, donc pas de `maxLength` sur le champ.
+2. **Cache** (`web_search_cache`, §3.14) : une entrée de moins de sept jours est rendue
+   telle quelle, `fromCache: true`, sans appel de modèle et sans décompte ; `remaining`
+   relit le compteur. Une lecture en échec est journalisée (`logError`) et traitée comme
+   absente : la recherche part, et elle est décomptée.
+3. **Plafond** : 50 recherches par jour et par compte, multipliées par
+   `budgetMultiplierFor` (×100 pour le fondateur). La place est **réservée** dans une
+   transaction sur `web_search_daily/{uid}_{jour}` avant l'appel : deux appels simultanés
+   ne passent pas sur la dernière place. Plafond atteint : `resource-exhausted` avec
+   `details: { reason: "web_search_daily_quota", limit, remaining: 0 }` ; le plafond de
+   dépense d'IA du jour (`BudgetExceededError`) part aussi en `resource-exhausted`, avec
+   `reason: "ai_daily_budget"`.
+4. **Appel de modèle** (`gemini/webRecipeSearch.ts`) : `callGemini` direct, outil
+   `googleSearch`, plafond de raisonnement du poste dans la politique, `0` à défaut, 40 s,
+   sous `withDailyBudget`. `callModel` n'est pas employé : son repli enverrait le poste
+   chez Claude, qui n'a ni la recherche Google ni le bloc de suggestions, et son résultat ne
+   porte pas les pages citées. Le prompt demande des pages de recettes, en français de
+   préférence, sans vidéo ni réseau social ; la réponse rédigée n'est pas lue, seules les
+   pages citées comptent. L'appel est enregistré par `recordUsage` (échec compris, en
+   `status: "error"`), avec `groundedSearchCount`. Après un appel abouti, l'écriture passe
+   par `recordSearchUsage`, qui ne lève jamais : un échec d'écriture d'`ai_usage` est
+   journalisé (`logError`, jetons et appel ancré dans `extra`, pour la réconciliation) et
+   les pages sont rendues. Lever ferait rendre la place de recherche alors que l'appel est
+   facturé. Le poste `web_recipe_search` est aux
+   trois endroits : `ctx.feature` ; `ROUTABLE_FEATURES`, groupe « Recherche »,
+   `providers: ["gemini"]` et `lockedReason` (verrouillé comme la modération : l'écran
+   Moteur d'IA le montre et règle son plafond de raisonnement, sans bascule possible) ;
+   `kFeatureCatalog` / `kFeatureProcess` (processus « Recherche »).
+5. **Pages** (`web/webSearchResults.ts`) : au plus douze liens de Google, chacun suivi
+   par `fetchPublicResource` (garde SSRF, trois redirections revérifiées, 1,5 Mo, 6 s), en
+   parallèle. Les liens sont des redirections
+   `vertexaisearch.cloud.google.com/grounding-api-redirect/…` : l'adresse finale est celle
+   de la page. Écartés : YouTube, youtu.be, TikTok, Instagram, Facebook (fb.com, fb.watch),
+   Pinterest (tous ses domaines nationaux, pin.it), sous-domaines compris ; toute adresse
+   hors https ; une adresse restée sur la redirection. Une page lue donne titre
+   (`og:title`, `<title>`), extrait (`meta description`, `og:description`, description
+   JSON-LD) et `directImport` (une recette `schema.org/Recipe` complète,
+   `isCompleteRecipe`, la même règle que l'import). **Aucune image n'est relevée** : la
+   carte montre une icône sur toutes les plateformes. Une vignette tierce chargée par
+   l'appareil donnerait l'adresse IP du lecteur au site, et afficherait une image non
+   modérée (règle v0.23.13 : seul `AppNetworkImage` affiche une image réseau, et seulement
+   celles du stockage de l'application). Une adresse de plus de 2 048 caractères
+   (`WEB_SEARCH_URL_MAX_CHARS`, `httpsUrlOrNull`) est écartée. Une page qui refuse d'être
+   lue (403, délai, type inattendu) garde sa carte sans extrait ni badge, son adresse
+   réelle étant connue
+   (`WebFetchError.lastUrl`) ; un refus de la garde SSRF n'en rend aucune. Dédoublonnage
+   par adresse finale (sans fragment ni barre finale), huit cartes au plus. **Le texte des
+   pages est non fiable** : il ne sert qu'à ces champs courts, renvoyés au client, et
+   n'entre dans aucun prompt.
+6. **Erreur** : la place n'est **rendue** que si l'appel de modèle **lève** une erreur —
+   moteur indisponible, quota du fournisseur, plafond de dépense d'IA
+   (`BudgetExceededError`) : rien n'a été facturé (transaction qui décrémente, un échec
+   journalisé laisse le plafond plus strict d'une unité). Dès que le modèle a répondu,
+   l'appel est facturé et la place est **gardée** : réponse sans aucune recherche ancrée
+   (`WebSearchUnreadableError`), erreur inattendue en lisant les pages, ou aucune page
+   retenue. `reportFailure(err, refunded)` journalise les deux cas (`logError`, `extra.refunded`).
+   Une erreur levée avant l'appel du modèle (compteur, réservation) est journalisée
+   par la callable (`logError`, « Recherche web échouée avant l'appel du modèle »).
+   Le client reçoit `unavailable` avec `details: { reason: "web_search_engine" }` et un
+   message écrit pour lui ; `resource-exhausted` avec `reason: "ai_daily_budget"` pour le
+   plafond de dépense. Une recherche aboutie sans page retenue n'est pas mise en cache.
+
+Réponse : `{ query, results: [{ url, title, site, snippet, directImport }],
+searchEntryPointHtml, webSearchQueries, fromCache, limit, remaining }`.
+
+**Côté client.** `GeminiService.searchWebRecipes` traduit les refus attendus par
+`webSearchErrorFrom` (code `resource-exhausted` du SDK ou `resource_exhausted` de l'appel
+HTTP du web, ramenés à une forme ; puis `details.reason`) : `WebSearchQuotaExceeded`
+(`web_search_daily_quota`), `WebSearchAiBudgetExceeded` (`ai_daily_budget`),
+`WebSearchQueryRefused` (`invalid-argument`, `web_search_query`) et
+`WebSearchEngineUnavailable` (`unavailable`, `web_search_engine`). Un `unavailable` sans
+raison est une coupure réseau : il reste une `GeminiCallableException`. `WebSearchNotifier`
+(`webSearchProvider`, en mémoire, autoDispose) range le plafond en `WebSearchQuotaReached`
+et le budget en `WebSearchBudgetReached` — deux cartes `secondaryContainer` sans
+« Réessayer », avec « Voir sur Google » — et le refus de requête comme la panne du moteur
+(`WebSearchEngineUnavailable`) en `WebSearchError`, sans rapport d'erreur (le serveur les
+journalise) ; toute autre erreur part par
+`reportUnexpectedError(feature: 'search.web')` et donne `WebSearchError`. L'erreur
+s'affiche par `AppErrorState` compact : message du serveur (`advice`) et « Réessayer » pour
+le moteur, message sans « Réessayer » pour un refus, et `describeError` sinon — qui lit
+aussi `GeminiCallableException.code` (hors ligne : « Connexion perdue »). Le pied
+« Vidéos et réseaux sociaux exclus. » + « Voir sur Google » suit les cartes, l'état vide
+(un encart resserré, `_WebEmptyNotice`, sans icône) et l'erreur. Quand `remaining` vaut 0,
+« Il ne vous reste aucune recherche aujourd'hui. » s'affiche sous le bouton du lecteur et
+sous la rangée de boutons du grand écran ; le bouton reste actif. Une
+recherche en cours ne repart pas ; une réponse arrivée après une nouvelle demande est
+ignorée ; `remaining` survit à « Effacer » pour la feuille « Aller plus loin ».
+`WebRecipeResult.fromMap` revérifie que chaque adresse est en https. La carte
+(`WebResultTile`, `search_widgets.dart`) : `WebResultThumbnail`, l'icône `Icons.public`
+64 × 64 sur `surfaceContainerHighest`, toujours ; libellé sémantique unique « titre,
+site[, import direct] » ; « Ouvrir » (`launchUrl`, `LaunchMode.externalApplication`) arme
+le bandeau d'import du retour avec l'adresse de la carte (`_armWebReturn`,
+`_pendingBannerLink`), sans lire le presse-papiers ; « Importer » ouvre
+`showUrlImportDialog(initialUrl:)` et, sur `true`, la carte affiche « Import envoyé ». Sur
+le web, le titre est un `Link` dont l'`InkWell` ne prend pas le focus
+(`canRequestFocus: false`, l'ancre a `tabIndex = -1`) : un seul arrêt de focus par carte ;
+le suivre arme aussi le bandeau (`onLinkFollowed`). Sur un ordinateur, le clic droit
+propose « Ouvrir dans le navigateur », « Copier le lien » (`showSuccessSnackBar`
+« Lien copié. »), « Importer ». « Recherche de pages de recettes… » est en
+`Semantics(liveRegion: true)` ; les `WebResultPlaceholderTile` sont sous
+`ExcludeSemantics`.
+
+**Le bloc « Suggestions de recherche »** (`GoogleSearchSuggestions`, 56 px,
+`Semantics(label: 'Suggestions de recherche Google')`) est affiché tel que Google le rend,
+dans une page minimale (`wrapGoogleSuggestions`) qui ajoute `<meta viewport>`,
+`<base target="_blank">` et une CSP `script-src 'none'`. Sans `searchEntryPointHtml`, rien
+n'est affiché, marges comprises. Le mode suit le vrai système
+(`googleSuggestionsModeFor(PlatformUtils.hostPlatform)`, lu par `dart:io`, pas
+`defaultTargetPlatform` que les tests remplacent) :
+
+- **Android, iOS, macOS** : `webview_flutter` (`WebViewController.loadHtmlString`),
+  JavaScript désactivé ; le `NavigationDelegate` laisse passer le document lui-même
+  (`about:`, `data:`) et bloque toute autre navigation, ouverte dans le navigateur si elle
+  est en https. Les réglages sont attendus dans un seul `try` remonté par
+  `reportUnexpectedError`. Sous macOS, le fond n'est pas rendu transparent : WKWebView
+  macOS n'expose pas ce réglage. macOS n'est pas construit (`FunctionalRequirements.md`, plateformes) : ce chemin n'a
+  jamais tourné.
+- **Web** : `HtmlElementView` sur une `iframe` `srcdoc`
+  (`google_suggestions_frame_web.dart`), `sandbox="allow-popups
+  allow-popups-to-escape-sandbox"`, sans `allow-scripts`, `referrerpolicy="no-referrer"`.
+  Le document `srcdoc` hérite de la CSP de la page ; il n'est pas chargé par une requête,
+  `frame-src` ne s'y applique pas, et `firebase.json` reste inchangé.
+- **Windows** : `webview_windows` 0.4.0 (WebView2, paquet tiers de jnschulze, dernière
+  version publiée en février 2024 ; son build CMake télécharge `nuget.exe` et le SDK
+  WebView2 1.0.1210.39). `WebviewController.getWebViewVersion()` vérifie d'abord que le
+  WebView2 Runtime est installé ; absent, ou `initialize` en échec, le bloc retombe sur les
+  puces, et l'absence est remontée une fois par session (`reportUnexpectedError`,
+  `trigger: windows_runtime`). Le paquet n'a **ni réglage JavaScript ni délégué de
+  navigation** : la CSP `script-src 'none'` du document empêche tout script ; les fenêtres
+  surgissantes (`<base target="_blank">`) s'ouvrent dans la vue
+  (`WebviewPopupWindowPolicy.sameWindow`), et toute adresse signalée par le flux `url`
+  autre que le document lui-même fait recharger le bloc et part dans le navigateur
+  (https seul). Un lien suivi signale chaque étape de ses redirections
+  (`consent.google.com`, puis `/search`) : `ExternalOpenGate` n'ouvre que la première
+  adresse, et ignore les suivantes tant qu'elles se suivent à moins d'une seconde ; chaque
+  étape repousse la fenêtre (le bloc est rechargé à chaque fois). La navigation a donc
+  commencé dans la vue avant d'être défaite : la page Google peut s'y charger un instant.
+  Rien n'est affiché pendant l'initialisation de WebView2 : le cadre de 56 px n'apparaît
+  qu'une fois la vue prête. Le build Windows n'est pas vérifié par la CI.
+- **Linux** : pas de WebView. Les requêtes lancées par Google (`webSearchQueries`)
+  s'affichent en puces (`GoogleSuggestionChips`, `Wrap` sans hauteur fixe) qui ouvrent la
+  recherche Google : un repli, pas le bloc lui-même. Sans requête, rien n'est affiché.
+
+**Retour du navigateur : bandeau d'import** (éditeur et admin). Quand `launchUrl` a ouvert
+Google (« Voir sur Google ») ou une page (« Ouvrir » d'une carte « Sur le web »), l'écran note
+en mémoire qu'un retour est attendu (`_awaitingGoogleReturn`) ; une carte y ajoute son
+adresse (`_pendingBannerLink`), posée dans le bandeau au retour, sans lecture du
+presse-papiers. Au retour,
 `AppLifecycleListener.onResume` — le moteur web le déclenche aussi, sur `focus` et
 `visibilitychange` — affiche une carte `secondaryContainer`. Seule la phrase « Vous avez
 trouvé une recette ? Importez-la. » est en `Semantics(liveRegion: true)`, pas toute la carte.
 Sur téléphone, la carte est le premier élément défilant de la liste des résultats
 (`_ResultList.leading`) ; sur grand écran, elle reste fixe sous le champ, au-dessus des
-boutons. Sur Android
+boutons. Sans adresse de carte, sur Android
 et Windows (`PlatformUtils.isAndroidApp`, `isWindowsApp`), `Clipboard.getData` est lu au
 retour : la première adresse http(s) du texte (`firstWebLink`) s'affiche en abrégé
 (`shortLinkLabel` : domaine sans `www.`, début du chemin, 27 caractères puis « … ») avec
@@ -3029,8 +3242,9 @@ callables qui produisent une recette à enregistrer exigent `requireEditor` —
 ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points d'entrée
 (`canEditProvider`) : copie et « Améliorer avec l'IA » de la fiche, copie d'un brouillon,
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
-planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien » et le
-bandeau d'import au retour de Google de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
+planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », le badge
+« Import direct » et « Importer » des pages « Sur le web », et le bandeau d'import au
+retour du navigateur de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
 « Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
 
 ### Les réponses JSON
@@ -3453,6 +3667,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `refineRecipeFn` | `refine` | `instruction` → 5 000 car., requis ; `currentCooklang` → 100 000 car., requis ; `currentTitre` → 5 000 car. ; `currentIngredients` → 500 éléments de 20 000 car. ; `currentTags` → 100 000 car. JSON ; `currentPortions` → nombre de 0 à 1 000 |
 | `generateRecipeFn` | `generate` | `query` → 5 000 car., requis ; `preferenceInsight` → 100 000 car. ; `libraryContext` → 500 éléments de 20 000 car. ; `variantLabel`, `variantInstruction` → 5 000 car. ; `siblingVariantLabels`, `avoidTitles` → 500 éléments de 5 000 car. |
 | `searchRecipesFn` | `search` | `query` → 5 000 car., requis ; `recipes`, `ratedRecipes` → 5 000 éléments de 20 000 car. |
+| `searchWebRecipesFn` | `web_recipe_search` | `query` → 200 car., requis (`readWebSearchQuery`, caractères de contrôle retirés, espaces resserrées) |
 | `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée |
@@ -4630,7 +4845,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts` | `WorkQueueScreen` | `reader` |
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
-| `/search` | `SearchScreen` | `reader` — liste, filtres locaux et « Chercher sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien » et le bandeau d'import au retour de Google : `editor` |
+| `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » et le badge « Import direct » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
 | `/planning` | `PlanningScreen` | `reader` |
 | `/planning/batch` | `BatchPlanningScreen` | `reader` |
 | `/planning/config` | `PlanningConfigScreen` | `reader` |

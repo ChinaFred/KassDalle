@@ -43,10 +43,19 @@
     "`gemini-3.1-flash-lite-image` — Nano Banana 2 Lite, 0,0336 $ l'image 1K",
     "(1120 jetons de sortie à 30 $ le million). L'ancienne entrée RESTE : les",
     "mois déjà consommés portent son identifiant, et la retirer relirait leur",
-    "coût au tarif par défaut, c'est-à-dire images gratuites."
+    "coût au tarif par défaut, c'est-à-dire images gratuites.",
+    "",
+    "`groundedSearchPerUnit` : prix d'une requête ANCRÉE dans la recherche",
+    "Google (outil `googleSearch`), facturée EN PLUS des jetons. Sur",
+    "gemini-2.5-flash, Google facture par prompt ancré : 35 $ les mille, soit",
+    "0,035 $ l'appel qui a lancé au moins une recherche, au-delà d'une",
+    "franchise de 1 500 prompts ancrés par JOUR (partagée avec Flash-Lite) que",
+    "ni la grille ni le reporting ne déduisent. Tarif relevé sur la page des",
+    "prix de Google, à revérifier contre la facture du premier mois. Un modèle",
+    "sans ce champ ne facture aucune recherche."
   ],
   "table": [
-    { "model": "gemini-2.5-flash",       "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0 },
+    { "model": "gemini-2.5-flash",       "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0, "groundedSearchPerUnit": 0.035 },
     { "model": "gemini-2.5-flash-image", "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0.04 },
     { "model": "gemini-2.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 10.00, "imageOutputPerUnit": 0 },
     { "model": "gemini-2.0-flash",       "inputPerMillion": 0.10,  "outputPerMillion": 0.40,  "imageOutputPerUnit": 0 },
@@ -154,6 +163,15 @@
       "cacheCreationInputTokens": 200000, "cacheReadInputTokens": 800000, "usd": 2.04,
       "why": "un prompt mis en cache : 0.30 d'entrée + 0.75 d'écriture + 0.24 de relecture + 0.75 de sortie" },
     { "model": "claude-opus-5",    "at": "2026-08-14T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
-      "cacheReadInputTokens": 2000000, "usd": 1.00, "why": "deux millions relus sur Opus : invisibles si on ne lit que input_tokens" }
+      "cacheReadInputTokens": 2000000, "usd": 1.00, "why": "deux millions relus sur Opus : invisibles si on ne lit que input_tokens" },
+
+    { "model": "gemini-2.5-flash", "at": "2026-10-12T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "groundedSearchCount": 1, "usd": 0.035, "why": "une requête ancrée dans Google : 35 $ les mille, en plus des jetons" },
+    { "model": "gemini-2.5-flash", "at": "2026-10-12T12:00:00Z", "inputTokens": 10000, "outputTokens": 500, "imageOutputCount": 0,
+      "groundedSearchCount": 1, "usd": 0.03925, "why": "0.003 d'entrée (prompt et résultat de l'outil) + 0.00125 de sortie + 0.035 de recherche" },
+    { "model": "gemini-2.5-flash-002", "at": "2026-10-12T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "groundedSearchCount": 2, "usd": 0.07, "why": "une révision datée garde le prix de la recherche de son préfixe" },
+    { "model": "claude-sonnet-5", "at": "2026-10-12T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "groundedSearchCount": 3, "usd": 0, "why": "un modèle sans prix de recherche ne la facture pas" }
   ]
 }

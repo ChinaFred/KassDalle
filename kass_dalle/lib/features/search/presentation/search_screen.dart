@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, SystemNavigator;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,8 +22,10 @@ import '../../recipes/domain/url_import.dart';
 import '../../recipes/presentation/url_import/url_import_dialog.dart';
 import '../domain/explore_facets.dart';
 import '../domain/search_models.dart';
+import '../domain/web_search.dart';
 import 'explore_filter_panel.dart';
 import 'generated_recipe_screen.dart';
+import 'google_search_suggestions.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
 
@@ -33,9 +36,10 @@ import 'search_widgets.dart';
 /// sections : dans le titre, par cuisine, type ou thème, dans les ingrédients
 /// principaux. L'IA ne part que sur un bouton : « Chercher avec l'IA »
 /// (classement, éditeurs et administrateurs) et « Imaginer 3 recettes »
-/// (création, mêmes rôles). « Chercher sur Google » ouvre le texte tel quel,
-/// sans appel d'IA ; au retour, un éditeur voit un bandeau qui propose
-/// d'importer la recette trouvée.
+/// (création, mêmes rôles). « Chercher sur le web » (tous les rôles) affiche
+/// jusqu'à huit pages de recettes trouvées par Google, à ouvrir ou à
+/// importer ; « Voir sur Google » ouvre le texte tel quel. Au retour du
+/// navigateur, un éditeur voit un bandeau qui propose d'importer la recette.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -57,14 +61,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _sectionsQuery = '';
 
   // Bandeau « Vous avez trouvé une recette ? Importez-la. » : armé quand
-  // « Chercher sur Google » a ouvert le navigateur, montré au retour dans
-  // l'application. En mémoire seulement : il disparaît avec l'écran.
+  // « Voir sur Google » ou une page « Sur le web » a ouvert le navigateur,
+  // montré au retour dans l'application. En mémoire seulement : il disparaît
+  // avec l'écran.
   late final AppLifecycleListener _lifecycle;
   bool _awaitingGoogleReturn = false;
   bool _importBannerVisible = false;
 
-  /// Adresse lue dans le presse-papiers au retour (Android et Windows).
+  /// Adresse lue dans le presse-papiers au retour (Android et Windows), ou
+  /// celle de la carte « Sur le web » ouverte.
   Uri? _bannerLink;
+
+  /// Adresse de la carte « Sur le web » ouverte : posée dans le bandeau au
+  /// retour, sans lire le presse-papiers.
+  Uri? _pendingBannerLink;
+
+  /// Pages « Sur le web » dont l'import a été envoyé depuis leur carte.
+  final Set<Uri> _importedWebLinks = {};
+
+  /// En-tête de la section « Sur le web », pour y faire défiler la liste.
+  final _webSectionKey = GlobalKey();
 
   // Garde de sortie : des idées de l'IA non enregistrées se perdent en
   // quittant l'écran. La navigation du bas et le menu latéral appellent
@@ -209,9 +225,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _scrollToTop();
   }
 
-  Future<void> _searchGoogle() async {
-    if (!_requireText('Écrivez ce que vous cherchez sur Google.')) return;
-    final uri = googleRecipeSearchUri(_query);
+  /// « Voir sur Google » : la recherche de la section « Sur le web » ([query])
+  /// ou, à défaut, le texte du champ, ouverte dans Google.
+  Future<void> _searchGoogle({String? query}) async {
+    final asked = query ?? _query;
+    if (asked.isEmpty &&
+        !_requireText('Écrivez ce que vous cherchez sur Google.')) {
+      return;
+    }
+    final uri = googleRecipeSearchUri(asked);
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!mounted) return;
@@ -226,6 +248,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           _awaitingGoogleReturn = true;
           _importBannerVisible = false;
           _bannerLink = null;
+          _pendingBannerLink = null;
         });
       }
     } catch (e, stackTrace) {
@@ -238,20 +261,117 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  /// Retour dans l'application après « Chercher sur Google » : le bandeau
-  /// d'import apparaît. Sur Android et Windows, le presse-papiers est lu
-  /// aussitôt ; sur le web et iOS, il ne l'est qu'à l'appui sur « Coller le
-  /// lien » — le navigateur demande une permission, iOS affiche une alerte.
+  /// Retour dans l'application après « Voir sur Google » ou l'ouverture
+  /// d'une page « Sur le web » : le bandeau d'import apparaît. Une page
+  /// ouverte depuis sa carte y pose son adresse. Sinon, sur Android et
+  /// Windows, le presse-papiers est lu aussitôt ; sur le web et iOS, il ne
+  /// l'est qu'à l'appui sur « Coller le lien » — le navigateur demande une
+  /// permission, iOS affiche une alerte.
   void _onResume() {
     if (!_awaitingGoogleReturn || !mounted) return;
     _awaitingGoogleReturn = false;
+    final pending = _pendingBannerLink;
+    _pendingBannerLink = null;
     if (!ref.read(canEditProvider)) return;
     setState(() {
       _importBannerVisible = true;
-      _bannerLink = null;
+      _bannerLink = pending;
     });
-    if (PlatformUtils.isAndroidApp || PlatformUtils.isWindowsApp) {
+    if (pending == null &&
+        (PlatformUtils.isAndroidApp || PlatformUtils.isWindowsApp)) {
       unawaited(_readClipboardIntoBanner());
+    }
+  }
+
+  /// « Chercher sur le web » : un appel par appui, jamais à la frappe.
+  void _searchWeb() {
+    if (!_requireText('Écrivez ce que vous cherchez sur le web.')) return;
+    FocusScope.of(context).unfocus();
+    unawaited(ref.read(webSearchProvider.notifier).search(_query));
+    // Après le rendu : l'en-tête de la section n'existe qu'une fois l'état
+    // passé en chargement.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToWebSection());
+  }
+
+  void _scrollToWebSection() {
+    if (!mounted) return;
+    final target = _webSectionKey.currentContext;
+    if (target == null) {
+      _scrollToTop();
+      return;
+    }
+    unawaited(
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      ),
+    );
+  }
+
+  /// « Ouvrir », ou la carte touchée : la page dans le navigateur. Pour un
+  /// éditeur, le bandeau d'import l'attend au retour, adresse posée.
+  Future<void> _openWebResult(WebRecipeResult result) async {
+    try {
+      final opened = await launchUrl(
+        result.url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted) return;
+      if (!opened) {
+        context.showErrorSnackBar('Impossible d\'ouvrir ${result.site}.');
+        return;
+      }
+      _armWebReturn(result);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'search.web.open',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'host': result.url.host},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible d\'ouvrir ${result.site}.');
+      }
+    }
+  }
+
+  /// Pour un éditeur, le bandeau d'import attend le retour du navigateur,
+  /// avec l'adresse de [result]. Appelé après « Ouvrir », et sur le web
+  /// quand le lien du titre a été suivi.
+  void _armWebReturn(WebRecipeResult result) {
+    if (!mounted || !ref.read(canEditProvider)) return;
+    setState(() {
+      _awaitingGoogleReturn = true;
+      _importBannerVisible = false;
+      _bannerLink = null;
+      _pendingBannerLink = result.url;
+    });
+  }
+
+  /// « Importer » : la boîte d'import, adresse posée. Rien ne part avant
+  /// « Importer » dans la boîte.
+  Future<void> _importWebResult(WebRecipeResult result) async {
+    final queued = await showUrlImportDialog(
+      context,
+      initialUrl: result.url.toString(),
+    );
+    if (queued && mounted) {
+      setState(() => _importedWebLinks.add(result.url));
+    }
+  }
+
+  Future<void> _copyWebLink(WebRecipeResult result) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: result.url.toString()));
+      if (mounted) context.showSuccessSnackBar('Lien copié.');
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'search.web.copy',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) context.showErrorSnackBar('Impossible de copier le lien.');
     }
   }
 
@@ -354,6 +474,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   /// « Aller plus loin » : trois chemins hors de la bibliothèque.
   Future<void> _openGoFurther(ExploreCorpus corpus, bool canEdit) {
+    final webState = ref.read(webSearchProvider);
+    final remainingLine = remainingSearchesLine(webState.remaining);
     return showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -378,13 +500,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ListTile(
               leading: const Icon(Icons.public),
-              title: const Text('Chercher sur Google'),
-              subtitle: const Text(
-                'Ouvre Google avec votre texte, sans passer par l\'IA.',
+              title: const Text('Chercher sur le web'),
+              subtitle: Text(
+                [
+                  'Jusqu\'à 8 pages de recettes, affichées ici.',
+                  ?remainingLine,
+                ].join(' '),
               ),
+              enabled: webState is! WebSearchLoading,
               onTap: () {
                 Navigator.pop(ctx);
-                unawaited(_searchGoogle());
+                _searchWeb();
               },
             ),
             if (canEdit)
@@ -509,6 +635,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ? null
         : () => _askAi(corpus, prefs);
     final VoidCallback? imagine = ideasBusy ? null : () => _imagine(corpus);
+    // Inactif seulement pendant une recherche en cours.
+    final webState = ref.watch(webSearchProvider);
+    final webBusy = webState is WebSearchLoading;
+    final VoidCallback? searchWeb = webBusy ? null : _searchWeb;
+    // Plus aucune recherche aujourd'hui : le bouton reste actif, une
+    // recherche déjà en cache sert encore, mais la phrase le dit.
+    final webExhaustedLine = webState.remaining == 0
+        ? remainingSearchesLine(0)
+        : null;
     final emptyLibrary =
         corpus.recipes.isEmpty && _query.isEmpty && prefs.filter.isEmpty;
 
@@ -536,6 +671,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       onRelaunch: askAi,
       onImagine: imagine,
       onOpenIdea: _openGeneratedSuggestion,
+      webSectionKey: _webSectionKey,
+      onSearchWeb: searchWeb,
+      onOpenWebResult: (r) => unawaited(_openWebResult(r)),
+      onWebLinkFollowed: _armWebReturn,
+      onImportWebResult: (r) => unawaited(_importWebResult(r)),
+      onCopyWebLink: (r) => unawaited(_copyWebLink(r)),
+      importedWebLinks: _importedWebLinks,
+      onSeeOnGoogle: (q) => unawaited(_searchGoogle(query: q)),
       emptyLibrary: emptyLibrary,
       onImport: canEdit ? () => showUrlImportDialog(context) : null,
       isSectionOpen: (section) => _isSectionOpen(section, outcome),
@@ -601,9 +744,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           label: const Text('Imaginer 3 recettes'),
                         ),
                       OutlinedButton.icon(
-                        onPressed: _searchGoogle,
+                        onPressed: searchWeb,
                         icon: const Icon(Icons.public, size: AppIconSize.small),
-                        label: const Text('Chercher sur Google'),
+                        label: const Text('Chercher sur le web'),
                       ),
                       // En fin de rangée, en bouton texte : un import n'est
                       // pas une recherche.
@@ -616,6 +759,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ],
                   ),
                 ),
+                if (webExhaustedLine != null)
+                  _WebExhaustedLine(text: webExhaustedLine),
                 _StatusLine(
                   outcome: outcome,
                   titleOnlyWords: titleOnlyWords,
@@ -657,7 +802,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           aiCorpusSize: aiCorpusSize,
           onAskAi: askAi,
           onGoFurther: () => _openGoFurther(corpus, canEdit),
-          onSearchGoogle: _searchGoogle,
+          onSearchWeb: searchWeb,
+          webExhaustedLine: webExhaustedLine,
         ),
       ],
     );
@@ -974,14 +1120,22 @@ class _BottomActions extends StatelessWidget {
   /// Nul pendant un classement en cours ou sans recette à classer.
   final VoidCallback? onAskAi;
   final VoidCallback onGoFurther;
-  final VoidCallback onSearchGoogle;
+
+  /// Nul pendant une recherche web en cours.
+  final VoidCallback? onSearchWeb;
+
+  /// « Il ne vous reste aucune recherche aujourd'hui. », sous le bouton du
+  /// lecteur ; nul tant qu'il en reste. L'éditeur la lit dans « Aller plus
+  /// loin ».
+  final String? webExhaustedLine;
 
   const _BottomActions({
     required this.canEdit,
     required this.aiCorpusSize,
     required this.onAskAi,
     required this.onGoFurther,
-    required this.onSearchGoogle,
+    required this.onSearchWeb,
+    this.webExhaustedLine,
   });
 
   @override
@@ -1006,16 +1160,24 @@ class _BottomActions extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          // Le lecteur n'a que Google hors de la bibliothèque : le bouton
+          // Le lecteur n'a que le web hors de la bibliothèque : le bouton
           // vient directement, sans feuille intermédiaire.
           child: !canEdit
-              ? OutlinedButton.icon(
-                  onPressed: onSearchGoogle,
-                  icon: const Icon(Icons.public, size: AppIconSize.small),
-                  label: const Text(
-                    'Chercher sur Google',
-                    textAlign: TextAlign.center,
-                  ),
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onSearchWeb,
+                      icon: const Icon(Icons.public, size: AppIconSize.small),
+                      label: const Text(
+                        'Chercher sur le web',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    if (webExhaustedLine case final line?)
+                      _WebExhaustedLine(text: line, centered: true),
+                  ],
                 )
               : stacked
               ? Column(
@@ -1030,6 +1192,31 @@ class _BottomActions extends StatelessWidget {
                     Expanded(flex: 2, child: further),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+/// « Il ne vous reste aucune recherche aujourd'hui. », sous le bouton.
+class _WebExhaustedLine extends StatelessWidget {
+  final String text;
+  final bool centered;
+
+  const _WebExhaustedLine({required this.text, this.centered = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: centered
+          ? const EdgeInsets.only(top: 4)
+          : const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Text(
+        text,
+        textAlign: centered ? TextAlign.center : TextAlign.start,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -1056,6 +1243,19 @@ class _ResultList extends ConsumerWidget {
   final VoidCallback? onImagine;
   final ValueChanged<GeneratedRecipeSuggestion> onOpenIdea;
 
+  /// Section « Sur le web » : son en-tête, la relance (nulle pendant une
+  /// recherche en cours), et les gestes d'une carte.
+  final GlobalKey webSectionKey;
+  final VoidCallback? onSearchWeb;
+  final ValueChanged<WebRecipeResult> onOpenWebResult;
+
+  /// Sur le web, le lien du titre d'une carte a été suivi.
+  final ValueChanged<WebRecipeResult> onWebLinkFollowed;
+  final ValueChanged<WebRecipeResult> onImportWebResult;
+  final ValueChanged<WebRecipeResult> onCopyWebLink;
+  final Set<Uri> importedWebLinks;
+  final ValueChanged<String> onSeeOnGoogle;
+
   /// Vrai quand les sources ne rendent aucune recette, sans texte ni filtre.
   final bool emptyLibrary;
 
@@ -1079,6 +1279,14 @@ class _ResultList extends ConsumerWidget {
     required this.onRelaunch,
     required this.onImagine,
     required this.onOpenIdea,
+    required this.webSectionKey,
+    required this.onSearchWeb,
+    required this.onOpenWebResult,
+    required this.onWebLinkFollowed,
+    required this.onImportWebResult,
+    required this.onCopyWebLink,
+    required this.importedWebLinks,
+    required this.onSeeOnGoogle,
     required this.emptyLibrary,
     required this.onImport,
     required this.isSectionOpen,
@@ -1089,6 +1297,7 @@ class _ResultList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ranking = ref.watch(aiRankingProvider);
     final ideas = ref.watch(aiIdeasProvider);
+    final web = ref.watch(webSearchProvider);
     final recipes = outcome.recipes;
     final sectioned = outcome.sections.isNotEmpty;
 
@@ -1096,8 +1305,12 @@ class _ResultList extends ConsumerWidget {
       ?leading,
       ..._rankingSection(context, ref, ranking),
       ..._ideasSection(context, ref, ideas),
+      ..._webSection(context, ref, web),
       // Avec du texte, les sections nomment déjà ce qui suit.
-      if (!sectioned && (ranking is! AiRankingIdle || ideas is! AiIdeasIdle))
+      if (!sectioned &&
+          (ranking is! AiRankingIdle ||
+              ideas is! AiIdeasIdle ||
+              web is! WebSearchIdle))
         const SearchSectionHeader(title: 'Vos recettes'),
     ];
 
@@ -1186,6 +1399,177 @@ class _ResultList extends ConsumerWidget {
         );
       },
     );
+  }
+
+  /// La section « Sur le web » : en-tête, état, cartes, bloc de Google, pied.
+  List<Widget> _webSection(
+    BuildContext context,
+    WidgetRef ref,
+    WebSearchState state,
+  ) {
+    final asked = webSearchQueryOf(state);
+    if (asked == null) return const [];
+    final notifier = ref.read(webSearchProvider.notifier);
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    final subtitle = switch (state) {
+      WebSearchSuccess(:final response) when response.fromCache =>
+        '« $asked » · Recherche déjà faite, non décomptée.',
+      WebSearchSuccess(:final remaining) => [
+        '« $asked »',
+        ?remainingSearchesLine(remaining),
+      ].join(' · '),
+      _ => '« $asked »',
+    };
+    final stale = query.trim() != asked && state is! WebSearchLoading;
+
+    Widget seeOnGoogle() => TextButton.icon(
+      onPressed: () => onSeeOnGoogle(asked),
+      icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
+      label: const Text('Voir sur Google'),
+    );
+
+    // Rien, marges comprises, quand Google n'a pas rendu son bloc.
+    List<Widget> suggestions(WebSearchResponse response) => [
+      if (response.searchEntryPointHtml case final html?)
+        GoogleSearchSuggestions(html: html, queries: response.webSearchQueries),
+    ];
+
+    Widget footer() => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text('Vidéos et réseaux sociaux exclus.', style: muted),
+          seeOnGoogle(),
+        ],
+      ),
+    );
+
+    return [
+      KeyedSubtree(
+        key: webSectionKey,
+        child: _SectionHeader(
+          icon: Icons.public,
+          title: 'Sur le web',
+          subtitle: subtitle,
+          trailing: _closeButton(notifier.close),
+        ),
+      ),
+      if (stale)
+        _Notice(
+          text: 'Recherche modifiée depuis la demande.',
+          actionLabel: 'Relancer',
+          onAction: onSearchWeb,
+        ),
+      ...switch (state) {
+        WebSearchLoading() => [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: const Text('Recherche de pages de recettes…'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const WebResultPlaceholderTile(),
+          const WebResultPlaceholderTile(),
+          const WebResultPlaceholderTile(),
+        ],
+        WebSearchSuccess(:final response) when response.results.isEmpty => [
+          const _WebEmptyNotice(),
+          ...suggestions(response),
+          footer(),
+        ],
+        WebSearchSuccess(:final response) => [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                webPagesFoundLabel(response.results.length),
+                style: muted,
+              ),
+            ),
+          ),
+          for (final r in response.results)
+            WebResultTile(
+              result: r,
+              canImport: canEdit,
+              imported: importedWebLinks.contains(r.url),
+              onOpen: () => onOpenWebResult(r),
+              onLinkFollowed: () => onWebLinkFollowed(r),
+              onImport: canEdit ? () => onImportWebResult(r) : null,
+              onCopyLink: () => onCopyWebLink(r),
+            ),
+          ...suggestions(response),
+          footer(),
+        ],
+        WebSearchError(:final error) => [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: switch (error) {
+              // Le serveur a écrit le message ; la même requête serait
+              // refusée de nouveau.
+              WebSearchQueryRefused(:final message) => AppErrorState(
+                error: error,
+                compact: true,
+                title: 'Recherche refusée',
+                advice: message,
+              ),
+              WebSearchEngineUnavailable(:final message) => AppErrorState(
+                error: error,
+                compact: true,
+                title: 'Moteur de recherche indisponible',
+                advice: message,
+                onRetry: () => unawaited(notifier.search(asked)),
+              ),
+              // Hors ligne : « Connexion perdue », par `describeError`.
+              _ => AppErrorState(
+                error: error,
+                compact: true,
+                onRetry: () => unawaited(notifier.search(asked)),
+              ),
+            },
+          ),
+          footer(),
+        ],
+        WebSearchQuotaReached(:final limit) => [
+          _WebLimitCard(
+            text: limit == null
+                ? 'Vous avez fait toutes vos recherches web d\'aujourd\'hui. '
+                      'Le compteur repart demain.'
+                : 'Vous avez fait vos $limit recherches web d\'aujourd\'hui. '
+                      'Le compteur repart demain.',
+            onSeeOnGoogle: () => onSeeOnGoogle(asked),
+          ),
+        ],
+        WebSearchBudgetReached() => [
+          _WebLimitCard(
+            text:
+                'Le budget d\'IA du jour est atteint. La recherche web revient '
+                'demain.',
+            onSeeOnGoogle: () => onSeeOnGoogle(asked),
+          ),
+        ],
+        WebSearchIdle() => const <Widget>[],
+      },
+    ];
   }
 
   Widget _closeButton(VoidCallback onPressed) =>
@@ -1348,6 +1732,96 @@ class _ResultList extends ConsumerWidget {
         AiIdeasIdle() => const <Widget>[],
       },
     ];
+  }
+}
+
+/// Plafond du jour atteint — recherches du compte ou budget d'IA : ce n'est
+/// pas une panne, rien à réessayer avant demain.
+class _WebLimitCard extends StatelessWidget {
+  final String text;
+  final VoidCallback onSeeOnGoogle;
+
+  const _WebLimitCard({required this.text, required this.onSeeOnGoogle});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSecondaryContainer;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.hourglass_bottom,
+                  size: AppIconSize.small,
+                  color: fg,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      text,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onSeeOnGoogle,
+                icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
+                label: const Text('Voir sur Google'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Aucune page retenue : un état resserré dans la liste, sans grande icône.
+/// « Voir sur Google » est dans le pied de la section, juste dessous.
+class _WebEmptyNotice extends StatelessWidget {
+  const _WebEmptyNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Semantics(
+        liveRegion: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Aucune page de recette trouvée',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Essayez d\'autres mots, ou voyez tous les résultats sur Google.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

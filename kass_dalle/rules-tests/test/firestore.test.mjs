@@ -226,6 +226,8 @@ beforeEach(async () => {
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
     "url_import_daily/editor_2026-10-11": { uid: EDITOR, day: "2026-10-11", count: 3 },
+    "web_search_daily/reader_2026-10-12": { uid: READER, day: "2026-10-12", count: 4 },
+    "web_search_cache/abc": { query: "quiche", results: [], cached_at: "2026-10-12" },
     "nutrition_ingredients/farine": { name: "farine", kcal: 364, shopping_product: "farine" },
     "users/founder": PERSONAS.founder.doc,
     "user_profiles/other-reader": { display_name: "Autre Lecteur", preferred_name: null },
@@ -1735,6 +1737,44 @@ describe("url_import_daily", () => {
     await assertFails(
       db("admin").doc("url_import_daily/admin_2026-10-11").set({ uid: "admin", count: 0 }),
     );
+  });
+});
+
+// ── web_search_daily ─────────────────────────────────────────────────────
+
+describe("web_search_daily", () => {
+  it("le titulaire lit son compteur", async () => {
+    await assertSucceeds(db("reader").doc("web_search_daily/reader_2026-10-12").get());
+  });
+
+  it("un autre compte ne le lit pas", async () => {
+    await assertFails(db("editor").doc("web_search_daily/reader_2026-10-12").get());
+  });
+
+  it("le titulaire ne remet pas son compteur à zéro", async () => {
+    await assertFails(
+      db("reader").doc("web_search_daily/reader_2026-10-12").update({ count: 0 }),
+    );
+  });
+
+  it("personne ne crée de compteur depuis le client", async () => {
+    await assertFails(
+      db("admin").doc("web_search_daily/admin_2026-10-12").set({ uid: "admin", count: 0 }),
+    );
+  });
+});
+
+// ── web_search_cache ─────────────────────────────────────────────────────
+
+describe("web_search_cache", () => {
+  it("aucun rôle ne lit le cache", async () => {
+    await assertFails(db("reader").doc("web_search_cache/abc").get());
+    await assertFails(db("admin").doc("web_search_cache/abc").get());
+  });
+
+  it("aucun rôle n'y écrit", async () => {
+    await assertFails(db("editor").doc("web_search_cache/abc").set({ results: [] }));
+    await assertFails(db("admin").doc("web_search_cache/new").set({ results: [] }));
   });
 });
 

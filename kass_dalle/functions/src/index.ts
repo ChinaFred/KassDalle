@@ -73,6 +73,10 @@ export {
   ensureWebBookFn,
 } from "./callable/urlImportCallable";
 
+// « Chercher sur le web » (Explorer) : recherche Google ancrée, pages résolues,
+// plafond du jour et cache partagé. Tous les rôles approuvés.
+export { searchWebRecipesFn } from "./callable/webSearchCallable";
+
 // Analyse d'un livre entier avant son import : pages, tranches, coût estimé.
 export { analyzeBookFileFn } from "./callable/bookImportCallable";
 
