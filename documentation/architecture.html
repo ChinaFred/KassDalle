@@ -597,8 +597,10 @@ flowchart TB
         <code>master</code>, ou à la main depuis l'onglet Actions, sur <code>master</code> seulement.
         Un seul déploiement tourne à la fois. Un commit signé <code>Deploy-Source: deploy.ps1</code>
         n'est pas redéployé : le script de secours vient de tout mettre en ligne depuis le PC.
-        Les deux workflows n'ont que le droit <code>contents: read</code>, et leurs actions sont
-        épinglées par SHA de commit, version en commentaire.
+        Les deux workflows lisent le dépôt sans y écrire (<code>ci.yml</code> lit aussi les PR
+        et les exécutions Actions), et leurs actions sont épinglées par SHA de commit, version en
+        commentaire. Sur le push d'une PR fusionnée à jour de <code>master</code>, la CI ne
+        rejoue que le contrôle de version : la CI de la PR a déjà testé le même arbre.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
         hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
         ou supprimées. Les deux se règlent dans Google Cloud, et non par ce workflow :
