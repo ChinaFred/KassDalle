@@ -74,6 +74,7 @@ void main() {
     Recipe recipe({
       String? sourceUrl,
       String? sourceSite,
+      String? sourceAuthor,
       RecipeOrigin? origin,
     }) => Recipe(
       id: 'r1',
@@ -90,17 +91,20 @@ void main() {
       origin: origin,
       sourceUrl: sourceUrl,
       sourceSite: sourceSite,
+      sourceAuthor: sourceAuthor,
     );
 
     test('source_url et source_site relus, réécrits tels quels', () {
       final r = recipe(
         sourceUrl: 'https://www.site.fr/quiche',
         sourceSite: 'site.fr',
+        sourceAuthor: 'Marie Dupont',
         origin: RecipeOrigin.web,
       );
       final written = r.toFirestore();
       expect(written['source_url'], 'https://www.site.fr/quiche');
       expect(written['source_site'], 'site.fr');
+      expect(written['source_author'], 'Marie Dupont');
       expect(written['origin'], 'web');
       final read = Recipe.fromFirestore('r1', {
         ...written,
@@ -108,13 +112,18 @@ void main() {
         'updated_at': _Ts(DateTime(2026, 10, 1)),
       });
       expect(read.sourceSite, 'site.fr');
+      expect(read.sourceAuthor, 'Marie Dupont');
       final copy = r.copyWith(titre: 'Autre');
-      expect((copy.sourceUrl, copy.sourceSite), (r.sourceUrl, r.sourceSite));
+      expect(
+        (copy.sourceUrl, copy.sourceSite, copy.sourceAuthor),
+        (r.sourceUrl, r.sourceSite, r.sourceAuthor),
+      );
     });
 
     test('sans adresse, le champ n’est pas écrit', () {
       expect(recipe().toFirestore().containsKey('source_url'), isFalse);
       expect(recipe().toFirestore().containsKey('source_site'), isFalse);
+      expect(recipe().toFirestore().containsKey('source_author'), isFalse);
       expect(recipe().sourceSite, isNull);
     });
 
@@ -313,6 +322,40 @@ void main() {
         tester.getSize(find.byType(InkWell).first).height,
         greaterThanOrEqualTo(48),
       );
+      expect(find.textContaining('Par '), findsNothing);
+    });
+
+    testWidgets('l\'auteur de la page au-dessus du lien', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: RecipeSourceLink(
+              url: 'https://www.site.fr/quiche',
+              site: 'site.fr',
+              author: 'Marie Dupont',
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Par Marie Dupont'), findsOneWidget);
+      expect(find.text('site.fr'), findsOneWidget);
+    });
+
+    testWidgets('un auteur qui répète le nom du site ne s\'affiche pas', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: RecipeSourceLink(
+              url: 'https://www.marmiton.org/quiche',
+              site: 'marmiton.org',
+              author: 'Marmiton',
+            ),
+          ),
+        ),
+      );
+      expect(find.textContaining('Par '), findsNothing);
     });
 
     testWidgets('sans nom de site, le lien porte l\'hôte de l\'adresse', (

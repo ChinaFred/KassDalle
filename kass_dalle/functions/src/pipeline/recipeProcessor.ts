@@ -60,6 +60,8 @@ import {
   type StoredRecipeIngredient,
 } from "../nutrition/referentialNormalization";
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
+import { sourceNutritionDocument } from "../nutrition/sourceNutrition";
+import type { JsonLdNutrition } from "../web/recipePage";
 import { BookFileError } from "../books/bookFile";
 import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
 import {
@@ -313,6 +315,8 @@ export const recipeProcessor = onTaskDispatched(
           origin: "web",
           sourceUrl: prepared.parsed.normalized,
           sourceSite: prepared.parsed.site,
+          sourceAuthor: prepared.sourceAuthor,
+          sourceNutrition: prepared.sourceNutrition,
           onStep: async (step) => {
             await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
           },
@@ -1057,6 +1061,10 @@ async function saveDraft(args: {
   sourceUrl?: string;
   /** Nom du site de cette page (« marmiton.org »), affiché par le client. */
   sourceSite?: string;
+  /** Auteur annoncé par la page — import par lien seulement. */
+  sourceAuthor?: string | null;
+  /** Nutrition par portion annoncée par la page — import par lien seulement. */
+  sourceNutrition?: { perPortion: JsonLdNutrition; portions: number | null } | null;
 }): Promise<string> {
   const {
     cooklang,
@@ -1292,6 +1300,17 @@ async function saveDraft(args: {
     // (règles Firestore), sauf en recopiant celui de la recette copiée.
     ...(args.sourceUrl ? { source_url: args.sourceUrl } : {}),
     ...(args.sourceSite ? { source_site: args.sourceSite } : {}),
+    ...(args.sourceAuthor ? { source_author: args.sourceAuthor } : {}),
+    // Comparée au calcul de la nutrition, tant que les ingrédients écrits ici
+    // ne changent pas (`nutrition/sourceNutrition.ts`). Serveur seul.
+    ...(args.sourceNutrition
+      ? {
+          source_nutrition: sourceNutritionDocument({
+            ...args.sourceNutrition,
+            ingredients,
+          }),
+        }
+      : {}),
     // Ce que le contrôle de fidélité a constaté, sur la recette elle-même :
     // un écart doit se voir depuis l'écran de relecture, pas seulement dans
     // les journaux d'un import déjà oublié.

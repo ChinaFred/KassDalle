@@ -30,7 +30,11 @@ Widget? recipeTopContent({required Recipe recipe, Widget? banner}) {
     mainAxisSize: MainAxisSize.min,
     children: [
       ?banner,
-      RecipeSourceLink(url: sourceUrl, site: recipe.sourceSite),
+      RecipeSourceLink(
+        url: sourceUrl,
+        site: recipe.sourceSite,
+        author: recipe.sourceAuthor,
+      ),
     ],
   );
 }

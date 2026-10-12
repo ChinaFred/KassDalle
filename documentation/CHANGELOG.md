@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.43 — fonctionnel
+### v0.23.44 — fonctionnel
 
 Admin › Backfills range ses neuf reprises en trois sections : « Récurrents », « Ponctuels à
 lancer » et « Ponctuels terminés ». Chaque tuile affiche l'état de son dernier passage, lu en
@@ -31,7 +31,7 @@ la fin ou jusqu'au plafond de dépense. « Reprendre la nutrition » passe toujo
 l'administrateur peut aussi le marquer ou le remettre à lancer par le menu ⋮. Lancer un
 backfill ne bloque plus l'écran, et deux passages du même backfill ne tournent jamais ensemble.
 
-### v0.23.43 — technique
+### v0.23.44 — technique
 
 Chaque backfill est classé dans deux registres, `functions/src/backfills/registry.ts` et
 `backfill_registry.dart`. `runBackfillPass` (`backfills/runner.ts`) pose un verrou par backfill
@@ -48,6 +48,27 @@ recette. Deux callables admin s'ajoutent, `setBackfillScheduleFn` et `setBackfil
 callables existants gardent nom et contrat ; leur réponse gagne `termineAuto`, leur requête
 `appVersion`, et un passage déjà en cours renvoie `failed-precondition`. `backfillShoppingFn`
 ne déclare plus les deux secrets d'IA, qu'il n'utilisait pas.
+
+### v0.23.43 — fonctionnel
+
+La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page
+le nomme dans ses données structurées : une ligne « Par Marie Dupont » au-dessus du lien
+« Source : <site> ». Elle ne s'affiche pas quand l'auteur annoncé est le site lui-même. La copie d'une recette importée garde son auteur. Les recettes importées
+avant cette version n'ont pas d'auteur : il faudrait relire chaque page pour le retrouver.
+
+### v0.23.43 — technique
+
+L'import par lien lit deux champs de plus dans le JSON-LD `schema.org/Recipe`, sans appel de
+modèle : `author` devient `source_author`, et `nutrition` devient `source_nutrition` (calories,
+protéines, glucides, lipides par portion, portions du site, empreinte des ingrédients écrits).
+À chaque calcul de la nutrition, `computeAndPersistRecipeNutrition` compare ses valeurs par
+portion à celles du site et écrit `source_nutrition_check`. Un écart au-delà d'un facteur 2 est
+journalisé en `WARNING` : il signale une conversion d'unité fausse, un ingrédient manquant ou un
+`per100g` faux dans le référentiel. La comparaison s'arrête dès que les ingrédients changent, et
+n'a pas lieu sous le seuil de couverture partielle. Les règles Firestore traitent
+`source_author` comme `source_site`, et réservent `source_nutrition` et
+`source_nutrition_check` au serveur. `recipeCategory` n'est pas lu : les tags restent ceux du
+balisage.
 
 ### v0.23.42 — fonctionnel
 

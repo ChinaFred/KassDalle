@@ -404,6 +404,9 @@ Document principal d'une recette.
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `source_url` | `String?` | Adresse de la page web d'une recette importée depuis un lien, **normalisée** (`normalizeUrl`, `web/urlGuard.ts` : sans fragment ni paramètres de suivi `utm_*`, `fbclid`…, paramètres triés, hôte en minuscules, sans barre finale). Écrite par `recipeProcessor` ; c'est la valeur que `importRecipeFromUrlFn` compare pour le doublon (`created_by` + `source_url`, deux égalités servies sans index composite). Le client ne la saisit jamais ; il la réécrit telle quelle à une mise à jour et la recopie sur une **copie** (`copyRecipeAsDraft`, décision du 11 octobre 2026). Les règles refusent toute autre écriture (`sourceUrlAccepted`, `!changes('source_url')`, §4) ; une copie n'est acceptée que si la recette copiée est lisible par l'appelant (`canReadRecipe`). Absent sur toute autre recette |
 | `source_site` | `String?` | Nom du site de `source_url` (« marmiton.org » : hôte en minuscules, sans `www.`), écrit par `recipeProcessor` à côté de l'adresse (`siteName`, `web/urlGuard.ts`). Le client l'affiche tel quel (« Source : marmiton.org ») et ne le calcule pas : la règle n'existe qu'au serveur. Mêmes règles d'écriture que `source_url` (recopie sur une copie à l'identique, jamais modifié) |
+| `source_author` | `String?` | Auteur annoncé par la page d'origine : `author` de son JSON-LD (`readAuthor`, `web/recipePage.ts` — chaîne, `Person` ou `Organization`, ou tableau ; noms joints par « , », sans doublon, sans adresse, 120 caractères au plus, coupé au dernier nom entier suivi de « … »). Écrit par `recipeProcessor` sur le chemin `json_ld` seulement. Le client l'affiche au-dessus du lien source (« Par Marie Dupont », masqué quand il répète le nom du site) et ne le saisit jamais. Mêmes règles d'écriture que `source_url`. Absent quand la page n'en publie pas, et sur les recettes importées avant la v0.23.43 |
+| `source_nutrition` | `Map?` | Nutrition **par portion** annoncée par la page d'origine (`nutrition` de son JSON-LD, `readNutrition`) : `per_portion` (`kcal`, `protein_g`, `carbs_g`, `fat_g`, seules les valeurs lisibles, `kcal` ≤ 10 000, grammes ≤ 2 000, kJ convertis), `portions` (le `recipeYield` du site, ou `null`) et `ingredients_fingerprint` (`ingredientsFingerprint` des ingrédients écrits à l'import). Écrit par `recipeProcessor`, chemin `json_ld` seulement. **Jamais affiché ni utilisé à la place du calcul** : il ne sert qu'à `source_nutrition_check`. Serveur seul : les règles refusent au client de le poser, de le changer ou de l'effacer ; une copie ne le reprend pas (absent du modèle Dart) |
+| `source_nutrition_check` | `Map?` | Écart entre le calcul de la nutrition et `source_nutrition`, écrit par `computeAndPersistRecipeNutrition` à chaque calcul (`compareWithSourceNutrition`, `nutrition/sourceNutrition.ts`). `state` : `ok`, `gap` (une valeur hors d'un facteur 2, dans un sens ou dans l'autre), `ingredients_changed` (l'empreinte des ingrédients ne correspond plus à celle de l'import : pas de comparaison), `low_coverage` (couverture sous le seuil `minCoverageForPartial` : pas de comparaison, `coverage` écrite). Pour `ok` et `gap` : `portions` (celles du site, sinon celles de la recette), `ratios` (notre valeur par portion divisée par celle du site, au centième), `gaps` (les clés hors du facteur 2). Plus `checked_at`. Un `gap` est journalisé en `WARNING` (module `DESIGN`, recette, site, ratios, couverture). Serveur seul, mêmes règles que `source_nutrition` |
 | `origin` | `String?` | Ce qui a écrit le document la première fois : `scan` (`recipeProcessor`), `web` (`recipeProcessor`, import depuis un lien), `ai` (conception pour le planning, Explorer), `manual` (saisie, texte collé compris), `copy` (copie de travail). Écrit par celui qui crée le document, jamais déduit du livre porteur. Absent sur les documents antérieurs au champ : l'écran de relecture déduit alors `copy` d'une recette source, `scan` d'un fichier source, et n'affirme rien sinon — il disait « issu d'un scan » à toute recette conçue par l'IA |
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
@@ -2019,18 +2022,25 @@ service cloud.firestore {
       function changes(field) {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
       }
-      // `source_url`, `source_site` : écrits par le serveur ; le client ne les
-      // pose qu'en recopiant ceux d'une recette copiée qu'il peut lire.
+      // `source_url`, `source_site`, `source_author` : écrits par le serveur ;
+      // le client ne les pose qu'en recopiant ceux d'une recette copiée qu'il
+      // peut lire.
       function sourceUrlAccepted() {
         let url = request.resource.data.get('source_url', null);
         let site = request.resource.data.get('source_site', null);
+        let author = request.resource.data.get('source_author', null);
         let from = request.resource.data.get('source_recipe_id', null);
-        return (url == null && site == null)
+        return (url == null && site == null && author == null)
           || (from is string && from != '' && !from.matches('.*/.*')
               && exists(/databases/$(database)/documents/recipes/$(from))
               && canReadRecipe(get(/databases/$(database)/documents/recipes/$(from)).data)
               && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_url', null) == url
-              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site);
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_author', null) == author);
+      }
+      // `source_nutrition`, `source_nutrition_check` : serveur seul.
+      function serverOnlySourceFields() {
+        return ['source_nutrition', 'source_nutrition_check'];
       }
 
       allow read: if canReadRecipe(resource.data);
@@ -2040,9 +2050,12 @@ service cloud.firestore {
       // ni effacé par un client, administrateur compris.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
+        && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
-        && !changes('source_url') && !changes('source_site') && !changes('estimated_times')
+        && !changes('source_url') && !changes('source_site') && !changes('source_author')
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
+        && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -2426,9 +2439,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   Un éditeur ne crée pas `books/web2_{autre uid}`, le repli du livre web.
 - L'import par lien a ses tests : « Mes recettes du web » (`__web`) ne se supprime pas et garde
   son tag ; un éditeur ne crée ni `books/web_{autre uid}` ni un livre tagué `__web`, mais crée
-  toujours « Mes recettes libres » ; `source_url` et `source_site` ne se posent pas à la
-  création, sauf recopiés à l'identique depuis une recette copiée **lisible** (une recette
-  privée d'un autre est refusée), et ne se modifient ni ne s'effacent, administrateur compris ;
+  toujours « Mes recettes libres » ; `source_url`, `source_site` et `source_author` ne se
+  posent pas à la création, sauf recopiés à l'identique depuis une recette copiée **lisible**
+  (une recette privée d'un autre est refusée), et ne se modifient ni ne s'effacent,
+  administrateur compris ; `source_nutrition` et `source_nutrition_check` ne se posent pas à la
+  création, même sur une copie, et ne se modifient ni ne s'effacent ;
   un éditeur ne crée pas de job `recipeUrlImport` et ne change pas la source d'un job en le
   relançant ; un import terminé ne se remet pas en file ni ne s'annule, un délai dépassé se
   relance avec `url_retry_count` + 1, pas au-delà de deux, pas sans compteur, et un import
@@ -2817,7 +2832,11 @@ qu'en début de mot et se lit d'un bloc : la lecture des attributs reste linéai
   2 000 caractères par ligne. Au-delà, le job finit en `no_recipe`, sans appel de modèle : lignes
   d'ingrédients telles quelles, sections d'étapes, `recipeYield` → portions, durées ISO 8601 →
   « 1 h 30 min », langue de `inLanguage` sinon `<html lang>`. Un bloc JSON illisible est
-  journalisé (`WARNING`) et ignoré.
+  journalisé (`WARNING`) et ignoré. Deux champs de la recette JSON-LD sont lus sans entrer
+  dans aucun prompt : `author` (`readAuthor`) devient `source_author`, et `nutrition`
+  (`readNutrition`, valeurs par portion) devient `source_nutrition`, comparé ensuite au calcul
+  de la nutrition (`source_nutrition_check`, §3). `recipeCategory`, `recipeCuisine`,
+  `keywords` et `aggregateRating` ne sont pas lus : les tags viennent du balisage.
 - **Sinon, le texte principal** de la page (`extractMainText` : `<article>`, sinon `<main>`,
   sinon `<body>`, sans scripts, styles, menus, en-tête, pied, formulaires ; 60 000 caractères au
   plus) suit la chaîne du texte collé : `transcribeText` avec le poste **`url_import_fallback`**.
@@ -2828,8 +2847,9 @@ Puis, comme pour un scan : traduction si la langue n'est pas le français
 (`recipe_translation`), balisage par `tagAndNormalize` avec le poste **`url_import`** (même
 prompt que `recipe_tagging`), contrôle de fidélité, **bornes des ingrédients**
 (`boundIngredients` : 200 lignes au plus, nom ≤ 120 caractères, unité ≤ 40, lignes écartées
-journalisées en `WARNING`), écriture par `saveDraft` avec `origin: "web"`, `source_url` et
-`source_site`, dans le livre système « Mes recettes du web »
+journalisées en `WARNING`), écriture par `saveDraft` avec `origin: "web"`, `source_url`,
+`source_site`, et sur le chemin `json_ld` `source_author` et `source_nutrition` quand la page
+les publie, dans le livre système « Mes recettes du web »
 (`findOrCreateWebBook`). Le texte principal de la page (ou, à défaut, la recette projetée) est
 joint comme document original, précédé de l'adresse et de la date de lecture.
 

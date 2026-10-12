@@ -12,7 +12,9 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 
 import { COLL_RECIPES, COLL_NUTRITION_UNITS } from "../config";
-import { logError } from "../logging";
+import { logError, logWarn } from "../logging";
+import type { StoredIngredient } from "../triggers/recipeIngredients";
+import { compareWithSourceNutrition, SOURCE_GAP_FACTOR } from "./sourceNutrition";
 import { getNutritionSourcePolicy } from "./policy";
 import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
@@ -754,9 +756,44 @@ export async function computeAndPersistRecipeNutrition(args: {
     fallback_policy: policy.fallback_policy,
   };
 
+  // Écart avec la nutrition annoncée par le site d'une recette importée par
+  // lien. Le calcul le constate, il ne s'en sert pas : la valeur du site n'est
+  // jamais affichée à la place de la nôtre.
+  const sourceCheck = compareWithSourceNutrition({
+    sourceNutrition: recipe.source_nutrition,
+    ingredients: rawIngredients as StoredIngredient[],
+    totals,
+    recipePortions: selectedPortions,
+    coverage,
+    canShowPartial,
+  });
+  if (sourceCheck?.state === "gap") {
+    await logWarn({
+      message: `Nutrition : écart avec le site au-delà d'un facteur ${SOURCE_GAP_FACTOR} (${sourceCheck.gaps.join(", ")})`,
+      moduleType: "DESIGN",
+      correlationId: args.correlationId,
+      scanId: args.scanId,
+      extra: {
+        recipeId: args.recipeId,
+        site: typeof recipe.source_site === "string" ? recipe.source_site : null,
+        ratios: sourceCheck.ratios,
+        portions: sourceCheck.portions,
+        coverage: Math.round(coverage * 100) / 100,
+      },
+    });
+  }
+
   await recipeRef.set(
     {
       nutrition: snapshot,
+      ...(sourceCheck
+        ? {
+            source_nutrition_check: {
+              ...sourceCheck,
+              checked_at: FieldValue.serverTimestamp(),
+            },
+          }
+        : {}),
     },
     { merge: true },
   );
