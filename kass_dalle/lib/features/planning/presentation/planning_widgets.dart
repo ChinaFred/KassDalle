@@ -257,34 +257,61 @@ class PlanningDayHeader extends StatelessWidget {
   }
 }
 
+/// Un repas du planning.
+///
+/// Chaque action est facultative : une action absente n'apparaît pas. Le
+/// lecteur ne garde sur ses repas antérieurs que « Supprimer ».
+///
+/// [readOnly] : le repas d'un autre membre, dans un planning partagé avec
+/// l'utilisateur. Ni menu, ni heure modifiable, ni retrait d'accompagnement,
+/// ni export, et pas de ligne d'origine du choix. Ces champs restent lisibles
+/// dans le document par l'audience du planning : ne pas les afficher n'est
+/// pas une protection (décision provisoire, TechnicalRequirements §3.7).
 class PlanningMealTile extends StatelessWidget {
   final PlannedMeal meal;
   final bool isPast;
   final bool aiLoading;
   final VoidCallback? onTap;
   final bool isWide;
-  final VoidCallback onDelete;
-  final VoidCallback onChangeRecipe;
-  final VoidCallback onClearRecipe;
+  final VoidCallback? onDelete;
+  final VoidCallback? onChangeRecipe;
+  final VoidCallback? onClearRecipe;
 
   /// « Autre suggestion » : la recette suivante de la liste classée, sans IA.
-  final VoidCallback onOtherSuggestion;
-  final VoidCallback onReschedule;
+  final VoidCallback? onOtherSuggestion;
+  final VoidCallback? onReschedule;
 
   /// Ajoute un accompagnement de plus, choisi à la main.
-  final VoidCallback onAddComponent;
+  final VoidCallback? onAddComponent;
 
   /// Retire un accompagnement déjà posé, auto ou choisi à la main.
-  final ValueChanged<MealComponent> onRemoveComponent;
+  final ValueChanged<MealComponent>? onRemoveComponent;
 
   /// Produit — ou réaffiche — le conseil de conservation de la recette.
-  final VoidCallback onStorageAdvice;
-  final VoidCallback onTimeChanged;
-  final VoidCallback onExportToCalendar;
+  final VoidCallback? onStorageAdvice;
+  final VoidCallback? onTimeChanged;
+  final VoidCallback? onExportToCalendar;
 
   /// Ouvre la fiche d'un composant qui est une recette — un accompagnement,
   /// une entrée, un dessert du corpus. Une garniture n'a pas de fiche.
   final ValueChanged<MealComponent>? onComponentTap;
+
+  /// Repas d'un autre membre : lecture seule (voir la classe).
+  final bool readOnly;
+
+  /// Prénom du propriétaire, en première ligne du sous-titre — « Vous » pour
+  /// ses propres repas. Null quand seul « Mon planning » est affiché.
+  final String? ownerName;
+
+  /// Recettes que l'utilisateur ne peut pas lire — privées, brouillons,
+  /// livre non partagé, supprimées. Le plat ou le composant garde son titre,
+  /// suivi de « Recette non partagée », et ne s'ouvre pas.
+  final Set<String> lockedRecipeIds;
+
+  /// Composants-recettes qui s'ouvrent. Null : tous ceux qui ne sont pas
+  /// verrouillés. Sur un repas d'autrui, une recette encore en cours de
+  /// résolution n'y figure pas.
+  final Set<String>? openableRecipeIds;
 
   const PlanningMealTile({
     super.key,
@@ -292,19 +319,28 @@ class PlanningMealTile extends StatelessWidget {
     required this.isPast,
     required this.aiLoading,
     required this.isWide,
-    required this.onDelete,
-    required this.onChangeRecipe,
-    required this.onClearRecipe,
-    required this.onOtherSuggestion,
-    required this.onReschedule,
-    required this.onAddComponent,
-    required this.onRemoveComponent,
-    required this.onStorageAdvice,
-    required this.onTimeChanged,
-    required this.onExportToCalendar,
+    this.onDelete,
+    this.onChangeRecipe,
+    this.onClearRecipe,
+    this.onOtherSuggestion,
+    this.onReschedule,
+    this.onAddComponent,
+    this.onRemoveComponent,
+    this.onStorageAdvice,
+    this.onTimeChanged,
+    this.onExportToCalendar,
     this.onTap,
     this.onComponentTap,
+    this.readOnly = false,
+    this.ownerName,
+    this.lockedRecipeIds = const {},
+    this.openableRecipeIds,
   });
+
+  VoidCallback? _action(VoidCallback? callback) => readOnly ? null : callback;
+
+  bool _isLocked(String? recipeId) =>
+      recipeId != null && lockedRecipeIds.contains(recipeId);
 
   /// Sous-titre du repas, augmenté de la consigne de conservation quand le
   /// plat est préparé un autre jour.
@@ -319,6 +355,7 @@ class PlanningMealTile extends StatelessWidget {
   /// s'affichait comme une décision de l'IA. Un repas antérieur au champ
   /// d'origine qui porte cette phrase est lu comme un choix manuel.
   Widget? _buildWhy(ThemeData theme) {
+    if (readOnly) return null;
     var source = meal.choiceSource;
     var facts = meal.justification?.trim() ?? '';
     if (source == null && facts.startsWith(_legacyManualJustification)) {
@@ -357,12 +394,21 @@ class PlanningMealTile extends StatelessWidget {
   }
 
   Widget _buildComponentLine(ThemeData theme, MealComponent c) {
-    final opens = c.isRecipe && onComponentTap != null;
-    final label = Row(
+    final locked = c.isRecipe && _isLocked(c.recipeId);
+    final opens =
+        c.isRecipe &&
+        !locked &&
+        onComponentTap != null &&
+        (openableRecipeIds?.contains(c.recipeId) ?? true);
+    Widget label = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
-          c.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,
+          locked
+              ? Icons.lock_outline
+              : c.isRecipe
+              ? Icons.menu_book_outlined
+              : Icons.rice_bowl_outlined,
           size: AppIconSize.badge,
           color: theme.colorScheme.onSurfaceVariant,
         ),
@@ -370,7 +416,8 @@ class PlanningMealTile extends StatelessWidget {
         Expanded(
           child: Text(
             '${c.role.label} : ${c.label}'
-            '${c.quantityLabel != null ? ' · ${c.quantityLabel}' : ''}',
+            '${c.quantityLabel != null ? ' · ${c.quantityLabel}' : ''}'
+            '${locked ? ' · $kRecipeNotSharedLabel' : ''}',
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               decoration: opens ? TextDecoration.underline : null,
@@ -381,6 +428,9 @@ class PlanningMealTile extends StatelessWidget {
         ),
       ],
     );
+    if (locked) {
+      label = Tooltip(message: kRecipeNotSharedTooltip, child: label);
+    }
     final content = opens
         ? InkWell(
             onTap: () => onComponentTap!(c),
@@ -388,6 +438,8 @@ class PlanningMealTile extends StatelessWidget {
             child: label,
           )
         : label;
+    final onRemove = readOnly ? null : onRemoveComponent;
+    if (onRemove == null) return content;
     // Le retrait vit hors de la zone qui ouvre la fiche : les deux gestes ne
     // doivent jamais se disputer le même appui.
     return Row(
@@ -397,7 +449,7 @@ class PlanningMealTile extends StatelessWidget {
         Tooltip(
           message: 'Retirer',
           child: InkWell(
-            onTap: () => onRemoveComponent(c),
+            onTap: () => onRemove(c),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.all(2),
@@ -413,29 +465,70 @@ class PlanningMealTile extends StatelessWidget {
     );
   }
 
+  /// « Marie », précédé de la silhouette : à qui est ce repas.
+  Widget? _buildOwner(ThemeData theme) {
+    final name = ownerName;
+    if (name == null) return null;
+    return Semantics(
+      label: name == 'Vous' ? 'Votre repas' : 'Repas de $name',
+      excludeSemantics: true,
+      child: Row(
+        children: [
+          Icon(
+            Icons.person_outline,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              name,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// « Recette non partagée », sous le titre d'un plat illisible.
+  Widget? _buildLocked(ThemeData theme) {
+    if (!_isLocked(meal.recipeId)) return null;
+    return const PlanningRecipeNotSharedLine();
+  }
+
   Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
+    final owner = _buildOwner(theme);
+    final locked = _buildLocked(theme);
     final why = _buildWhy(theme);
     final components = _buildComponents(theme);
     final prep = meal.prepDate;
-    if (prep == null) {
-      if (subtitle == null && why == null && components == null) return null;
+    final daysAhead = prep == null
+        ? 0
+        : mealStorageDaysAhead(prepDate: prep, mealDate: meal.plannedAt);
+    if (prep == null || daysAhead <= 0) {
+      if (owner == null &&
+          locked == null &&
+          subtitle == null &&
+          why == null &&
+          components == null) {
+        return null;
+      }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [if (subtitle != null) Text(subtitle), ?components, ?why],
-      );
-    }
-
-    final daysAhead = mealStorageDaysAhead(
-      prepDate: prep,
-      mealDate: meal.plannedAt,
-    );
-    if (daysAhead <= 0) {
-      if (subtitle == null && why == null && components == null) return null;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [if (subtitle != null) Text(subtitle), ?components, ?why],
+        children: [
+          ?owner,
+          ?locked,
+          if (subtitle != null) Text(subtitle),
+          ?components,
+          ?why,
+        ],
       );
     }
 
@@ -448,6 +541,8 @@ class PlanningMealTile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        ?owner,
+        ?locked,
         if (subtitle != null) Text(subtitle),
         const SizedBox(height: 2),
         Row(
@@ -502,33 +597,40 @@ class PlanningMealTile extends StatelessWidget {
       subtitle = '${meal.targetPortions} parts';
     }
 
+    final avatar = CircleAvatar(
+      backgroundColor: isPast
+          ? theme.colorScheme.surfaceContainerHighest
+          : theme.colorScheme.primaryContainer,
+      child: Text(
+        timeStr,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: isPast
+              ? theme.colorScheme.onSurfaceVariant
+              : theme.colorScheme.onPrimaryContainer,
+        ),
+      ),
+    );
+    final onTime = _action(onTimeChanged);
+    final onExport = _action(onExportToCalendar);
+    final menu = _buildMenu();
+
     return Opacity(
       opacity: isPast ? 0.6 : 1.0,
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         child: ListTile(
-          leading: Tooltip(
-            message: 'Modifier l\'heure',
-            child: InkWell(
-              onTap: onTimeChanged,
-              borderRadius: BorderRadius.circular(24),
-              child: CircleAvatar(
-                backgroundColor: isPast
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : theme.colorScheme.primaryContainer,
-                child: Text(
-                  timeStr,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isPast
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.onPrimaryContainer,
+          leading: onTime == null
+              ? avatar
+              : Tooltip(
+                  message: 'Modifier l\'heure',
+                  child: InkWell(
+                    onTap: onTime,
+                    borderRadius: BorderRadius.circular(24),
+                    child: avatar,
                   ),
                 ),
-              ),
-            ),
-          ),
           title: Text(
             meal.recipeTitre,
             style: isPast
@@ -542,10 +644,11 @@ class PlanningMealTile extends StatelessWidget {
                   height: 24,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Row(
+              : (isWide && onExport != null) || menu != null
+              ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (isWide)
+                    if (isWide && onExport != null)
                       IconButton(
                         // L'infobulle du bouton remplace le `Tooltip` qui
                         // l'enveloppait : elle dit la même chose et, elle,
@@ -555,118 +658,130 @@ class PlanningMealTile extends StatelessWidget {
                           AppIcons.calendarExport,
                           size: AppIconSize.small,
                         ),
-                        onPressed: onExportToCalendar,
+                        onPressed: onExport,
                         visualDensity: VisualDensity.compact,
                       ),
-                    PopupMenuButton<PlanningMealAction>(
-                      iconSize: AppIconSize.small,
-                      onSelected: (action) {
-                        switch (action) {
-                          case PlanningMealAction.otherSuggestion:
-                            onOtherSuggestion();
-                          case PlanningMealAction.changeRecipe:
-                            onChangeRecipe();
-                          case PlanningMealAction.reschedule:
-                            onReschedule();
-                          case PlanningMealAction.addComponent:
-                            onAddComponent();
-                          case PlanningMealAction.clearRecipe:
-                            onClearRecipe();
-                          case PlanningMealAction.storageAdvice:
-                            onStorageAdvice();
-                          case PlanningMealAction.exportToCalendar:
-                            onExportToCalendar();
-                          case PlanningMealAction.delete:
-                            onDelete();
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        // Sans IA : la recette suivante de la liste classée
-                        // par le serveur, pour ce jour-là.
-                        PopupMenuItem(
-                          value: PlanningMealAction.otherSuggestion,
-                          child: ListTile(
-                            leading: const Icon(Icons.autorenew),
-                            // Un repas libre n'a pas de recette à remplacer.
-                            title: Text(
-                              meal.recipeId == null
-                                  ? 'Proposer une recette'
-                                  : 'Autre suggestion',
-                            ),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: PlanningMealAction.changeRecipe,
-                          child: ListTile(
-                            leading: Icon(Icons.swap_horiz_outlined),
-                            title: Text('Changer la recette'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: PlanningMealAction.reschedule,
-                          child: ListTile(
-                            leading: Icon(Icons.calendar_month_outlined),
-                            title: Text('Replanifier'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        if (meal.recipeId != null)
-                          const PopupMenuItem(
-                            value: PlanningMealAction.addComponent,
-                            child: ListTile(
-                              leading: Icon(Icons.add_circle_outline),
-                              title: Text('Ajouter un accompagnement'),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                        const PopupMenuItem(
-                          value: PlanningMealAction.clearRecipe,
-                          child: ListTile(
-                            leading: Icon(
-                              Icons.radio_button_unchecked_outlined,
-                            ),
-                            title: Text('Remettre à blanc'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        if (meal.recipeId != null)
-                          const PopupMenuItem(
-                            value: PlanningMealAction.storageAdvice,
-                            child: ListTile(
-                              leading: Icon(Icons.kitchen_outlined),
-                              title: Text('Conservation et réchauffage'),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                        const PopupMenuItem(
-                          value: PlanningMealAction.exportToCalendar,
-                          child: ListTile(
-                            leading: Icon(AppIcons.calendarExport),
-                            title: Text('Exporter vers Calendar'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const PopupMenuDivider(),
-                        const PopupMenuItem(
-                          value: PlanningMealAction.delete,
-                          child: ListTile(
-                            leading: Icon(Icons.delete_outline),
-                            title: Text('Supprimer'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                      ],
-                    ),
+                    ?menu,
                   ],
-                ),
-          onTap: onTap,
+                )
+              : null,
+          onTap: _isLocked(meal.recipeId) ? null : onTap,
         ),
       ),
     );
   }
+
+  /// Le menu ⋮ : seules les actions fournies y figurent, et aucun menu
+  /// quand il n'y en a pas.
+  Widget? _buildMenu() {
+    final actions = <PlanningMealAction, VoidCallback>{
+      PlanningMealAction.otherSuggestion: ?_action(onOtherSuggestion),
+      PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
+      PlanningMealAction.reschedule: ?_action(onReschedule),
+      if (meal.recipeId != null)
+        PlanningMealAction.addComponent: ?_action(onAddComponent),
+      PlanningMealAction.clearRecipe: ?_action(onClearRecipe),
+      if (meal.recipeId != null)
+        PlanningMealAction.storageAdvice: ?_action(onStorageAdvice),
+      PlanningMealAction.exportToCalendar: ?_action(onExportToCalendar),
+      PlanningMealAction.delete: ?_action(onDelete),
+    };
+    if (actions.isEmpty) return null;
+    final hasOthers = actions.keys.any((a) => a != PlanningMealAction.delete);
+    return PopupMenuButton<PlanningMealAction>(
+      iconSize: AppIconSize.small,
+      onSelected: (action) => actions[action]?.call(),
+      itemBuilder: (_) => [
+        for (final action in actions.keys)
+          if (action == PlanningMealAction.delete) ...[
+            if (hasOthers) const PopupMenuDivider(),
+            PopupMenuItem(value: action, child: _menuTile(action)),
+          ] else
+            PopupMenuItem(value: action, child: _menuTile(action)),
+      ],
+    );
+  }
+
+  Widget _menuTile(PlanningMealAction action) {
+    final (IconData icon, String label) = switch (action) {
+      // Sans IA : la recette suivante de la liste classée par le serveur,
+      // pour ce jour-là. Un repas libre n'a pas de recette à remplacer.
+      PlanningMealAction.otherSuggestion => (
+        Icons.autorenew,
+        meal.recipeId == null ? 'Proposer une recette' : 'Autre suggestion',
+      ),
+      PlanningMealAction.changeRecipe => (
+        Icons.swap_horiz_outlined,
+        'Changer la recette',
+      ),
+      PlanningMealAction.reschedule => (
+        Icons.calendar_month_outlined,
+        'Replanifier',
+      ),
+      PlanningMealAction.addComponent => (
+        Icons.add_circle_outline,
+        'Ajouter un accompagnement',
+      ),
+      PlanningMealAction.clearRecipe => (
+        Icons.radio_button_unchecked_outlined,
+        'Remettre à blanc',
+      ),
+      PlanningMealAction.storageAdvice => (
+        Icons.kitchen_outlined,
+        'Conservation et réchauffage',
+      ),
+      PlanningMealAction.exportToCalendar => (
+        AppIcons.calendarExport,
+        'Exporter vers Calendar',
+      ),
+      PlanningMealAction.delete => (Icons.delete_outline, 'Supprimer'),
+    };
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      contentPadding: EdgeInsets.zero,
+    );
+  }
 }
+
+/// La ligne cadenas « Recette non partagée », avec son infobulle : sous le
+/// titre d'un repas, et dans « À préparer ce jour-là ».
+class PlanningRecipeNotSharedLine extends StatelessWidget {
+  const PlanningRecipeNotSharedLine({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: kRecipeNotSharedTooltip,
+      child: Row(
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              kRecipeNotSharedLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// « Recette non partagée » : la recette d'un repas partagé que
+/// l'utilisateur ne peut pas lire.
+const kRecipeNotSharedLabel = 'Recette non partagée';
+
+/// L'infobulle qui l'explique.
+const kRecipeNotSharedTooltip = 'Son auteur ne l\'a pas partagée avec vous';
 
 enum PlanningMealAction {
   otherSuggestion,
@@ -685,7 +800,17 @@ class PlanningEmptyDayRow extends StatelessWidget {
   final bool isPast;
   final VoidCallback? onPick;
 
-  const PlanningEmptyDayRow({super.key, required this.isPast, this.onPick});
+  /// « Rien de prévu », ou « Rien de prévu pour vous » quand d'autres
+  /// plannings sont affichés : la ligne ne porte que sur les repas de
+  /// l'utilisateur.
+  final String label;
+
+  const PlanningEmptyDayRow({
+    super.key,
+    required this.isPast,
+    this.onPick,
+    this.label = 'Rien de prévu',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -699,7 +824,7 @@ class PlanningEmptyDayRow extends StatelessWidget {
         spacing: 8,
         children: [
           Text(
-            'Rien de prévu',
+            label,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant.withValues(
                 alpha: isPast ? 0.5 : 1,

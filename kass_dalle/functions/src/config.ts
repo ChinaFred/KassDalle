@@ -163,6 +163,13 @@ export const COLL_INVITATIONS = "invitations";
  * modèle de `url_import_daily`. Écrit par les Functions seulement.
  */
 export const COLL_INVITATION_SENDS_DAILY = "invitation_sends_daily";
+
+/**
+ * Portée des plannings : `planning_reach/{uid}.uids` liste les comptes dont
+ * `uid` peut lire le planning (`planned_meals`), en lecture seule. Lue par
+ * les règles Firestore. Écrite par le serveur seul (`triggers/planningReach.ts`).
+ */
+export const COLL_PLANNING_REACH = "planning_reach";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 
 /**

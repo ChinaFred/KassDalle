@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -305,18 +306,25 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
               : const Text('Chargement de la recette...'),
         ),
       ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(),
-        body: AppErrorState(
-          error: e,
-          onRetry: () => ref.invalidate(recipeDetailProvider(widget.recipeId)),
-        ),
-      ),
+      // Une recette que les règles refusent — privée, brouillon, livre non
+      // partagé, auteur hors de mes groupes — se dit « non partagée », pas
+      // « en panne » : un lien ouvert depuis le planning partagé d'un autre
+      // membre y mène, et réessayer n'y changerait rien.
+      error: (e, _) => e is FirebaseException && e.code == 'permission-denied'
+          ? Scaffold(appBar: AppBar(), body: const _RecipeNotSharedState())
+          : Scaffold(
+              appBar: AppBar(),
+              body: AppErrorState(
+                error: e,
+                onRetry: () =>
+                    ref.invalidate(recipeDetailProvider(widget.recipeId)),
+              ),
+            ),
       data: (recipe) {
         if (recipe == null) {
           return Scaffold(
             appBar: AppBar(),
-            body: const Center(child: Text('Recette introuvable')),
+            body: const _RecipeNotSharedState(),
           );
         }
 
@@ -1043,5 +1051,19 @@ Future<PdfExportChoice?> _showPdfExportDialog(
         ],
       ),
     ),
+  );
+}
+
+/// Recette ouverte par un lien et illisible pour ce compte : supprimée, ou
+/// non partagée avec lui. Le client ne distingue pas les deux cas — les
+/// règles refusent l'un comme l'autre.
+class _RecipeNotSharedState extends StatelessWidget {
+  const _RecipeNotSharedState();
+
+  @override
+  Widget build(BuildContext context) => const AppEmptyState(
+    icon: Icons.lock_outline,
+    title: 'Recette non partagée',
+    message: 'Son auteur ne l\'a pas partagée avec vous.',
   );
 }

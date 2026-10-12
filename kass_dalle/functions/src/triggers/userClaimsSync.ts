@@ -25,8 +25,10 @@
  * document à chaque appel (`requireAuth`) et n'attendent pas cette heure.
  *
  * Le même déclencheur tient le profil public `user_profiles/{uid}`
- * (`userPublicProfile.ts`, v0.23.14) : un second déclencheur sur
- * `users/{uid}` aurait doublé les réveils pour la même écriture. Le profil
+ * (`userPublicProfile.ts`, v0.23.14), pour ne pas ajouter un déclencheur
+ * de plus sur `users/{uid}`. La portée des plannings, elle, a son propre
+ * déclencheur (`syncPlanningReachOnRole`) : elle doit rejouer en cas
+ * d'échec (`retry: true`), ce que celui-ci ne fait pas. Le profil
  * est traité avant les claims et indépendamment d'eux : l'un peut échouer
  * sans empêcher l'autre, et chacun laisse sa trace.
  */

@@ -205,6 +205,7 @@ firestore/
 ├── dead_letters/{jobId}/
 ├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
 ├── planning_config/{uid}/
+├── planning_reach/{uid}/                          ← plannings lisibles par uid, écrit par le serveur seul
 ├── nutrition_ingredients/{ingredientId}/
 ├── nutrition_units/{unitId}/
 ├── meal_staples/{stapleId}/                       ← garnitures simples, référentiel partagé
@@ -1294,6 +1295,29 @@ Le repas planifié est **le porteur du contexte** : c'est le couple (personne, d
 adaptation d'une recette — un nombre de parts différent — vit ici, jamais dans la recette
 partagée.
 
+Depuis v0.23.47, seul un éditeur ou un administrateur crée et modifie ses repas. Un lecteur
+garde la lecture et la suppression de ses repas antérieurs, sans migration. Les repas d'un
+propriétaire se lisent aussi, en lecture seule, par les comptes de `planning_reach` (§3.8
+quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
+`planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais une requête `in`.
+Le client n'affiche sur un repas d'autrui ni `justification`, ni `choice_source`, ni
+menu, ni heure modifiable. L'écran d'un planning partagé couvre les 90 derniers jours et la suite ;
+il ne propose l'archive plus ancienne que pour son propre planning. C'est une limite du
+client : la règle ne borne pas `planned_at`, et l'audience peut lire tout l'historique du
+propriétaire par une requête directe. Sa recette se résout par une lecture groupée
+(`readableRecipeIds`, lots de 30, repli recette par recette sur refus) : une recette refusée
+s'affiche par `recipe_titre` avec « Recette non partagée », sans élargir la lecture des
+recettes. Les refus d'un lot sont remontés une fois par lot au rapport d'erreurs
+(`planning.shared_recipe_denied`, avec leur nombre). Si la résolution échoue, le repas
+s'ouvre quand même : la fiche affiche « Recette non partagée » sur un refus.
+
+**Champs lisibles par l'audience (décision provisoire, v0.23.47).** La règle de lecture
+porte sur le document entier : un compte de `planning_reach` lit tous les champs d'un repas
+partagé, dont `justification`, `choice_source`, `dismissed_recipe_ids` et
+`components[].justification`, sur tout l'historique du propriétaire. Le client ne les affiche pas sur un repas d'autrui. Ce n'est
+pas une protection : un client modifié les lit. Ce choix est accepté et documenté en
+attendant une décision.
+
 | Champ | Type | Description |
 |---|---|---|
 | `uid` | `String` | Propriétaire du repas |
@@ -1315,7 +1339,8 @@ partagée.
 
 ### 3.8 Collection `planning_config`
 
-Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration du planning.
+Un document par utilisateur (`{uid}`), écrit depuis « Préférences du planning » par un
+éditeur ou un administrateur (un lecteur le relit, il ne l'écrit plus depuis v0.23.47).
 
 | Champ | Type | Description |
 |---|---|---|
@@ -1328,6 +1353,48 @@ Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration d
 | `default_calendar_duration_minutes` | `int` | Durée d'un événement Google Calendar, depuis tous les points d'export : le repas à table, jamais les temps de la recette (ceux-ci ne servent qu'au rappel et à `duration_minutes` du repas) |
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
 | `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
+| `shared_group_ids` | `List<String>` | **Partager mon planning** (v0.23.47) : les groupes familiaux dont les membres voient ce planning, en lecture seule. Absent ou vide = rien n'est partagé (aucune migration). Cochés parmi les groupes dont le compte est membre, propriétaire compris ; 50 au plus (règles). Le serveur ignore un identifiant de groupe disparu, quitté ou mal formé (`sharedGroupIdsOf`). Un propriétaire qui n'est plus éditeur ou administrateur, ou révoqué, garde ses groupes en base : le partage est **suspendu**, et reprend s'il redevient éditeur. Un changement déclenche `syncPlanningReachOnConfig` |
+
+---
+
+### 3.8 quater Collection `planning_reach` — la portée des plannings
+
+Un document par compte lecteur : les propriétaires dont il peut lire le planning
+(`planned_meals`). Les règles Firestore le relisent (§4, `canReadPlanningOf`) : elles ne
+peuvent ni parcourir `groups`, ni croiser les groupes cochés avec le rôle du propriétaire.
+
+| Champ | Type | Description |
+|---|---|---|
+| `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Qui l'écrit :** le serveur seul (`triggers/planningReach.ts`, `syncPlanningReachFor`, dans
+une transaction qui relit les groupes du titulaire, puis `planning_config` et `users` de chaque
+autre membre). Trois déclencheurs :
+
+- `syncGroupReach` (écriture d'un groupe dont la composition change) recalcule, pour les
+  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre ;
+- `syncPlanningReachOnConfig` (écriture de `planning_config/{uid}` dont `shared_group_ids`
+  change) recalcule les membres des groupes ajoutés ou retirés, `retry: true` ;
+- `syncPlanningReachOnRole` (écriture de `users/{uid}` dont `role` ou `is_revoked` fait
+  changer le droit de partager, `planningShareChanged`) recalcule les membres des groupes
+  cochés par ce compte, `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
+  un éditeur rétrogradé ou révoqué ne doit pas rester lisible. `syncUserClaims` ne s'en
+  occupe pas.
+
+Aucun backfill : sans `shared_group_ids` rien n'est partagé, et sans `planning_reach` rien ne
+se lit. Le même risque accepté que `group_reach` (§3.5 bis) vaut ici : un échec au-delà de la
+fenêtre de nouvelles tentatives laisse une portée périmée jusqu'au prochain changement, et se
+voit dans Admin › Journaux.
+
+**Qui le lit :** son titulaire (`PlanningRepository.watchPlanningReach`, d'où le client tire
+le sélecteur « Plannings affichés ») et un administrateur.
+
+**Ce que l'appareil garde.** Les plannings affichés ne sont pas stockés dans Firestore. Le
+défaut dépend du rôle — l'éditeur voit son planning seul, le lecteur tous les plannings
+partagés avec lui et pas le sien — et l'appareil mémorise l'**écart** à ce défaut, par compte
+et par rôle (`SharedPreferences`, clé `planning_toggled.<editor|reader>.<uid>`,
+`planning_visibility_store.dart`).
 
 ---
 
@@ -2187,7 +2254,9 @@ service cloud.firestore {
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
-| `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`) — la requête du client filtre `uid == propriétaire`. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7) | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par son propriétaire seul, quel que soit son rôle (le lecteur supprime ses repas antérieurs) |
+| `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
+| `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
@@ -2565,6 +2634,17 @@ d'une recette visible, ne lit pas celui d'une recette privée d'autrui, un compt
 le lit pas, un administrateur ne le réécrit pas, un éditeur ne le crée pas. Ces tests n'ont pas
 tourné sur le poste de développement (Java absent) : la CI les rejoue.
 
+La v0.23.47 (plannings partagés) ajoute 17 tests et en réécrit 4 : le lecteur ne crée pas de
+repas, ne modifie pas son ancien repas, le relit et le supprime, n'écrit pas `planning_config` ;
+il lit le repas d'un planning partagé avec lui (`planning_reach`), pas celui d'un planning non
+partagé, et ne modifie ni ne supprime un repas partagé ; un compte sans `planning_reach`, un
+compte révoqué ou en attente qui en a un, ne lit rien ; une requête `uid == propriétaire`
+partagé est acceptée, une requête sur un propriétaire non partagé ou sans filtre est refusée ;
+`planning_reach` se lit par son titulaire et un administrateur, et ne s'écrit par aucun
+client ; l'éditeur écrit `shared_group_ids`, liste de 50 au plus, pour lui seul. Les tests
+« repas créé au nom d'un autre », « modifier son repas », « uid figé » et « planifier et
+écrire `planning_config` » portent désormais sur l'éditeur.
+
 La v0.23.14 rend bloquant le dernier `todo`, « un éditeur ne lit pas le document d'un autre »,
 et ajoute 13 tests : un éditeur ne liste pas `users`, un administrateur lit et liste `users` ;
 sur `user_profiles`, un lecteur et un éditeur lisent le profil d'un autre, un lecteur liste les
@@ -2575,7 +2655,7 @@ La v0.23.12 rend bloquants 12 des 13 `todo` et ajoute 20 tests qui vérifient qu
 légitime reste accepté : renommer un livre système et lui ajouter un tag, changer les tags
 d'un livre ordinaire, retirer le champ `tags` (refusé) ; ajouter un membre à son groupe,
 `owner_id` figé pour l'administrateur aussi, modifier son repas ; un lecteur planifie et écrit
-`planning_config`, un compte en attente et un compte neuf écrivent un rapport d'erreur, un
+`planning_config` (cas inversé en v0.23.47 : c'est l'éditeur qui planifie), un compte en attente et un compte neuf écrivent un rapport d'erreur, un
 compte révoqué à l'instant n'en écrit pas, un compte révoqué ne modifie pas son repas, un compte
 en attente relit sa configuration ; `storage_bytes` qui recule ou n'est pas entier, incrément du
 client par `FieldValue.increment`, remise à zéro par un administrateur ; un éditeur liste ses
@@ -3567,6 +3647,18 @@ Les créations du planning (« Générer avec
 l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») passent aussi toutes par
 `PlanningRepository.saveAsDraft` : un repas planifié lit un brouillon comme une recette validée
 (`getRecipesByIds`), courses comprises.
+
+**Le `reader` ne planifie pas** (v0.23.47) : `suggestMealPlanFn` (`planning`),
+`suggestStorageAdviceFn` (`storage_advice`) et `consolidateShoppingListFn` (`shopping_list`,
+sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` et
+`suggestMealIdeasFn`. Les règles `planned_meals` et `planning_config` exigent `isEditor()` à
+l'écriture (§4). Côté client, `canEditProvider` masque « Planifier » sur la fiche recette,
+« Nouveau planning », « Préférences du planning », « Liste des ingrédients », l'export du
+planning, « Choisir une recette » d'un jour libre, l'heure et le menu d'un repas (sauf
+« Supprimer » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
+l'écran Préférences ; `canWriteRecipeAdviceProvider` rend faux pour un lecteur, et la fiche lui
+montre le conseil de conservation déjà stocké, ou rien. La liste de courses d'une fiche recette
+reste ouverte au lecteur : elle est locale et ne coûte rien.
 
 **Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
 callables qui produisent une recette à enregistrer exigent `requireEditor` —
@@ -4820,6 +4912,10 @@ sauvegardes planifiées, gérées par Google Cloud, hors du code et hors du dép
 | quotidienne | 7 jours | une erreur vue dans la semaine |
 | hebdomadaire, le dimanche | 14 semaines (le maximum) | une erreur vue tard |
 
+**État.** Les deux planifications sont actives depuis le 11 octobre 2026. La première
+sauvegarde quotidienne date du 12 octobre 2026 (`READY`). Les sauvegardes sont rangées dans la
+région `eur3`, celle de la base.
+
 Une base n'accepte qu'une planification quotidienne et une hebdomadaire. Chaque sauvegarde
 est une copie complète de la base. Elle est facturée au Go stocké ; une restauration est
 facturée au Go restauré. Les fichiers de Storage (photos, scans) ne sont pas couverts : voir
@@ -4843,7 +4939,7 @@ La première sauvegarde apparaît dans les 24 heures :
 ce qu'il faut dans `(default)`.
 
 1. Choisir la sauvegarde (`gcloud firestore backups list --project=kassdale-6d948`) et noter son nom complet
-   `projects/kassdale-6d948/locations/<région>/backups/<id>`.
+   `projects/kassdale-6d948/locations/eur3/backups/<id>`.
 2. La restaurer dans une base neuve :
    `gcloud firestore databases restore --project=kassdale-6d948 --source-backup=<nom complet> --destination-database=restore-AAAAMMJJ`.
    Le temps de restauration dépend du volume, de quelques minutes à une heure.
@@ -4868,6 +4964,7 @@ d'exploitation, lancée à la main depuis le PC.
 Les sauvegardes de Firestore ne couvrent pas les fichiers : photos de recettes, scans,
 couvertures, fichiers importés. Le bucket `gs://kassdale-6d948.firebasestorage.app` garde donc
 les **versions** de ses objets : un fichier remplacé ou supprimé reste récupérable **30 jours**.
+Réglage actif depuis le 12 octobre 2026 (`versioning_enabled: true`, règle `Delete` à 30 jours).
 Au-delà, une règle de cycle de vie supprime l'ancienne version. Les anciennes versions sont
 facturées au Go comme les fichiers en ligne, pendant ces 30 jours.
 
@@ -4875,8 +4972,8 @@ Le réglage se fait une fois, depuis le PC, avec le compte propriétaire du proj
 
 ```powershell
 gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --versioning
-Set-Content -Path lifecycle.json -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
-gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file=lifecycle.json
+Set-Content -Path "$env:TEMP\lifecycle.json" -Value '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}'
+gcloud storage buckets update gs://kassdale-6d948.firebasestorage.app --lifecycle-file="$env:TEMP\lifecycle.json"
 gcloud storage buckets describe gs://kassdale-6d948.firebasestorage.app --format="yaml(versioning_enabled,lifecycle_config)"
 ```
 
@@ -5212,7 +5309,7 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, applyEmailInvitation
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, syncPlanningReachOnConfig, syncPlanningReachOnRole, applyEmailInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 
@@ -5233,8 +5330,8 @@ l'authentification.
 
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
-la garde de la callable, **jamais par le routeur** : hors `/admin`, il laisse passer tout
-compte nommé. L'import (`/scan`) est réservé à l'éditeur et à l'admin, et `firestore.rules`
+la garde de la callable, **jamais par le routeur** : hors `/admin` et les trois écrans de
+planification (13.2, étape 8), il laisse passer tout compte nommé. L'import (`/scan`) est réservé à l'éditeur et à l'admin, et `firestore.rules`
 l'impose : la création d'un `processing_job`, seul point qui lance le pipeline facturé
 (`jobDispatcher`), exige `isEditor()`, et sa relance aussi. La lecture d'un livre avant import
 (`analyzeBookFileFn`) exige `requireEditor`. Un `reader` qui ouvre `/scan` par un lien voit un
@@ -5260,10 +5357,10 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
 | `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
-| `/planning` | `PlanningScreen` | `reader` |
-| `/planning/batch` | `BatchPlanningScreen` | `reader` |
-| `/planning/config` | `PlanningConfigScreen` | `reader` |
-| `/planning/staples` | `MyStaplesScreen` | `reader` — ses garnitures, retouchées pour soi |
+| `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui, supprime ses repas antérieurs ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
+| `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2) |
+| `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
+| `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
@@ -5316,13 +5413,16 @@ pour être testable. C'est le miroir client du sas d'entrée de `firestore.rules
    `//`, et son chemin n'est ni `/login` ni `/pending`. Un `next` vers un autre site ou vers
    ces deux routes est ignoré.
 7. `location.startsWith('/admin')` et pas admin → `/`.
-8. `/processing` → `/drafts`.
+8. `/planning/batch`, `/planning/config` ou `/planning/staples` (`kPlanningEditorRoutes`) et
+   pas éditeur (`!user.canEdit`) → `/planning?reserve=1` (v0.23.47). L'écran du planning
+   lit `kPlanningReservedParam` et affiche « Planification réservée aux éditeurs. Demandez à un administrateur de vous nommer éditeur. »
+9. `/processing` → `/drafts`.
 
 Le routeur écoute `appUserProvider` par un `_RouterNotifier` branché en `ref.listen` : cela
 **n'ajoute pas de dépendance réactive**, donc le `GoRouter` n'est jamais reconstruit — un
 routeur recréé perdrait la pile de navigation à chaque rafraîchissement du compte.
 
-> **Le routeur ne garde que `/admin`.** `/logs`, `/error-reports` et `/dead-letters` sont
+> **Le routeur ne garde que `/admin` et les trois écrans de planification.** `/logs`, `/error-reports` et `/dead-letters` sont
 > atteignables par URL directe pour tout compte connecté. Ce n'est pas une faille de
 > données : les callables qu'ils appellent exigent le rôle `admin` (`requireAdmin`) et les
 > règles Firestore filtrent le reste. La garde utile est celle du backend, pas celle du

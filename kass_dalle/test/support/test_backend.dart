@@ -15,6 +15,7 @@ import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
+import 'package:kass_dalle/features/planning/data/planning_visibility_store.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/processing/domain/processing_job.dart';
@@ -49,6 +50,12 @@ class TestBackend {
   final NutritionIngredientsRepository nutrition;
   final NutritionUnitsReference units;
 
+  /// Mes repas planifiés, rendus par `plannedMealsProvider`.
+  final List<PlannedMeal> plannedMeals;
+
+  /// Mes groupes familiaux, rendus par `myGroupsProvider`.
+  final List<FamilyGroup> groups;
+
   late final overrides = [
     // `appUserProvider` est remplacé directement plutôt que reconstruit depuis
     // un faux FirebaseAuth : c'est la frontière que les écrans lisent, et la
@@ -74,24 +81,40 @@ class TestBackend {
     ),
     // Le planning et la file de traitement lisent Firestore par des chemins qui
     // leur sont propres ; on les neutralise pour isoler l'écran testé.
-    plannedMealsProvider.overrideWith(
-      (ref) => Stream.value(const <PlannedMeal>[]),
+    plannedMealsProvider.overrideWith((ref) => Stream.value(plannedMeals)),
+    // Les plannings affichés se mémorisent sur l'appareil : une mémoire
+    // remplace les préférences, absentes des tests.
+    planningVisibilityStoreProvider.overrideWithValue(
+      InMemoryPlanningVisibilityStore(),
     ),
+    myGroupsProvider.overrideWith((ref) => Stream.value(groups)),
     processingJobsProvider.overrideWith(
       (ref) => Stream.value(const <ProcessingJob>[]),
     ),
   ];
 
-  TestBackend._(this.firestore, this.user)
-    : recipes = RecipeRepository(firestore: firestore),
-      books = BookRepository(firestore: firestore),
-      annotations = AnnotationRepository(firestore: firestore),
-      ratings = RecipeRatingRepository(firestore: firestore),
-      nutrition = NutritionIngredientsRepository(firestore: firestore),
-      units = NutritionUnitsReference(firestore: firestore);
+  TestBackend._(
+    this.firestore,
+    this.user, {
+    this.plannedMeals = const [],
+    this.groups = const [],
+  }) : recipes = RecipeRepository(firestore: firestore),
+       books = BookRepository(firestore: firestore),
+       annotations = AnnotationRepository(firestore: firestore),
+       ratings = RecipeRatingRepository(firestore: firestore),
+       nutrition = NutritionIngredientsRepository(firestore: firestore),
+       units = NutritionUnitsReference(firestore: firestore);
 
-  factory TestBackend({AppUser? user}) =>
-      TestBackend._(FakeFirebaseFirestore(), user ?? testUser());
+  factory TestBackend({
+    AppUser? user,
+    List<PlannedMeal> plannedMeals = const [],
+    List<FamilyGroup> groups = const [],
+  }) => TestBackend._(
+    FakeFirebaseFirestore(),
+    user ?? testUser(),
+    plannedMeals: plannedMeals,
+    groups: groups,
+  );
 
   // ── Semis ──────────────────────────────────────────────────────────────────
 

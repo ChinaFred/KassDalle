@@ -243,6 +243,7 @@ beforeEach(async () => {
       error_code: "page_blocked",
     },
     "planned_meals/m1": { uid: READER, date: "2026-10-09" },
+    "planned_meals/m-editor": { uid: EDITOR, date: "2026-10-12" },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
@@ -1583,7 +1584,7 @@ describe("champs propriétaire", () => {
   });
 
   it("un repas planifié ne se crée pas au nom d'un autre", async () => {
-    await assertFails(db("reader").doc("planned_meals/new").set({ uid: OTHER }));
+    await assertFails(db("editor").doc("planned_meals/new").set({ uid: OTHER }));
   });
 
   it("un lecteur ne lit pas le repas d'un autre", async () => {
@@ -1612,12 +1613,14 @@ describe("champs propriétaire", () => {
     await assertFails(db("admin").doc("groups/g1").update({ owner_id: OTHER }));
   });
 
-  it("repas planifié : son titulaire le modifie", async () => {
-    await assertSucceeds(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
+  it("repas planifié : son titulaire éditeur le modifie", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/m-editor").update({ date: "2026-10-13" }),
+    );
   });
 
   it("repas planifié : uid figé en mise à jour", async () => {
-    await assertFails(db("reader").doc("planned_meals/m1").update({ uid: OTHER }));
+    await assertFails(db("editor").doc("planned_meals/m-editor").update({ uid: OTHER }));
   });
 });
 
@@ -1632,9 +1635,9 @@ describe("données personnelles — pending et révoqué", () => {
     await assertSucceeds(db("reader").doc("error_reports/new").set({ user_id: READER }));
   });
 
-  it("un lecteur planifie un repas et écrit planning_config", async () => {
-    await assertSucceeds(db("reader").doc("planned_meals/new").set({ uid: READER }));
-    await assertSucceeds(db("reader").doc(`planning_config/${READER}`).set({ days: 7 }));
+  it("un éditeur planifie un repas et écrit planning_config", async () => {
+    await assertSucceeds(db("editor").doc("planned_meals/new").set({ uid: EDITOR }));
+    await assertSucceeds(db("editor").doc(`planning_config/${EDITOR}`).set({ days: 7 }));
   });
 
   it("un compte en attente écrit son rapport d'erreur", async () => {
@@ -1698,6 +1701,131 @@ describe("données personnelles — pending et révoqué", () => {
   it("un compte révoqué n'écrit pas de rapport d'erreur", async () => {
     await assertFails(
       db("revoked").doc("error_reports/new").set({ user_id: PERSONAS.revoked.uid }),
+    );
+  });
+});
+
+// ── plannings partagés ───────────────────────────────────────────────────
+//
+// Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que
+// des éditeurs de ses groupes partagent avec lui. `planning_reach/{uid}` porte
+// la liste des propriétaires lisibles, écrite par le serveur seul.
+
+describe("plannings partagés — le lecteur ne planifie plus", () => {
+  it("un lecteur ne crée pas de repas", async () => {
+    await assertFails(db("reader").doc("planned_meals/new").set({ uid: READER }));
+  });
+
+  it("un lecteur ne modifie pas son ancien repas", async () => {
+    await assertFails(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
+  });
+
+  it("un lecteur relit et supprime son ancien repas", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/m1").get());
+    await assertSucceeds(db("reader").doc("planned_meals/m1").delete());
+  });
+
+  it("un lecteur n'écrit pas planning_config", async () => {
+    await assertFails(db("reader").doc(`planning_config/${READER}`).set({ days: 7 }));
+    await assertFails(
+      db("reader")
+        .doc(`planning_config/${READER}`)
+        .set({ shared_group_ids: ["famille"] }),
+    );
+  });
+});
+
+describe("plannings partagés — lecture", () => {
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "planning_reach/reader": { uids: [EDITOR] },
+      "planning_reach/revoked-stale": { uids: [EDITOR] },
+      "planning_reach/pending": { uids: [EDITOR] },
+      "planned_meals/m-stranger": { uid: PERSONAS.stranger.uid, date: "2026-10-12" },
+    });
+  });
+
+  it("un lecteur lit un repas d'un planning partagé avec lui", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/m-editor").get());
+  });
+
+  it("un lecteur ne lit pas un repas d'un planning non partagé", async () => {
+    await assertFails(db("reader").doc("planned_meals/m-stranger").get());
+  });
+
+  it("un lecteur ne modifie ni ne supprime un repas partagé", async () => {
+    await assertFails(
+      db("reader").doc("planned_meals/m-editor").update({ date: "2026-10-13" }),
+    );
+    await assertFails(db("reader").doc("planned_meals/m-editor").delete());
+  });
+
+  it("sans planning_reach (invité, non membre) : rien", async () => {
+    await assertFails(db("otherReader").doc("planned_meals/m-editor").get());
+  });
+
+  it("révoqué ou en attente, même avec planning_reach : rien", async () => {
+    await assertFails(db("revokedStaleToken").doc("planned_meals/m-editor").get());
+    await assertFails(db("pending").doc("planned_meals/m-editor").get());
+  });
+
+  it("requête uid == propriétaire partagé : acceptée", async () => {
+    await assertSucceeds(
+      db("reader").collection("planned_meals").where("uid", "==", EDITOR).get(),
+    );
+  });
+
+  it("requête uid == propriétaire non partagé : refusée", async () => {
+    await assertFails(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", PERSONAS.stranger.uid)
+        .get(),
+    );
+  });
+
+  it("requête sans filtre sur le propriétaire : refusée", async () => {
+    await assertFails(db("reader").collection("planned_meals").get());
+  });
+});
+
+describe("plannings partagés — planning_reach et shared_group_ids", () => {
+  it("planning_reach : lu par son titulaire et un administrateur", async () => {
+    await seedDocs(env, { "planning_reach/reader": { uids: [EDITOR] } });
+    await assertSucceeds(db("reader").doc("planning_reach/reader").get());
+    await assertSucceeds(db("admin").doc("planning_reach/reader").get());
+    await assertFails(db("otherReader").doc("planning_reach/reader").get());
+  });
+
+  it("planning_reach : aucune écriture du client, administrateur compris", async () => {
+    await assertFails(db("reader").doc("planning_reach/reader").set({ uids: [EDITOR] }));
+    await assertFails(db("stranger").doc("planning_reach/stranger").set({ uids: [READER] }));
+    await assertFails(db("admin").doc("planning_reach/reader").set({ uids: [EDITOR] }));
+  });
+
+  it("un éditeur coche les groupes qui voient son planning", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ shared_group_ids: ["famille"] }),
+    );
+  });
+
+  it("shared_group_ids : liste de 50 groupes au plus", async () => {
+    const many = Array.from({ length: 51 }, (_, i) => `g${i}`);
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ shared_group_ids: many }),
+    );
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ shared_group_ids: "famille" }),
+    );
+  });
+
+  it("un éditeur n'écrit pas les préférences d'un autre", async () => {
+    await assertFails(
+      db("editor")
+        .doc(`planning_config/${READER}`)
+        .set({ shared_group_ids: ["famille"] }),
     );
   });
 });
