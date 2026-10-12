@@ -14,6 +14,11 @@
  *  - n'agit que sur un document `pending` et non révoqué, relu dans la
  *    transaction : un administrateur qui a déjà nommé le compte garde la main ;
  *  - le fondateur n'est jamais concerné (`enforceFounderRole` le gère) ;
+ *  - l'administrateur qui a fait le dernier envoi (`last_sent_by`, sinon
+ *    `invited_by`) est relu dans la transaction : s'il n'est plus
+ *    administrateur, ou s'il est révoqué, rien n'est appliqué. Le compte
+ *    reste `pending` et l'invitation inchangée ; un administrateur en place
+ *    décide à la main ;
  *  - groupe supprimé entre-temps : le rôle est donné quand même, et
  *    l'invitation porte `group_missing: true`.
  *
@@ -26,7 +31,8 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 
-import { COLL_GROUPS, COLL_INVITATIONS, REGION } from "../config";
+import { COLL_GROUPS, COLL_INVITATIONS, COLL_USERS, REGION } from "../config";
+import { accessDenial } from "../callable/_auth";
 import { logError, logInfo } from "../logging";
 import { isFounderEmail } from "./founderRole";
 import { isInvitableRole, normalizeEmailKey, pickActiveInvitation } from "../invitations/rules";
@@ -35,6 +41,26 @@ import { isInvitableRole, normalizeEmailKey, pickActiveInvitation } from "../inv
 export function awaitsRole(data: Record<string, unknown> | undefined | null): boolean {
   if (!data) return false;
   return data.role === "pending" && data.is_revoked !== true;
+}
+
+/** L'administrateur qui répond de l'invitation : dernier envoi, sinon création. */
+export function inviterUidOf(invitation: Record<string, unknown>): string | null {
+  for (const key of ["last_sent_by", "invited_by"]) {
+    const v = invitation[key];
+    if (typeof v === "string" && v.trim() && !v.includes("/")) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Vrai si le compte de l'invitant peut encore donner un rôle : document
+ * présent, rôle `admin`, non révoqué (même règle que `requireAdmin`). Pure.
+ */
+export function inviterStillAdmin(userData: Record<string, unknown> | undefined | null): boolean {
+  if (!userData) return false;
+  const role =
+    typeof userData.role === "string" && userData.role.trim() ? userData.role.trim() : null;
+  return accessDenial({ role, revoked: userData.is_revoked === true }, "admin") === null;
 }
 
 export const applyEmailInvitation = onDocumentCreated(
@@ -78,11 +104,23 @@ export const applyEmailInvitation = onDocumentCreated(
         );
         if (chosen === null) return null;
         // Adresse non vérifiée : on ne donne rien, mais on le dit.
-        if (!verified) return { skipped: "unverified" as const, invitationId: chosen.id };
+        if (!verified) {
+          return { skipped: "unverified" as const, invitationId: chosen.id, inviterUid: null };
+        }
 
         const role = chosen.data.role;
-        if (!isInvitableRole(role))
-          return { skipped: "bad_role" as const, invitationId: chosen.id };
+        if (!isInvitableRole(role)) {
+          return { skipped: "bad_role" as const, invitationId: chosen.id, inviterUid: null };
+        }
+
+        const inviterUid = inviterUidOf(chosen.data);
+        if (inviterUid === null) {
+          return { skipped: "no_inviter" as const, invitationId: chosen.id, inviterUid: null };
+        }
+        const inviterSnap = await tx.get(db.collection(COLL_USERS).doc(inviterUid));
+        if (!inviterStillAdmin(inviterSnap.data())) {
+          return { skipped: "inviter_not_admin" as const, invitationId: chosen.id, inviterUid };
+        }
 
         const userSnap = await tx.get(userRef);
         if (!awaitsRole(userSnap.data())) return null;
@@ -110,15 +148,37 @@ export const applyEmailInvitation = onDocumentCreated(
 
       if (outcome === null) return;
       if ("skipped" in outcome) {
-        await logInfo({
-          message:
-            outcome.skipped === "unverified"
-              ? "applyEmailInvitation: adresse non vérifiée, invitation non appliquée"
-              : "applyEmailInvitation: rôle d'invitation illisible, invitation non appliquée",
-          userId: uid,
-          firestoreDocId: outcome.invitationId,
-        });
-        return;
+        switch (outcome.skipped) {
+          case "unverified":
+            await logInfo({
+              message: "applyEmailInvitation: adresse non vérifiée, invitation non appliquée",
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+          case "inviter_not_admin":
+            await logInfo({
+              message:
+                `applyEmailInvitation: l'invitant ${outcome.inviterUid} n'est plus ` +
+                "administrateur (ou est révoqué), invitation non appliquée",
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+          case "bad_role":
+          case "no_inviter":
+            // Donnée mal formée : à corriger, donc visible dans les erreurs.
+            await logError({
+              message:
+                outcome.skipped === "bad_role"
+                  ? "applyEmailInvitation: rôle d'invitation illisible, invitation non appliquée"
+                  : "applyEmailInvitation: invitant absent de l'invitation, non appliquée",
+              errorDescription: `invitation ${outcome.invitationId}`,
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+        }
       }
       await logInfo({
         message:

@@ -1,11 +1,19 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kass_dalle/features/admin/data/admin_repository.dart';
 import 'package:kass_dalle/features/admin/data/invitations_repository.dart';
 import 'package:kass_dalle/features/admin/domain/email_invitation.dart';
 import 'package:kass_dalle/features/admin/presentation/admin_providers.dart';
+import 'package:kass_dalle/features/admin/presentation/admin_screen.dart';
 import 'package:kass_dalle/features/admin/presentation/invitations_tab.dart';
 import 'package:kass_dalle/features/admin/presentation/invite_by_email_screen.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
@@ -14,15 +22,17 @@ import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
 
 /// Invitations par e-mail, vues du client : lecture du document, statut
-/// effectif (expirée calculée à la lecture), sous-titre, et formulaire.
+/// effectif (expirée calculée à la lecture, fixture partagée avec le
+/// serveur), sous-titre, onglet et formulaire.
 class _FakeRepo implements InvitationsRepository {
-  _FakeRepo(this.outcome);
+  _FakeRepo(this.outcome, {this.invitations = const []});
 
   final InvitationOutcome outcome;
+  final List<EmailInvitation> invitations;
   final calls = <Map<String, Object?>>[];
 
   @override
-  Stream<List<EmailInvitation>> watchInvitations() => Stream.value(const []);
+  Stream<List<EmailInvitation>> watchInvitations() => Stream.value(invitations);
 
   @override
   Future<InvitationOutcome> create({
@@ -70,7 +80,40 @@ Map<String, dynamic> _doc({
   'last_error': null,
 };
 
+/// Statut stocké → valeur de l'énumération Dart, pour la fixture.
+const _wire = {
+  'sent': EmailInvitationStatus.sent,
+  'send_failed': EmailInvitationStatus.sendFailed,
+  'accepted': EmailInvitationStatus.accepted,
+  'cancelled': EmailInvitationStatus.cancelled,
+  'expired': EmailInvitationStatus.expired,
+};
+
 void main() {
+  group('statut effectif — fixture partagée avec le serveur', () {
+    final fixture =
+        jsonDecode(
+              File(
+                'test-fixtures/email_invitation_status.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final raw in fixture['cases'] as List) {
+      final c = raw as Map<String, dynamic>;
+      test(c['name'] as String, () {
+        final expires = c['expires_at'] as String?;
+        final inv = EmailInvitation.fromFirestore('x', {
+          'status': c['status'],
+          if (expires != null)
+            'expires_at': Timestamp.fromDate(DateTime.parse(expires)),
+        });
+        final status = inv.statusAt(DateTime.parse(c['now'] as String));
+        expect(status, _wire[c['expected']]);
+        expect(status.isPending, c['active']);
+      });
+    }
+  });
+
   group('EmailInvitation.fromFirestore', () {
     test('lit les champs du serveur', () {
       final inv = EmailInvitation.fromFirestore('i1', _doc(role: 'editor'));
@@ -121,6 +164,20 @@ void main() {
       expect(EmailInvitationStatus.expired.canCancel, isFalse);
       expect(EmailInvitationStatus.accepted.canResend, isFalse);
       expect(EmailInvitationStatus.cancelled.isPending, isFalse);
+      expect(EmailInvitationStatus.sent.canCopyLink, isTrue);
+      expect(EmailInvitationStatus.expired.canCopyLink, isTrue);
+      expect(EmailInvitationStatus.accepted.canCopyLink, isFalse);
+      expect(EmailInvitationStatus.cancelled.canCopyLink, isFalse);
+    });
+
+    test('annulée par le serveur : adresse refusée', () {
+      final inv = EmailInvitation.fromFirestore('a', {
+        ..._doc(status: 'cancelled'),
+        'cancelled_by': 'system',
+        'last_error': 'Adresse refusée par Gmail : 550 5.1.1 m***@gmail.com',
+      });
+      expect(inv.cancelledBySystem, isTrue);
+      expect(inv.statusAt(_now), EmailInvitationStatus.cancelled);
     });
 
     test('compte des invitations en attente', () {
@@ -201,22 +258,36 @@ void main() {
 
     Future<_FakeRepo> pump(
       WidgetTester tester, {
-      required List<FamilyGroup> groups,
+      List<FamilyGroup>? groups,
+      Stream<List<FamilyGroup>>? groupsStream,
       required InvitationOutcome outcome,
+      bool settle = true,
     }) async {
       final repo = _FakeRepo(outcome);
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             appUserProvider.overrideWith((ref) => Stream.value(me)),
-            myGroupsProvider.overrideWith((ref) => Stream.value(groups)),
+            myGroupsProvider.overrideWith(
+              (ref) => groupsStream ?? Stream.value(groups ?? const []),
+            ),
             invitationsRepositoryProvider.overrideWithValue(repo),
           ],
           child: const MaterialApp(home: InviteByEmailScreen()),
         ),
       );
-      await tester.pumpAndSettle();
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+      }
       return repo;
+    }
+
+    Future<void> tapSend(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Envoyer l\'invitation'));
+      await tester.tap(find.text('Envoyer l\'invitation'));
+      await tester.pumpAndSettle();
     }
 
     final group = FamilyGroup(
@@ -261,6 +332,117 @@ void main() {
         find.widgetWithText(FilledButton, 'Envoyer l\'invitation'),
       );
       expect(button.onPressed, isNull);
+      expect(find.text('Ouvrir Groupes familiaux'), findsOneWidget);
+    });
+
+    testWidgets('groupes en chargement : champ désactivé, envoi impossible', (
+      tester,
+    ) async {
+      final pending = StreamController<List<FamilyGroup>>();
+      addTearDown(pending.close);
+      await pump(
+        tester,
+        groupsStream: pending.stream,
+        outcome: const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+        settle: false,
+      );
+      expect(find.text('Chargement des groupes…'), findsOneWidget);
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Envoyer l\'invitation'),
+      );
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('groupes illisibles : erreur affichée, pas « aucun groupe »', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        groupsStream: Stream.error(Exception('permission-denied')),
+        outcome: const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      );
+      expect(find.text('Groupes illisibles'), findsOneWidget);
+      expect(find.textContaining('aucun groupe'), findsNothing);
+    });
+
+    testWidgets('validation au clic : adresse vide, groupe non choisi', (
+      tester,
+    ) async {
+      final other = FamilyGroup(
+        id: 'g2',
+        name: 'Les Voisins',
+        ownerId: 'admin',
+        memberIds: const ['admin'],
+        createdAt: DateTime(2026),
+      );
+      final repo = await pump(
+        tester,
+        groups: [group, other],
+        outcome: const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      );
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Envoyer l\'invitation'),
+      );
+      expect(button.onPressed, isNotNull);
+      await tapSend(tester);
+      expect(repo.calls, isEmpty);
+      expect(find.text('Saisissez une adresse e-mail.'), findsOneWidget);
+      expect(find.text('Choisissez un groupe.'), findsOneWidget);
+    });
+
+    testWidgets('Entrée dans l\'adresse envoie l\'invitation', (tester) async {
+      final repo = await pump(
+        tester,
+        groups: [group],
+        outcome: const InvitationOutcome(
+          kind: InvitationOutcomeKind.refused,
+          message: 'Refus.',
+          field: 'email',
+        ),
+      );
+      await tester.enterText(find.byType(TextField).first, 'marie@gmail.com');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pumpAndSettle();
+      expect(repo.calls.single['email'], 'marie@gmail.com');
+    });
+
+    testWidgets('Ctrl+S envoie l\'invitation', (tester) async {
+      final repo = await pump(
+        tester,
+        groups: [group],
+        outcome: const InvitationOutcome(
+          kind: InvitationOutcomeKind.refused,
+          message: 'Refus.',
+          field: 'email',
+        ),
+      );
+      await tester.enterText(find.byType(TextField).first, 'marie@gmail.com');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(repo.calls.single['email'], 'marie@gmail.com');
+    });
+
+    testWidgets('aperçu grand écran : suit chaque frappe du message', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pump(
+        tester,
+        groups: [group],
+        outcome: const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      );
+      final message = find.byType(TextField).at(1);
+      await tester.enterText(message, 'Salut');
+      await tester.pump();
+      expect(find.text('Salut'), findsWidgets);
+      await tester.enterText(message, 'Salut Marie');
+      await tester.pump();
+      // Le champ et l'aperçu.
+      expect(find.text('Salut Marie'), findsNWidgets(2));
     });
 
     testWidgets('refus du serveur affiché sous l\'adresse', (tester) async {
@@ -283,7 +465,11 @@ void main() {
       expect(repo.calls.single['groupId'], 'g1');
       expect(repo.calls.single['role'], UserRole.reader);
       expect(find.text('Ce compte attend déjà un rôle.'), findsOneWidget);
-      expect(find.text('Lui donner ce rôle maintenant'), findsOneWidget);
+      expect(find.text('Lui donner le rôle (sans groupe)'), findsOneWidget);
+      expect(
+        find.textContaining('invitez-le depuis Groupes familiaux'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('adresse mal formée : refusée sans appel au serveur', (
@@ -302,5 +488,53 @@ void main() {
       expect(repo.calls, isEmpty);
       expect(find.text('Adresse e-mail invalide.'), findsOneWidget);
     });
+  });
+
+  testWidgets('onglets lisibles à 360 dp', (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final users = [
+      for (var i = 0; i < 12; i++)
+        AppUser(
+          uid: 'u$i',
+          email: 'u$i@gmail.com',
+          displayName: 'U$i',
+          role: UserRole.reader,
+          createdAt: DateTime(2026),
+          lastSeenAt: DateTime(2026),
+        ),
+    ];
+    final repo = _FakeRepo(
+      const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      invitations: [
+        for (var i = 0; i < 12; i++)
+          EmailInvitation.fromFirestore(
+            'i$i',
+            _doc(expiresAt: DateTime.now().add(const Duration(days: 3))),
+          ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appUserProvider.overrideWith((ref) => Stream.value(users.first)),
+          allUsersProvider.overrideWith((ref) => Stream.value(users)),
+          adminRepositoryProvider.overrideWithValue(
+            AdminRepository(firestore: FakeFirebaseFirestore()),
+          ),
+          invitationsRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: AdminScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // La police de test (carrés de la taille du corps) ne mesure pas comme
+    // Roboto : on vérifie les libellés courts et l'absence d'erreur de mise
+    // en page, pas la largeur au pixel.
+    expect(find.text('Comptes (12)'), findsOneWidget);
+    expect(find.text('Invitations (12)'), findsOneWidget);
+    expect(find.textContaining('en attente)'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

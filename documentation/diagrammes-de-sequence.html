@@ -3393,15 +3393,16 @@ sequenceDiagram
   participant D as invitation_sends_daily
   participant M as SMTP Gmail (nodemailer)
 
-  A->>S: « Inviter par e-mail » : adresse, rôle, groupe, message
-  S->>S: forme de l'adresse (looksLikeEmail)
+  A->>S: « Inviter par e-mail » : adresse, rôle, groupe, message (prérempli)
+  A->>S: Envoyer, Entrée ou Ctrl/Cmd+S
+  S->>S: adresse saisie et de bonne forme, groupe choisi ? (sinon message sous le champ)
   S->>F: action create
   F->>F: requireAdmin ; rôle reader ou editor (admin : invalid-argument)
-  F->>G: groupe existant, appelant propriétaire ou membre ?
+  F->>G: groupe existant, appelant propriétaire ou membre ? (même contrôle au renvoi)
   F->>U: parcours email, role, is_revoked — même clé d'adresse ?
   alt compte existant
     F-->>S: refused (account_active, account_pending + existingUid, account_revoked, founder)
-    S-->>A: message sous l'adresse ; « Lui donner ce rôle maintenant » si en attente
+    S-->>A: message sous l'adresse ; « Lui donner le rôle (sans groupe) » si en attente
   else adresse libre
     F->>I: transaction — invitation active de même email_key ?
     F->>D: transaction — moins de 20 envois aujourd'hui ?
@@ -3416,8 +3417,13 @@ sequenceDiagram
         F->>I: status sent, last_error null
         F-->>S: sent
         S-->>A: « Invitation envoyée à … », onglet Invitations
-      else échec SMTP ou secret vide
-        F->>F: logError
+      else Gmail refuse l'adresse (5xx sur RCPT TO)
+        F->>F: logError (adresse masquée)
+        F->>I: status cancelled, cancelled_by system, last_error « Adresse refusée par Gmail : … »
+        F-->>S: refused (address_rejected)
+        S-->>A: motif sous l'adresse ; historique : Annulée, avec ce motif
+      else échec temporaire, de configuration ou secret vide
+        F->>F: logError (adresse masquée)
         F->>I: status send_failed, last_error lisible
         F-->>S: send_failed
         S-->>A: « E-mail non envoyé. L'invitation est enregistrée… »
@@ -3431,7 +3437,10 @@ sequenceDiagram
         d'application révoqué ou une fonction interrompue laisse une invitation visible dans
         l'onglet Invitations, en « Envoi échoué », que l'administrateur renvoie. Un renvoi
         (<code>action resend</code>) suit le même chemin à partir de l'étape du compteur : il
-        repousse l'expiration de trente jours et compte dans les vingt envois du jour.
+        repousse l'expiration de trente jours et compte dans les vingt envois du jour ; il
+        rejoue avant le contrôle du groupe. Le résultat de l'envoi s'écrit dans une transaction
+        qui ne touche pas une invitation acceptée ou annulée entre-temps. Un message vide part
+        sans paragraphe personnel : le serveur n'a pas de message par défaut.
         Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
         déjà reçu ne donne plus de rôle.
       </figcaption>
@@ -3468,7 +3477,10 @@ sequenceDiagram
   T->>AU: getUser(uid) — adresse, emailVerified
   alt fondateur, adresse non vérifiée, ou aucune invitation active
     T->>T: rien à faire (non vérifiée : logInfo)
-  else invitation active de même email_key
+  else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
+    T->>U: transaction — relit le compte de l'invitant
+    T->>T: rien n'est appliqué (logInfo) ; compte pending, invitation inchangée
+  else invitation active de même email_key, invitant toujours admin
     T->>U: transaction — relit : toujours pending et non révoqué ?
     T->>G: transaction — le groupe existe ?
     T->>U: role = rôle de l'invitation
@@ -3486,10 +3498,12 @@ sequenceDiagram
       <figcaption>
         <b>Le serveur décide, sur l'adresse du compte Auth.</b> Le client ne lit pas les
         invitations et ne peut pas se donner de rôle : la règle de création de
-        <code>users/{uid}</code> impose toujours <code>pending</code>. Le rôle arrive une à
+        <code>users/{uid}</code> impose toujours <code>pending</code>, et une adresse vérifiée
+        (<code>email_verified</code>). Le rôle arrive une à
         quelques secondes plus tard. Deux exécutions de <code>syncUserClaims</code> se
         croisent (création, puis rôle) : chacune relit le document avant d'écrire, si bien que la
-        dernière à passer écrit l'état final. Avec une autre adresse Google, le compte reste en
+        dernière à passer écrit l'état final ; un document supprimé entre-temps est traité comme
+        une suppression, jamais rétabli d'après l'instantané. Avec une autre adresse Google, le compte reste en
         attente, et l'administrateur le nomme dans l'onglet Comptes.
       </figcaption>
     </figure>

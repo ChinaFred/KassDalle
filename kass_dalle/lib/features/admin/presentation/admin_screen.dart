@@ -57,9 +57,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen>
           tabs: [
             Tab(text: usersCount == null ? 'Comptes' : 'Comptes ($usersCount)'),
             Tab(
+              // Nombre d'invitations en attente.
               text: pendingCount == null
                   ? 'Invitations'
-                  : 'Invitations ($pendingCount en attente)',
+                  : 'Invitations ($pendingCount)',
             ),
           ],
         ),

@@ -843,14 +843,17 @@ flowchart LR
         « Inviter par e-mail » : adresse Google, rôle Lecteur ou Éditeur (jamais Administrateur),
         un groupe dont l'administrateur est propriétaire ou membre, et un message de 500 caractères
         au plus. Le serveur enregistre l'invitation, puis envoie l'e-mail. S'il ne part pas,
-        l'invitation reste en « Envoi échoué » et se renvoie depuis l'onglet Invitations. Une
+        l'invitation reste en « Envoi échoué » et se renvoie depuis l'onglet Invitations ; si
+        Gmail refuse l'adresse, elle est annulée, avec le motif « Adresse refusée par Gmail ».
+        Renvoyer exige d'être encore membre du groupe. Une
         adresse qui a déjà un compte est refusée, avec le chemin à suivre (onglet Comptes, puis
         invitation de groupe). Une invitation vaut trente jours depuis son dernier envoi ; vingt
         envois par administrateur et par jour.
         <b>La première connexion d'un invité</b> : la personne se connecte avec le compte Google de
         l'adresse invitée. Son compte naît en attente, et le serveur lui donne, quelques secondes
         plus tard, le rôle de l'invitation et l'entrée dans le groupe ; la salle d'attente se
-        referme seule. Avec une autre adresse, le compte reste en attente d'un rôle donné à la main.
+        referme seule. Avec une autre adresse, ou si l'administrateur qui a envoyé l'invitation
+        n'est plus administrateur, le compte reste en attente d'un rôle donné à la main.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
         <span class="expect warn">

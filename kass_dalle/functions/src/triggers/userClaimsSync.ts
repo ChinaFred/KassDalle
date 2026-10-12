@@ -96,27 +96,48 @@ async function revokeSessions(uid: string, reason: string): Promise<void> {
   }
 }
 
+/** Résultat de la relecture de `users/{uid}` au moment d'agir. */
+export type UserReread =
+  { kind: "found"; data: Record<string, unknown> } | { kind: "missing" } | { kind: "failed" };
+
 /**
- * Le document `users/{uid}` relu au moment d'agir. Un échec de lecture se
- * journalise et retombe sur l'instantané de l'événement ; un document supprimé
- * entre-temps aussi (l'exécution de la suppression fera le ménage).
+ * L'état du document à appliquer, d'après la relecture. Pure, testée.
+ *
+ *  - document trouvé : son contenu actuel ;
+ *  - document absent : supprimé entre l'événement et la relecture. On le
+ *    traite comme une suppression (claims effacés, sessions coupées s'il avait
+ *    un rôle nommé). Reposer les claims de l'instantané rendrait un rôle à un
+ *    compte supprimé, si l'exécution de la suppression passait avant celle-ci ;
+ *  - lecture en échec : repli sur l'instantané de l'événement, seule donnée
+ *    disponible (l'échec est journalisé par l'appelant).
  */
-async function currentUserData(
-  uid: string,
-  fallback: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+export function stateAfterReread(
+  eventAfter: Record<string, unknown> | undefined,
+  reread: UserReread,
+): { exists: boolean; data: Record<string, unknown> | undefined } {
+  switch (reread.kind) {
+    case "found":
+      return { exists: true, data: reread.data };
+    case "missing":
+      return { exists: false, data: undefined };
+    case "failed":
+      return { exists: eventAfter !== undefined, data: eventAfter };
+  }
+}
+
+/** Relit `users/{uid}`. Un échec de lecture est journalisé, jamais tu. */
+async function rereadUser(uid: string): Promise<UserReread> {
   try {
     const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
-    return snap.exists
-      ? ((snap.data() as Record<string, unknown> | undefined) ?? fallback)
-      : fallback;
+    if (!snap.exists) return { kind: "missing" };
+    return { kind: "found", data: (snap.data() as Record<string, unknown> | undefined) ?? {} };
   } catch (err) {
     await logError({
       message: `syncUserClaims: relecture du document impossible pour ${uid}`,
       errorDescription: err instanceof Error ? err.message : String(err),
       userId: uid,
     });
-    return fallback;
+    return { kind: "failed" };
   }
 }
 
@@ -138,10 +159,11 @@ export const syncUserClaims = onDocumentWritten(
     // révocation : une connexion ordinaire (`last_seen_at`) n'en coûte pas.
     const eventBefore = event.data?.before?.data() as Record<string, unknown> | undefined;
     const authorityMoved = !sameClaims(claimsFrom(eventBefore), claimsFrom(eventAfter));
-    const afterData =
+    const current =
       eventAfter !== undefined && authorityMoved
-        ? await currentUserData(uid, eventAfter)
-        : eventAfter;
+        ? stateAfterReread(eventAfter, await rereadUser(uid))
+        : { exists: eventAfter !== undefined, data: eventAfter };
+    const afterData = current.data;
 
     try {
       const outcome = await syncPublicProfile(uid, afterData);
@@ -164,9 +186,8 @@ export const syncUserClaims = onDocumentWritten(
     // sans rapport.
     if (!authorityMoved) return;
 
-    const afterExists = event.data?.after?.exists === true;
-
-    if (!afterExists) {
+    // Absent de l'événement, ou supprimé avant la relecture : suppression.
+    if (!current.exists) {
       // Utilisateur supprimé : les claims partent avec le compte, s'il existe
       // encore. Un compte déjà supprimé fait échouer setCustomUserClaims, ce
       // qui est sans conséquence — mais doit rester visible.

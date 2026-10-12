@@ -1,0 +1,85 @@
+{
+  "_comment": "Statut effectif d'une invitation par e-mail (invitations/{id}). Le serveur s'en sert pour décider (effectiveStatus, functions/src/invitations/rules.ts : doublon, renvoi, rôle donné à la première connexion) ; le client pour afficher (EmailInvitation.statusAt, lib/features/admin/domain/email_invitation.dart : sections En attente / Historique, actions permises, compteur de l'onglet). 'expired' n'est jamais écrit : une invitation 'sent' ou 'send_failed' dont expires_at est passée, ou égale à l'instant présent, est expirée. expires_at absente : expirée. Un statut stocké inconnu se lit comme 'send_failed'. 'accepted' et 'cancelled' ne changent pas avec le temps. Rejouée par test/email_invitation_test.dart et functions/src/tests/invitations.test.ts.",
+  "cases": [
+    {
+      "name": "envoyée, non expirée",
+      "status": "sent",
+      "expires_at": "2026-10-20T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "sent",
+      "active": true
+    },
+    {
+      "name": "envoyée, expirée",
+      "status": "sent",
+      "expires_at": "2026-10-01T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "expired",
+      "active": false
+    },
+    {
+      "name": "envoi échoué, non expirée : reste active",
+      "status": "send_failed",
+      "expires_at": "2026-10-20T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "send_failed",
+      "active": true
+    },
+    {
+      "name": "envoi échoué, expirée",
+      "status": "send_failed",
+      "expires_at": "2026-10-01T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "expired",
+      "active": false
+    },
+    {
+      "name": "acceptée, date passée : reste acceptée",
+      "status": "accepted",
+      "expires_at": "2026-10-01T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "accepted",
+      "active": false
+    },
+    {
+      "name": "annulée, date future : reste annulée",
+      "status": "cancelled",
+      "expires_at": "2026-10-20T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "cancelled",
+      "active": false
+    },
+    {
+      "name": "expiration exactement maintenant : expirée",
+      "status": "sent",
+      "expires_at": "2026-10-12T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "expired",
+      "active": false
+    },
+    {
+      "name": "expiration une milliseconde après maintenant : encore active",
+      "status": "sent",
+      "expires_at": "2026-10-12T10:00:00.001Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "sent",
+      "active": true
+    },
+    {
+      "name": "date d'expiration absente : expirée",
+      "status": "sent",
+      "expires_at": null,
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "expired",
+      "active": false
+    },
+    {
+      "name": "statut stocké inconnu, non expiré : lu comme envoi échoué",
+      "status": "bizarre",
+      "expires_at": "2026-10-20T10:00:00Z",
+      "now": "2026-10-12T10:00:00Z",
+      "expected": "send_failed",
+      "active": true
+    }
+  ]
+}

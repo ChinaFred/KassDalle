@@ -1,33 +1,74 @@
 /**
  * Invitations par e-mail : clé d'adresse, statut effectif, refus d'un compte
- * existant, message et composition de l'e-mail. Logique pure, serveur seul.
+ * existant, message et composition de l'e-mail, lecture d'une erreur SMTP.
+ * Logique pure. Le statut effectif rejoue aussi la fixture partagée avec Dart
+ * (`test-fixtures/email_invitation_status.json`).
  */
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   APK_URL,
   APP_URL,
   INVITATION_MESSAGE_MAX,
   INVITATION_TTL_DAYS,
+  ADDRESS_REJECTED_PREFIX,
   accountRefusal,
   buildInvitationEmail,
   cleanEmail,
   cleanMessage,
-  defaultInvitationMessage,
   effectiveStatus,
   escapeHtml,
   expiryFrom,
   headerSafeName,
   isActiveInvitation,
   isInvitableRole,
+  isPermanentRecipientRejection,
+  maskEmails,
   normalizeEmailKey,
   pickActiveInvitation,
   readableSendError,
 } from "../invitations/rules";
 import { MailNotConfiguredError, mailCredentials } from "../invitations/mailer";
-import { awaitsRole } from "../triggers/invitationSignup";
+import { awaitsRole, inviterStillAdmin, inviterUidOf } from "../triggers/invitationSignup";
+import { stateAfterReread } from "../triggers/userClaimsSync";
+
+const STATUS_FIXTURE = path.join(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "test-fixtures",
+  "email_invitation_status.json",
+);
+
+const statusFixture = JSON.parse(readFileSync(STATUS_FIXTURE, "utf8")) as {
+  cases: {
+    name: string;
+    status: string;
+    expires_at: string | null;
+    now: string;
+    expected: string;
+    active: boolean;
+  }[];
+};
+
+describe("statut effectif — fixture partagée avec Dart", () => {
+  for (const c of statusFixture.cases) {
+    test(c.name, () => {
+      const data = {
+        status: c.status,
+        ...(c.expires_at === null ? {} : { expires_at: new Date(c.expires_at) }),
+      };
+      const now = new Date(c.now);
+      assert.equal(effectiveStatus(data, now), c.expected);
+      assert.equal(isActiveInvitation(data, now), c.active);
+    });
+  }
+});
 
 const NOW = new Date("2026-10-12T10:00:00Z");
 const LATER = new Date("2026-10-20T10:00:00Z");
@@ -171,18 +212,24 @@ describe("compte existant", () => {
 });
 
 describe("message", () => {
-  test("message par défaut avec le nom du groupe", () => {
-    assert.equal(
-      defaultInvitationMessage("Les Kassbi"),
-      "Je t'invite dans mon groupe familial « Les Kassbi » sur Kass'Dalle, pour suivre et " +
-        "noter tes repas préférés. Tu auras aussi accès aux recettes que le groupe partage.",
-    );
+  test("vide reste vide ; borné à 500 caractères", () => {
+    assert.equal(cleanMessage("   "), "");
+    assert.equal(cleanMessage(undefined), "");
+    assert.equal(cleanMessage("x".repeat(800)).length, INVITATION_MESSAGE_MAX);
+    assert.equal(cleanMessage("a\r\nb"), "a\nb");
   });
 
-  test("vide → message par défaut ; borné à 500 caractères", () => {
-    assert.equal(cleanMessage("   ", "G"), defaultInvitationMessage("G"));
-    assert.equal(cleanMessage("x".repeat(800), "G").length, INVITATION_MESSAGE_MAX);
-    assert.equal(cleanMessage("a\r\nb", "G"), "a\nb");
+  test("message vide : l'e-mail part sans paragraphe personnel", () => {
+    const mail = buildInvitationEmail({
+      inviterName: "Fred",
+      groupName: "Les Kassbi",
+      message: "",
+      toEmail: "marie@gmail.com",
+      expiresAt: new Date("2026-11-11T10:00:00Z"),
+    });
+    assert.ok(mail.text.startsWith(`Ouvrir Kass'Dalle : ${APP_URL}`));
+    assert.ok(!mail.html.includes('<p style="margin:0 0 12px">'));
+    assert.ok(mail.html.includes("Ouvrir Kass'Dalle"));
   });
 });
 
@@ -239,6 +286,50 @@ describe("e-mail", () => {
     );
     assert.equal(readableSendError("x".repeat(400)).length, 300);
   });
+
+  test("adresses masquées dans l'erreur", () => {
+    assert.equal(maskEmails("t@gmail.com"), "t***@gmail.com");
+    assert.equal(
+      readableSendError(
+        new Error(
+          "550-5.1.1 The email account that you tried to reach does not exist: toto@gmail.com",
+        ),
+      ),
+      "550-5.1.1 The email account that you tried to reach does not exist: t***@gmail.com",
+    );
+    assert.equal(
+      maskEmails("Can't send mail - all recipients were rejected: <Jean.Dupont+x@orange.fr>"),
+      "Can't send mail - all recipients were rejected: <J***@orange.fr>",
+    );
+  });
+});
+
+describe("refus définitif du destinataire", () => {
+  test("5xx sur RCPT TO, ou enveloppe rejetée : définitif", () => {
+    const rcpt = Object.assign(new Error("550 5.1.1"), { responseCode: 550, command: "RCPT TO" });
+    assert.equal(isPermanentRecipientRejection(rcpt), true);
+    const env = Object.assign(new Error("rejected"), {
+      code: "EENVELOPE",
+      responseCode: 553,
+      command: "RCPT TO",
+    });
+    assert.equal(isPermanentRecipientRejection(env), true);
+  });
+
+  test("temporaire ou configuration : pas définitif", () => {
+    const temp = Object.assign(new Error("450"), { responseCode: 450, command: "RCPT TO" });
+    const auth = Object.assign(new Error("535"), { responseCode: 535, command: "AUTH PLAIN" });
+    const noCode = Object.assign(new Error("no recipients"), { code: "EENVELOPE" });
+    assert.equal(isPermanentRecipientRejection(temp), false);
+    assert.equal(isPermanentRecipientRejection(auth), false);
+    assert.equal(isPermanentRecipientRejection(noCode), false);
+    assert.equal(isPermanentRecipientRejection(new MailNotConfiguredError()), false);
+    assert.equal(isPermanentRecipientRejection("550"), false);
+  });
+
+  test("motif lisible préfixé", () => {
+    assert.equal(ADDRESS_REJECTED_PREFIX, "Adresse refusée par Gmail : ");
+  });
 });
 
 describe("secrets", () => {
@@ -261,5 +352,47 @@ describe("déclencheur de première connexion", () => {
     assert.equal(awaitsRole({ role: "pending", is_revoked: true }), false);
     assert.equal(awaitsRole({ role: "reader", is_revoked: false }), false);
     assert.equal(awaitsRole(undefined), false);
+  });
+
+  test("l'invitant est celui du dernier envoi, sinon le créateur", () => {
+    assert.equal(inviterUidOf({ invited_by: "a", last_sent_by: "b" }), "b");
+    assert.equal(inviterUidOf({ invited_by: "a" }), "a");
+    assert.equal(inviterUidOf({ invited_by: "a", last_sent_by: "" }), "a");
+    assert.equal(inviterUidOf({ invited_by: "x/y" }), null);
+    assert.equal(inviterUidOf({}), null);
+  });
+
+  test("invitant encore administrateur et non révoqué, sinon rien n'est appliqué", () => {
+    assert.equal(inviterStillAdmin({ role: "admin", is_revoked: false }), true);
+    assert.equal(inviterStillAdmin({ role: "admin", is_revoked: true }), false);
+    assert.equal(inviterStillAdmin({ role: "editor", is_revoked: false }), false);
+    assert.equal(inviterStillAdmin({ role: "pending" }), false);
+    assert.equal(inviterStillAdmin(undefined), false);
+  });
+});
+
+describe("syncUserClaims — relecture du document", () => {
+  const snapshot = { role: "reader", is_revoked: false };
+
+  test("document trouvé : son contenu actuel", () => {
+    const now = { role: "editor", is_revoked: false };
+    assert.deepEqual(stateAfterReread(snapshot, { kind: "found", data: now }), {
+      exists: true,
+      data: now,
+    });
+  });
+
+  test("document absent à la relecture : traité comme une suppression", () => {
+    assert.deepEqual(stateAfterReread(snapshot, { kind: "missing" }), {
+      exists: false,
+      data: undefined,
+    });
+  });
+
+  test("lecture en échec : repli sur l'instantané", () => {
+    assert.deepEqual(stateAfterReread(snapshot, { kind: "failed" }), {
+      exists: true,
+      data: snapshot,
+    });
   });
 });

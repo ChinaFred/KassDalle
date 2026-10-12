@@ -250,8 +250,32 @@ beforeEach(async () => {
 // ── users ────────────────────────────────────────────────────────────────
 
 describe("users — création de compte", () => {
-  const fresh = (claims = { email: "new@example.com" }) =>
+  const fresh = (claims = { email: "new@example.com", email_verified: true }) =>
     env.authenticatedContext("newcomer", claims).firestore();
+
+  it("refuse la création quand l'adresse du jeton n'est pas vérifiée", async () => {
+    await assertFails(
+      fresh({ email: "new@example.com", email_verified: false })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
+
+  it("refuse la création quand le jeton ne dit pas si l'adresse est vérifiée", async () => {
+    await assertFails(
+      fresh({ email: "new@example.com" })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
+
+  it("accepte la création quand l'adresse du jeton est vérifiée", async () => {
+    await assertSucceeds(
+      fresh({ email: "new@example.com", email_verified: true })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
 
   it("un compte neuf se crée en pending, non révoqué, à l'adresse de son jeton", async () => {
     await assertSucceeds(

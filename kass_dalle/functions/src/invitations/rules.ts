@@ -3,14 +3,21 @@
  *
  * Tout ce qui décide se trouve ici et se teste sans émulateur : la clé d'une
  * adresse, le statut effectif d'une invitation, le refus d'une adresse qui a
- * déjà un compte, le message par défaut et la composition de l'e-mail. La
+ * déjà un compte, la composition de l'e-mail et la lecture d'une erreur SMTP. La
  * callable (`callable/invitationsCallable.ts`) et le déclencheur
  * (`triggers/invitationSignup.ts`) ne font qu'appliquer ces décisions.
  *
- * Logique **serveur seule** : le client envoie l'adresse brute et ne fait
- * qu'un contrôle de forme. Il n'existe pas de jumeau Dart de
- * `normalizeEmailKey`, et il ne faut pas en écrire un (CLAUDE.md, « La
- * duplication est un coût, pas une méthode »).
+ * Logique **serveur seule**, sauf le statut effectif : le client envoie
+ * l'adresse brute et ne fait qu'un contrôle de forme. Il n'existe pas de
+ * jumeau Dart de `normalizeEmailKey`, et il ne faut pas en écrire un
+ * (CLAUDE.md, « La duplication est un coût, pas une méthode »).
+ *
+ * `effectiveStatus` a un jumeau Dart (`EmailInvitation.statusAt`,
+ * `email_invitation.dart`) : le client l'emploie pour afficher, le serveur
+ * pour décider. Les deux rejouent `test-fixtures/email_invitation_status.json`.
+ *
+ * Le message par défaut n'existe que côté client, qui le prérempli : un
+ * message vide part sans paragraphe personnel, le pied fixe suffit.
  */
 
 /** Durée de validité d'une invitation, comptée depuis son dernier envoi. */
@@ -197,21 +204,13 @@ export function accountRefusal(
   };
 }
 
-/** Le message prérempli, tel que le formulaire le propose. */
-export function defaultInvitationMessage(groupName: string): string {
-  return (
-    `Je t'invite dans mon groupe familial « ${groupName} » sur Kass'Dalle, pour suivre ` +
-    "et noter tes repas préférés. Tu auras aussi accès aux recettes que le groupe partage."
-  );
-}
-
 /**
  * Le message libre, borné : espaces de bord retirés, retours à la ligne
- * normalisés, 500 caractères au plus. Vide → message par défaut.
+ * normalisés, 500 caractères au plus. Vide reste vide : l'e-mail part alors
+ * sans paragraphe personnel.
  */
-export function cleanMessage(raw: unknown, groupName: string): string {
+export function cleanMessage(raw: unknown): string {
   const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
-  if (text.length === 0) return defaultInvitationMessage(groupName);
   return Array.from(text).slice(0, INVITATION_MESSAGE_MAX).join("");
 }
 
@@ -280,9 +279,9 @@ export function buildInvitationEmail(input: InvitationEmailInput): InvitationEma
     "ton accès devra être validé à la main.";
   const expiryLine = `Cette invitation expire le ${expires}.`;
 
+  const message = input.message.trim();
   const text = [
-    input.message,
-    "",
+    ...(message.length > 0 ? [message, ""] : []),
     `Ouvrir Kass'Dalle : ${APP_URL}`,
     `Sur Android, l'application se télécharge ici : ${APK_URL}`,
     "",
@@ -292,8 +291,7 @@ export function buildInvitationEmail(input: InvitationEmailInput): InvitationEma
     inviter,
   ].join("\n");
 
-  const paragraphs = input.message
-    .split(/\n{2,}/)
+  const paragraphs = (message.length > 0 ? message.split(/\n{2,}/) : [])
     .map((p) => `<p style="margin:0 0 12px">${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
   const muted = "color:#5f5f5f;font-size:14px;margin:0 0 8px";
@@ -315,10 +313,45 @@ export function buildInvitationEmail(input: InvitationEmailInput): InvitationEma
   return { fromName: `${inviter} via Kass'Dalle`, subject, text, html };
 }
 
-/** Le message d'erreur SMTP à montrer à l'administrateur : une ligne, 300 caractères. */
+/**
+ * Masque la partie locale des adresses e-mail d'un texte : premier caractère
+ * gardé, le reste remplacé par `***` (`marie@gmail.com` → `m***@gmail.com`).
+ * Une erreur SMTP cite l'adresse du destinataire ; elle part dans les journaux
+ * et dans `last_error`, qu'il n'y a pas lieu de remplir d'adresses en clair.
+ */
+export function maskEmails(text: string): string {
+  return text.replace(/([A-Za-z0-9._%+'-])[A-Za-z0-9._%+'-]*@([A-Za-z0-9-]+\.)/g, "$1***@$2");
+}
+
+/**
+ * Le message d'erreur SMTP à montrer à l'administrateur : une ligne,
+ * 300 caractères, adresses masquées.
+ */
 export function readableSendError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  const line = raw.replace(/\s+/g, " ").trim();
+  const line = maskEmails(raw.replace(/\s+/g, " ").trim());
   const text = line.length > 0 ? line : "Erreur inconnue.";
   return Array.from(text).slice(0, 300).join("");
+}
+
+/** Préfixe du motif d'une invitation annulée parce que Gmail a refusé l'adresse. */
+export const ADDRESS_REJECTED_PREFIX = "Adresse refusée par Gmail : ";
+
+/**
+ * Vrai si le serveur SMTP refuse **définitivement** le destinataire : un code
+ * de réponse 5xx sur la commande `RCPT TO` (ex. `550 5.1.1`), ou une
+ * enveloppe rejetée (`EENVELOPE`, que nodemailer lève quand tous les
+ * destinataires sont refusés).
+ *
+ * Un 5xx sur une autre commande (`AUTH` 535 : mot de passe d'application
+ * faux) est une erreur de configuration, et un 4xx une erreur temporaire :
+ * l'invitation reste alors en `send_failed` et se renvoie.
+ */
+export function isPermanentRecipientRejection(err: unknown): boolean {
+  if (err === null || typeof err !== "object") return false;
+  const e = err as { responseCode?: unknown; command?: unknown; code?: unknown };
+  const code = typeof e.responseCode === "number" ? e.responseCode : null;
+  if (code === null || code < 500 || code > 599) return false;
+  if (e.code === "EENVELOPE") return true;
+  return typeof e.command === "string" && /^RCPT\b/i.test(e.command.trim());
 }

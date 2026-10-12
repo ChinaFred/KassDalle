@@ -451,6 +451,8 @@ classDiagram
     +String? acceptedUid
     +DateTime? acceptedAt
     +bool groupMissing
+    +String? cancelledBy
+    +bool cancelledBySystem
     +statusAt(DateTime) EmailInvitationStatus
   }
 
@@ -638,7 +640,9 @@ classDiagram
         l'administrateur. À la première connexion sous l'adresse invitée, le serveur donne au
         compte neuf son rôle et l'ajoute à <code>memberIds</code> du groupe, sans passer par
         <code>invitedIds</code>. Le statut <code>expired</code> n'est jamais stocké : il se
-        calcule à la lecture. <b>GroupReach</b> n'a
+        calcule à la lecture (<code>statusAt</code>, jumeau de <code>effectiveStatus</code>,
+        fixture <code>email_invitation_status.json</code>). <code>cancelledBy</code> vaut
+        <code>system</code> quand Gmail a refusé l'adresse. <b>GroupReach</b> n'a
         pas de classe Dart : c'est le document <code>group_reach/{uid}</code>, les autres comptes
         avec qui l'utilisateur partage un groupe, que le serveur seul écrit. Le client le lit en
         <code>Set&lt;String&gt;</code> (<code>GroupRepository.watchReach</code>) et en tire

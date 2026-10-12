@@ -8,18 +8,25 @@
  *
  * Ce que le serveur vérifie, et que le client ne peut pas contourner :
  *  - le rôle donné est `reader` ou `editor`, jamais `admin` ;
- *  - l'appelant appartient au groupe choisi (propriétaire ou membre) ;
+ *  - l'appelant appartient au groupe choisi (propriétaire ou membre), à la
+ *    création comme au renvoi ;
  *  - l'adresse n'a pas de compte (comparée sur sa clé normalisée,
  *    `normalizeEmailKey`) ;
  *  - une seule invitation active par adresse ;
  *  - vingt envois par administrateur et par jour UTC, créations et renvois
  *    confondus (`invitation_sends_daily`).
  *
- * L'invitation est enregistrée **avant** l'envoi. Un échec SMTP, ou des
- * secrets vides, la laisse en `send_failed` avec `last_error` lisible, et la
- * callable rend `status: "send_failed"` au lieu de lever : l'invitation existe
- * et se renvoie depuis la liste. Les refus métier (adresse déjà inscrite,
- * doublon, plafond) sont des réponses `status: "refused"`, pas des erreurs.
+ * L'invitation est enregistrée **avant** l'envoi. Un échec SMTP temporaire
+ * ou de configuration (secrets vides, mot de passe refusé) la laisse en
+ * `send_failed` avec `last_error` lisible, et la callable rend
+ * `status: "send_failed"` au lieu de lever : l'invitation existe et se
+ * renvoie depuis la liste. Un refus définitif du destinataire (5xx sur
+ * `RCPT TO`, ex. `550 5.1.1`) l'annule (`cancelled_by: "system"`, motif
+ * « Adresse refusée par Gmail : … ») : une adresse qui n'existe pas ne doit
+ * pas rester active. Les refus métier (adresse déjà inscrite, doublon,
+ * plafond, groupe quitté) sont des réponses `status: "refused"`, pas des
+ * erreurs. Les adresses citées par une erreur SMTP sont masquées
+ * (`maskEmails`) dans les journaux et dans `last_error`.
  *
  * Aucun appel de modèle : pas de poste d'IA.
  */
@@ -42,6 +49,7 @@ import { spendDay } from "../ai/budget";
 import { logError, logInfo } from "../logging";
 import { FOUNDER_EMAIL, isFounderEmail } from "../triggers/founderRole";
 import {
+  ADDRESS_REJECTED_PREFIX,
   INVITATION_DAILY_LIMIT,
   accountRefusal,
   buildInvitationEmail,
@@ -51,6 +59,7 @@ import {
   expiryFrom,
   isActiveInvitation,
   isInvitableRole,
+  isPermanentRecipientRejection,
   normalizeEmailKey,
   readableSendError,
   type ExistingAccount,
@@ -84,7 +93,8 @@ type Refusal = {
 
 type SendOutcome =
   | { status: "sent"; invitationId: string }
-  | { status: "send_failed"; invitationId: string; error: string };
+  | { status: "send_failed"; invitationId: string; error: string }
+  | Refusal;
 
 function refused(
   reason: string,
@@ -109,6 +119,33 @@ function counterRef(uid: string, at: Date) {
 const DAILY_LIMIT_MESSAGE =
   `Plafond atteint : ${INVITATION_DAILY_LIMIT} envois d'invitation par jour. ` +
   "Réessayez demain.";
+
+/**
+ * Le groupe de l'invitation, si l'appelant en est propriétaire ou membre ;
+ * sinon le refus à rendre. Rejoué au renvoi : un administrateur sorti du
+ * groupe ne peut plus y faire entrer quelqu'un.
+ */
+async function groupOfInviter(
+  uid: string,
+  groupId: string,
+  field: Refusal["field"],
+): Promise<{ name: string } | Refusal> {
+  if (groupId.length === 0 || groupId.includes("/")) {
+    return refused("group_required", "Choisissez un groupe.", field);
+  }
+  const groupSnap = await getFirestore().collection(COLL_GROUPS).doc(groupId).get();
+  if (!groupSnap.exists) {
+    return refused("group_missing", "Ce groupe n'existe plus.", field);
+  }
+  const ownerId = groupSnap.get("owner_id");
+  const members = groupSnap.get("member_ids");
+  const isMember = ownerId === uid || (Array.isArray(members) && members.includes(uid));
+  if (!isMember) {
+    return refused("group_not_member", "Vous n'appartenez pas à ce groupe.", field);
+  }
+  const name = groupSnap.get("name");
+  return { name: typeof name === "string" ? name : "" };
+}
 
 /** Nom et adresse de l'administrateur qui envoie. */
 async function inviterIdentity(
@@ -170,8 +207,10 @@ async function deliver(
     expiresAt: Date;
   },
 ): Promise<SendOutcome> {
-  const ref = getFirestore().collection(COLL_INVITATIONS).doc(invitationId);
+  const db = getFirestore();
+  const ref = db.collection(COLL_INVITATIONS).doc(invitationId);
   let error: string | null = null;
+  let rejected = false;
   try {
     const credentials = mailCredentials(GMAIL_SENDER.value(), GMAIL_APP_PASSWORD.value());
     const email = buildInvitationEmail({
@@ -190,9 +229,13 @@ async function deliver(
       html: email.html,
     });
   } catch (err) {
-    error = readableSendError(err);
+    rejected = isPermanentRecipientRejection(err);
+    const readable = readableSendError(err);
+    error = rejected ? `${ADDRESS_REJECTED_PREFIX}${readable}` : readable;
     await logError({
-      message: `manageInvitationFn: e-mail d'invitation non envoyé (${invitationId})`,
+      message: rejected
+        ? `manageInvitationFn: adresse refusée par le serveur SMTP, invitation annulée (${invitationId})`
+        : `manageInvitationFn: e-mail d'invitation non envoyé (${invitationId})`,
       errorDescription: error,
       userId: ctx.userId,
       correlationId: ctx.correlationId,
@@ -200,12 +243,26 @@ async function deliver(
     });
   }
 
+  const update: Record<string, unknown> =
+    error === null
+      ? { status: "sent", last_error: null }
+      : rejected
+        ? {
+            status: "cancelled",
+            cancelled_by: "system",
+            cancelled_at: Timestamp.now(),
+            last_error: error,
+          }
+        : { status: "send_failed", last_error: error };
   try {
-    await ref.update(
-      error === null
-        ? { status: "sent", last_error: null }
-        : { status: "send_failed", last_error: error },
-    );
+    // Transaction : une invitation annulée ou acceptée pendant l'envoi garde
+    // son statut, au lieu d'être remise en `sent`.
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const status = snap.get("status");
+      if (!snap.exists || status === "accepted" || status === "cancelled") return;
+      tx.update(ref, update);
+    });
   } catch (err) {
     // L'e-mail est parti (ou non) ; seul le statut n'a pas suivi. L'invitation
     // reste en `send_failed` « Envoi en cours ou interrompu » : elle donne
@@ -219,9 +276,11 @@ async function deliver(
     });
   }
 
-  return error === null
-    ? { status: "sent", invitationId }
-    : { status: "send_failed", invitationId, error };
+  if (error === null) return { status: "sent", invitationId };
+  if (rejected) {
+    return refused("address_rejected", error, "email", { invitationId });
+  }
+  return { status: "send_failed", invitationId, error };
 }
 
 async function createInvitation(
@@ -250,19 +309,9 @@ async function createInvitation(
   }
 
   const db = getFirestore();
-  const groupSnap = await db.collection(COLL_GROUPS).doc(groupId).get();
-  if (!groupSnap.exists) {
-    return refused("group_missing", "Ce groupe n'existe plus.", "group");
-  }
-  const ownerId = groupSnap.get("owner_id");
-  const members = groupSnap.get("member_ids");
-  const isMember =
-    ownerId === ctx.userId || (Array.isArray(members) && members.includes(ctx.userId));
-  if (!isMember) {
-    return refused("group_not_member", "Vous n'appartenez pas à ce groupe.", "group");
-  }
-  const groupName =
-    typeof groupSnap.get("name") === "string" ? (groupSnap.get("name") as string) : "";
+  const group = await groupOfInviter(ctx.userId, groupId, "group");
+  if ("status" in group) return group;
+  const groupName = group.name;
 
   const existing = await existingAccountFor(key);
   const accountDenial = accountRefusal(existing?.account ?? null);
@@ -272,7 +321,7 @@ async function createInvitation(
     });
   }
 
-  const message = cleanMessage(data.message, groupName);
+  const message = cleanMessage(data.message);
   const inviter = await inviterIdentity(ctx.userId, tokenEmail);
   const now = new Date();
   const expiresAt = expiryFrom(now);
@@ -363,6 +412,12 @@ async function resendInvitation(
     return refused("invalid_email", "Adresse e-mail de l'invitation illisible.", null);
   }
 
+  // Même contrôle qu'à la création : l'administrateur qui renvoie doit
+  // appartenir au groupe, et le groupe exister encore.
+  const groupId = typeof current.group_id === "string" ? current.group_id.trim() : "";
+  const group = await groupOfInviter(ctx.userId, groupId, null);
+  if ("status" in group) return group;
+
   // Un compte a pu naître entre-temps sous une autre adresse Google, ou sous
   // celle-ci avant que l'invitation n'ait été lue : il n'y a plus rien à envoyer.
   const existing = await existingAccountFor(key);
@@ -417,6 +472,7 @@ async function resendInvitation(
       last_sent_by: ctx.userId,
       expires_at: Timestamp.fromDate(expiresAt),
       send_count: FieldValue.increment(1),
+      group_name: group.name,
     });
     return null;
   });
@@ -433,11 +489,8 @@ async function resendInvitation(
     to: email,
     inviterName: inviter.name,
     inviterEmail: inviter.email,
-    groupName: typeof current.group_name === "string" ? current.group_name : "",
-    message:
-      typeof current.message === "string"
-        ? current.message
-        : cleanMessage("", String(current.group_name ?? "")),
+    groupName: group.name,
+    message: cleanMessage(current.message),
     expiresAt,
   });
 }

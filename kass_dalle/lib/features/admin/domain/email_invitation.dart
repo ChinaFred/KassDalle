@@ -8,6 +8,8 @@ import '../../auth/domain/app_user.dart';
 /// échec d'envoi) dont la date d'expiration est passée est expirée à la
 /// lecture. Même règle que `effectiveStatus` côté serveur
 /// (`functions/src/invitations/rules.ts`), qui seul décide du rôle donné.
+/// Logique dupliquée : les deux rejouent
+/// `test-fixtures/email_invitation_status.json`.
 enum EmailInvitationStatus {
   sent,
   sendFailed,
@@ -34,6 +36,10 @@ enum EmailInvitationStatus {
       this == EmailInvitationStatus.expired;
 
   bool get canCancel => isPending;
+
+  /// « Copier le lien » n'a de sens que pour une invitation qu'on peut encore
+  /// renvoyer : acceptée ou annulée, le lien ne donne plus de rôle.
+  bool get canCopyLink => canResend;
 }
 
 /// Invitation par e-mail — `invitations/{id}`, écrite par le serveur seul.
@@ -58,6 +64,10 @@ class EmailInvitation {
   final DateTime? acceptedAt;
   final bool groupMissing;
 
+  /// Qui a annulé : l'uid d'un administrateur, ou `system` quand le serveur
+  /// SMTP a refusé définitivement l'adresse.
+  final String? cancelledBy;
+
   const EmailInvitation({
     required this.id,
     required this.email,
@@ -76,7 +86,11 @@ class EmailInvitation {
     this.acceptedUid,
     this.acceptedAt,
     this.groupMissing = false,
+    this.cancelledBy,
   });
+
+  /// Annulée par le serveur parce que Gmail a refusé l'adresse.
+  bool get cancelledBySystem => cancelledBy == 'system';
 
   /// Lecture tolérante : un champ absent ou d'un autre type donne une valeur
   /// neutre, jamais une exception qui viderait toute la liste.
@@ -110,6 +124,7 @@ class EmailInvitation {
       acceptedUid: optStr('accepted_uid'),
       acceptedAt: readDate(data['accepted_at']),
       groupMissing: data['group_missing'] == true,
+      cancelledBy: optStr('cancelled_by'),
     );
   }
 
@@ -138,8 +153,9 @@ class EmailInvitation {
   }
 }
 
-/// Le message prérempli du formulaire — le même texte que le serveur met
-/// quand le message arrive vide (`defaultInvitationMessage`).
+/// Le message prérempli du formulaire. Il n'existe que côté client : un
+/// message vidé par l'administrateur part tel quel, et l'e-mail n'a alors
+/// pas de paragraphe personnel.
 String defaultInvitationMessage(String groupName) =>
     'Je t\'invite dans mon groupe familial « $groupName » sur Kass\'Dalle, '
     'pour suivre et noter tes repas préférés. Tu auras aussi accès aux '
@@ -174,7 +190,7 @@ class InvitationOutcome {
   /// Compte existant qui porte déjà l'adresse (refus `account_pending`).
   final String? existingUid;
 
-  /// Erreur SMTP lisible, pour un envoi échoué.
+  /// Erreur SMTP lisible, pour un envoi échoué (adresses masquées).
   final String? error;
 
   const InvitationOutcome({

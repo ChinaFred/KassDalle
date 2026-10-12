@@ -140,17 +140,39 @@ class _InvitationTile extends ConsumerWidget {
     final acceptedBy = acceptedUid == null
         ? null
         : ref.watch(memberNameProvider(acceptedUid));
-    final error = status == EmailInvitationStatus.sendFailed
-        ? invitation.lastError
-        : null;
+    // Motif à montrer : l'erreur d'un envoi échoué, ou le refus de l'adresse
+    // par Gmail qui a fait annuler l'invitation par le serveur.
+    final error = switch (status) {
+      EmailInvitationStatus.sendFailed => invitation.lastError,
+      EmailInvitationStatus.cancelled when invitation.cancelledBySystem =>
+        invitation.lastError,
+      _ => null,
+    };
 
     return ListTile(
       title: Text(invitation.email),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            invitationSubtitle(invitation, status, acceptedByName: acceptedBy),
+          Text.rich(
+            TextSpan(
+              children: [
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: InvitationStatusChip(status: status),
+                  ),
+                ),
+                TextSpan(
+                  text: invitationSubtitle(
+                    invitation,
+                    status,
+                    acceptedByName: acceptedBy,
+                  ),
+                ),
+              ],
+            ),
           ),
           if (error != null)
             Text(
@@ -162,18 +184,12 @@ class _InvitationTile extends ConsumerWidget {
         ],
       ),
       isThreeLine: error != null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InvitationStatusChip(status: status),
-          _InvitationMenu(invitation: invitation, status: status),
-        ],
-      ),
+      trailing: _InvitationMenu(invitation: invitation, status: status),
     );
   }
 }
 
-/// Puce de statut, couleurs du thème.
+/// Puce de statut, couleurs du thème, posée en tête du sous-titre.
 class InvitationStatusChip extends StatelessWidget {
   final EmailInvitationStatus status;
   const InvitationStatusChip({super.key, required this.status});
@@ -199,16 +215,20 @@ class InvitationStatusChip extends StatelessWidget {
         scheme.onSurfaceVariant,
       ),
     };
+    final textTheme = Theme.of(context).textTheme;
     return Semantics(
       label: 'Statut : ${status.label}',
       excludeSemantics: true,
-      child: Chip(
-        label: Text(status.label),
-        backgroundColor: bg,
-        labelStyle: TextStyle(color: fg, fontSize: 11),
-        side: BorderSide.none,
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          status.label,
+          style: textTheme.labelSmall?.copyWith(color: fg),
+        ),
       ),
     );
   }
@@ -246,14 +266,15 @@ class _InvitationMenu extends ConsumerWidget {
               dense: true,
             ),
           ),
-        const PopupMenuItem(
-          value: _InvitationAction.copyLink,
-          child: ListTile(
-            leading: Icon(Icons.link),
-            title: Text('Copier le lien'),
-            dense: true,
+        if (status.canCopyLink)
+          const PopupMenuItem(
+            value: _InvitationAction.copyLink,
+            child: ListTile(
+              leading: Icon(Icons.link),
+              title: Text('Copier le lien'),
+              dense: true,
+            ),
           ),
-        ),
       ],
     );
   }

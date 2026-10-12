@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/presentation/leave_guard.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/widgets/app_shortcuts.dart';
+import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -150,12 +154,28 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
     return null;
   }
 
-  Future<void> _send(FamilyGroup group) async {
+  /// Bouton « Envoyer », Entrée dans l'adresse, Ctrl/Cmd+S : contrôle les
+  /// champs, puis envoie. Les fautes s'affichent sous leur champ.
+  void _trySend(List<FamilyGroup> groups) {
+    if (_sending) return;
     final email = _emailCtrl.text.trim();
-    if (!looksLikeEmail(email)) {
-      setState(() => _emailError = 'Adresse e-mail invalide.');
+    final group = _selectedGroup(groups);
+    final emailError = email.isEmpty
+        ? 'Saisissez une adresse e-mail.'
+        : (looksLikeEmail(email) ? null : 'Adresse e-mail invalide.');
+    final groupError = group == null ? 'Choisissez un groupe.' : null;
+    if (emailError != null || groupError != null) {
+      setState(() {
+        _emailError = emailError;
+        _groupError = groupError;
+        _refusal = null;
+      });
       return;
     }
+    _send(group!, email);
+  }
+
+  Future<void> _send(FamilyGroup group, String email) async {
     FocusScope.of(context).unfocus();
     setState(() {
       _sending = true;
@@ -212,7 +232,9 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
   }
 
   /// Compte en attente : lui donner le rôle choisi par le geste de l'onglet
-  /// Comptes, sans invitation.
+  /// Comptes, sans invitation et sans groupe. L'arrivée automatique dans le
+  /// groupe est réservée aux comptes neufs : pour un compte existant, l'ajout
+  /// passe par l'invitation de groupe, dans Groupes familiaux.
   Future<void> _grantRoleNow(String uid) async {
     setState(() => _sending = true);
     try {
@@ -220,7 +242,8 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
       if (!mounted) return;
       _done = true;
       context.showSuccessSnackBar(
-        'Rôle donné. Ajoutez-le au groupe depuis Groupes familiaux.',
+        'Rôle donné, sans groupe. Pour l\'ajouter au groupe, invitez-le '
+        'depuis Groupes familiaux.',
       );
       Navigator.of(context).pop();
     } catch (e, st) {
@@ -280,22 +303,31 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(myGroupsProvider);
     final me = ref.watch(appUserProvider).value;
-    final groups = groupsAsync.value ?? const <FamilyGroup>[];
+    // Pas de repli sur une liste vide : un chargement ou une erreur ne
+    // doivent pas se lire comme « aucun groupe ».
+    final groups = groupsAsync.hasValue
+        ? groupsAsync.requireValue
+        : const <FamilyGroup>[];
 
     final group = _selectedGroup(groups);
+    final canSend = !_sending && groupsAsync.hasValue && groups.isNotEmpty;
 
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
-    final preview = _EmailPreview(
-      inviterName: me?.displayedName ?? '',
-      groupName: group?.name ?? '…',
-      message: _messageCtrl.text,
-      toEmail: _emailCtrl.text.trim().isEmpty ? '…' : _emailCtrl.text.trim(),
+    // L'aperçu suit chaque frappe dans l'adresse et dans le message.
+    final preview = ListenableBuilder(
+      listenable: Listenable.merge([_messageCtrl, _emailCtrl]),
+      builder: (context, _) => _EmailPreview(
+        inviterName: me?.displayedName ?? '',
+        groupName: group?.name ?? '…',
+        message: _messageCtrl.text,
+        toEmail: _emailCtrl.text.trim().isEmpty ? '…' : _emailCtrl.text.trim(),
+      ),
     );
 
-    final form = _buildForm(context, groupsAsync, groups, group);
+    final form = _buildForm(context, groupsAsync, groups, canSend);
 
-    return PopScope(
+    final screen = PopScope(
       canPop: !_hasInput,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
@@ -359,19 +391,22 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
               ),
       ),
     );
+
+    return AppShortcuts(
+      onSave: canSend ? () => _trySend(groups) : null,
+      child: screen,
+    );
   }
 
   Widget _buildForm(
     BuildContext context,
     AsyncValue<List<FamilyGroup>> groupsAsync,
     List<FamilyGroup> groups,
-    FamilyGroup? group,
+    bool canSend,
   ) {
     final theme = Theme.of(context);
     final enabled = !_sending;
     final noGroup = groupsAsync.hasValue && groups.isEmpty;
-    final canSend =
-        enabled && group != null && _emailCtrl.text.trim().isNotEmpty;
     final refusal = _refusal;
 
     return AutofillGroup(
@@ -384,7 +419,10 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
             keyboardType: TextInputType.emailAddress,
             autofillHints: const [AutofillHints.email],
             autocorrect: false,
-            textInputAction: TextInputAction.next,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) {
+              if (canSend) _trySend(groups);
+            },
             decoration: InputDecoration(
               labelText: 'Adresse e-mail',
               helperText:
@@ -397,7 +435,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
             ),
           ),
           if (refusal?.reason == 'account_pending' &&
-              refusal?.existingUid != null)
+              refusal?.existingUid != null) ...[
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -405,9 +443,18 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
                     ? () => _grantRoleNow(refusal!.existingUid!)
                     : null,
                 icon: const Icon(Icons.how_to_reg_outlined),
-                label: const Text('Lui donner ce rôle maintenant'),
+                label: const Text('Lui donner le rôle (sans groupe)'),
               ),
             ),
+            Text(
+              'L\'arrivée automatique dans le groupe est réservée aux comptes '
+              'neufs. Pour l\'ajouter au groupe, invitez-le depuis Groupes '
+              'familiaux.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           if (refusal?.reason == 'duplicate' && refusal?.invitationId != null)
             Align(
               alignment: Alignment.centerLeft,
@@ -450,15 +497,39 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          if (noGroup)
+          if (groupsAsync.hasError && !groupsAsync.hasValue)
+            AppErrorState(
+              error: groupsAsync.error,
+              compact: true,
+              title: 'Groupes illisibles',
+              onRetry: () => ref.invalidate(myGroupsProvider),
+            )
+          else if (!groupsAsync.hasValue)
+            const InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'Groupe',
+                enabled: false,
+                border: OutlineInputBorder(),
+              ),
+              child: Text('Chargement des groupes…'),
+            )
+          else if (noGroup) ...[
             Text(
               'Vous n\'appartenez à aucun groupe. Créez-en un dans Groupes '
               'familiaux.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.error,
               ),
-            )
-          else
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => context.push(AppRoutes.groups),
+                icon: const Icon(Icons.groups_outlined),
+                label: const Text('Ouvrir Groupes familiaux'),
+              ),
+            ),
+          ] else
             DropdownButtonFormField<String>(
               key: ValueKey('group-${_groupId ?? ''}'),
               initialValue: _groupId,
@@ -503,7 +574,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
-              onPressed: canSend && !noGroup ? () => _send(group) : null,
+              onPressed: canSend ? () => _trySend(groups) : null,
               icon: _sending
                   ? const SizedBox(
                       width: 18,
@@ -543,9 +614,9 @@ class _EmailPreview extends StatelessWidget {
     );
     final inviter = inviterName.trim().isEmpty ? 'Kass\'Dalle' : inviterName;
     final expires = DateTime.now().add(const Duration(days: 30));
-    final body = message.trim().isEmpty
-        ? defaultInvitationMessage(groupName)
-        : message.trim();
+    // Message vide : l'e-mail part sans paragraphe personnel, comme le
+    // compose le serveur.
+    final body = message.trim();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -565,8 +636,7 @@ class _EmailPreview extends StatelessWidget {
             style: theme.textTheme.titleSmall,
           ),
           const Divider(height: 24),
-          Text(body),
-          const SizedBox(height: 16),
+          if (body.isNotEmpty) ...[Text(body), const SizedBox(height: 16)],
           Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.tonal(

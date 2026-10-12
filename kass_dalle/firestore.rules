@@ -200,10 +200,15 @@ service cloud.firestore {
       // comprises, pour afficher un prénom (audit 2026-10-09).
       allow read: if isOwner(uid) || isAdmin();
 
+      // L'adresse recopiée doit être vérifiée par le fournisseur d'identité
+      // (`email_verified`, toujours vrai pour un compte Google) : le document
+      // porte l'adresse sur laquelle se décident l'invitation par e-mail et
+      // la reconnaissance du fondateur.
       allow create: if isAuthenticated() && request.auth.uid == uid
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
                       && request.resource.data.email == request.auth.token.email
+                      && request.auth.token.email_verified == true
                       && namesBounded();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
