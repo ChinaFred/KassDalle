@@ -23,6 +23,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { COLL_PLANNING_CONFIG, COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import {
   BACKFILL_REVIEW_LIMIT,
   BackfillReview,
@@ -50,6 +52,8 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 interface BackfillPlanningDefaultsRequest {
   text?: unknown;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
 export interface BackfillPlanningDefaultsResponse {
@@ -135,7 +139,7 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillPlanningDefaultsResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, FEATURE);
     const raw = req.data?.text;
     const text = typeof raw === "string" ? raw.trim() : "";
@@ -146,122 +150,140 @@ export const backfillPlanningDefaultsFn = onCall<BackfillPlanningDefaultsRequest
       );
     }
 
-    const db = getFirestore();
-    const deadline = Date.now() + 540_000 - DEADLINE_MARGIN_MS;
-    const response: BackfillPlanningDefaultsResponse = {
-      examines: 0,
-      poses: 0,
-      completes: 0,
-      dejaAJour: 0,
-      ignores: 0,
-      tropLongs: 0,
-      echoues: 0,
-      restants: 0,
-      stoppedByDeadline: false,
-      stoppedByBudget: false,
-      stoppedByErrors: false,
-      completed: false,
-      aRevoir: { items: [], total: 0 },
-    };
-    // Comptes à revoir, nommés à la fin du passage par une seule lecture.
-    const toReview: { uid: string; reason: string }[] = [];
+    return runBackfillFromCallable({
+      key: "planning_defaults",
+      ctx,
+      appVersion: req.data?.appVersion,
+      summarize: summarizePlanningDefaults,
+      run: async (): Promise<BackfillPlanningDefaultsResponse> => {
+        const db = getFirestore();
+        const deadline = Date.now() + 540_000 - DEADLINE_MARGIN_MS;
+        const response: BackfillPlanningDefaultsResponse = {
+          examines: 0,
+          poses: 0,
+          completes: 0,
+          dejaAJour: 0,
+          ignores: 0,
+          tropLongs: 0,
+          echoues: 0,
+          restants: 0,
+          stoppedByDeadline: false,
+          stoppedByBudget: false,
+          stoppedByErrors: false,
+          completed: false,
+          aRevoir: { items: [], total: 0 },
+        };
+        // Comptes à revoir, nommés à la fin du passage par une seule lecture.
+        const toReview: { uid: string; reason: string }[] = [];
 
-    // Un document par compte : toute la collection tient en une lecture.
-    // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
-    // si bien qu'une relance avance toujours au-delà des précédents.
-    const snap = await db.collection(COLL_PLANNING_CONFIG).get();
-    let consecutiveFailures = 0;
-    let treated = 0;
-    for (const doc of snap.docs) {
-      if (Date.now() > deadline) {
-        response.stoppedByDeadline = true;
-        break;
-      }
-      if (treated >= MAX_DOCS) {
-        response.stoppedByBudget = true;
-        break;
-      }
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        response.stoppedByErrors = true;
-        break;
-      }
-      response.examines += 1;
-      // Le compte qui lance l'opération garde ses propres règles.
-      if (doc.id === ctx.userId) {
-        response.ignores += 1;
-        continue;
-      }
-      const current = doc.get("global_constraints") as unknown;
-      const next = mergedConstraints(current, text);
-      if (next == null) {
-        response.dejaAJour += 1;
-        continue;
-      }
-      if (next === "too_long") {
-        response.tropLongs += 1;
-        toReview.push({
-          uid: doc.id,
-          reason: "Contraintes trop longues : texte non ajouté",
-        });
-        continue;
-      }
-      try {
-        // Précondition sur la date d'écriture lue : si la personne enregistre
-        // ses préférences entre-temps, l'écriture échoue au lieu d'écraser
-        // son texte par l'ancien — relancer reprend le compte.
-        await doc.ref.update({ global_constraints: next }, { lastUpdateTime: doc.updateTime });
-        if (typeof current === "string" && current.trim().length > 0) {
-          response.completes += 1;
-        } else {
-          response.poses += 1;
+        // Un document par compte : toute la collection tient en une lecture.
+        // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
+        // si bien qu'une relance avance toujours au-delà des précédents.
+        const snap = await db.collection(COLL_PLANNING_CONFIG).get();
+        let consecutiveFailures = 0;
+        let treated = 0;
+        for (const doc of snap.docs) {
+          if (Date.now() > deadline) {
+            response.stoppedByDeadline = true;
+            break;
+          }
+          if (treated >= MAX_DOCS) {
+            response.stoppedByBudget = true;
+            break;
+          }
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            response.stoppedByErrors = true;
+            break;
+          }
+          response.examines += 1;
+          // Le compte qui lance l'opération garde ses propres règles.
+          if (doc.id === ctx.userId) {
+            response.ignores += 1;
+            continue;
+          }
+          const current = doc.get("global_constraints") as unknown;
+          const next = mergedConstraints(current, text);
+          if (next == null) {
+            response.dejaAJour += 1;
+            continue;
+          }
+          if (next === "too_long") {
+            response.tropLongs += 1;
+            toReview.push({
+              uid: doc.id,
+              reason: "Contraintes trop longues : texte non ajouté",
+            });
+            continue;
+          }
+          try {
+            // Précondition sur la date d'écriture lue : si la personne enregistre
+            // ses préférences entre-temps, l'écriture échoue au lieu d'écraser
+            // son texte par l'ancien — relancer reprend le compte.
+            await doc.ref.update({ global_constraints: next }, { lastUpdateTime: doc.updateTime });
+            if (typeof current === "string" && current.trim().length > 0) {
+              response.completes += 1;
+            } else {
+              response.poses += 1;
+            }
+            treated += 1;
+            consecutiveFailures = 0;
+          } catch (e) {
+            response.echoues += 1;
+            consecutiveFailures += 1;
+            toReview.push({ uid: doc.id, reason: `Échec d'écriture : ${shortErrorMessage(e)}` });
+            await logError("Contraintes de variété par défaut — échec sur un compte", {
+              correlationId: ctx.correlationId,
+              userId: ctx.userId,
+              moduleType: "DESIGN",
+              feature: FEATURE,
+              errorDescription: e instanceof Error ? e.message : String(e),
+              extra: { configUid: doc.id, consecutiveFailures },
+            });
+          }
         }
-        treated += 1;
-        consecutiveFailures = 0;
-      } catch (e) {
-        response.echoues += 1;
-        consecutiveFailures += 1;
-        toReview.push({ uid: doc.id, reason: `Échec d'écriture : ${shortErrorMessage(e)}` });
-        await logError("Contraintes de variété par défaut — échec sur un compte", {
+        response.restants = snap.size - response.examines;
+        response.completed = response.restants === 0 && !response.stoppedByErrors;
+        const review = new BackfillReview();
+        const labels = await accountLabels(
+          db,
+          ctx,
+          toReview.slice(0, BACKFILL_REVIEW_LIMIT).map((r) => r.uid),
+        );
+        for (const r of toReview) {
+          review.add({
+            kind: "account",
+            id: r.uid,
+            label: labels.get(r.uid) ?? r.uid,
+            reason: r.reason,
+          });
+        }
+        response.aRevoir = review.toJSON();
+
+        await logInfo({
+          message: "Contraintes de variété par défaut — passage",
           correlationId: ctx.correlationId,
           userId: ctx.userId,
           moduleType: "DESIGN",
           feature: FEATURE,
-          errorDescription: e instanceof Error ? e.message : String(e),
-          extra: { configUid: doc.id, consecutiveFailures },
+          // Le texte posé chez les autres se retrouve : sa longueur et son empreinte.
+          extra: {
+            ...withoutReviewList(response),
+            textLength: text.length,
+            textSha256: createHash("sha256").update(text).digest("hex"),
+          },
         });
-      }
-    }
-    response.restants = snap.size - response.examines;
-    response.completed = response.restants === 0 && !response.stoppedByErrors;
-    const review = new BackfillReview();
-    const labels = await accountLabels(
-      db,
-      ctx,
-      toReview.slice(0, BACKFILL_REVIEW_LIMIT).map((r) => r.uid),
-    );
-    for (const r of toReview) {
-      review.add({
-        kind: "account",
-        id: r.uid,
-        label: labels.get(r.uid) ?? r.uid,
-        reason: r.reason,
-      });
-    }
-    response.aRevoir = review.toJSON();
-
-    await logInfo({
-      message: "Contraintes de variété par défaut — passage",
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      feature: FEATURE,
-      // Le texte posé chez les autres se retrouve : sa longueur et son empreinte.
-      extra: {
-        ...withoutReviewList(response),
-        textLength: text.length,
-        textSha256: createHash("sha256").update(text).digest("hex"),
+        return response;
       },
     });
-    return response;
   },
 );
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizePlanningDefaults(r: BackfillPlanningDefaultsResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.restants,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}

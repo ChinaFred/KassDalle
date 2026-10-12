@@ -1,5 +1,5 @@
 /**
- * Rattrapage de la nutrition : la passe, et ses deux entrées.
+ * Rattrapage de la nutrition : la passe et ses règles de décision.
  *
  * `onRecipeWritten` calcule une fois par changement d'entrée, et c'est tout ce
  * qu'il doit faire : sa garde porte sur ses entrées, précisément pour qu'il
@@ -11,14 +11,17 @@
  * forme dit tout : un rattrapage est une décision, pas l'effet de bord d'une
  * écriture sans rapport.
  *
- * Deux entrées, une seule mécanique :
+ * Deux entrées, une seule mécanique (`runNutritionBackfillPass`,
+ * `callable/nutritionBackfillCallable.ts`) :
  *
- *  - `scheduledNutritionCatchUp` — tous les jours à 5 h, vingt recettes au
- *    plus, bornes de prudence actives. Personne ne l'a demandé, il ne doit donc
- *    surprendre personne.
- *  - `backfillNutritionFn` (voir `callable/nutritionBackfillCallable.ts`) — un
- *    administrateur qui vient de corriger un référentiel veut le résultat
- *    maintenant : les bornes de patience sautent, celle de prudence reste.
+ *  - le passage programmé — `scheduledBackfills`, tous les jours à 5 h par
+ *    défaut, réglable dans Admin › Backfills — vingt recettes au plus, bornes
+ *    de patience actives. Personne ne l'a demandé à cet instant, il ne doit
+ *    donc surprendre personne. Il remplace `scheduledNutritionCatchUp`,
+ *    retirée en v0.23.43 ;
+ *  - `backfillNutritionFn` — un administrateur qui vient de corriger un
+ *    référentiel veut le résultat maintenant : les bornes de patience sautent,
+ *    celle de prudence reste.
  *
  * La passe écrit sur les recettes qu'elle reprend, donc elle réveille
  * `onRecipeWritten` — qui rend la main aussitôt, aucune entrée n'ayant bougé.
@@ -26,11 +29,10 @@
  * il aurait relancé la salve à lui seul.
  */
 
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore } from "firebase-admin/firestore";
 
-import { ANTHROPIC_API_KEY, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
-import { logError, logInfo, newCorrelationId } from "../logging";
+import { COLL_RECIPES } from "../config";
+import { logError } from "../logging";
 import { BudgetExceededError, assertWithinDailyBudget, recipeBudgetUserId } from "../ai/budget";
 import { readTimestampMillis } from "../nutrition/aiEnrichment";
 import { resolvePageType } from "../triggers/recipeWritten";
@@ -314,53 +316,3 @@ export async function runNutritionCatchUp(
 
   return report;
 }
-
-export const scheduledNutritionCatchUp = onSchedule(
-  {
-    // Tous les jours à 5 h, heure de Paris : avant l'alerte de dépense de 7 h,
-    // pour que ce qu'il consomme soit déjà compté quand elle regarde.
-    schedule: "0 5 * * *",
-    timeZone: "Europe/Paris",
-    region: REGION,
-    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
-    memory: "512MiB",
-    timeoutSeconds: 540,
-    retryCount: 0,
-  },
-  async () => {
-    // Un seul fil pour tout le passage : l'écran de journaux montre alors le
-    // rattrapage comme un traitement, et non comme vingt traitements anonymes.
-    const correlationId = newCorrelationId("rattrapage_nutrition");
-
-    try {
-      const report = await runNutritionCatchUp({
-        correlationId,
-        maxRecipes: MAX_RECIPES_PER_RUN,
-        // On s'arrête avant le délai de la fonction : une reprise coupée en
-        // plein milieu laisse une recette dans un état qu'il faudra reprendre.
-        deadlineMs: Date.now() + 8 * 60 * 1000,
-      });
-
-      await logInfo({
-        message:
-          "rattrapageNutrition: " +
-          report.completees +
-          " complétée(s), " +
-          report.echouees +
-          " encore incomplète(s), " +
-          report.laissees +
-          " laissée(s) pour demain",
-        moduleType: "DESIGN",
-        correlationId,
-        extra: { ...report },
-      });
-    } catch (err) {
-      await logError({
-        message: "rattrapageNutrition: passage interrompu",
-        errorDescription: err instanceof Error ? err.message : String(err),
-        moduleType: "DESIGN",
-        correlationId,
-      });
-    }
-  },
-);

@@ -637,6 +637,12 @@ Le compte rendu nomme aussi les éléments à revoir : chaque backfill renvoie `
 plafonnée à 100 entrées, total compté au-delà), que l'écran ouvre dans une feuille « À revoir »
 avec un bouton « Copier la liste ». Un compteur d'erreurs sans noms ne dit pas quoi corriger.
 
+Chaque backfill est classé **ponctuel** (un fonds à reprendre une fois ; marqué terminé quand
+un passage finit sans reste, puis retiré du code) ou **récurrent** (du travail à chaque
+nouvelle recette ; programmable par jours et heure, lancé par `scheduledBackfills`), dans les
+deux registres `functions/src/backfills/registry.ts` et `backfill_registry.dart`. Le skill
+`backfill` dit comment.
+
 Un bouton de semis posé dans l'écran du référentiel lui-même a été livré une fois
 (garnitures simples, v0.22.58) : personne ne l'a trouvé, et la réponse « ouvrez
 l'écran du référentiel et appuyez sur l'icône » a dû être écrite à la main. L'écran

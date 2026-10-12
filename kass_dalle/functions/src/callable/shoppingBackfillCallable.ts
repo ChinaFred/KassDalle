@@ -15,19 +15,15 @@
 import { onCall } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 
-import {
-  ANTHROPIC_API_KEY,
-  COLL_RECIPES,
-  GEMINI_API_KEY,
-  MAX_CALLABLE_INSTANCES,
-  REGION,
-} from "../config";
+import { COLL_RECIPES, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { deriveShoppingProducts, type ShoppingProduct } from "../nutrition/shoppingDerivation";
 import { shoppingAliasesOrNone, shoppingInputsOf } from "../triggers/recipeShoppingProducts";
 import type { StoredIngredient } from "../triggers/recipeIngredients";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import {
   BackfillReview,
   recipeReviewLabel,
@@ -59,9 +55,11 @@ interface BackfillShoppingRequest {
   maxDocs?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
-interface BackfillShoppingResponse {
+export interface BackfillShoppingResponse {
   examinees: number;
   /** `shopping_products` réécrit. */
   recalculees: number;
@@ -249,13 +247,11 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
     region: REGION,
     timeoutSeconds: 540,
     memory: "512MiB",
-    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillShoppingResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, PRODUCTS_FEATURE);
-    const db = getFirestore();
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8);
     const maxMinutes = Number.isFinite(maxMinutesRaw)
@@ -265,44 +261,85 @@ export const backfillShoppingFn = onCall<BackfillShoppingRequest>(
     const maxDocs = Number.isFinite(maxDocsRaw)
       ? Math.max(1, Math.min(5000, Math.trunc(maxDocsRaw)))
       : DEFAULT_MAX_RECIPES;
-    const bounds: Bounds = {
-      deadline: Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS,
+    const options: ShoppingPassOptions = {
+      deadlineMs: Date.now() + maxMinutes * 60_000,
       maxDocs,
+      resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
+      resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
     };
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
-    const startAfter = await getBackfillCursor({
-      db,
-      docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
-      resumeFromCheckpoint,
-      resetCheckpoint,
+    return runBackfillFromCallable({
+      key: "shopping_products",
+      ctx,
+      appVersion: req.data?.appVersion,
+      run: () => runShoppingPass(ctx, options),
+      summarize: summarizeShopping,
     });
-
-    const { response, cursor } = await runProductsMode(db, ctx, bounds, startAfter);
-    response.completed = response.collectionParcourue;
-
-    // Le curseur revient au début quand tout est passé ; sinon il retient le
-    // dernier document examiné. Le compte rendu part avec lui : l'écran le
-    // relit à l'ouverture, pour qui a quitté la page avant la fin du passage.
-    await setBackfillCursor({
-      db,
-      docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
-      lastDocId: response.collectionParcourue ? null : cursor,
-      operation: PRODUCTS_FEATURE,
-      adminUid: ctx.userId,
-      lastReport: { ...response },
-    });
-
-    await logInfo({
-      message: "Produits d'achat des recettes — recalcul",
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      feature: PRODUCTS_FEATURE,
-      extra: { ...withoutReviewList(response), maxMinutes, maxDocs },
-    });
-
-    return response;
   },
 );
+
+/** Ce qu'un passage a le droit de faire. */
+export interface ShoppingPassOptions {
+  /** Instant de fin du passage ; la marge d'écriture du curseur est déduite ici. */
+  deadlineMs: number;
+  maxDocs: number;
+  resumeFromCheckpoint: boolean;
+  resetCheckpoint: boolean;
+}
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeShopping(r: BackfillShoppingResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.completed ? 0 : null,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}
+
+/**
+ * Un passage, quelle que soit son entrée : le callable ou `scheduledBackfills`.
+ * Aucun appel de modèle.
+ */
+export async function runShoppingPass(
+  ctx: AuthContext,
+  options: ShoppingPassOptions,
+): Promise<BackfillShoppingResponse> {
+  const db = getFirestore();
+  const bounds: Bounds = {
+    deadline: options.deadlineMs - DEADLINE_MARGIN_MS,
+    maxDocs: options.maxDocs,
+  };
+
+  const startAfter = await getBackfillCursor({
+    db,
+    docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
+    resumeFromCheckpoint: options.resumeFromCheckpoint,
+    resetCheckpoint: options.resetCheckpoint,
+  });
+
+  const { response, cursor } = await runProductsMode(db, ctx, bounds, startAfter);
+  response.completed = response.collectionParcourue;
+
+  // Le curseur revient au début quand tout est passé ; sinon il retient le
+  // dernier document examiné. Le compte rendu part dans l'état du backfill
+  // (`backfills/runner.ts`), que l'écran lit en continu.
+  await setBackfillCursor({
+    db,
+    docId: SHOPPING_PRODUCTS_CHECKPOINT_DOC_ID,
+    lastDocId: response.collectionParcourue ? null : cursor,
+    operation: PRODUCTS_FEATURE,
+    adminUid: ctx.userId,
+  });
+
+  await logInfo({
+    message: "Produits d'achat des recettes — recalcul",
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    moduleType: "DESIGN",
+    feature: PRODUCTS_FEATURE,
+    extra: { ...withoutReviewList(response), maxDocs: options.maxDocs },
+  });
+
+  return response;
+}

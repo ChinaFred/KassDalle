@@ -4,8 +4,8 @@ import 'backfill_failures.dart';
 ///
 /// Deux origines, une seule forme : la réponse de `backfillRecipeProteinFn`
 /// quand le passage vient de finir, et `last_report` dans
-/// `app_config/recipe_protein_backfill_checkpoint`, où la fonction le laisse
-/// à côté de son curseur.
+/// `app_config/backfill_run_recipe_protein`, l'état du backfill que l'écran
+/// lit en continu.
 class RecipeProteinBackfillReport {
   /// Fin du passage. `null` quand le compte rendu n'en porte pas.
   final DateTime? finishedAt;
@@ -38,6 +38,10 @@ class RecipeProteinBackfillReport {
   /// n'en porte pas — compte rendu antérieur à la liste.
   final BackfillFailures? failures;
 
+  /// Ce passage vient de marquer le backfill terminé (ponctuel passé sans
+  /// reste, `termineAuto` de la réponse).
+  final bool termineAuto;
+
   const RecipeProteinBackfillReport({
     required this.finishedAt,
     required this.examinees,
@@ -52,6 +56,7 @@ class RecipeProteinBackfillReport {
     required this.stoppedByErrors,
     required this.stoppedByDeadline,
     this.failures,
+    this.termineAuto = false,
   });
 
   /// Lit les compteurs tels que la fonction les rend. Un compteur absent vaut
@@ -76,6 +81,7 @@ class RecipeProteinBackfillReport {
       stoppedByErrors: map['stoppedByErrors'] == true,
       stoppedByDeadline: map['stoppedByDeadline'] == true,
       failures: BackfillFailures.fromMap(map['aRevoir']),
+      termineAuto: map['termineAuto'] == true,
     );
   }
 

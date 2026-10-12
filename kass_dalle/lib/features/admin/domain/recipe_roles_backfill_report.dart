@@ -4,10 +4,10 @@ import 'backfill_failures.dart';
 ///
 /// Deux origines, une seule forme : la réponse de `backfillRecipeRolesFn`
 /// quand le passage vient de finir, et `last_report` dans
-/// `app_config/recipe_roles_backfill_checkpoint`, où la fonction le laisse à
-/// côté de son curseur. Un passage dure plusieurs minutes et son résultat
-/// affiché en fin de traitement se rate : relu depuis le point de contrôle,
-/// il reste lisible jusqu'au passage suivant.
+/// `app_config/backfill_run_recipe_roles`, l'état du backfill que l'écran lit
+/// en continu. Un passage dure plusieurs minutes et son résultat affiché en
+/// fin de traitement se rate : relu depuis l'état, il reste lisible jusqu'au
+/// passage suivant.
 class RecipeRolesBackfillReport {
   /// Fin du passage. `null` quand le compte rendu n'en porte pas.
   final DateTime? finishedAt;

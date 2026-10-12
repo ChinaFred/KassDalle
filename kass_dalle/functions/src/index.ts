@@ -122,7 +122,11 @@ export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
 export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
-export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
+// `scheduledNutritionCatchUp` (tous les jours à 5 h) est retirée en v0.23.43 :
+// `scheduledBackfills` lance chaque heure les backfills récurrents programmés
+// depuis Admin › Backfills, la nutrition par défaut tous les jours à 5 h.
+export { scheduledBackfills } from "./scheduled/backfillSchedule";
+export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillRecipeProteinFn } from "./callable/recipeProteinBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";

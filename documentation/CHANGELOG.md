@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.43 — fonctionnel
+
+Admin › Backfills range ses neuf reprises en trois sections : « Récurrents », « Ponctuels à
+lancer » et « Ponctuels terminés ». Chaque tuile affiche l'état de son dernier passage, lu en
+direct : terminé, incomplet, en erreur, en cours. Un backfill récurrent se programme depuis
+l'écran, par jours et heure de Paris ; un passage incomplet reprend l'heure suivante, jusqu'à
+la fin ou jusqu'au plafond de dépense. « Reprendre la nutrition » passe toujours tous les jours
+à 5 h, réglable désormais. Un ponctuel passé sans reste est marqué terminé et descend en bas ;
+l'administrateur peut aussi le marquer ou le remettre à lancer par le menu ⋮. Lancer un
+backfill ne bloque plus l'écran, et deux passages du même backfill ne tournent jamais ensemble.
+
+### v0.23.43 — technique
+
+Chaque backfill est classé dans deux registres, `functions/src/backfills/registry.ts` et
+`backfill_registry.dart`. `runBackfillPass` (`backfills/runner.ts`) pose un verrou par backfill
+et écrit l'état dans `app_config/backfill_run_<clé>` : statut, origine, compte rendu complet,
+`termine_*` pour un ponctuel. Le compte rendu ne s'écrit plus à côté du curseur
+(`setBackfillCursor` perd `lastReport`) ; `backfill_reports_repository.dart` et ses deux
+providers sont remplacés par `backfill_status_repository.dart`. La tâche `scheduledNutritionCatchUp`
+est retirée et remplacée par `scheduledBackfills`, horaire, qui lance les récurrents échus
+d'après `app_config/backfill_schedules` ; sans réglage, la nutrition garde 5 h, 20 recettes et
+ses bornes de patience. La passe de chaque récurrent sort de son callable pour être appelée
+aussi par la tâche. Un passage programmé qui appelle un modèle est imputé au plafond de
+l'administrateur qui l'a programmé ; la nutrition reste imputée au propriétaire de chaque
+recette. Deux callables admin s'ajoutent, `setBackfillScheduleFn` et `setBackfillDoneFn`. Les
+callables existants gardent nom et contrat ; leur réponse gagne `termineAuto`, leur requête
+`appVersion`, et un passage déjà en cours renvoie `failed-precondition`. `backfillShoppingFn`
+ne déclare plus les deux secrets d'IA, qu'il n'utilisait pas.
+
 ### v0.23.42 — fonctionnel
 
 « Chercher sur le web » donne la priorité aux recettes en français : Gemini cherche en
