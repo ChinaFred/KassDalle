@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -23,7 +25,7 @@ class ErrorReport {
   /// Message de l'exception.
   final String errorMessage;
 
-  /// Stack trace tronquée (max 2000 chars).
+  /// Stack trace tronquée ([maxStackTrace] caractères au plus).
   final String? stackTrace;
 
   /// Paramètres du contexte au moment de l'erreur.
@@ -42,16 +44,71 @@ class ErrorReport {
     required this.context,
   });
 
+  // ── Bornes d'écriture ─────────────────────────────────────────────────────
+  //
+  // Les règles Firestore (`error_reports`) refusent un rapport aux champs
+  // inconnus ou trop longs : tout compte connecté, même en attente, en écrit,
+  // et un rapport sans borne servait de stockage libre (audit sécurité).
+  // Les règles admettent le double de ces longueurs : la marge couvre une
+  // différence de décompte des caractères, et un rapport tronqué ici n'est
+  // jamais refusé là-bas.
+
+  static const maxShortText = 200;
+  static const maxAppVersion = 50;
+  static const maxMessage = 4000;
+  static const maxStackTrace = 2000;
+  static const maxContext = 4000;
+  static const maxContextValue = 500;
+
+  /// [value] coupé à [max] unités UTF-16, sans couper un caractère en deux,
+  /// avec « … » quand il a été coupé.
+  static String truncate(String value, int max) {
+    if (value.length <= max) return value;
+    var end = max - 1;
+    final last = value.codeUnitAt(end - 1);
+    // Une moitié haute de paire de substitution ne reste pas seule.
+    if (last >= 0xD800 && last <= 0xDBFF) end -= 1;
+    return '${value.substring(0, end)}…';
+  }
+
+  /// Le contexte, écrit en JSON borné à [maxContext] caractères.
+  ///
+  /// Une chaîne plutôt qu'une carte : les règles bornent la longueur d'une
+  /// chaîne, pas celle des valeurs d'une carte. Chaque valeur devient du
+  /// texte coupé à [maxContextValue] ; les entrées qui ne tiennent plus sont
+  /// comptées sous `_omis`. Le JSON reste toujours valide.
+  static String encodeContext(Map<String, dynamic> context) {
+    final kept = <String, Object?>{};
+    var omitted = 0;
+    for (final entry in context.entries) {
+      final raw = entry.value;
+      final Object? value = raw == null || raw is num || raw is bool
+          ? raw
+          : truncate(raw.toString(), maxContextValue);
+      final candidate = {...kept, truncate(entry.key, maxShortText): value};
+      // Place gardée pour le compteur des entrées omises.
+      if (jsonEncode(candidate).length > maxContext - 20) {
+        omitted++;
+        continue;
+      }
+      kept[truncate(entry.key, maxShortText)] = value;
+    }
+    if (omitted > 0) kept['_omis'] = omitted;
+    return jsonEncode(kept);
+  }
+
   Map<String, dynamic> toFirestore() => {
     'user_id': userId,
-    'job_id': jobId,
+    'job_id': jobId == null ? null : truncate(jobId!, maxShortText),
     'timestamp': Timestamp.fromDate(timestamp),
-    'app_version': appVersion,
-    'feature': feature,
-    'error_type': errorType,
-    'error_message': errorMessage,
-    'stack_trace': stackTrace,
-    'context': context,
+    'app_version': truncate(appVersion, maxAppVersion),
+    'feature': truncate(feature, maxShortText),
+    'error_type': truncate(errorType, maxShortText),
+    'error_message': truncate(errorMessage, maxMessage),
+    'stack_trace': stackTrace == null
+        ? null
+        : truncate(stackTrace!, maxStackTrace),
+    'context': encodeContext(context),
   };
 
   static DateTime _parseTimestamp(dynamic raw) {
@@ -65,9 +122,24 @@ class ErrorReport {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
+  /// Le contexte relu : une chaîne JSON depuis la v0.23.45, une carte avant.
   static Map<String, dynamic> _parseContext(dynamic raw) {
     if (raw is Map) {
       return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      } on FormatException {
+        // Pas de remontée ici : ce service est celui qui remonte les erreurs,
+        // et il lit sa propre collection. Le texte n'est pas perdu : il
+        // s'affiche tel quel sous `brut`.
+        return {'brut': raw};
+      }
+      return {'brut': raw};
     }
     return <String, dynamic>{};
   }
@@ -126,10 +198,7 @@ class ErrorReportService {
     if (stackTrace == null) return null;
     final rawStackTrace = stackTrace.toString();
     if (rawStackTrace.isEmpty) return null;
-    return rawStackTrace.substring(
-      0,
-      rawStackTrace.length.clamp(0, 2000).toInt(),
-    );
+    return ErrorReport.truncate(rawStackTrace, ErrorReport.maxStackTrace);
   }
 
   Future<String> reportError({

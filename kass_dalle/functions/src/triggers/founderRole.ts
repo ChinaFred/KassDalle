@@ -15,7 +15,8 @@
  * Trois précautions :
  *
  *  1. L'adresse qui décide est celle du **compte Auth**, lue ici par
- *     `getUser()`. Celle du document est écrite par le client ; les règles la
+ *     `getUser()`, vérifiée et rattachée à une connexion Google
+ *     (`isFounderAccount`). Celle du document est écrite par le client ; les règles la
  *     verrouillent désormais sur celle du jeton, mais un contrôle d'autorité
  *     ne se fonde pas sur une donnée que le client a pu poser.
  *  2. Le déclencheur **restaure** aussi bien qu'il amorce : si le rôle du
@@ -47,6 +48,32 @@ export const FOUNDER_EMAIL = "china.fred.75@gmail.com";
 /** Vrai si l'adresse désigne le compte fondateur, casse et espaces ignorés. */
 export function isFounderEmail(email: string | null | undefined): boolean {
   return typeof email === "string" && email.trim().toLowerCase() === FOUNDER_EMAIL;
+}
+
+/** Ce que `founderAccount` lit d'un compte Auth (`UserRecord` de l'Admin SDK). */
+export interface FounderCandidate {
+  email?: string | null;
+  emailVerified?: boolean;
+  providerData?: ReadonlyArray<{ providerId?: string }>;
+}
+
+/**
+ * Vrai si le compte Auth est celui du fondateur : son adresse, **vérifiée**,
+ * et une connexion Google.
+ *
+ * L'adresse seule ne suffisait pas (audit sécurité, « à confirmer ») : un
+ * fournisseur qui laisse créer un compte avec une adresse non vérifiée
+ * (e-mail et mot de passe, par exemple) aurait suffi à se faire reconnaître
+ * fondateur. Même contrôle que `isFounder()` dans `firestore.rules`
+ * (`email_verified` et `sign_in_provider == 'google.com'`). Pure, testée.
+ */
+export function isFounderAccount(user: FounderCandidate | null | undefined): boolean {
+  if (!user) return false;
+  return (
+    isFounderEmail(user.email) &&
+    user.emailVerified === true &&
+    (user.providerData ?? []).some((p) => p.providerId === "google.com")
+  );
 }
 
 /**
@@ -86,9 +113,9 @@ export const enforceFounderRole = onDocumentWritten(
     const claimedEmail = typeof data?.email === "string" ? data.email : null;
     if (!isFounderEmail(claimedEmail)) return;
 
-    let authEmail: string | undefined;
+    let authUser: FounderCandidate;
     try {
-      authEmail = (await getAuth().getUser(uid)).email;
+      authUser = await getAuth().getUser(uid);
     } catch (err) {
       // Un document utilisateur sans compte Auth correspondant : impossible de
       // vérifier l'identité, donc on ne promeut rien. Doit rester visible.
@@ -100,13 +127,18 @@ export const enforceFounderRole = onDocumentWritten(
       return;
     }
 
-    if (!isFounderEmail(authEmail)) {
+    if (!isFounderAccount(authUser)) {
       await logInfo({
         message:
-          "enforceFounderRole: document se réclamant du fondateur avec une autre " +
-          "adresse Auth — aucune promotion",
+          "enforceFounderRole: document se réclamant du fondateur sans compte Auth " +
+          "Google à l'adresse vérifiée — aucune promotion",
         userId: uid,
-        extra: { documentEmail: claimedEmail },
+        extra: {
+          documentEmail: claimedEmail,
+          authEmailMatches: isFounderEmail(authUser.email),
+          emailVerified: authUser.emailVerified === true,
+          providers: (authUser.providerData ?? []).map((p) => p.providerId ?? null),
+        },
       });
       return;
     }

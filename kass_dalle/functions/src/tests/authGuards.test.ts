@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 
 import { accessDenial, accountFromToken, mergeAccount, type AccountState } from "../callable/_auth";
 import { claimsFrom, shouldRevokeSessions } from "../triggers/userClaimsSync";
-import { founderRepair, isFounderEmail } from "../triggers/founderRole";
+import { founderRepair, isFounderAccount, isFounderEmail } from "../triggers/founderRole";
 import {
   APP_CHECK_MODES,
   DEFAULT_APP_CHECK_POLICY,
@@ -198,6 +198,27 @@ describe("compte fondateur", () => {
     assert.equal(isFounderEmail("chinafred75@gmail.com"), false);
     assert.equal(isFounderEmail(null), false);
     assert.equal(isFounderEmail(undefined), false);
+  });
+
+  test("compte fondateur : adresse vérifiée et connexion Google, les trois ensemble", () => {
+    const google = [{ providerId: "google.com" }];
+    const email = "china.fred.75@gmail.com";
+    assert.equal(isFounderAccount({ email, emailVerified: true, providerData: google }), true);
+    // Adresse du fondateur, non vérifiée : refusé.
+    assert.equal(isFounderAccount({ email, emailVerified: false, providerData: google }), false);
+    assert.equal(isFounderAccount({ email, providerData: google }), false);
+    // Adresse vérifiée, mais pas de connexion Google : refusé.
+    assert.equal(
+      isFounderAccount({ email, emailVerified: true, providerData: [{ providerId: "password" }] }),
+      false,
+    );
+    assert.equal(isFounderAccount({ email, emailVerified: true }), false);
+    // Autre adresse : refusé.
+    assert.equal(
+      isFounderAccount({ email: "autre@gmail.com", emailVerified: true, providerData: google }),
+      false,
+    );
+    assert.equal(isFounderAccount(null), false);
   });
 
   test("un fondateur déjà administrateur et actif n'est pas réécrit", () => {

@@ -20,6 +20,42 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.45 — fonctionnel
+
+La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image
+analysée vaut un appel, et son coût s'ajoute à la dépense du jour. Plafond atteint, l'image
+n'est pas publiée et l'écran affiche le message du plafond ; une photo de page importée par
+lien est laissée de côté et la recette est créée sans elle. La relance des images en attente
+par l'administrateur n'est pas concernée.
+
+### v0.23.45 — technique
+
+Cinq corrections issues de l'audit `securite`.
+
+- **Cloud Vision dans le plafond quotidien.** `moderateAndPromote` réserve une place par image
+  analysée (`withDailyBudget`), au coût de l'analyse lu dans la grille tarifaire
+  (`visionAnalysisCostUsd`, nouvelle option `estimateUsd` de `reserveDailyBudget`). Un compte
+  pouvait rappeler `moderateAndPromoteImagesFn` en boucle sur sa quarantaine, chaque appel
+  déclenchant une analyse facturée. Refus : `resource-exhausted`. `recordUsage` accepte
+  `dailyCalls` : une image analysée compte pour un appel dans `ai_daily_spend` (un lot de
+  vingt-cinq images en comptait un). Les analyses déjà faites d'un lot interrompu sont
+  enregistrées en `finally`. `retryPendingModerationFn` (admin) reste hors plafond.
+- **`normalizeRecipeReferentialsFn`** écrit dans `nutrition_ingredients` : réservée à
+  l'éditeur, et au lecteur créateur de la recette `recipeId`
+  (`assertCanNormalizeReferentials`). `requireEditor` seul aurait cassé l'enregistrement
+  d'une recette par son lecteur créateur, que les règles permettent.
+- **`free_recipe_cover_url`** : les règles n'admettent que `null` ou une adresse de
+  téléchargement du bucket du projet sous `users/`, 500 caractères au plus (`coverUrlOk`) ;
+  `publicCoverUrl` écarte toute autre valeur à la recopie dans `user_profiles`.
+- **`error_reports`** : liste fermée des neuf champs, `user_id` égal à l'appelant, longueurs
+  bornées (`isErrorReport`). `context` devient une chaîne JSON, seule forme mesurable par
+  une règle ; le client tronque chaque champ à la moitié de la borne. Les rapports anciens
+  (contexte en carte) se relisent toujours. Un client antérieur à cette version, qui écrit
+  encore une carte, voit ses rapports refusés jusqu'à sa mise à jour.
+- **Fondateur** : `isFounder()` exige `email_verified` et une connexion Google ;
+  `isFounderAccount` applique le même contrôle dans `enforceFounderRole` et pour le
+  multiplicateur de plafond (`founderUid`).
+
 ### v0.23.44 — technique
 
 La CI ne se rejoue plus en entier sur le push qui fusionne une PR. Un job « Déjà testé en

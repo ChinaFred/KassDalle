@@ -476,11 +476,84 @@ describe("users — fondateur", () => {
     );
   });
 
+  it("le fondateur, connecté par Google à l'adresse vérifiée, change le rôle du document fondateur", async () => {
+    await assertSucceeds(db("founder").doc("users/founder").update({ role: "editor" }));
+  });
+
+  // Audit sécurité (« à confirmer ») : l'adresse seule suffisait.
+  for (const [label, token] of [
+    ["adresse non vérifiée", { email_verified: false, firebase: { sign_in_provider: "google.com" } }],
+    ["connexion par mot de passe", { email_verified: true, firebase: { sign_in_provider: "password" } }],
+    ["sans email_verified", { firebase: { sign_in_provider: "google.com" } }],
+  ]) {
+    it(`un administrateur à l'adresse du fondateur (${label}) ne destitue pas le fondateur`, async () => {
+      await seedDocs(env, {
+        "users/fake-founder": { role: "admin", is_revoked: false, email: FOUNDER_EMAIL },
+      });
+      const ctx = env
+        .authenticatedContext("fake-founder", {
+          role: "admin",
+          revoked: false,
+          email: FOUNDER_EMAIL,
+          ...token,
+        })
+        .firestore();
+      await assertFails(ctx.doc("users/founder").update({ role: "reader" }));
+    });
+  }
+
   it("changer l'adresse puis le rôle du fondateur échoue dès la première écriture", async () => {
     await assertFails(
       db("admin").doc("users/founder").update({ email: "x@example.com", role: "reader" }),
     );
     await assertFails(db("admin").doc("users/founder").update({ role: "reader" }));
+  });
+});
+
+// Audit sécurité : la couverture « Recette libre » est recopiée dans le
+// profil public ; une adresse externe y passait sans modération.
+describe("users — couverture « Recette libre »", () => {
+  const COVER =
+    "https://firebasestorage.googleapis.com/v0/b/kassdale-6d948.firebasestorage.app/o/" +
+    `users%2F${READER}%2Ffree_recipe_cover_1760000000000.jpg?alt=media&token=abc-123`;
+
+  it("un lecteur ne pose pas une adresse externe sur son compte", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: "https://exemple.org/x.png" }),
+    );
+  });
+
+  it("un lecteur pose l'adresse Storage de sa couverture modérée", async () => {
+    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: COVER }));
+  });
+
+  it("une adresse du bucket hors de users/ (quarantaine) est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ free_recipe_cover_url: COVER.replace("users%2F", "quarantine%2F") }),
+    );
+  });
+
+  it("une adresse de plus de 500 caractères est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ free_recipe_cover_url: COVER + "x".repeat(500) }),
+    );
+  });
+
+  it("effacer la couverture reste permis", async () => {
+    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: null }));
+  });
+
+  it("un compte neuf ne naît pas avec une couverture externe", async () => {
+    const ctx = env.authenticatedContext("newcomer", { email: "new@example.com" }).firestore();
+    const base = { role: "pending", is_revoked: false, email: "new@example.com" };
+    await assertFails(
+      ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: "https://exemple.org/x.png" }),
+    );
+    await assertSucceeds(ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: null }));
   });
 });
 
@@ -1591,13 +1664,73 @@ describe("champs propriétaire", () => {
 
 // ── comptes en attente et révoqués sur les données personnelles ──────────
 
+/// Un rapport d'erreur tel que l'écrit `ErrorReport.toFirestore`.
+function errorReport(uid) {
+  return {
+    user_id: uid,
+    job_id: null,
+    timestamp: new Date("2026-10-12T00:00:00Z"),
+    app_version: "0.23.45+392",
+    feature: "recipe_save",
+    error_type: "FirebaseException",
+    error_message: "permission-denied",
+    stack_trace: "#0 main (package:kass_dalle/main.dart:1)",
+    context: JSON.stringify({ recipeId: "r1" }),
+  };
+}
+
 describe("données personnelles — pending et révoqué", () => {
   it("un anonyme n'écrit pas de rapport d'erreur", async () => {
     await assertFails(db("anonymous").doc("error_reports/new").set({ user_id: "x" }));
   });
 
   it("un lecteur écrit son rapport d'erreur", async () => {
-    await assertSucceeds(db("reader").doc("error_reports/new").set({ user_id: READER }));
+    await assertSucceeds(db("reader").doc("error_reports/new").set(errorReport(READER)));
+  });
+
+  // Audit sécurité : champs et tailles libres, ouverts même à un compte en attente.
+  it("un rapport d'erreur au champ de 500 Ko est refusé", async () => {
+    const huge = "x".repeat(500 * 1024);
+    for (const field of ["error_message", "stack_trace", "context", "feature"]) {
+      await assertFails(
+        db("pending")
+          .doc("error_reports/new")
+          .set({ ...errorReport(PERSONAS.pending.uid), [field]: huge }),
+      );
+    }
+  });
+
+  it("un rapport d'erreur au champ inconnu est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), payload: "n'importe quoi" }),
+    );
+  });
+
+  it("un rapport d'erreur au contexte en carte (sans borne mesurable) est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), context: { a: "b" } }),
+    );
+  });
+
+  it("un rapport d'erreur au nom d'un autre compte est refusé", async () => {
+    await assertFails(db("reader").doc("error_reports/new").set(errorReport(OTHER)));
+  });
+
+  it("un rapport aux longueurs maximales du client passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("error_reports/new")
+        .set({
+          ...errorReport(READER),
+          error_message: "m".repeat(4000),
+          stack_trace: "s".repeat(2000),
+          context: JSON.stringify({ k: "v".repeat(3900) }),
+        }),
+    );
   });
 
   it("un lecteur planifie un repas et écrit planning_config", async () => {
@@ -1607,7 +1740,7 @@ describe("données personnelles — pending et révoqué", () => {
 
   it("un compte en attente écrit son rapport d'erreur", async () => {
     await assertSucceeds(
-      db("pending").doc("error_reports/new").set({ user_id: PERSONAS.pending.uid }),
+      db("pending").doc("error_reports/new").set(errorReport(PERSONAS.pending.uid)),
     );
   });
 
@@ -1617,7 +1750,7 @@ describe("données personnelles — pending et révoqué", () => {
         .authenticatedContext("newcomer", { email: "new@example.com" })
         .firestore()
         .doc("error_reports/new")
-        .set({ user_id: "newcomer" }),
+        .set(errorReport("newcomer")),
     );
   });
 
@@ -1625,7 +1758,7 @@ describe("données personnelles — pending et révoqué", () => {
     await assertFails(
       db("revokedStaleToken")
         .doc("error_reports/new")
-        .set({ user_id: PERSONAS.revokedStaleToken.uid }),
+        .set(errorReport(PERSONAS.revokedStaleToken.uid)),
     );
   });
 
@@ -1665,7 +1798,7 @@ describe("données personnelles — pending et révoqué", () => {
 
   it("un compte révoqué n'écrit pas de rapport d'erreur", async () => {
     await assertFails(
-      db("revoked").doc("error_reports/new").set({ user_id: PERSONAS.revoked.uid }),
+      db("revoked").doc("error_reports/new").set(errorReport(PERSONAS.revoked.uid)),
     );
   });
 });

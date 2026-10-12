@@ -43,7 +43,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 - **Une adresse ouverte sans session est retenue.** La page de connexion la reçoit dans `?next=` et l'ouvre une fois la connexion faite ; c'est ce qui ramène sur la recette le lien d'un événement Google Calendar. Seule une route interne de l'application est acceptée : une adresse vers un autre site, `/login` ou `/pending` est ignorée, et l'utilisateur arrive sur l'accueil. L'accueil seul ne produit pas de `?next=`. Un compte en attente va dans la salle d'attente, quelle que soit l'adresse demandée.
 - **Un compte neuf naît en attente (`pending`) et n'accède à rien.** Il voit une salle d'attente qui affiche son adresse et l'invite à la communiquer ; l'écran se referme de lui-même dès qu'un rôle lui est attribué.
 - **Le rôle n'est jamais choisi par l'application.** Les règles Firestore imposent `pending` à la création, et seul un Admin le change ensuite.
-- **Le compte fondateur** (`china.fred.75@gmail.com`) est le seul administrateur d'origine : le déclencheur serveur `enforceFounderRole` lui rend le rôle `admin` en vérifiant l'adresse du compte **Auth**, jamais celle écrite dans le document. Il rétablit aussi ce rôle s'il est rabaissé ou révoqué — un administrateur adoubé ne peut pas mettre dehors celui qui l'a nommé.
+- **Le compte fondateur** (`china.fred.75@gmail.com`) est le seul administrateur d'origine : le déclencheur serveur `enforceFounderRole` lui rend le rôle `admin` en vérifiant l'adresse du compte **Auth**, jamais celle écrite dans le document. L'adresse doit être **vérifiée** et la connexion passer par **Google**, côté serveur comme dans les règles Firestore (v0.23.45). Il rétablit aussi ce rôle s'il est rabaissé ou révoqué — un administrateur adoubé ne peut pas mettre dehors celui qui l'a nommé.
 
 ### 3.2 Rôles
 
@@ -923,6 +923,7 @@ déjà transmise continue de fonctionner.
 - Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
+- **Chaque analyse compte dans le plafond quotidien d'IA du compte** (une image, un appel). Plafond atteint : l'image n'est ni analysée ni publiée, et l'écran affiche le message du plafond. Une photo de page importée par lien est alors laissée de côté ; la recette est créée sans photo.
 - La revue vit dans *Admin › Modération*, et montre aussi bien ce qui est passé que ce qui a été bloqué.
 - **Seules les images de l'application s'affichent** (v0.23.13). Une image dont l'adresse ne pointe pas vers le stockage de l'application — photo de recette, couverture de livre, image insérée dans le texte d'une recette, visuel de dressage — n'est pas chargée : l'écran montre l'image de repli habituelle, sur toutes les plateformes, et l'export PDF part sans elle. Dans un éditeur, l'image insérée affiche « Image extérieure : importez-la depuis la galerie ». Une telle vignette ne s'ouvre pas en grand, et l'atelier de retouche ne la télécharge pas (« Cette image ne vient pas de Kass'Dalle : elle n'est pas téléchargée. »). Les images de l'ancien stockage du projet restent affichées. Ces images n'ont pas été modérées. Exception, décidée par l'utilisateur : la photo de profil du compte Google reste affichée.
 
@@ -1391,9 +1392,13 @@ endroits où l'on regarde déjà la dépense.
   comme Gemini et Claude le sont.
 - **Dépense par utilisateur** — on voit combien d'images chaque compte a fait analyser, et
   ce que cela a coûté. C'est la seule façon de repérer un envoi massif.
-- **Mais elle ne consomme pas le plafond quotidien.** Un plafond atteint doit empêcher de
-  *dépenser*, jamais de *publier une image légitime* : sinon le contrôle punit celui qu'il
-  protège. Elle est comptée et affichée, hors plafond, et l'écran le dit.
+- **Elle consomme le plafond quotidien du compte** (v0.23.45). Chaque image analysée
+  compte pour un appel, et son coût pour sa part en euros. Elle en était exclue : un compte
+  pouvait alors faire analyser des images sans limite en rappelant la publication en boucle
+  (audit sécurité). Plafond atteint, l'image n'est pas publiée et l'écran affiche le message
+  du plafond ; la publication redevient possible le lendemain, ou dès qu'un administrateur
+  relève le plafond. La relance des images en attente, réservée à l'administrateur, n'y est
+  pas soumise.
 - **Le quota offert est une ligne, pas un silence.** Le fournisseur offre mille unités par
   mois ; à notre volume, la facture réelle sera nulle la plupart du temps. Le coût brut
   reste affiché, et le quota apparaît en déduction. Un mois à zéro euro doit se lire comme

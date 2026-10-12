@@ -7,11 +7,18 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  MAX_COVER_URL_LENGTH,
   MAX_NAME_LENGTH,
+  publicCoverUrl,
   publicProfileFrom,
   sameProfile,
   truncateName,
 } from "../triggers/userPublicProfile";
+
+/** Adresse produite par la modération (`getDownloadURL` sur `users/{uid}/…`). */
+const COVER =
+  "https://firebasestorage.googleapis.com/v0/b/kassdale-6d948.firebasestorage.app/o/" +
+  "users%2Fu1%2Ffree_recipe_cover_1760000000000.jpg?alt=media&token=abc-123";
 
 describe("publicProfileFrom", () => {
   test("ne recopie que les champs publics", () => {
@@ -23,14 +30,14 @@ describe("publicProfileFrom", () => {
       display_name: "Marie Kassbi",
       preferred_name: "Marie",
       photo_url: "https://example.com/p.jpg",
-      free_recipe_cover_url: "https://example.com/c.jpg",
+      free_recipe_cover_url: COVER,
       created_at: 1,
       last_seen_at: 2,
     });
     assert.deepEqual(profile, {
       display_name: "Marie Kassbi",
       preferred_name: "Marie",
-      free_recipe_cover_url: "https://example.com/c.jpg",
+      free_recipe_cover_url: COVER,
     });
     assert.equal(JSON.stringify(profile).includes("@"), false);
   });
@@ -97,5 +104,31 @@ describe("sameProfile", () => {
 
   test("un nom préféré changé diffère", () => {
     assert.equal(sameProfile({ display_name: "Marie", preferred_name: "Mimi" }, expected), false);
+  });
+});
+
+// Audit sécurité : le titulaire écrivait librement une adresse externe,
+// recopiée dans le profil lu par toute la famille, sans modération.
+describe("publicCoverUrl", () => {
+  test("une adresse de couverture modérée passe", () => {
+    assert.equal(publicCoverUrl(COVER), COVER);
+    const appspot = COVER.replace(
+      "kassdale-6d948.firebasestorage.app",
+      "kassdale-6d948.appspot.com",
+    );
+    assert.equal(publicCoverUrl(appspot), appspot);
+  });
+
+  test("une adresse externe, un autre bucket ou un autre dossier sont écartés", () => {
+    assert.equal(publicCoverUrl("https://exemple.org/x.png"), null);
+    assert.equal(publicCoverUrl(COVER.replace("kassdale-6d948", "autre-projet")), null);
+    assert.equal(publicCoverUrl(COVER.replace("users%2F", "quarantine%2F")), null);
+    assert.equal(publicCoverUrl(COVER.replace("https://", "http://")), null);
+  });
+
+  test("au-delà de 500 caractères, ou d'un autre type : null", () => {
+    assert.equal(publicCoverUrl(COVER + "x".repeat(MAX_COVER_URL_LENGTH)), null);
+    assert.equal(publicCoverUrl(42), null);
+    assert.equal(publicCoverUrl(null), null);
   });
 });

@@ -41,7 +41,7 @@ import { getAuth } from "firebase-admin/auth";
 
 import { COLL_AI_DAILY_SPEND, COLL_APP_CONFIG } from "../config";
 import { logError, logWarn } from "../logging";
-import { FOUNDER_EMAIL } from "../triggers/founderRole";
+import { FOUNDER_EMAIL, isFounderAccount } from "../triggers/founderRole";
 import { isInteractiveCall } from "./callOrigin";
 
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
@@ -342,8 +342,12 @@ export async function founderUid(): Promise<string | null> {
   }
   try {
     const user = await getAuth().getUserByEmail(FOUNDER_EMAIL);
-    cachedFounderUid = { value: user.uid, readAt: Date.now() };
-    return user.uid;
+    // Même reconnaissance que le rôle (`isFounderAccount`) : adresse vérifiée
+    // et connexion Google. Un compte à la bonne adresse non vérifiée
+    // n'obtient pas le multiplicateur.
+    const value = isFounderAccount(user) ? user.uid : null;
+    cachedFounderUid = { value, readAt: Date.now() };
+    return value;
   } catch {
     // Compte absent — projet neuf, ou adresse jamais connectée. Sans identifiant,
     // personne n'obtient le multiplicateur : c'est le sens qui protège.
@@ -388,8 +392,19 @@ export async function readDailySpend(userId: string, at = new Date()): Promise<D
 export async function addToDailySpend(args: {
   userId: string;
   costUsd: number | null;
+  /**
+   * Appels à compter, un par défaut. La modération d'images en compte un par
+   * image analysée : Cloud Vision facture à l'image, et un lot de vingt-cinq
+   * images compté pour un seul appel laissait le plafond d'appels vingt-cinq
+   * fois trop large.
+   */
+  calls?: number;
   at?: Date;
 }): Promise<void> {
+  const calls =
+    args.calls != null && Number.isFinite(args.calls) && args.calls > 0
+      ? Math.floor(args.calls)
+      : 1;
   const day = spendDay(args.at ?? new Date());
   await getFirestore()
     .collection(COLL_AI_DAILY_SPEND)
@@ -398,9 +413,9 @@ export async function addToDailySpend(args: {
       {
         uid: args.userId,
         day,
-        calls: FieldValue.increment(1),
+        calls: FieldValue.increment(calls),
         cost_usd: FieldValue.increment(args.costUsd ?? 0),
-        unpriced_calls: FieldValue.increment(args.costUsd == null ? 1 : 0),
+        unpriced_calls: FieldValue.increment(args.costUsd == null ? calls : 0),
         updated_at: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -648,6 +663,29 @@ const CONCURRENCY_DENIAL: BudgetDenial = {
     "une fois les traitements en cours terminés.",
 };
 
+/** Options d'une réservation. */
+export interface ReservationOptions {
+  /**
+   * Coût connu d'avance de l'appel, en dollars, tiré de la grille tarifaire.
+   *
+   * Sert aux postes facturés à l'unité, dont le prix ne dépend pas de la
+   * réponse : une analyse Cloud Vision coûte ses unités fois le prix de
+   * l'unité. Sans lui, la réservation retient la moyenne des appels du jour
+   * (`estimatedCallCostUsd`), qui reflète surtout des appels de texte.
+   * `null` ou absent (grille illisible) : la moyenne s'applique.
+   */
+  estimateUsd?: number | null;
+}
+
+/**
+ * Dépense réservée pour un appel : le coût connu d'avance s'il est fourni et
+ * positif, la moyenne du jour sinon. Pure, testée.
+ */
+export function reservedEstimateUsd(averageUsd: number, knownUsd?: number | null): number {
+  if (knownUsd != null && Number.isFinite(knownUsd) && knownUsd > 0) return knownUsd;
+  return averageUsd;
+}
+
 let reservationSeq = 0;
 
 function newReservationId(nowMs: number): string {
@@ -672,6 +710,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export async function reserveDailyBudget(
   userId: string | null | undefined,
   feature: string,
+  opts: ReservationOptions = {},
 ): Promise<BudgetReservation | null> {
   const uid = budgetUserId(userId);
   const [policy, usdToEur, multiplier] = await Promise.all([
@@ -721,7 +760,11 @@ export async function reserveDailyBudget(
       const changes: Record<string, unknown> = {};
       for (const staleId of decision.stale) changes[staleId] = FieldValue.delete();
       if (!decision.denial && !decision.concurrencyFull) {
-        changes[id] = { at_ms: nowMs, usd: decision.estimateUsd, feature };
+        changes[id] = {
+          at_ms: nowMs,
+          usd: reservedEstimateUsd(decision.estimateUsd, opts.estimateUsd),
+          feature,
+        };
       }
       if (Object.keys(changes).length > 0) {
         // Carte imbriquée et `merge` : seules ces entrées changent, et le
@@ -814,8 +857,9 @@ export async function withDailyBudget<T>(
   userId: string | null | undefined,
   feature: string,
   fn: () => Promise<T>,
+  opts: ReservationOptions = {},
 ): Promise<T> {
-  const reservation = await reserveDailyBudget(userId, feature);
+  const reservation = await reserveDailyBudget(userId, feature, opts);
   try {
     return await fn();
   } finally {

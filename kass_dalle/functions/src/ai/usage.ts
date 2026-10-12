@@ -108,6 +108,15 @@ export interface UsageEntry {
    * depuis la grille tarifaire.
    */
   costUsdOverride?: number | null;
+  /**
+   * Appels comptés au plafond du jour (`ai_daily_spend`), un par défaut.
+   *
+   * La ligne d'usage reste une ligne par appel du fournisseur ; seul le
+   * compteur du plafond change. La modération d'images y compte une unité par
+   * image analysée : un lot de vingt-cinq images compté pour un appel
+   * ouvrait le plafond d'appels vingt-cinq fois plus large.
+   */
+  dailyCalls?: number;
   entityType?: string | null;
   entityId?: string | null;
   costBucket?: string;
@@ -511,7 +520,12 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   // `releaseDailyBudget` : entre les deux, l'appel compte deux fois, ce qui
   // rend le plafond plus strict, jamais plus large.
   try {
-    await addToDailySpend({ userId: effectiveUserId, costUsd, at: now });
+    await addToDailySpend({
+      userId: effectiveUserId,
+      costUsd,
+      calls: entry.dailyCalls,
+      at: now,
+    });
   } catch (err) {
     // Best-effort : un compteur de plafond qui n'a pas pu s'incrémenter ne
     // doit pas faire échouer un appel déjà payé. Mais il rend le plafond

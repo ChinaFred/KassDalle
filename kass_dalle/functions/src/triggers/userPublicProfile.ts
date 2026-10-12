@@ -49,6 +49,32 @@ export function truncateName(value: string): string {
   return value.slice(0, end);
 }
 
+/** Longueur maximale de l'adresse de couverture — même borne que les règles. */
+export const MAX_COVER_URL_LENGTH = 500;
+
+/**
+ * Forme admise d'une couverture « Recette libre » : une adresse de
+ * téléchargement du bucket du projet, sous `users/` — le dossier où seule la
+ * modération dépose (`free_recipe_cover`, `moderation/promote.ts`). Même
+ * expression que `freeRecipeCoverOk()` dans `firestore.rules`.
+ */
+const COVER_URL_PATTERN =
+  /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/kassdale-6d948\.(firebasestorage\.app|appspot\.com)\/o\/users%2F[^/#]+$/;
+
+/**
+ * La couverture recopiée dans le profil public, ou `null`.
+ *
+ * Défense en profondeur : les règles refusent déjà une autre adresse sur
+ * `users/{uid}`. Ce filtre couvre une écriture du serveur ou un document
+ * antérieur à la règle — une adresse externe n'a pas été modérée, et le profil
+ * public est lu par toute la famille.
+ */
+export function publicCoverUrl(value: unknown): string | null {
+  const url = optionalString(value);
+  if (url === null || url.length > MAX_COVER_URL_LENGTH) return null;
+  return COVER_URL_PATTERN.test(url) ? url : null;
+}
+
 /** Les champs publics d'un compte. */
 export interface PublicProfile {
   display_name: string;
@@ -81,7 +107,7 @@ export function publicProfileFrom(
   return {
     display_name: optionalName(data.display_name) ?? "",
     preferred_name: optionalName(data.preferred_name),
-    free_recipe_cover_url: optionalString(data.free_recipe_cover_url),
+    free_recipe_cover_url: publicCoverUrl(data.free_recipe_cover_url),
   };
 }
 
