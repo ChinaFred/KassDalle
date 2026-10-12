@@ -703,7 +703,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // se corrige directement depuis Admin › Moteur d'IA (`setAiPricingFn`),
   // qui écrit le même document sans dupliquer aucun chiffre dans le code.
   //
-  // Depuis v0.23.44, chaque backfill est classé ponctuel ou récurrent
+  // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
   // code, qui laisse ici un paragraphe daté comme ceux ci-dessus.

@@ -52,8 +52,68 @@ jobs:
             .github/scripts/check-version.sh "$BEFORE" "$GITHUB_SHA"
           fi
 
+  deja-teste:
+    name: Déjà testé en PR
+    runs-on: ubuntu-latest
+    # Une PR fusionnée relançait les trois jobs lourds sur master, environ
+    # douze minutes facturées, pour un contenu que sa CI venait de valider.
+    # Le push de fusion les saute quand trois conditions tiennent :
+    # - le commit poussé a le même arbre que la tête d'une PR vers master qui
+    #   lui est associée (rien n'a été ajouté à la fusion) ;
+    # - cette tête contient déjà la master d'avant le push : la CI de la PR,
+    #   qui teste la fusion avec master, a donc testé ce même arbre ;
+    # - toutes les exécutions de cette CI en pull_request sur cette tête ont
+    #   réussi, aucune n'est en cours.
+    # Le job Version tourne toujours : il compare à la master d'avant le push.
+    # Une réponse d'API manquante ou inattendue fait tourner la CI entière.
+    if: github.event_name == 'push'
+    # Ces droits restent dans ce job : les jobs lourds exécutent le code de la
+    # PR et n'ont pas à lire les autres exécutions.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: La tête de la PR fusionnée a-t-elle déjà une CI verte ?
+        id: check
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          skip=false
+          if ! tree=$(gh api "repos/$REPO/commits/$SHA" --jq .commit.tree.sha) ||
+             ! heads=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[] | select(.base.ref == "master") | .head.sha'); then
+            echo "::warning::Lecture de l'API impossible : la CI tourne en entier."
+            heads=""
+          fi
+          for head in $heads; do
+            head_tree=$(gh api "repos/$REPO/commits/$head" --jq .commit.tree.sha) || continue
+            [ "$head_tree" = "$tree" ] || continue
+            status=$(gh api "repos/$REPO/compare/$BEFORE...$head" --jq .status) || continue
+            case "$status" in ahead|identical) ;; *) continue ;; esac
+            # Toutes les CI de PR de cette tête doivent être vertes : la même
+            # tête peut viser une autre branche dans une seconde PR, ou avoir
+            # une CI encore en cours ou rouge.
+            all_green=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request" \
+              --jq '[.workflow_runs[].conclusion] | length > 0 and all(. == "success")') || continue
+            if [ "$all_green" = "true" ]; then
+              echo "::notice::Arbre identique à $head, CI de PR verte : jobs lourds sautés."
+              skip=true
+              break
+            fi
+          done
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
   flutter:
     name: Flutter — analyse et tests
+    needs: deja-teste
+    # !cancelled() : sur une PR ou un lancement manuel, deja-teste est sauté et
+    # sa sortie est vide.
+    if: ${{ !cancelled() && needs.deja-teste.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -96,6 +156,8 @@ jobs:
 
   functions:
     name: Cloud Functions — lint et build
+    needs: deja-teste
+    if: ${{ !cancelled() && needs.deja-teste.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -132,6 +194,8 @@ jobs:
 
   rules:
     name: Règles — émulateur
+    needs: deja-teste
+    if: ${{ !cancelled() && needs.deja-teste.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:

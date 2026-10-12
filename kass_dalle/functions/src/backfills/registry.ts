@@ -43,7 +43,7 @@ export interface BackfillDefinition {
    * Programmation appliquée tant que `app_config/backfill_schedules` ne dit
    * rien de ce backfill, `null` sans défaut. Seule la nutrition en a une :
    * elle remplace `scheduledNutritionCatchUp` (tous les jours à 5 h), retirée
-   * en v0.23.44. Même valeur côté client (`backfill_registry.dart`), qui
+   * en v0.23.45. Même valeur côté client (`backfill_registry.dart`), qui
    * l'affiche « (par défaut) » et en pré-remplit l'éditeur ; fixture
    * `backfill_schedule.json`.
    */

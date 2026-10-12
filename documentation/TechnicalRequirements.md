@@ -1524,9 +1524,9 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | ancien compte rendu du dernier passage, écrit jusqu'en v0.23.43 par cinq backfills. Depuis v0.23.44, le compte rendu part dans l'état du backfill (`backfill_run_<clé>`, ci-dessous) ; le champ reste dans les documents existants, plus rien ne l'écrit ni ne le lit |
+| `last_report` | `Map?` | ancien compte rendu du dernier passage, écrit jusqu'en v0.23.44 par cinq backfills. Depuis v0.23.45, le compte rendu part dans l'état du backfill (`backfill_run_<clé>`, ci-dessous) ; le champ reste dans les documents existants, plus rien ne l'écrit ni ne le lit |
 
-**État et programmation des backfills** (v0.23.44). Chaque backfill d'Admin › Backfills
+**État et programmation des backfills** (v0.23.45). Chaque backfill d'Admin › Backfills
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
@@ -3961,7 +3961,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 
 | Fonction | Cadence | Ce qu'elle fait |
 |---|---|---|
-| `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.44, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
+| `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 
@@ -3984,7 +3984,7 @@ où il s'est arrêté, et l'appel suivant repart de là.
 | `setBackfillScheduleFn` | `admin` | `{ key, enabled, days, hour }` → l'entrée `key` de `app_config/backfill_schedules`, avec `timezone` et `programme_par_uid` (l'appelant). Refuse un ponctuel (`failed-precondition`), une clé inconnue, une heure ou un jour qui n'est pas un entier dans sa plage (chaîne, booléen, `null`, décimal compris), aucun jour quand `enabled` (`invalid-argument`) |
 | `setBackfillDoneFn` | `admin` | `{ key, done, appVersion }` → pose (`termine_par: "manuel"`) ou retire `termine_*` sur `app_config/backfill_run_<clé>`. Ponctuels seulement |
 
-**Backfills ponctuels et récurrents** (v0.23.44). Chaque backfill est classé dans
+**Backfills ponctuels et récurrents** (v0.23.45). Chaque backfill est classé dans
 `backfills/registry.ts` (§3.13). Toutes les reprises ci-dessus passent par
 `runBackfillPass` (`backfills/runner.ts`), qui :
 
@@ -4379,16 +4379,23 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 
 `.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
-précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read`. Ses actions
-sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme celles de
-`deploy.yml`. Quatre jobs, sur `ubuntu-latest` :
+précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read` ; le seul
+job « Déjà testé en PR » reçoit en plus `pull-requests: read` et `actions: read`. Ses actions sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme
+celles de `deploy.yml`. Cinq jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
 | Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
+| Déjà testé en PR (push seulement, API GitHub) | Sur un push, sort `skip=true` quand le commit poussé a le même arbre que la tête d'une PR associée qui vise `master`, que cette tête contient la `master` d'avant le push (`compare` : `ahead` ou `identical`) et que toutes les exécutions de `ci.yml` sur cette tête, en `pull_request`, ont réussi (au moins une, aucune en cours ni en échec). La CI de la PR a alors testé ce même arbre. Une réponse d'API manquante laisse `skip=false` |
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
+
+Les jobs Flutter, Functions et Règles dépendent de « Déjà testé en PR » et sont sautés quand
+il sort `skip=true` (v0.23.44). La fusion d'une PR à jour de `master` ne relance donc que le
+job Version, au lieu des douze minutes facturées de la CI entière. Un workflow dont des jobs
+sont sautés conclut `success` : `deploy.yml` part comme avant. Sur une PR et un lancement
+manuel, « Déjà testé en PR » est sauté et les trois jobs tournent (`!cancelled()`).
 
 #### Le contrôle de version
 

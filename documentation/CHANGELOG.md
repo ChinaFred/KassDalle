@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.44 — fonctionnel
+### v0.23.45 — fonctionnel
 
 Admin › Backfills range ses neuf reprises en trois sections : « Récurrents », « Ponctuels à
 lancer » et « Ponctuels terminés ». Chaque tuile affiche l'état de son dernier passage, lu en
@@ -31,7 +31,7 @@ la fin ou jusqu'au plafond de dépense. « Reprendre la nutrition » passe toujo
 l'administrateur peut aussi le marquer ou le remettre à lancer par le menu ⋮. Lancer un
 backfill ne bloque plus l'écran, et deux passages du même backfill ne tournent jamais ensemble.
 
-### v0.23.44 — technique
+### v0.23.45 — technique
 
 Chaque backfill est classé dans deux registres, `functions/src/backfills/registry.ts` et
 `backfill_registry.dart`. `runBackfillPass` (`backfills/runner.ts`) pose un verrou par backfill
@@ -56,6 +56,16 @@ deux côtés ; l'échéance du verrou est écrite par le serveur (`en_cours_expi
 callables existants gardent nom et contrat ; leur réponse gagne `termineAuto`, leur requête
 `appVersion`, et un passage déjà en cours renvoie `failed-precondition`. `backfillShoppingFn`
 ne déclare plus les deux secrets d'IA, qu'il n'utilisait pas.
+
+### v0.23.44 — technique
+
+La CI ne se rejoue plus en entier sur le push qui fusionne une PR. Un job « Déjà testé en
+PR » compare l'arbre du commit poussé à celui de la tête de la PR, vérifie que cette tête
+contient la `master` d'avant le push et qu'une CI de PR a réussi dessus. Les jobs Flutter,
+Functions et Règles sont alors sautés ; seul le contrôle de version tourne. Sur les cent
+dernières exécutions, ces jobs en double représentaient environ 400 minutes Actions
+facturées sur 1 450. Le dépôt reçoit aussi un fichier `LICENSE` propriétaire : code
+consultable, tous droits réservés, en vue d'un passage du dépôt en public.
 
 ### v0.23.43 — fonctionnel
 

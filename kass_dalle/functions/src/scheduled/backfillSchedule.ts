@@ -6,7 +6,7 @@
  *
  *  1. sa programmation est lue dans `app_config/backfill_schedules`. Le
  *     défaut (`DEFAULT_BACKFILL_SCHEDULES` : la nutrition, tous les jours à
- *     5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.44)
+ *     5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45)
  *     y est écrit au premier tick qui ne le trouve pas, pour que l'écran le
  *     lise au lieu d'en garder une copie ;
  *  2. l'auteur de la programmation doit être encore administrateur
