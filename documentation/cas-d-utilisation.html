@@ -870,7 +870,7 @@ flowchart LR
         le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble.
         <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
         chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
-        manquent. Un compte approuvé depuis la v0.23.48 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
+        manquent. Un compte approuvé depuis la v0.23.49 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
         compte rendu donne les comptes complétés, le nombre de livres créés, les comptes déjà à
         jour, ceux en attente ou révoqués, et les échecs.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
@@ -935,7 +935,7 @@ flowchart LR
           <tr>
             <td>Plafond quotidien (<code>reserveDailyBudget</code> / <code>withDailyBudget</code>)</td>
             <td>l'identifiant du compte, pas son rôle</td>
-            <td>Vérifie <b>combien de fois</b> : deux limites par compte et par jour, en euros et en appels. La seconde tient pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Chaque appel réserve sa place avant de partir, et les appels en cours comptent déjà. Le refus arrive avant la dépense, sur les quatre chemins d'où l'argent part : le routeur de texte (<code>callModel</code>), la production d'image (<code>runImageModel</code>), l'amélioration d'illustration (<code>enhanceCulinaryImage</code>) et le bac à sable (<code>askModel</code>). Un appel lancé par un utilisateur est en outre limité à dix en cours par compte ; un import, ses déclencheurs et les tâches planifiées ne le sont pas</td>
+            <td>Vérifie <b>combien de fois</b> : deux limites par compte et par jour, en euros et en appels. La seconde tient pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Chaque appel réserve sa place avant de partir, et les appels en cours comptent déjà. Le refus arrive avant la dépense, sur les cinq chemins d'où l'argent part : le routeur de texte (<code>callModel</code>), la production d'image (<code>runImageModel</code>), l'amélioration d'illustration (<code>enhanceCulinaryImage</code>), le bac à sable (<code>askModel</code>) et la modération d'images (<code>moderateAndPromote</code>, une image analysée par appel compté ; la relance par l'administrateur n'y est pas soumise). Un appel lancé par un utilisateur est en outre limité à dix en cours par compte ; un import, ses déclencheurs et les tâches planifiées ne le sont pas</td>
           </tr>
         </tbody>
       </table>

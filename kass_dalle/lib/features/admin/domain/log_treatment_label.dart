@@ -35,6 +35,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'ecriture_recette': 'Après écriture d\'une recette',
   'recipe-written': 'Après écriture d\'une recette',
   'ecriture_livre': 'Après écriture d\'un livre',
+  'system_books': 'Livres système d\'un compte approuvé',
   'rattrapage_nutrition': 'Rattrapage programmé de la nutrition',
   'backfill_nutrition': 'Reprise de la nutrition demandée',
   'backfill_allergens': 'Reprise des allergènes',

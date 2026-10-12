@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.48 — fonctionnel
+### v0.23.49 — fonctionnel
 
 Tout compte approuvé a ses quatre livres système : « Mes créations Kass'Dalle », « Mes recettes
 libres », « Mes Recettes Secrètes » et « Mes recettes du web ». Jusqu'ici, ils n'étaient créés
@@ -29,7 +29,7 @@ aucun. Ils sont désormais créés à l'approbation du compte, lecteurs compris.
 approuvés, une nouvelle reprise *Admin › Backfills › Livres système des comptes* crée ceux qui
 manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA.
 
-### v0.23.48 — technique
+### v0.23.49 — technique
 
 `books/systemBooks.ts` (`ensureSystemBooksFor`) crée les livres système absents d'un compte,
 reconnus à leur tag. Les trois livres créés par le client reprennent ses champs ; « Mes recettes
@@ -40,6 +40,47 @@ comptes existants. La couverture reste vide : l'écran affiche l'image du livre 
 client la dépose à la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est
 éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. Tests :
 `tests/systemBooksBackfill.test.ts`, `tests/authGuards.test.ts`.
+
+### v0.23.48 — fonctionnel
+
+La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image
+analysée vaut un appel, et son coût s'ajoute à la dépense du jour. Plafond atteint, l'image
+n'est pas publiée et l'écran affiche « Quota atteint — Le service a atteint sa limite pour
+aujourd'hui. Réessayez plus tard. », le message de tout `resource-exhausted` ; une photo de page importée par
+lien est laissée de côté et la recette est créée sans elle. La relance des images en attente
+par l'administrateur n'est pas concernée.
+
+### v0.23.48 — technique
+
+Cinq corrections issues de l'audit `securite`.
+
+- **Cloud Vision dans le plafond quotidien.** `moderateAndPromote` réserve une place par image
+  analysée (`withDailyBudget`), au coût de l'analyse lu dans la grille tarifaire
+  (`visionAnalysisCostUsd`, nouvelle option `estimateUsd` de `reserveDailyBudget`). Un compte
+  pouvait rappeler `moderateAndPromoteImagesFn` en boucle sur sa quarantaine, chaque appel
+  déclenchant une analyse facturée. Refus : `resource-exhausted`. Chaque analyse est
+  enregistrée par `recordUsage` dès qu'elle est faite, avant que sa place soit rendue
+  (`analyseAndRecord`) : une ligne `ai_usage` par image au lieu d'une par lot, et un lot ne
+  dépasse plus le plafond de ses analyses en cours. `retryPendingModerationFn` (admin) reste
+  hors plafond ; `recordUsage` accepte `dailyCalls` pour qu'elle compte une image pour un
+  appel.
+- **`normalizeRecipeReferentialsFn`** écrit dans `nutrition_ingredients` : réservée à
+  l'éditeur, et au lecteur créateur de la recette `recipeId`
+  (`assertCanNormalizeReferentials`). `requireEditor` seul aurait cassé l'enregistrement
+  d'une recette par son lecteur créateur, que les règles permettent.
+- **`free_recipe_cover_url`** : les règles n'admettent que `null` ou une adresse de
+  téléchargement exacte de la modération, `users%2F{uid du document}%2Ffree_recipe_cover_{n}.{jpg|jpeg|png|webp}`
+  dans le bucket du projet, 500 caractères au plus (`coverUrlOk`) : ni `..`, ni `%2E`, ni
+  `%25`. `publicCoverUrl` applique la même forme à la recopie dans `user_profiles`.
+- **`error_reports`** : liste fermée des neuf champs, `user_id` égal à l'appelant, longueurs
+  bornées (`isErrorReport`). `context` devient une chaîne JSON, seule forme mesurable par
+  une règle ; le client tronque chaque champ à la moitié de la borne. Un contexte illisible
+  à la lecture est remonté une fois par rapport (`error_report.parse`). Les rapports anciens
+  (contexte en carte) se relisent toujours. Un client antérieur à cette version, qui écrit
+  encore une carte, voit ses rapports refusés jusqu'à sa mise à jour.
+- **Fondateur** : `isFounder()` exige `email_verified` et une connexion Google ;
+  `isFounderAccount` applique le même contrôle dans `enforceFounderRole` et pour le
+  multiplicateur de plafond (`founderUid`).
 
 ### v0.23.47 — fonctionnel
 

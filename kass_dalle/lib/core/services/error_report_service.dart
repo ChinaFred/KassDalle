@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -23,11 +25,15 @@ class ErrorReport {
   /// Message de l'exception.
   final String errorMessage;
 
-  /// Stack trace tronquée (max 2000 chars).
+  /// Stack trace tronquée ([maxStackTrace] caractères au plus).
   final String? stackTrace;
 
   /// Paramètres du contexte au moment de l'erreur.
   final Map<String, dynamic> context;
+
+  /// Erreur de lecture du contexte (JSON illisible), ou `null`. Le texte est
+  /// gardé sous `brut` ; [ErrorReportService] remonte l'erreur une fois.
+  final FormatException? contextParseError;
 
   ErrorReport({
     required this.id,
@@ -40,18 +46,74 @@ class ErrorReport {
     required this.errorMessage,
     this.stackTrace,
     required this.context,
+    this.contextParseError,
   });
+
+  // ── Bornes d'écriture ─────────────────────────────────────────────────────
+  //
+  // Les règles Firestore (`error_reports`) refusent un rapport aux champs
+  // inconnus ou trop longs : tout compte connecté, même en attente, en écrit,
+  // et un rapport sans borne servait de stockage libre (audit sécurité).
+  // Les règles admettent le double de ces longueurs : la marge couvre une
+  // différence de décompte des caractères, et un rapport tronqué ici n'est
+  // jamais refusé là-bas.
+
+  static const maxShortText = 200;
+  static const maxAppVersion = 50;
+  static const maxMessage = 4000;
+  static const maxStackTrace = 2000;
+  static const maxContext = 4000;
+  static const maxContextValue = 500;
+
+  /// [value] coupé à [max] unités UTF-16, sans couper un caractère en deux,
+  /// avec « … » quand il a été coupé.
+  static String truncate(String value, int max) {
+    if (value.length <= max) return value;
+    var end = max - 1;
+    final last = value.codeUnitAt(end - 1);
+    // Une moitié haute de paire de substitution ne reste pas seule.
+    if (last >= 0xD800 && last <= 0xDBFF) end -= 1;
+    return '${value.substring(0, end)}…';
+  }
+
+  /// Le contexte, écrit en JSON borné à [maxContext] caractères.
+  ///
+  /// Une chaîne plutôt qu'une carte : les règles bornent la longueur d'une
+  /// chaîne, pas celle des valeurs d'une carte. Chaque valeur devient du
+  /// texte coupé à [maxContextValue] ; les entrées qui ne tiennent plus sont
+  /// comptées sous `_omis`. Le JSON reste toujours valide.
+  static String encodeContext(Map<String, dynamic> context) {
+    final kept = <String, Object?>{};
+    var omitted = 0;
+    for (final entry in context.entries) {
+      final raw = entry.value;
+      final Object? value = raw == null || raw is num || raw is bool
+          ? raw
+          : truncate(raw.toString(), maxContextValue);
+      final candidate = {...kept, truncate(entry.key, maxShortText): value};
+      // Place gardée pour le compteur des entrées omises.
+      if (jsonEncode(candidate).length > maxContext - 20) {
+        omitted++;
+        continue;
+      }
+      kept[truncate(entry.key, maxShortText)] = value;
+    }
+    if (omitted > 0) kept['_omis'] = omitted;
+    return jsonEncode(kept);
+  }
 
   Map<String, dynamic> toFirestore() => {
     'user_id': userId,
-    'job_id': jobId,
+    'job_id': jobId == null ? null : truncate(jobId!, maxShortText),
     'timestamp': Timestamp.fromDate(timestamp),
-    'app_version': appVersion,
-    'feature': feature,
-    'error_type': errorType,
-    'error_message': errorMessage,
-    'stack_trace': stackTrace,
-    'context': context,
+    'app_version': truncate(appVersion, maxAppVersion),
+    'feature': truncate(feature, maxShortText),
+    'error_type': truncate(errorType, maxShortText),
+    'error_message': truncate(errorMessage, maxMessage),
+    'stack_trace': stackTrace == null
+        ? null
+        : truncate(stackTrace!, maxStackTrace),
+    'context': encodeContext(context),
   };
 
   static DateTime _parseTimestamp(dynamic raw) {
@@ -65,11 +127,35 @@ class ErrorReport {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  static Map<String, dynamic> _parseContext(dynamic raw) {
+  /// Le contexte relu : une chaîne JSON depuis la v0.23.48, une carte avant.
+  /// Un JSON illisible garde son texte sous `brut` et rend son erreur, que le
+  /// service remonte.
+  static ({Map<String, dynamic> context, FormatException? error}) _parseContext(
+    dynamic raw,
+  ) {
     if (raw is Map) {
-      return raw.map((key, value) => MapEntry(key.toString(), value));
+      return (
+        context: raw.map((key, value) => MapEntry(key.toString(), value)),
+        error: null,
+      );
     }
-    return <String, dynamic>{};
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return (
+            context: decoded.map(
+              (key, value) => MapEntry(key.toString(), value),
+            ),
+            error: null,
+          );
+        }
+        return (context: {'brut': raw}, error: null);
+      } on FormatException catch (e) {
+        return (context: {'brut': raw}, error: e);
+      }
+    }
+    return (context: <String, dynamic>{}, error: null);
   }
 
   static String? _asNullableString(dynamic raw) {
@@ -78,19 +164,22 @@ class ErrorReport {
     return raw.toString();
   }
 
-  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) =>
-      ErrorReport(
-        id: id,
-        userId: _asNullableString(data['user_id']) ?? '',
-        jobId: _asNullableString(data['job_id']),
-        timestamp: _parseTimestamp(data['timestamp']),
-        appVersion: _asNullableString(data['app_version']) ?? '',
-        feature: _asNullableString(data['feature']) ?? '',
-        errorType: _asNullableString(data['error_type']) ?? '',
-        errorMessage: _asNullableString(data['error_message']) ?? '',
-        stackTrace: _asNullableString(data['stack_trace']),
-        context: _parseContext(data['context']),
-      );
+  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) {
+    final parsed = _parseContext(data['context']);
+    return ErrorReport(
+      id: id,
+      userId: _asNullableString(data['user_id']) ?? '',
+      jobId: _asNullableString(data['job_id']),
+      timestamp: _parseTimestamp(data['timestamp']),
+      appVersion: _asNullableString(data['app_version']) ?? '',
+      feature: _asNullableString(data['feature']) ?? '',
+      errorType: _asNullableString(data['error_type']) ?? '',
+      errorMessage: _asNullableString(data['error_message']) ?? '',
+      stackTrace: _asNullableString(data['stack_trace']),
+      context: parsed.context,
+      contextParseError: parsed.error,
+    );
+  }
 }
 
 /// Service de persistance des rapports d'erreur.
@@ -126,10 +215,7 @@ class ErrorReportService {
     if (stackTrace == null) return null;
     final rawStackTrace = stackTrace.toString();
     if (rawStackTrace.isEmpty) return null;
-    return rawStackTrace.substring(
-      0,
-      rawStackTrace.length.clamp(0, 2000).toInt(),
-    );
+    return ErrorReport.truncate(rawStackTrace, ErrorReport.maxStackTrace);
   }
 
   Future<String> reportError({
@@ -201,6 +287,30 @@ class ErrorReportService {
     return ref.id;
   }
 
+  /// Rapports dont le contexte illisible a déjà été remonté, par session.
+  ///
+  /// Remonter écrit un nouveau rapport, ce qui relance la lecture en flux :
+  /// sans ce registre, chaque relecture du même document en écrirait un
+  /// autre, sans fin. Le rapport écrit porte un contexte valide : il ne
+  /// déclenche rien à son tour.
+  static final Set<String> _reportedParseFailures = <String>{};
+
+  void _reportParseFailure(ErrorReport report) {
+    final error = report.contextParseError;
+    if (error == null || !_reportedParseFailures.add(report.id)) return;
+    reportError(
+      feature: 'error_report.parse',
+      error: error,
+      stackTrace: StackTrace.current,
+      context: {'reportId': report.id},
+    ).catchError((Object e, StackTrace st) {
+      // Écrire dans la collection en panne ne peut pas se remonter par ce
+      // même service : la console est le dernier recours.
+      debugPrint('[ErrorReportService] remontée impossible : $e\n$st');
+      return '';
+    });
+  }
+
   /// Tous les rapports — réservé à l'admin.
   Stream<List<ErrorReport>> watchAll() {
     return _col
@@ -211,7 +321,9 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+              final report = ErrorReport.fromFirestore(d.id, d.data());
+              reports.add(report);
+              _reportParseFailure(report);
             } catch (error, stackTrace) {
               // Un document mal formé ne doit pas casser toute la liste. On ne
               // peut pas remonter l'incident via ce service — ce serait écrire
@@ -238,7 +350,9 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+              final report = ErrorReport.fromFirestore(d.id, d.data());
+              reports.add(report);
+              _reportParseFailure(report);
             } catch (error, stackTrace) {
               // Un document mal formé ne doit pas casser toute la liste. On ne
               // peut pas remonter l'incident via ce service — ce serait écrire

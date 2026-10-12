@@ -27,9 +27,17 @@ const rulesPath = (name) => new URL(`../../${name}`, import.meta.url);
 /// que les règles Firestore relisent pour la révocation (et pour le rôle
 /// quand le jeton ne porte pas encore le claim).
 export const PERSONAS = {
+  // Jeton d'une connexion Google à l'adresse vérifiée : `isFounder()` exige
+  // `email_verified` et `firebase.sign_in_provider == 'google.com'`.
   founder: {
     uid: "founder",
-    claims: { role: "admin", revoked: false, email: FOUNDER_EMAIL },
+    claims: {
+      role: "admin",
+      revoked: false,
+      email: FOUNDER_EMAIL,
+      email_verified: true,
+      firebase: { sign_in_provider: "google.com" },
+    },
     doc: { role: "admin", is_revoked: false, email: FOUNDER_EMAIL },
   },
   admin: {

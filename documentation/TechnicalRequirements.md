@@ -238,7 +238,7 @@ Créée automatiquement à la première connexion Google.
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
-| `free_recipe_cover_url` | `String?` | Couverture choisie pour « Mes recettes libres ». Écrite par `auth_repository.dart` sous `users/{uid}/free_recipe_cover_*.jpg` ; le fichier précédent est supprimé au remplacement |
+| `free_recipe_cover_url` | `String?` | Couverture choisie pour « Mes recettes libres ». Écrite par `auth_repository.dart` : l'image passe par la modération, qui la publie sous `users/{uid}/free_recipe_cover_*.jpg` ; le fichier précédent est supprimé au remplacement. Les règles n'admettent que `null` ou l'adresse de téléchargement exacte de la modération, `users%2F{uid du document}%2Ffree_recipe_cover_{n}.{jpg|jpeg|png|webp}` dans le bucket du projet, sans `..`, `%2E` ni `%25` (`coverUrlOk`, 500 caractères au plus, v0.23.48) ; `syncUserClaims` écarte toute autre valeur à la recopie dans `user_profiles` (`publicCoverUrl`) |
 | `import_illustrations` | `Boolean` | Défaut de la case « Extraire les illustrations » de l'écran d'import. Absent = `true`. Écrit par **Préférences** (`features/auth/presentation/preferences_screen.dart`), lu par `UserPreferencesRepository`. C'est un **défaut**, pas un verrou : chaque import peut le changer pour lui seul, sans que ce choix remonte ici. |
 
 **Nom préféré et nom Google :** `display_name` est réécrit à chaque connexion depuis le compte
@@ -253,7 +253,11 @@ ou inconnu est relu comme `pending` par `AppUser.fromFirestore` : le repli ferme
 
 **Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
 `admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
-et non par le champ `email` du document, qu'un client a pu écrire. Il est *idempotent* et
+et non par le champ `email` du document, qu'un client a pu écrire. Depuis v0.23.48, l'adresse
+doit être vérifiée (`emailVerified`) et le compte rattaché à une connexion Google
+(`providerData[].providerId == 'google.com'`) : `isFounderAccount`, qui sert aussi au
+multiplicateur de plafond (`founderUid`, `ai/budget.ts`). Les règles exigent l'équivalent sur le
+jeton (`isFounder()` : `email_verified` et `firebase.sign_in_provider == 'google.com'`). Il est *idempotent* et
 *réparateur* : il rétablit `role: 'admin'`, `is_revoked: false` si l'un des deux a été modifié, et
 ne réécrit rien quand ils sont corrects — d'où l'absence de boucle. Les règles interdisent par
 ailleurs à tout autre administrateur de toucher au rôle, à la révocation ou à l'existence de ce
@@ -345,7 +349,7 @@ par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé
 (`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
 l'accès (`gainsAccess` : approbation d'un compte en attente, levée d'une révocation ; un échec est
 journalisé et n'empêche pas l'accès), et la reprise *Admin › Backfills › Livres système des
-comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.48. Mêmes
+comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.49. Mêmes
 champs que le client, couverture vide : l'écran affiche
 alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
 la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
@@ -1539,7 +1543,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée (résultat d'outil de la recherche Google compris), de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `grounded_search_count` (`int`, 0 ou 1 : appel ancré dans la recherche Google, facturé à l'appel ; absent des lignes antérieures à octobre 2026, lu comme 0), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `scan_id` (le scan de l'utilisateur, quand l'appel en vient un — c'est lui qui rend le coût d'un scan additionnable en une requête), `call_id` (le même identifiant que les lignes de journal de cet appel : c'est lui qui met un montant exact en face d'un appel dans l'écran des journaux, sans rapprochement par l'heure), `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
-| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
+| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la relance de modération, `dailyCalls`, depuis v0.23.48), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
 | `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
@@ -1550,7 +1554,8 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 - `dead_letters/{jobId}` : job d'import abandonné après trois tentatives, avec son motif et
   son étape. Relancé ou purgé depuis *Admin › File d'échecs*.
 - `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
-  `feature`, message, pile, `userId` et un `context` libre. C'est le seul endroit où un
+  `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.48, carte
+  avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
   échec côté client laisse une trace : `debugPrint` est invisible en production.
 
 ---
@@ -1922,9 +1927,13 @@ service cloud.firestore {
       return 'china.fred.75@gmail.com';
     }
 
+    // Adresse vérifiée et connexion Google (v0.23.48) : l'adresse seule
+    // suffisait, quel que soit le fournisseur.
     function isFounder() {
       return isAuthenticated() && 'email' in request.auth.token
-        && request.auth.token.email.lower() == founderEmail();
+        && request.auth.token.email.lower() == founderEmail()
+        && request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'google.com';
     }
 
     // Collection users
@@ -1953,6 +1962,17 @@ service cloud.firestore {
       function namesBounded() {
         return nameOk('display_name') && nameOk('preferred_name');
       }
+      // Couverture « Recette libre » : nulle, ou l'adresse exacte que produit
+      // la modération, `users/{uid}/free_recipe_cover_{n}.{ext}` (ni `..`, ni
+      // `%2E`, ni `%25`), dans le bucket du projet
+      // (v0.23.48). Recopiée dans `user_profiles`, lu par toute la famille.
+      function coverUrlOk() {
+        let url = request.resource.data.get('free_recipe_cover_url', null);
+        return url == null
+          || (url is string && url.size() <= 500
+              && url.matches('https://firebasestorage[.]googleapis[.]com/v0/b/kassdale-6d948[.](firebasestorage[.]app|appspot[.]com)/o/users%2F'
+                             + uid + '%2Ffree_recipe_cover_[0-9]+[.](jpg|jpeg|png|webp)([?][^/#%]*)?'));
+      }
       // À la mise à jour, seul un nom modifié est contrôlé.
       function touchedNamesBounded() {
         let keys = request.resource.data.diff(resource.data).affectedKeys();
@@ -1969,12 +1989,16 @@ service cloud.firestore {
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
                       && request.resource.data.email == request.auth.token.email
-                      && namesBounded();
+                      && namesBounded()
+                      && coverUrlOk();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer.
       allow update: if !touchesEmail()
                       && touchedNamesBounded()
+                      && (!request.resource.data.diff(resource.data).affectedKeys()
+                             .hasAny(['free_recipe_cover_url'])
+                          || coverUrlOk())
                       && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
                           || (isAuthenticated() && request.auth.uid == uid
                               && !touchesAuthority()));
@@ -2191,7 +2215,7 @@ service cloud.firestore {
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`) — la requête du client filtre `uid == propriétaire`. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7) | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par son propriétaire seul, quel que soit son rôle (le lecteur supprime ses repas antérieurs) |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
-| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
+| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
@@ -2301,6 +2325,15 @@ Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `sync
 
 **Un `book_id` contenant « / » est refusé** par `bookCheck` ; côté serveur,
 `expectedPrivacy` le traite comme un livre introuvable et le signale par `logError`.
+
+**La normalisation écrit dans le référentiel partagé** (v0.23.48).
+`normalizeRecipeReferentialsFn` crée et enrichit des fiches `nutrition_ingredients` à partir
+des noms reçus. `assertCanNormalizeReferentials` (`callable/_recipeAccess.ts`, décision pure
+`referentialNormalizationDenial` testée) la réserve à l'éditeur et à l'administrateur
+(`isEditorAccount`), et au lecteur créateur de la recette `recipeId` : c'est le seul parcours
+qui l'y amène, l'enregistrement d'une de ses recettes (`RecipeRepository.updateRecipe`). Les
+noms restent ceux de la requête, la normalisation précédant l'enregistrement. Un lecteur sans
+`recipeId`, ou sur la recette d'un autre, reçoit `permission-denied` avant toute écriture.
 
 **Les callables qui écrivent sur une recette suivent `allow update`.** `suggestPlatingFn`,
 `suggestStorageAdviceFn`, `generatePlatingImageFn` et `computeRecipeNutritionFn` lisent et
@@ -2738,9 +2771,13 @@ réservation qu'aucune fin n'a retirée (instance arrêtée) cesse de compter ap
 réel et l'estimation, sur au plus dix appels simultanés d'utilisateur, plus les appels du
 serveur en cours.
 
-Mêmes réservations pour les trois chemins qui n'empruntent pas `callModel` : la production
+Mêmes réservations pour les quatre chemins qui n'empruntent pas `callModel` : la production
 d'image (`runImageModel`), l'amélioration d'illustration (`enhanceCulinaryImage`, jusque-là
-hors plafond) et le bac à sable (`askModel` sur un modèle choisi). `assertWithinDailyBudget`
+hors plafond), le bac à sable (`askModel` sur un modèle choisi) et la modération d'images
+(`moderateAndPromote`, depuis v0.23.48). La modération réserve une place **par image analysée**,
+au coût connu d'avance — unités Cloud Vision fois le prix de l'unité, lus dans la grille
+(`visionAnalysisCostUsd`, option `estimateUsd` de `reserveDailyBudget`) — et enregistre
+chaque analyse par `recordUsage` avant de rendre sa place (`analyseAndRecord`). `assertWithinDailyBudget`
 reste la vérification en lecture seule du rattrapage nutrition nocturne, avant d'engager une
 recette. La limite de concurrence est une constante du code, comme le multiplicateur du
 fondateur : elle ne se règle pas depuis Admin.
@@ -3808,7 +3845,12 @@ remontée.
 | `error_type` | `string` | le type Dart de l'exception (`TimeoutException`, `FirebaseException`) |
 | `error_message` | `string` | `error.toString()` |
 | `stack_trace` | `string?` | **tronquée à 2 000 caractères** |
-| `context` | `map` | libre — les paramètres au moment de l'erreur |
+| `context` | `string` | les paramètres au moment de l'erreur, en **JSON** (v0.23.48) : chaque valeur passée en texte de 500 caractères au plus, 4 000 caractères en tout, les entrées qui ne tiennent plus comptées sous `_omis`. Les rapports antérieurs portent une carte, que la lecture accepte toujours |
+
+Les longueurs sont bornées par le client (`ErrorReport.toFirestore`) : `feature`,
+`error_type` et `job_id` à 200 caractères, `app_version` à 50, `error_message` à 4 000.
+Les règles (`isErrorReport`, §4) admettent le double et refusent tout autre champ : un compte
+en attente en écrit, et un rapport sans borne servait de stockage libre.
 
 `app_version` est obligatoire pour une raison simple : un rapport sans version ne se
 diagnostique pas, l'application se déployant plusieurs fois par jour.
@@ -3903,7 +3945,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
 | `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
 | `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
-| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. |
+| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.23.48) : éditeur ou admin, ou lecteur créateur de la recette `recipeId` (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
 
 **Liste blanche.** `refineRecipeFn`, `searchRecipesFn`, `suggestMealPlanFn` et
 `generateRecipeConceptFn` passent au générateur un objet construit par
@@ -5097,7 +5139,7 @@ functions/src/
 ├── logging.ts     # le journal structuré — cf. chapitre 7
 ├── ai/            # types neutres, routeur, client Claude, tarification, budget, usage
 ├── billing/       # coûts GCP (BigQuery), réconciliation mensuelle
-├── books/         # import d'un livre entier : ouverture, découpage en tranches, estimation
+├── books/         # import d'un livre entier : ouverture, découpage en tranches, estimation ; livres système d'un compte (`ensureSystemBooksFor`)
 ├── callable/      # entrées HTTPS callable + gardes (_auth.ts)
 ├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
 ├── gemini/        # client Gemini, transcription, balisage, fidélité, prompts par poste
@@ -5488,7 +5530,9 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
   `recipe_illustration` (créateur ou admin, sinon `permission-denied` pour le lot). Pour
   chaque image : téléchargement, `scanUpload()` (le format d'abord : inutile d'envoyer un
   exécutable renommé à un moteur d'analyse), origine retenue (`resolveImageOrigin`), puis
+  réservation dans le plafond quotidien du compte (`withDailyBudget`, v0.23.48) →
   `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
+  Plafond atteint : `resource-exhausted`.
   Rend `{ results: [{ moderationId, status, reason, url }] }`, dans l'ordre des `items`.
 - **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.
   Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
@@ -5619,11 +5663,22 @@ ni du repli « appels sans montant » : le montant est calculable, il doit être
 - **`ai_usage` et `ai_daily_spend`** reçoivent la ligne comme n'importe quel appel : c'est
   ce qui alimente *Admin › Dépense par utilisateur*, donc le nombre d'analyses demandées
   par personne.
-- **Hors plafond quotidien.** Un plafond atteint doit empêcher de *dépenser*, jamais de
-  *publier une image légitime* : sinon le contrôle punit celui qu'il protège. L'appel est
-  compté, chiffré, affiché — et exclu de `BudgetExceededError`. L'écran de dépense le
-  signale, faute de quoi l'écart entre « dépensé » et « décompté du plafond » passera pour
-  un bug.
+- **Dans le plafond quotidien** (v0.23.48). La modération en était exclue, pour ne jamais
+  empêcher de publier une image légitime. Un compte pouvait alors déposer une image en
+  quarantaine et rappeler `moderateAndPromoteImagesFn` en boucle : chaque appel déclenchait
+  une analyse facturée, sans limite (audit sécurité, « Moyenne »). `moderateAndPromote`
+  réserve désormais une place par image analysée (`withDailyBudget`, au coût de l'analyse
+  lu dans la grille), avant l'appel à Cloud Vision. Plafond atteint : `BudgetExceededError`,
+  rendu au client en `resource-exhausted`. Le client ne lit pas son message :
+  `describeError` (`core/widgets/error_message.dart`) traduit tout `resource-exhausted` en
+  « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. ».
+  Chaque analyse est enregistrée dès qu'elle est faite, réussie ou non (`analyseAndRecord`,
+  une ligne `ai_usage` par image, écrite avant que la réservation soit rendue) : l'image
+  suivante du lot lit une dépense du jour à jour, et un lot interrompu ne perd aucune analyse
+  facturée. L'import par lien perd alors sa photo, la recette reste créée. La relance
+  `retryPendingModerationFn`, réservée à l'administrateur et bornée à vingt images, n'est pas
+  soumise au plafond ; elle écrit une ligne par relance, qui compte une image analysée pour un
+  appel dans `ai_daily_spend` (`dailyCalls`).
 - **Ajouter la ligne à la fixture `ai_pricing.json`** avant d'écrire le code : elle est
   rejouée par les deux suites, et c'est la seule barrière contre un écart de tarif
   silencieux.
