@@ -8,7 +8,7 @@
  * par le backfill `system_books` (`systemBooksBackfillCallable.ts`).
  *
  * Un livre est reconnu à son tag interne, quel que soit son titre : un livre
- * renommé n'est pas recréé. Un livre créé depuis la v0.23.49 porte un
+ * renommé n'est pas recréé. Un livre créé depuis la v0.23.50 porte un
  * identifiant fixe (`systemBookId`) : le serveur et le client, qui peuvent
  * tourner en même temps à l'approbation d'un éditeur, écrivent le même
  * document au lieu de créer chacun le leur. Les trois livres du client reprennent ses champs ;

@@ -20,21 +20,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.49 — fonctionnel
+### v0.23.50 — fonctionnel
 
 Tout compte approuvé a ses quatre livres système : « Mes créations Kass'Dalle », « Mes recettes
 libres », « Mes Recettes Secrètes » et « Mes recettes du web ». Jusqu'ici, ils n'étaient créés
 qu'à l'ouverture de la bibliothèque par un éditeur ou un administrateur : les lecteurs n'en avaient
-aucun. Ils sont désormais créés à l'approbation du compte, lecteurs compris. Pour les comptes déjà
+aucun. Ils sont désormais créés à l'approbation du compte, ou à l'acceptation d'une invitation par e-mail, lecteurs compris. Pour les comptes déjà
 approuvés, une nouvelle reprise *Admin › Backfills › Livres système des comptes* crée ceux qui
 manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA.
 
-### v0.23.49 — technique
+### v0.23.50 — technique
 
 `books/systemBooks.ts` (`ensureSystemBooksFor`) crée les livres système absents d'un compte,
 reconnus à leur tag. Les trois livres créés par le client reprennent ses champs ; « Mes recettes
 du web » passe par `findOrCreateWebBook`. Deux appelants : `syncUserClaims`, quand le compte
-reçoit l'accès (`gainsAccess` : approbation, levée d'une révocation), et le backfill ponctuel
+reçoit l'accès (`gainsAccess` : approbation, invitation par e-mail acceptée, levée d'une révocation), et le backfill ponctuel
 `backfillSystemBooksFn` (`callable/systemBooksBackfillCallable.ts`, clé `system_books`) pour les
 comptes existants. La couverture reste vide : l'écran affiche l'image du livre système, et le
 client la dépose à la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est
@@ -47,6 +47,30 @@ supprime pas. Le serveur et le client créent en transaction et ne réécrivent 
 existant. `firestore.rules` réserve ces identifiants au compte qu'ils nomment, et laisse un éditeur
 lire son propre identifiant encore absent, lecture qu'exige la transaction du client. Tests : `tests/systemBooksBackfill.test.ts`,
 `tests/authGuards.test.ts`, `rules-tests/test/firestore.test.mjs`.
+
+### v0.23.49 — fonctionnel
+
+Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par
+e-mail ». L'admin saisit une adresse, choisit un groupe dont il est membre et un rôle (Lecteur
+ou Éditeur), relit un message prérempli, puis envoie. L'e-mail porte le lien vers l'application
+et le lien de l'APK Android. À la première connexion Google sous cette adresse, le compte reçoit
+le rôle et entre dans le groupe sans attendre d'approbation. Une invitation vaut 30 jours, se
+renvoie ou s'annule depuis la liste. Une adresse qui a déjà un compte est refusée : elle garde
+le parcours actuel (rôle dans l'onglet Comptes, invitation de groupe à accepter).
+
+### v0.23.49 — technique
+
+Nouvelle callable `manageInvitationFn` (création, renvoi, annulation ; 20 envois par admin et
+par jour) qui envoie par SMTP Gmail avec `nodemailer`, chargé par `await import()`. Deux
+secrets, `GMAIL_SENDER` et `GMAIL_APP_PASSWORD`, doivent exister dans Secret Manager avant le
+déploiement. Nouveau déclencheur `applyEmailInvitation` à la création de `users/{uid}` : il lit
+l'adresse vérifiée du compte Auth, relit l'invitant et le document dans une transaction, pose
+le rôle et ajoute le compte au groupe. Collections `invitations` et `invitation_sends_daily`,
+lisibles par un admin, écrites par le serveur seul. `syncUserClaims` relit `users/{uid}` avant
+d'écrire les claims, pour qu'une exécution en retard ne remette pas `pending`, et traite un
+document disparu comme une suppression. La création d'un compte exige désormais
+`email_verified`. Le statut effectif d'une invitation rejoint la logique dupliquée, avec la
+fixture `email_invitation_status.json`.
 
 ### v0.23.48 — fonctionnel
 
