@@ -404,7 +404,7 @@ Document principal d'une recette.
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `source_url` | `String?` | Adresse de la page web d'une recette importée depuis un lien, **normalisée** (`normalizeUrl`, `web/urlGuard.ts` : sans fragment ni paramètres de suivi `utm_*`, `fbclid`…, paramètres triés, hôte en minuscules, sans barre finale). Écrite par `recipeProcessor` ; c'est la valeur que `importRecipeFromUrlFn` compare pour le doublon (`created_by` + `source_url`, deux égalités servies sans index composite). Le client ne la saisit jamais ; il la réécrit telle quelle à une mise à jour et la recopie sur une **copie** (`copyRecipeAsDraft`, décision du 11 octobre 2026). Les règles refusent toute autre écriture (`sourceUrlAccepted`, `!changes('source_url')`, §4) ; une copie n'est acceptée que si la recette copiée est lisible par l'appelant (`canReadRecipe`). Absent sur toute autre recette |
 | `source_site` | `String?` | Nom du site de `source_url` (« marmiton.org » : hôte en minuscules, sans `www.`), écrit par `recipeProcessor` à côté de l'adresse (`siteName`, `web/urlGuard.ts`). Le client l'affiche tel quel (« Source : marmiton.org ») et ne le calcule pas : la règle n'existe qu'au serveur. Mêmes règles d'écriture que `source_url` (recopie sur une copie à l'identique, jamais modifié) |
-| `source_author` | `String?` | Auteur annoncé par la page d'origine : `author` de son JSON-LD (`readAuthor`, `web/recipePage.ts` — chaîne, `Person` ou `Organization`, ou tableau ; noms joints par « , », sans doublon, sans adresse, 120 caractères au plus, coupé au dernier nom entier suivi de « … »). Écrit par `recipeProcessor` sur le chemin `json_ld` seulement. Le client l'affiche au-dessus du lien source (« Par Marie Dupont », masqué quand il répète le nom du site) et ne le saisit jamais. Mêmes règles d'écriture que `source_url`. Absent quand la page n'en publie pas, et sur les recettes importées avant la v0.23.42 |
+| `source_author` | `String?` | Auteur annoncé par la page d'origine : `author` de son JSON-LD (`readAuthor`, `web/recipePage.ts` — chaîne, `Person` ou `Organization`, ou tableau ; noms joints par « , », sans doublon, sans adresse, 120 caractères au plus, coupé au dernier nom entier suivi de « … »). Écrit par `recipeProcessor` sur le chemin `json_ld` seulement. Le client l'affiche au-dessus du lien source (« Par Marie Dupont », masqué quand il répète le nom du site) et ne le saisit jamais. Mêmes règles d'écriture que `source_url`. Absent quand la page n'en publie pas, et sur les recettes importées avant la v0.23.43 |
 | `source_nutrition` | `Map?` | Nutrition **par portion** annoncée par la page d'origine (`nutrition` de son JSON-LD, `readNutrition`) : `per_portion` (`kcal`, `protein_g`, `carbs_g`, `fat_g`, seules les valeurs lisibles, `kcal` ≤ 10 000, grammes ≤ 2 000, kJ convertis), `portions` (le `recipeYield` du site, ou `null`) et `ingredients_fingerprint` (`ingredientsFingerprint` des ingrédients écrits à l'import). Écrit par `recipeProcessor`, chemin `json_ld` seulement. **Jamais affiché ni utilisé à la place du calcul** : il ne sert qu'à `source_nutrition_check`. Serveur seul : les règles refusent au client de le poser, de le changer ou de l'effacer ; une copie ne le reprend pas (absent du modèle Dart) |
 | `source_nutrition_check` | `Map?` | Écart entre le calcul de la nutrition et `source_nutrition`, écrit par `computeAndPersistRecipeNutrition` à chaque calcul (`compareWithSourceNutrition`, `nutrition/sourceNutrition.ts`). `state` : `ok`, `gap` (une valeur hors d'un facteur 2, dans un sens ou dans l'autre), `ingredients_changed` (l'empreinte des ingrédients ne correspond plus à celle de l'import : pas de comparaison), `low_coverage` (couverture sous le seuil `minCoverageForPartial` : pas de comparaison, `coverage` écrite). Pour `ok` et `gap` : `portions` (celles du site, sinon celles de la recette), `ratios` (notre valeur par portion divisée par celle du site, au centième), `gaps` (les clés hors du facteur 2). Plus `checked_at`. Un `gap` est journalisé en `WARNING` (module `DESIGN`, recette, site, ratios, couverture). Serveur seul, mêmes règles que `source_nutrition` |
 | `origin` | `String?` | Ce qui a écrit le document la première fois : `scan` (`recipeProcessor`), `web` (`recipeProcessor`, import depuis un lien), `ai` (conception pour le planning, Explorer), `manual` (saisie, texte collé compris), `copy` (copie de travail). Écrit par celui qui crée le document, jamais déduit du livre porteur. Absent sur les documents antérieurs au champ : l'écran de relecture déduit alors `copy` d'une recette source, `scan` d'un fichier source, et n'affirme rien sinon — il disait « issu d'un scan » à toute recette conçue par l'IA |
@@ -1592,8 +1592,14 @@ pourquoi.
   erreur (moteur, quota du fournisseur, plafond de dépense). Une réponse rendue par le
   modèle garde sa place, même sans recherche ancrée ni page retenue : elle est facturée. Écrit par
   les Functions seules ; le titulaire et l'administrateur le lisent.
-- `web_search_cache/{sha256}` : le cache partagé des recherches web. Clé : SHA-256 de la
-  requête en minuscules, espaces resserrées, accents gardés (`webSearchCacheKey`). Champs :
+- `web_search_cache/{sha256}` : le cache partagé des recherches web. Clé : SHA-256 de
+  `v{WEB_SEARCH_CACHE_VERSION}:` suivi de la requête en minuscules, espaces resserrées,
+  accents gardés (`webSearchCacheKey`). La version vaut 2 depuis le tri des pages en
+  français d'abord : les entrées écrites avant, sous une clé sans préfixe et avec l'ancien
+  prompt, ne sont plus lues, et la politique TTL les supprime à leur `expires_at` (sept
+  jours au plus). Aucune reprise de données. Un changement de prompt ou d'ordre des
+  résultats incrémente la version. Les résultats sont rangés dans l'ordre servi au client.
+  Champs :
   `query` (`String`, la requête normalisée), `results` (`List<Map>` : `url`, `title`,
   `site`, `snippet?`, `directImport` — adresses https de 2 048 caractères au plus ; aucune
   vignette, une entrée plus ancienne qui porte encore `imageUrl` se relit sans ce champ),
@@ -3080,9 +3086,11 @@ L'IA ne part que sur un bouton. Le `reader` n'a que « Chercher sur le web » :
    `googleSearch`, plafond de raisonnement du poste dans la politique, `0` à défaut, 40 s,
    sous `withDailyBudget`. `callModel` n'est pas employé : son repli enverrait le poste
    chez Claude, qui n'a ni la recherche Google ni le bloc de suggestions, et son résultat ne
-   porte pas les pages citées. Le prompt demande des pages de recettes, en français de
-   préférence, sans vidéo ni réseau social ; la réponse rédigée n'est pas lue, seules les
-   pages citées comptent. L'appel est enregistré par `recordUsage` (échec compris, en
+   porte pas les pages citées. Le prompt demande des pages de recettes, sans vidéo ni réseau
+   social ; il demande de **formuler les recherches Google en français** et de retenir des
+   pages rédigées en français (sites français, belges, suisses, québécois…), l'anglais
+   seulement en complément s'il existe moins de huit pages en français. La réponse rédigée
+   n'est pas lue, seules les pages citées comptent. L'appel est enregistré par `recordUsage` (échec compris, en
    `status: "error"`), avec `groundedSearchCount`. Après un appel abouti, l'écriture passe
    par `recordSearchUsage`, qui ne lève jamais : un échec d'écriture d'`ai_usage` est
    journalisé (`logError`, jetons et appel ancré dans `extra`, pour la réconciliation) et
@@ -3107,10 +3115,21 @@ L'IA ne part que sur un bouton. Le `reader` n'a que « Chercher sur le web » :
    modérée (règle v0.23.13 : seul `AppNetworkImage` affiche une image réseau, et seulement
    celles du stockage de l'application). Une adresse de plus de 2 048 caractères
    (`WEB_SEARCH_URL_MAX_CHARS`, `httpsUrlOrNull`) est écartée. Une page qui refuse d'être
-   lue (403, délai, type inattendu) garde sa carte sans extrait ni badge, son adresse
+   lue (403, délai, type inattendu) garde sa carte sans extrait, `directImport` à faux, son adresse
    réelle étant connue
    (`WebFetchError.lastUrl`) ; un refus de la garde SSRF n'en rend aucune. Dédoublonnage
-   par adresse finale (sans fragment ni barre finale), huit cartes au plus. **Le texte des
+   par adresse finale (sans fragment ni barre finale), huit cartes au plus. **Langue et
+   ordre** : chaque page lue donne sa langue (`detectPageLanguage`) — `inLanguage` de la
+   recette JSON-LD, puis `<html lang>`, puis `og:locale`, réduits à leur code principal
+   (`primaryLanguageCode` : `fr-BE`, `fr_CA` → `fr`) ; sans déclaration, un indice tiré de
+   l'adresse seule (`urlSuggestsFrench` : domaine `.fr`, sous-domaine `fr.`, chemin
+   `/fr/` ou `/fr-xx/`), sinon langue inconnue. Une page non lue n'a que l'indice de son
+   adresse. Le texte des pages n'est pas analysé. `orderByLanguage` range les cartes —
+   français, puis inconnue, puis autre langue — par un tri stable qui garde l'ordre de
+   Google dans chaque groupe, **avant** la coupe à huit cartes : une page en français citée
+   en dixième passe devant une page en anglais citée en premier. Aucune page n'est écartée
+   pour sa langue. La langue reste côté serveur (`SourceOutcome.language`) : elle n'est ni
+   renvoyée au client ni mise en cache, l'ordre du cache suffit. **Le texte des
    pages est non fiable** : il ne sert qu'à ces champs courts, renvoyés au client, et
    n'entre dans aucun prompt.
 6. **Erreur** : la place n'est **rendue** que si l'appel de modèle **lève** une erreur —
@@ -3154,10 +3173,22 @@ ignorée ; `remaining` survit à « Effacer » pour la feuille « Aller plus loi
 `WebRecipeResult.fromMap` revérifie que chaque adresse est en https. La carte
 (`WebResultTile`, `search_widgets.dart`) : `WebResultThumbnail`, l'icône `Icons.public`
 64 × 64 sur `surfaceContainerHighest`, toujours ; libellé sémantique unique « titre,
-site[, import direct] » ; « Ouvrir » (`launchUrl`, `LaunchMode.externalApplication`) arme
-le bandeau d'import du retour avec l'adresse de la carte (`_armWebReturn`,
-`_pendingBannerLink`), sans lire le presse-papiers ; « Importer » ouvre
-`showUrlImportDialog(initialUrl:)` et, sur `true`, la carte affiche « Import envoyé ». Sur
+site » ; « Ouvrir », le toucher de la carte, « Ouvrir dans le navigateur » et « Voir sur
+Google » passent par `openWebPage` (`web_page_opener.dart`) : sur Android et iOS
+(`PlatformUtils.hostPlatform`), `LaunchMode.inAppBrowserView` — Custom Tabs,
+SFSafariViewController — quand `supportsLaunchMode` le confirme, et
+`LaunchMode.externalApplication` sinon ; sur le web et le bureau,
+`externalApplication` (nouvel onglet, navigateur). Une question au plugin en
+échec est remontée (`reportUnexpectedError`, `search.web.launchMode`) et la page part
+dans le navigateur. Sur Android 11+, `supportsLaunchMode` ne voit les Custom Tabs que
+grâce à la requête `android.support.customtabs.action.CustomTabsService` déclarée dans
+`<queries>` d'`AndroidManifest.xml`. L'ouverture arme le bandeau d'import du retour avec
+l'adresse de la carte (`_armWebReturn`, `_pendingBannerLink`), sans lire le
+presse-papiers ; « Importer » ouvre `showUrlImportDialog(initialUrl:)` et, sur `true`, la
+carte affiche « Import envoyé ». « Importer » est le même bouton pour toutes les pages
+(icône lien, infobulle « Importer cette recette dans vos brouillons ») : le client ne lit
+pas `directImport`, que le serveur rend et compte dans son journal
+(`logInfo`, `extra.directImport`), et ne l'affiche pas. Sur
 le web, le titre est un `Link` dont l'`InkWell` ne prend pas le focus
 (`canRequestFocus: false`, l'ancre a `tabIndex = -1`) : un seul arrêt de focus par carte ;
 le suivre arme aussi le bandeau (`onLinkFollowed`). Sur un ordinateur, le clic droit
@@ -3176,8 +3207,8 @@ n'est affiché, marges comprises. Le mode suit le vrai système
 
 - **Android, iOS, macOS** : `webview_flutter` (`WebViewController.loadHtmlString`),
   JavaScript désactivé ; le `NavigationDelegate` laisse passer le document lui-même
-  (`about:`, `data:`) et bloque toute autre navigation, ouverte dans le navigateur si elle
-  est en https. Les réglages sont attendus dans un seul `try` remonté par
+  (`about:`, `data:`) et bloque toute autre navigation, ouverte par `openWebPage` si
+  elle est en https — navigateur intégré sur Android et iOS, navigateur sous macOS. Les réglages sont attendus dans un seul `try` remonté par
   `reportUnexpectedError`. Sous macOS, le fond n'est pas rendu transparent : WKWebView
   macOS n'expose pas ce réglage. macOS n'est pas construit (`FunctionalRequirements.md`, plateformes) : ce chemin n'a
   jamais tourné.
@@ -3213,11 +3244,41 @@ en mémoire qu'un retour est attendu (`_awaitingGoogleReturn`) ; une carte y ajo
 adresse (`_pendingBannerLink`), posée dans le bandeau au retour, sans lecture du
 presse-papiers. Au retour,
 `AppLifecycleListener.onResume` — le moteur web le déclenche aussi, sur `focus` et
-`visibilitychange` — affiche une carte `secondaryContainer`. Seule la phrase « Vous avez
-trouvé une recette ? Importez-la. » est en `Semantics(liveRegion: true)`, pas toute la carte.
-Sur téléphone, la carte est le premier élément défilant de la liste des résultats
-(`_ResultList.leading`) ; sur grand écran, elle reste fixe sous le champ, au-dessus des
-boutons. Sans adresse de carte, sur Android
+`visibilitychange` — affiche une carte `secondaryContainer` (`_ImportBanner`). Seule sa
+phrase est en `Semantics(liveRegion: …)`, pas toute la carte, et seulement quand le bandeau
+apparaît au retour (`_bannerAnnounced`).
+La carte se pose **sous** la liste des résultats, hors d'elle, sur toutes les tailles
+d'écran (`_ListWithBanner`) : au-dessus de `_BottomActions` sur téléphone, en bas de la
+colonne des résultats sur grand écran. Elle ne réduit la zone visible que par le bas : le
+décalage de la liste et la position à l'écran des cartes ne changent pas. La liste reste
+le premier enfant d'un même arbre, avec ou sans bandeau, et n'est pas reconstruite.
+Sur téléphone (`compact`), une seule ligne : `importBannerShortSentence` (« Une recette
+trouvée ? », `maxLines: 1`), le bouton (libellé tronqué, adresse abrégée en infobulle) et
+« Fermer ». Grand écran : `importBannerSentence`, l'adresse abrégée, le bouton et
+« Fermer ». Le bandeau est masqué quand le clavier est ouvert : `View.of(context).viewInsets`,
+relu à chaque `didChangeMetrics` (`WidgetsBindingObserver`). `MediaQuery.viewInsetsOf`
+vaudrait toujours 0 : l'écran est dans le corps du `Scaffold` d'`AppShell`
+(`resizeToAvoidBottomInset`), qui retire `viewInsets` du `MediaQuery`. Il est masqué aussi
+quand la liste garderait moins de `importBannerMinListHeight` (120 px) à côté de lui.
+`_ListWithBanner` reçoit les variantes, de la préférée à la plus petite — grand écran :
+complète puis compacte ; téléphone : compacte — et `_FirstThatFits` (rendu à plusieurs
+enfants) les mesure toutes à leur hauteur réelle, largeur et taille du texte comprises,
+contre la hauteur donnée par le `LayoutBuilder` moins 120 px. Seule la première qui tient
+prend place, se peint, reçoit le toucher et la sémantique ; aucune si aucune ne tient. Le
+choix est rendu à l'écran après le rendu (`onShown`), et chaque variante non affichée est
+sous `ExcludeFocus` : Tab ne s'y arrête pas, Entrée ne la déclenche pas. Il revient quand
+la place le permet. Au retour, après le rendu,
+`_revealOpenedCard` ramène en vue la carte ouverte (`_openedWebLink`, une `GlobalKey` par
+adresse dans `_webCardKeys`) par `Scrollable.ensureVisible` avec
+`ScrollPositionAlignmentPolicy.keepVisibleAtEnd` : la liste ne défile que si le bandeau
+recouvre le bas de la carte, et juste assez pour l'aligner sur le bas de la liste. Sur
+iOS, SFSafariViewController s'ouvre dans l'application, qui ne quitte pas le premier
+plan : aucun `onResume` n'arrive. Après une ouverture en `inAppBrowserView` — carte ou
+« Voir sur Google » —, `_revealBannerNowOnIos` pose le bandeau tout de suite, sans
+annonce, et sa phrase n'est pas annoncée à la fermeture de la page non plus : ni le cycle
+de vie ni url_launcher (dont l'appel rend la main au premier chargement de la page) ne
+signalent cette fermeture. Sur Android, Custom Tabs met l'activité en pause : `onResume` arrive au retour,
+et le bandeau s'annonce. Sans adresse de carte, sur Android
 et Windows (`PlatformUtils.isAndroidApp`, `isWindowsApp`), `Clipboard.getData` est lu au
 retour : la première adresse http(s) du texte (`firstWebLink`) s'affiche en abrégé
 (`shortLinkLabel` : domaine sans `www.`, début du chemin, 27 caractères puis « … ») avec
@@ -3262,8 +3323,8 @@ callables qui produisent une recette à enregistrer exigent `requireEditor` —
 ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points d'entrée
 (`canEditProvider`) : copie et « Améliorer avec l'IA » de la fiche, copie d'un brouillon,
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
-planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », le badge
-« Import direct » et « Importer » des pages « Sur le web », et le bandeau d'import au
+planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien »,
+« Importer » des pages « Sur le web », et le bandeau d'import au
 retour du navigateur de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
 « Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
 
@@ -4865,7 +4926,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts` | `WorkQueueScreen` | `reader` |
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
-| `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » et le badge « Import direct » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
+| `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
 | `/planning` | `PlanningScreen` | `reader` |
 | `/planning/batch` | `BatchPlanningScreen` | `reader` |
 | `/planning/config` | `PlanningConfigScreen` | `reader` |

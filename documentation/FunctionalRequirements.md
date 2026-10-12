@@ -51,7 +51,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 |---|---|
 | **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. |
 | **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis une page « Sur le web » d'Explorer, le bandeau au retour du navigateur et « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. |
-| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur le web » : il voit les pages trouvées et les ouvre dans son navigateur, sans badge « Import direct » ni bouton « Importer ». « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour du navigateur. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. |
+| **Reader** | Consultation, annotation, notation, planning, export PDF. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur le web » : il voit les pages trouvées et les ouvre dans le navigateur intégré (Android, iOS) ou dans son navigateur, sans bouton « Importer ». « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour du navigateur. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
@@ -557,24 +557,34 @@ section.
   la bibliothèque, qui lit le même champ, n'a pas de limite. Le bouton n'est inactif que
   pendant une recherche en cours.
 - Jusqu'à **8 pages**, chacune sur une carte : l'icône d'un globe, titre, site réel de la
-  page, extrait. Aucune photo de la page n'est affichée, sur aucune plateforme : la charger
+  page, extrait. **Les recettes en français passent d'abord** : Google est interrogé en
+  français, sur des sites francophones (France, Belgique, Suisse, Québec…), et une page en
+  anglais ne vient qu'en complément, quand il y a moins de huit pages en français. Les pages
+  en français sont en tête de liste, puis celles dont la langue n'est pas déclarée, puis
+  celles dans une autre langue ; dans chaque groupe, l'ordre de Google est gardé. Aucune
+  page n'est écartée pour sa langue. Aucune photo de la page n'est affichée, sur aucune plateforme : la charger
   depuis l'appareil donnerait l'adresse IP du lecteur au site, et montrerait une image qui
   n'est pas passée par la modération (même règle que les images extérieures, 5.11 « Seules
   les images de l'application s'affichent »). Les vidéos et les
   réseaux sociaux (YouTube, TikTok, Instagram, Facebook, Pinterest) sont exclus ; une même
   page n'apparaît qu'une fois.
-- **Ouvrir** (tous les rôles), ou toucher la carte : la page s'ouvre dans le navigateur, hors
-  de l'application. Sur le web, le titre est un lien (clic du milieu, menu du navigateur),
+- **Ouvrir** (tous les rôles), ou toucher la carte : sur Android et iOS, la page s'ouvre dans
+  le navigateur intégré, au-dessus de l'application ; le retour arrière ramène à Explorer,
+  la liste au même endroit. Sans navigateur intégré sur l'appareil, elle s'ouvre dans le
+  navigateur. Sur le web, elle s'ouvre dans un nouvel onglet, et sur Windows dans le
+  navigateur. Sur le web, le titre est un lien (clic du milieu, menu du navigateur),
   sans arrêt de focus de plus que la carte ; sur un ordinateur, le clic droit propose
   « Ouvrir dans le navigateur », « Copier le lien » (« Lien copié. ») et « Importer ».
 - **Importer** (Editor, Admin) ouvre la boîte « Importer depuis un lien » (4.6), adresse
-  posée. Une fois l'import envoyé, la carte affiche « Import envoyé ». Le badge **« Import
-  direct »** signale une page qui décrit sa recette de façon structurée : l'import sera
-  fidèle. Un Reader ne voit ni le badge ni « Importer ».
+  posée ; il n'ouvre pas la page. Une fois l'import envoyé, la carte affiche « Import
+  envoyé ». Le bouton est le même pour toutes les pages, qu'elles décrivent leur recette de
+  façon structurée ou non. Un Reader ne voit pas « Importer ».
 - Sous les cartes, le bloc « Suggestions de recherche » de Google, tel que Google le rend —
   sur Android, iOS, le web et Windows ; sous Windows sans le composant WebView2 de
-  Microsoft, les requêtes lancées par Google en puces. Puis « Vidéos et
-  réseaux sociaux exclus. » et **Voir sur Google**, qui ouvre la recherche Google du texte
+  Microsoft, les requêtes lancées par Google en puces. Un lien du bloc s'ouvre comme une
+  carte : navigateur intégré sur Android et iOS, navigateur ailleurs. Puis « Vidéos et
+  réseaux sociaux exclus. » et **Voir sur Google**, qui ouvre — dans le navigateur intégré
+  sur Android et iOS, dans le navigateur ailleurs — la recherche Google du texte
   suivi de « recette », sans appel d'IA. Ce pied reste affiché quand aucune page n'est
   trouvée et après une erreur.
 - Sous le titre de la section : « « texte » · Il vous reste N recherches aujourd'hui. ». Une
@@ -600,9 +610,26 @@ section.
   « Effacer » ferme la section. Rien n'est enregistré : la section disparaît avec l'écran.
 
 **Au retour du navigateur** (Editor, Admin), après « Ouvrir » sur une carte ou « Voir sur
-Google », Explorer affiche un bandeau : « Vous avez trouvé une recette ? Importez-la. ». Sur
-téléphone, il est le premier élément de la liste des résultats et défile avec elle ; sur
-grand écran, il reste fixe sous le champ.
+Google », Explorer affiche un bandeau qui propose d'importer la recette. Il se pose sous
+la liste des résultats, hors d'elle.
+- Sur grand écran, en bas de la colonne des résultats : « Vous avez trouvé une recette ?
+  Importez-la. », l'adresse abrégée s'il y en a une, le bouton et la croix « Fermer ».
+- Sur téléphone, au-dessus de la barre du bas, sur une seule ligne : « Une recette
+  trouvée ? », le bouton et la croix ; un texte trop long est tronqué. Il est masqué tant
+  que le clavier est ouvert.
+- Il ne s'affiche que si la liste garde au moins 120 px de hauteur à côté de lui, mesuré
+  sur sa hauteur réelle (texte agrandi, petit écran, fenêtre basse, paysage). Sur grand
+  écran, si la version complète ne tient pas, la version sur une ligne du téléphone la
+  remplace ; si aucune ne tient, il reste masqué, et revient quand la place le permet. Un
+  bandeau masqué ne reçoit pas le focus du clavier : Tab ne s'y arrête pas.
+- La liste ne défile pas au retour, sauf dans un cas : si le bandeau recouvre la carte
+  qu'on vient d'ouvrir, la liste défile juste assez pour que le bas de cette carte se
+  trouve au-dessus du bandeau.
+- La phrase est lue par le lecteur d'écran à l'apparition du bandeau au retour. Sur iOS,
+  où le bandeau est posé dès l'ouverture, elle n'est pas annoncée.
+- Sur iOS, la page ouverte depuis une carte ou par « Voir sur Google » s'affiche au-dessus
+  d'Explorer sans le quitter : le bandeau est posé dès l'ouverture, sans annonce, et se voit
+  à la fermeture de la page.
 - Après « Ouvrir » sur une carte, le bandeau porte l'adresse de cette page, avec « Importer
   ce lien » ; le presse-papiers n'est pas lu.
 - Après « Voir sur Google », sur Android et Windows, le presse-papiers est lu au retour.

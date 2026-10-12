@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_windows/webview_windows.dart' as win;
 
@@ -9,6 +8,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/platform_utils.dart';
 import 'google_suggestions_frame.dart';
+import 'web_page_opener.dart';
 
 /// Hauteur du bloc « Suggestions de recherche » de Google.
 const double googleSuggestionsHeight = 56;
@@ -62,7 +62,7 @@ GoogleSuggestionsMode googleSuggestionsModeFor(TargetPlatform? platform) {
 ///   `google_suggestions_frame_web.dart`).
 /// - Android, iOS, macOS : `webview_flutter`, JavaScript coupé ; toute
 ///   navigation est bloquée dans la vue et l'adresse (https seulement)
-///   s'ouvre dans le navigateur.
+///   s'ouvre dans le navigateur intégré (voir [openWebPage]).
 /// - Windows : `webview_windows` (WebView2). Le paquet n'a ni réglage
 ///   JavaScript ni délégué de navigation : la page interdit les scripts par
 ///   sa politique de sécurité, et une navigation est défaite dès qu'elle est
@@ -110,11 +110,12 @@ Widget _framed(Widget view) => Semantics(
   ),
 );
 
-/// Ouvre une adresse https dans le navigateur ; rien d'autre.
-Future<void> _openExternally(Uri uri, String trigger) async {
+/// Ouvre une adresse https, et rien d'autre : navigateur intégré sur
+/// téléphone, navigateur ailleurs (voir [openWebPage]).
+Future<void> _openPage(Uri uri, String trigger) async {
   if (uri.scheme != 'https') return;
   try {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await openWebPage(uri);
   } catch (error, stackTrace) {
     reportUnexpectedError(
       feature: 'search.web.suggestions',
@@ -185,8 +186,8 @@ class _SuggestionsWebViewState extends State<_SuggestionsWebView> {
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
             if (_isOwnDocument(uri)) return NavigationDecision.navigate;
-            // Toute autre navigation sort de l'application.
-            unawaited(_openExternally(uri!, 'webview'));
+            // Toute autre navigation quitte le bloc pour le navigateur.
+            unawaited(_openPage(uri!, 'webview'));
             return NavigationDecision.prevent;
           },
           onWebResourceError: (error) => reportUnexpectedError(
@@ -292,7 +293,7 @@ class _WindowsSuggestionsViewState extends State<_WindowsSuggestionsView> {
     if (_isOwnDocument(uri)) return;
     unawaited(_reload());
     if (!_openGate.tryOpen()) return;
-    unawaited(_openExternally(uri!, 'webview_windows'));
+    unawaited(_openPage(uri!, 'webview_windows'));
   }
 
   Future<void> _reload() async {
@@ -362,7 +363,7 @@ class GoogleSuggestionChips extends StatelessWidget {
                 label: Text(q),
                 tooltip: 'Chercher « $q » sur Google',
                 onPressed: () => unawaited(
-                  _openExternally(
+                  _openPage(
                     Uri.https('www.google.com', '/search', {'q': q}),
                     'chip',
                   ),

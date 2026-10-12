@@ -21,6 +21,7 @@
 import type { GeminiGrounding, GeminiGroundingSource } from "../gemini/client";
 import {
   WEB_SEARCH_MAX_SOURCES,
+  orderByLanguage,
   pickCards,
   type SourceOutcome,
   type WebRecipeCard,
@@ -92,7 +93,12 @@ export function remainingSearches(used: number, limit: number): number {
   return Math.max(0, limit - Math.max(0, used));
 }
 
-/** Lecture des pages citées par la réponse, et sélection des cartes. */
+/**
+ * Lecture des pages citées par la réponse, et sélection des cartes : pages en
+ * français d'abord, ordre de Google gardé dans chaque langue. Le tri précède
+ * la coupe à huit cartes : une page en français citée en dixième passe
+ * devant une page en anglais citée en premier.
+ */
 async function resolveGrounding(
   grounding: GeminiGrounding | undefined,
   deps: WebSearchDeps,
@@ -111,7 +117,9 @@ async function resolveGrounding(
     await deps.reportPartial({ degraded, dropped });
   }
   return {
-    results: pickCards(outcomes.map((o) => o.card)),
+    results: pickCards(
+      orderByLanguage(outcomes.flatMap((o) => (o.card ? [o] : []))).map((o) => o.card),
+    ),
     searchEntryPointHtml: grounding.searchEntryPointHtml ?? null,
     webSearchQueries: grounding.webSearchQueries,
   };

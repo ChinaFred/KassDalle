@@ -35,6 +35,15 @@ describe("prompt", () => {
     assert.match(prompt, /YouTube, TikTok, Instagram, Facebook, Pinterest/);
   });
 
+  test("recherches en français, pages en français, l'anglais en complément", () => {
+    const prompt = buildWebRecipeSearchPrompt("pad thaï");
+    assert.match(prompt, /Formule tes recherches Google en français/);
+    assert.match(prompt, /pages rédigées en français/);
+    assert.match(prompt, /belges, suisses, québécois/);
+    assert.match(prompt, /en anglais seulement en complément, s'il existe moins de huit pages/);
+    assert.doesNotMatch(prompt, /à défaut, en anglais/);
+  });
+
   test("le poste porte sa clé de coût", () => {
     assert.equal(WEB_RECIPE_SEARCH_FEATURE, "web_recipe_search");
   });

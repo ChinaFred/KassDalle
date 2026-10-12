@@ -2,30 +2,36 @@
  * « Chercher sur le web » : des liens de Google aux cartes.
  *
  * Exclusion des vidéos et réseaux sociaux, adresses https seules, résolution
- * des liens de redirection, page illisible gardée sans vignette, badge
- * « Import direct », dédoublonnage, clé du cache. Sans réseau : la lecture
+ * des liens de redirection, page illisible gardée sans vignette, `directImport`,
+ * dédoublonnage, clé du cache. Sans réseau : la lecture
  * des pages passe par un faux `fetcher`.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { WebFetchError, type FetchedResource } from "../web/safeFetch";
 import {
   WEB_SEARCH_CACHE_TTL_MS,
+  WEB_SEARCH_CACHE_VERSION,
   WEB_SEARCH_MAX_RESULTS,
   WEB_SEARCH_URL_MAX_CHARS,
   cardFromCache,
   cleanWebSearchQuery,
+  detectPageLanguage,
   extractPageCard,
   httpsUrlOrNull,
   isCacheFresh,
   isExcludedHost,
+  orderByLanguage,
   pickCards,
+  primaryLanguageCode,
   resolveWebSource,
   sourceTitleIsExcluded,
+  urlSuggestsFrench,
   webSearchCacheKey,
   type PageFetcher,
   type WebRecipeCard,
@@ -131,6 +137,14 @@ describe("requête et cache", () => {
     assert.match(webSearchCacheKey("x"), /^[0-9a-f]{64}$/);
   });
 
+  test("la clé porte la version : une entrée de l'ancien prompt n'est plus servie", () => {
+    assert.equal(WEB_SEARCH_CACHE_VERSION, 2);
+    const unversioned = createHash("sha256").update("blanquette de veau").digest("hex");
+    const v2 = createHash("sha256").update("v2:blanquette de veau").digest("hex");
+    assert.notEqual(webSearchCacheKey("Blanquette de veau"), unversioned);
+    assert.equal(webSearchCacheKey("Blanquette de veau"), v2);
+  });
+
   test("une entrée sert sept jours, pas un instant de plus", () => {
     const now = Date.parse("2026-10-12T12:00:00Z");
     assert.equal(isCacheFresh(now - 1000, now), true);
@@ -159,7 +173,7 @@ describe("requête et cache", () => {
 });
 
 describe("lecture d'une page", () => {
-  test("recette JSON-LD complète : badge, titre, aucune image", () => {
+  test("recette JSON-LD complète : directImport, titre, aucune image", () => {
     const fields = extractPageCard(fixture("graph_howtostep.html"));
     assert.equal(fields.directImport, true);
     assert.equal(fields.title, "Quiche lorraine – Le site");
@@ -167,10 +181,67 @@ describe("lecture d'une page", () => {
     assert.equal(fields.description, "La vraie, sans fromage.");
   });
 
-  test("page sans données structurées : pas de badge, meta description", () => {
+  test("page sans données structurées : pas de directImport, meta description", () => {
     const fields = extractPageCard(fixture("no_jsonld_blog.html"));
     assert.equal(fields.directImport, false);
     assert.equal(fields.description, "Blog");
+  });
+});
+
+describe("langue d'une page", () => {
+  const html = (head: string, body = "") =>
+    `<!DOCTYPE html><html${head}><head></head><body>${body}</body></html>`;
+  const jsonLd = (lang: string) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      "@type": "Recipe",
+      name: "R",
+      inLanguage: lang,
+    })}</script>`;
+
+  test("codes de langue déclarés", () => {
+    assert.equal(primaryLanguageCode("fr"), "fr");
+    assert.equal(primaryLanguageCode("fr-BE"), "fr");
+    assert.equal(primaryLanguageCode("fr_CA"), "fr");
+    assert.equal(primaryLanguageCode(" EN-us "), "en");
+    assert.equal(primaryLanguageCode("x-default"), null);
+    assert.equal(primaryLanguageCode(""), null);
+    assert.equal(primaryLanguageCode(null), null);
+  });
+
+  test("<html lang>, og:locale, inLanguage", () => {
+    const url = "https://example.com/r";
+    assert.equal(detectPageLanguage(html(' lang="fr-FR"'), url), "fr");
+    assert.equal(detectPageLanguage(html(' lang="en"'), url), "other");
+    assert.equal(
+      detectPageLanguage(html("", '<meta property="og:locale" content="fr_CA">'), url),
+      "fr",
+    );
+    assert.equal(detectPageLanguage(html(' lang="en"', jsonLd("fr")), url), "fr");
+  });
+
+  test("rien de déclaré : l'adresse seule, sinon inconnue", () => {
+    assert.equal(detectPageLanguage(html(""), "https://www.cuisine.fr/r"), "fr");
+    assert.equal(detectPageLanguage(html(""), "https://fr.example.com/r"), "fr");
+    assert.equal(detectPageLanguage(html(""), "https://example.com/fr-be/r"), "fr");
+    assert.equal(detectPageLanguage(html(""), "https://example.be/r"), "unknown");
+    assert.equal(detectPageLanguage(null, "https://example.com/r"), "unknown");
+    // Une déclaration l'emporte sur l'adresse.
+    assert.equal(detectPageLanguage(html(' lang="en"'), "https://www.cuisine.fr/r"), "other");
+    assert.equal(urlSuggestsFrench("https://example.com/frites/r"), false);
+  });
+
+  test("français, puis inconnue, puis autre langue ; tri stable ; rien d'écarté", () => {
+    const items = [
+      { id: "a", language: "other" as const },
+      { id: "b", language: "unknown" as const },
+      { id: "c", language: "fr" as const },
+      { id: "d", language: "other" as const },
+      { id: "e", language: "fr" as const },
+    ];
+    assert.deepEqual(
+      orderByLanguage(items).map((i) => i.id),
+      ["c", "e", "b", "a", "d"],
+    );
   });
 });
 
@@ -184,9 +255,17 @@ describe("résolution d'un lien de Google", () => {
     assert.equal(outcome.card.url, "https://www.le-site.fr/quiche");
     assert.equal(outcome.card.site, "le-site.fr");
     assert.equal(outcome.card.directImport, true);
+    assert.equal("language" in outcome && outcome.language, "fr");
   });
 
-  test("une page qui refuse d'être lue garde sa carte, sans extrait ni badge", async () => {
+  test("la langue de la page lue est relevée", async () => {
+    const outcome = await resolveWebSource({ uri: REDIRECT }, async () =>
+      page("https://www.example.com/r", '<html lang="en-US"><head></head></html>'),
+    );
+    assert.equal("language" in outcome && outcome.language, "other");
+  });
+
+  test("une page qui refuse d'être lue garde sa carte, sans extrait ni directImport", async () => {
     const outcome = await resolveWebSource(
       { uri: REDIRECT, title: "marmiton.org" },
       failing("blocked", "https://www.marmiton.org/recettes/blanquette.aspx"),
@@ -197,6 +276,7 @@ describe("résolution d'un lien de Google", () => {
     assert.equal(outcome.card.snippet, null);
     assert.equal(outcome.card.directImport, false);
     assert.equal("degraded" in outcome && outcome.degraded, "blocked");
+    assert.equal("language" in outcome && outcome.language, "unknown");
   });
 
   test("un refus de la garde SSRF ne rend jamais d'adresse", async () => {

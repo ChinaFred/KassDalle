@@ -63,7 +63,7 @@ function fakeDeps(over: Partial<WebSearchDeps> & { used?: number; cached?: WebSe
       calls.push("search");
       return GROUNDING;
     },
-    resolve: async () => ({ card: CARD, degraded: null }),
+    resolve: async () => ({ card: CARD, language: "fr", degraded: null }),
     reportPartial: async () => {
       calls.push("reportPartial");
     },
@@ -179,6 +179,39 @@ describe("recherche web — enchaînement", () => {
     assert.ok(!f.calls.includes("writeCache"));
     assert.ok(!f.calls.includes("refund"));
     assert.ok(f.calls.includes("reportPartial"));
+  });
+
+  test("pages en français d'abord, avant la coupe à huit, ordre de Google gardé", async () => {
+    const langs: Array<"fr" | "other" | "unknown"> = [
+      "other",
+      "unknown",
+      "fr",
+      "other",
+      "fr",
+      "unknown",
+      "other",
+      "other",
+      "other",
+      "fr",
+    ];
+    const sources = langs.map((_, i) => ({ uri: `https://g.example/${i}` }));
+    const f = fakeDeps({
+      used: 0,
+      search: async () => ({ ...GROUNDING, sources }),
+      resolve: async (s) => {
+        const i = Number(s.uri.split("/").pop());
+        return {
+          card: { ...CARD, url: `https://s${i}.example/r`, site: `s${i}.example` },
+          language: langs[i],
+          degraded: null,
+        };
+      },
+    });
+    const res = await runWebSearch("quiche", 50, f.deps);
+    assert.deepEqual(
+      res.results.map((c) => c.site),
+      [2, 4, 9, 1, 5, 0, 3, 6].map((i) => `s${i}.example`),
+    );
   });
 
   test("le plafond du fondateur multiplie, sans changer la règle", async () => {

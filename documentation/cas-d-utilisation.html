@@ -155,7 +155,7 @@
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, à ouvrir dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -411,8 +411,10 @@ flowchart LR
         les rôles, part sur un bouton : jusqu'à 8 pages de recettes trouvées par Google,
         affichées sous « Sur le web » — vidéos et réseaux sociaux exclus —, chacune sur une carte
         à icône de globe (aucune photo de la page : la charger donnerait l'adresse IP du lecteur
-        au site, et montrerait une image non modérée), à ouvrir dans le navigateur, ou à
-        importer pour l'éditeur et l'administrateur. 50 recherches par jour et par compte ; une
+        au site, et montrerait une image non modérée), à ouvrir — dans le navigateur intégré sur
+        Android et iOS, qui ramène à la liste au même endroit, dans le navigateur ailleurs —, ou
+        à importer pour l'éditeur et l'administrateur, par « Importer ». Les pages en français passent en tête ; une page en anglais ne vient
+        qu'en complément. 50 recherches par jour et par compte ; une
         recherche déjà faite par un membre depuis moins de sept jours n'est ni rappelée ni
         décomptée ; une recherche dont le moteur n'a pas répondu ne compte pas, une réponse sans
         aucune recherche compte, puisqu'elle est facturée. Quand le budget d'IA du jour est

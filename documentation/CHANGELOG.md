@@ -20,14 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.42 — fonctionnel
+### v0.23.43 — fonctionnel
 
 La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page
 le nomme dans ses données structurées : une ligne « Par Marie Dupont » au-dessus du lien
 « Source : <site> ». Elle ne s'affiche pas quand l'auteur annoncé est le site lui-même. La copie d'une recette importée garde son auteur. Les recettes importées
 avant cette version n'ont pas d'auteur : il faudrait relire chaque page pour le retrouver.
 
-### v0.23.42 — technique
+### v0.23.43 — technique
 
 L'import par lien lit deux champs de plus dans le JSON-LD `schema.org/Recipe`, sans appel de
 modèle : `author` devient `source_author`, et `nutrition` devient `source_nutrition` (calories,
@@ -40,6 +40,30 @@ n'a pas lieu sous le seuil de couverture partielle. Les règles Firestore traite
 `source_author` comme `source_site`, et réservent `source_nutrition` et
 `source_nutrition_check` au serveur. `recipeCategory` n'est pas lu : les tags restent ceux du
 balisage.
+
+### v0.23.42 — fonctionnel
+
+« Chercher sur le web » donne la priorité aux recettes en français : Gemini cherche en
+français, et les pages rédigées en français passent en tête, l'anglais ne venant qu'en
+complément. Le badge « Import direct », qui ouvrait la page au lieu de l'importer, est retiré :
+chaque carte n'a plus qu'un bouton « Importer ». Sur Android et iOS, une page — et « Voir sur
+Google » — s'ouvre dans un navigateur intégré, au-dessus de l'application. Au retour, la liste
+garde sa position : le bandeau d'import qui apparaît se place sous la liste au lieu de
+s'insérer en tête et de tout décaler (136 px en test), tient sur une ligne sur téléphone, se
+masque quand le clavier est ouvert ou quand il laisserait moins de 120 px à la liste, et la
+carte ouverte est ramenée en vue si le bandeau la couvre.
+
+### v0.23.42 — technique
+
+Le serveur relève la langue de chaque page lue (`inLanguage` du JSON-LD, `<html lang>`,
+`og:locale`, sinon un indice d'adresse) et trie les résultats de façon stable avant la coupe à
+huit : français, langue inconnue, autre langue. La clé de `web_search_cache` passe en version 2
+(`sha256("v2:" + requête)`) : les entrées produites avec l'ancien prompt ne sont plus servies,
+et la règle d'expiration les efface sous 7 jours ; pendant ce délai, une requête déjà en cache
+rappelle le modèle une fois. Le client ouvre les pages par `openWebPage`
+(`LaunchMode.inAppBrowserView` sur Android et iOS, avec la requête `CustomTabsService` dans
+`AndroidManifest.xml`). Le champ `directImport` reste rendu et journalisé par le serveur, le
+client ne le lit plus.
 
 ### v0.23.41 — fonctionnel
 

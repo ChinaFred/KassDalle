@@ -18,19 +18,16 @@ class WebRecipeResult {
   final String site;
   final String? snippet;
 
-  /// Vrai quand la page décrit sa recette en `schema.org/Recipe` complet :
-  /// l'import la projette sans relecture par le modèle.
-  final bool directImport;
-
   const WebRecipeResult({
     required this.url,
     required this.title,
     required this.site,
     this.snippet,
-    this.directImport = false,
   });
 
   /// Lit une carte du serveur ; `null` si son adresse n'est pas en https.
+  /// `directImport`, que le serveur rend encore, n'est pas lu : l'interface
+  /// ne distingue plus les pages structurées.
   ///
   /// Le serveur ne rend que de l'https. Le client le revérifie : une adresse
   /// `javascript:` ou `http:` ne doit jamais atteindre `launchUrl`.
@@ -45,14 +42,11 @@ class WebRecipeResult {
       title: title.isEmpty ? url.host : title,
       site: site.isEmpty ? url.host.replaceFirst(RegExp(r'^www\.'), '') : site,
       snippet: snippet.isEmpty ? null : snippet,
-      directImport: map['directImport'] == true,
     );
   }
 
-  /// Ce que lit un lecteur d'écran : « titre, site[, import direct] ». Le
-  /// badge n'est annoncé qu'à qui peut importer.
-  String semanticLabel({required bool canImport}) =>
-      '$title, $site${canImport && directImport ? ', import direct' : ''}';
+  /// Ce que lit un lecteur d'écran : « titre, site ».
+  String get semanticLabel => '$title, $site';
 }
 
 /// Une adresse https absolue, ou `null`.
