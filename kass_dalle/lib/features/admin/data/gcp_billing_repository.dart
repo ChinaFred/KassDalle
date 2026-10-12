@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/app_version.dart';
 import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
 import '../domain/backfill_failures.dart';
@@ -94,6 +95,34 @@ class GcpCostsReport {
   double get totalEur => currency == 'EUR' ? totalNative : totalUsd * usdToEur;
 }
 
+/// Échec d'une callable, avec son code (`failed-precondition`, `internal`…).
+///
+/// Le texte reste celui des exceptions qu'elle remplace, pour les écrans qui
+/// l'affichent tel quel ; le code permet à un écran de reconnaître un refus
+/// attendu — un passage de backfill déjà en cours — sans lire le message.
+class CallableFailure implements Exception {
+  final String name;
+  final String code;
+  final String message;
+  final String details;
+
+  const CallableFailure({
+    required this.name,
+    required this.code,
+    required this.message,
+    required this.details,
+  });
+
+  @override
+  String toString() =>
+      'Callable $name failed: code=$code, message=$message, details=$details';
+}
+
+/// La raison d'un échec, lisible : le message du serveur pour une callable,
+/// le texte de l'exception sinon.
+String callableFailureReason(Object error) =>
+    error is CallableFailure ? error.message : '$error';
+
 class GcpBillingRepository {
   final FirebaseFunctions _functions;
 
@@ -167,10 +196,11 @@ class GcpBillingRepository {
           .call<dynamic>(payload);
       return res.data;
     } on FirebaseFunctionsException catch (e, st) {
-      final details = e.details;
-      throw Exception(
-        'Callable $name failed: code=${e.code}, message=${e.message ?? 'n/a'}, '
-        'details=$details\n$st',
+      throw CallableFailure(
+        name: name,
+        code: e.code,
+        message: e.message ?? 'n/a',
+        details: '${e.details}\n$st',
       );
     }
   }
@@ -230,7 +260,13 @@ class GcpBillingRepository {
         final err = jsonDecode(res.body) as Map<String, dynamic>;
         final errObj = err['error'] as Map<String, dynamic>?;
         if (errObj != null) {
-          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
+          // `FAILED_PRECONDITION` → `failed-precondition`, comme le SDK.
+          code =
+              (errObj['status'] as String?)?.toLowerCase().replaceAll(
+                '_',
+                '-',
+              ) ??
+              code;
           message = (errObj['message'] as String?) ?? message;
           details = errObj['details'];
         }
@@ -239,8 +275,11 @@ class GcpBillingRepository {
         // dans l'exception plutôt que de le perdre silencieusement.
         details = 'corps non parsable ($parseError) : ${res.body}';
       }
-      throw Exception(
-        'Callable $name failed: code=$code, message=$message, details=$details',
+      throw CallableFailure(
+        name: name,
+        code: code,
+        message: message,
+        details: '$details',
       );
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -280,6 +319,7 @@ class GcpBillingRepository {
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
       'refreshSodium': refreshSodium,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -304,6 +344,7 @@ class GcpBillingRepository {
           (data['remainingUnitsWithoutWeight'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+      'termineAuto': (data['termineAuto'] == true) ? 1 : 0,
     };
     return BackfillCounts(
       counts: counts,
@@ -313,10 +354,11 @@ class GcpBillingRepository {
 
   /// Reprend le calcul nutritionnel des recettes incomplètes, à la demande.
   ///
-  /// Le passage planifié de 5 h suffit au quotidien. Celui-ci sert quand on
-  /// vient de corriger un référentiel et qu'on veut voir l'effet tout de suite :
-  /// il lève les deux bornes de patience du planifié — l'âge de l'instantané et
-  /// le plafond de tentatives.
+  /// Le passage programmé (tous les jours à 5 h par défaut) suffit au
+  /// quotidien. Celui-ci sert quand on vient de corriger un référentiel et
+  /// qu'on veut voir l'effet tout de suite : il lève les deux bornes de
+  /// patience du programmé — l'âge de l'instantané et le plafond de
+  /// tentatives.
   ///
   /// Idempotent, avec point de reprise serveur. Relancer continue là où l'appel
   /// précédent s'est arrêté, jusqu'à ce que `completed` vaille 1.
@@ -331,6 +373,7 @@ class GcpBillingRepository {
       'maxRecipes': maxRecipes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -349,6 +392,7 @@ class GcpBillingRepository {
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
       'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
+      'termineAuto': (data['termineAuto'] == true) ? 1 : 0,
     };
     return BackfillCounts(
       counts: counts,
@@ -377,6 +421,7 @@ class GcpBillingRepository {
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
       'force': force,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -406,6 +451,7 @@ class GcpBillingRepository {
       'maxRecipes': maxRecipes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'appVersion': kAppVersion,
     }, timeout: const Duration(minutes: 9));
 
     return RecipeProteinBackfillReport.fromMap(
@@ -423,7 +469,7 @@ class GcpBillingRepository {
   }) async {
     final dynamic raw = await _callViaSdk(
       'backfillPlanningDefaultsFn',
-      <String, dynamic>{'text': text},
+      <String, dynamic>{'text': text, 'appVersion': kAppVersion},
       timeout: const Duration(minutes: 9),
     );
 
@@ -443,6 +489,7 @@ class GcpBillingRepository {
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -469,6 +516,7 @@ class GcpBillingRepository {
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -495,6 +543,7 @@ class GcpBillingRepository {
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'appVersion': kAppVersion,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -503,6 +552,35 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Enregistre la programmation d'un backfill récurrent : jours ISO (lundi
+  /// = 1) et heure de Paris. L'administrateur connecté devient le compte
+  /// imputé des passages programmés.
+  Future<void> setBackfillSchedule({
+    required String key,
+    required bool enabled,
+    required List<int> days,
+    required int hour,
+  }) async {
+    await _callViaSdk('setBackfillScheduleFn', <String, dynamic>{
+      'key': key,
+      'enabled': enabled,
+      'days': days,
+      'hour': hour,
+    });
+  }
+
+  /// Marque un backfill ponctuel terminé ([done]), ou le remet à lancer.
+  Future<void> setBackfillDone({
+    required String key,
+    required bool done,
+  }) async {
+    await _callViaSdk('setBackfillDoneFn', <String, dynamic>{
+      'key': key,
+      'done': done,
+      'appVersion': kAppVersion,
+    });
   }
 
   /// KPIs courants de normalisation des référentiels.
