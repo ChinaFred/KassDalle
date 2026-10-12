@@ -11,6 +11,11 @@
  * Sinon, on extrait le texte principal de la page (sans scripts, menus,
  * pied de page) et il suit la chaîne du texte collé.
  *
+ * Deux champs de plus sont lus pour la recette, sans entrer dans aucun prompt :
+ * `author`, cité sous le lien de la page, et `nutrition`, les valeurs par
+ * portion que le site annonce, gardées pour les comparer au calcul du serveur
+ * (`nutrition/sourceNutrition.ts`).
+ *
  * Tout est pur ici, et testé par `tests/recipePage.test.ts` sur des pages
  * réelles réduites (`tests/fixtures/web/`).
  */
@@ -30,6 +35,21 @@ export interface JsonLdRecipe {
   totalTime: string | null;
   image: string | null;
   inLanguage: string | null;
+  /** Auteur(s) de la recette, noms joints, borné à `SOURCE_AUTHOR_MAX_CHARS`. */
+  author: string | null;
+  /** Valeurs nutritionnelles annoncées par le site, pour une portion. */
+  nutrition: JsonLdNutrition | null;
+}
+
+/**
+ * Valeurs nutritionnelles par portion lues dans `schema.org/NutritionInformation`.
+ * Une valeur absente, illisible ou hors bornes vaut `null`.
+ */
+export interface JsonLdNutrition {
+  kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
 }
 
 /** Ce qu'une page donne avant tout appel de modèle. */
@@ -439,7 +459,85 @@ function toJsonLdRecipe(obj: Record<string, unknown>): JsonLdRecipe {
     totalTime: readDuration(obj.totalTime),
     image: readImage(obj.image),
     inLanguage: typeof obj.inLanguage === "string" ? obj.inLanguage : null,
+    author: readAuthor(obj.author),
+    nutrition: readNutrition(obj.nutrition),
   };
+}
+
+/** Longueur maximale du nom d'auteur gardé. Au-delà, il est coupé. */
+export const SOURCE_AUTHOR_MAX_CHARS = 120;
+
+/**
+ * Le ou les auteurs : chaîne, `Person` / `Organization` (`name`), ou tableau
+ * de ceux-ci. Les noms sont joints par « , », sans doublon. Une référence
+ * `{"@id": …}` sans nom ne donne rien.
+ */
+export function readAuthor(value: unknown): string | null {
+  const names: string[] = [];
+  const visit = (v: unknown, depth: number): void => {
+    if (depth > 3 || v == null) return;
+    if (Array.isArray(v)) {
+      for (const item of v) visit(item, depth + 1);
+      return;
+    }
+    let name = "";
+    if (typeof v === "string") name = cleanText(v);
+    else if (typeof v === "object") {
+      const n = (v as Record<string, unknown>).name;
+      if (typeof n === "string") name = cleanText(n);
+    }
+    // Une adresse n'est pas un nom : certains sites mettent la page de l'auteur.
+    if (name && !/^https?:\/\//i.test(name) && !names.includes(name)) names.push(name);
+  };
+  visit(value, 0);
+  if (names.length === 0) return null;
+  const joined = names.join(", ");
+  return joined.length > SOURCE_AUTHOR_MAX_CHARS
+    ? joined.slice(0, SOURCE_AUTHOR_MAX_CHARS).trimEnd()
+    : joined;
+}
+
+/** Bornes d'une valeur nutritionnelle par portion : au-delà, elle est écartée. */
+export const SOURCE_NUTRITION_BOUNDS = { kcal: 10_000, grams: 2_000 } as const;
+
+/** Premier nombre d'un texte (« 12,5 g », « 420 kcal »), ou `null`. */
+function firstNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const m = /(\d+(?:[.,]\d+)?)/.exec(value);
+  return m ? Number(m[1].replace(",", ".")) : null;
+}
+
+function boundedOrNull(n: number | null, max: number): number | null {
+  return n != null && n > 0 && n <= max ? Math.round(n * 10) / 10 : null;
+}
+
+/**
+ * `NutritionInformation` d'une recette : calories, protéines, glucides,
+ * lipides, par portion. Des calories en kJ sans « kcal » sont converties.
+ * `null` quand aucune des quatre valeurs n'est lisible.
+ */
+export function readNutrition(value: unknown): JsonLdNutrition | null {
+  const node = Array.isArray(value) ? value[0] : value;
+  if (!node || typeof node !== "object") return null;
+  const o = node as Record<string, unknown>;
+  let kcal = firstNumber(o.calories);
+  if (
+    kcal != null &&
+    typeof o.calories === "string" &&
+    /kj/i.test(o.calories) &&
+    !/kcal|calorie/i.test(o.calories)
+  ) {
+    kcal = kcal / 4.184;
+  }
+  const out: JsonLdNutrition = {
+    kcal: boundedOrNull(kcal, SOURCE_NUTRITION_BOUNDS.kcal),
+    protein_g: boundedOrNull(firstNumber(o.proteinContent), SOURCE_NUTRITION_BOUNDS.grams),
+    carbs_g: boundedOrNull(firstNumber(o.carbohydrateContent), SOURCE_NUTRITION_BOUNDS.grams),
+    fat_g: boundedOrNull(firstNumber(o.fatContent), SOURCE_NUTRITION_BOUNDS.grams),
+  };
+  if (out.kcal != null) out.kcal = Math.round(out.kcal);
+  return Object.values(out).some((v) => v != null) ? out : null;
 }
 
 /** Remplace les caractères de contrôle (code < 32) par une espace. */

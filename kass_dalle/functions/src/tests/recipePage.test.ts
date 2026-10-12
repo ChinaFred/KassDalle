@@ -23,7 +23,10 @@ import {
   isoDurationMinutes,
   parseRecipePage,
   projectJsonLdRecipe,
+  readAuthor,
+  readNutrition,
   readYield,
+  SOURCE_AUTHOR_MAX_CHARS,
 } from "../web/recipePage";
 
 function fixture(name: string): string {
@@ -95,7 +98,15 @@ describe("JSON-LD", () => {
     assert.equal(r.image, "https://cdn.example.com/quiche.jpg");
     assert.equal(page.ogImage, "https://www.site.fr/img/og-quiche.jpg");
     assert.equal(page.htmlLang, "fr-FR");
+    assert.equal(r.author, "Marie Dupont");
+    assert.deepEqual(r.nutrition, { kcal: 420, protein_g: 18.5, carbs_g: null, fat_g: 30 });
     assert.ok(isCompleteRecipe(r));
+  });
+
+  test("une recette sans auteur ni nutrition", () => {
+    const page = parseRecipePage(fixture("sections_english.html"), "https://example.org/b");
+    assert.equal(page.recipes[0].author, null);
+    assert.equal(page.recipes[0].nutrition, null);
   });
 
   test("HowToSection, tableau racine, langue de la recette", () => {
@@ -143,6 +154,57 @@ describe("JSON-LD", () => {
     assert.equal(projected.langue, "fr");
     assert.equal(projected.introduction, "La vraie, sans fromage.");
     assert.deepEqual(projected.sectionsIngredients[0].lignes.length, 4);
+  });
+});
+
+describe("auteur", () => {
+  test("chaîne, Person, Organization, tableau, doublons", () => {
+    assert.equal(readAuthor("Marie Dupont"), "Marie Dupont");
+    assert.equal(readAuthor({ "@type": "Organization", name: "Le site" }), "Le site");
+    assert.equal(
+      readAuthor([{ name: "Marie" }, { name: "Paul" }, { name: "Marie" }]),
+      "Marie, Paul",
+    );
+  });
+
+  test("référence sans nom, adresse, vide : rien", () => {
+    assert.equal(readAuthor({ "@id": "https://www.site.fr/#auteur" }), null);
+    assert.equal(readAuthor("https://www.site.fr/auteur/marie"), null);
+    assert.equal(readAuthor(""), null);
+    assert.equal(readAuthor(undefined), null);
+  });
+
+  test("balises retirées, longueur bornée", () => {
+    assert.equal(readAuthor("<b>Marie</b> &amp; Paul"), "Marie & Paul");
+    const long = readAuthor("a".repeat(500));
+    assert.equal(long?.length, SOURCE_AUTHOR_MAX_CHARS);
+  });
+});
+
+describe("nutrition annoncée", () => {
+  test("texte avec unité, virgule décimale, nombre nu", () => {
+    assert.deepEqual(
+      readNutrition({
+        calories: "350 calories",
+        proteinContent: "12,5 g",
+        carbohydrateContent: 40,
+        fatContent: "9 grams",
+      }),
+      { kcal: 350, protein_g: 12.5, carbs_g: 40, fat_g: 9 },
+    );
+  });
+
+  test("kJ convertis en kcal, sauf quand les kcal sont écrites", () => {
+    assert.equal(readNutrition({ calories: "1674 kJ" })?.kcal, 400);
+    assert.equal(readNutrition({ calories: "400 kcal / 1674 kJ" })?.kcal, 400);
+  });
+
+  test("hors bornes, illisible ou absent : null", () => {
+    assert.equal(readNutrition({ calories: "0 kcal", fatContent: "n/a" }), null);
+    assert.equal(readNutrition({ calories: "99999 kcal" }), null);
+    assert.equal(readNutrition({ proteinContent: "5000 g" }), null);
+    assert.equal(readNutrition("420 kcal"), null);
+    assert.equal(readNutrition(undefined), null);
   });
 });
 

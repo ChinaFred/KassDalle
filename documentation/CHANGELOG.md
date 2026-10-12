@@ -20,6 +20,27 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.42 — fonctionnel
+
+La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page
+le nomme dans ses données structurées : une ligne « Recette de Marie Dupont » au-dessus du lien
+« Source : <site> ». La copie d'une recette importée garde son auteur. Les recettes importées
+avant cette version n'ont pas d'auteur : il faudrait relire chaque page pour le retrouver.
+
+### v0.23.42 — technique
+
+L'import par lien lit deux champs de plus dans le JSON-LD `schema.org/Recipe`, sans appel de
+modèle : `author` devient `source_author`, et `nutrition` devient `source_nutrition` (calories,
+protéines, glucides, lipides par portion, portions du site, empreinte des ingrédients écrits).
+À chaque calcul de la nutrition, `computeAndPersistRecipeNutrition` compare ses valeurs par
+portion à celles du site et écrit `source_nutrition_check`. Un écart au-delà d'un facteur 2 est
+journalisé en `WARNING` : il signale une conversion d'unité fausse, un ingrédient manquant ou un
+`per100g` faux dans le référentiel. La comparaison s'arrête dès que les ingrédients changent, et
+n'a pas lieu sous le seuil de couverture partielle. Les règles Firestore traitent
+`source_author` comme `source_site`, et réservent `source_nutrition` et
+`source_nutrition_check` au serveur. `recipeCategory` n'est pas lu : les tags restent ceux du
+balisage.
+
 ### v0.23.41 — fonctionnel
 
 Explorer affiche les pages de recettes trouvées sur le web, sans quitter l'application. Le

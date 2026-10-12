@@ -793,6 +793,10 @@ sequenceDiagram
         RN->>M: estimate_fry_absorption
       end
       RN->>FS: nutrition — totaux, par portion, pour 100 g, qualité, huile absorbée
+      opt source_nutrition (import par lien)
+        RN->>FS: source_nutrition_check — ratios avec le site, ou ingrédients changés
+        Note over RN: écart au-delà d'un facteur 2 → WARNING
+      end
     end
     opt création, ingrédients modifiés, ou allergens absent
       TR->>NI: lit les allergens des ingrédients
@@ -3245,7 +3249,7 @@ sequenceDiagram
   M-->>RP: CookLang, ingrédients, tags
   RP->>FS: books/web_{uid} (créé par ensureWebBookFn ou ici s'il manque, privé, tag __web ;<br/>un document web_{uid} étranger au compte n'est jamais réutilisé)
   RP->>FS: texte de la page → scans/{uid}/…txt (document original)
-  RP->>FS: saveDraft — origin web, source_url, source_site, review_status draft<br/>(au plus 200 ingrédients, nom ≤ 120 car., unité ≤ 40 car.)
+  RP->>FS: saveDraft — origin web, source_url, source_site, review_status draft<br/>(JSON-LD : source_author, source_nutrition par portion + empreinte des ingrédients)<br/>(au plus 200 ingrédients, nom ≤ 120 car., unité ≤ 40 car.)
   RP->>W: photo (JSON-LD, sinon og:image) — même garde, image/*, 8 Mo
   RP->>RP: sharp — 40 Mpx au plus, format jpeg/png/webp/avif/gif (SVG refusé)
   RP->>MOD: JPEG en quarantaine, recipe_illustration, attachOnApproval

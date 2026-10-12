@@ -133,6 +133,19 @@ beforeEach(async () => {
       origin: "web",
       source_url: "https://www.site.fr/quiche",
       source_site: "site.fr",
+      source_author: "Marie Dupont",
+      source_nutrition: { per_portion: { kcal: 420 }, portions: 6, ingredients_fingerprint: "" },
+      source_nutrition_check: { state: "ok", portions: 6, ratios: { kcal: 1 }, gaps: [] },
+    },
+    "recipes/web-editor-author": {
+      title: "Quiche",
+      created_by: EDITOR,
+      review_status: "draft",
+      origin: "web",
+      source_url: "https://www.site.fr/quiche",
+      source_site: "site.fr",
+      source_author: "Marie Dupont",
+      source_nutrition: { per_portion: { kcal: 420 }, portions: 6, ingredients_fingerprint: "" },
     },
     "recipes/web-editor": {
       title: "Quiche",
@@ -1026,6 +1039,68 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
   it("l'administrateur non plus ne pose pas une adresse", async () => {
     await assertFails(
       db("admin").doc("recipes/draft-reader").update({ source_url: "https://a.fr/x" }),
+    );
+  });
+});
+
+describe("recipes — auteur et nutrition de la page d'origine", () => {
+  const copyOf = (extra) => ({
+    title: "x",
+    created_by: EDITOR,
+    review_status: "draft",
+    source_recipe_id: "web-editor-author",
+    source_url: "https://www.site.fr/quiche",
+    source_site: "site.fr",
+    ...extra,
+  });
+
+  it("une copie recopie l'auteur de la recette copiée", async () => {
+    await assertSucceeds(db("editor").doc("recipes/new").set(copyOf({ source_author: "Marie Dupont" })));
+  });
+
+  it("une copie ne pose pas un autre auteur", async () => {
+    await assertFails(db("editor").doc("recipes/new").set(copyOf({ source_author: "Paul" })));
+  });
+
+  it("une recette saisie ne pose pas d'auteur", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/new")
+        .set({ title: "x", created_by: EDITOR, review_status: "draft", source_author: "Paul" }),
+    );
+  });
+
+  it("la création ne pose ni nutrition du site ni écart", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/new")
+        .set(copyOf({ source_author: "Marie Dupont", source_nutrition: { per_portion: {} } })),
+    );
+    await assertFails(
+      db("editor")
+        .doc("recipes/new")
+        .set({
+          title: "x",
+          created_by: EDITOR,
+          review_status: "draft",
+          source_nutrition_check: { state: "ok" },
+        }),
+    );
+  });
+
+  it("le propriétaire ne modifie ni l'auteur, ni la nutrition du site, ni l'écart", async () => {
+    const ref = db("reader").doc("recipes/web-reader");
+    await assertFails(ref.update({ source_author: "Paul" }));
+    await assertFails(ref.update({ source_author: deleteField() }));
+    await assertFails(ref.update({ "source_nutrition.per_portion.kcal": 100 }));
+    await assertFails(ref.update({ source_nutrition_check: deleteField() }));
+  });
+
+  it("une édition qui réécrit le même auteur passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("recipes/web-reader")
+        .update({ title: "Quiche lorraine", source_author: "Marie Dupont" }),
     );
   });
 });

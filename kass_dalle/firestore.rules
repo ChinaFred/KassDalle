@@ -460,17 +460,27 @@ service cloud.firestore {
       // La recette copiée doit aussi être lisible par l'appelant : sans cela,
       // une adresse se vérifiait contre une recette privée d'autrui, et la
       // création confirmait ou infirmait ce qu'elle contient. `source_site`, le
-      // nom du site écrit à côté, suit la même règle.
+      // nom du site écrit à côté, et `source_author`, l'auteur annoncé par la
+      // page, suivent la même règle.
       function sourceUrlAccepted() {
         let url = request.resource.data.get('source_url', null);
         let site = request.resource.data.get('source_site', null);
+        let author = request.resource.data.get('source_author', null);
         let from = request.resource.data.get('source_recipe_id', null);
-        return (url == null && site == null)
+        return (url == null && site == null && author == null)
           || (from is string && from != '' && !from.matches('.*/.*')
               && exists(/databases/$(database)/documents/recipes/$(from))
               && canReadRecipe(get(/databases/$(database)/documents/recipes/$(from)).data)
               && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_url', null) == url
-              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site);
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_site', null) == site
+              && get(/databases/$(database)/documents/recipes/$(from)).data.get('source_author', null) == author);
+      }
+
+      // Nutrition annoncée par la page d'une recette importée, et son écart
+      // avec le calcul : le serveur seul les écrit (`recipeProcessor`,
+      // `computeAndPersistRecipeNutrition`). Une copie ne les reprend pas.
+      function serverOnlySourceFields() {
+        return ['source_nutrition', 'source_nutrition_check'];
       }
 
       allow read: if canReadRecipe(resource.data);
@@ -489,11 +499,14 @@ service cloud.firestore {
       // empreinte gardée) quand les deux durées sont lues.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
+        && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
-        && !changes('source_url') && !changes('source_site') && !changes('estimated_times')
+        && !changes('source_url') && !changes('source_site') && !changes('source_author')
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
+        && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());

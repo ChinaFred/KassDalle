@@ -47,6 +47,7 @@ import {
   exceedsJsonLdBounds,
   isCompleteRecipe,
   parseRecipePage,
+  type JsonLdNutrition,
   projectJsonLdRecipe,
   recipeAsPlainText,
 } from "../web/recipePage";
@@ -138,6 +139,13 @@ export interface PreparedUrlImport {
   imageUrl: string | null;
   /** Texte joint comme document original. */
   originalText: string;
+  /** Auteur annoncé par le JSON-LD de la page ; `null` par le texte de la page. */
+  sourceAuthor: string | null;
+  /**
+   * Nutrition par portion annoncée par le JSON-LD, avec les portions du site.
+   * `null` par le texte de la page ou quand le site n'en publie pas.
+   */
+  sourceNutrition: { perPortion: JsonLdNutrition; portions: number | null } | null;
 }
 
 /**
@@ -291,6 +299,10 @@ export async function prepareUrlImport(args: {
     path,
     imageUrl,
     originalText: header + body,
+    sourceAuthor: structured?.author ?? null,
+    sourceNutrition: structured?.nutrition
+      ? { perPortion: structured.nutrition, portions: structured.recipeYield }
+      : null,
   };
 }
 

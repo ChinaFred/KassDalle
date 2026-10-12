@@ -779,6 +779,10 @@ class Recipe {
   /// côté de l'adresse. Mêmes règles d'écriture que [sourceUrl].
   final String? sourceSite;
 
+  /// Auteur annoncé par la page d'origine (`author` de son JSON-LD), écrit
+  /// par le serveur à l'import. Mêmes règles d'écriture que [sourceUrl].
+  final String? sourceAuthor;
+
   /// Vrai quand la recette a été traduite à l'import.
   bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
 
@@ -835,6 +839,7 @@ class Recipe {
     this.langueOrigine,
     this.sourceUrl,
     this.sourceSite,
+    this.sourceAuthor,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -909,6 +914,7 @@ class Recipe {
       langueOrigine: data['langue_origine'] as String?,
       sourceUrl: data['source_url'] as String?,
       sourceSite: data['source_site'] as String?,
+      sourceAuthor: data['source_author'] as String?,
     );
   }
 
@@ -946,6 +952,7 @@ class Recipe {
       // posée ni changée ici (règles Firestore).
       if (sourceUrl != null) 'source_url': sourceUrl,
       if (sourceSite != null) 'source_site': sourceSite,
+      if (sourceAuthor != null) 'source_author': sourceAuthor,
       if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
       if (fidelityFindings.isNotEmpty)
         'fidelity_findings': fidelityFindings.map((f) => f.toMap()).toList(),
@@ -984,6 +991,7 @@ class Recipe {
     RecipeOrigin? origin,
     String? sourceUrl,
     String? sourceSite,
+    String? sourceAuthor,
   }) {
     return Recipe(
       id: id,
@@ -1030,6 +1038,7 @@ class Recipe {
       langueOrigine: langueOrigine,
       sourceUrl: sourceUrl ?? this.sourceUrl,
       sourceSite: sourceSite ?? this.sourceSite,
+      sourceAuthor: sourceAuthor ?? this.sourceAuthor,
     );
   }
 }

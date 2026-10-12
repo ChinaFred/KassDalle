@@ -44,17 +44,22 @@ Future<void> openExternalPage(
 ///
 /// [site] est le nom écrit par le serveur (`source_site`). Sans lui — le rappel
 /// de la saisie n'a que l'adresse —, le lien porte l'hôte de l'adresse.
+///
+/// [author] est l'auteur annoncé par la page (`source_author`). Présent, il
+/// s'affiche sur une ligne « Recette de … » au-dessus du lien.
 class RecipeSourceLink extends StatelessWidget {
   const RecipeSourceLink({
     super.key,
     required this.url,
     this.site,
+    this.author,
     this.prefix = 'Source : ',
     this.compact = false,
   });
 
   final String url;
   final String? site;
+  final String? author;
   final String prefix;
 
   /// Une seule ligne (lien + copier), sans l'adresse complète : pour les
@@ -71,12 +76,20 @@ class RecipeSourceLink extends StatelessWidget {
     if (!looksLikeWebLink(url)) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final label = (site ?? '').isNotEmpty ? site! : Uri.parse(url.trim()).host;
+    final authorName = (author ?? '').trim();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (authorName.isNotEmpty)
+            Text(
+              'Recette de $authorName',
+              style: theme.textTheme.bodyMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           Row(
             children: [
               Text(prefix, style: theme.textTheme.bodyMedium),
