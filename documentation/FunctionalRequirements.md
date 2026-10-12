@@ -44,7 +44,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 - **Un compte neuf naît en attente (`pending`) et n'accède à rien.** Il voit une salle d'attente qui affiche son adresse et l'invite à la communiquer ; l'écran se referme de lui-même dès qu'un rôle lui est attribué.
 - **Le rôle n'est jamais choisi par l'application.** Les règles Firestore imposent `pending` à la création, et seul un Admin le change ensuite.
 - **Exception : le compte invité par e-mail.** Si un Admin a invité l'adresse Google du compte neuf (3.3) et que l'invitation est active, le serveur (`applyEmailInvitation`) lui donne à sa première connexion le rôle de l'invitation et l'ajoute aux membres du groupe choisi, sans invitation de groupe à accepter. C'est le serveur qui décide, sur l'adresse vérifiée du compte **Auth** ; le client ne lit pas les invitations et ne peut pas se donner de rôle. Le compte naît toujours `pending` : la salle d'attente s'affiche le temps que le serveur réponde (quelques secondes), puis se referme seule. L'adresse doit être celle de l'invitation, comparée sans casse et, pour Gmail, sans points ni suffixe `+…` ; une autre adresse reste en attente d'un rôle donné à la main.
-- **Le compte fondateur** (`china.fred.75@gmail.com`) est le seul administrateur d'origine : le déclencheur serveur `enforceFounderRole` lui rend le rôle `admin` en vérifiant l'adresse du compte **Auth**, jamais celle écrite dans le document. Il rétablit aussi ce rôle s'il est rabaissé ou révoqué — un administrateur adoubé ne peut pas mettre dehors celui qui l'a nommé.
+- **Le compte fondateur** (`china.fred.75@gmail.com`) est le seul administrateur d'origine : le déclencheur serveur `enforceFounderRole` lui rend le rôle `admin` en vérifiant l'adresse du compte **Auth**, jamais celle écrite dans le document. L'adresse doit être **vérifiée** et la connexion passer par **Google**, côté serveur comme dans les règles Firestore (v0.23.48). Il rétablit aussi ce rôle s'il est rabaissé ou révoqué — un administrateur adoubé ne peut pas mettre dehors celui qui l'a nommé.
 
 ### 3.2 Rôles
 
@@ -947,6 +947,7 @@ déjà transmise continue de fonctionner.
 - Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
+- **Chaque analyse compte dans le plafond quotidien d'IA du compte** (une image, un appel). Plafond atteint : l'image n'est ni analysée ni publiée, et l'écran affiche « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte. Une photo de page importée par lien est alors laissée de côté ; la recette est créée sans photo.
 - La revue vit dans *Admin › Modération*, et montre aussi bien ce qui est passé que ce qui a été bloqué.
 - **Seules les images de l'application s'affichent** (v0.23.13). Une image dont l'adresse ne pointe pas vers le stockage de l'application — photo de recette, couverture de livre, image insérée dans le texte d'une recette, visuel de dressage — n'est pas chargée : l'écran montre l'image de repli habituelle, sur toutes les plateformes, et l'export PDF part sans elle. Dans un éditeur, l'image insérée affiche « Image extérieure : importez-la depuis la galerie ». Une telle vignette ne s'ouvre pas en grand, et l'atelier de retouche ne la télécharge pas (« Cette image ne vient pas de Kass'Dalle : elle n'est pas téléchargée. »). Les images de l'ancien stockage du projet restent affichées. Ces images n'ont pas été modérées. Exception, décidée par l'utilisateur : la photo de profil du compte Google reste affichée.
 
@@ -1422,9 +1423,13 @@ endroits où l'on regarde déjà la dépense.
   comme Gemini et Claude le sont.
 - **Dépense par utilisateur** — on voit combien d'images chaque compte a fait analyser, et
   ce que cela a coûté. C'est la seule façon de repérer un envoi massif.
-- **Mais elle ne consomme pas le plafond quotidien.** Un plafond atteint doit empêcher de
-  *dépenser*, jamais de *publier une image légitime* : sinon le contrôle punit celui qu'il
-  protège. Elle est comptée et affichée, hors plafond, et l'écran le dit.
+- **Elle consomme le plafond quotidien du compte** (v0.23.48). Chaque image analysée
+  compte pour un appel, et son coût pour sa part en euros. Elle en était exclue : un compte
+  pouvait alors faire analyser des images sans limite en rappelant la publication en boucle
+  (audit sécurité). Plafond atteint, l'image n'est pas publiée et l'écran affiche
+  « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte ; la publication redevient possible le lendemain, ou dès qu'un administrateur
+  relève le plafond. La relance des images en attente, réservée à l'administrateur, n'y est
+  pas soumise.
 - **Le quota offert est une ligne, pas un silence.** Le fournisseur offre mille unités par
   mois ; à notre volume, la facture réelle sera nulle la plupart du temps. Le coût brut
   reste affiché, et le quota apparaît en déduction. Un mois à zéro euro doit se lire comme

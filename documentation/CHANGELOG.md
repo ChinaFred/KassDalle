@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.48 — fonctionnel
+### v0.23.49 — fonctionnel
 
 Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par
 e-mail ». L'admin saisit une adresse, choisit un groupe dont il est membre et un rôle (Lecteur
@@ -30,7 +30,7 @@ le rôle et entre dans le groupe sans attendre d'approbation. Une invitation vau
 renvoie ou s'annule depuis la liste. Une adresse qui a déjà un compte est refusée : elle garde
 le parcours actuel (rôle dans l'onglet Comptes, invitation de groupe à accepter).
 
-### v0.23.48 — technique
+### v0.23.49 — technique
 
 Nouvelle callable `manageInvitationFn` (création, renvoi, annulation ; 20 envois par admin et
 par jour) qui envoie par SMTP Gmail avec `nodemailer`, chargé par `await import()`. Deux
@@ -43,6 +43,47 @@ d'écrire les claims, pour qu'une exécution en retard ne remette pas `pending`,
 document disparu comme une suppression. La création d'un compte exige désormais
 `email_verified`. Le statut effectif d'une invitation rejoint la logique dupliquée, avec la
 fixture `email_invitation_status.json`.
+
+### v0.23.48 — fonctionnel
+
+La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image
+analysée vaut un appel, et son coût s'ajoute à la dépense du jour. Plafond atteint, l'image
+n'est pas publiée et l'écran affiche « Quota atteint — Le service a atteint sa limite pour
+aujourd'hui. Réessayez plus tard. », le message de tout `resource-exhausted` ; une photo de page importée par
+lien est laissée de côté et la recette est créée sans elle. La relance des images en attente
+par l'administrateur n'est pas concernée.
+
+### v0.23.48 — technique
+
+Cinq corrections issues de l'audit `securite`.
+
+- **Cloud Vision dans le plafond quotidien.** `moderateAndPromote` réserve une place par image
+  analysée (`withDailyBudget`), au coût de l'analyse lu dans la grille tarifaire
+  (`visionAnalysisCostUsd`, nouvelle option `estimateUsd` de `reserveDailyBudget`). Un compte
+  pouvait rappeler `moderateAndPromoteImagesFn` en boucle sur sa quarantaine, chaque appel
+  déclenchant une analyse facturée. Refus : `resource-exhausted`. Chaque analyse est
+  enregistrée par `recordUsage` dès qu'elle est faite, avant que sa place soit rendue
+  (`analyseAndRecord`) : une ligne `ai_usage` par image au lieu d'une par lot, et un lot ne
+  dépasse plus le plafond de ses analyses en cours. `retryPendingModerationFn` (admin) reste
+  hors plafond ; `recordUsage` accepte `dailyCalls` pour qu'elle compte une image pour un
+  appel.
+- **`normalizeRecipeReferentialsFn`** écrit dans `nutrition_ingredients` : réservée à
+  l'éditeur, et au lecteur créateur de la recette `recipeId`
+  (`assertCanNormalizeReferentials`). `requireEditor` seul aurait cassé l'enregistrement
+  d'une recette par son lecteur créateur, que les règles permettent.
+- **`free_recipe_cover_url`** : les règles n'admettent que `null` ou une adresse de
+  téléchargement exacte de la modération, `users%2F{uid du document}%2Ffree_recipe_cover_{n}.{jpg|jpeg|png|webp}`
+  dans le bucket du projet, 500 caractères au plus (`coverUrlOk`) : ni `..`, ni `%2E`, ni
+  `%25`. `publicCoverUrl` applique la même forme à la recopie dans `user_profiles`.
+- **`error_reports`** : liste fermée des neuf champs, `user_id` égal à l'appelant, longueurs
+  bornées (`isErrorReport`). `context` devient une chaîne JSON, seule forme mesurable par
+  une règle ; le client tronque chaque champ à la moitié de la borne. Un contexte illisible
+  à la lecture est remonté une fois par rapport (`error_report.parse`). Les rapports anciens
+  (contexte en carte) se relisent toujours. Un client antérieur à cette version, qui écrit
+  encore une carte, voit ses rapports refusés jusqu'à sa mise à jour.
+- **Fondateur** : `isFounder()` exige `email_verified` et une connexion Google ;
+  `isFounderAccount` applique le même contrôle dans `enforceFounderRole` et pour le
+  multiplicateur de plafond (`founderUid`).
 
 ### v0.23.47 — fonctionnel
 

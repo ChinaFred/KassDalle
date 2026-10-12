@@ -16,6 +16,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
 import { logError, logInfo, logWarn } from "../logging";
+import { BudgetExceededError, withDailyBudget } from "../ai/budget";
+import { estimateAiCostUsd, loadAiPricingTable } from "../ai/pricing";
 import { recordUsage } from "../ai/usage";
 import { scanUpload } from "../utils/uploadSecurity";
 import { decideModeration, type ModerationDecision } from "./decision";
@@ -24,7 +26,9 @@ import {
   MODERATION_FEATURE_BATCH,
   analyseImage,
   getModerationConfig,
+  type EngineAnalysis,
 } from "./engine";
+import { VISION_MODEL_ID, VISION_UNITS_PER_IMAGE } from "./vision";
 import { resolveImageOrigin, sha256Hex, type ImageOrigin } from "./origin";
 import {
   assertTargetOwnership,
@@ -98,6 +102,67 @@ export class QuarantineFileMissing extends Error {
 }
 
 /**
+ * Coût d'une analyse Cloud Vision, en dollars, lu dans la grille tarifaire :
+ * ses unités fois le prix de l'unité. `null` si la grille est illisible — la
+ * réservation retombe alors sur la moyenne du jour, et le plafond d'appels
+ * tient seul. Aucun prix n'est écrit dans le code.
+ */
+export async function visionAnalysisCostUsd(): Promise<number | null> {
+  try {
+    return estimateAiCostUsd({
+      model: VISION_MODEL_ID,
+      inputTokens: 0,
+      outputTokens: 0,
+      analyzedImageUnits: VISION_UNITS_PER_IMAGE,
+      table: await loadAiPricingTable(),
+    });
+  } catch (err) {
+    await logError({
+      message: "Modération : coût d'une analyse inconnu, réservation à la moyenne du jour",
+      moduleType: "MODERATION",
+      errorDescription: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/** Ce qu'une analyse laisse à enregistrer : modèle, unités facturées, issue. */
+export interface VisionUsageEntry {
+  /** `null` quand le moteur n'a pas répondu. */
+  model: string | null;
+  units: number;
+  status: "ok" | "error";
+}
+
+/**
+ * Lance une analyse et enregistre sa consommation **aussitôt**, réussie ou
+ * non, avant de rendre la main. Testée seule, avec des doublures.
+ *
+ * L'enregistrement se faisait en fin de lot : les analyses d'un lot de
+ * vingt-cinq images n'entraient dans la dépense du jour qu'à la fin, et le
+ * lot pouvait dépasser le plafond de vingt-cinq analyses (relecture
+ * sécurité). Appelée à l'intérieur de la réservation (`withDailyBudget`),
+ * elle inscrit la dépense avant que la place soit rendue : l'image suivante
+ * lit un plafond à jour. `record` ne doit pas lever.
+ */
+export async function analyseAndRecord<T extends { model: string; units: number }>(args: {
+  analyse: () => Promise<T>;
+  record: (entry: VisionUsageEntry) => Promise<void>;
+}): Promise<T> {
+  let analysis: T;
+  try {
+    analysis = await args.analyse();
+  } catch (err) {
+    // Un appel dont le moteur est tombé ne consomme rien, mais reste visible
+    // avec le statut `error`.
+    await args.record({ model: null, units: 0, status: "error" });
+    throw err;
+  }
+  await args.record({ model: analysis.model, units: analysis.units, status: "ok" });
+  return analysis;
+}
+
+/**
  * Analyse et publie un lot d'images déjà déposées en quarantaine.
  *
  * Un lot est un poste de coût à part (`image_moderation_batch`) : le distinguer
@@ -131,7 +196,39 @@ export async function moderateAndPromote(args: {
   const outcomes: ItemOutcome[] = [];
   let unitsBilled = 0;
   let engineModel = "moderation-disabled";
-  let engineFailed = false;
+  // Lu une fois par lot, au premier besoin : une image sans analyse (asset,
+  // image de l'IA, modération coupée) ne lit pas la grille.
+  let analysisCostUsd: number | null | undefined;
+
+  // Une ligne d'usage par analyse, écrite dès l'analyse faite : le lot peut
+  // s'arrêter à la première erreur (format, fichier absent, plafond atteint)
+  // sans qu'une analyse facturée sorte du reporting ni du plafond du jour.
+  const recordAnalysis = async (entry: VisionUsageEntry): Promise<void> => {
+    try {
+      await recordUsage({
+        feature,
+        provider: "vision",
+        model: entry.model ?? VISION_MODEL_ID,
+        userId,
+        correlationId,
+        analyzedImageUnits: entry.units,
+        entityType: "image_moderation",
+        status: entry.status,
+      });
+    } catch (err) {
+      // Best-effort : l'analyse est faite et facturée, la perdre ici
+      // fausserait le reporting et le plafond d'autant. Visible.
+      await logError({
+        message: "Modération : consommation Cloud Vision non enregistrée",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        feature,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        extra: { units: entry.units, status: entry.status },
+      });
+    }
+  };
 
   for (const item of items) {
     const docRef = db.collection(COLLECTION).doc();
@@ -197,8 +294,42 @@ export async function moderateAndPromote(args: {
       // qu'aucun signal n'a été vu ferait mentir le journal.
       decision = { status: "approved", reason: "moderation_disabled", culinaryMatches: [] };
     } else {
+      // Plafond quotidien du compte, réservé avant l'analyse : chaque image
+      // analysée est facturée par Cloud Vision. Sans cette réservation, un
+      // compte qui rappelait la fonction en boucle sur sa quarantaine
+      // déclenchait des analyses sans limite. Un refus remonte à l'appelant
+      // (`BudgetExceededError`) : ce n'est pas une panne du moteur, l'image
+      // ne passe pas en attente.
+      if (analysisCostUsd === undefined) analysisCostUsd = await visionAnalysisCostUsd();
+      const estimateUsd = analysisCostUsd;
+      let analysis: EngineAnalysis | null = null;
       try {
-        const analysis = await analyseImage(bytes, config);
+        analysis = await withDailyBudget(
+          userId,
+          feature,
+          () =>
+            analyseAndRecord({
+              analyse: () => analyseImage(bytes, config),
+              record: recordAnalysis,
+            }),
+          { estimateUsd },
+        );
+      } catch (err) {
+        if (err instanceof BudgetExceededError) throw err;
+        // Pas de repli : publier par défaut, c'est modérer pour rien ; refuser
+        // par défaut, c'est accuser à tort. L'image attend.
+        await logError({
+          message: "Moteur de modération injoignable — image laissée en attente",
+          moduleType: "MODERATION",
+          userId,
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          extra: { quarantinePath: item.quarantinePath, provider: config.provider },
+        });
+      }
+      if (analysis == null) {
+        decision = { status: "pending", reason: "engine_unavailable", culinaryMatches: [] };
+      } else {
         engineModel = analysis.model;
         provider = analysis.provider;
         unitsBilled += analysis.units;
@@ -211,19 +342,6 @@ export async function moderateAndPromote(args: {
           labels: analysis.signals.labels,
         };
         decision = decideModeration(analysis.signals, config.thresholds);
-      } catch (err) {
-        // Pas de repli : publier par défaut, c'est modérer pour rien ; refuser
-        // par défaut, c'est accuser à tort. L'image attend.
-        engineFailed = true;
-        decision = { status: "pending", reason: "engine_unavailable", culinaryMatches: [] };
-        await logError({
-          message: "Moteur de modération injoignable — image laissée en attente",
-          moduleType: "MODERATION",
-          userId,
-          correlationId,
-          errorDescription: err instanceof Error ? err.message : String(err),
-          extra: { quarantinePath: item.quarantinePath, provider: config.provider },
-        });
       }
     }
 
@@ -300,22 +418,6 @@ export async function moderateAndPromote(args: {
       status: decision.status,
       reason: decision.reason,
       url: publishedUrl,
-    });
-  }
-
-  // Une analyse facturée est enregistrée même si le verdict a été négatif : le
-  // fournisseur l'a servie et la facture. Un appel dont le moteur est tombé ne
-  // consomme rien, mais reste visible avec le statut `error`.
-  if (unitsBilled > 0 || engineFailed) {
-    await recordUsage({
-      feature,
-      provider: "vision",
-      model: engineModel,
-      userId,
-      correlationId,
-      analyzedImageUnits: unitsBilled,
-      entityType: "image_moderation",
-      status: engineFailed ? "error" : "ok",
     });
   }
 

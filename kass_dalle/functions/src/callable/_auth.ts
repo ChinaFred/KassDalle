@@ -142,6 +142,15 @@ export async function isAdminAccount(uid: string): Promise<boolean> {
   return accessDenial(await accountFromFirestore(uid), "admin") === null;
 }
 
+/**
+ * Le compte est-il éditeur ou administrateur, lu sur son document ? Sert les
+ * callables ouvertes au lecteur sous condition : l'éditeur passe sans autre
+ * contrôle, le lecteur seulement sur ce qui lui appartient.
+ */
+export async function isEditorAccount(uid: string): Promise<boolean> {
+  return accessDenial(await accountFromFirestore(uid), "editor") === null;
+}
+
 function deny(denial: { message: string }): never {
   throw new HttpsError("permission-denied", denial.message);
 }
