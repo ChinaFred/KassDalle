@@ -476,6 +476,19 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Crée, pour chaque compte approuvé (lecteur, éditeur, administrateur), les
+  /// livres système qui lui manquent. Sans appel de modèle. Les drapeaux
+  /// valent 1 ou 0 ; les comptes en échec sont dans `failures`.
+  Future<BackfillCounts> backfillSystemBooks() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillSystemBooksFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Recalcule `shopping_products` sur toutes les recettes, sans appel de
   /// modèle. Réentrante, avec reprise sur point de contrôle. Rend les
   /// compteurs tels quels ; les drapeaux valent 1 ou 0. Les recettes à

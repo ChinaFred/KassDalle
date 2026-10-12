@@ -28,6 +28,7 @@ export const BACKFILL_KEYS = [
   "estimated_times",
   "refresh_sodium",
   "planning_defaults",
+  "system_books",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -117,6 +118,13 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "planning_defaults",
     kind: "ponctuel",
     title: "Contraintes de variété par défaut",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  {
+    key: "system_books",
+    kind: "ponctuel",
+    title: "Livres système des comptes",
     usesAi: false,
     defaultSchedule: null,
   },

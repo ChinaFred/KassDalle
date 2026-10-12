@@ -20,6 +20,34 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.50 — fonctionnel
+
+Tout compte approuvé a ses quatre livres système : « Mes créations Kass'Dalle », « Mes recettes
+libres », « Mes Recettes Secrètes » et « Mes recettes du web ». Jusqu'ici, ils n'étaient créés
+qu'à l'ouverture de la bibliothèque par un éditeur ou un administrateur : les lecteurs n'en avaient
+aucun. Ils sont désormais créés à l'approbation du compte, ou à l'acceptation d'une invitation par e-mail, lecteurs compris. Pour les comptes déjà
+approuvés, une nouvelle reprise *Admin › Backfills › Livres système des comptes* crée ceux qui
+manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA.
+
+### v0.23.50 — technique
+
+`books/systemBooks.ts` (`ensureSystemBooksFor`) crée les livres système absents d'un compte,
+reconnus à leur tag. Les trois livres créés par le client reprennent ses champs ; « Mes recettes
+du web » passe par `findOrCreateWebBook`. Deux appelants : `syncUserClaims`, quand le compte
+reçoit l'accès (`gainsAccess` : approbation, invitation par e-mail acceptée, levée d'une révocation), et le backfill ponctuel
+`backfillSystemBooksFn` (`callable/systemBooksBackfillCallable.ts`, clé `system_books`) pour les
+comptes existants. La couverture reste vide : l'écran affiche l'image du livre système, et le
+client la dépose à la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est
+éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide.
+
+Les trois livres créés par le client et par le serveur prennent un identifiant fixe,
+`kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` : à l'approbation d'un éditeur, le
+déclencheur et l'application peuvent tourner en même temps, et un livre système en double ne se
+supprime pas. Le serveur et le client créent en transaction et ne réécrivent jamais un livre
+existant. `firestore.rules` réserve ces identifiants au compte qu'ils nomment, et laisse un éditeur
+lire son propre identifiant encore absent, lecture qu'exige la transaction du client. Tests : `tests/systemBooksBackfill.test.ts`,
+`tests/authGuards.test.ts`, `rules-tests/test/firestore.test.mjs`.
+
 ### v0.23.49 — fonctionnel
 
 Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par

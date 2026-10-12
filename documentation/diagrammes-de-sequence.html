@@ -1784,6 +1784,7 @@ sequenceDiagram
   participant SY as syncUserClaims
   participant FD as enforceFounderRole
   participant UP as user_profiles/{uid}
+  participant BK as books
   participant CF as Callables
 
   N->>L: Se connecter avec Google
@@ -1800,6 +1801,7 @@ sequenceDiagram
   FS->>SY: onDocumentWritten
   SY->>UP: crée le profil public — nom, couverture des recettes libres (adresse Storage du projet seulement)
   SY->>AU: setCustomUserClaims { role, revoked }
+  SY->>BK: crée les livres système manquants (ensureSystemBooksFor)
   Note over SY,AU: le jeton du compte ne porte le rôle<br/>qu'au renouvellement suivant
   FS-->>R: appUserProvider se met à jour
   R->>R: plus pending et sur /pending → /
@@ -1831,6 +1833,8 @@ sequenceDiagram
         déclencheur tient le profil public <code>user_profiles/{uid}</code> (v0.23.14) : il le
         relit à chaque écriture du compte et ne le réécrit que si le nom ou la couverture
         diffèrent. C'est ce profil, et non <code>users/{uid}</code>, que les autres membres lisent.
+        Quand le compte reçoit l'accès — approbation, levée d'une révocation —, le déclencheur
+        crée aussi ses livres système manquants, lecteurs compris (v0.23.50).
         <span class="expect">
           <b>Un compte <code>pending</code> est envoyé en salle d'attente, pas au login.</b> Il est
           authentifié : le renvoyer vers <code>/login</code> le ferait rebondir vers l'accueil, où

@@ -331,7 +331,7 @@ pour que deux comptes sans profil restent distincts.
 
 | Champ | Type | Description |
 |---|---|---|
-| `id` | `String` | ID auto-généré Firestore |
+| `id` | `String` | ID auto-généré Firestore, sauf livres système : `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`, `web_{uid}` (repli `web2_{uid}`) |
 | `titre` | `String` | Titre du livre |
 | `sous_titre` | `String?` | Sous-titre du livre |
 | `editeur` | `String?` | Maison d'edition |
@@ -360,7 +360,25 @@ Firestore aussi (`isSystemBook`, `keepsSystemTags`, §4). Ils sont posés à l'o
 bibliothèque (`ensureSystemBooks`), pour un éditeur ou un administrateur seulement : un lecteur ne
 crée pas de recette, il n'a pas besoin des livres qui les reçoivent (les règles lui refusent
 d'ailleurs la création d'un livre), et il garde ceux qu'il avait. Les trois premiers sont créés
-par le client. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
+par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé, lecteurs compris
+(`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
+l'accès (`gainsAccess` : approbation d'un compte en attente, invitation par e-mail acceptée, levée d'une révocation ; un échec est
+journalisé et n'empêche pas l'accès), et la reprise *Admin › Backfills › Livres système des
+comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.50. Ces trois livres
+ont un identifiant fixe, `kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` (`systemBookId`
+côté serveur, `_createSystemBook` côté client) : à l'approbation d'un éditeur, le déclencheur et
+l'application peuvent tourner en même temps, et un livre système en double ne se supprime pas.
+Les livres créés avant la v0.23.50 gardent leur identifiant aléatoire. Le serveur crée en
+transaction et retrouve un livre déjà posé par le client ; le client aussi, et ne réécrit jamais
+un livre existant : hors ligne, un `set` mis en file aurait remplacé à la reconnexion un livre que
+le cache ne montrait pas, `is_private` compris. Pour cette transaction, les règles laissent un
+éditeur lire son propre identifiant fixe encore absent (`ownSystemBookId`). Un identifiant occupé
+par un autre document (étranger au compte, ou livre sans le tag) est journalisé et n'empêche pas
+la création des autres livres. Les règles réservent ces identifiants au compte qu'ils nomment
+(§4). Un livre système reste reconnu à son tag, quel que soit son identifiant. Mêmes
+champs que le client, couverture vide : l'écran affiche
+alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
+la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
 `pipeline/urlImport.ts`) : par `ensureWebBookFn` (`callable/urlImportCallable.ts`,
 `requireEditor`), appelée par `ensureSystemBooks` avec les autres livres, et à défaut au premier
 import par lien. Identifiant déterministe `books/web_{uid}` (deux appels simultanés ne créent
@@ -1673,8 +1691,8 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `recipe_protein`, `estimated_times`, `refresh_sodium`, `planning_defaults` —
-ponctuels). Deux sortes de documents, écrits par le serveur seul — les règles refusent
+récurrents ; `recipe_protein`, `estimated_times`, `refresh_sodium`, `planning_defaults`,
+`system_books` — ponctuels). Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
 (administrateurs seulement) :
 
@@ -2161,8 +2179,13 @@ service cloud.firestore {
       allow read: if isApproved()
         && (isCreator(resource.data) || isAdmin() || isSharedWithMe(resource.data));
       // « Mes recettes du web » est créé par le serveur seul (`web_{uid}`).
+      // Les trois autres, sous `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`,
+      // par le seul compte qu'ils nomment (client et serveur écrivent le même document).
+      // Son propre livre système encore absent se lit : le client le crée en transaction.
+      allow get: if isEditor() && resource == null && ownSystemBookId();
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !bookId.matches('web[0-9]*_.*')
+        && (!bookId.matches('(kassdalle|libres|secretes)_.*') || ownSystemBookId())
         && !(request.resource.data.get('tags', []) is list
              && request.resource.data.get('tags', []).hasAny(['__web']));
       allow update: if isEditor() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
@@ -4312,6 +4335,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillEstimatedTimesFn` | `admin` | un seul passage à la fois : verrou daté `running_until` sur le point de reprise, posé en transaction, levé à la fin, expiré au bout de 540 s ; un second lancement rend « déjà en cours » (`dejaEnCours`) sans appel. Parcourt `recipes` et soumet au modèle, par lots de huit recettes **d'un même `created_by`** — le texte d'un compte ne partage jamais un prompt avec celui d'un autre — (poste `backfill_time_estimate_batch`, 160 recettes par appel par défaut, 8 au moins, 400 au plus ; quota atteint, les groupes en attente partent avant l'arrêt si le délai le permet), les recettes de type `recipe` à qui il manque une durée de préparation ou de cuisson et qui ne portent pas d'estimation pour leur contenu actuel (`decideEstimatedTimes`). Une recette dont les durées sont lues, ou déjà estimée, n'est ni redemandée ni refacturée. Chaque réponse s'écrit dans une transaction qui revérifie l'empreinte : une recette modifiée pendant l'appel est ignorée. S'arrête après trois lots en échec de suite. Un lot en échec ne bloque pas le parcours : le curseur le dépasse, et `completed` reste faux tant qu'un passage compte une erreur ; une fois la collection parcourue, le curseur revient au début, et le passage suivant reprend les recettes en erreur en ignorant sans appel celles déjà estimées. Compte rendu : examinées, estimées, sans estimation, ignorées, hors recette, en erreur, et la liste `aRevoir` des recettes non estimées (voir « Liste à revoir » ci-dessous), recopiée dans le `last_report` de l'état du backfill. Point de reprise dans `app_config/estimated_times_backfill_checkpoint`. À lancer une fois après le déploiement qui introduit les durées estimées — Admin › Backfills, « Durées estimées » |
 | `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
+| `backfillSystemBooksFn` | `admin` | parcourt `users` et crée, pour chaque compte `reader`, `editor` ou `admin` non révoqué, ceux des quatre livres système qui lui manquent, reconnus à leur tag (`missingSystemBooks`) : `__kassdale_ia`, `__libres`, `__secretes` par `books.add` avec les champs de `BookRepository.findOrCreate…Book`, `__web` par `findOrCreateWebBook`. Couverture vide. Comptes en attente ou révoqués sautés. 500 comptes complétés par appel au plus, arrêt sur trois échecs de suite. Sans appel de modèle, sans curseur : réentrant parce qu'un compte complet est sauté |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
 
@@ -4405,6 +4429,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillEstimatedTimesFn` | recettes sans réponse du modèle (« Pas de réponse de l'IA pour cette recette »), sans aucune durée estimée (« L'IA n'a estimé aucune durée »), d'un lot en échec (« Lot en échec : <message> ») ou dont l'écriture a échoué (« Écriture refusée : <message> »), nommées par leur titre. Une recette modifiée pendant l'appel est ignorée, pas listée |
+| `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
 | `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'uid — jamais l'adresse |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
@@ -5338,7 +5363,7 @@ functions/src/
 ├── logging.ts     # le journal structuré — cf. chapitre 7
 ├── ai/            # types neutres, routeur, client Claude, tarification, budget, usage
 ├── billing/       # coûts GCP (BigQuery), réconciliation mensuelle
-├── books/         # import d'un livre entier : ouverture, découpage en tranches, estimation
+├── books/         # import d'un livre entier : ouverture, découpage en tranches, estimation ; livres système d'un compte (`ensureSystemBooksFor`)
 ├── callable/      # entrées HTTPS callable + gardes (_auth.ts)
 ├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
 ├── gemini/        # client Gemini, transcription, balisage, fidélité, prompts par poste
