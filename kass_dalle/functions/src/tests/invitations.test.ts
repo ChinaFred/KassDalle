@@ -312,8 +312,24 @@ describe("refus définitif du destinataire", () => {
       code: "EENVELOPE",
       responseCode: 553,
       command: "RCPT TO",
+      response: "553 5.1.3 The recipient address is not a valid address",
     });
     assert.equal(isPermanentRecipientRejection(env), true);
+  });
+
+  test("5xx de quota ou de politique sur RCPT TO : pas définitif", () => {
+    const quota = Object.assign(new Error("550 5.4.5 Daily user sending limit exceeded"), {
+      responseCode: 550,
+      command: "RCPT TO",
+    });
+    const policy = Object.assign(new Error("rejected"), {
+      code: "EENVELOPE",
+      responseCode: 550,
+      command: "RCPT TO",
+      response: "550 5.7.1 Message rejected by policy",
+    });
+    assert.equal(isPermanentRecipientRejection(quota), false);
+    assert.equal(isPermanentRecipientRejection(policy), false);
   });
 
   test("temporaire ou configuration : pas définitif", () => {

@@ -3417,7 +3417,7 @@ sequenceDiagram
         F->>I: status sent, last_error null
         F-->>S: sent
         S-->>A: « Invitation envoyée à … », onglet Invitations
-      else Gmail refuse l'adresse (5xx sur RCPT TO)
+      else Gmail refuse l'adresse (5.1.x sur RCPT TO)
         F->>F: logError (adresse masquée)
         F->>I: status cancelled, cancelled_by system, last_error « Adresse refusée par Gmail : … »
         F-->>S: refused (address_rejected)

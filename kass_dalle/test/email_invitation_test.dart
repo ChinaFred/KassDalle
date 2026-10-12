@@ -214,7 +214,7 @@ void main() {
         EmailInvitationStatus.accepted,
         acceptedByName: 'Marie',
       ),
-      'Lecteur · Les Kassbi · acceptée par Marie, le 05/10',
+      'Lecteur · Les Kassbi · par Marie, le 05/10',
     );
   });
 

@@ -343,15 +343,25 @@ export const ADDRESS_REJECTED_PREFIX = "Adresse refusée par Gmail : ";
  * enveloppe rejetée (`EENVELOPE`, que nodemailer lève quand tous les
  * destinataires sont refusés).
  *
- * Un 5xx sur une autre commande (`AUTH` 535 : mot de passe d'application
- * faux) est une erreur de configuration, et un 4xx une erreur temporaire :
- * l'invitation reste alors en `send_failed` et se renvoie.
+ * Seul le code étendu `5.1.x` (adresse inexistante ou mal formée) compte :
+ * un `5.4.x` ou `5.7.x` dit un quota ou une politique de Gmail, pas une
+ * adresse fausse. Un 5xx sur une autre commande (`AUTH` 535 : mot de passe
+ * d'application faux) est une erreur de configuration, et un 4xx une erreur
+ * temporaire : l'invitation reste alors en `send_failed` et se renvoie.
  */
 export function isPermanentRecipientRejection(err: unknown): boolean {
   if (err === null || typeof err !== "object") return false;
-  const e = err as { responseCode?: unknown; command?: unknown; code?: unknown };
+  const e = err as {
+    responseCode?: unknown;
+    command?: unknown;
+    code?: unknown;
+    response?: unknown;
+    message?: unknown;
+  };
   const code = typeof e.responseCode === "number" ? e.responseCode : null;
   if (code === null || code < 500 || code > 599) return false;
+  const text = [e.response, e.message].filter((t) => typeof t === "string").join(" ");
+  if (!/\b5\.1\.\d{1,3}\b/.test(text)) return false;
   if (e.code === "EENVELOPE") return true;
   return typeof e.command === "string" && /^RCPT\b/i.test(e.command.trim());
 }

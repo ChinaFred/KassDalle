@@ -1227,7 +1227,7 @@ lit `send_failed`. Logique dupliquée : les deux rejouent
 **Enregistrer avant d'envoyer.** La callable écrit l'invitation (`status: send_failed`,
 `last_error: "Envoi en cours ou interrompu."`), puis envoie l'e-mail, puis écrit `sent` ou
 `send_failed` avec la raison, dans une transaction qui ne touche pas une invitation acceptée
-ou annulée pendant l'envoi. Un refus définitif du destinataire (code 5xx sur `RCPT TO`, ex.
+ou annulée pendant l'envoi. Un refus définitif du destinataire (code 5xx avec un code étendu `5.1.x` sur `RCPT TO`, ex.
 `550 5.1.1`, ou enveloppe rejetée) passe l'invitation à `cancelled` (`cancelled_by: "system"`,
 `last_error` « Adresse refusée par Gmail : … ») : une adresse inexistante ne reste pas active.
 Une fonction interrompue pendant l'envoi laisse une invitation visible et renvoyable, jamais
@@ -2666,7 +2666,7 @@ au groupe passe par l'invitation de groupe (Groupes familiaux), ce que le formul
 `last_error` lisible (une ligne, 300 caractères ; « Envoi d'e-mail non configuré. » pour un
 secret vide), l'erreur est journalisée (`logError`, `firestoreDocId` = l'invitation), et la
 réponse est `send_failed`. Un refus **définitif** du destinataire
-(`isPermanentRecipientRejection` : code 5xx sur `RCPT TO`, ou `EENVELOPE` avec un code 5xx)
+(`isPermanentRecipientRejection` : code 5xx sur `RCPT TO` ou `EENVELOPE`, avec un code étendu `5.1.x` ; un `5.4.x` ou `5.7.x`, quota ou politique de Gmail, reste en `send_failed`)
 passe l'invitation à `cancelled`, `cancelled_by: "system"`, `last_error` « Adresse refusée par
 Gmail : … », et la réponse est le refus `address_rejected`, affiché sous l'adresse ; l'onglet
 Invitations la range dans l'historique, Annulée, avec ce motif. Dans le texte journalisé comme

@@ -105,12 +105,13 @@ String invitationSubtitle(
   switch (status) {
     case EmailInvitationStatus.accepted:
       final at = invitation.acceptedAt;
-      final by = acceptedByName == null ? '' : ' par $acceptedByName';
-      final when = at == null ? '' : ', le ${formatDayMonth(at)}';
+      final by = acceptedByName == null ? '' : 'par $acceptedByName';
+      final when = at == null ? '' : 'le ${formatDayMonth(at)}';
+      final detail = [by, when].where((s) => s.isNotEmpty).join(', ');
       final missing = invitation.groupMissing ? ' · groupe supprimé' : '';
-      return '$head · acceptée$by$when$missing';
+      return '$head${detail.isEmpty ? '' : ' · $detail'}$missing';
     case EmailInvitationStatus.cancelled:
-      return '$head · annulée';
+      return head;
     case EmailInvitationStatus.sent:
     case EmailInvitationStatus.sendFailed:
     case EmailInvitationStatus.expired:
@@ -184,7 +185,9 @@ class _InvitationTile extends ConsumerWidget {
         ],
       ),
       isThreeLine: error != null,
-      trailing: _InvitationMenu(invitation: invitation, status: status),
+      trailing: status.canResend || status.canCancel
+          ? _InvitationMenu(invitation: invitation, status: status)
+          : null,
     );
   }
 }
