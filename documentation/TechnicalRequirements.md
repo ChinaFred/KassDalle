@@ -1524,15 +1524,16 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `last_doc_id` | `String?` | le dernier document traité ; `null` quand le passage est terminé, et l'appel suivant repart du début. Pour la nutrition, le curseur est la dernière recette **reprise**, et le passage n'est terminé que si la collection a été parcourue **et** qu'aucune recette n'a été laissée |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 | `updated_by` | `String?` | uid de l'admin qui a lancé l'appel |
-| `last_report` | `Map?` | ancien compte rendu du dernier passage, écrit jusqu'en v0.23.42 par cinq backfills. Depuis v0.23.43, le compte rendu part dans l'état du backfill (`backfill_run_<clé>`, ci-dessous) ; le champ reste dans les documents existants, plus rien ne l'écrit ni ne le lit |
+| `last_report` | `Map?` | ancien compte rendu du dernier passage, écrit jusqu'en v0.23.43 par cinq backfills. Depuis v0.23.44, le compte rendu part dans l'état du backfill (`backfill_run_<clé>`, ci-dessous) ; le champ reste dans les documents existants, plus rien ne l'écrit ni ne le lit |
 
-**État et programmation des backfills** (v0.23.43). Chaque backfill d'Admin › Backfills
+**État et programmation des backfills** (v0.23.44). Chaque backfill d'Admin › Backfills
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `recipe_protein`, `estimated_times`, `refresh_sodium`, `planning_defaults` —
-ponctuels). Deux sortes de documents, écrits par le serveur seul, lus en continu par l'écran
-(administrateurs seulement, règle commune d'`app_config`) :
+ponctuels). Deux sortes de documents, écrits par le serveur seul — les règles refusent
+l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
+(administrateurs seulement) :
 
 `backfill_run_<clé>` — l'état d'un backfill, écrit par `backfills/runner.ts` à chaque passage,
 manuel ou programmé, et par `setBackfillDoneFn`. Un backfill jamais lancé n'a pas de document.
@@ -1543,11 +1544,12 @@ L'écran les lit par la requête `doc_type == "backfill_run"`.
 | `doc_type` | `String` | toujours `backfill_run` |
 | `key` | `String` | clé du registre |
 | `dernier_passage_statut` | `String` | `en_cours` (verrou posé) \| `termine` \| `incomplet` \| `erreur` |
-| `en_cours_depuis` | `Timestamp?` | pose du verrou. Un verrou de plus de dix minutes (`BACKFILL_LOCK_TTL_MS`) est celui d'un passage interrompu : il se reprend, et l'écran affiche « En erreur — passage interrompu » |
+| `en_cours_depuis` | `Timestamp?` | pose du verrou |
+| `en_cours_expire_le` | `Timestamp?` | échéance du verrou, `en_cours_depuis` + dix minutes (`BACKFILL_LOCK_TTL_MS`). Passée, le verrou est celui d'un passage interrompu : il se reprend, et l'écran affiche « En erreur — passage interrompu ». Le client compare l'heure à cette échéance et ne connaît pas la durée |
 | `en_cours_id`, `en_cours_origine`, `en_cours_par_uid` | `String?` | identifiant du passage qui tient le verrou, son origine, son auteur ; remis à `null` à la fin |
 | `dernier_passage_le` | `Timestamp?` | fin du dernier passage |
 | `dernier_passage_origine` | `String?` | `manuel` \| `programme` |
-| `dernier_passage_erreur` | `String?` | message court quand le passage a levé une erreur |
+| `dernier_passage_erreur` | `String?` | message court quand le passage a levé une erreur, ou « L'auteur de la programmation n'est plus administrateur. » quand un passage programmé a été refusé pour cette raison |
 | `arret_plafond` | `bool` | le dernier passage s'est arrêté au plafond de dépense quotidien |
 | `reprise_due` | `bool` | un passage programmé est resté incomplet sans toucher le plafond, ou n'a pas tenu dans le tick : la tâche horaire le reprend à l'heure suivante |
 | `dernier_creneau` | `String?` | créneau (`AAAA-MM-JJTHH`, heure de Paris) du dernier passage programmé : un créneau ne part qu'une fois |
@@ -1560,10 +1562,12 @@ L'écran les lit par la requête `doc_type == "backfill_run"`.
 `setBackfillScheduleFn` : `{ enabled: bool, days: int[] (ISO, lundi = 1), hour: int (0–23),
 timezone: "Europe/Paris", programme_par_uid: String, updated_at: Timestamp }`.
 `programme_par_uid` est l'administrateur qui a enregistré : les passages programmés qui
-appellent un modèle lui sont imputés (plafond quotidien, §7.10). Sans entrée pour
-`nutrition`, le défaut s'applique (`DEFAULT_BACKFILL_SCHEDULES` côté serveur,
-`kDefaultBackfillSchedules` côté client) : tous les jours à 5 h. Aucune migration : le document
-se crée au premier enregistrement.
+appellent un modèle lui sont imputés (plafond quotidien de base, §7.10). Lecture stricte des
+deux côtés (`parseSchedule`, `BackfillSchedule.fromMap`, fixture `backfill_schedule.json`) :
+jours et heure entiers, sans conversion ; une entrée illisible vaut « non programmé ». Sans
+entrée pour `nutrition`, `scheduledBackfills` écrit le défaut (`DEFAULT_BACKFILL_SCHEDULES` :
+tous les jours à 5 h, `programme_par_uid: null`) au premier tick ; le client n'en garde pas de
+copie. Aucune migration manuelle.
 
 ---
 
@@ -2109,7 +2113,7 @@ service cloud.firestore {
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` · `planning_config` | le propriétaire seul, même en attente ou révoqué | création et modification par le propriétaire **nommé** (`isApproved()`) : un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par le propriétaire |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document ; modification et purge par l'admin |
-| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -3954,7 +3958,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 
 | Fonction | Cadence | Ce qu'elle fait |
 |---|---|---|
-| `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.43, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
+| `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.44, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 
@@ -3974,17 +3978,20 @@ où il s'est arrêté, et l'appel suivant repart de là.
 
 | Réglage | Réservé à | Ce qu'il écrit |
 |---|---|---|
-| `setBackfillScheduleFn` | `admin` | `{ key, enabled, days, hour }` → l'entrée `key` de `app_config/backfill_schedules`, avec `timezone` et `programme_par_uid` (l'appelant). Refuse un ponctuel (`failed-precondition`), une clé inconnue, une heure hors 0–23, aucun jour quand `enabled` (`invalid-argument`) |
+| `setBackfillScheduleFn` | `admin` | `{ key, enabled, days, hour }` → l'entrée `key` de `app_config/backfill_schedules`, avec `timezone` et `programme_par_uid` (l'appelant). Refuse un ponctuel (`failed-precondition`), une clé inconnue, une heure ou un jour qui n'est pas un entier dans sa plage (chaîne, booléen, `null`, décimal compris), aucun jour quand `enabled` (`invalid-argument`) |
 | `setBackfillDoneFn` | `admin` | `{ key, done, appVersion }` → pose (`termine_par: "manuel"`) ou retire `termine_*` sur `app_config/backfill_run_<clé>`. Ponctuels seulement |
 
-**Backfills ponctuels et récurrents** (v0.23.43). Chaque backfill est classé dans
+**Backfills ponctuels et récurrents** (v0.23.44). Chaque backfill est classé dans
 `backfills/registry.ts` (§3.13). Toutes les reprises ci-dessus passent par
 `runBackfillPass` (`backfills/runner.ts`), qui :
 
 - pose un **verrou** par backfill, en transaction, sur `app_config/backfill_run_<clé>` : un
   second passage du même backfill — un double clic, un autre appareil, la tâche horaire — est
-  refusé, `failed-precondition`, et l'écran affiche « Un passage de « X » est déjà en cours ».
-  Deux backfills différents tournent ensemble. Un verrou de plus de dix minutes est repris ;
+  refusé, `failed-precondition`, et l'écran affiche le message du serveur. Deux backfills
+  différents tournent ensemble, sauf ceux d'un même `LOCK_GROUPS` (`backfills/registry.ts`) :
+  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients, et
+  l'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
+  des deux). Un verrou dont l'échéance est passée est repris ;
 - enregistre l'issue : statut, origine, date, compte rendu complet (`last_report`), ou le
   message de l'erreur, puis relève l'erreur ;
 - pour un **ponctuel**, pose `termine_*` (`termine_par: "auto"`) quand le passage finit sans
@@ -3999,23 +4006,35 @@ appelable sans requête (`runNutritionBackfillPass`, `runEnrichReferentialsPass`
 `scheduledBackfills` appellent la même.
 
 **Passage programmé.** À chaque tick, `scheduledBackfills` lit les programmations et les
-états, puis lance en séquence les récurrents échus, chacun borné par ce qui reste des 540 s de
+états, écrit le défaut de la nutrition s'il manque, puis lance en séquence les récurrents échus, chacun borné par ce qui reste des 540 s de
 la fonction (huit minutes et demie au plus, trois minutes au moins). Ce qui ne tient pas est
 marqué `reprise_due` et part au tick suivant. Un passage incomplet reprend l'heure suivante,
 depuis son point de reprise, jusqu'à la fin. Un créneau tombé pendant un passage manuel est
 reporté d'une heure. Bornes par passage : nutrition 20 recettes, bornes de patience **actives**,
 sans point de reprise (le comportement de l'ancienne tâche de 5 h) ; rôle des recettes 40
 recettes ; allergènes 400 ingrédients et 500 recettes ; produits d'achat 500 recettes ;
-enrichissement des référentiels, le délai seul.
+enrichissement des référentiels, le délai seul — et en reprise à l'heure suivante, sans la
+phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parcourir).
+
+**Auteur de la programmation.** Avant chaque passage programmé, le rôle de
+`programme_par_uid` est relu sur son document (`isAdminAccount`) : un compte qui n'est plus
+administrateur — rétrogradé ou révoqué — n'a plus de passage imputé en son nom. Le passage ne
+part pas, l'état passe en `erreur` avec « L'auteur de la programmation n'est plus
+administrateur. », `reprise_due` à faux, et un `logWarn` le trace. Un administrateur
+reprogramme le backfill pour le relancer. Sans auteur (défaut de la nutrition), rien à
+vérifier.
 
 **Plafond de dépense.** Un passage programmé qui appelle un modèle est imputé à
 l'administrateur qui a enregistré la programmation (`programme_par_uid`) : ses appels passent par
 `callModel` sous cet uid, et `assertWithinDailyBudget` est consulté avant le passage, puis relu
-s'il s'arrête avant la fin. Plafond atteint : statut « incomplet », `arret_plafond: true`, et la
+s'il s'arrête avant la fin (un `logWarn` trace un plafond atteint en cours de passage). C'est le
+plafond de **base** : le passage tourne dans `runWithBaseBudgetCap` (`ai/callOrigin.ts`), et
+`effectiveBudgetMultiplier` (`ai/budget.ts`) y rend 1 au lieu du multiplicateur du compte —
+un passage que personne ne surveille ne profite pas de la marge du fondateur (×100). Plafond atteint : statut « incomplet », `arret_plafond: true`, et la
 reprise attend le **prochain créneau**, pas l'heure suivante. **Exception assumée : la
 nutrition** impute chaque recette à son propriétaire (`recipeBudgetUserId`), comme l'ancienne
 tâche — le calcul sert la recette de quelqu'un, et c'est le compte que `syncRecipeNutrition`
-débite. Aucun poste de coût nouveau : les passages programmés s'imputent aux postes de leurs
+débite ; elle garde aussi les multiplicateurs de ces comptes. Aucun poste de coût nouveau : les passages programmés s'imputent aux postes de leurs
 backfills (`backfill_recipe_roles`, `backfill_allergens`,
 `backfill_enrich_referentials_per100g`, et ceux de la chaîne nutrition).
 

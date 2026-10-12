@@ -30,8 +30,9 @@ import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { COLL_APP_CONFIG } from "../config";
 import { logError, logWarn } from "../logging";
 import { shortErrorMessage } from "../callable/_backfillReview";
-import { backfillDefinition, type BackfillKey } from "./registry";
+import { backfillDefinition, lockSiblings, type BackfillKey } from "./registry";
 import {
+  BACKFILL_LOCK_TTL_MS,
   lockExpired,
   passStatus,
   repriseDueAfter,
@@ -58,12 +59,30 @@ export function readMillis(value: unknown): number | null {
   return value instanceof Timestamp ? value.toMillis() : null;
 }
 
-/** Un passage du même backfill tient le verrou. */
+/**
+ * Un passage du même backfill, ou d'un backfill qui partage ses données
+ * (`lockSiblings`), tient le verrou.
+ */
 export class BackfillBusyError extends Error {
-  constructor(readonly title: string) {
-    super(`Un passage de « ${title} » est déjà en cours.`);
+  constructor(
+    readonly title: string,
+    readonly holderTitle: string = title,
+  ) {
+    super(
+      holderTitle === title
+        ? `Un passage de « ${title} » est déjà en cours.`
+        : `« ${holderTitle} » est en cours et travaille sur les mêmes données que « ${title} » : relancez quand il aura fini.`,
+    );
     this.name = "BackfillBusyError";
   }
+}
+
+/** Le verrou décrit par un document d'état est-il tenu par un passage vivant ? */
+function liveLock(data: Record<string, unknown>, nowMs: number): boolean {
+  return (
+    data.dernier_passage_statut === "en_cours" &&
+    !lockExpired(readMillis(data.en_cours_depuis), nowMs)
+  );
 }
 
 /** Le compte rendu tel qu'il s'écrit dans Firestore : sans `undefined`. */
@@ -92,7 +111,12 @@ export interface PassResult<R> {
   termineAuto: boolean;
 }
 
-/** Pose le verrou ; lève `BackfillBusyError` si un passage vivant le tient. */
+/**
+ * Pose le verrou ; lève `BackfillBusyError` si un passage vivant le tient,
+ * sur ce backfill ou sur un backfill qui partage ses données. Les documents
+ * des voisins sont lus dans la même transaction : deux départs simultanés
+ * ne passent pas tous les deux.
+ */
 async function acquireLock(
   db: FirebaseFirestore.Firestore,
   key: BackfillKey,
@@ -100,14 +124,19 @@ async function acquireLock(
   args: { origin: RunOrigin; actorUid: string | null; lockId: string; creneau: string | null },
 ): Promise<{ interrupted: boolean }> {
   const ref = runRef(db, key);
+  const siblings = lockSiblings(key);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    const siblingSnaps = await Promise.all(siblings.map((k) => tx.get(runRef(db, k))));
     const data = (snap.data() ?? {}) as Record<string, unknown>;
     const nowMs = Date.now();
+    if (liveLock(data, nowMs)) throw new BackfillBusyError(title);
+    siblingSnaps.forEach((sib, i) => {
+      if (liveLock((sib.data() ?? {}) as Record<string, unknown>, nowMs)) {
+        throw new BackfillBusyError(title, backfillDefinition(siblings[i])?.title ?? siblings[i]);
+      }
+    });
     const enCours = data.dernier_passage_statut === "en_cours";
-    if (enCours && !lockExpired(readMillis(data.en_cours_depuis), nowMs)) {
-      throw new BackfillBusyError(title);
-    }
     tx.set(
       ref,
       {
@@ -116,6 +145,9 @@ async function acquireLock(
         dernier_passage_statut: "en_cours",
         en_cours_origine: args.origin,
         en_cours_depuis: Timestamp.fromMillis(nowMs),
+        // L'écran compare l'heure à cette échéance pour dire « passage
+        // interrompu » : la durée de vie du verrou n'existe qu'ici.
+        en_cours_expire_le: Timestamp.fromMillis(nowMs + BACKFILL_LOCK_TTL_MS),
         en_cours_id: args.lockId,
         en_cours_par_uid: args.actorUid,
         ...(args.creneau ? { dernier_creneau: args.creneau } : {}),
@@ -218,6 +250,7 @@ async function recordFinish(
           dernier_passage_origine: args.origin,
           last_correlation_id: args.correlationId,
           en_cours_depuis: null,
+          en_cours_expire_le: null,
           en_cours_id: null,
           en_cours_origine: null,
           en_cours_par_uid: null,
@@ -318,6 +351,35 @@ export async function recordSpendCapSkip(
       dernier_passage_le: FieldValue.serverTimestamp(),
       dernier_passage_erreur: null,
       arret_plafond: true,
+      reprise_due: false,
+      last_correlation_id: correlationId,
+      ...(creneau ? { dernier_creneau: creneau } : {}),
+      updated_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+/**
+ * Passage programmé refusé : son auteur n'est plus administrateur. Statut
+ * « erreur » avec le message, plus de reprise ; la tuile l'affiche jusqu'à
+ * une nouvelle programmation.
+ */
+export async function recordScheduledRunBlocked(
+  key: BackfillKey,
+  creneau: string | null,
+  correlationId: string,
+  message: string,
+): Promise<void> {
+  await runRef(getFirestore(), key).set(
+    {
+      doc_type: BACKFILL_RUN_DOC_TYPE,
+      key,
+      dernier_passage_statut: "erreur",
+      dernier_passage_origine: "programme",
+      dernier_passage_le: FieldValue.serverTimestamp(),
+      dernier_passage_erreur: message,
+      arret_plafond: false,
       reprise_due: false,
       last_correlation_id: correlationId,
       ...(creneau ? { dernier_creneau: creneau } : {}),

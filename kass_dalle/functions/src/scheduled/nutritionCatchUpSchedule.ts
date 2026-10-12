@@ -18,7 +18,7 @@
  *    défaut, réglable dans Admin › Backfills — vingt recettes au plus, bornes
  *    de patience actives. Personne ne l'a demandé à cet instant, il ne doit
  *    donc surprendre personne. Il remplace `scheduledNutritionCatchUp`,
- *    retirée en v0.23.43 ;
+ *    retirée en v0.23.44 ;
  *  - `backfillNutritionFn` — un administrateur qui vient de corriger un
  *    référentiel veut le résultat maintenant : les bornes de patience sautent,
  *    celle de prudence reste.

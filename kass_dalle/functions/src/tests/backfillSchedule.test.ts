@@ -9,14 +9,21 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   BACKFILL_LOCK_TTL_MS,
   DEFAULT_BACKFILL_SCHEDULES,
   dueReason,
   effectiveSchedule,
+  PROGRAMMER_NOT_ADMIN_MESSAGE,
   lockExpired,
+  missingDefaultSchedules,
   parisSlot,
+  parseDays,
+  parseHour,
+  programmerBlocker,
   parseSchedule,
   passStatus,
   repriseDueAfter,
@@ -26,8 +33,10 @@ import {
   type PassSummary,
   type RunStateForDue,
 } from "../backfills/schedule";
-import { BACKFILLS, backfillDefinition, recurrentKeys } from "../backfills/registry";
+import { BACKFILLS, backfillDefinition, lockSiblings, recurrentKeys } from "../backfills/registry";
 import { validateScheduleRequest } from "../callable/backfillAdminCallable";
+import { UNATTRIBUTED, effectiveBudgetMultiplier } from "../ai/budget";
+import { runWithBaseBudgetCap } from "../ai/callOrigin";
 
 const IDLE: RunStateForDue = {
   enCours: false,
@@ -176,19 +185,94 @@ describe("programmation stockée", () => {
   test("autres récurrents sans réglage : non programmés", () => {
     assert.equal(effectiveSchedule("recipe_roles", {}), null);
   });
-  test("lecture tolérante : jours triés, dédoublonnés, hors plage écartés", () => {
-    const s = parseSchedule({
-      enabled: true,
-      days: [7, 3, 3, 9, "1"],
-      hour: 3,
-      programme_par_uid: " a1 ",
-    });
-    assert.deepEqual(s, { enabled: true, days: [1, 3, 7], hour: 3, programmeParUid: "a1" });
+  test("défaut à semer : seulement s'il manque, jamais par-dessus un réglage", () => {
+    assert.deepEqual(Object.keys(missingDefaultSchedules(undefined)), ["nutrition"]);
+    assert.deepEqual(Object.keys(missingDefaultSchedules({ recipe_roles: {} })), ["nutrition"]);
+    assert.deepEqual(missingDefaultSchedules({ nutrition: { enabled: false } }), {});
+    assert.deepEqual(missingDefaultSchedules({ nutrition: "illisible" }), {});
   });
-  test("mal formée : null", () => {
-    assert.equal(parseSchedule({ enabled: true, days: [1], hour: 24 }), null);
-    assert.equal(parseSchedule({ enabled: true, hour: 3 }), null);
-    assert.equal(parseSchedule("x"), null);
+  test("lecture stricte des jours et de l'heure", () => {
+    for (const bad of [null, "", "5", true, 5.5, -1, 24, undefined]) {
+      assert.equal(parseHour(bad), null, `heure ${JSON.stringify(bad)}`);
+    }
+    assert.equal(parseHour(0), 0);
+    for (const bad of [null, "1", ["1"], [true], [1.5], [0], [8], [null]]) {
+      assert.equal(parseDays(bad), null, `jours ${JSON.stringify(bad)}`);
+    }
+    assert.deepEqual(parseDays([]), []);
+    assert.deepEqual(parseDays([5, 1, 5]), [1, 5]);
+  });
+});
+
+// ── Fixture partagée avec le client ─────────────────────────────────────────
+
+interface ScheduleFixture {
+  registry: { key: string; kind: string; uses_ai: boolean }[];
+  parse_schedule: {
+    name: string;
+    input: unknown;
+    expected: {
+      enabled: boolean;
+      days: number[];
+      hour: number;
+      programme_par_uid: string | null;
+    } | null;
+  }[];
+}
+
+const FIXTURE = JSON.parse(
+  readFileSync(
+    path.join(__dirname, "..", "..", "..", "test-fixtures", "backfill_schedule.json"),
+    "utf8",
+  ),
+) as ScheduleFixture;
+
+describe("fixture backfill_schedule.json", () => {
+  test("registre : mêmes clés, même ordre, même nature, même usage de l'IA", () => {
+    assert.deepEqual(
+      BACKFILLS.map((b) => ({ key: b.key, kind: b.kind, uses_ai: b.usesAi })),
+      FIXTURE.registry,
+    );
+  });
+  for (const c of FIXTURE.parse_schedule) {
+    test(`lecture d'une programmation : ${c.name}`, () => {
+      const parsed = parseSchedule(c.input);
+      assert.deepEqual(
+        parsed == null
+          ? null
+          : {
+              enabled: parsed.enabled,
+              days: parsed.days,
+              hour: parsed.hour,
+              programme_par_uid: parsed.programmeParUid,
+            },
+        c.expected,
+      );
+    });
+  }
+});
+
+describe("auteur de la programmation", () => {
+  test("encore administrateur : le passage part", () => {
+    assert.equal(programmerBlocker("a1", true), null);
+  });
+  test("plus administrateur : pas de passage, message enregistré", () => {
+    assert.equal(programmerBlocker("a1", false), PROGRAMMER_NOT_ADMIN_MESSAGE);
+    assert.equal(
+      PROGRAMMER_NOT_ADMIN_MESSAGE,
+      "L'auteur de la programmation n'est plus administrateur.",
+    );
+  });
+  test("sans auteur (défaut de la nutrition) : rien à vérifier", () => {
+    assert.equal(programmerBlocker(null, false), null);
+  });
+});
+
+describe("verrou commun", () => {
+  test("enrichissement et réparation du sel se bloquent l'un l'autre", () => {
+    assert.deepEqual(lockSiblings("enrich_referentials"), ["refresh_sodium"]);
+    assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials"]);
+    assert.deepEqual(lockSiblings("recipe_roles"), []);
   });
 });
 
@@ -232,5 +316,12 @@ describe("registre et validation", () => {
     assert.equal(sanitizeAppVersion("0.23.43+390"), null);
     assert.equal(sanitizeAppVersion("..."), null);
     assert.equal(sanitizeAppVersion(42), null);
+  });
+});
+
+describe("plafond de base d'un passage programmé", () => {
+  test("le multiplicateur du compte ne s'applique pas dans runWithBaseBudgetCap", async () => {
+    assert.equal(await effectiveBudgetMultiplier(UNATTRIBUTED), 100);
+    assert.equal(await runWithBaseBudgetCap(() => effectiveBudgetMultiplier(UNATTRIBUTED)), 1);
   });
 });

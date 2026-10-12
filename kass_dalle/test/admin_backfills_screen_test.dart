@@ -18,7 +18,15 @@ Future<void> _pump(
       overrides: [
         backfillRunsProvider.overrideWith((ref) => Stream.value(runs)),
         backfillSchedulesProvider.overrideWith(
-          (ref) => Stream.value(BackfillSchedules.empty),
+          (ref) => Stream.value(
+            const BackfillSchedules({
+              'nutrition': {
+                'enabled': true,
+                'days': [1, 2, 3, 4, 5, 6, 7],
+                'hour': 5,
+              },
+            }),
+          ),
         ),
       ],
       child: const MaterialApp(home: AdminBackfillsScreen()),
@@ -48,15 +56,47 @@ void main() {
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
       findsOneWidget,
-      reason: 'nutrition sans réglage : le défaut de l\'ancienne tâche de 5 h',
+      reason: 'le défaut semé par le serveur est lu tel quel',
     );
     expect(find.text('Relancer quand même'), findsOneWidget);
+    expect(
+      find.textContaining('Dernier passage — terminé'),
+      findsOneWidget,
+      reason: 'tuile terminée : la seconde ligne dit de quoi elle parle',
+    );
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('large : deux colonnes sans débordement', (tester) async {
     await _pump(tester, size: const Size(1200, 2400), runs: runs);
     expect(find.text('Programmer'), findsNWidgets(5));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chargement : tuiles neutres, ponctuels non rangés', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backfillRunsProvider.overrideWith(
+            (ref) => const Stream<Map<String, BackfillRunState>>.empty(),
+          ),
+          backfillSchedulesProvider.overrideWith(
+            (ref) => const Stream<BackfillSchedules>.empty(),
+          ),
+        ],
+        child: const MaterialApp(home: AdminBackfillsScreen()),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Ponctuels'), findsOneWidget);
+    expect(find.textContaining('Ponctuels à lancer'), findsNothing);
+    expect(find.text('État inconnu'), findsNothing);
+    expect(find.text('Programmation : …'), findsNWidgets(5));
     expect(tester.takeException(), isNull);
   });
 }

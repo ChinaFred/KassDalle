@@ -45,32 +45,53 @@ export const ALL_DAYS: readonly number[] = [1, 2, 3, 4, 5, 6, 7];
 /**
  * Programmation appliquée quand `app_config/backfill_schedules` ne dit rien
  * pour ce backfill. Seule la nutrition en a une : elle remplace la tâche
- * `scheduledNutritionCatchUp` (tous les jours à 5 h), retirée en v0.23.43, et
- * le rattrapage quotidien ne doit pas s'arrêter au déploiement. Même valeur
- * côté client (`kDefaultBackfillSchedules`), pour l'affichage.
+ * `scheduledNutritionCatchUp` (tous les jours à 5 h), retirée en v0.23.44, et
+ * le rattrapage quotidien ne doit pas s'arrêter au déploiement.
+ *
+ * Le client n'en garde pas de copie : `scheduledBackfills` écrit ce défaut
+ * dans `app_config/backfill_schedules` au premier tick qui ne le trouve pas
+ * (`missingDefaultSchedules`), et l'écran lit alors une valeur stockée.
  */
 export const DEFAULT_BACKFILL_SCHEDULES: Partial<Record<BackfillKey, BackfillSchedule>> = {
   nutrition: { enabled: true, days: [...ALL_DAYS], hour: 5, programmeParUid: null },
 };
 
-/** Jours valides, triés, sans doublon ; `null` si la valeur n'est pas une liste. */
+/**
+ * Un entier de [min] à [max], ou `null`. Strict : une chaîne (« 5 »), un
+ * booléen, `null` ou un nombre non entier (5.5) sont refusés, pas convertis.
+ * Même règle côté client (`BackfillSchedule.fromMap`), fixture
+ * `test-fixtures/backfill_schedule.json`.
+ */
+function strictInt(value: unknown, min: number, max: number): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max
+    ? value
+    : null;
+}
+
+/**
+ * Jours ISO triés, sans doublon ; `null` si la valeur n'est pas une liste ou
+ * si un seul élément n'est pas un jour valide. Une liste vide est valide.
+ */
 export function parseDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) return null;
   const days = new Set<number>();
   for (const raw of value) {
-    const n = typeof raw === "number" ? raw : Number(raw);
-    if (Number.isInteger(n) && n >= 1 && n <= 7) days.add(n);
+    const day = strictInt(raw, 1, 7);
+    if (day == null) return null;
+    days.add(day);
   }
   return [...days].sort((a, b) => a - b);
 }
 
-/** Heure valide, ou `null`. */
+/** Heure de 0 à 23, ou `null`. */
 export function parseHour(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : null;
+  return strictInt(value, 0, 23);
 }
 
-/** Lit une programmation stockée. Mal formée : `null`, et le défaut ne s'applique pas. */
+/**
+ * Lit une programmation stockée. Mal formée : `null`, et le défaut ne
+ * s'applique pas. `enabled` ne vaut vrai que pour le booléen `true`.
+ */
 export function parseSchedule(raw: unknown): BackfillSchedule | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -99,6 +120,40 @@ export function effectiveSchedule(
   const raw = schedulesDoc?.[key];
   if (raw === undefined) return DEFAULT_BACKFILL_SCHEDULES[key] ?? null;
   return parseSchedule(raw);
+}
+
+/**
+ * Défauts à écrire dans `app_config/backfill_schedules` : ceux dont la clé
+ * n'y figure pas encore. Une entrée présente, même désactivée ou illisible,
+ * n'est jamais remplacée.
+ */
+export function missingDefaultSchedules(
+  schedulesDoc: Record<string, unknown> | undefined,
+): Partial<Record<BackfillKey, BackfillSchedule>> {
+  const out: Partial<Record<BackfillKey, BackfillSchedule>> = {};
+  for (const [key, schedule] of Object.entries(DEFAULT_BACKFILL_SCHEDULES)) {
+    if (schedule && schedulesDoc?.[key] === undefined) out[key as BackfillKey] = schedule;
+  }
+  return out;
+}
+
+/** Message enregistré quand l'auteur d'une programmation a perdu le rôle admin. */
+export const PROGRAMMER_NOT_ADMIN_MESSAGE =
+  "L'auteur de la programmation n'est plus administrateur.";
+
+/**
+ * Un passage programmé peut-il partir au nom de son auteur ? `null` : oui.
+ * Sans auteur (le défaut de la nutrition), rien à vérifier : la nutrition est
+ * imputée au propriétaire de chaque recette. Avec un auteur, il doit être
+ * encore administrateur — un compte rétrogradé ou révoqué ne doit plus voir
+ * de dépense imputée par une programmation qu'il ne peut plus modifier.
+ */
+export function programmerBlocker(
+  programmeParUid: string | null,
+  programmerIsAdmin: boolean,
+): string | null {
+  if (programmeParUid == null) return null;
+  return programmerIsAdmin ? null : PROGRAMMER_NOT_ADMIN_MESSAGE;
 }
 
 /** Jour ISO, heure et créneau (`AAAA-MM-JJTHH`) d'un instant, à Paris. */

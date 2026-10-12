@@ -1597,6 +1597,7 @@ classDiagram
     +String key
     +String? statut
     +DateTime? enCoursDepuis
+    +DateTime? enCoursExpireLe
     +DateTime? dernierPassageLe
     +String? dernierPassageOrigine
     +bool arretPlafond
@@ -1708,10 +1709,12 @@ classDiagram
           <b><code>BackfillDefinition</code></b> classe chaque backfill ponctuel ou récurrent
           (<code>kBackfillRegistry</code>, même clés que <code>functions/src/backfills/registry.ts</code>).
           <b><code>BackfillRunState</code></b> lit <code>app_config/backfill_run_&lt;clé&gt;</code> :
-          statut du dernier passage, verrou (<code>en_cours</code> de plus de dix minutes =
+          statut du dernier passage, verrou (<code>en_cours</code> dont l'échéance
+          <code>en_cours_expire_le</code>, écrite par le serveur, est passée =
           <code>interrompu</code>), compte rendu, « terminé ».
-          <b><code>BackfillSchedules</code></b> lit <code>app_config/backfill_schedules</code> ;
-          sans entrée pour la nutrition, le défaut « tous les jours à 5 h » s'applique.
+          <b><code>BackfillSchedules</code></b> lit <code>app_config/backfill_schedules</code>,
+          sans défaut côté client : le serveur y écrit celui de la nutrition. Lecture stricte,
+          rejouée avec le serveur par la fixture <code>backfill_schedule.json</code>.
         </span>
       </figcaption>
     </figure>

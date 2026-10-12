@@ -535,7 +535,9 @@ regroupement des lignes de courses.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
 sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning et la
 **géométrie du redressement** : le client redresse à la main dans l'atelier de
-retouche, le serveur redresse tout seul à l'import d'une page.
+retouche, le serveur redresse tout seul à l'import d'une page. Enfin, le
+**registre des backfills** et la lecture d'une programmation : l'écran les
+affiche, la tâche planifiée les applique.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -553,6 +555,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur (section `unsafe_keys` : serveur seul) | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et dans la feuille de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 | `allergens.json` | les quatorze allergènes majeurs de l'annexe II INCO — clés dans l'ordre du règlement et libellés, valeurs seules ; le serveur les cite dans le prompt et calcule le champ `allergens` d'une recette (serveur seul), le client les affiche sur la fiche et dans la correction admin | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
+| `backfill_schedule.json` | registre des backfills d'Admin › Backfills (clés dans l'ordre, nature ponctuel / récurrent, appel d'IA) et lecture d'une programmation stockée (jours et heure entiers sans conversion, `enabled` booléen strict) ; le défaut de programmation et la durée du verrou ne sont pas en double : le serveur écrit l'un dans `app_config/backfill_schedules`, l'autre en échéance `en_cours_expire_le` | `features/admin/domain/backfill_registry.dart`, `features/admin/domain/backfill_status.dart` | `backfills/registry.ts`, `backfills/schedule.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

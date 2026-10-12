@@ -116,13 +116,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'pas, quarante par appel et quatre cents au plus. Une fois tout '
             'le référentiel parcouru, recalcule ceux des recettes, sans '
             'appel d\'IA.\n\n'
-            'Relancez tant que le résultat indique « incomplet ».';
+            'Appels d\'IA facturés. Relancez tant que le résultat indique '
+            '« incomplet ».';
       case BackfillKeys.recipeRoles:
         final report = _rolesReport();
         final reste = report == null ? '' : '\n\n${report.restantesSentence}';
         return 'Demande à l\'IA le rôle dans un repas de chaque recette non '
             'classée, et ce qu\'elle apporte déjà. Un appel par recette, '
-            'quarante au plus.$reste';
+            'quarante au plus.\n\n'
+            'Appels d\'IA facturés.$reste';
       case BackfillKeys.shoppingProducts:
         return 'Recalcule la liste de courses de toutes les recettes avec la '
             'règle du jour. Une recette dont le résultat ne change pas n\'est '
@@ -133,11 +135,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         final reste = report == null ? '' : '\n\n${report.restantesSentence}';
         return 'Demande à l\'IA la protéine et le féculent principaux des '
             'plats et accompagnements qui n\'en ont pas. Rien d\'autre n\'est '
-            'modifié. Un appel par recette, quarante au plus.$reste';
+            'modifié. Un appel par recette, quarante au plus.\n\n'
+            'Appels d\'IA facturés.$reste';
       case BackfillKeys.estimatedTimes:
         return 'Demande à l\'IA la préparation et la cuisson des recettes qui '
             'n\'en donnent pas : huit recettes par appel, cent soixante au '
-            'plus. Une durée lue dans la recette n\'est jamais remplacée.';
+            'plus. Une durée lue dans la recette n\'est jamais remplacée.\n\n'
+            'Appels d\'IA facturés.';
       case BackfillKeys.refreshSodium:
         return 'Le sel et le sodium d\'un ingrédient étaient additionnés : '
             'tout ingrédient salé porte un sel deux fois trop élevé. Ce '
@@ -357,13 +361,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       }
     } on CallableFailure catch (e, st) {
       if (e.code == 'failed-precondition') {
-        // Refus attendu, pas une panne : un passage du même backfill tient le
-        // verrou serveur (autre appareil, ou passage programmé). Le message
-        // le dit, et la tuile montre son avancement ; rien à remonter.
+        // Refus attendu, pas une panne : un passage de ce backfill, ou d'un
+        // backfill qui partage ses données, tient le verrou serveur (autre
+        // appareil, ou passage programmé). Le message du serveur le nomme,
+        // et la tuile montre son avancement ; rien à remonter.
         if (mounted) {
           context.showSnackBar(
-            'Un passage de « ${def.title} » est déjà en cours. Son résultat '
-            's\'affichera sur la tuile.',
+            '${e.message} Son résultat s\'affichera sur sa tuile.',
           );
         }
         return;
@@ -516,12 +520,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     final readError = runs.error ?? schedulesAsync.error;
     final loading =
         readError == null && (!runs.hasValue || !schedulesAsync.hasValue);
+    final runsRead = _readOf(runs);
+    final schedulesRead = _readOf(schedulesAsync);
+    // Les ponctuels ne se rangent qu'une fois l'état lu : sans lui, on ne sait
+    // pas lesquels sont terminés, et les ranger d'abord à lancer les ferait
+    // sauter d'une section à l'autre à l'arrivée des données.
+    final sorted = runsRead == _Read.known;
     final sections = backfillSections(kBackfillRegistry, states);
+    final ponctuels = [
+      for (final def in kBackfillRegistry)
+        if (!def.isRecurrent) def,
+    ];
 
     Widget tile(BackfillDefinition def, {required bool wide}) => _BackfillCard(
       def: def,
       state: states[def.key],
-      stateKnown: readError == null && runs.hasValue,
+      stateRead: runsRead,
+      scheduleRead: schedulesRead,
       schedule: schedules.scheduleFor(def.key),
       now: _now,
       launching: _launching.contains(def.key),
@@ -596,12 +611,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     ),
                     grid(sections.recurrents),
                     const SizedBox(height: 24),
-                    _SectionHeader(
-                      title:
-                          'Ponctuels à lancer (${sections.ponctuelsALancer.length})',
-                    ),
-                    grid(sections.ponctuelsALancer),
-                    if (sections.ponctuelsTermines.isNotEmpty) ...[
+                    if (!sorted) ...[
+                      const _SectionHeader(title: 'Ponctuels'),
+                      grid(ponctuels),
+                    ] else ...[
+                      _SectionHeader(
+                        title:
+                            'Ponctuels à lancer (${sections.ponctuelsALancer.length})',
+                      ),
+                      if (sections.ponctuelsALancer.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: Text('Tous les ponctuels sont terminés.'),
+                        )
+                      else
+                        grid(sections.ponctuelsALancer),
+                    ],
+                    if (sorted && sections.ponctuelsTermines.isNotEmpty) ...[
                       const SizedBox(height: 24),
                       _SectionHeader(
                         title:
@@ -676,7 +702,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // se corrige directement depuis Admin › Moteur d'IA (`setAiPricingFn`),
   // qui écrit le même document sans dupliquer aucun chiffre dans le code.
   //
-  // Depuis v0.23.43, chaque backfill est classé ponctuel ou récurrent
+  // Depuis v0.23.44, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
   // code, qui laisse ici un paragraphe daté comme ceux ci-dessus.
@@ -702,19 +728,24 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: onToggle == null
           ? text
-          : InkWell(
-              onTap: onToggle,
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                height: 48,
-                child: Row(
-                  children: [
-                    Expanded(child: text),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      semanticLabel: expanded ? 'Replier' : 'Déplier',
-                    ),
-                  ],
+          : Semantics(
+              button: true,
+              expanded: expanded,
+              child: InkWell(
+                onTap: onToggle,
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Expanded(child: text),
+                      ExcludeSemantics(
+                        child: Icon(
+                          expanded ? Icons.expand_less : Icons.expand_more,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -761,13 +792,26 @@ class _TileGrid extends StatelessWidget {
 
 enum _TileAction { markDone, unmarkDone }
 
+/// Ce que l'écran sait d'une lecture Firestore : en cours, en échec, lue.
+enum _Read { loading, error, known }
+
+_Read _readOf(AsyncValue<Object?> value) => value.hasError
+    ? _Read.error
+    : value.hasValue
+    ? _Read.known
+    : _Read.loading;
+
 /// Tuile d'un backfill : état, programmation, actions.
 class _BackfillCard extends StatefulWidget {
   final BackfillDefinition def;
   final BackfillRunState? state;
 
-  /// Faux quand l'état n'a pas pu être lu : la tuile dit « État inconnu ».
-  final bool stateKnown;
+  /// Lecture de l'état : « … » pendant le chargement, « État inconnu » en
+  /// erreur.
+  final _Read stateRead;
+
+  /// Lecture de la programmation, même règle.
+  final _Read scheduleRead;
   final BackfillSchedule? schedule;
   final DateTime now;
   final bool launching;
@@ -780,7 +824,8 @@ class _BackfillCard extends StatefulWidget {
   const _BackfillCard({
     required this.def,
     required this.state,
-    required this.stateKnown,
+    required this.stateRead,
+    required this.scheduleRead,
     required this.schedule,
     required this.now,
     required this.launching,
@@ -812,6 +857,11 @@ class _BackfillCardState extends State<_BackfillCard> {
 
   bool get _done => widget.state?.isDone ?? false;
 
+  /// Un passage tourne (lancé d'ici, ou lu en cours dans l'état).
+  bool get _running =>
+      widget.launching ||
+      widget.state?.status(widget.now) == BackfillRunStatus.enCours;
+
   List<PopupMenuEntry<_TileAction>> _menuItems() => [
     if (_done)
       const PopupMenuItem(
@@ -819,9 +869,11 @@ class _BackfillCardState extends State<_BackfillCard> {
         child: Text('Remettre à lancer'),
       )
     else
-      const PopupMenuItem(
+      // Pas pendant un passage : son issue pourrait contredire la marque.
+      PopupMenuItem(
         value: _TileAction.markDone,
-        child: Text('Marquer comme terminé'),
+        enabled: !_running,
+        child: const Text('Marquer comme terminé'),
       ),
   ];
 
@@ -865,24 +917,36 @@ class _BackfillCardState extends State<_BackfillCard> {
     final done = _done;
     final muted = scheme.onSurfaceVariant;
     final status = state?.status(widget.now) ?? BackfillRunStatus.jamais;
-    final running = widget.launching || status == BackfillRunStatus.enCours;
+    final running = _running;
     final failures = state?.failures;
     final linkLabel = backfillFailuresLinkLabel(failures);
     final bodyStyle = theme.textTheme.bodyMedium?.copyWith(
       color: done ? muted : null,
     );
 
-    final statusText = !widget.stateKnown
-        ? 'État inconnu'
-        : widget.launching && status != BackfillRunStatus.enCours
-        ? 'Passage lancé, en attente du serveur…'
-        : backfillStatusLine(
-            def: def,
-            state: state,
-            schedule: widget.schedule,
-            now: widget.now,
-          );
-    final statusIcon = _statusIcon(status);
+    final statusText = switch (widget.stateRead) {
+      _Read.loading => '…',
+      _Read.error => 'État inconnu',
+      _Read.known =>
+        widget.launching && status != BackfillRunStatus.enCours
+            ? 'Passage lancé, en attente du serveur…'
+            : backfillStatusLine(
+                def: def,
+                state: state,
+                schedule: widget.schedule,
+                now: widget.now,
+              ),
+    };
+    final statusIcon = widget.launching
+        ? Icons.sync
+        : widget.stateRead == _Read.known
+        ? _statusIcon(status)
+        : Icons.more_horiz;
+    final scheduleText = switch (widget.scheduleRead) {
+      _Read.loading => '…',
+      _Read.error => 'inconnue',
+      _Read.known => backfillScheduleLabel(widget.schedule),
+    };
 
     final actions = <Widget>[
       if (running)
@@ -960,8 +1024,7 @@ class _BackfillCardState extends State<_BackfillCard> {
             if (def.isRecurrent)
               _InfoLine(
                 icon: Icons.event_repeat_outlined,
-                text:
-                    'Programmation : ${backfillScheduleLabel(widget.schedule)}',
+                text: 'Programmation : $scheduleText',
                 color: muted,
               ),
             if (done)
@@ -970,11 +1033,13 @@ class _BackfillCardState extends State<_BackfillCard> {
                 text: backfillDoneLine(state!),
                 color: muted,
               ),
-            if (!done || state?.dernierPassageLe != null)
+            if (!done)
+              _InfoLine(icon: statusIcon, text: statusText)
+            else if (state?.dernierPassageLe != null)
               _InfoLine(
                 icon: statusIcon,
-                text: statusText,
-                color: done ? muted : null,
+                text: 'Dernier passage — ${_lowerFirst(statusText)}',
+                color: muted,
               ),
             if (running)
               const Padding(
@@ -1012,6 +1077,9 @@ class _BackfillCardState extends State<_BackfillCard> {
     );
   }
 }
+
+String _lowerFirst(String text) =>
+    text.isEmpty ? text : '${text[0].toLowerCase()}${text.substring(1)}';
 
 class _InfoLine extends StatelessWidget {
   final IconData icon;

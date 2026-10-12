@@ -3407,11 +3407,15 @@ sequenceDiagram
   SF->>C: backfill_schedules.key, programme_par_uid = l'appelant
 
   loop toutes les heures (Europe/Paris)
-    SCH->>C: lit backfill_schedules et les états des récurrents
+    SCH->>C: lit backfill_schedules et les états des récurrents,<br/>écrit le défaut de la nutrition s'il manque
     loop chaque récurrent
       SCH->>SCH: dueReason — créneau (jour et heure) ou reprise due ?
       opt échu, et au moins 3 min devant soi
-        SCH->>BU: plafond de programme_par_uid (sauf nutrition)
+        SCH->>C: programme_par_uid encore admin ?
+        alt plus administrateur
+          SCH->>C: erreur, « L'auteur de la programmation n'est plus administrateur. »
+        end
+        SCH->>BU: plafond de base de programme_par_uid, sans multiplicateur (sauf nutrition)
         alt plafond atteint
           SCH->>C: incomplet, arret_plafond, reprise au prochain créneau
         else sous le plafond
@@ -3427,12 +3431,12 @@ sequenceDiagram
   A->>S: Lancer (confirmation)
   S->>R: callable du backfill, origine manuel, appVersion
 
-  R->>C: transaction — dernier_passage_statut en_cours depuis moins de 10 min ?
+  R->>C: transaction — verrou vivant (en_cours_expire_le) sur ce backfill<br/>ou sur un backfill du même groupe ?
   alt verrou tenu
     R-->>S: failed-precondition
     S-->>A: « Un passage de « X » est déjà en cours »
   else libre ou expiré
-    R->>C: en_cours, en_cours_depuis, en_cours_id
+    R->>C: en_cours, en_cours_depuis, en_cours_expire_le, en_cours_id
     R->>P: passe (curseur, bornes, plafond)
     alt passe en erreur
       R->>C: erreur, message, verrou levé

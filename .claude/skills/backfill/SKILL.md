@@ -19,6 +19,12 @@ clé (`snake_case`, stable) :
 - `lib/features/admin/domain/backfill_registry.dart` (`kBackfillRegistry`) — `key`, `kind`,
   `title`, `description` (une phrase), `usesAi`, `passLimit` (ce qu'un passage traite au plus,
   cité dans l'encadré de coût). Ajouter l'icône dans `_BackfillCardState._icons`.
+- `kass_dalle/test-fixtures/backfill_schedule.json`, section `registry` : la clé, la nature et
+  `uses_ai`, dans l'ordre. Les deux suites vérifient que les registres la suivent (logique
+  dupliquée, voir `CLAUDE.md`).
+
+Si le backfill écrit les mêmes documents qu'un autre, l'ajouter à `LOCK_GROUPS`
+(`backfills/registry.ts`) : l'un refuse de partir pendant que l'autre tourne.
 
 | Nature | Quand | Ce que l'écran en fait |
 |---|---|---|
@@ -30,8 +36,7 @@ Un ponctuel **n'est terminé automatiquement** que si `summarize` rend `complete
 inconnu (`remaining: null`, décompte impossible) n'est pas un reste nul.
 
 Exemples à recopier : `functions/src/callable/recipeRolesBackfillCallable.ts` (avec appel de
-modèle, curseur, compte rendu relu par l'écran) et `shoppingBackfillCallable.ts` (sans modèle ;
-il déclare pourtant les deux secrets, inutiles sans appel de modèle : ne pas les recopier).
+modèle, curseur, compte rendu relu par l'écran) et `shoppingBackfillCallable.ts` (sans modèle).
 
 ## 1. Le callable — `kass_dalle/functions/src/callable/<nom>BackfillCallable.ts`
 
@@ -106,8 +111,17 @@ L'admin règle jours (ISO, lundi = 1) et heure de Paris depuis l'écran ; `setBa
 au plafond). La tâche `scheduledBackfills` tourne toutes les heures : un récurrent est échu au
 jour et à l'heure programmés, ou en reprise d'un passage programmé incomplet (heure suivante,
 sauf arrêt par plafond : prochain créneau). Seule la nutrition a un défaut sans réglage
-(`DEFAULT_BACKFILL_SCHEDULES` / `kDefaultBackfillSchedules`, tous les jours à 5 h) : un nouveau
-récurrent n'en a pas, sauf décision explicite, et le défaut s'écrit alors des deux côtés.
+(`DEFAULT_BACKFILL_SCHEDULES`, tous les jours à 5 h). La tâche l'écrit dans
+`app_config/backfill_schedules` au premier tick qui ne le trouve pas : le client n'en garde pas
+de copie. Un nouveau récurrent n'a pas de défaut, sauf décision explicite, qui s'ajoute à
+`DEFAULT_BACKFILL_SCHEDULES` seul.
+
+Un passage programmé part au nom de son auteur, s'il est encore administrateur (sinon : erreur
+« L'auteur de la programmation n'est plus administrateur. », plus de reprise), et sous le
+plafond de **base**, sans le multiplicateur du compte (`runWithBaseBudgetCap`). La nutrition
+fait exception : imputée au propriétaire de chaque recette, multiplicateurs compris.
+`app_config/backfill_schedules` et `backfill_run_*` ne s'écrivent que par le serveur : les
+règles Firestore refusent l'écriture client, administrateur compris.
 
 ## 3. Documentation, dans le même commit
 

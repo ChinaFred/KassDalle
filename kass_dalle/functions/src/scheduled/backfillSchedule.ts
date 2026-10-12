@@ -4,19 +4,25 @@
  * Une seule tâche, toutes les heures, heure de Paris. À chaque tick, pour
  * chaque backfill récurrent (`backfills/registry.ts`) :
  *
- *  1. sa programmation est lue dans `app_config/backfill_schedules`, ou le
+ *  1. sa programmation est lue dans `app_config/backfill_schedules`. Le
  *     défaut (`DEFAULT_BACKFILL_SCHEDULES` : la nutrition, tous les jours à
- *     5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.43) ;
- *  2. il est lancé s'il est échu (`dueReason`) : jour et heure programmés, ou
+ *     5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.44)
+ *     y est écrit au premier tick qui ne le trouve pas, pour que l'écran le
+ *     lise au lieu d'en garder une copie ;
+ *  2. l'auteur de la programmation doit être encore administrateur
+ *     (`programmerBlocker`) : sinon, pas de passage, et l'état le dit ;
+ *  3. il est lancé s'il est échu (`dueReason`) : jour et heure programmés, ou
  *     reprise d'un passage programmé resté incomplet ;
- *  3. les passages échus partent en séquence, chacun borné par ce qui reste
+ *  4. les passages échus partent en séquence, chacun borné par ce qui reste
  *     du délai de la fonction. Ce qui ne tient pas est marqué à reprendre et
  *     part au tick suivant.
  *
  * Plafond de dépense. Un backfill qui appelle un modèle est imputé à
  * l'administrateur qui a enregistré la programmation (`programme_par_uid`) :
  * ses appels passent par `callModel` sous son uid, et le plafond est consulté
- * avant le passage puis relu s'il s'arrête avant la fin. Plafond atteint : le
+ * avant le passage puis relu s'il s'arrête avant la fin. C'est le plafond de
+ * **base**, sans le multiplicateur du compte (fondateur ×100) :
+ * `runWithBaseBudgetCap`. Plafond atteint : le
  * passage est « incomplet, arrêt par plafond », et la reprise attend le
  * prochain créneau, pas l'heure suivante. Exception assumée : la nutrition
  * impute chaque recette à son propriétaire (`recipeBudgetUserId`), comme
@@ -29,28 +35,34 @@
  */
 
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { ANTHROPIC_API_KEY, COLL_APP_CONFIG, GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId, qualify } from "../logging";
 import { BudgetExceededError, assertWithinDailyBudget } from "../ai/budget";
+import { runWithBaseBudgetCap } from "../ai/callOrigin";
+import { isAdminAccount } from "../callable/_auth";
 import { backfillDefinition, recurrentKeys, type BackfillKey } from "../backfills/registry";
 import {
   BackfillBusyError,
   backfillRunDocId,
   markBackfillDeferred,
   readMillis,
+  recordScheduledRunBlocked,
   recordSpendCapSkip,
   runBackfillPass,
 } from "../backfills/runner";
 import {
   BACKFILL_SCHEDULES_DOC_ID,
   dueReason,
+  missingDefaultSchedules,
+  programmerBlocker,
   effectiveSchedule,
   lockHeld,
   parisSlot,
   slotMatches,
   type BackfillSchedule,
+  type DueReason,
   type PassSummary,
   type RunStateForDue,
 } from "../backfills/schedule";
@@ -123,6 +135,7 @@ function scheduledPassFor(
   uid: string | null,
   correlationId: string,
   deadlineMs: number,
+  reason: DueReason,
 ): ScheduledPass | null {
   if (key === "nutrition") {
     return {
@@ -153,6 +166,9 @@ function scheduledPassFor(
             resumeFromCheckpoint: true,
             resetCheckpoint: false,
             refreshSodium: false,
+            // Reprise à l'heure suivante : les unités viennent d'être
+            // parcourues, seule la phase des ingrédients a un curseur.
+            skipUnits: reason === "reprise",
           }),
         summarize: (r) =>
           summarizeEnrichReferentials(r as Parameters<typeof summarizeEnrichReferentials>[0]),
@@ -202,6 +218,7 @@ async function runScheduledBackfill(args: {
   key: BackfillKey;
   schedule: BackfillSchedule;
   creneau: string | null;
+  reason: DueReason;
   deadlineMs: number;
 }): Promise<void> {
   const { key, schedule, creneau } = args;
@@ -211,7 +228,22 @@ async function runScheduledBackfill(args: {
       : newCorrelationId(qualify("backfill_programme", key));
   const uid = schedule.programmeParUid;
 
-  const pass = scheduledPassFor(key, uid, correlationId, args.deadlineMs);
+  // L'auteur doit être encore administrateur au moment du passage : un compte
+  // rétrogradé ou révoqué ne voit plus de dépense imputée en son nom.
+  const blocker = programmerBlocker(uid, uid != null && (await isAdminAccount(uid)));
+  if (blocker) {
+    await recordScheduledRunBlocked(key, creneau, correlationId, blocker);
+    await logWarn({
+      message: `Backfill programmé ${key} — passage refusé : ${blocker}`,
+      correlationId,
+      userId: uid ?? undefined,
+      moduleType: "DESIGN",
+      extra: { key, creneau },
+    });
+    return;
+  }
+
+  const pass = scheduledPassFor(key, uid, correlationId, args.deadlineMs, args.reason);
   if (!pass) {
     await logError({
       message: `Backfill programmé ${key} — aucun administrateur imputable, passage non lancé`,
@@ -253,6 +285,16 @@ async function runScheduledBackfill(args: {
         // passes comptent alors des échecs, sans le dire.
         if (budgetFeature && uid && !pass.summarize(response).complete) {
           spendCapHit = !(await budgetOpen(uid, budgetFeature));
+          if (spendCapHit) {
+            await logWarn({
+              message: `Backfill programmé ${key} — plafond de dépense atteint en cours de passage, reprise au prochain créneau`,
+              correlationId,
+              userId: uid,
+              feature: budgetFeature,
+              moduleType: "DESIGN",
+              extra: { key, creneau },
+            });
+          }
         }
         return response;
       },
@@ -344,12 +386,18 @@ async function tickBackfill(
     moduleType: "DESIGN",
     extra: { key, reason, creneau },
   });
-  await runScheduledBackfill({
-    key,
-    schedule: schedule as BackfillSchedule,
-    creneau,
-    deadlineMs: Math.min(tickDeadlineMs, nowMs + MAX_PASS_MS),
-  });
+  const launch = () =>
+    runScheduledBackfill({
+      key,
+      schedule: schedule as BackfillSchedule,
+      creneau,
+      reason,
+      deadlineMs: Math.min(tickDeadlineMs, nowMs + MAX_PASS_MS),
+    });
+  // Plafond de base pour tout passage programmé imputé à son auteur. La
+  // nutrition garde l'imputation par recette, multiplicateurs compris, comme
+  // l'ancienne tâche de 5 h.
+  await (key === "nutrition" ? launch() : runWithBaseBudgetCap(launch));
 }
 
 export const scheduledBackfills = onSchedule(
@@ -378,6 +426,34 @@ export const scheduledBackfills = onSchedule(
         ...keys.map((k) => db.collection(COLL_APP_CONFIG).doc(backfillRunDocId(k))),
       );
       schedulesDoc = schedulesSnap.data();
+      const seed = missingDefaultSchedules(schedulesDoc);
+      if (Object.keys(seed).length > 0) {
+        await db
+          .collection(COLL_APP_CONFIG)
+          .doc(BACKFILL_SCHEDULES_DOC_ID)
+          .set(
+            Object.fromEntries(
+              Object.entries(seed).map(([k, sch]) => [
+                k,
+                {
+                  enabled: sch.enabled,
+                  days: sch.days,
+                  hour: sch.hour,
+                  timezone: "Europe/Paris",
+                  programme_par_uid: null,
+                  updated_at: FieldValue.serverTimestamp(),
+                },
+              ]),
+            ),
+            { merge: true },
+          );
+        await logInfo({
+          message: "Backfills programmés — programmation par défaut écrite",
+          correlationId,
+          moduleType: "DESIGN",
+          extra: { keys: Object.keys(seed) },
+        });
+      }
       runDocs = new Map(keys.map((k, i) => [k, runSnaps[i].data()]));
     } catch (err) {
       await logError({

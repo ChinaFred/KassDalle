@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/admin/domain/backfill_registry.dart';
 import 'package:kass_dalle/features/admin/domain/backfill_status.dart';
@@ -37,14 +40,29 @@ void main() {
   });
 
   group('programmations stockées', () {
-    test('nutrition sans réglage : tous les jours à 5 h', () {
-      final s = BackfillSchedules.empty.scheduleFor(BackfillKeys.nutrition);
-      expect(backfillScheduleLabel(s), 'Tous les jours à 5 h');
-    });
-    test('autre récurrent sans réglage : non programmé', () {
+    test('sans réglage stocké : non programmé, le client n\'invente pas '
+        'de défaut (le serveur écrit celui de la nutrition)', () {
+      expect(
+        BackfillSchedules.empty.scheduleFor(BackfillKeys.nutrition),
+        isNull,
+      );
       expect(
         BackfillSchedules.empty.scheduleFor(BackfillKeys.recipeRoles),
         isNull,
+      );
+    });
+    test('défaut semé par le serveur : tous les jours à 5 h', () {
+      const schedules = BackfillSchedules({
+        'nutrition': {
+          'enabled': true,
+          'days': [1, 2, 3, 4, 5, 6, 7],
+          'hour': 5,
+          'programme_par_uid': null,
+        },
+      });
+      expect(
+        backfillScheduleLabel(schedules.scheduleFor('nutrition')),
+        'Tous les jours à 5 h',
       );
     });
     test('réglage stocké : il remplace le défaut, désactivé compris', () {
@@ -56,7 +74,7 @@ void main() {
         },
         'recipe_roles': {
           'enabled': true,
-          'days': [7, 3, 3, 9],
+          'days': [7, 3, 3],
           'hour': 3,
         },
       });
@@ -166,6 +184,8 @@ void main() {
       final state = BackfillRunState.fromMap('recipe_roles', {
         'dernier_passage_statut': 'en_cours',
         'en_cours_depuis': depuis,
+        // L'échéance vient du serveur ; le client ne connaît pas la durée.
+        'en_cours_expire_le': depuis.add(const Duration(minutes: 10)),
         'en_cours_origine': 'programme',
       });
       expect(
@@ -189,6 +209,29 @@ void main() {
           now: depuis.add(const Duration(minutes: 11)),
         ),
         'En erreur — passage interrompu',
+      );
+    });
+
+    test('verrou sans échéance : interrompu', () {
+      final state = BackfillRunState.fromMap('recipe_roles', {
+        'dernier_passage_statut': 'en_cours',
+        'en_cours_depuis': DateTime.utc(2026, 10, 11, 1),
+      });
+      expect(state.status(_now), BackfillRunStatus.interrompu);
+    });
+
+    test('auteur de la programmation rétrogradé : l\'erreur s\'affiche', () {
+      final state = BackfillRunState.fromMap('recipe_roles', {
+        'dernier_passage_statut': 'erreur',
+        'dernier_passage_origine': 'programme',
+        'dernier_passage_le': DateTime.utc(2026, 10, 11, 1),
+        'dernier_passage_erreur':
+            'L\'auteur de la programmation n\'est plus administrateur.',
+      });
+      expect(
+        backfillStatusLine(def: roles, state: state, schedule: null, now: _now),
+        'En erreur — dim. 11/10 à 03:00 : L\'auteur de la programmation '
+        'n\'est plus administrateur.',
       );
     });
 
@@ -237,5 +280,40 @@ void main() {
       expect(sections.ponctuelsALancer, hasLength(4));
       expect(sections.ponctuelsTermines, isEmpty);
     });
+  });
+
+  group('fixture backfill_schedule.json (partagée avec le serveur)', () {
+    final fixture =
+        jsonDecode(
+              File('test-fixtures/backfill_schedule.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+
+    test(
+      'registre : mêmes clés, même ordre, même nature, même usage de l\'IA',
+      () {
+        expect([
+          for (final def in kBackfillRegistry)
+            {'key': def.key, 'kind': def.kind.name, 'uses_ai': def.usesAi},
+        ], fixture['registry']);
+      },
+    );
+
+    for (final c in (fixture['parse_schedule'] as List).cast<Map>()) {
+      test('lecture d\'une programmation : ${c['name']}', () {
+        final parsed = BackfillSchedule.fromMap(c['input']);
+        expect(
+          parsed == null
+              ? null
+              : {
+                  'enabled': parsed.enabled,
+                  'days': parsed.days,
+                  'hour': parsed.hour,
+                  'programme_par_uid': parsed.programmeParUid,
+                },
+          c['expected'],
+        );
+      });
+    }
   });
 }

@@ -943,6 +943,12 @@ export interface EnrichReferentialsPassOptions {
   resetCheckpoint: boolean;
   /** Mode réparation du sel (`refresh_sodium`), ponctuel. */
   refreshSodium: boolean;
+  /**
+   * Saute la phase 1 (poids des unités). Une reprise programmée, à l'heure
+   * suivante, ne reparcourt pas toutes les unités : la phase 1 n'a pas de
+   * curseur, et l'heure précédente vient de les traiter.
+   */
+  skipUnits?: boolean;
 }
 
 /** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
@@ -991,8 +997,9 @@ export async function runEnrichReferentialsPass(
   //
   // Sautée en mode réparation : le sel doublé est une affaire de valeurs
   // nutritionnelles, pas de poids d'unités. Repasser ici ferait dépenser des
-  // appels pour un problème qui n'existe pas.
-  if (!refreshSodium) {
+  // appels pour un problème qui n'existe pas. Sautée aussi en reprise
+  // programmée (`skipUnits`).
+  if (!refreshSodium && !options.skipUnits) {
     const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
     let cursor: string | null = null;
     const PAGE = 300;

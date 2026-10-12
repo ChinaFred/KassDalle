@@ -4,7 +4,6 @@ import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
 import '../../../core/theme/app_icon_size.dart';
-import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_shortcuts.dart';
 
@@ -55,6 +54,10 @@ Future<bool> showBackfillScheduleEditor(
           context: context,
           isScrollControlled: true,
           useSafeArea: true,
+          // Le glisser fermerait la feuille sans passer par `PopScope` : la
+          // fermeture passe par « Annuler », le fond ou Échap, refusés tant
+          // qu'un enregistrement est en cours.
+          enableDrag: false,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
@@ -86,6 +89,9 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
   late Set<int> _days;
   late int _hour;
   bool _saving = false;
+
+  /// Raison du dernier échec d'enregistrement, affichée au-dessus des boutons.
+  String? _error;
 
   /// Heure proposée pour une première programmation : la nuit, quand
   /// personne n'importe.
@@ -120,7 +126,10 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
 
   Future<void> _save() async {
     if (!_canSave) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       await widget.onSave(
         BackfillScheduleChoice(
@@ -135,10 +144,10 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
       // L'erreur est déjà remontée par [onSave] (ErrorReportService) ;
       // l'éditeur reste ouvert et la cite.
       if (!mounted) return;
-      setState(() => _saving = false);
-      context.showErrorSnackBar(
-        'Programmation non enregistrée : ${callableFailureReason(e)}.',
-      );
+      setState(() {
+        _saving = false;
+        _error = 'Programmation non enregistrée : ${callableFailureReason(e)}.';
+      });
     }
   }
 
@@ -148,122 +157,143 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
     final scheme = theme.colorScheme;
     final allDays = _days.length == 7;
 
-    return AppShortcuts(
-      onSave: _save,
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          20,
-          24,
-          16 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Programmer — ${widget.def.title}',
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Passage programmé'),
-              value: _enabled,
-              onChanged: _saving
-                  ? null
-                  : (v) => setState(() {
-                      _enabled = v;
-                      if (v && _days.isEmpty) _days = {...kAllBackfillDays};
-                    }),
-            ),
-            if (_enabled) ...[
-              const SizedBox(height: 8),
-              Text('Jours', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilterChip(
-                    label: const Text('Tous les jours'),
-                    selected: allDays,
-                    onSelected: (v) => setState(
-                      () => _days = v ? {...kAllBackfillDays} : <int>{},
-                    ),
-                  ),
-                  for (var d = 1; d <= 7; d++)
-                    FilterChip(
-                      label: Text(_dayLabels[d - 1]),
-                      selected: _days.contains(d),
-                      onSelected: (v) => setState(() {
-                        final next = {..._days};
-                        v ? next.add(d) : next.remove(d);
-                        _days = next;
-                      }),
-                    ),
-                ],
+    return PopScope(
+      // Ni fond, ni Échap, ni retour pendant l'enregistrement.
+      canPop: !_saving,
+      child: AppShortcuts(
+        onSave: _save,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            16 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Programmer — ${widget.def.title}',
+                style: theme.textTheme.titleLarge,
               ),
-              if (_days.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Choisissez au moins un jour.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.error,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                initialValue: _hour,
-                decoration: const InputDecoration(
-                  labelText: 'Heure',
-                  helperText: 'Heure de Paris',
-                ),
-                items: [
-                  for (var h = 0; h < 24; h++)
-                    DropdownMenuItem(value: h, child: Text(formatHour(h))),
-                ],
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Passage programmé'),
+                value: _enabled,
                 onChanged: _saving
                     ? null
-                    : (v) => setState(() => _hour = v ?? _hour),
+                    : (v) => setState(() {
+                        _enabled = v;
+                        if (v && _days.isEmpty) _days = {...kAllBackfillDays};
+                      }),
               ),
-              const SizedBox(height: 16),
-              if (_days.isNotEmpty)
-                Text(
-                  backfillScheduleSummary(_draft, DateTime.now()),
-                  style: theme.textTheme.bodyMedium,
+              if (_enabled) ...[
+                const SizedBox(height: 8),
+                Text('Jours', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilterChip(
+                      label: const Text('Tous les jours'),
+                      selected: allDays,
+                      onSelected: _saving
+                          ? null
+                          : (v) => setState(
+                              () => _days = v ? {...kAllBackfillDays} : <int>{},
+                            ),
+                    ),
+                    for (var d = 1; d <= 7; d++)
+                      FilterChip(
+                        label: Text(_dayLabels[d - 1]),
+                        selected: _days.contains(d),
+                        onSelected: _saving
+                            ? null
+                            : (v) => setState(() {
+                                final next = {..._days};
+                                v ? next.add(d) : next.remove(d);
+                                _days = next;
+                              }),
+                      ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              _CostNotice(
-                def: widget.def,
-                onOpenSpendCap: widget.onOpenSpendCap,
-              ),
-            ],
-            const SizedBox(height: 16),
-            OverflowBar(
-              alignment: MainAxisAlignment.end,
-              spacing: 8,
-              children: [
-                TextButton(
-                  onPressed: _saving
+                if (_days.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Choisissez au moins un jour.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _hour,
+                  decoration: const InputDecoration(
+                    labelText: 'Heure',
+                    helperText: 'Heure de Paris',
+                  ),
+                  items: [
+                    for (var h = 0; h < 24; h++)
+                      DropdownMenuItem(value: h, child: Text(formatHour(h))),
+                  ],
+                  onChanged: _saving
                       ? null
-                      : () => Navigator.of(context).pop(false),
-                  child: const Text('Annuler'),
+                      : (v) => setState(() => _hour = v ?? _hour),
                 ),
-                FilledButton(
-                  onPressed: _canSave ? _save : null,
-                  child: _saving
-                      ? const SizedBox.square(
-                          dimension: AppIconSize.small,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Enregistrer'),
+                const SizedBox(height: 16),
+                if (_days.isNotEmpty)
+                  Text(
+                    backfillScheduleSummary(_draft, DateTime.now()),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                const SizedBox(height: 12),
+                _CostNotice(
+                  def: widget.def,
+                  onOpenSpendCap: widget.onOpenSpendCap,
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 16),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _error!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.of(context).pop(false),
+                    child: const Text('Annuler'),
+                  ),
+                  FilledButton(
+                    onPressed: _canSave ? _save : null,
+                    child: _saving
+                        ? const SizedBox.square(
+                            dimension: AppIconSize.small,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Enregistrer'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -327,7 +357,9 @@ class _CostNotice extends StatelessWidget {
                             Navigator.of(context).pop(false);
                             onOpenSpendCap();
                           },
-                          child: const Text('Régler le plafond'),
+                          child: const Text(
+                            'Régler le plafond (sans enregistrer)',
+                          ),
                         ),
                       ],
                     )

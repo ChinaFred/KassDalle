@@ -40,11 +40,18 @@ et écrit l'état dans `app_config/backfill_run_<clé>` : statut, origine, compt
 (`setBackfillCursor` perd `lastReport`) ; `backfill_reports_repository.dart` et ses deux
 providers sont remplacés par `backfill_status_repository.dart`. La tâche `scheduledNutritionCatchUp`
 est retirée et remplacée par `scheduledBackfills`, horaire, qui lance les récurrents échus
-d'après `app_config/backfill_schedules` ; sans réglage, la nutrition garde 5 h, 20 recettes et
-ses bornes de patience. La passe de chaque récurrent sort de son callable pour être appelée
-aussi par la tâche. Un passage programmé qui appelle un modèle est imputé au plafond de
-l'administrateur qui l'a programmé ; la nutrition reste imputée au propriétaire de chaque
-recette. Deux callables admin s'ajoutent, `setBackfillScheduleFn` et `setBackfillDoneFn`. Les
+d'après `app_config/backfill_schedules` ; la tâche y écrit le défaut de la nutrition (5 h, 20
+recettes, bornes de patience) au premier tick, et le client n'en garde pas de copie. La passe de
+chaque récurrent sort de son callable pour être appelée aussi par la tâche ; en reprise,
+l'enrichissement des référentiels saute la phase des unités. Un passage programmé qui appelle
+un modèle est imputé au plafond **de base** de l'administrateur qui l'a programmé, sans le
+multiplicateur du compte (`runWithBaseBudgetCap`), et ne part pas si cet auteur n'est plus
+administrateur ; la nutrition reste imputée au propriétaire de chaque recette.
+L'enrichissement des référentiels et la réparation du sel partagent un verrou. Les règles
+Firestore refusent l'écriture client sur `app_config/backfill_schedules` et
+`app_config/backfill_run_*`, administrateur compris (tests dans `rules-tests`). La fixture
+`backfill_schedule.json` verrouille le registre et la lecture stricte d'une programmation des
+deux côtés ; l'échéance du verrou est écrite par le serveur (`en_cours_expire_le`). Deux callables admin s'ajoutent, `setBackfillScheduleFn` et `setBackfillDoneFn`. Les
 callables existants gardent nom et contrat ; leur réponse gagne `termineAuto`, leur requête
 `appVersion`, et un passage déjà en cours renvoie `failed-precondition`. `backfillShoppingFn`
 ne déclare plus les deux secrets d'IA, qu'il n'utilisait pas.

@@ -113,39 +113,47 @@ class BackfillSchedule {
   bool get isActive => enabled && days.isNotEmpty;
 
   /// Lit une entrée stockée ; `null` si elle est mal formée.
+  ///
+  /// Même lecture que `parseSchedule` côté serveur (fixture
+  /// `test-fixtures/backfill_schedule.json`) : heure et jours entiers, sans
+  /// conversion — « 5 », 5.5, `null` ou `true` rendent l'entrée illisible ;
+  /// `enabled` ne vaut vrai que pour le booléen `true`.
   static BackfillSchedule? fromMap(Object? raw) {
     if (raw is! Map) return null;
+    final hour = _strictInt(raw['hour'], 0, 23);
     final rawDays = raw['days'];
-    final rawHour = raw['hour'];
-    if (rawDays is! List || rawHour is! num) return null;
-    final hour = rawHour.toInt();
-    if (hour < 0 || hour > 23) return null;
-    final days = <int>{
-      for (final d in rawDays)
-        if (d is num && d.toInt() >= 1 && d.toInt() <= 7) d.toInt(),
-    }.toList()..sort();
+    if (hour == null || rawDays is! List) return null;
+    final days = <int>{};
+    for (final d in rawDays) {
+      final day = _strictInt(d, 1, 7);
+      if (day == null) return null;
+      days.add(day);
+    }
+    final sorted = days.toList()..sort();
     final uid = raw['programme_par_uid'];
+    final trimmed = uid is String ? uid.trim() : '';
     return BackfillSchedule(
-      enabled: raw['enabled'] == true && days.isNotEmpty,
-      days: List.unmodifiable(days),
+      enabled: raw['enabled'] == true && sorted.isNotEmpty,
+      days: List.unmodifiable(sorted),
       hour: hour,
-      programmeParUid: uid is String && uid.trim().isNotEmpty ? uid : null,
+      programmeParUid: trimmed.isEmpty ? null : trimmed,
     );
+  }
+
+  /// Un entier de [min] à [max] — un `num` sans partie décimale —, ou `null`.
+  static int? _strictInt(Object? value, int min, int max) {
+    if (value is! num || value != value.truncate()) return null;
+    final n = value.toInt();
+    return n >= min && n <= max ? n : null;
   }
 }
 
-/// Programmations appliquées sans réglage stocké. Même valeur que
-/// `DEFAULT_BACKFILL_SCHEDULES` côté serveur : la nutrition reprend tous les
-/// jours à 5 h, comme l'ancienne tâche `scheduledNutritionCatchUp`.
-const Map<String, BackfillSchedule> kDefaultBackfillSchedules = {
-  BackfillKeys.nutrition: BackfillSchedule(
-    enabled: true,
-    days: kAllBackfillDays,
-    hour: 5,
-  ),
-};
-
 /// Le document `app_config/backfill_schedules`, lu.
+///
+/// Aucun défaut ici : le serveur écrit la programmation par défaut de la
+/// nutrition (tous les jours à 5 h) dans ce document au premier passage de
+/// `scheduledBackfills` qui ne la trouve pas. L'écran affiche ce qui est
+/// stocké, rien d'autre.
 class BackfillSchedules {
   final Map<String, Object?> _raw;
 
@@ -153,13 +161,10 @@ class BackfillSchedules {
 
   static const empty = BackfillSchedules({});
 
-  /// La programmation qui vaut pour [key] : celle du document, ou le défaut
-  /// si le document ne dit rien de cette clé. Une entrée illisible vaut
-  /// « non programmé ».
-  BackfillSchedule? scheduleFor(String key) {
-    if (!_raw.containsKey(key)) return kDefaultBackfillSchedules[key];
-    return BackfillSchedule.fromMap(_raw[key]);
-  }
+  /// La programmation stockée pour [key] ; `null` si absente ou illisible
+  /// (« Non programmé »).
+  BackfillSchedule? scheduleFor(String key) =>
+      BackfillSchedule.fromMap(_raw[key]);
 }
 
 /// « Tous les dimanches à 3 h », « Lun., mer. et ven. à 3 h »,
@@ -220,9 +225,6 @@ String backfillScheduleSummary(BackfillSchedule schedule, DateTime now) {
 
 // ── État d'un backfill ──────────────────────────────────────────────────────
 
-/// Durée de vie d'un verrou, comme `BACKFILL_LOCK_TTL_MS` côté serveur.
-const Duration kBackfillLockTtl = Duration(minutes: 10);
-
 enum BackfillRunStatus {
   jamais,
   enCours,
@@ -230,7 +232,8 @@ enum BackfillRunStatus {
   incomplet,
   erreur,
 
-  /// Verrou plus vieux que [kBackfillLockTtl] : le passage a été interrompu.
+  /// Verrou dont l'échéance (`en_cours_expire_le`, posée par le serveur) est
+  /// passée : le passage a été interrompu.
   interrompu,
 }
 
@@ -238,6 +241,7 @@ class BackfillRunState {
   final String key;
   final String? statut;
   final DateTime? enCoursDepuis;
+  final DateTime? enCoursExpireLe;
   final String? enCoursOrigine;
   final DateTime? dernierPassageLe;
   final String? dernierPassageOrigine;
@@ -253,6 +257,7 @@ class BackfillRunState {
     required this.key,
     this.statut,
     this.enCoursDepuis,
+    this.enCoursExpireLe,
     this.enCoursOrigine,
     this.dernierPassageLe,
     this.dernierPassageOrigine,
@@ -283,6 +288,7 @@ class BackfillRunState {
       key: key,
       statut: str('dernier_passage_statut'),
       enCoursDepuis: date('en_cours_depuis'),
+      enCoursExpireLe: date('en_cours_expire_le'),
       enCoursOrigine: str('en_cours_origine'),
       dernierPassageLe: date('dernier_passage_le'),
       dernierPassageOrigine: str('dernier_passage_origine'),
@@ -301,8 +307,10 @@ class BackfillRunState {
   BackfillRunStatus status(DateTime now) {
     switch (statut) {
       case 'en_cours':
-        final depuis = enCoursDepuis;
-        if (depuis == null || now.difference(depuis) > kBackfillLockTtl) {
+        // L'échéance vient du serveur : la durée de vie du verrou n'existe
+        // que là. Sans échéance, le verrou ne se date pas : interrompu.
+        final expire = enCoursExpireLe;
+        if (enCoursDepuis == null || expire == null || now.isAfter(expire)) {
           return BackfillRunStatus.interrompu;
         }
         return BackfillRunStatus.enCours;

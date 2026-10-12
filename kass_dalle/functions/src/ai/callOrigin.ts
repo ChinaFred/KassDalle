@@ -22,7 +22,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 interface CallOrigin {
-  interactive: true;
+  interactive?: true;
+  /** Passage programmé d'un backfill : plafond de base, sans multiplicateur. */
+  baseBudgetCap?: true;
 }
 
 const storage = new AsyncLocalStorage<CallOrigin>();
@@ -46,4 +48,19 @@ export function isInteractiveCall(): boolean {
 /** Exécute `fn` comme une requête d'utilisateur — pour les tests. */
 export function runAsInteractive<T>(fn: () => T): T {
   return storage.run({ interactive: true }, fn);
+}
+
+/**
+ * Exécute `fn` comme un passage programmé de backfill : le plafond de dépense
+ * du compte imputé s'applique **sans son multiplicateur** (fondateur ×100).
+ * Un passage que personne ne surveille n'a pas à profiter de la marge prévue
+ * pour les essais du propriétaire. Voir `effectiveBudgetMultiplier`.
+ */
+export function runWithBaseBudgetCap<T>(fn: () => T): T {
+  return storage.run({ baseBudgetCap: true }, fn);
+}
+
+/** Vrai dans un passage programmé de backfill (`runWithBaseBudgetCap`). */
+export function isBaseBudgetCap(): boolean {
+  return storage.getStore()?.baseBudgetCap === true;
 }

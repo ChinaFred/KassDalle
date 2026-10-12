@@ -98,3 +98,19 @@ export function backfillDefinition(key: unknown): BackfillDefinition | null {
 export function recurrentKeys(): BackfillKey[] {
   return BACKFILLS.filter((b) => b.kind === "recurrent").map((b) => b.key);
 }
+
+/**
+ * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
+ * ensemble : l'enrichissement des référentiels et la réparation du sel
+ * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
+ * refusé pendant que l'autre tient son verrou.
+ */
+const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
+  ["enrich_referentials", "refresh_sodium"],
+];
+
+/** Les autres backfills dont le verrou bloque [key]. */
+export function lockSiblings(key: BackfillKey): BackfillKey[] {
+  const group = LOCK_GROUPS.find((g) => g.includes(key));
+  return group ? group.filter((k) => k !== key) : [];
+}
