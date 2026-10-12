@@ -40,9 +40,9 @@ comptes existants. La couverture reste vide : l'écran affiche l'image du livre 
 client la dépose à la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est
 éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide.
 
-Les trois livres créés par le client et par le serveur ont désormais un identifiant fixe,
+Les trois livres créés par le client et par le serveur prennent un identifiant fixe,
 `kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` : à l'approbation d'un éditeur, le
-déclencheur et l'application pouvaient créer chacun le leur, et un livre système en double ne se
+déclencheur et l'application peuvent tourner en même temps, et un livre système en double ne se
 supprime pas. Le serveur et le client créent en transaction et ne réécrivent jamais un livre
 existant. `firestore.rules` réserve ces identifiants au compte qu'ils nomment, et laisse un éditeur
 lire son propre identifiant encore absent, lecture qu'exige la transaction du client. Tests : `tests/systemBooksBackfill.test.ts`,

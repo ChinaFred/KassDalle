@@ -331,7 +331,7 @@ pour que deux comptes sans profil restent distincts.
 
 | Champ | Type | Description |
 |---|---|---|
-| `id` | `String` | ID auto-généré Firestore |
+| `id` | `String` | ID auto-généré Firestore, sauf livres système : `kassdalle_{uid}`, `libres_{uid}`, `secretes_{uid}`, `web_{uid}` (repli `web2_{uid}`) |
 | `titre` | `String` | Titre du livre |
 | `sous_titre` | `String?` | Sous-titre du livre |
 | `editeur` | `String?` | Maison d'edition |
@@ -364,18 +364,18 @@ par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé
 (`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
 l'accès (`gainsAccess` : approbation d'un compte en attente, invitation par e-mail acceptée, levée d'une révocation ; un échec est
 journalisé et n'empêche pas l'accès), et la reprise *Admin › Backfills › Livres système des
-comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.50. Depuis la
-v0.23.50, ces trois livres ont un identifiant fixe, `kassdalle_{uid}`, `libres_{uid}` et
-`secretes_{uid}` (`systemBookId` côté serveur, `_createSystemBook` côté client) : à l'approbation
-d'un éditeur, le déclencheur et l'application peuvent tourner en même temps, et un identifiant
-aléatoire laissait chacun créer son livre, en double et non supprimable. Le serveur crée en
+comptes* (`backfillSystemBooksFn`, §7.10) pour les comptes approuvés avant la v0.23.50. Ces trois livres
+ont un identifiant fixe, `kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` (`systemBookId`
+côté serveur, `_createSystemBook` côté client) : à l'approbation d'un éditeur, le déclencheur et
+l'application peuvent tourner en même temps, et un livre système en double ne se supprime pas.
+Les livres créés avant la v0.23.50 gardent leur identifiant aléatoire. Le serveur crée en
 transaction et retrouve un livre déjà posé par le client ; le client aussi, et ne réécrit jamais
 un livre existant : hors ligne, un `set` mis en file aurait remplacé à la reconnexion un livre que
 le cache ne montrait pas, `is_private` compris. Pour cette transaction, les règles laissent un
 éditeur lire son propre identifiant fixe encore absent (`ownSystemBookId`). Un identifiant occupé
 par un autre document (étranger au compte, ou livre sans le tag) est journalisé et n'empêche pas
 la création des autres livres. Les règles réservent ces identifiants au compte qu'ils nomment
-(§4). Les livres créés avant gardent leur identifiant aléatoire et restent reconnus à leur tag. Mêmes
+(§4). Un livre système reste reconnu à son tag, quel que soit son identifiant. Mêmes
 champs que le client, couverture vide : l'écran affiche
 alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
 la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
