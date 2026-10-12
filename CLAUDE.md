@@ -514,7 +514,8 @@ pas pour chaque travail.
 
 ## Intégration continue
 
-`.github/workflows/ci.yml` rejoue à chaque push et chaque PR :
+`.github/workflows/ci.yml` rejoue à chaque push et chaque PR. Sur le push qui fusionne une PR
+déjà testée, seul le job Version tourne :
 
 | Job | Étapes |
 |---|---|

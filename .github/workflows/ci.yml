@@ -62,7 +62,8 @@ jobs:
     #   lui est associée (rien n'a été ajouté à la fusion) ;
     # - cette tête contient déjà la master d'avant le push : la CI de la PR,
     #   qui teste la fusion avec master, a donc testé ce même arbre ;
-    # - une exécution de cette CI sur la tête de la PR a réussi.
+    # - toutes les exécutions de cette CI en pull_request sur cette tête ont
+    #   réussi, aucune n'est en cours.
     # Le job Version tourne toujours : il compare à la master d'avant le push.
     # Une réponse d'API manquante ou inattendue fait tourner la CI entière.
     if: github.event_name == 'push'
@@ -94,8 +95,12 @@ jobs:
             [ "$head_tree" = "$tree" ] || continue
             status=$(gh api "repos/$REPO/compare/$BEFORE...$head" --jq .status) || continue
             case "$status" in ahead|identical) ;; *) continue ;; esac
-            runs=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&status=success" --jq .total_count) || continue
-            if [ "$runs" -gt 0 ]; then
+            # Toutes les CI de PR de cette tête doivent être vertes : la même
+            # tête peut viser une autre branche dans une seconde PR, ou avoir
+            # une CI encore en cours ou rouge.
+            all_green=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request" \
+              --jq '[.workflow_runs[].conclusion] | length > 0 and all(. == "success")') || continue
+            if [ "$all_green" = "true" ]; then
               echo "::notice::Arbre identique à $head, CI de PR verte : jobs lourds sautés."
               skip=true
               break
