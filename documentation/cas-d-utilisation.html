@@ -708,7 +708,7 @@ flowchart LR
         est traduite. Le brouillon arrive dans « Mes recettes du web », livre système privé qui ne
         se supprime pas. Il est créé avec les autres livres système, à l'ouverture de la
         bibliothèque, pour un éditeur ou un administrateur, avec sa couverture « From the web » ;
-        le lecteur n'a pas ce livre. Le texte de la page est joint comme document
+        un lecteur le reçoit à l'approbation de son compte. Le texte de la page est joint comme document
         original, et la source s'affiche sur la fiche, avec l'auteur quand la page le nomme ; la
         copie d'une recette importée la garde.
         La photo de la page s'ajoute quand la modération l'accepte : en attente, la recette est
@@ -883,7 +883,7 @@ flowchart LR
         recette dont les durées sont lues, ou déjà estimée pour son texte actuel, n'est ni
         redemandée ni refacturée. Le compte rendu donne les recettes estimées, sans estimation,
         ignorées et en erreur. Les recettes écrites ensuite sont estimées à leur écriture.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses neuf reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses dix reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au
@@ -891,6 +891,11 @@ flowchart LR
         passe tous les jours à 5 h sans réglage. Un ponctuel passé sans reste est marqué terminé
         et descend en bas ; l'administrateur peut aussi le marquer, ou le remettre à lancer, par
         le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble.
+        <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
+        chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
+        manquent. Un compte approuvé depuis la v0.23.50 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
+        compte rendu donne les comptes complétés, le nombre de livres créés, les comptes déjà à
+        jour, ceux en attente ou révoqués, et les échecs.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
         un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
         « Voir les N à revoir ». Il ouvre une liste — un ingrédient, une unité, une recette ou un compte par ligne, avec

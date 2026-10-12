@@ -20,6 +20,57 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.51 — fonctionnel
+
+Un administrateur peut inviter par e-mail une personne dont il a révoqué l'accès. Son compte
+reste révoqué jusqu'à ce qu'elle se reconnecte avec le compte Google de l'adresse invitée : son
+accès est alors rétabli avec le rôle choisi, et l'invitation au groupe l'attend dans Groupes
+familiaux, à accepter. L'écran « accès révoqué » le dit et ouvre le choix du compte Google. Dans
+Groupes familiaux, le propriétaire d'un groupe peut aussi chercher une personne par son adresse
+e-mail complète : le compte trouvé s'affiche par son nom, jamais par son adresse, dans la limite
+de dix recherches par jour.
+
+### v0.23.51 — technique
+
+Nouveau déclencheur `applyRevokedInvitation` (onUpdate `users/{uid}`) : à la reconnexion d'un
+compte révoqué (`last_seen_at` changé), il relit dans une transaction l'adresse Auth vérifiée,
+l'invitation de retour qui vise ce compte (`target: "revoked"`, `target_uid`), l'invitant et le
+groupe, puis rétablit le compte, pose le rôle et l'ajoute à `invited_ids`. `syncUserClaims`
+annule les invitations de retour devenues sans objet quand un compte est rétabli à la main. Le
+client aligne son jeton sur le document après un changement de rôle ou de révocation
+(`TokenClaimsAligner`), et la connexion web par redirection enregistre enfin le compte
+(`getRedirectResult`). Nouvelle callable `findMemberByEmailFn` : adresse exacte, propriétaire du
+groupe seul, réponse sans adresse, compteur `member_email_search_daily` (10 par jour, alerte à
+la cinquième recherche vide, TTL), fermé aux clients.
+
+### v0.23.50 — fonctionnel
+
+Tout compte approuvé a ses quatre livres système : « Mes créations Kass'Dalle », « Mes recettes
+libres », « Mes Recettes Secrètes » et « Mes recettes du web ». Jusqu'ici, ils n'étaient créés
+qu'à l'ouverture de la bibliothèque par un éditeur ou un administrateur : les lecteurs n'en avaient
+aucun. Ils sont désormais créés à l'approbation du compte, ou à l'acceptation d'une invitation par e-mail, lecteurs compris. Pour les comptes déjà
+approuvés, une nouvelle reprise *Admin › Backfills › Livres système des comptes* crée ceux qui
+manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA.
+
+### v0.23.50 — technique
+
+`books/systemBooks.ts` (`ensureSystemBooksFor`) crée les livres système absents d'un compte,
+reconnus à leur tag. Les trois livres créés par le client reprennent ses champs ; « Mes recettes
+du web » passe par `findOrCreateWebBook`. Deux appelants : `syncUserClaims`, quand le compte
+reçoit l'accès (`gainsAccess` : approbation, invitation par e-mail acceptée, levée d'une révocation), et le backfill ponctuel
+`backfillSystemBooksFn` (`callable/systemBooksBackfillCallable.ts`, clé `system_books`) pour les
+comptes existants. La couverture reste vide : l'écran affiche l'image du livre système, et le
+client la dépose à la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est
+éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide.
+
+Les trois livres créés par le client et par le serveur prennent un identifiant fixe,
+`kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` : à l'approbation d'un éditeur, le
+déclencheur et l'application peuvent tourner en même temps, et un livre système en double ne se
+supprime pas. Le serveur et le client créent en transaction et ne réécrivent jamais un livre
+existant. `firestore.rules` réserve ces identifiants au compte qu'ils nomment, et laisse un éditeur
+lire son propre identifiant encore absent, lecture qu'exige la transaction du client. Tests : `tests/systemBooksBackfill.test.ts`,
+`tests/authGuards.test.ts`, `rules-tests/test/firestore.test.mjs`.
+
 ### v0.23.49 — fonctionnel
 
 Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par

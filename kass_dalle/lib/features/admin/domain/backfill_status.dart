@@ -405,6 +405,9 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.planningDefaults:
       return '${_count(n('poses') + n('completes'), 'compte mis à jour', 'comptes mis à jour')}, '
           '${_count(n('restants'), 'restant', 'restants')}';
+    case BackfillKeys.systemBooks:
+      return '${_count(n('livresCrees'), 'livre créé', 'livres créés')}, '
+          '${_count(n('restants'), 'compte restant', 'comptes restants')}';
     default:
       return '';
   }

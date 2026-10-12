@@ -151,9 +151,33 @@ class BookRepository {
       createdAt: now,
       updatedAt: now,
     );
-    final id = await createBook(book);
+    final id = await _createSystemBook('kassdalle', uid, book);
     unawaited(_uploadAssetCover('assets/mycreations.png', id));
     return (id: id, titre: titre);
+  }
+
+  /// Crée un livre système sous un identifiant fixe, `{prefix}_{uid}` — le
+  /// même que le serveur (`functions/src/books/systemBooks.ts`).
+  ///
+  /// Le serveur crée aussi ces livres, à l'approbation du compte. Avec un
+  /// identifiant aléatoire, les deux pouvaient créer chacun le leur au même
+  /// moment, et un livre système en double ne se supprime pas. Sous un
+  /// identifiant fixe, le second retrouve le document du premier. Les règles
+  /// Firestore réservent ces identifiants au compte qu'ils nomment.
+  ///
+  /// En transaction, et non par un simple `set` : hors ligne, ou sur un
+  /// appareil au cache vide, la lecture par tag ne trouve pas un livre qui
+  /// existe sur le serveur. Un `set` mis en file l'aurait remplacé à la
+  /// reconnexion — titre, couverture, et `is_private` remis à `false`, ce
+  /// qui rend partagées les recettes d'un livre rendu privé. Une transaction
+  /// lit le serveur, et échoue hors ligne au lieu d'écrire.
+  Future<String> _createSystemBook(String prefix, String uid, Book book) async {
+    final ref = _col.doc('${prefix}_$uid');
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) tx.set(ref, book.toFirestore());
+    });
+    return ref.id;
   }
 
   /// Envoie la couverture d'un livre et retourne son URL publiée.
@@ -325,7 +349,7 @@ class BookRepository {
       updatedAt: now,
       isPrivate: false,
     );
-    final id = await createBook(book);
+    final id = await _createSystemBook('libres', uid, book);
     unawaited(_uploadAssetCover('assets/opensource.png', id));
     return (id: id, titre: titre);
   }
@@ -394,7 +418,7 @@ class BookRepository {
       updatedAt: now,
       isPrivate: true,
     );
-    final id = await createBook(book);
+    final id = await _createSystemBook('secretes', uid, book);
     unawaited(_uploadAssetCover('assets/Secret.png', id));
     return (id: id, titre: titre);
   }

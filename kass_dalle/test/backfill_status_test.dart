@@ -294,13 +294,14 @@ void main() {
         'recipe_protein',
         'refresh_sodium',
         'planning_defaults',
+        'system_books',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['estimated_times']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(4));
+      expect(sections.ponctuelsALancer, hasLength(5));
       expect(sections.ponctuelsTermines, isEmpty);
     });
   });

@@ -24,6 +24,7 @@ abstract final class BackfillKeys {
   static const estimatedTimes = 'estimated_times';
   static const refreshSodium = 'refresh_sodium';
   static const planningDefaults = 'planning_defaults';
+  static const systemBooks = 'system_books';
 }
 
 class BackfillDefinition {
@@ -164,6 +165,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'rien effacer.',
     usesAi: false,
     passLimit: 'Chaque passage traite au plus 500 comptes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.systemBooks,
+    kind: BackfillKind.ponctuel,
+    title: 'Livres système des comptes',
+    description:
+        'Crée les livres système manquants de chaque compte lecteur, éditeur '
+        'ou administrateur.',
+    usesAi: false,
+    passLimit: 'Chaque passage complète au plus 500 comptes.',
   ),
 ];
 

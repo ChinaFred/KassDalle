@@ -155,6 +155,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'n\'est pas modifié. Un texte déjà présent n\'est pas ajouté deux '
             'fois.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.systemBooks:
+        return 'Crée, pour chaque compte lecteur, éditeur ou administrateur, '
+            'ceux des quatre livres système qui lui manquent : « Mes '
+            'créations Kass\'Dalle », « Mes recettes libres », « Mes Recettes '
+            'Secrètes » et « Mes recettes du web ». Les comptes en attente ou '
+            'révoqués sont sautés. Un livre déjà présent, même renommé, '
+            'n\'est pas recréé.\n\n'
+            'Aucun appel d\'IA.';
       default:
         return '';
     }
@@ -289,6 +297,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
           'le vôtre ignoré=${r['ignores']}, '
           'trop longs (laissés tels quels)=${r['tropLongs']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
+        );
+      case BackfillKeys.systemBooks:
+        final r = await _repo.backfillSystemBooks();
+        return _fromCounts(
+          r,
+          'Comptes : examinés=${r['examines']}, complétés=${r['completes']} '
+          '(livres créés=${r['livresCrees']}), déjà à jour=${r['dejaAJour']}, '
+          'en attente ou révoqués=${r['ignores']}, '
           'échecs=${r['echoues']}, restants=${r['restants']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
@@ -858,6 +876,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.estimatedTimes: Icons.timer_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.planningDefaults: Icons.restaurant_menu_outlined,
+    BackfillKeys.systemBooks: Icons.library_books_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

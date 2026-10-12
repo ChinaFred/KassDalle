@@ -879,6 +879,53 @@ describe("books", () => {
     );
   });
 
+  it("un éditeur ne crée pas le livre système d'un autre compte (libres_<uid>…)", async () => {
+    for (const prefix of ["kassdalle", "libres", "secretes"]) {
+      await assertFails(
+        db("editor")
+          .doc(`books/${prefix}_${OTHER}`)
+          .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: [], is_private: false }),
+      );
+    }
+  });
+
+  it("un éditeur lit son propre livre système encore absent (transaction du client)", async () => {
+    await assertSucceeds(db("editor").doc(`books/secretes_${EDITOR}`).get());
+  });
+
+  it("un lecteur ou un compte en attente ne lit pas son identifiant fixe absent", async () => {
+    await assertFails(db("reader").doc(`books/secretes_${READER}`).get());
+    await assertFails(db("pending").doc("books/secretes_pending").get());
+  });
+
+  it("un éditeur ne lit pas l'identifiant fixe absent d'un autre compte", async () => {
+    await assertFails(db("editor").doc(`books/secretes_${OTHER}`).get());
+  });
+
+  it("un administrateur ne crée pas le livre système d'un autre compte côté client", async () => {
+    await assertFails(
+      db("admin")
+        .doc(`books/libres_${OTHER}`)
+        .set({ titre: "Mes recettes libres", created_by: PERSONAS.admin.uid, tags: [], is_private: false }),
+    );
+  });
+
+  it("un identifiant voisin du motif réservé reste un livre ordinaire", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("books/libresX")
+        .set({ titre: "Libres", created_by: EDITOR, tags: [], is_private: false }),
+    );
+  });
+
+  it("un éditeur crée ses propres livres système sous leur identifiant fixe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`books/libres_${EDITOR}`)
+        .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: ["__libres"], is_private: false }),
+    );
+  });
+
   it("un éditeur ne crée pas de livre portant le tag __web", async () => {
     await assertFails(
       db("editor")
