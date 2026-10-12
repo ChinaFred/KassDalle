@@ -513,8 +513,8 @@ class _TagChip extends StatelessWidget {
 /// Côté de l'icône d'une page web.
 const double webResultThumbnailSize = 64;
 
-/// Une page de recette trouvée sur le web : icône, titre, site, extrait,
-/// badge « Import direct », et les actions « Ouvrir » et « Importer ».
+/// Une page de recette trouvée sur le web : icône, titre, site, extrait, et
+/// les actions « Ouvrir » et « Importer ».
 ///
 /// Toucher la carte l'ouvre dans le navigateur, comme « Ouvrir ». Sur le web,
 /// le titre est un vrai lien (clic du milieu, menu du navigateur) ; il n'est
@@ -523,7 +523,7 @@ const double webResultThumbnailSize = 64;
 class WebResultTile extends StatelessWidget {
   final WebRecipeResult result;
 
-  /// Éditeur ou administrateur : badge, « Importer » et menu « Importer ».
+  /// Éditeur ou administrateur : « Importer » et menu « Importer ».
   final bool canImport;
 
   /// Vrai une fois l'import envoyé depuis cette carte.
@@ -639,20 +639,6 @@ class WebResultTile extends StatelessWidget {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (canImport && result.directImport)
-          Tooltip(
-            message:
-                'Cette page décrit sa recette de façon structurée : '
-                'l\'import sera fidèle.',
-            child: Chip(
-              avatar: const Icon(Icons.bolt, size: AppIconSize.inline),
-              label: const Text('Import direct'),
-              labelStyle: theme.textTheme.labelSmall,
-              backgroundColor: theme.colorScheme.secondaryContainer,
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
         Tooltip(
           message: 'Ouvrir ${result.site} dans le navigateur',
           child: TextButton.icon(
@@ -717,11 +703,7 @@ class WebResultTile extends StatelessWidget {
       );
     }
 
-    return Semantics(
-      container: true,
-      label: result.semanticLabel(canImport: canImport),
-      child: card,
-    );
+    return Semantics(container: true, label: result.semanticLabel, child: card);
   }
 }
 

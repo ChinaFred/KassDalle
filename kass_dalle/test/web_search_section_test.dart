@@ -16,6 +16,8 @@ import 'package:kass_dalle/features/search/presentation/google_search_suggestion
 import 'package:kass_dalle/features/search/presentation/search_providers.dart';
 import 'package:kass_dalle/features/search/presentation/search_screen.dart';
 import 'package:kass_dalle/features/search/presentation/search_widgets.dart';
+import 'package:kass_dalle/features/search/presentation/web_page_opener.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 
 /// « Chercher sur le web » : bouton par rôle, états de la section « Sur le
 /// web », carte d'une page, plafond du jour, et lecture de la réponse.
@@ -26,7 +28,6 @@ final _pages = [
     title: 'Blanquette de veau',
     site: 'le-site.fr',
     snippet: 'La recette de grand-mère.',
-    directImport: true,
   ),
   WebRecipeResult(
     url: Uri.parse('https://blog.example.fr/blanquette'),
@@ -206,9 +207,7 @@ void main() {
   });
 
   group('section « Sur le web »', () {
-    testWidgets('éditeur : cartes, badge, import, restant, pied', (
-      tester,
-    ) async {
+    testWidgets('éditeur : cartes, import, restant, pied', (tester) async {
       final service = await _pump(tester);
       await _search(tester, 'blanquette');
       expect(service.queries, ['blanquette']);
@@ -219,23 +218,23 @@ void main() {
       );
       expect(find.text('2 pages trouvées'), findsOneWidget);
       expect(find.text('Blanquette de veau'), findsOneWidget);
-      expect(find.text('Import direct'), findsOneWidget);
+      // Un seul bouton d'import, page structurée ou non : aucun badge.
+      expect(find.text('Import direct'), findsNothing);
       expect(find.text('Importer'), findsNWidgets(2));
       expect(find.text('Ouvrir'), findsNWidgets(2));
       expect(find.text('Vidéos et réseaux sociaux exclus.'), findsOneWidget);
       expect(find.text('Voir sur Google'), findsOneWidget);
-      // Un seul libellé par carte, badge compris pour qui peut importer.
+      // Un seul libellé par carte.
       expect(
-        find.bySemanticsLabel('Blanquette de veau, le-site.fr, import direct'),
+        find.bySemanticsLabel('Blanquette de veau, le-site.fr'),
         findsOneWidget,
       );
     });
 
-    testWidgets('lecteur : ni badge ni « Importer »', (tester) async {
+    testWidgets('lecteur : pas d\'« Importer »', (tester) async {
       await _pump(tester, canEdit: false);
       await _search(tester, 'blanquette');
       expect(find.text('Blanquette de veau'), findsOneWidget);
-      expect(find.text('Import direct'), findsNothing);
       expect(find.text('Importer'), findsNothing);
       expect(find.text('Ouvrir'), findsNWidgets(2));
       expect(
@@ -477,6 +476,7 @@ void main() {
             'site': 'exemple.fr',
             // Champ d'un ancien serveur : ignoré.
             'imageUrl': 'https://exemple.fr/i.jpg',
+            // Rendu par le serveur, plus lu par le client.
             'directImport': true,
           },
         ],
@@ -484,7 +484,6 @@ void main() {
         'remaining': 3,
       });
       expect(response.results, hasLength(1));
-      expect(response.results.single.directImport, isTrue);
       expect(response.fromCache, isTrue);
       expect(response.remaining, 3);
     });
@@ -574,6 +573,96 @@ void main() {
       // Fermée, la section garde le nombre restant pour « Aller plus loin ».
       notifier.close();
       expect(container.read(webSearchProvider).remaining, 49);
+    });
+  });
+
+  group('bouton « Importer » d\'une carte', () {
+    Future<List<String>> pumpTile(
+      WidgetTester tester, {
+      bool imported = false,
+    }) async {
+      final calls = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WebResultTile(
+              result: _pages.first,
+              canImport: true,
+              imported: imported,
+              onOpen: () => calls.add('open'),
+              onImport: () => calls.add('import'),
+              onCopyLink: () => calls.add('copy'),
+            ),
+          ),
+        ),
+      );
+      return calls;
+    }
+
+    testWidgets('lance l\'import sans ouvrir la page', (tester) async {
+      final calls = await pumpTile(tester);
+      await tester.tap(find.text('Importer'));
+      await tester.pumpAndSettle();
+      expect(calls, ['import']);
+    });
+
+    testWidgets('icône lien, infobulle, cible de 48 px, aucun badge', (
+      tester,
+    ) async {
+      await pumpTile(tester);
+      final button = find.widgetWithText(FilledButton, 'Importer');
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(of: button, matching: find.byIcon(Icons.link)),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Importer cette recette dans vos brouillons'),
+        findsOneWidget,
+      );
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      expect(find.text('Import direct'), findsNothing);
+      expect(find.byIcon(Icons.bolt), findsNothing);
+    });
+
+    testWidgets('import envoyé : « Import envoyé », plus de bouton', (
+      tester,
+    ) async {
+      final calls = await pumpTile(tester, imported: true);
+      expect(find.text('Import envoyé'), findsOneWidget);
+      expect(find.text('Importer'), findsNothing);
+      await tester.tap(find.text('Import envoyé'));
+      await tester.pumpAndSettle();
+      expect(calls, isNot(contains('import')));
+    });
+  });
+
+  group('ouverture d\'une page', () {
+    test('navigateur intégré sur téléphone, navigateur ailleurs', () {
+      for (final host in [TargetPlatform.android, TargetPlatform.iOS]) {
+        expect(
+          webPageLaunchModeFor(host: host, inAppSupported: true),
+          LaunchMode.inAppBrowserView,
+          reason: '$host',
+        );
+        expect(
+          webPageLaunchModeFor(host: host, inAppSupported: false),
+          LaunchMode.externalApplication,
+          reason: '$host sans navigateur intégré',
+        );
+      }
+      for (final host in [
+        null,
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        expect(
+          webPageLaunchModeFor(host: host, inAppSupported: true),
+          LaunchMode.externalApplication,
+          reason: '$host',
+        );
+      }
     });
   });
 

@@ -5,8 +5,13 @@
  * redirection (`vertexaisearch.cloud.google.com/grounding-api-redirect/…`).
  * Ce module suit chaque lien jusqu'à la page réelle, par `fetchPublicResource`
  * (garde SSRF, redirections revérifiées), et en tire ce que la carte affiche :
- * titre, site, extrait, et le badge « Import direct » quand la page décrit sa
- * recette en `schema.org/Recipe`.
+ * titre, site, extrait. `directImport` dit si la page décrit sa recette en
+ * `schema.org/Recipe` complet : le client ne l'affiche pas, la callable le
+ * compte dans son journal.
+ *
+ * La langue de chaque page est relevée aussi (`<html lang>`, `og:locale`,
+ * `inLanguage` du JSON-LD) : les pages en français passent devant, sans que
+ * les autres soient écartées.
  *
  * Aucune image n'est relevée : la carte montre une icône. Une vignette tierce
  * chargée par l'appareil donnerait l'adresse IP du lecteur au site, et
@@ -25,6 +30,7 @@ import type { GeminiGroundingSource } from "../gemini/client";
 import {
   cleanText,
   extractJsonLdRecipes,
+  htmlLangOf,
   isCompleteRecipe,
   metaContent,
   pageTitleOf,
@@ -120,14 +126,24 @@ export function cleanWebSearchQuery(raw: unknown): string | null {
 }
 
 /**
- * Clé du cache : la requête en minuscules, espaces resserrées.
+ * Version des entrées du cache, entrée dans le hash de la clé.
+ *
+ * À incrémenter quand le prompt ou l'ordre des résultats change : les
+ * entrées écrites avant ne sont plus servies, et s'effacent à leur
+ * expiration (`expires_at`). Version 2 : pages en français d'abord.
+ */
+export const WEB_SEARCH_CACHE_VERSION = 2;
+
+/**
+ * Clé du cache : la version, puis la requête en minuscules, espaces
+ * resserrées.
  *
  * Les accents restent : « pâte » et « pâté » sont deux plats, et Google ne
  * rend pas les mêmes pages pour l'un et l'autre.
  */
 export function webSearchCacheKey(query: string): string {
   const normalized = (cleanWebSearchQuery(query) ?? "").toLocaleLowerCase("fr");
-  return createHash("sha256").update(normalized).digest("hex");
+  return createHash("sha256").update(`v${WEB_SEARCH_CACHE_VERSION}:${normalized}`).digest("hex");
 }
 
 /** Vrai si l'entrée du cache, écrite à `cachedAtMs`, sert encore à `nowMs`. */
@@ -190,6 +206,76 @@ export function sourceTitleIsExcluded(title: string | undefined): boolean {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(t) && isExcludedHost(t);
 }
 
+// ── Langue ───────────────────────────────────────────────────────────────────
+
+/**
+ * Langue d'une page, pour l'ordre des cartes : français, autre langue, ou
+ * inconnue (rien de déclaré, page illisible).
+ */
+export type PageLanguage = "fr" | "other" | "unknown";
+
+/**
+ * Code de langue principal d'une valeur déclarée (`fr`, `fr-BE`, `fr_CA`,
+ * `en-US`) ; `null` si la valeur n'en porte pas (`x-default`, vide).
+ */
+export function primaryLanguageCode(value: string | null | undefined): string | null {
+  const m = /^\s*([a-z]{2,3})(?:[-_][a-z0-9]+)*\s*$/i.exec(value ?? "");
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Indice tiré de l'adresse quand la page ne déclare rien : domaine en `.fr`,
+ * sous-domaine `fr.`, ou chemin qui commence par `/fr/` ou `/fr-xx/`. Rien
+ * d'autre : `.be`, `.ch` et `.ca` publient aussi en néerlandais, en allemand
+ * et en anglais.
+ */
+export function urlSuggestsFrench(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const u = new URL(url);
+  const host = u.hostname.toLowerCase().replace(/\.$/, "");
+  return (
+    host.endsWith(".fr") || host.startsWith("fr.") || /^\/fr(?:[-_][a-z]{2})?\//i.test(u.pathname)
+  );
+}
+
+/**
+ * Langue d'une page : `inLanguage` de la recette JSON-LD, puis
+ * `<html lang>`, puis `og:locale`, puis l'indice de l'adresse. Le texte de
+ * la page n'est pas analysé.
+ */
+export function detectPageLanguage(html: string | null, url: string): PageLanguage {
+  if (html != null) {
+    const { recipes } = extractJsonLdRecipes(html);
+    const declared = [
+      ...recipes.map((r) => r.inLanguage),
+      htmlLangOf(html),
+      metaContent(html, "og:locale"),
+    ];
+    for (const value of declared) {
+      const code = primaryLanguageCode(value);
+      if (code) return code === "fr" ? "fr" : "other";
+    }
+  }
+  return urlSuggestsFrench(url) ? "fr" : "unknown";
+}
+
+const LANGUAGE_RANK: Record<PageLanguage, number> = { fr: 0, unknown: 1, other: 2 };
+
+/**
+ * Pages en français d'abord, puis de langue inconnue, puis dans une autre
+ * langue. Tri stable : l'ordre de Google est gardé dans chaque groupe.
+ * Aucune page n'est écartée.
+ */
+export function orderByLanguage<T extends { language: PageLanguage }>(items: readonly T[]): T[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        LANGUAGE_RANK[a.item.language] - LANGUAGE_RANK[b.item.language] || a.index - b.index,
+    )
+    .map((e) => e.item);
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 function clip(text: string | null | undefined, max: number): string | null {
@@ -206,10 +292,10 @@ export interface PageCardFields {
 }
 
 /**
- * Titre, description et badge d'une page.
+ * Titre, description et `directImport` d'une page.
  *
- * Le badge suit la règle de l'import : une recette
- * JSON-LD complète (titre, ingrédients, étapes) se projette sans modèle.
+ * `directImport` suit la règle de l'import : une recette JSON-LD complète
+ * (titre, ingrédients, étapes) se projette sans modèle.
  */
 export function extractPageCard(html: string): PageCardFields {
   const { recipes } = extractJsonLdRecipes(html);
@@ -231,9 +317,13 @@ export function extractPageCard(html: string): PageCardFields {
 
 // ── Résolution d'une source ──────────────────────────────────────────────────
 
-/** Issue de la résolution d'une source : une carte, ou la raison de l'écarter. */
+/**
+ * Issue de la résolution d'une source : une carte et la langue de sa page, ou
+ * la raison de l'écarter.
+ */
 export type SourceOutcome =
-  { card: WebRecipeCard; degraded: FetchFailure | null } | { card: null; dropped: string };
+  | { card: WebRecipeCard; language: PageLanguage; degraded: FetchFailure | null }
+  | { card: null; dropped: string };
 
 export type PageFetcher = (url: URL, opts: FetchOptions) => Promise<FetchedResource>;
 
@@ -241,7 +331,7 @@ export type PageFetcher = (url: URL, opts: FetchOptions) => Promise<FetchedResou
  * Suit le lien de Google jusqu'à la page, et en fait une carte.
  *
  * Une page qui refuse d'être lue (403, délai, type inattendu) garde sa carte,
- * sans extrait ni badge, à condition que son adresse réelle soit connue et
+ * sans extrait, `directImport` à faux, à condition que son adresse réelle soit connue et
  * sûre. Un refus de la garde SSRF (`refused`) ne rend jamais d'adresse.
  */
 export async function resolveWebSource(
@@ -259,7 +349,8 @@ export async function resolveWebSource(
     if (!isDisplayableFinalUrl(finalUrl)) {
       return { card: null, dropped: finalUrl ? "excluded" : "not_https" };
     }
-    const fields = extractPageCard(decodeHtml(page.body, page.charset));
+    const html = decodeHtml(page.body, page.charset);
+    const fields = extractPageCard(html);
     const site = siteOf(finalUrl);
     return {
       card: {
@@ -269,6 +360,7 @@ export async function resolveWebSource(
         snippet: fields.description,
         directImport: fields.directImport,
       },
+      language: detectPageLanguage(html, finalUrl),
       degraded: null,
     };
   } catch (err) {
@@ -290,6 +382,8 @@ export async function resolveWebSource(
         snippet: null,
         directImport: false,
       },
+      // Page non lue : seule l'adresse peut donner un indice.
+      language: detectPageLanguage(null, finalUrl),
       degraded: err.failure,
     };
   }
@@ -304,7 +398,8 @@ export function dedupKey(url: string): string {
 }
 
 /**
- * Garde les cartes dans l'ordre de Google, dédoublonnées par adresse finale,
+ * Garde les cartes dans l'ordre reçu — celui de Google, ou celui de
+ * [orderByLanguage] —, dédoublonnées par adresse finale,
  * jusqu'à [WEB_SEARCH_MAX_RESULTS].
  */
 export function pickCards(cards: Array<WebRecipeCard | null>): WebRecipeCard[] {
