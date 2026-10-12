@@ -20,6 +20,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.44 — fonctionnel
+
+Nouvelle reprise *Admin › Backfills › Livres système des comptes*. Elle crée, pour chaque compte
+lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui manquent : « Mes
+créations Kass'Dalle », « Mes recettes libres », « Mes Recettes Secrètes » et « Mes recettes du
+web ». Jusqu'ici, ces livres n'étaient créés qu'à l'ouverture de la bibliothèque par un éditeur ou
+un administrateur : les lecteurs n'en avaient aucun. Un livre déjà présent, même renommé, n'est pas
+recréé. Aucun appel d'IA.
+
+### v0.23.44 — technique
+
+`backfillSystemBooksFn` (`callable/systemBooksBackfillCallable.ts`, rôle `admin`) parcourt
+`users` et crée les livres système absents, reconnus à leur tag, pour les comptes approuvés non
+révoqués. Les trois livres créés par le client reprennent ses champs ; « Mes recettes du web »
+passe par `findOrCreateWebBook`. La couverture reste vide : l'écran affiche l'image du livre
+système, et le client la dépose à la prochaine ouverture de la bibliothèque par un éditeur.
+Tests : `tests/systemBooksBackfill.test.ts`.
+
 ### v0.23.43 — fonctionnel
 
 La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page

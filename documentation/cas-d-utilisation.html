@@ -816,6 +816,11 @@ flowchart LR
         recette dont les durées sont lues, ou déjà estimée pour son texte actuel, n'est ni
         redemandée ni refacturée. Le compte rendu donne les recettes estimées, sans estimation,
         ignorées et en erreur. Les recettes écrites ensuite sont estimées à leur écriture.
+        <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
+        chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
+        manquent. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
+        compte rendu donne les comptes complétés, le nombre de livres créés, les comptes déjà à
+        jour, ceux en attente ou révoqués, et les échecs.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
         un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
         « Voir les N à revoir ». Il ouvre une liste — un ingrédient, une unité, une recette ou un compte par ligne, avec

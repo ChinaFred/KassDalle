@@ -382,6 +382,50 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillSystemBooks() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Livres système des comptes'),
+        content: const Text(
+          'Crée, pour chaque compte lecteur, éditeur ou administrateur, ceux '
+          'des quatre livres système qui lui manquent : « Mes créations '
+          'Kass\'Dalle », « Mes recettes libres », « Mes Recettes Secrètes » '
+          'et « Mes recettes du web ». Les comptes en attente ou révoqués sont '
+          'sautés.\n\n'
+          'Un livre déjà présent, même renommé, n\'est pas recréé : relancer '
+          'ne refait rien.\n\n'
+          'Aucun appel de modèle. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<BackfillCounts>(
+      title: 'Livres système des comptes',
+      label: 'Livres système en cours...',
+      failuresOf: (r) => r.failures,
+      feature: 'admin_backfill_system_books',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillSystemBooks(),
+      format: (r) =>
+          'Comptes : examinés=${r['examines']}, complétés=${r['completes']} '
+          '(livres créés=${r['livresCrees']}), déjà à jour=${r['dejaAJour']}, '
+          'en attente ou révoqués=${r['ignores']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
+    );
+  }
+
   Future<void> _runBackfillShoppingProducts() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -798,6 +842,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           'autres comptes, sans rien effacer. À lancer une '
                           'fois après la v0.23.28. Aucun appel d\'IA.',
                       onTap: _busy ? null : _runBackfillPlanningDefaults,
+                    ),
+                    const SizedBox(height: 8),
+                    _BackfillTile(
+                      icon: Icons.library_books_outlined,
+                      title: 'Livres système des comptes',
+                      subtitle:
+                          'Crée les livres système manquants de chaque compte '
+                          'lecteur, éditeur ou administrateur. Un livre déjà '
+                          'présent n\'est pas recréé. Aucun appel d\'IA.',
+                      onTap: _busy ? null : _runBackfillSystemBooks,
                     ),
                   ],
                 ),
