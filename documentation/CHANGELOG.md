@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.46 — technique
+
+#### Sauvegardes : état daté et région de restauration
+
+`TechnicalRequirements.md` dit maintenant que les sauvegardes de Firestore sont actives depuis
+le 11 octobre 2026, avec une première sauvegarde prête le 12, et que le versionnage de Storage
+l'est depuis le 12. La commande de restauration nomme la région `eur3` au lieu d'un
+paramètre à deviner. Le fichier `lifecycle.json` se crée dans `$env:TEMP`, plus dans le dépôt.
+
 ### v0.23.45 — fonctionnel
 
 Admin › Backfills range ses neuf reprises en trois sections : « Récurrents », « Ponctuels à
