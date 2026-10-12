@@ -393,6 +393,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       setState(() {
         _emailSearching = false;
         if (_searchController.text.trim() != q) return;
+        _searchResults = [];
+        _searchedQuery = null;
         _emailError = e.message;
         _emailErrorQuery = q;
       });
@@ -402,6 +404,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       setState(() {
         _emailSearching = false;
         if (_searchController.text.trim() != q) return;
+        _searchResults = [];
+        _searchedQuery = null;
         _emailError = 'Recherche impossible. Réessayez.';
         _emailErrorQuery = q;
       });
@@ -591,11 +595,14 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                 if (emailHelp != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Text(
-                      emailHelp,
-                      style: emailHelpIsError
-                          ? smallText?.copyWith(color: colors.error)
-                          : smallText,
+                    child: Semantics(
+                      liveRegion: emailHelpIsError,
+                      child: Text(
+                        emailHelp,
+                        style: emailHelpIsError
+                            ? smallText?.copyWith(color: colors.error)
+                            : smallText,
+                      ),
                     ),
                   ),
                 if (candidates.isNotEmpty) ...[
