@@ -121,6 +121,9 @@ export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 // monte les secrets GMAIL_SENDER et GMAIL_APP_PASSWORD ; nodemailer se charge
 // au premier envoi.
 export { manageInvitationFn } from "./callable/invitationsCallable";
+// Recherche d'un membre à inviter dans un groupe, par son adresse exacte :
+// réservée au propriétaire du groupe, dix recherches par jour.
+export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
@@ -160,5 +163,5 @@ export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
 export { syncPlanningReachOnConfig, syncPlanningReachOnRole } from "./triggers/planningReach";
 export { enforceFounderRole } from "./triggers/founderRole";
-// Première connexion d'un invité : rôle et groupe de son invitation.
-export { applyEmailInvitation } from "./triggers/invitationSignup";
+// Invitations par e-mail : première connexion d'un compte neuf, reconnexion d'un compte révoqué.
+export { applyEmailInvitation, applyRevokedInvitation } from "./triggers/invitationSignup";

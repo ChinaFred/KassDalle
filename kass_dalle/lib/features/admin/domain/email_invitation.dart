@@ -68,6 +68,16 @@ class EmailInvitation {
   /// SMTP a refusé définitivement l'adresse.
   final String? cancelledBy;
 
+  /// Le compte visé, fixé à la création : `new` (compte à créer, valeur des
+  /// invitations antérieures au champ) ou `revoked` (compte révoqué
+  /// [targetUid], dont l'accès est rétabli à sa reconnexion).
+  final String target;
+  final String? targetUid;
+
+  /// Pour un compte révoqué revenu : ce qu'est devenu le groupe —
+  /// `invited`, `already_member`, `already_invited`, `full` ou `missing`.
+  final String? groupInvite;
+
   const EmailInvitation({
     required this.id,
     required this.email,
@@ -87,7 +97,13 @@ class EmailInvitation {
     this.acceptedAt,
     this.groupMissing = false,
     this.cancelledBy,
+    this.target = 'new',
+    this.targetUid,
+    this.groupInvite,
   });
+
+  /// L'invitation vise un compte révoqué.
+  bool get targetsRevokedAccount => target == 'revoked';
 
   /// Annulée par le serveur parce que Gmail a refusé l'adresse.
   bool get cancelledBySystem => cancelledBy == 'system';
@@ -125,6 +141,9 @@ class EmailInvitation {
       acceptedAt: readDate(data['accepted_at']),
       groupMissing: data['group_missing'] == true,
       cancelledBy: optStr('cancelled_by'),
+      target: str('target') == 'revoked' ? 'revoked' : 'new',
+      targetUid: optStr('target_uid'),
+      groupInvite: optStr('group_invite'),
     );
   }
 
@@ -193,6 +212,12 @@ class InvitationOutcome {
   /// Erreur SMTP lisible, pour un envoi échoué (adresses masquées).
   final String? error;
 
+  /// Compte visé par une invitation envoyée : `new` ou `revoked`.
+  final String? target;
+
+  /// L'invitation rétablira l'accès d'un compte révoqué à sa reconnexion.
+  bool get restoresAccess => target == 'revoked';
+
   const InvitationOutcome({
     required this.kind,
     this.invitationId,
@@ -201,6 +226,7 @@ class InvitationOutcome {
     this.field,
     this.existingUid,
     this.error,
+    this.target,
   });
 
   factory InvitationOutcome.fromMap(Map<String, dynamic> data) {
@@ -223,6 +249,22 @@ class InvitationOutcome {
       field: s('field'),
       existingUid: s('existingUid'),
       error: s('error'),
+      target: s('target'),
     );
   }
+}
+
+/// L'adresse saisie est-elle celle d'un compte révoqué de [users] ?
+///
+/// Indication pour l'administrateur avant l'envoi (aide sous l'adresse,
+/// aperçu de l'e-mail) : comparaison sans casse ni espaces de bord. Le
+/// serveur décide sur la clé normalisée (points et `+…` de Gmail), que le
+/// client ne reproduit pas ; une variante d'écriture d'une adresse Gmail
+/// n'est donc reconnue qu'au retour du serveur.
+bool isRevokedAccountEmail(Iterable<AppUser> users, String email) {
+  final wanted = email.trim().toLowerCase();
+  if (wanted.isEmpty) return false;
+  return users.any(
+    (u) => u.isRevoked && u.email.trim().toLowerCase() == wanted,
+  );
 }

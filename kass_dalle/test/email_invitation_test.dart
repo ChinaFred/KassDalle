@@ -218,6 +218,167 @@ void main() {
     );
   });
 
+  test('sous-titre d\'une invitation acceptée par un compte révoqué', () {
+    final inv = EmailInvitation.fromFirestore('a', {
+      ..._doc(status: 'accepted'),
+      'accepted_uid': 'gab',
+      'accepted_at': Timestamp.fromDate(DateTime(2026, 10, 12)),
+      'target': 'revoked',
+      'target_uid': 'gab',
+      'group_invite': 'invited',
+    });
+    expect(inv.targetsRevokedAccount, isTrue);
+    expect(inv.targetUid, 'gab');
+    expect(inv.groupInvite, 'invited');
+    expect(
+      invitationSubtitle(
+        inv,
+        EmailInvitationStatus.accepted,
+        acceptedByName: 'Gabriel',
+      ),
+      'Lecteur · Les Kassbi · par Gabriel, le 12/10 · accès rétabli',
+    );
+    final full = EmailInvitation.fromFirestore('b', {
+      ..._doc(status: 'accepted'),
+      'target': 'revoked',
+      'group_invite': 'full',
+    });
+    expect(
+      invitationSubtitle(full, EmailInvitationStatus.accepted),
+      'Lecteur · Les Kassbi · accès rétabli · pas invité au groupe, complet '
+      '(50 invitations en attente) : invitez-le depuis Groupes familiaux '
+      'quand une place se libère',
+    );
+    // Invitant sorti du groupe au retour du compte : rien d'écrit au groupe,
+    // qui existe toujours.
+    final left = EmailInvitation.fromFirestore('d', {
+      ..._doc(status: 'accepted'),
+      'target': 'revoked',
+      'group_invite': 'missing',
+      'group_missing': false,
+    });
+    expect(
+      invitationSubtitle(left, EmailInvitationStatus.accepted),
+      'Lecteur · Les Kassbi · accès rétabli · pas invité au groupe '
+      "(l'invitant n'en fait plus partie) : invitez-le depuis Groupes "
+      'familiaux',
+    );
+    final gone = EmailInvitation.fromFirestore('e', {
+      ..._doc(status: 'accepted'),
+      'target': 'revoked',
+      'group_invite': 'missing',
+      'group_missing': true,
+    });
+    expect(
+      invitationSubtitle(gone, EmailInvitationStatus.accepted),
+      'Lecteur · Les Kassbi · accès rétabli · groupe supprimé',
+    );
+    // En attente, la ligne dit que le compte visé est révoqué.
+    final pending = EmailInvitation.fromFirestore('f', {
+      ..._doc(),
+      'target': 'revoked',
+      'target_uid': 'gab',
+    });
+    for (final status in [
+      EmailInvitationStatus.sent,
+      EmailInvitationStatus.sendFailed,
+      EmailInvitationStatus.expired,
+    ]) {
+      expect(
+        invitationSubtitle(pending, status),
+        endsWith(' · compte révoqué'),
+        reason: status.name,
+      );
+    }
+    expect(
+      invitationSubtitle(pending, EmailInvitationStatus.sent),
+      'Lecteur · Les Kassbi · envoyée le 02/10, expire le 01/11 · compte '
+      'révoqué',
+    );
+    // Invitation antérieure au champ : compte neuf.
+    expect(
+      EmailInvitation.fromFirestore('c', _doc()).targetsRevokedAccount,
+      isFalse,
+    );
+  });
+
+  test('compte révoqué : reconnu sans casse, jamais un compte actif', () {
+    AppUser user(String email, {bool revoked = false}) => AppUser(
+      uid: email,
+      email: email,
+      displayName: '',
+      role: UserRole.reader,
+      createdAt: DateTime(2026),
+      lastSeenAt: DateTime(2026),
+      isRevoked: revoked,
+    );
+    final users = [
+      user('gabriel@gmail.com', revoked: true),
+      user('marie@gmail.com'),
+    ];
+    expect(isRevokedAccountEmail(users, ' Gabriel@Gmail.com '), isTrue);
+    expect(isRevokedAccountEmail(users, 'marie@gmail.com'), isFalse);
+    expect(isRevokedAccountEmail(users, ''), isFalse);
+    expect(isRevokedAccountEmail(users, 'inconnu@gmail.com'), isFalse);
+  });
+
+  test('pied de l\'e-mail et message de succès d\'un compte révoqué', () {
+    expect(
+      invitationAccountLine(
+        toEmail: 'gabriel@gmail.com',
+        groupName: 'Les Kassbi',
+        restoresAccess: true,
+      ),
+      'Connecte-toi avec le compte Google gabriel@gmail.com : ton accès sera '
+      'rétabli, et l\'invitation au groupe « Les Kassbi » t\'attendra dans '
+      'Groupes familiaux.',
+    );
+    expect(
+      invitationAccountLine(
+        toEmail: 'marie@gmail.com',
+        groupName: 'Les Kassbi',
+        restoresAccess: false,
+      ),
+      'Connecte-toi avec le compte Google marie@gmail.com. Avec une autre '
+      'adresse, ton accès devra être validé à la main.',
+    );
+    final back = InvitationOutcome.fromMap({
+      'status': 'sent',
+      'invitationId': 'i1',
+      'target': 'revoked',
+    });
+    expect(back.restoresAccess, isTrue);
+    expect(
+      invitationSentMessage('gabriel@gmail.com', back),
+      'Invitation envoyée à gabriel@gmail.com — accès rétabli à sa prochaine '
+      'connexion.',
+    );
+    expect(
+      invitationSentMessage(
+        'marie@gmail.com',
+        InvitationOutcome.fromMap({'status': 'sent', 'target': 'new'}),
+      ),
+      'Invitation envoyée à marie@gmail.com.',
+    );
+    expect(
+      invitationResentMessage('gabriel@gmail.com', back),
+      'Invitation renvoyée à gabriel@gmail.com — accès rétabli à sa prochaine '
+      'connexion.',
+    );
+    expect(
+      invitationResentMessage(
+        'marie@gmail.com',
+        InvitationOutcome.fromMap({'status': 'sent', 'target': 'new'}),
+      ),
+      'Invitation renvoyée à marie@gmail.com.',
+    );
+    expect(
+      kRevokedAccountHelper,
+      'Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion '
+      'avec cette adresse.',
+    );
+  });
+
   test('message par défaut et contrôle de forme', () {
     expect(
       defaultInvitationMessage('Les Kassbi'),
@@ -262,6 +423,7 @@ void main() {
       Stream<List<FamilyGroup>>? groupsStream,
       required InvitationOutcome outcome,
       bool settle = true,
+      List<AppUser> users = const [],
     }) async {
       final repo = _FakeRepo(outcome);
       await tester.pumpWidget(
@@ -272,6 +434,7 @@ void main() {
               (ref) => groupsStream ?? Stream.value(groups ?? const []),
             ),
             invitationsRepositoryProvider.overrideWithValue(repo),
+            allUsersProvider.overrideWith((ref) => Stream.value(users)),
           ],
           child: const MaterialApp(home: InviteByEmailScreen()),
         ),
@@ -311,6 +474,41 @@ void main() {
         find.textContaining('groupe familial « Les Kassbi »'),
         findsWidgets,
       );
+    });
+
+    testWidgets('compte révoqué : aide sous l\'adresse et aperçu adaptés', (
+      tester,
+    ) async {
+      final gabriel = AppUser(
+        uid: 'gab',
+        email: 'Gabriel@gmail.com',
+        displayName: 'Gabriel',
+        role: UserRole.reader,
+        createdAt: DateTime(2026),
+        lastSeenAt: DateTime(2026),
+        isRevoked: true,
+      );
+      await pump(
+        tester,
+        groups: [group],
+        users: [me, gabriel],
+        outcome: const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      );
+      expect(find.text(kRevokedAccountHelper), findsNothing);
+      await tester.enterText(find.byType(TextField).first, 'gabriel@gmail.com');
+      await tester.pumpAndSettle();
+      expect(find.text(kRevokedAccountHelper), findsOneWidget);
+      expect(find.text('Choisissez un groupe.'), findsNothing);
+      expect(
+        find.text(
+          'Il devra accepter l\'invitation au groupe dans Groupes familiaux.',
+        ),
+        findsOneWidget,
+      );
+      // Un compte actif ne déclenche pas l'aide.
+      await tester.enterText(find.byType(TextField).first, 'fred@gmail.com');
+      await tester.pumpAndSettle();
+      expect(find.text(kRevokedAccountHelper), findsNothing);
     });
 
     testWidgets('aucun groupe : message et envoi impossible', (tester) async {

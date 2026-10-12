@@ -1,21 +1,32 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../../core/services/error_report_service.dart';
 import '../../auth/domain/user_profile.dart';
 import '../domain/family_group.dart';
+import '../domain/member_email_search.dart';
 
 class GroupRepository {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions? _functionsOverride;
   final ErrorReportService _errorReportService;
 
   GroupRepository({
     FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
     ErrorReportService? errorReportService,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functionsOverride = functions,
        // Le rapport d'erreur suit le Firestore du repository : en test, il
        // écrit dans le Firestore de test au lieu d'exiger l'App réelle.
        _errorReportService =
            errorReportService ?? ErrorReportService(firestore: firestore);
+
+  /// Résolu au premier appel : les tests qui n'appellent aucune fonction
+  /// construisent le repository sans application Firebase.
+  FirebaseFunctions get _functions =>
+      _functionsOverride ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('groups');
@@ -196,9 +207,9 @@ class GroupRepository {
   ///
   /// Lit les profils publics (`user_profiles`), pas `users` : le document d'un
   /// compte, adresse comprise, ne se lit plus que par son titulaire et par un
-  /// administrateur (v0.23.14). La recherche par adresse a disparu avec : la
-  /// servir aurait demandé d'exposer les adresses, ou une Cloud Function de
-  /// plus. Un compte en attente n'a pas de profil, et n'apparaît donc pas.
+  /// administrateur (v0.23.14). La recherche par adresse passe par le
+  /// serveur ([findMemberByEmail]). Un compte en attente n'a pas de profil, et
+  /// n'apparaît donc pas.
   /// Plafonné à 200 profils : une famille en compte quelques dizaines.
   Future<List<UserProfile>> searchUsers(String query) async {
     final q = query.trim().toLowerCase();
@@ -221,6 +232,50 @@ class GroupRepository {
         feature: 'group_search_users',
         error: e,
         stackTrace: st,
+      );
+      rethrow;
+    }
+  }
+
+  /// Le compte dont l'adresse est exactement [email], pour l'inviter dans
+  /// [groupId] ; `null` si aucun compte approuvé ne la porte.
+  ///
+  /// Passe par `findMemberByEmailFn` : le serveur vérifie que l'appelant est
+  /// propriétaire du groupe, compte la recherche (dix par jour) et ne rend
+  /// que l'identifiant et les noms publics. Plafond atteint :
+  /// [MemberSearchLimitReached] ; groupe supprimé ou appelant qui n'en est
+  /// plus propriétaire : [MemberSearchRefused], avec le message du serveur.
+  /// Toute erreur est signalée sans l'adresse.
+  Future<UserProfile?> findMemberByEmail(String groupId, String email) async {
+    try {
+      final raw = await _functions
+          .httpsCallable('findMemberByEmailFn')
+          .call<Map<String, dynamic>>({
+            'groupId': groupId,
+            'email': email.trim(),
+          });
+      return memberFromSearchResponse(Map<String, dynamic>.from(raw.data));
+    } on FirebaseFunctionsException catch (e, st) {
+      final limit = e.code == 'resource-exhausted';
+      await _errorReportService.reportError(
+        feature: 'group_search_email',
+        error: e,
+        stackTrace: st,
+        context: {
+          'group_id': groupId,
+          'outcome': limit ? 'daily_limit' : e.code,
+        },
+      );
+      if (limit) throw const MemberSearchLimitReached();
+      final refusal = memberSearchRefusalMessage(e.code, e.message);
+      if (refusal != null) throw MemberSearchRefused(refusal);
+      rethrow;
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'group_search_email',
+        error: e,
+        stackTrace: st,
+        context: {'group_id': groupId},
       );
       rethrow;
     }

@@ -179,6 +179,7 @@
       <li><a href="#plannings-partages">Partager son planning, lire celui d'un autre</a></li>
       <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
       <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
+      <li><a href="#invitation-retour">Retour d'un compte révoqué invité</a></li>
     </ol>
   </nav>
 
@@ -2053,7 +2054,9 @@ sequenceDiagram
       vérifient que le créateur d'un livre ou d'une recette partage un groupe avec le lecteur, par
       une lecture de <code>group_reach/{lecteur}</code>, que le serveur seul écrit. Il n'existe pas
       de partage nominatif : un livre est partagé avec les membres de ses groupes, ou privé.
-      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId} → syncGroupReach → group_reach/{uid}</span>
+      Le propriétaire trouve la personne par son nom (profils publics) ou par son adresse
+      e-mail exacte, que le serveur seul compare (<code>findMemberByEmailFn</code>).
+      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId} → syncGroupReach → group_reach/{uid} ; recherche par adresse : group_repository.dart → callable/memberSearchCallable.ts → invitations/memberSearch.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -2066,6 +2069,9 @@ sequenceDiagram
   participant R as GroupRepository
   participant FS as groups/{groupId}
   participant US as user_profiles
+  participant MS as findMemberByEmailFn
+  participant MD as member_email_search_daily
+  participant UU as users
   participant SR as syncGroupReach
   participant GR as group_reach/{uid}
   participant BL as Bibliothèque, recherche, planning
@@ -2077,9 +2083,27 @@ sequenceDiagram
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
-  O->>G: Rechercher une personne à inviter…
-  G->>US: searchUsers — lecture plafonnée à 200 profils publics
-  US-->>G: candidats — nom seul, ni adresse ni rôle
+  O->>G: Nom ou adresse e-mail complète
+  alt saisie sans « @ » — par nom, à chaque frappe
+    G->>US: searchUsers — lecture plafonnée à 200 profils publics
+    US-->>G: candidats — nom seul, ni adresse ni rôle
+  else adresse complète — à la validation ou à la flèche « Chercher cette adresse »
+    G->>R: findMemberByEmail(groupId, adresse)
+    R->>MS: findMemberByEmailFn {groupId, email}
+    MS->>MS: requireAuth (approuvé, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
+    MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
+    MS->>UU: parcours de users (email, role, is_revoked, noms)
+    MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
+    opt {found: false}
+      MS->>MD: transaction — misses + 1 (best-effort, un échec est journalisé)
+      opt cinquième réponse vide du jour
+        MS->>MS: logWarn — 5 recherches par adresse sans résultat aujourd'hui
+      end
+    end
+    MS-->>R: {found: false} ou {found: true, uid, displayName, preferredName}<br/>jamais l'adresse
+    R-->>G: UserProfile ou « Aucun compte pour cette adresse. »<br/>plafond : « Trop de recherches aujourd'hui. Réessayez demain. »<br/>not-found / permission-denied (MemberSearchRefused) : message du serveur<br/>autre erreur : « Recherche impossible. Réessayez. »
+  end
+  Note over G: membres et invités écartés de la liste, dans les deux cas
   O->>G: Inviter dans le groupe
   G->>R: inviteMember(groupId, uid)
   R->>FS: invited_ids += uid
@@ -3563,7 +3587,8 @@ sequenceDiagram
   <section>
     <h2 id="invitation-email"><span class="n">35</span>Inviter un proche par e-mail</h2>
     <p class="sec-note">
-      Un administrateur invite une personne qui n'a pas encore de compte. Aucun appel de modèle.
+      Un administrateur invite une personne qui n'a pas encore de compte, ou dont le compte est
+      révoqué. Aucun appel de modèle.
       <span class="path">admin_screen.dart → invite_by_email_screen.dart → InvitationsRepository.create →
       callable/invitationsCallable.ts (manageInvitationFn) → invitations/mailer.ts</span>
     </p>
@@ -3582,16 +3607,19 @@ sequenceDiagram
   participant M as SMTP Gmail (nodemailer)
 
   A->>S: « Inviter par e-mail » : adresse, rôle, groupe, message (prérempli)
+  opt adresse d'un compte révoqué de la liste des comptes (sans casse)
+    S-->>A: aide « Ce compte est révoqué… », aperçu avec le pied du compte révoqué
+  end
   A->>S: Envoyer, Entrée ou Ctrl/Cmd+S
   S->>S: adresse saisie et de bonne forme, groupe choisi ? (sinon message sous le champ)
   S->>F: action create
   F->>F: requireAdmin ; rôle reader ou editor (admin : invalid-argument)
   F->>G: groupe existant, appelant propriétaire ou membre ? (même contrôle au renvoi)
   F->>U: parcours email, role, is_revoked — même clé d'adresse ?
-  alt compte existant
-    F-->>S: refused (account_active, account_pending + existingUid, account_revoked, founder)
+  alt compte actif, en attente, ou fondateur
+    F-->>S: refused (account_active, account_pending + existingUid, founder)
     S-->>A: message sous l'adresse ; « Lui donner le rôle (sans groupe) » si en attente
-  else adresse libre
+  else adresse libre (target new), ou compte révoqué (target revoked, target_uid)
     F->>I: transaction — invitation active de même email_key ?
     F->>D: transaction — moins de 20 envois aujourd'hui ?
     alt doublon ou plafond
@@ -3599,12 +3627,12 @@ sequenceDiagram
       S-->>A: message ; « Renvoyer l'invitation » pour un doublon
     else
       F->>D: count + 1
-      F->>I: création, status send_failed, last_error « Envoi en cours ou interrompu. »
-      F->>M: e-mail « {Admin} via Kass'Dalle », Reply-To de l'admin
+      F->>I: création, status send_failed, last_error « Envoi en cours ou interrompu. », target, target_uid
+      F->>M: e-mail « {Admin} via Kass'Dalle », Reply-To de l'admin (compte révoqué : pied « ton accès sera rétabli… »)
       alt envoyé
         F->>I: status sent, last_error null
-        F-->>S: sent
-        S-->>A: « Invitation envoyée à … », onglet Invitations
+        F-->>S: sent, target
+        S-->>A: « Invitation envoyée à … » (compte révoqué : « — accès rétabli à sa prochaine connexion. »), onglet Invitations
       else Gmail refuse l'adresse (5.1.x sur RCPT TO)
         F->>F: logError (adresse masquée)
         F->>I: status cancelled, cancelled_by system, last_error « Adresse refusée par Gmail : … »
@@ -3626,7 +3654,9 @@ sequenceDiagram
         l'onglet Invitations, en « Envoi échoué », que l'administrateur renvoie. Un renvoi
         (<code>action resend</code>) suit le même chemin à partir de l'étape du compteur : il
         repousse l'expiration de trente jours et compte dans les vingt envois du jour ; il
-        rejoue avant le contrôle du groupe. Le résultat de l'envoi s'écrit dans une transaction
+        rejoue avant le contrôle du groupe, et vérifie que le compte visé n'a pas changé
+        (<code>resendRefusal</code> : refus <code>target_changed</code> sinon). Un compte
+        révoqué invité reste révoqué : rien ne change pour lui à l'envoi (séquence 37). Le résultat de l'envoi s'écrit dans une transaction
         qui ne touche pas une invitation acceptée ou annulée entre-temps. Un message vide part
         sans paragraphe personnel : le serveur n'a pas de message par défaut.
         Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
@@ -3668,7 +3698,7 @@ sequenceDiagram
   else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
     T->>U: transaction — relit le compte de l'invitant
     T->>T: rien n'est appliqué (logInfo) ; compte pending, invitation inchangée
-  else invitation active de même email_key, invitant toujours admin
+  else invitation active de compte neuf (target absent ou new) de même email_key, invitant toujours admin
     T->>U: transaction — relit : toujours pending et non révoqué ?
     T->>G: transaction — le groupe existe ?
     T->>U: role = rôle de l'invitation
@@ -3693,6 +3723,119 @@ sequenceDiagram
         dernière à passer écrit l'état final ; un document supprimé entre-temps est traité comme
         une suppression, jamais rétabli d'après l'instantané. Avec une autre adresse Google, le compte reste en
         attente, et l'administrateur le nomme dans l'onglet Comptes.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-retour"><span class="n">37</span>Retour d'un compte révoqué invité</h2>
+    <p class="sec-note">
+      Un administrateur a invité par e-mail l'adresse d'un compte révoqué (séquence 35, target
+      revoked). Le titulaire se reconnecte avec le compte Google de cette adresse.
+      <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
+      (applyRevokedInvitation) → syncUserClaims · syncPlanningReachOnRole →
+      auth_repository.dart:watchAppUser (TokenClaimsAligner)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor P as Compte révoqué
+  participant C as Client Flutter
+  participant U as users/{uid}
+  participant T as applyRevokedInvitation
+  participant AU as Firebase Auth
+  participant I as invitations
+  participant G as groups
+  participant CL as syncUserClaims
+  participant PR as syncPlanningReachOnRole
+
+  P->>C: écran de révocation : « Vous avez reçu une invitation ? Reconnectez-vous… »
+  P->>C: Continuer avec Google (signInAgainAfterRevocation : choix du compte Google forcé)
+  C->>U: _upsertUser — last_seen_at, display_name, photo_url (permis au titulaire révoqué)
+  U->>T: onDocumentUpdated — révoqué avant et après, last_seen_at changé ?
+  T->>I: where target_uid == uid — une invitation de retour active ?
+  alt aucune
+    T->>T: fin, sans appel Auth
+  else au moins une
+    T->>AU: getUser(uid) — adresse, emailVerified
+    alt fondateur, adresse non vérifiée, ou aucune invitation de même clé qui vise ce compte
+      T->>T: rien à faire (non vérifiée : logInfo)
+    else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
+      T->>U: transaction — relit le compte de l'invitant
+      T->>T: rien n'est appliqué (logInfo) ; compte révoqué, invitation inchangée
+    else invitation active, target revoked, target_uid = uid, invitant toujours admin
+      T->>U: transaction — relit : toujours révoqué, pas le fondateur ?
+      T->>G: transaction — le groupe existe ? invitant encore membre ? déjà membre, déjà invité, 50 en attente ?
+      T->>U: is_revoked false, role = rôle de l'invitation
+      opt groupe existant, invitant membre, compte ni membre ni invité, moins de 50 invitations
+        T->>G: invited_ids + uid (jamais member_ids)
+      end
+      T->>I: status accepted, accepted_uid, accepted_at, group_invite, group_missing
+      U->>CL: onDocumentWritten — claims {role, revoked false}, sans couper la session
+      CL->>I: invitations de retour encore actives de ce compte → cancelled (system)
+      U->>PR: onDocumentWritten — portée des plannings si l'éditeur peut partager
+      U-->>C: is_revoked false
+      loop au plus 2 renouvellements (moins de 3 s), une fois par session et par état
+        C->>AU: getIdTokenResult(forceRefresh)
+      end
+      C-->>P: l'écran de révocation se ferme, accueil ; l'invitation attend dans Groupes familiaux
+      opt jeton toujours en retard
+        C->>AU: jusqu'à 6 renouvellements de plus, sans bloquer
+        C-->>P: seconde émission du compte quand le jeton suit (sinon auth_token_claims_lag)
+      end
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le compte reste révoqué jusqu'à sa reconnexion.</b> L'envoi ne change rien au compte :
+        seul le titulaire de l'adresse, en se connectant, déclenche le rétablissement. Seule
+        l'invitation qui porte son uid (<code>target_uid</code>) s'applique : un autre compte de
+        même clé d'adresse n'en profite pas, et <code>applyEmailInvitation</code> ignore les
+        invitations de retour. Le statut <code>accepted</code>, relu dans la transaction,
+        empêche une seconde application. Un invitant sorti du groupe n'y fait pas inviter le
+        compte (<code>group_invite: "missing"</code>) ; le rôle est rendu quand même. Le client
+        attend au plus deux renouvellements du jeton avant d'émettre le compte, puis continue
+        sans bloquer et émet le compte une seconde fois quand le jeton suit.
+      </figcaption>
+    </figure>
+
+    <p class="sec-note">
+      Rétablissement à la main dans l'onglet Comptes : <code>syncUserClaims</code> voit
+      <code>is_revoked</code> passer de <code>true</code> à <code>false</code> et annule les
+      invitations de retour encore actives du compte, envoyées au plus tard au rétablissement.
+      <span class="path">admin_repository.dart → users/{uid} → triggers/userClaimsSync.ts →
+      triggers/invitationSignup.ts:cancelStaleReturnInvitations</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Admin
+  participant U as users/{uid}
+  participant CL as syncUserClaims
+  participant I as invitations
+  A->>U: is_revoked false (onglet Comptes)
+  U->>CL: onDocumentWritten — révoqué avant, rétabli après
+  CL->>I: where target_uid == uid
+  loop chaque invitation de retour encore active, envoyée avant le rétablissement
+    CL->>I: transaction — relit l'invitation et users/{uid}
+    alt compte de nouveau révoqué, ou last_sent_at après le rétablissement
+      Note over CL,I: rien n'est annulé
+    else
+      CL->>I: status cancelled, cancelled_by system, last_error
+    end
+  end
+  Note over I: « Accès rétabli à la main : invitation sans objet. »<br/>(« … par une autre invitation … » si une invitation acceptée a rétabli moins de 60 s avant)
+</pre>
+      </div>
+      <figcaption>
+        Laissée active, une invitation de retour rétablirait le compte après une nouvelle
+        révocation. Une invitation envoyée après le rétablissement, ou un compte révoqué de
+        nouveau entre-temps, la laisse active : elle répond à cette nouvelle révocation. Une erreur sur une invitation est journalisée et n'arrête pas les autres.
       </figcaption>
     </figure>
   </section>

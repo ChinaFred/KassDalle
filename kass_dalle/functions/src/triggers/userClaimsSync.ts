@@ -24,6 +24,10 @@
  * cours n'est plus prolongé au-delà de son heure. Les callables relisent le
  * document à chaque appel (`requireAuth`) et n'attendent pas cette heure.
  *
+ * Quand un compte révoqué est rétabli, le même déclencheur annule les
+ * invitations de retour encore actives qui le visent
+ * (`cancelStaleReturnInvitations`, `invitationSignup.ts`).
+ *
  * Le même déclencheur tient le profil public `user_profiles/{uid}`
  * (`userPublicProfile.ts`, v0.23.14), pour ne pas ajouter un déclencheur
  * de plus sur `users/{uid}`. La portée des plannings, elle, a son propre
@@ -47,6 +51,8 @@ import { COLL_USERS, REGION } from "../config";
 import { ensureSystemBooksFor } from "../books/systemBooks";
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { syncPublicProfile } from "./userPublicProfile";
+import { cancelStaleReturnInvitations } from "./invitationSignup";
+import { isAccessRestored } from "../invitations/rules";
 
 /** Claims dérivés du document utilisateur. */
 export interface UserClaims {
@@ -275,6 +281,23 @@ export const syncUserClaims = onDocumentWritten(
     // chacun doit laisser sa trace.
     if (shouldRevokeSessions(before, after, true)) {
       await revokeSessions(uid, after.revoked ? "révoqué" : `rôle ${after.role ?? "aucun"}`);
+    }
+
+    // Compte rétabli (à la main dans Comptes, ou par une invitation de
+    // retour) : les invitations de retour encore actives n'ont plus d'objet.
+    // Lu sur l'événement, pas sur la relecture : c'est cette écriture-là qui
+    // rétablit.
+    if (isAccessRestored(eventBefore, eventAfter)) {
+      try {
+        const at = new Date(event.time);
+        await cancelStaleReturnInvitations(uid, Number.isNaN(at.getTime()) ? new Date() : at);
+      } catch (err) {
+        await logError({
+          message: `syncUserClaims: invitations de retour non annulées pour ${uid}`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          userId: uid,
+        });
+      }
     }
 
     // Après les claims : un livre système ne conditionne pas l'accès, et son

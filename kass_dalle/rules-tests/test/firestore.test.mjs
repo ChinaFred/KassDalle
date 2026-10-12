@@ -443,6 +443,28 @@ describe("users — rôle et révocation", () => {
     );
   });
 
+  // `applyRevokedInvitation` se déclenche sur cette écriture : un compte
+  // révoqué invité de nouveau par e-mail retrouve l'accès en se connectant.
+  it("un compte révoqué écrit sa connexion (last_seen_at, nom, photo)", async () => {
+    await assertSucceeds(
+      db("revoked")
+        .doc(`users/${PERSONAS.revoked.uid}`)
+        .update({
+          last_seen_at: new Date("2026-10-12T10:00:00Z"),
+          display_name: "Gabriel",
+          photo_url: "https://lh3.googleusercontent.com/a/photo",
+        }),
+    );
+  });
+
+  it("un compte révoqué ne se donne pas de rôle en écrivant sa connexion", async () => {
+    await assertFails(
+      db("revoked")
+        .doc(`users/${PERSONAS.revoked.uid}`)
+        .update({ last_seen_at: serverTimestamp(), role: "admin" }),
+    );
+  });
+
   it("un compte pending ne se nomme pas lui-même", async () => {
     await assertFails(
       db("pending").doc(`users/${PERSONAS.pending.uid}`).update({ role: "reader" }),
@@ -2290,6 +2312,28 @@ describe("invitations — lecture administrateur, écriture serveur seule", () =
       db("admin").doc("invitation_sends_daily/admin_2026-10-12").update({ count: 0 }),
     );
   });
+});
+
+// ── member_email_search_daily ────────────────────────────────────────────
+
+describe("member_email_search_daily — compteur serveur seul", () => {
+  const DOC = "member_email_search_daily/reader_2026-10-12";
+
+  beforeEach(async () => {
+    await seedDocs(env, { [DOC]: { uid: READER, day: "2026-10-12", count: 3 } });
+  });
+
+  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} ne lit ni n'écrit le compteur`, async () => {
+      await assertFails(db(persona).doc(DOC).get());
+      await assertFails(db(persona).collection("member_email_search_daily").get());
+      await assertFails(db(persona).doc(DOC).update({ count: 0 }));
+      await assertFails(db(persona).doc(DOC).delete());
+      await assertFails(
+        db(persona).doc("member_email_search_daily/new").set({ uid: READER, count: 0 }),
+      );
+    });
+  }
 });
 
 // ── processing_jobs ──────────────────────────────────────────────────────
