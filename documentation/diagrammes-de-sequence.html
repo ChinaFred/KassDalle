@@ -2097,7 +2097,7 @@ sequenceDiagram
       end
     end
     MS-->>R: {found: false} ou {found: true, uid, displayName, preferredName}<br/>jamais l'adresse
-    R-->>G: UserProfile ou « Aucun compte pour cette adresse. »<br/>plafond : « Trop de recherches aujourd'hui. Réessayez demain. »
+    R-->>G: UserProfile ou « Aucun compte pour cette adresse. »<br/>plafond : « Trop de recherches aujourd'hui. Réessayez demain. »<br/>not-found / permission-denied (MemberSearchRefused) : message du serveur<br/>autre erreur : « Recherche impossible. Réessayez. »
   end
   Note over G: membres et invités écartés de la liste, dans les deux cas
   O->>G: Inviter dans le groupe
@@ -3748,7 +3748,7 @@ sequenceDiagram
   participant PR as syncPlanningReachOnRole
 
   P->>C: écran de révocation : « Vous avez reçu une invitation ? Reconnectez-vous… »
-  P->>C: Continuer avec Google (signInAgainAfterRevocation : déconnexion d'abord hors web)
+  P->>C: Continuer avec Google (signInAgainAfterRevocation : choix du compte Google forcé)
   C->>U: _upsertUser — last_seen_at, display_name, photo_url (permis au titulaire révoqué)
   U->>T: onDocumentUpdated — révoqué avant et après, last_seen_at changé ?
   T->>I: where target_uid == uid — une invitation de retour active ?

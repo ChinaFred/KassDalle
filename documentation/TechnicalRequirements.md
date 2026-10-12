@@ -309,9 +309,11 @@ ne compare donc pas `last_sent_at` à la révocation, et cette annulation tient 
 
 **Écran de révocation.** `/login?revoked=true` dit « Votre accès a été révoqué. Contactez
 l'administrateur. Vous avez reçu une invitation ? Reconnectez-vous avec le compte Google de
-l'adresse invitée. » Le bouton passe par `AuthRepository.signInAgainAfterRevocation` : sur
-mobile et desktop, il ferme d'abord la session (le sélecteur de compte s'ouvre) ; sur le web, il
-ouvre directement la fenêtre Google. Dans les deux cas, `_upsertUser` écrit `last_seen_at`.
+l'adresse invitée. » Le bouton passe par `AuthRepository.signInAgainAfterRevocation`, qui
+appelle `signInWithGoogle(forceAccountChooser: true)` : sur le web, la fenêtre Google s'ouvre
+directement avec `prompt: select_account` ; sur mobile et desktop, la session est fermée puis la
+connexion silencieuse (`attemptLightweightAuthentication`) est sautée. Le choix du compte
+s'affiche donc partout. Dans les deux cas, `_upsertUser` écrit `last_seen_at`.
 L'écran se ferme seul quand le document n'est plus révoqué (le routeur suit `appUserProvider`).
 
 **Connexion web par redirection.** Quand la fenêtre surgissante échoue, `signInWithGoogle`
