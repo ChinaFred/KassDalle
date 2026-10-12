@@ -46,6 +46,8 @@ import { suggestMainProteinStarch } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import {
   BackfillReview,
   recipeReviewLabel,
@@ -76,9 +78,11 @@ interface BackfillProteinRequest {
   maxRecipes?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
-interface BackfillProteinResponse {
+export interface BackfillProteinResponse {
   examinees: number;
   /** Plats et accompagnements examinés par le modèle dans ce passage, et marqués. */
   traitees: number;
@@ -159,228 +163,245 @@ export const backfillRecipeProteinFn = onCall<BackfillProteinRequest>(
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillProteinResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, FEATURE);
-    const db = getFirestore();
+    return runBackfillFromCallable({
+      key: "recipe_protein",
+      ctx,
+      appVersion: req.data?.appVersion,
+      summarize: summarizeRecipeProtein,
+      run: async (): Promise<BackfillProteinResponse> => {
+        const db = getFirestore();
 
-    const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8);
-    const maxMinutes = Number.isFinite(maxMinutesRaw)
-      ? Math.max(1, Math.min(8.5, maxMinutesRaw))
-      : 8;
-    const deadline = Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS;
-    const maxRecipesRaw = Number(req.data?.maxRecipes ?? DEFAULT_MAX_RECIPES);
-    const maxRecipes = Number.isFinite(maxRecipesRaw)
-      ? Math.max(1, Math.min(200, Math.trunc(maxRecipesRaw)))
-      : DEFAULT_MAX_RECIPES;
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
+        const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8);
+        const maxMinutes = Number.isFinite(maxMinutesRaw)
+          ? Math.max(1, Math.min(8.5, maxMinutesRaw))
+          : 8;
+        const deadline = Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS;
+        const maxRecipesRaw = Number(req.data?.maxRecipes ?? DEFAULT_MAX_RECIPES);
+        const maxRecipes = Number.isFinite(maxRecipesRaw)
+          ? Math.max(1, Math.min(200, Math.trunc(maxRecipesRaw)))
+          : DEFAULT_MAX_RECIPES;
+        const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+        const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
-    let cursor = await getBackfillCursor({
-      db,
-      docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
+        let cursor = await getBackfillCursor({
+          db,
+          docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
+          resumeFromCheckpoint,
+          resetCheckpoint,
+        });
 
-    const counters = {
-      examinees: 0,
-      traitees: 0,
-      dejaTraitees: 0,
-      ignorees: 0,
-      sansReponse: 0,
-      echouees: 0,
-    };
-    let collectionParcourue = false;
-    let stoppedByDeadline = false;
-    let stoppedByBudget = false;
-    let stoppedByErrors = false;
-    let consecutiveFailures = 0;
-    const review = new BackfillReview();
+        const counters = {
+          examinees: 0,
+          traitees: 0,
+          dejaTraitees: 0,
+          ignorees: 0,
+          sansReponse: 0,
+          echouees: 0,
+        };
+        let collectionParcourue = false;
+        let stoppedByDeadline = false;
+        let stoppedByBudget = false;
+        let stoppedByErrors = false;
+        let consecutiveFailures = 0;
+        const review = new BackfillReview();
 
-    pages: for (;;) {
-      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
-      if (cursor) query = query.startAfter(cursor);
-      const page = await query.get();
-      if (page.empty) {
-        collectionParcourue = true;
-        break;
-      }
-
-      for (const doc of page.docs) {
-        if (Date.now() > deadline) {
-          stoppedByDeadline = true;
-          break pages;
-        }
-        if (counters.traitees + counters.sansReponse + counters.echouees >= maxRecipes) {
-          stoppedByBudget = true;
-          break pages;
-        }
-        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          stoppedByErrors = true;
-          break pages;
-        }
-
-        counters.examinees += 1;
-        const data = doc.data() as Record<string, unknown>;
-        // Une page sans `page_type` est une recette : le client n'écrit le
-        // champ que pour les autres types.
-        const pageType = typeof data.page_type === "string" ? data.page_type : "recipe";
-        const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
-          string,
-          unknown
-        >;
-        const mealRole = parseMealRole(tags.meal_role);
-
-        if (
-          pageType !== "recipe" ||
-          mealRole == null ||
-          !ROLES_WITH_MAIN_INGREDIENTS.includes(mealRole)
-        ) {
-          counters.ignorees += 1;
-          cursor = doc.id;
-          continue;
-        }
-        if (tags[MAIN_INGREDIENTS_CHECKED_FIELD] != null) {
-          counters.dejaTraitees += 1;
-          cursor = doc.id;
-          continue;
-        }
-        if (hasBothMainIngredients(tags)) {
-          // Protéine et féculent posés sans marqueur (« Suggérer les tags »
-          // d'un ancien client, ou valeurs saisies) : rien à demander au
-          // modèle. Le marqueur seul, pour que le reste à traiter tombe à
-          // zéro. Un seul des deux posé : le modèle propose l'autre.
-          try {
-            await doc.ref.update({
-              [`tags.${MAIN_INGREDIENTS_CHECKED_FIELD}`]: FieldValue.serverTimestamp(),
-            });
-            counters.dejaTraitees += 1;
-          } catch (e) {
-            counters.echouees += 1;
-            review.add({
-              kind: "recipe",
-              id: doc.id,
-              label: recipeReviewLabel(doc.id, data),
-              reason: `Marqueur d'examen non écrit : ${shortErrorMessage(e)}`,
-            });
-            await logError("Protéine et féculent des plats — marqueur non écrit", {
-              correlationId: ctx.correlationId,
-              userId: ctx.userId,
-              moduleType: "DESIGN",
-              feature: FEATURE,
-              errorDescription: e instanceof Error ? e.message : String(e),
-              extra: { recipeId: doc.id },
-            });
+        pages: for (;;) {
+          let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(PAGE_SIZE);
+          if (cursor) query = query.startAfter(cursor);
+          const page = await query.get();
+          if (page.empty) {
+            collectionParcourue = true;
+            break;
           }
-          cursor = doc.id;
-          continue;
-        }
 
-        const titre = asString(data.titre);
-        const cooklang = asString(data.draft_cooklang) || asString(data.raw_cooklang);
-        try {
-          const fields = await suggestMainProteinStarch(
-            { titre, cooklang, mealRole, dishTypes: asStrings(tags.dish_types) },
-            { ...ctx, feature: FEATURE, moduleType: "DESIGN" },
-          );
-          if (!fields.mainIngredientsChecked) {
-            // Pas une erreur : le modèle n'a pas répondu. Rien n'est écrit, la
-            // recette sera réexaminée au prochain tour complet.
-            counters.sansReponse += 1;
-            review.add({
-              kind: "recipe",
-              id: doc.id,
-              label: recipeReviewLabel(doc.id, data),
-              reason: "Pas de réponse de l'IA",
-            });
-            await logInfo({
-              message: "Protéine et féculent des plats — pas de réponse du modèle",
-              correlationId: ctx.correlationId,
-              userId: ctx.userId,
-              moduleType: "DESIGN",
-              feature: FEATURE,
-              extra: { recipeId: doc.id, titre },
-            });
-          } else {
-            // Les champs absents seulement, et le marqueur : le rôle, ce que
-            // la recette apporte, ses types de plat et une valeur déjà posée
-            // ont pu être corrigés à la main. Une réponse hors liste
-            // (« veau ») n'écrit que le marqueur.
-            const patch = mainIngredientsPatch(tags, fields);
-            await doc.ref.update({
-              ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [`tags.${k}`, v])),
-              [`tags.${MAIN_INGREDIENTS_CHECKED_FIELD}`]: FieldValue.serverTimestamp(),
-            });
-            counters.traitees += 1;
+          for (const doc of page.docs) {
+            if (Date.now() > deadline) {
+              stoppedByDeadline = true;
+              break pages;
+            }
+            if (counters.traitees + counters.sansReponse + counters.echouees >= maxRecipes) {
+              stoppedByBudget = true;
+              break pages;
+            }
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              stoppedByErrors = true;
+              break pages;
+            }
+
+            counters.examinees += 1;
+            const data = doc.data() as Record<string, unknown>;
+            // Une page sans `page_type` est une recette : le client n'écrit le
+            // champ que pour les autres types.
+            const pageType = typeof data.page_type === "string" ? data.page_type : "recipe";
+            const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
+              string,
+              unknown
+            >;
+            const mealRole = parseMealRole(tags.meal_role);
+
+            if (
+              pageType !== "recipe" ||
+              mealRole == null ||
+              !ROLES_WITH_MAIN_INGREDIENTS.includes(mealRole)
+            ) {
+              counters.ignorees += 1;
+              cursor = doc.id;
+              continue;
+            }
+            if (tags[MAIN_INGREDIENTS_CHECKED_FIELD] != null) {
+              counters.dejaTraitees += 1;
+              cursor = doc.id;
+              continue;
+            }
+            if (hasBothMainIngredients(tags)) {
+              // Protéine et féculent posés sans marqueur (« Suggérer les tags »
+              // d'un ancien client, ou valeurs saisies) : rien à demander au
+              // modèle. Le marqueur seul, pour que le reste à traiter tombe à
+              // zéro. Un seul des deux posé : le modèle propose l'autre.
+              try {
+                await doc.ref.update({
+                  [`tags.${MAIN_INGREDIENTS_CHECKED_FIELD}`]: FieldValue.serverTimestamp(),
+                });
+                counters.dejaTraitees += 1;
+              } catch (e) {
+                counters.echouees += 1;
+                review.add({
+                  kind: "recipe",
+                  id: doc.id,
+                  label: recipeReviewLabel(doc.id, data),
+                  reason: `Marqueur d'examen non écrit : ${shortErrorMessage(e)}`,
+                });
+                await logError("Protéine et féculent des plats — marqueur non écrit", {
+                  correlationId: ctx.correlationId,
+                  userId: ctx.userId,
+                  moduleType: "DESIGN",
+                  feature: FEATURE,
+                  errorDescription: e instanceof Error ? e.message : String(e),
+                  extra: { recipeId: doc.id },
+                });
+              }
+              cursor = doc.id;
+              continue;
+            }
+
+            const titre = asString(data.titre);
+            const cooklang = asString(data.draft_cooklang) || asString(data.raw_cooklang);
+            try {
+              const fields = await suggestMainProteinStarch(
+                { titre, cooklang, mealRole, dishTypes: asStrings(tags.dish_types) },
+                { ...ctx, feature: FEATURE, moduleType: "DESIGN" },
+              );
+              if (!fields.mainIngredientsChecked) {
+                // Pas une erreur : le modèle n'a pas répondu. Rien n'est écrit, la
+                // recette sera réexaminée au prochain tour complet.
+                counters.sansReponse += 1;
+                review.add({
+                  kind: "recipe",
+                  id: doc.id,
+                  label: recipeReviewLabel(doc.id, data),
+                  reason: "Pas de réponse de l'IA",
+                });
+                await logInfo({
+                  message: "Protéine et féculent des plats — pas de réponse du modèle",
+                  correlationId: ctx.correlationId,
+                  userId: ctx.userId,
+                  moduleType: "DESIGN",
+                  feature: FEATURE,
+                  extra: { recipeId: doc.id, titre },
+                });
+              } else {
+                // Les champs absents seulement, et le marqueur : le rôle, ce que
+                // la recette apporte, ses types de plat et une valeur déjà posée
+                // ont pu être corrigés à la main. Une réponse hors liste
+                // (« veau ») n'écrit que le marqueur.
+                const patch = mainIngredientsPatch(tags, fields);
+                await doc.ref.update({
+                  ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [`tags.${k}`, v])),
+                  [`tags.${MAIN_INGREDIENTS_CHECKED_FIELD}`]: FieldValue.serverTimestamp(),
+                });
+                counters.traitees += 1;
+              }
+              consecutiveFailures = 0;
+            } catch (e) {
+              counters.echouees += 1;
+              consecutiveFailures += 1;
+              review.add({
+                kind: "recipe",
+                id: doc.id,
+                label: recipeReviewLabel(doc.id, data),
+                reason: `Échec : ${shortErrorMessage(e)}`,
+              });
+              await logError("Protéine et féculent des plats — échec sur une recette", {
+                correlationId: ctx.correlationId,
+                userId: ctx.userId,
+                moduleType: "DESIGN",
+                geminiStatus: "ERROR",
+                feature: FEATURE,
+                errorDescription: e instanceof Error ? e.message : String(e),
+                extra: { recipeId: doc.id, titre, consecutiveFailures },
+              });
+            }
+            cursor = doc.id;
           }
-          consecutiveFailures = 0;
-        } catch (e) {
-          counters.echouees += 1;
-          consecutiveFailures += 1;
-          review.add({
-            kind: "recipe",
-            id: doc.id,
-            label: recipeReviewLabel(doc.id, data),
-            reason: `Échec : ${shortErrorMessage(e)}`,
+
+          await setBackfillCursor({
+            db,
+            docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
+            lastDocId: cursor,
+            operation: FEATURE,
+            adminUid: ctx.userId,
           });
-          await logError("Protéine et féculent des plats — échec sur une recette", {
-            correlationId: ctx.correlationId,
-            userId: ctx.userId,
-            moduleType: "DESIGN",
-            geminiStatus: "ERROR",
-            feature: FEATURE,
-            errorDescription: e instanceof Error ? e.message : String(e),
-            extra: { recipeId: doc.id, titre, consecutiveFailures },
-          });
+
+          if (page.size < PAGE_SIZE) {
+            collectionParcourue = true;
+            break;
+          }
         }
-        cursor = doc.id;
-      }
 
-      await setBackfillCursor({
-        db,
-        docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
-        lastDocId: cursor,
-        operation: FEATURE,
-        adminUid: ctx.userId,
-      });
+        const response: BackfillProteinResponse = {
+          ...counters,
+          restantes: await countRemaining(db, ctx),
+          collectionParcourue,
+          stoppedByDeadline,
+          stoppedByBudget,
+          stoppedByErrors,
+          completed: collectionParcourue,
+          aRevoir: review.toJSON(),
+        };
 
-      if (page.size < PAGE_SIZE) {
-        collectionParcourue = true;
-        break;
-      }
-    }
+        // Curseur remis au début quand tout est passé. Le compte rendu part dans
+        // l'état du backfill (`backfills/runner.ts`), que l'écran lit en continu.
+        await setBackfillCursor({
+          db,
+          docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
+          lastDocId: collectionParcourue ? null : cursor,
+          operation: FEATURE,
+          adminUid: ctx.userId,
+        });
 
-    const response: BackfillProteinResponse = {
-      ...counters,
-      restantes: await countRemaining(db, ctx),
-      collectionParcourue,
-      stoppedByDeadline,
-      stoppedByBudget,
-      stoppedByErrors,
-      completed: collectionParcourue,
-      aRevoir: review.toJSON(),
-    };
+        await logInfo({
+          message: "Protéine et féculent des plats — rattrapage",
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          moduleType: "DESIGN",
+          feature: FEATURE,
+          extra: { ...withoutReviewList(response), maxMinutes, maxRecipes },
+        });
 
-    // Curseur remis au début quand tout est passé ; compte rendu posé à côté,
-    // relu par l'écran à l'ouverture.
-    await setBackfillCursor({
-      db,
-      docId: RECIPE_PROTEIN_CHECKPOINT_DOC_ID,
-      lastDocId: collectionParcourue ? null : cursor,
-      operation: FEATURE,
-      adminUid: ctx.userId,
-      lastReport: { ...response },
+        return response;
+      },
     });
-
-    await logInfo({
-      message: "Protéine et féculent des plats — rattrapage",
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      feature: FEATURE,
-      extra: { ...withoutReviewList(response), maxMinutes, maxRecipes },
-    });
-
-    return response;
   },
 );
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeRecipeProtein(r: BackfillProteinResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.restantes,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}

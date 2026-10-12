@@ -35,7 +35,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'ecriture_recette': 'Après écriture d\'une recette',
   'recipe-written': 'Après écriture d\'une recette',
   'ecriture_livre': 'Après écriture d\'un livre',
-  'rattrapage_nutrition': 'Rattrapage quotidien de la nutrition',
+  'rattrapage_nutrition': 'Rattrapage programmé de la nutrition',
   'backfill_nutrition': 'Reprise de la nutrition demandée',
   'backfill_allergens': 'Reprise des allergènes',
   'backfill_recipe_privacy': 'Reprise de la confidentialité des recettes',
@@ -80,6 +80,9 @@ const Map<String, String> kLogTreatmentLabels = {
   'politique_nutrition_ecriture': 'Modification de la politique nutrition',
   'fry-absorption': 'Huile absorbée à la friture',
   'backfill_referentiels': 'Backfill des référentiels',
+  'backfill_programme': 'Backfill programmé',
+  'programmation_backfill': 'Programmation d\'un backfill',
+  'backfill_termine': 'Backfill marqué terminé',
   'backfill-enrich-referentials': 'Backfill des référentiels',
   'kpis_referentiels': 'Indicateurs des référentiels',
   'data_quality_dashboard': 'Qualité des données',
@@ -171,6 +174,11 @@ const Map<String, String> kLogTreatmentDetails = {
   'allergenes': 'Allergènes de la recette',
   'durees-estimees': 'Durées estimées par l\'IA',
   'backfill-demande': 'Reprise demandée depuis l\'écran',
+  // Backfills programmés (`backfill_programme:<clé>`).
+  'enrich-referentials': 'Enrichir unités et ingrédients',
+  'allergens': 'Allergènes des ingrédients et des recettes',
+  'recipe-roles': 'Rôle des recettes dans un repas',
+  'shopping-products': 'Recalculer les produits d\'achat',
   // Causes d\'avant la garde sur les entrées : le déclencheur se réveillait
   // sur ses propres écritures, et disait alors qu\'il n\'avait rien à faire.
   // Gardées pour les journaux déjà écrits.

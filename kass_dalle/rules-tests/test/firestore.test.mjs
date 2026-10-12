@@ -206,6 +206,14 @@ beforeEach(async () => {
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
     "app_config/nutrition_policy": { mode: "strict" },
+    "app_config/backfill_schedules": {
+      nutrition: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], hour: 5 },
+    },
+    "app_config/backfill_run_nutrition": {
+      doc_type: "backfill_run",
+      key: "nutrition",
+      dernier_passage_statut: "termine",
+    },
     "processing_jobs/job-reader": { created_by: READER, status: "processing" },
     "processing_jobs/job-editor": { created_by: EDITOR, status: "error" },
     "processing_jobs/url-done": { created_by: EDITOR, status: "done", type: "recipeUrlImport" },
@@ -1675,7 +1683,7 @@ describe("données personnelles — pending et révoqué", () => {
 
 // ── plannings partagés ───────────────────────────────────────────────────
 //
-// Depuis la v0.23.45, le lecteur ne planifie plus : il lit les plannings que
+// Depuis la v0.23.46, le lecteur ne planifie plus : il lit les plannings que
 // des éditeurs de ses groupes partagent avec lui. `planning_reach/{uid}` porte
 // la liste des propriétaires lisibles, écrite par le serveur seul.
 
@@ -1836,6 +1844,38 @@ describe("app_config", () => {
 
   it("un administrateur écrit la configuration", async () => {
     await assertSucceeds(db("admin").doc("app_config/nutrition_policy").set({ mode: "open" }));
+  });
+
+  // Programmation et état des backfills : écrits par le serveur seul
+  // (setBackfillScheduleFn, setBackfillDoneFn, runBackfillPass).
+  it("un administrateur n'écrit pas la programmation des backfills", async () => {
+    await assertFails(
+      db("admin")
+        .doc("app_config/backfill_schedules")
+        .set({ recipe_roles: { enabled: true, days: [7], hour: 3, programme_par_uid: OTHER } }),
+    );
+  });
+
+  it("un administrateur n'écrit pas l'état d'un backfill", async () => {
+    await assertFails(
+      db("admin").doc("app_config/backfill_run_nutrition").update({ dernier_passage_statut: null }),
+    );
+    await assertFails(
+      db("admin").doc("app_config/backfill_run_estimated_times").set({ termine_par: "manuel" }),
+    );
+  });
+
+  it("un administrateur lit la programmation et l'état des backfills", async () => {
+    await assertSucceeds(db("admin").doc("app_config/backfill_schedules").get());
+    await assertSucceeds(db("admin").doc("app_config/backfill_run_nutrition").get());
+    await assertSucceeds(
+      db("admin").collection("app_config").where("doc_type", "==", "backfill_run").get(),
+    );
+  });
+
+  it("un lecteur ne lit pas l'état des backfills", async () => {
+    await assertFails(db("reader").doc("app_config/backfill_run_nutrition").get());
+    await assertFails(db("reader").doc("app_config/backfill_schedules").get());
   });
 
   it("usage : storage_bytes reste un entier positif", async () => {

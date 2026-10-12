@@ -42,7 +42,7 @@ import { getAuth } from "firebase-admin/auth";
 import { COLL_AI_DAILY_SPEND, COLL_APP_CONFIG } from "../config";
 import { logError, logWarn } from "../logging";
 import { FOUNDER_EMAIL } from "../triggers/founderRole";
-import { isInteractiveCall } from "./callOrigin";
+import { isBaseBudgetCap, isInteractiveCall } from "./callOrigin";
 
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
 
@@ -361,6 +361,14 @@ export async function budgetMultiplierFor(userId: string): Promise<number> {
   return (await founderUid()) === userId ? FOUNDER_DAILY_BUDGET_MULTIPLIER : 1;
 }
 
+/**
+ * Le multiplicateur appliqué à cet appel : celui du compte, ou 1 dans un
+ * passage programmé de backfill (`runWithBaseBudgetCap`, `callOrigin.ts`).
+ */
+export async function effectiveBudgetMultiplier(userId: string): Promise<number> {
+  return isBaseBudgetCap() ? 1 : budgetMultiplierFor(userId);
+}
+
 /** Dépense du jour d'un compte. Document absent = rien dépensé. */
 export async function readDailySpend(userId: string, at = new Date()): Promise<DailySpend> {
   const snap = await getFirestore()
@@ -442,7 +450,7 @@ export async function assertWithinDailyBudget(
     getAiBudgetPolicy(),
     readDailySpend(uid),
     getUsdToEurRate(),
-    budgetMultiplierFor(uid),
+    effectiveBudgetMultiplier(uid),
   ]);
 
   // Un plafond en euros qu'aucun taux ne permet d'évaluer doit se voir : sans
@@ -677,7 +685,7 @@ export async function reserveDailyBudget(
   const [policy, usdToEur, multiplier] = await Promise.all([
     getAiBudgetPolicy(),
     getUsdToEurRate(),
-    budgetMultiplierFor(uid),
+    effectiveBudgetMultiplier(uid),
   ]);
   if (!policy.enabled) return null;
 

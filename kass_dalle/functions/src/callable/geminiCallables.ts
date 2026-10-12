@@ -1431,7 +1431,7 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
  * conseil stocké avant de demander : un plat n'est chiffré qu'une fois.
  *
  * Seuls le créateur de la recette et un administrateur le produisent, et
- * jamais un lecteur : depuis la v0.23.45, le lecteur ne planifie plus
+ * jamais un lecteur : depuis la v0.23.46, le lecteur ne planifie plus
  * (`requireEditor`). Les autres lisent le conseil stocké, ou n'en ont pas.
  */
 export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {

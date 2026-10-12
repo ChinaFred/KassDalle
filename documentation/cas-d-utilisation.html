@@ -181,6 +181,7 @@
           <tr><td>Lire les durées d'une recette qu'on voit, et ses durées estimées par l'IA (« ≈ Prép. 20 min ») quand elle n'en donne pas — même rendu pour tous les rôles ; compter ou non les durées estimées dans le filtre « Temps total » d'Explorer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Corriger les allergènes d'un ingrédient du référentiel, lancer le backfill « Allergènes »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Lancer le backfill « Durées estimées »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Programmer un backfill récurrent, marquer un backfill ponctuel terminé ou le remettre à lancer</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -768,6 +769,8 @@ flowchart LR
     d26(["Corriger les allergènes d'un ingrédient&lt;br/&gt;14 cases à cocher"])
     d27(["Lancer le backfill Allergènes"])
     d28(["Lancer le backfill Durées estimées"])
+    d29(["Programmer un backfill récurrent&lt;br/&gt;jours et heure de Paris"])
+    d30(["Marquer un backfill ponctuel terminé&lt;br/&gt;ou le remettre à lancer"])
   end
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
 
@@ -800,6 +803,8 @@ flowchart LR
   ADM --- d26
   ADM --- d27
   ADM --- d28
+  ADM --- d29
+  ADM --- d30
   d23 -.->|"charger remplit le formulaire, rien n'est écrit"| d16
   d24 -.->|"lecture seule, ouvre l'écran à corriger"| d11
   d0 -.->|"est"| d1
@@ -819,6 +824,8 @@ flowchart LR
   d27 -.->|"phase 2 : toutes les recettes, sans IA"| e9(["Poser sur la recette l'union&lt;br/&gt;des allergènes de ses ingrédients"])
   d28 -.->|"est"| d12
   d28 -.->|"recettes sans durée, 8 par appel"| e10(["Estimer la préparation et la cuisson&lt;br/&gt;d'une recette"])
+  d29 -.->|"tâche horaire scheduledBackfills, imputée à l'admin qui programme"| e11(["Passage programmé, reprise l'heure suivante&lt;br/&gt;jusqu'à la fin ou au plafond"])
+  d30 -.->|"aussi posé seul quand un passage finit sans reste"| d12
   e10 --- GEM
   e8 --- GEM
 </pre>
@@ -853,14 +860,22 @@ flowchart LR
         recette dont les durées sont lues, ou déjà estimée pour son texte actuel, n'est ni
         redemandée ni refacturée. Le compte rendu donne les recettes estimées, sans estimation,
         ignorées et en erreur. Les recettes écrites ensuite sont estimées à leur écriture.
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses neuf reprises en trois
+        sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
+        de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
+        Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au
+        plafond de dépense de l'administrateur qui l'a programmé ; « Reprendre la nutrition »
+        passe tous les jours à 5 h sans réglage. Un ponctuel passé sans reste est marqué terminé
+        et descend en bas ; l'administrateur peut aussi le marquer, ou le remettre à lancer, par
+        le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
         un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
         « Voir les N à revoir ». Il ouvre une liste — un ingrédient, une unité, une recette ou un compte par ligne, avec
         la raison (« Pas de réponse de l'IA », « Recette incomplète : beurre, farine non
         examinés »…). Une ligne ouvre l'ingrédient dans le référentiel ou la fiche de la recette ;
         « Copier la liste » copie une ligne « nom — raison » par élément. Cent éléments au plus
-        sont listés, le total est toujours donné. Rien n'est conservé : la liste disparaît au
-        lancement d'un autre backfill ou à la fermeture de la bannière.
+        sont listés, le total est toujours donné. La liste du dernier passage reste sur la tuile
+        jusqu'au passage suivant.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">

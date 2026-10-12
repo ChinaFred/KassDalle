@@ -1,21 +1,40 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 import 'admin_providers.dart';
 import 'backfill_failures_sheet.dart';
+import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
+import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_failures.dart';
+import '../domain/backfill_registry.dart';
+import '../domain/backfill_status.dart';
 import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../planning/domain/planning_preferences.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/platform_utils.dart';
+import '../../../core/widgets/app_states.dart';
 
-/// Écran d'administration : backfill unique d'enrichissement des référentiels.
+/// Admin › Backfills : les reprises de données, rangées en trois sections.
 ///
-/// Estime par IA les poids d'unités manquants et les valeurs nutritionnelles
-/// (per100g) des ingrédients manquants. Idempotent, avec reprise sur checkpoint.
+/// - **Récurrents** : du travail à chaque nouvelle recette ou nouvel
+///   ingrédient. Date du dernier passage, programmation (jours + heure de
+///   Paris) lancée par la tâche `scheduledBackfills`.
+/// - **Ponctuels à lancer** : un fonds antérieur à reprendre une fois.
+/// - **Ponctuels terminés** : passés sans reste (marqués par le serveur) ou
+///   marqués à la main, en attendant leur retrait du code.
+///
+/// L'état de chaque tuile est lu en continu dans Firestore : un passage
+/// programmé, ou lancé depuis un autre appareil, apparaît sans rafraîchir.
+/// Lancer un backfill ne bloque pas l'écran : chaque backfill a son verrou
+/// côté serveur, et deux backfills différents tournent ensemble.
 class AdminBackfillsScreen extends ConsumerStatefulWidget {
   const AdminBackfillsScreen({super.key});
 
@@ -24,453 +43,183 @@ class AdminBackfillsScreen extends ConsumerStatefulWidget {
       _AdminBackfillsScreenState();
 }
 
+/// Ce qu'un passage lancé depuis l'écran rend à la bannière.
+class _PassOutcome {
+  final String message;
+  final BackfillFailures? failures;
+  final bool termineAuto;
+
+  const _PassOutcome({
+    required this.message,
+    required this.failures,
+    required this.termineAuto,
+  });
+}
+
+String _flag(BackfillCounts r, String key, String text) =>
+    (r[key] ?? 0) == 1 ? text : '';
+
 class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
-  bool _busy = false;
-  String _busyLabel = '';
+  /// Backfills lancés depuis cet écran et pas encore revenus.
+  final Set<String> _launching = {};
+
   String? _resultMessage;
-  String? _errorMessage;
   bool _resultIsError = false;
 
-  /// Éléments à revoir du dernier passage, et le titre de sa tuile. Remis à
-  /// `null` au lancement d'un autre backfill et à la fermeture de la bannière.
+  /// Éléments à revoir du dernier passage revenu, et le titre de sa tuile.
   BackfillFailures? _failures;
   String _failuresTitle = '';
 
-  /// Lance un backfill et affiche son compte rendu dans la bannière.
-  ///
-  /// [failuresOf] lit la liste « à revoir » de la réponse (`aRevoir`) ;
-  /// [title] est le titre de la tuile, repris en tête de la feuille. Tout
-  /// backfill de cet écran se branche par ces deux paramètres.
-  Future<T?> _runBackfill<T>({
-    required String title,
-    required String label,
-    required String feature,
-    required Future<T> Function() run,
-    required String Function(T) format,
-    required BackfillFailures? Function(T) failuresOf,
-    Map<String, dynamic> context = const {},
-  }) async {
-    if (_busy) return null;
-    setState(() {
-      _busy = true;
-      _busyLabel = label;
-      _resultMessage = null;
-      _errorMessage = null;
-      _resultIsError = false;
-      _failures = null;
-      _failuresTitle = title;
+  bool _termineesExpanded = true;
+
+  /// Rafraîchit l'heure de référence : un verrou expire, une reprise
+  /// annoncée « à 04:00 » passe à l'heure suivante.
+  Timer? _clock;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
     });
-    try {
-      final result = await run();
-      if (!mounted) return null;
-      ref.invalidate(referentialKpisProvider);
-      setState(() {
-        _busy = false;
-        _resultMessage = format(result);
-        _resultIsError = false;
-        _failures = failuresOf(result);
-      });
-      return result;
-    } catch (e, st) {
-      try {
-        await ref
-            .read(errorReportServiceProvider)
-            .reportError(
-              feature: feature,
-              error: e,
-              stackTrace: st,
-              context: {'label': label, ...context},
-            );
-      } catch (error, stackTrace) {
-        reportUnexpectedError(
-          feature: 'adminBackfillsScreen.runBackfill',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-      if (!mounted) return null;
-      setState(() {
-        _busy = false;
-        _errorMessage = '$e';
-        _resultIsError = true;
-      });
-      return null;
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  GcpBillingRepository get _repo => ref.read(gcpBillingRepositoryProvider);
+
+  // ── Passages ──────────────────────────────────────────────────────────────
+
+  /// Ce que la boîte de confirmation dit avant de lancer.
+  String _confirmText(BackfillDefinition def) {
+    switch (def.key) {
+      case BackfillKeys.nutrition:
+        return 'Reprend le calcul des recettes dont la nutrition manque, a '
+            'échoué ou reste incomplète, quarante au plus.\n\n'
+            'Le passage programmé attend vingt heures entre deux tentatives '
+            'et renonce après cinq essais. Ce passage-ci lève les deux : '
+            'utile juste après une correction de référentiel.\n\n'
+            'Appels d\'IA facturés. Relancez tant que le résultat indique '
+            '« incomplet ».';
+      case BackfillKeys.enrichReferentials:
+        return 'Estime par l\'IA le poids des unités sans conversion et les '
+            'valeurs nutritionnelles des ingrédients qui en manquent.\n\n'
+            'Appels d\'IA facturés, huit minutes de travail au plus. Reprend '
+            'où il s\'était arrêté.';
+      case BackfillKeys.allergens:
+        return 'Demande à l\'IA les allergènes des ingrédients qui n\'en ont '
+            'pas, quarante par appel et quatre cents au plus. Une fois tout '
+            'le référentiel parcouru, recalcule ceux des recettes, sans '
+            'appel d\'IA.\n\n'
+            'Appels d\'IA facturés. Relancez tant que le résultat indique '
+            '« incomplet ».';
+      case BackfillKeys.recipeRoles:
+        final report = _rolesReport();
+        final reste = report == null ? '' : '\n\n${report.restantesSentence}';
+        return 'Demande à l\'IA le rôle dans un repas de chaque recette non '
+            'classée, et ce qu\'elle apporte déjà. Un appel par recette, '
+            'quarante au plus.\n\n'
+            'Appels d\'IA facturés.$reste';
+      case BackfillKeys.shoppingProducts:
+        return 'Recalcule la liste de courses de toutes les recettes avec la '
+            'règle du jour. Une recette dont le résultat ne change pas n\'est '
+            'pas réécrite.\n\n'
+            'Aucun appel d\'IA. Cinq cents recettes par passage.';
+      case BackfillKeys.recipeProtein:
+        final report = _proteinReport();
+        final reste = report == null ? '' : '\n\n${report.restantesSentence}';
+        return 'Demande à l\'IA la protéine et le féculent principaux des '
+            'plats et accompagnements qui n\'en ont pas. Rien d\'autre n\'est '
+            'modifié. Un appel par recette, quarante au plus.\n\n'
+            'Appels d\'IA facturés.$reste';
+      case BackfillKeys.estimatedTimes:
+        return 'Demande à l\'IA la préparation et la cuisson des recettes qui '
+            'n\'en donnent pas : huit recettes par appel, cent soixante au '
+            'plus. Une durée lue dans la recette n\'est jamais remplacée.\n\n'
+            'Appels d\'IA facturés.';
+      case BackfillKeys.refreshSodium:
+        return 'Le sel et le sodium d\'un ingrédient étaient additionnés : '
+            'tout ingrédient salé porte un sel deux fois trop élevé. Ce '
+            'passage fait réestimer par l\'IA les ingrédients porteurs de '
+            'sodium.\n\n'
+            'Dépense importante : autant qu\'un premier remplissage du '
+            'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.planningDefaults:
+        return 'Pose les règles de variété (protéine, féculent, cuisine) dans '
+            'les contraintes du planning des autres comptes. Votre compte '
+            'n\'est pas modifié. Un texte déjà présent n\'est pas ajouté deux '
+            'fois.\n\n'
+            'Aucun appel d\'IA.';
+      default:
+        return '';
     }
   }
 
-  Future<void> _runBackfillEnrichReferentials() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Enrichir les référentiels'),
-        content: const Text(
-          'Cette opération estime par IA :\n'
-          '• le poids des unités sans conversion (poignée, brin, petit…) ;\n'
-          '• les valeurs nutritionnelles (per100g) des ingrédients manquants.\n\n'
-          'Le traitement est idempotent et reprend depuis le checkpoint serveur. '
-          'Relancez si le résultat indique « incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Enrichir unités + ingrédients',
-      label: 'Enrichissement des référentiels en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_enrich_referentials',
-      run: () =>
-          ref.read(gcpBillingRepositoryProvider).backfillEnrichReferentials(),
-      format: (r) =>
-          'Unités: scannées=${r['scannedUnits']}, enrichies=${r['enrichedUnits']}, '
-          'restantes=${r['remainingUnitsWithoutWeight']} | '
-          'Ingrédients: scannés=${r['scannedIngredients']}, '
-          'enrichis=${r['enrichedIngredients']}, échecs=${r['failedIngredients']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
+  RecipeRolesBackfillReport? _rolesReport() {
+    final raw = ref
+        .read(backfillRunsProvider)
+        .value?[BackfillKeys.recipeRoles]
+        ?.lastReport;
+    return raw == null ? null : RecipeRolesBackfillReport.fromMap(raw);
   }
 
-  /// Réparation du sel compté deux fois.
-  ///
-  /// Séparée de l'enrichissement courant, et pas seulement par prudence : elle
-  /// redemande au modèle des profils qu'on possède déjà, ce que le rattrapage
-  /// normal ne fait jamais. Le dialogue dit ce que ça coûte — mille cent
-  /// soixante-sept ingrédients — parce qu'une dépense qu'on lance sans la
-  /// chiffrer est une dépense qu'on ne peut pas arbitrer.
-  Future<void> _runBackfillRefreshSodium() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reprendre le sel des ingrédients'),
-        content: const Text(
-          'Le sel et le sodium d\'un ingrédient décrivent la même chose dans '
-          'deux unités. Ils étaient additionnés au lieu d\'être réconciliés : '
-          'tout ingrédient salé porte un sel deux fois trop élevé.\n\n'
-          'Le code est corrigé, mais les valeurs déjà écrites ne se réparent '
-          'pas toutes seules — un profil doublé est indistinguable d\'un '
-          'profil juste. Cette passe les fait réestimer par l\'IA.\n\n'
-          'Elle porte sur les ingrédients porteurs de sodium, soit la grande '
-          'majorité du référentiel, et coûte donc autant qu\'un premier '
-          'remplissage. Idempotente, avec reprise sur point de contrôle : '
-          'relancez tant que le résultat indique « incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Reprendre le sel des ingrédients',
-      label: 'Reprise du sel des ingrédients en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_refresh_sodium',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillEnrichReferentials(refreshSodium: true),
-      format: (r) =>
-          'Ingrédients: scannés=${r['scannedIngredients']}, '
-          'repris=${r['refreshedIngredients']}, échecs=${r['failedIngredients']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
+  RecipeProteinBackfillReport? _proteinReport() {
+    final raw = ref
+        .read(backfillRunsProvider)
+        .value?[BackfillKeys.recipeProtein]
+        ?.lastReport;
+    return raw == null ? null : RecipeProteinBackfillReport.fromMap(raw);
   }
 
-  Future<void> _runBackfillNutrition() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reprendre la nutrition'),
-        content: const Text(
-          'Reprend le calcul des recettes dont la nutrition manque, a échoué, '
-          'ou reste incomplète.\n\n'
-          'Un passage automatique le fait déjà chaque nuit à 5 h, avec deux '
-          'garde-fous : il attend vingt heures entre deux tentatives, et '
-          'renonce après cinq essais. Cette reprise-ci lève les deux — '
-          'utile juste après une correction de référentiel.\n\n'
-          'Idempotent, avec reprise sur point de contrôle. Relancez tant que le '
-          'résultat indique « incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+  _PassOutcome _fromCounts(BackfillCounts r, String message) => _PassOutcome(
+    message: message,
+    failures: r.failures,
+    termineAuto: (r['termineAuto'] ?? 0) == 1,
+  );
 
-    await _runBackfill<BackfillCounts>(
-      title: 'Reprendre la nutrition',
-      label: 'Reprise de la nutrition en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_nutrition',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillNutrition(),
-      format: (r) =>
-          'Recettes: examinées=${r['examinees']}, reprises=${r['reprises']}, '
+  /// Lance le passage de [def] et met en forme son compte rendu.
+  Future<_PassOutcome> _runPass(BackfillDefinition def) async {
+    switch (def.key) {
+      case BackfillKeys.nutrition:
+        final r = await _repo.backfillNutrition();
+        return _fromCounts(
+          r,
+          'Recettes : examinées=${r['examinees']}, reprises=${r['reprises']}, '
           'complétées=${r['completees']}, encore incomplètes=${r['echouees']}, '
           'laissées=${r['laissees']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (plafond de dépense atteint)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
-  }
-
-  /// Classe les recettes par leur rôle dans un repas.
-  ///
-  /// Le planning ne compose un plat et son accompagnement que pour une
-  /// recette classée. La passe 2 de l'import classe ce qui arrive ; cette
-  /// reprise classe l'existant, quarante recettes par passage.
-  Future<void> _runBackfillRecipeRoles() async {
-    // Ce qu'il reste à classer, d'après le dernier passage : on sait avant de
-    // lancer si un passage de quarante suffira.
-    final lastReport = ref.read(recipeRolesBackfillReportProvider).value;
-    final reste = lastReport == null ? '' : ' ${lastReport.restantesSentence}';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rôle des recettes dans un repas'),
-        content: Text(
-          'Demande au modèle, pour chaque recette qui ne l\'a pas encore, son '
-          'rôle dans un repas — plat, accompagnement, entrée, dessert, snack —, '
-          'ce qu\'elle apporte déjà (protéine, féculent, légume) et ses '
-          'accompagnements classiques. C\'est ce qui permet au planning de '
-          'composer un plat et son accompagnement.\n\n'
-          'Un appel de modèle par recette, quarante recettes par passage. '
-          'Idempotent, avec reprise sur point de contrôle : relancez tant que '
-          'le résultat indique « incomplet ».$reste Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<RecipeRolesBackfillReport>(
-      title: 'Rôle des recettes dans un repas',
-      label: 'Classement des recettes en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_recipe_roles',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeRoles(),
-      format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
-    );
-  }
-
-  /// Pose la protéine et le féculent principaux sur les plats et
-  /// accompagnements classés avant v0.23.24.
-  ///
-  /// La présélection du planning les lit pour varier les protéines et
-  /// alterner les féculents ; sans eux, elle retombe sur les types de plat.
-  /// Quarante recettes par passage.
-  Future<void> _runBackfillRecipeProtein() async {
-    final lastReport = ref.read(recipeProteinBackfillReportProvider).value;
-    final reste = lastReport == null ? '' : ' ${lastReport.restantesSentence}';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Protéine et féculent des plats'),
-        content: Text(
-          'Demande au modèle, pour chaque plat ou accompagnement qui ne l\'a '
-          'pas encore, sa protéine principale (bœuf, volaille, poisson, '
-          'végétarien…) et son féculent principal (pâtes, riz, pommes de '
-          'terre…). Le planning s\'en sert pour varier les protéines et '
-          'alterner les féculents. Rien d\'autre n\'est modifié : ni le rôle, '
-          'ni les types de plat.\n\n'
-          'Un appel de modèle par recette, quarante recettes par passage. '
-          'Idempotent, avec reprise sur point de contrôle : relancez tant que '
-          'le résultat indique « incomplet ».$reste Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<RecipeProteinBackfillReport>(
-      title: 'Protéine et féculent des plats',
-      label: 'Protéine et féculent des plats en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_recipe_protein',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeProtein(),
-      format: (r) => '${r.restantesSentence}\nCe passage : ${r.passSummary}',
-    );
-  }
-
-  Future<void> _runBackfillPlanningDefaults() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Contraintes de variété par défaut'),
-        content: const Text(
-          'Pose les règles de variété (protéine, féculent, cuisine) dans les '
-          'contraintes globales du planning des autres comptes. Votre compte '
-          'n\'est pas modifié.\n\n'
-          'Contraintes vides : le texte est posé. Contraintes déjà écrites : '
-          'le texte est ajouté à la suite, rien n\'est effacé. Un compte qui '
-          'a déjà le texte est sauté : relancer ne refait rien.\n\n'
-          'Aucun appel de modèle. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Contraintes de variété par défaut',
-      label: 'Contraintes de variété en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_planning_defaults',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillPlanningDefaults(text: kDefaultGlobalConstraints),
-      format: (r) =>
-          'Comptes : examinés=${r['examines']}, posés=${r['poses']}, '
-          'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
-          'le vôtre ignoré=${r['ignores']}, '
-          'trop longs (laissés tels quels)=${r['tropLongs']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
-    );
-  }
-
-  Future<void> _runBackfillShoppingProducts() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Recalculer les produits d\'achat'),
-        content: const Text(
-          'Recalcule la liste de courses de toutes les recettes : une ligne '
-          'par produit et famille d\'unité, kilo et grammes additionnés, '
-          'produit acheté du référentiel appliqué. Le déclencheur d\'écriture '
-          'ne le fait que quand les ingrédients changent ; les recettes '
-          'existantes gardent sinon leurs anciennes lignes.\n\n'
-          'Aucun appel de modèle. Une recette dont le résultat ne change pas '
-          'n\'est pas réécrite. Cinq cents recettes par passage, avec reprise '
-          'sur point de contrôle : relancez tant que le résultat indique '
-          '« incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Recalculer les produits d\'achat',
-      label: 'Recalcul des produits d\'achat en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_shopping_products',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillShopping(),
-      format: (r) =>
-          'Recettes : examinées=${r['examinees']}, '
-          'recalculées=${r['recalculees']}, identiques=${r['identiques']}, '
-          'sans ingrédients=${r['sansIngredients']}, '
-          'hors recette=${r['horsRecette']}, échecs=${r['echouees']}'
+          '${_flag(r, 'stoppedByBudget', ' (plafond de dépense atteint)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.enrichReferentials:
+        final r = await _repo.backfillEnrichReferentials();
+        return _fromCounts(
+          r,
+          'Unités : scannées=${r['scannedUnits']}, enrichies=${r['enrichedUnits']}, '
+          'restantes=${r['remainingUnitsWithoutWeight']} | '
+          'Ingrédients : scannés=${r['scannedIngredients']}, '
+          'enrichis=${r['enrichedIngredients']}, échecs=${r['failedIngredients']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
-          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
-    );
-  }
-
-  /// Allergènes : examine les ingrédients du référentiel qui n'en ont pas,
-  /// puis recalcule le champ sur toutes les recettes. C'est aussi ce qu'on
-  /// relance après avoir corrigé un ingrédient à la main.
-  Future<void> _runBackfillAllergens() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Allergènes des ingrédients et des recettes'),
-        content: const Text(
-          'Deux étapes. D\'abord, demande au modèle les allergènes majeurs de '
-          'chaque ingrédient du référentiel qui ne les a pas encore : un appel '
-          'pour quarante ingrédients, quatre cents ingrédients au plus par '
-          'passage. Un ingrédient déjà examiné, ou corrigé à la main, n\'est '
-          'ni redemandé ni refacturé.\n\n'
-          'Ensuite, une fois tout le référentiel parcouru, recalcule les '
-          'allergènes de chaque recette, sans appel de modèle. Une recette '
-          'dont le résultat ne change pas n\'est pas réécrite.\n\n'
-          'Reprise sur point de contrôle : relancez tant que le résultat '
-          'indique « incomplet ». Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Allergènes des ingrédients et des recettes',
-      label: 'Allergènes en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_allergens',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillAllergens(),
-      format: (r) =>
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.refreshSodium:
+        final r = await _repo.backfillEnrichReferentials(refreshSodium: true);
+        return _fromCounts(
+          r,
+          'Ingrédients : scannés=${r['scannedIngredients']}, '
+          'repris=${r['refreshedIngredients']}, échecs=${r['failedIngredients']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.allergens:
+        final r = await _repo.backfillAllergens();
+        return _fromCounts(
+          r,
           'Ingrédients : examinés=${r['ingredientsExamines']}, '
           'ignorés (déjà examinés)=${r['ingredientsIgnores']}, '
           'en erreur=${r['ingredientsEnErreur']}'
@@ -481,29 +230,83 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'hors recette=${r['recettesHorsRecette']}, '
           'échecs=${r['recettesEchouees']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint)' : ''}'
-          '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
-    );
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif)')}',
+        );
+      case BackfillKeys.recipeRoles:
+        final r = await _repo.backfillRecipeRoles();
+        return _PassOutcome(
+          message: '${r.restantesSentence}\nCe passage : ${r.passSummary}',
+          failures: r.failures,
+          termineAuto: false,
+        );
+      case BackfillKeys.shoppingProducts:
+        final r = await _repo.backfillShopping();
+        return _fromCounts(
+          r,
+          'Recettes : examinées=${r['examinees']}, '
+          'recalculées=${r['recalculees']}, identiques=${r['identiques']}, '
+          'sans ingrédients=${r['sansIngredients']}, '
+          'hors recette=${r['horsRecette']}, échecs=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.recipeProtein:
+        final r = await _repo.backfillRecipeProtein();
+        return _PassOutcome(
+          message: '${r.restantesSentence}\nCe passage : ${r.passSummary}',
+          failures: r.failures,
+          termineAuto: r.termineAuto,
+        );
+      case BackfillKeys.estimatedTimes:
+        final r = await _repo.backfillEstimatedTimes();
+        return _fromCounts(
+          r,
+          (r['dejaEnCours'] ?? 0) == 1
+              ? 'Un passage est déjà en cours : rien n\'a été lancé. Relancez '
+                    'quand il sera terminé.'
+              : 'Recettes : estimées=${r['estimees']}, '
+                    'sans estimation du modèle=${r['sansEstimation']}, '
+                    'ignorées (durées lues ou déjà estimées)=${r['ignorees']}, '
+                    'hors recette=${r['horsRecette']}, '
+                    'en erreur=${r['enErreur']}'
+                    '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+                    '${(r['enErreur'] ?? 0) > 0 ? ' (recettes en erreur : voir la liste à revoir avant de relancer)' : ''}'
+                    '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint)')}'
+                    '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+                    '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif)')}',
+        );
+      case BackfillKeys.planningDefaults:
+        final r = await _repo.backfillPlanningDefaults(
+          text: kDefaultGlobalConstraints,
+        );
+        return _fromCounts(
+          r,
+          'Comptes : examinés=${r['examines']}, posés=${r['poses']}, '
+          'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
+          'le vôtre ignoré=${r['ignores']}, '
+          'trop longs (laissés tels quels)=${r['tropLongs']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
+        );
+      default:
+        throw StateError('Backfill inconnu : ${def.key}');
+    }
   }
 
-  /// Durées estimées : la préparation et la cuisson des recettes qui n'en
-  /// donnent pas, estimées par le modèle pour le filtre « Temps total » et le
-  /// tri « Plus rapides » d'Explorer.
-  Future<void> _runBackfillEstimatedTimes() async {
+  Future<bool> _confirm({
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Durées estimées'),
-        content: const Text(
-          'Demande au modèle la durée de préparation et de cuisson des '
-          'recettes qui n\'en donnent pas : un appel pour huit recettes, cent '
-          'soixante recettes au plus par passage. Une durée lue dans la '
-          'recette n\'est jamais remplacée, et une recette déjà estimée pour '
-          'son contenu n\'est ni redemandée ni refacturée.\n\n'
-          'Reprise sur point de contrôle : relancez tant que le résultat '
-          'indique « incomplet ». Continuer ?',
-        ),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -511,72 +314,339 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
+            child: Text(confirmLabel),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<BackfillCounts>(
-      title: 'Durées estimées',
-      label: 'Durées estimées en cours...',
-      failuresOf: (r) => r.failures,
-      feature: 'admin_backfill_estimated_times',
-      run: () =>
-          ref.read(gcpBillingRepositoryProvider).backfillEstimatedTimes(),
-      format: (r) => (r['dejaEnCours'] ?? 0) == 1
-          ? 'Un passage est déjà en cours : rien n\'a été lancé. Relancez '
-                'quand il sera terminé.'
-          : 'Recettes : estimées=${r['estimees']}, '
-                'sans estimation du modèle=${r['sansEstimation']}, '
-                'ignorées (durées lues ou déjà estimées)=${r['ignorees']}, '
-                'hors recette=${r['horsRecette']}, '
-                'en erreur=${r['enErreur']}'
-                '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-                '${(r['enErreur'] ?? 0) > 0 ? ' (recettes en erreur : voir la liste à revoir avant de relancer)' : ''}'
-                '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (quota du passage atteint)' : ''}'
-                '${(r['stoppedByErrors'] ?? 0) == 1 ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
-                '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif)' : ''}',
-    );
+    return confirmed == true && mounted;
   }
 
-  /// Dernier compte rendu du backfill, tel que la fonction l'a laissé à côté
-  /// de son curseur. Pour qui a quitté l'écran avant la fin du passage.
-  String _rolesReportLine(AsyncValue<RecipeRolesBackfillReport?> report) {
-    return report.when(
-      data: (r) {
-        if (r == null) return '';
-        final at = r.finishedAt;
-        final quand = at == null
-            ? ''
-            : ' le ${DateFormat('dd/MM/yy HH:mm').format(at.toLocal())}';
-        return '\n\nDernier passage$quand : ${r.classees} classée'
-            '${r.classees > 1 ? 's' : ''}, ${r.echouees} en échec. '
-            '${r.restantesSentence}';
-      },
-      loading: () => '',
-      error: (_, _) => '\n\nDernier compte rendu illisible.',
-    );
+  Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
+    if (_launching.contains(def.key)) return;
+    final done = state?.isDone ?? false;
+    final doneAt = state?.termineLe;
+    final ok = done
+        ? await _confirm(
+            title: 'Relancer « ${def.title} » ?',
+            content:
+                'Ce backfill est terminé'
+                '${doneAt == null ? '' : ' depuis le ${formatParisDate(doneAt)}'}. '
+                'Un nouveau passage ne traitera que ce qui aurait été ajouté '
+                'depuis.',
+            confirmLabel: 'Relancer',
+          )
+        : await _confirm(
+            title: def.title,
+            content: _confirmText(def),
+            confirmLabel: 'Lancer',
+          );
+    if (!ok) return;
+
+    setState(() => _launching.add(def.key));
+    try {
+      final outcome = await _runPass(def);
+      if (!mounted) return;
+      ref.invalidate(referentialKpisProvider);
+      setState(() {
+        _resultMessage = outcome.message;
+        _resultIsError = false;
+        _failures = outcome.failures;
+        _failuresTitle = def.title;
+      });
+      if (outcome.termineAuto) {
+        context.showSuccessSnackBar(
+          '« ${def.title} » est terminé : rangé en bas de la liste.',
+        );
+      }
+    } on CallableFailure catch (e, st) {
+      if (e.code == 'failed-precondition') {
+        // Refus attendu, pas une panne : un passage de ce backfill, ou d'un
+        // backfill qui partage ses données, tient le verrou serveur (autre
+        // appareil, ou passage programmé). Le message du serveur le nomme,
+        // et la tuile montre son avancement ; rien à remonter.
+        if (mounted) {
+          context.showSnackBar(
+            '${e.message} Son résultat s\'affichera sur sa tuile.',
+          );
+        }
+        return;
+      }
+      await _reportFailure(def, e, st);
+    } catch (e, st) {
+      await _reportFailure(def, e, st);
+    } finally {
+      if (mounted) setState(() => _launching.remove(def.key));
+    }
   }
 
-  /// Dernier compte rendu de « Protéine et féculent des plats ».
-  String _proteinReportLine(AsyncValue<RecipeProteinBackfillReport?> report) {
-    return report.when(
-      data: (r) {
-        if (r == null) return '';
-        final at = r.finishedAt;
-        final quand = at == null
-            ? ''
-            : ' le ${DateFormat('dd/MM/yy HH:mm').format(at.toLocal())}';
-        return '\n\nDernier passage$quand : ${r.traitees} traitée'
-            '${r.traitees > 1 ? 's' : ''}, ${r.ignorees} ignorée'
-            '${r.ignorees > 1 ? 's' : ''}, ${r.sansReponse} sans réponse, '
-            '${r.echouees} en échec. '
-            '${r.restantesSentence}';
+  Future<void> _reportFailure(
+    BackfillDefinition def,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    await _report(
+      feature: 'admin_backfill_${def.key}',
+      error: error,
+      stackTrace: stackTrace,
+      context: {'key': def.key},
+    );
+    if (!mounted) return;
+    setState(() {
+      _resultMessage = '${def.title} : ${callableFailureReason(error)}';
+      _resultIsError = true;
+      _failures = null;
+      _failuresTitle = def.title;
+    });
+  }
+
+  Future<void> _report({
+    required String feature,
+    required Object error,
+    required StackTrace stackTrace,
+    Map<String, dynamic> context = const {},
+  }) async {
+    try {
+      await ref
+          .read(errorReportServiceProvider)
+          .reportError(
+            feature: feature,
+            error: error,
+            stackTrace: stackTrace,
+            context: context,
+          );
+    } catch (reportError, reportStack) {
+      reportUnexpectedError(
+        feature: 'adminBackfillsScreen.report',
+        error: reportError,
+        stackTrace: reportStack,
+      );
+    }
+  }
+
+  // ── Terminé à la main ─────────────────────────────────────────────────────
+
+  Future<void> _setDone(
+    BackfillDefinition def,
+    BackfillRunState? state,
+    bool done,
+  ) async {
+    final toReview = state?.failures?.total ?? 0;
+    final ok = done
+        ? await _confirm(
+            title: 'Marquer « ${def.title} » comme terminé ?',
+            content:
+                'Il passera en bas de la liste, et restera lançable.'
+                '${toReview > 0 ? ' Le dernier passage a laissé $toReview élément${toReview > 1 ? 's' : ''} à revoir.' : ''}',
+            confirmLabel: 'Marquer terminé',
+          )
+        : await _confirm(
+            title: 'Remettre « ${def.title} » à lancer ?',
+            content: 'Il reviendra parmi les ponctuels à lancer.',
+            confirmLabel: 'Remettre à lancer',
+          );
+    if (!ok) return;
+    try {
+      await _repo.setBackfillDone(key: def.key, done: done);
+      if (!mounted) return;
+      context.showSuccessSnackBar(
+        done
+            ? '« ${def.title} » marqué comme terminé.'
+            : '« ${def.title} » remis à lancer.',
+      );
+    } catch (e, st) {
+      await _report(
+        feature: 'admin_backfill_set_done',
+        error: e,
+        stackTrace: st,
+        context: {'key': def.key, 'done': done},
+      );
+      if (!mounted) return;
+      context.showErrorSnackBar(
+        'Changement non enregistré : ${callableFailureReason(e)}.',
+      );
+    }
+  }
+
+  // ── Programmation ─────────────────────────────────────────────────────────
+
+  Future<void> _editSchedule(
+    BackfillDefinition def,
+    BackfillSchedule? current,
+  ) async {
+    final saved = await showBackfillScheduleEditor(
+      context,
+      def: def,
+      current: current,
+      onSave: (choice) async {
+        try {
+          await _repo.setBackfillSchedule(
+            key: def.key,
+            enabled: choice.enabled,
+            days: choice.days,
+            hour: choice.hour,
+          );
+        } catch (e, st) {
+          await _report(
+            feature: 'admin_backfill_schedule',
+            error: e,
+            stackTrace: st,
+            context: {'key': def.key},
+          );
+          rethrow;
+        }
       },
-      loading: () => '',
-      error: (_, _) => '\n\nDernier compte rendu illisible.',
+      // L'éditeur se ferme lui-même avant d'appeler ce lien.
+      onOpenSpendCap: () => context.push(AppRoutes.adminAiSpend),
+    );
+    if (saved && mounted) {
+      context.showSuccessSnackBar('Programmation enregistrée.');
+    }
+  }
+
+  // ── Écran ─────────────────────────────────────────────────────────────────
+
+  void _retryRead() {
+    ref.invalidate(backfillRunsProvider);
+    ref.invalidate(backfillSchedulesProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final runs = ref.watch(backfillRunsProvider);
+    final schedulesAsync = ref.watch(backfillSchedulesProvider);
+    final states = runs.value ?? const <String, BackfillRunState>{};
+    final schedules = schedulesAsync.value ?? BackfillSchedules.empty;
+    final readError = runs.error ?? schedulesAsync.error;
+    final loading =
+        readError == null && (!runs.hasValue || !schedulesAsync.hasValue);
+    final runsRead = _readOf(runs);
+    final schedulesRead = _readOf(schedulesAsync);
+    // Les ponctuels ne se rangent qu'une fois l'état lu : sans lui, on ne sait
+    // pas lesquels sont terminés, et les ranger d'abord à lancer les ferait
+    // sauter d'une section à l'autre à l'arrivée des données.
+    final sorted = runsRead == _Read.known;
+    final sections = backfillSections(kBackfillRegistry, states);
+    final ponctuels = [
+      for (final def in kBackfillRegistry)
+        if (!def.isRecurrent) def,
+    ];
+
+    Widget tile(BackfillDefinition def, {required bool wide}) => _BackfillCard(
+      def: def,
+      state: states[def.key],
+      stateRead: runsRead,
+      scheduleRead: schedulesRead,
+      schedule: schedules.scheduleFor(def.key),
+      scheduleIsDefault: schedules.isDefault(def.key),
+      now: _now,
+      launching: _launching.contains(def.key),
+      wide: wide,
+      onLaunch: () => _launch(def, states[def.key]),
+      onSchedule: def.isRecurrent
+          ? () => _editSchedule(def, schedules.scheduleFor(def.key))
+          : null,
+      onSetDone: def.isRecurrent
+          ? null
+          : (done) => _setDone(def, states[def.key], done),
+      onShowFailures: (failures) => showBackfillFailuresSheet(
+        context,
+        title: def.title,
+        failures: failures,
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Backfills')),
+      body: Column(
+        children: [
+          // Hors de la liste, pour rester visible quel que soit le défilement.
+          if (_resultMessage != null)
+            BackfillOperationBanner(
+              isError: _resultIsError,
+              message: _resultMessage ?? '',
+              failures: _resultIsError ? null : _failures,
+              onShowFailures: () {
+                final failures = _failures;
+                if (failures == null) return;
+                showBackfillFailuresSheet(
+                  context,
+                  title: _failuresTitle,
+                  failures: failures,
+                );
+              },
+              onClose: () => setState(() {
+                _resultMessage = null;
+                _failures = null;
+              }),
+            ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide =
+                    constraints.maxWidth >= PlatformUtils.wideBreakpoint;
+                Widget grid(List<BackfillDefinition> defs) => _TileGrid(
+                  wide: wide,
+                  children: [for (final def in defs) tile(def, wide: wide)],
+                );
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text('Lecture de l\'état…'),
+                      ),
+                    if (readError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: AppErrorState(
+                          error: readError,
+                          compact: true,
+                          title: 'Impossible de lire l\'état des backfills.',
+                          onRetry: _retryRead,
+                        ),
+                      ),
+                    _SectionHeader(
+                      title: 'Récurrents (${sections.recurrents.length})',
+                    ),
+                    grid(sections.recurrents),
+                    const SizedBox(height: 24),
+                    if (!sorted) ...[
+                      const _SectionHeader(title: 'Ponctuels'),
+                      grid(ponctuels),
+                    ] else ...[
+                      _SectionHeader(
+                        title:
+                            'Ponctuels à lancer (${sections.ponctuelsALancer.length})',
+                      ),
+                      if (sections.ponctuelsALancer.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: Text('Tous les ponctuels sont terminés.'),
+                        )
+                      else
+                        grid(sections.ponctuelsALancer),
+                    ],
+                    if (sorted && sections.ponctuelsTermines.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      _SectionHeader(
+                        title:
+                            'Ponctuels terminés (${sections.ponctuelsTermines.length})',
+                        expanded: _termineesExpanded,
+                        onToggle: () => setState(
+                          () => _termineesExpanded = !_termineesExpanded,
+                        ),
+                      ),
+                      if (_termineesExpanded) grid(sections.ponctuelsTermines),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -633,233 +703,427 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // se corrige directement depuis Admin › Moteur d'IA (`setAiPricingFn`),
   // qui écrit le même document sans dupliquer aucun chiffre dans le code.
   //
-  // Reste ici la seule opération qui ait encore du travail à chaque exécution :
-  // les référentiels reçoivent de nouveaux ingrédients à chaque recette.
+  // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
+  // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
+  // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
+  // code, qui laisse ici un paragraphe daté comme ceux ci-dessus.
+}
+
+/// En-tête de section, pleine largeur. [onToggle] la rend repliable.
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final bool expanded;
+  final VoidCallback? onToggle;
+
+  const _SectionHeader({
+    required this.title,
+    this.expanded = true,
+    this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final rolesReport = ref.watch(recipeRolesBackfillReportProvider);
-    final proteinReport = ref.watch(recipeProteinBackfillReportProvider);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Backfills')),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // Hors de la liste, pour rester visible. L'opération la plus
-              // récente est la dernière tuile : un compte rendu inséré en tête
-              // d'une liste défilée jusqu'en bas s'affichait hors de l'écran,
-              // et trois passages du rôle des recettes ont été lancés sans
-              // que leur résultat soit lu.
-              if (_resultMessage != null || _errorMessage != null)
-                BackfillOperationBanner(
-                  isError: _resultIsError,
-                  message: _errorMessage ?? _resultMessage ?? '',
-                  failures: _resultIsError ? null : _failures,
-                  onShowFailures: () {
-                    final failures = _failures;
-                    if (failures == null) return;
-                    showBackfillFailuresSheet(
-                      context,
-                      title: _failuresTitle,
-                      failures: failures,
-                    );
-                  },
-                  onClose: () => setState(() {
-                    _resultMessage = null;
-                    _errorMessage = null;
-                    _failures = null;
-                  }),
-                ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Enrichissement des référentiels',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Complète automatiquement, via IA, les données manquantes '
-                              'des référentiels : poids des unités et valeurs '
-                              'nutritionnelles (per100g) des ingrédients.',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
+    final style = Theme.of(context).textTheme.titleMedium;
+    final text = Semantics(header: true, child: Text(title, style: style));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: onToggle == null
+          ? text
+          : Semantics(
+              button: true,
+              expanded: expanded,
+              child: InkWell(
+                onTap: onToggle,
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Expanded(child: text),
+                      ExcludeSemantics(
+                        child: Icon(
+                          expanded ? Icons.expand_less : Icons.expand_more,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _BackfillTile(
-                      icon: Icons.auto_awesome_outlined,
-                      title: 'Enrichir unités + ingrédients',
-                      subtitle:
-                          'Estime les poids d\'unités manquants et les per100g des '
-                          'ingrédients. Idempotent, reprise sur checkpoint.',
-                      onTap: _busy ? null : _runBackfillEnrichReferentials,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.science_outlined,
-                      title: 'Reprendre le sel des ingrédients',
-                      subtitle:
-                          'Réparation : le sel et le sodium étaient additionnés au '
-                          'lieu d\'être réconciliés, et tout ingrédient salé en porte '
-                          'le double. Réestime les profils concernés — dépense '
-                          'importante, à ne lancer qu\'une fois.',
-                      onTap: _busy ? null : _runBackfillRefreshSodium,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.restore_outlined,
-                      title: 'Reprendre la nutrition',
-                      subtitle:
-                          'Recalcule les recettes dont la nutrition manque, a échoué '
-                          'ou reste incomplète. Le passage de 5 h le fait déjà ; '
-                          'ici, sans attendre vingt heures.',
-                      onTap: _busy ? null : _runBackfillNutrition,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.restaurant_outlined,
-                      title: 'Rôle des recettes dans un repas',
-                      subtitle:
-                          'Classe les recettes non classées : plat, accompagnement, '
-                          'entrée, dessert ou snack, ce qu\'elles apportent déjà et '
-                          'leurs accompagnements classiques. Un appel par recette, '
-                          'quarante par passage.'
-                          '${_rolesReportLine(rolesReport)}',
-                      onTap: _busy ? null : _runBackfillRecipeRoles,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.set_meal_outlined,
-                      title: 'Protéine et féculent des plats',
-                      subtitle:
-                          'Pose la protéine et le féculent principaux des plats '
-                          'et accompagnements qui n\'en ont pas. À lancer une '
-                          'fois après la v0.23.24. Un appel par recette, '
-                          'quarante par passage.'
-                          '${_proteinReportLine(proteinReport)}',
-                      onTap: _busy ? null : _runBackfillRecipeProtein,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.shopping_cart_outlined,
-                      title: 'Recalculer les produits d\'achat',
-                      subtitle:
-                          'Refait la liste de courses de toutes les recettes '
-                          'avec la règle du jour et les produits achetés du '
-                          'référentiel. Aucun appel d\'IA. À relancer après '
-                          'tout changement de la règle de regroupement.',
-                      onTap: _busy ? null : _runBackfillShoppingProducts,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.no_food_outlined,
-                      title: 'Allergènes des ingrédients et des recettes',
-                      subtitle:
-                          'Examine par IA les ingrédients du référentiel qui '
-                          'n\'ont pas encore d\'allergènes, quarante par '
-                          'appel, puis recalcule les allergènes de toutes les '
-                          'recettes sans appel. À relancer après une '
-                          'correction d\'un ingrédient.',
-                      onTap: _busy ? null : _runBackfillAllergens,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.timer_outlined,
-                      title: 'Durées estimées',
-                      subtitle:
-                          'Estime par IA la préparation et la cuisson des '
-                          'recettes qui n\'en donnent pas, huit par appel. '
-                          'Une durée lue dans la recette n\'est jamais '
-                          'remplacée. À lancer une fois après la mise en '
-                          'service ; les recettes écrites ensuite sont '
-                          'estimées à l\'écriture.',
-                      onTap: _busy ? null : _runBackfillEstimatedTimes,
-                    ),
-                    const SizedBox(height: 8),
-                    _BackfillTile(
-                      icon: Icons.restaurant_menu_outlined,
-                      title: 'Contraintes de variété par défaut',
-                      subtitle:
-                          'Pose les règles de variété des protéines, des '
-                          'féculents et des cuisines dans le planning des '
-                          'autres comptes, sans rien effacer. À lancer une '
-                          'fois après la v0.23.28. Aucun appel d\'IA.',
-                      onTap: _busy ? null : _runBackfillPlanningDefaults,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (_busy)
-            Positioned.fill(
-              child: AbsorbPointer(
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  child: Center(
-                    child: Card(
-                      margin: const EdgeInsets.all(24),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(),
-                            const SizedBox(height: 16),
-                            Text(
-                              _busyLabel,
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.bodyLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// Une colonne sur téléphone, deux au-delà de `PlatformUtils.wideBreakpoint`.
+class _TileGrid extends StatelessWidget {
+  final bool wide;
+  final List<Widget> children;
+
+  const _TileGrid({required this.wide, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    const gap = 12.0;
+    if (!wide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final child in children)
+            Padding(
+              padding: const EdgeInsets.only(bottom: gap),
+              child: child,
+            ),
         ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = (constraints.maxWidth - gap) / 2;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final child in children) SizedBox(width: width, child: child),
+          ],
+        );
+      },
+    );
+  }
+}
+
+enum _TileAction { markDone, unmarkDone }
+
+/// Ce que l'écran sait d'une lecture Firestore : en cours, en échec, lue.
+enum _Read { loading, error, known }
+
+_Read _readOf(AsyncValue<Object?> value) => value.hasError
+    ? _Read.error
+    : value.hasValue
+    ? _Read.known
+    : _Read.loading;
+
+/// Tuile d'un backfill : état, programmation, actions.
+class _BackfillCard extends StatefulWidget {
+  final BackfillDefinition def;
+  final BackfillRunState? state;
+
+  /// Lecture de l'état : « … » pendant le chargement, « État inconnu » en
+  /// erreur.
+  final _Read stateRead;
+
+  /// Lecture de la programmation, même règle.
+  final _Read scheduleRead;
+  final BackfillSchedule? schedule;
+
+  /// La programmation vient du défaut du registre, pas du document.
+  final bool scheduleIsDefault;
+  final DateTime now;
+  final bool launching;
+  final bool wide;
+  final VoidCallback onLaunch;
+  final VoidCallback? onSchedule;
+  final void Function(bool done)? onSetDone;
+  final void Function(BackfillFailures failures) onShowFailures;
+
+  const _BackfillCard({
+    required this.def,
+    required this.state,
+    required this.stateRead,
+    required this.scheduleRead,
+    required this.schedule,
+    required this.scheduleIsDefault,
+    required this.now,
+    required this.launching,
+    required this.wide,
+    required this.onLaunch,
+    required this.onSchedule,
+    required this.onSetDone,
+    required this.onShowFailures,
+  });
+
+  @override
+  State<_BackfillCard> createState() => _BackfillCardState();
+}
+
+class _BackfillCardState extends State<_BackfillCard> {
+  bool _hovered = false;
+
+  static const _icons = <String, IconData>{
+    BackfillKeys.nutrition: Icons.restore_outlined,
+    BackfillKeys.enrichReferentials: Icons.auto_awesome_outlined,
+    BackfillKeys.allergens: Icons.no_food_outlined,
+    BackfillKeys.recipeRoles: Icons.restaurant_outlined,
+    BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
+    BackfillKeys.recipeProtein: Icons.set_meal_outlined,
+    BackfillKeys.estimatedTimes: Icons.timer_outlined,
+    BackfillKeys.refreshSodium: Icons.science_outlined,
+    BackfillKeys.planningDefaults: Icons.restaurant_menu_outlined,
+  };
+
+  bool get _done => widget.state?.isDone ?? false;
+
+  /// Un passage tourne (lancé d'ici, ou lu en cours dans l'état).
+  bool get _running =>
+      widget.launching ||
+      widget.state?.status(widget.now) == BackfillRunStatus.enCours;
+
+  List<PopupMenuEntry<_TileAction>> _menuItems() => [
+    if (_done)
+      const PopupMenuItem(
+        value: _TileAction.unmarkDone,
+        child: Text('Remettre à lancer'),
+      )
+    else
+      // Pas pendant un passage : son issue pourrait contredire la marque.
+      PopupMenuItem(
+        value: _TileAction.markDone,
+        enabled: !_running,
+        child: Text(
+          _running
+              ? 'Marquer comme terminé (passage en cours)'
+              : 'Marquer comme terminé',
+        ),
+      ),
+  ];
+
+  void _onMenu(_TileAction action) {
+    widget.onSetDone?.call(action == _TileAction.markDone);
+  }
+
+  Future<void> _showContextMenu(Offset position) async {
+    if (widget.onSetDone == null) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final action = await showMenu<_TileAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: _menuItems(),
+    );
+    if (action != null) _onMenu(action);
+  }
+
+  /// L'icône double le texte de l'état, qui le dit en toutes lettres : la
+  /// couleur seule ne porte jamais l'information.
+  IconData _statusIcon(BackfillRunStatus status) => switch (status) {
+    BackfillRunStatus.jamais => Icons.history,
+    BackfillRunStatus.enCours => Icons.sync,
+    BackfillRunStatus.termine => Icons.check_circle_outline,
+    BackfillRunStatus.incomplet => Icons.warning_amber_outlined,
+    BackfillRunStatus.erreur => Icons.error_outline,
+    BackfillRunStatus.interrompu => Icons.error_outline,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final def = widget.def;
+    final state = widget.state;
+    final done = _done;
+    final muted = scheme.onSurfaceVariant;
+    final status = state?.status(widget.now) ?? BackfillRunStatus.jamais;
+    final running = _running;
+    final failures = state?.failures;
+    final linkLabel = backfillFailuresLinkLabel(failures);
+    final bodyStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: done ? muted : null,
+    );
+
+    final statusText = switch (widget.stateRead) {
+      _Read.loading => '…',
+      _Read.error => 'État inconnu',
+      _Read.known =>
+        widget.launching && status != BackfillRunStatus.enCours
+            ? 'Passage lancé, en attente du serveur…'
+            : backfillStatusLine(
+                def: def,
+                state: state,
+                schedule: widget.schedule,
+                now: widget.now,
+              ),
+    };
+    final statusIcon = widget.launching
+        ? Icons.sync
+        : widget.stateRead == _Read.known
+        ? _statusIcon(status)
+        : Icons.more_horiz;
+    final scheduleText = switch (widget.scheduleRead) {
+      _Read.loading => '…',
+      _Read.error => 'inconnue',
+      _Read.known => backfillScheduleLabel(
+        widget.schedule,
+        isDefault: widget.scheduleIsDefault,
+      ),
+    };
+
+    final actions = <Widget>[
+      if (running)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Text('Passage en cours', style: bodyStyle),
+        )
+      else if (done)
+        TextButton(
+          onPressed: widget.onLaunch,
+          child: const Text('Relancer quand même'),
+        )
+      else
+        FilledButton.tonal(
+          onPressed: widget.onLaunch,
+          child: const Text('Lancer'),
+        ),
+      if (widget.onSchedule != null)
+        TextButton.icon(
+          onPressed: widget.onSchedule,
+          icon: const Icon(Icons.schedule),
+          label: const Text('Programmer'),
+        ),
+      if (widget.onSetDone != null)
+        PopupMenuButton<_TileAction>(
+          tooltip: 'Plus d\'actions',
+          icon: const Icon(Icons.more_vert),
+          onSelected: _onMenu,
+          itemBuilder: (_) => _menuItems(),
+        ),
+    ];
+
+    final card = Card(
+      elevation: widget.wide && _hovered ? 4 : 1,
+      color: done ? scheme.surfaceContainerLow : null,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_icons[def.key] ?? Icons.build_outlined, color: muted),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    def.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: done ? muted : null,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Chip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: Icon(
+                      def.usesAi
+                          ? Icons.payments_outlined
+                          : Icons.money_off_outlined,
+                      size: AppIconSize.small,
+                    ),
+                    label: Text(def.usesAi ? 'IA' : 'Sans IA'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(def.description, style: bodyStyle),
+            ),
+            const SizedBox(height: 8),
+            if (def.isRecurrent)
+              _InfoLine(
+                icon: Icons.event_repeat_outlined,
+                text: 'Programmation : $scheduleText',
+                color: muted,
+              ),
+            if (done)
+              _InfoLine(
+                icon: Icons.task_alt,
+                text: backfillDoneLine(state!),
+                color: muted,
+              ),
+            if (!done)
+              _InfoLine(icon: statusIcon, text: statusText)
+            else if (state?.dernierPassageLe != null)
+              _InfoLine(
+                icon: statusIcon,
+                text: 'Dernier passage — ${_lowerFirst(statusText)}',
+                color: muted,
+              ),
+            if (running)
+              const Padding(
+                padding: EdgeInsets.only(top: 8, right: 8),
+                child: LinearProgressIndicator(),
+              ),
+            if (linkLabel != null && failures != null && !running)
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 48),
+                  alignment: Alignment.centerLeft,
+                ),
+                onPressed: () => widget.onShowFailures(failures),
+                child: Text(linkLabel),
+              ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OverflowBar(spacing: 4, children: actions),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        // Clic droit : le même menu que ⋮, à l'endroit du clic.
+        onSecondaryTapDown: (details) =>
+            _showContextMenu(details.globalPosition),
+        child: card,
       ),
     );
   }
 }
 
-class _BackfillTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
+String _lowerFirst(String text) =>
+    text.isEmpty ? text : '${text[0].toLowerCase()}${text.substring(1)}';
 
-  const _BackfillTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+class _InfoLine extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  const _InfoLine({required this.icon, required this.text, this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.play_arrow_outlined),
-        onTap: onTap,
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4, right: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              icon,
+              size: AppIconSize.small,
+              color: color ?? theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(color: color),
+            ),
+          ),
+        ],
       ),
     );
   }

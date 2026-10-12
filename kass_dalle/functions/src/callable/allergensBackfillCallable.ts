@@ -44,6 +44,8 @@ import {
 import { readDocsByIds } from "../nutrition/firestoreBatch";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import {
   BackfillReview,
   namesList,
@@ -59,7 +61,7 @@ const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.firebaseapp.com",
 ];
 
-/** Point de reprise du parcours du référentiel, et compte rendu du dernier passage. */
+/** Point de reprise du parcours du référentiel. */
 export const ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID = "allergens_ingredients_backfill_checkpoint";
 /** Point de reprise du recalcul des recettes. */
 export const ALLERGENS_RECIPES_CHECKPOINT_DOC_ID = "allergens_recipes_backfill_checkpoint";
@@ -84,6 +86,8 @@ interface BackfillAllergensRequest {
   maxRecipes?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
 export interface BackfillAllergensResponse {
@@ -393,9 +397,8 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillAllergensResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, FEATURE);
-    const db = getFirestore();
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8);
     const maxMinutes = Number.isFinite(maxMinutesRaw)
@@ -409,82 +412,121 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
     const maxRecipes = Number.isFinite(maxRecipesRaw)
       ? Math.max(1, Math.min(5000, Math.trunc(maxRecipesRaw)))
       : DEFAULT_MAX_RECIPES;
-    const bounds: Bounds = {
-      deadline: Date.now() + maxMinutes * 60_000 - DEADLINE_MARGIN_MS,
+    const options: AllergensPassOptions = {
+      deadlineMs: Date.now() + maxMinutes * 60_000,
       maxIngredients,
       maxRecipes,
+      resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
+      resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
     };
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
-    const response = emptyResponse();
-    const review = new BackfillReview();
+    return runBackfillFromCallable({
+      key: "allergens",
+      ctx,
+      appVersion: req.data?.appVersion,
+      run: () => runAllergensPass(ctx, options),
+      summarize: summarizeAllergens,
+    });
+  },
+);
 
-    const ingredientsStart = await getBackfillCursor({
+/** Ce qu'un passage a le droit de faire. */
+export interface AllergensPassOptions {
+  /** Instant de fin du passage ; la marge d'écriture des curseurs est déduite ici. */
+  deadlineMs: number;
+  maxIngredients: number;
+  maxRecipes: number;
+  resumeFromCheckpoint: boolean;
+  resetCheckpoint: boolean;
+}
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeAllergens(r: BackfillAllergensResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.completed ? 0 : null,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}
+
+/**
+ * Un passage, quelle que soit son entrée : le callable (un administrateur) ou
+ * `scheduledBackfills` (la programmation, imputée à l'administrateur qui l'a
+ * enregistrée — `ctx.userId`).
+ */
+export async function runAllergensPass(
+  ctx: AuthContext,
+  options: AllergensPassOptions,
+): Promise<BackfillAllergensResponse> {
+  const db = getFirestore();
+  const bounds: Bounds = {
+    deadline: options.deadlineMs - DEADLINE_MARGIN_MS,
+    maxIngredients: options.maxIngredients,
+    maxRecipes: options.maxRecipes,
+  };
+  const { resumeFromCheckpoint, resetCheckpoint } = options;
+
+  const response = emptyResponse();
+  const review = new BackfillReview();
+
+  const ingredientsStart = await getBackfillCursor({
+    db,
+    docId: ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID,
+    resumeFromCheckpoint,
+    resetCheckpoint,
+  });
+  const ingredientsCursor = await runIngredientsPhase(
+    db,
+    ctx,
+    bounds,
+    response,
+    review,
+    ingredientsStart,
+  );
+  await setBackfillCursor({
+    db,
+    docId: ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID,
+    lastDocId: response.referentielParcouru ? null : ingredientsCursor,
+    operation: FEATURE,
+    adminUid: ctx.userId,
+  });
+
+  // Les recettes ne se recalculent que contre un référentiel parcouru en
+  // entier : sinon une partie des recettes serait recalculée avec des
+  // ingrédients encore à examiner, et le serait à nouveau au passage suivant.
+  if (response.referentielParcouru) {
+    const recipesStart = await getBackfillCursor({
       db,
-      docId: ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID,
+      docId: ALLERGENS_RECIPES_CHECKPOINT_DOC_ID,
       resumeFromCheckpoint,
       resetCheckpoint,
     });
-    const ingredientsCursor = await runIngredientsPhase(
-      db,
-      ctx,
-      bounds,
-      response,
-      review,
-      ingredientsStart,
-    );
+    const recipesCursor = await runRecipesPhase(db, ctx, bounds, response, review, recipesStart);
     await setBackfillCursor({
       db,
-      docId: ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID,
-      lastDocId: response.referentielParcouru ? null : ingredientsCursor,
+      docId: ALLERGENS_RECIPES_CHECKPOINT_DOC_ID,
+      lastDocId: response.recettesParcourues ? null : recipesCursor,
       operation: FEATURE,
       adminUid: ctx.userId,
     });
+  }
 
-    // Les recettes ne se recalculent que contre un référentiel parcouru en
-    // entier : sinon une partie des recettes serait recalculée avec des
-    // ingrédients encore à examiner, et le serait à nouveau au passage suivant.
-    if (response.referentielParcouru) {
-      const recipesStart = await getBackfillCursor({
-        db,
-        docId: ALLERGENS_RECIPES_CHECKPOINT_DOC_ID,
-        resumeFromCheckpoint,
-        resetCheckpoint,
-      });
-      const recipesCursor = await runRecipesPhase(db, ctx, bounds, response, review, recipesStart);
-      await setBackfillCursor({
-        db,
-        docId: ALLERGENS_RECIPES_CHECKPOINT_DOC_ID,
-        lastDocId: response.recettesParcourues ? null : recipesCursor,
-        operation: FEATURE,
-        adminUid: ctx.userId,
-      });
-    }
+  response.completed = response.referentielParcouru && response.recettesParcourues;
+  response.aRevoir = review.toJSON();
 
-    response.completed = response.referentielParcouru && response.recettesParcourues;
-    response.aRevoir = review.toJSON();
+  await logInfo({
+    message: "Allergènes — rattrapage des ingrédients et des recettes",
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    moduleType: "DESIGN",
+    feature: FEATURE,
+    extra: {
+      ...withoutReviewList(response),
+      maxIngredients: options.maxIngredients,
+      maxRecipes: options.maxRecipes,
+    },
+  });
 
-    // Le compte rendu part à côté du curseur du référentiel : l'écran le
-    // relit à l'ouverture, pour qui a quitté la page avant la fin du passage.
-    await setBackfillCursor({
-      db,
-      docId: ALLERGENS_INGREDIENTS_CHECKPOINT_DOC_ID,
-      lastDocId: response.referentielParcouru ? null : ingredientsCursor,
-      operation: FEATURE,
-      adminUid: ctx.userId,
-      lastReport: { ...response },
-    });
-
-    await logInfo({
-      message: "Allergènes — rattrapage des ingrédients et des recettes",
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      feature: FEATURE,
-      extra: { ...withoutReviewList(response), maxMinutes, maxIngredients, maxRecipes },
-    });
-
-    return response;
-  },
-);
+  return response;
+}
