@@ -150,10 +150,11 @@ class BackfillSchedule {
 
 /// Le document `app_config/backfill_schedules`, lu.
 ///
-/// Aucun défaut ici : le serveur écrit la programmation par défaut de la
-/// nutrition (tous les jours à 5 h) dans ce document au premier passage de
-/// `scheduledBackfills` qui ne la trouve pas. L'écran affiche ce qui est
-/// stocké, rien d'autre.
+/// Tant que le document ne dit rien d'un backfill qui a un défaut au registre
+/// (`defaultSchedule` — la nutrition, tous les jours à 5 h), c'est ce défaut
+/// qui vaut : le serveur l'applique dès son premier passage horaire et l'écrit
+/// alors dans le document. L'écran l'affiche « (par défaut) » et l'éditeur
+/// en part, pour qu'un « Enregistrer » ne coupe pas le rattrapage quotidien.
 class BackfillSchedules {
   final Map<String, Object?> _raw;
 
@@ -161,15 +162,40 @@ class BackfillSchedules {
 
   static const empty = BackfillSchedules({});
 
-  /// La programmation stockée pour [key] ; `null` si absente ou illisible
-  /// (« Non programmé »).
-  BackfillSchedule? scheduleFor(String key) =>
-      BackfillSchedule.fromMap(_raw[key]);
+  /// La programmation qui vaut pour [key] : celle du document, sinon le défaut
+  /// du registre ; `null` si l'entrée est illisible ou s'il n'y a ni l'une ni
+  /// l'autre (« Non programmé »).
+  BackfillSchedule? scheduleFor(String key) {
+    if (_raw.containsKey(key)) return BackfillSchedule.fromMap(_raw[key]);
+    final fallback = backfillDefinition(key)?.defaultSchedule;
+    if (fallback == null) return null;
+    return BackfillSchedule(
+      enabled: true,
+      days: fallback.days,
+      hour: fallback.hour,
+    );
+  }
+
+  /// Vrai quand [scheduleFor] rend le défaut du registre, faute d'entrée.
+  bool isDefault(String key) =>
+      !_raw.containsKey(key) &&
+      backfillDefinition(key)?.defaultSchedule != null;
 }
 
 /// « Tous les dimanches à 3 h », « Lun., mer. et ven. à 3 h »,
-/// « Tous les jours à 5 h » ou « Non programmé ».
-String backfillScheduleLabel(BackfillSchedule? schedule) {
+/// « Tous les jours à 5 h » ou « Non programmé ». [isDefault] ajoute
+/// « (par défaut) » : la programmation vient du registre, pas du document.
+String backfillScheduleLabel(
+  BackfillSchedule? schedule, {
+  bool isDefault = false,
+}) {
+  final label = _scheduleLabel(schedule);
+  return isDefault && (schedule?.isActive ?? false)
+      ? '$label (par défaut)'
+      : label;
+}
+
+String _scheduleLabel(BackfillSchedule? schedule) {
   if (schedule == null || !schedule.isActive) return 'Non programmé';
   final at = 'à ${formatHour(schedule.hour)}';
   final days = schedule.days;

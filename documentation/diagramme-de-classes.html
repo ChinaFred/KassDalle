@@ -1591,6 +1591,7 @@ classDiagram
     +String description
     +bool usesAi
     +String passLimit
+    +BackfillDefaultSchedule? defaultSchedule
   }
 
   class BackfillRunState {
@@ -1621,6 +1622,7 @@ classDiagram
 
   class BackfillSchedules {
     +scheduleFor(key) BackfillSchedule?
+    +isDefault(key) bool
   }
 
   class BackfillFailure {
@@ -1713,7 +1715,8 @@ classDiagram
           <code>en_cours_expire_le</code>, écrite par le serveur, est passée =
           <code>interrompu</code>), compte rendu, « terminé ».
           <b><code>BackfillSchedules</code></b> lit <code>app_config/backfill_schedules</code>,
-          sans défaut côté client : le serveur y écrit celui de la nutrition. Lecture stricte,
+          et retombe sur <code>BackfillDefinition.defaultSchedule</code> tant que la clé
+          manque (<code>isDefault</code>, affiché « (par défaut) »). Lecture stricte,
           rejouée avec le serveur par la fixture <code>backfill_schedule.json</code>.
         </span>
       </figcaption>

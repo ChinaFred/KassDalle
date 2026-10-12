@@ -11,7 +11,7 @@
  * l'heure d'été est compris sans table écrite ici.
  */
 
-import type { BackfillKey, BackfillKind } from "./registry";
+import { BACKFILLS, type BackfillKey, type BackfillKind } from "./registry";
 
 export const BACKFILL_TIMEZONE = "Europe/Paris";
 
@@ -40,21 +40,25 @@ export interface BackfillSchedule {
   programmeParUid: string | null;
 }
 
-export const ALL_DAYS: readonly number[] = [1, 2, 3, 4, 5, 6, 7];
-
 /**
  * Programmation appliquée quand `app_config/backfill_schedules` ne dit rien
- * pour ce backfill. Seule la nutrition en a une : elle remplace la tâche
- * `scheduledNutritionCatchUp` (tous les jours à 5 h), retirée en v0.23.44, et
- * le rattrapage quotidien ne doit pas s'arrêter au déploiement.
- *
- * Le client n'en garde pas de copie : `scheduledBackfills` écrit ce défaut
- * dans `app_config/backfill_schedules` au premier tick qui ne le trouve pas
- * (`missingDefaultSchedules`), et l'écran lit alors une valeur stockée.
+ * pour ce backfill, tirée du registre (`defaultSchedule`). Le rattrapage
+ * quotidien de la nutrition ne doit pas s'arrêter au déploiement :
+ * `scheduledBackfills` l'applique dès le premier tick, et l'y écrit
+ * (`missingDefaultSchedules`).
  */
-export const DEFAULT_BACKFILL_SCHEDULES: Partial<Record<BackfillKey, BackfillSchedule>> = {
-  nutrition: { enabled: true, days: [...ALL_DAYS], hour: 5, programmeParUid: null },
-};
+export const DEFAULT_BACKFILL_SCHEDULES: Partial<Record<BackfillKey, BackfillSchedule>> =
+  Object.fromEntries(
+    BACKFILLS.filter((b) => b.defaultSchedule != null).map((b) => [
+      b.key,
+      {
+        enabled: true,
+        days: [...(b.defaultSchedule?.days ?? [])],
+        hour: b.defaultSchedule?.hour ?? 0,
+        programmeParUid: null,
+      },
+    ]),
+  );
 
 /**
  * Un entier de [min] à [max], ou `null`. Strict : une chaîne (« 5 »), un

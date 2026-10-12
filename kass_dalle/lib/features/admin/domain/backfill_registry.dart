@@ -40,6 +40,12 @@ class BackfillDefinition {
   /// Ce qu'un passage traite au plus, cité dans l'encadré de coût.
   final String passLimit;
 
+  /// Programmation appliquée par le serveur tant que
+  /// `app_config/backfill_schedules` ne dit rien de ce backfill ; `null` sans
+  /// défaut. Même valeur que `defaultSchedule` de
+  /// `functions/src/backfills/registry.ts` (fixture `backfill_schedule.json`).
+  final BackfillDefaultSchedule? defaultSchedule;
+
   const BackfillDefinition({
     required this.key,
     required this.kind,
@@ -47,9 +53,18 @@ class BackfillDefinition {
     required this.description,
     required this.usesAi,
     required this.passLimit,
+    this.defaultSchedule,
   });
 
   bool get isRecurrent => kind == BackfillKind.recurrent;
+}
+
+/// Jours ISO (lundi = 1) et heure de Paris d'une programmation par défaut.
+class BackfillDefaultSchedule {
+  final List<int> days;
+  final int hour;
+
+  const BackfillDefaultSchedule({required this.days, required this.hour});
 }
 
 /// Ordre fixe de l'écran : les récurrents, puis les ponctuels.
@@ -64,6 +79,11 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage programmé reprend au plus 20 recettes ; un passage '
         'lancé à la main, 40.',
+    // Remplace l'ancienne tâche `scheduledNutritionCatchUp` (5 h chaque jour).
+    defaultSchedule: BackfillDefaultSchedule(
+      days: [1, 2, 3, 4, 5, 6, 7],
+      hour: 5,
+    ),
   ),
   BackfillDefinition(
     key: BackfillKeys.enrichReferentials,

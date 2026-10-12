@@ -254,6 +254,7 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
                 const SizedBox(height: 12),
                 _CostNotice(
                   def: widget.def,
+                  saving: _saving,
                   onOpenSpendCap: widget.onOpenSpendCap,
                 ),
               ],
@@ -305,7 +306,14 @@ class _CostNotice extends StatelessWidget {
   final BackfillDefinition def;
   final VoidCallback onOpenSpendCap;
 
-  const _CostNotice({required this.def, required this.onOpenSpendCap});
+  /// Enregistrement en cours : le lien vers le plafond est inactif.
+  final bool saving;
+
+  const _CostNotice({
+    required this.def,
+    required this.saving,
+    required this.onOpenSpendCap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -351,12 +359,14 @@ class _CostNotice extends StatelessWidget {
                             minimumSize: const Size(0, 48),
                             alignment: Alignment.centerLeft,
                           ),
-                          onPressed: () {
-                            // Ferme l'éditeur sans enregistrer, puis ouvre
-                            // Dépense par utilisateur.
-                            Navigator.of(context).pop(false);
-                            onOpenSpendCap();
-                          },
+                          onPressed: saving
+                              ? null
+                              : () {
+                                  // Ferme l'éditeur sans enregistrer, puis ouvre
+                                  // Dépense par utilisateur.
+                                  Navigator.of(context).pop(false);
+                                  onOpenSpendCap();
+                                },
                           child: const Text(
                             'Régler le plafond (sans enregistrer)',
                           ),

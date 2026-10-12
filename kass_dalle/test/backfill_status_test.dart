@@ -40,16 +40,39 @@ void main() {
   });
 
   group('programmations stockées', () {
-    test('sans réglage stocké : non programmé, le client n\'invente pas '
-        'de défaut (le serveur écrit celui de la nutrition)', () {
-      expect(
-        BackfillSchedules.empty.scheduleFor(BackfillKeys.nutrition),
-        isNull,
-      );
-      expect(
-        BackfillSchedules.empty.scheduleFor(BackfillKeys.recipeRoles),
-        isNull,
-      );
+    test(
+      'sans réglage stocké : le défaut du registre, marqué « par défaut »',
+      () {
+        final s = BackfillSchedules.empty.scheduleFor(BackfillKeys.nutrition);
+        expect(s?.isActive, isTrue);
+        expect(
+          backfillScheduleLabel(
+            s,
+            isDefault: BackfillSchedules.empty.isDefault(
+              BackfillKeys.nutrition,
+            ),
+          ),
+          'Tous les jours à 5 h (par défaut)',
+        );
+        expect(
+          BackfillSchedules.empty.scheduleFor(BackfillKeys.recipeRoles),
+          isNull,
+        );
+        expect(
+          BackfillSchedules.empty.isDefault(BackfillKeys.recipeRoles),
+          isFalse,
+        );
+      },
+    );
+    test('réglage stocké : plus de mention « par défaut »', () {
+      const schedules = BackfillSchedules({
+        'nutrition': {
+          'enabled': false,
+          'days': [1],
+          'hour': 5,
+        },
+      });
+      expect(schedules.isDefault('nutrition'), isFalse);
     });
     test('défaut semé par le serveur : tous les jours à 5 h', () {
       const schedules = BackfillSchedules({
@@ -294,7 +317,17 @@ void main() {
       () {
         expect([
           for (final def in kBackfillRegistry)
-            {'key': def.key, 'kind': def.kind.name, 'uses_ai': def.usesAi},
+            {
+              'key': def.key,
+              'kind': def.kind.name,
+              'uses_ai': def.usesAi,
+              'default_schedule': def.defaultSchedule == null
+                  ? null
+                  : {
+                      'days': def.defaultSchedule!.days,
+                      'hour': def.defaultSchedule!.hour,
+                    },
+            },
         ], fixture['registry']);
       },
     );

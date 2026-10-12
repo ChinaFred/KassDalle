@@ -39,52 +39,86 @@ export interface BackfillDefinition {
   title: string;
   /** Le passage appelle-t-il un modèle (donc est-il facturé) ? */
   usesAi: boolean;
+  /**
+   * Programmation appliquée tant que `app_config/backfill_schedules` ne dit
+   * rien de ce backfill, `null` sans défaut. Seule la nutrition en a une :
+   * elle remplace `scheduledNutritionCatchUp` (tous les jours à 5 h), retirée
+   * en v0.23.44. Même valeur côté client (`backfill_registry.dart`), qui
+   * l'affiche « (par défaut) » et en pré-remplit l'éditeur ; fixture
+   * `backfill_schedule.json`.
+   */
+  defaultSchedule: BackfillDefaultSchedule | null;
+}
+
+/** Jours ISO (lundi = 1) et heure de Paris d'une programmation par défaut. */
+export interface BackfillDefaultSchedule {
+  days: readonly number[];
+  hour: number;
 }
 
 export const BACKFILLS: readonly BackfillDefinition[] = [
-  { key: "nutrition", kind: "recurrent", title: "Reprendre la nutrition", usesAi: true },
+  {
+    key: "nutrition",
+    kind: "recurrent",
+    title: "Reprendre la nutrition",
+    usesAi: true,
+    defaultSchedule: { days: [1, 2, 3, 4, 5, 6, 7], hour: 5 },
+  },
   {
     key: "enrich_referentials",
     kind: "recurrent",
     title: "Enrichir unités et ingrédients",
     usesAi: true,
+    defaultSchedule: null,
   },
   {
     key: "allergens",
     kind: "recurrent",
     title: "Allergènes des ingrédients et des recettes",
     usesAi: true,
+    defaultSchedule: null,
   },
   {
     key: "recipe_roles",
     kind: "recurrent",
     title: "Rôle des recettes dans un repas",
     usesAi: true,
+    defaultSchedule: null,
   },
   {
     key: "shopping_products",
     kind: "recurrent",
     title: "Recalculer les produits d'achat",
     usesAi: false,
+    defaultSchedule: null,
   },
   {
     key: "recipe_protein",
     kind: "ponctuel",
     title: "Protéine et féculent des plats",
     usesAi: true,
+    defaultSchedule: null,
   },
-  { key: "estimated_times", kind: "ponctuel", title: "Durées estimées", usesAi: true },
+  {
+    key: "estimated_times",
+    kind: "ponctuel",
+    title: "Durées estimées",
+    usesAi: true,
+    defaultSchedule: null,
+  },
   {
     key: "refresh_sodium",
     kind: "ponctuel",
     title: "Reprendre le sel des ingrédients",
     usesAi: true,
+    defaultSchedule: null,
   },
   {
     key: "planning_defaults",
     kind: "ponctuel",
     title: "Contraintes de variété par défaut",
     usesAi: false,
+    defaultSchedule: null,
   },
 ];
 

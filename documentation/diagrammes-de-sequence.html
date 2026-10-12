@@ -3414,12 +3414,13 @@ sequenceDiagram
         SCH->>C: programme_par_uid encore admin ?
         alt plus administrateur
           SCH->>C: erreur, « L'auteur de la programmation n'est plus administrateur. »
-        end
-        SCH->>BU: plafond de base de programme_par_uid, sans multiplicateur (sauf nutrition)
-        alt plafond atteint
-          SCH->>C: incomplet, arret_plafond, reprise au prochain créneau
-        else sous le plafond
-          SCH->>R: origine programme, échéance bornée par le tick
+        else encore administrateur
+          SCH->>BU: plafond de base de programme_par_uid, sans multiplicateur (sauf nutrition)
+          alt plafond atteint
+            SCH->>C: incomplet, arret_plafond, reprise au prochain créneau
+          else sous le plafond
+            SCH->>R: origine programme, échéance bornée par le tick
+          end
         end
       end
       opt échu mais plus le temps

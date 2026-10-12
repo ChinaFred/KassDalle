@@ -207,7 +207,12 @@ describe("programmation stockée", () => {
 // ── Fixture partagée avec le client ─────────────────────────────────────────
 
 interface ScheduleFixture {
-  registry: { key: string; kind: string; uses_ai: boolean }[];
+  registry: {
+    key: string;
+    kind: string;
+    uses_ai: boolean;
+    default_schedule: { days: number[]; hour: number } | null;
+  }[];
   parse_schedule: {
     name: string;
     input: unknown;
@@ -230,7 +235,15 @@ const FIXTURE = JSON.parse(
 describe("fixture backfill_schedule.json", () => {
   test("registre : mêmes clés, même ordre, même nature, même usage de l'IA", () => {
     assert.deepEqual(
-      BACKFILLS.map((b) => ({ key: b.key, kind: b.kind, uses_ai: b.usesAi })),
+      BACKFILLS.map((b) => ({
+        key: b.key,
+        kind: b.kind,
+        uses_ai: b.usesAi,
+        default_schedule:
+          b.defaultSchedule == null
+            ? null
+            : { days: [...b.defaultSchedule.days], hour: b.defaultSchedule.hour },
+      })),
       FIXTURE.registry,
     );
   });

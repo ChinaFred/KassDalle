@@ -73,6 +73,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'avant le premier passage horaire : défaut de la nutrition affiché',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            backfillRunsProvider.overrideWith(
+              (ref) => Stream.value(const <String, BackfillRunState>{}),
+            ),
+            backfillSchedulesProvider.overrideWith(
+              (ref) => Stream.value(BackfillSchedules.empty),
+            ),
+          ],
+          child: const MaterialApp(home: AdminBackfillsScreen()),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.text('Programmation : Tous les jours à 5 h (par défaut)'),
+        findsOneWidget,
+      );
+      expect(find.text('Programmation : Non programmé'), findsNWidgets(4));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('chargement : tuiles neutres, ponctuels non rangés', (
     tester,
   ) async {

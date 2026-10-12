@@ -1,15 +1,15 @@
 {
-  "_doc": "Backfills ponctuels et récurrents : ce que le client et le serveur doivent lire à l'identique. Rejouée par functions/src/tests/backfillSchedule.test.ts (backfills/registry.ts, backfills/schedule.ts parseSchedule) et test/backfill_status_test.dart (backfill_registry.dart, BackfillSchedule.fromMap). Le défaut de programmation et la durée du verrou ne sont plus en double : le serveur écrit le défaut dans app_config/backfill_schedules et l'échéance du verrou dans en_cours_expire_le.",
+  "_doc": "Backfills ponctuels et récurrents : ce que le client et le serveur doivent lire à l'identique. Rejouée par functions/src/tests/backfillSchedule.test.ts (backfills/registry.ts, backfills/schedule.ts parseSchedule) et test/backfill_status_test.dart (backfill_registry.dart, BackfillSchedule.fromMap). Le registre porte aussi la programmation par défaut (default_schedule) : le serveur l'applique et l'écrit dans app_config/backfill_schedules, le client l'affiche « (par défaut) » tant que la clé y manque. La durée du verrou n'est pas en double : le serveur écrit son échéance dans en_cours_expire_le.",
   "registry": [
-    { "key": "nutrition", "kind": "recurrent", "uses_ai": true },
-    { "key": "enrich_referentials", "kind": "recurrent", "uses_ai": true },
-    { "key": "allergens", "kind": "recurrent", "uses_ai": true },
-    { "key": "recipe_roles", "kind": "recurrent", "uses_ai": true },
-    { "key": "shopping_products", "kind": "recurrent", "uses_ai": false },
-    { "key": "recipe_protein", "kind": "ponctuel", "uses_ai": true },
-    { "key": "estimated_times", "kind": "ponctuel", "uses_ai": true },
-    { "key": "refresh_sodium", "kind": "ponctuel", "uses_ai": true },
-    { "key": "planning_defaults", "kind": "ponctuel", "uses_ai": false }
+    { "key": "nutrition", "kind": "recurrent", "uses_ai": true, "default_schedule": { "days": [1, 2, 3, 4, 5, 6, 7], "hour": 5 } },
+    { "key": "enrich_referentials", "kind": "recurrent", "uses_ai": true, "default_schedule": null },
+    { "key": "allergens", "kind": "recurrent", "uses_ai": true, "default_schedule": null },
+    { "key": "recipe_roles", "kind": "recurrent", "uses_ai": true, "default_schedule": null },
+    { "key": "shopping_products", "kind": "recurrent", "uses_ai": false, "default_schedule": null },
+    { "key": "recipe_protein", "kind": "ponctuel", "uses_ai": true, "default_schedule": null },
+    { "key": "estimated_times", "kind": "ponctuel", "uses_ai": true, "default_schedule": null },
+    { "key": "refresh_sodium", "kind": "ponctuel", "uses_ai": true, "default_schedule": null },
+    { "key": "planning_defaults", "kind": "ponctuel", "uses_ai": false, "default_schedule": null }
   ],
   "parse_schedule": [
     {

@@ -538,6 +538,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       stateRead: runsRead,
       scheduleRead: schedulesRead,
       schedule: schedules.scheduleFor(def.key),
+      scheduleIsDefault: schedules.isDefault(def.key),
       now: _now,
       launching: _launching.contains(def.key),
       wide: wide,
@@ -813,6 +814,9 @@ class _BackfillCard extends StatefulWidget {
   /// Lecture de la programmation, même règle.
   final _Read scheduleRead;
   final BackfillSchedule? schedule;
+
+  /// La programmation vient du défaut du registre, pas du document.
+  final bool scheduleIsDefault;
   final DateTime now;
   final bool launching;
   final bool wide;
@@ -827,6 +831,7 @@ class _BackfillCard extends StatefulWidget {
     required this.stateRead,
     required this.scheduleRead,
     required this.schedule,
+    required this.scheduleIsDefault,
     required this.now,
     required this.launching,
     required this.wide,
@@ -873,7 +878,11 @@ class _BackfillCardState extends State<_BackfillCard> {
       PopupMenuItem(
         value: _TileAction.markDone,
         enabled: !_running,
-        child: const Text('Marquer comme terminé'),
+        child: Text(
+          _running
+              ? 'Marquer comme terminé (passage en cours)'
+              : 'Marquer comme terminé',
+        ),
       ),
   ];
 
@@ -945,7 +954,10 @@ class _BackfillCardState extends State<_BackfillCard> {
     final scheduleText = switch (widget.scheduleRead) {
       _Read.loading => '…',
       _Read.error => 'inconnue',
-      _Read.known => backfillScheduleLabel(widget.schedule),
+      _Read.known => backfillScheduleLabel(
+        widget.schedule,
+        isDefault: widget.scheduleIsDefault,
+      ),
     };
 
     final actions = <Widget>[

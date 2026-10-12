@@ -40,8 +40,9 @@ et écrit l'état dans `app_config/backfill_run_<clé>` : statut, origine, compt
 (`setBackfillCursor` perd `lastReport`) ; `backfill_reports_repository.dart` et ses deux
 providers sont remplacés par `backfill_status_repository.dart`. La tâche `scheduledNutritionCatchUp`
 est retirée et remplacée par `scheduledBackfills`, horaire, qui lance les récurrents échus
-d'après `app_config/backfill_schedules` ; la tâche y écrit le défaut de la nutrition (5 h, 20
-recettes, bornes de patience) au premier tick, et le client n'en garde pas de copie. La passe de
+d'après `app_config/backfill_schedules` ; le défaut de la nutrition (5 h, 20 recettes, bornes
+de patience) vit dans les deux registres (`defaultSchedule`), la tâche l'écrit au premier tick,
+et l'écran l'affiche « (par défaut) » d'ici là. La passe de
 chaque récurrent sort de son callable pour être appelée aussi par la tâche ; en reprise,
 l'enrichissement des référentiels saute la phase des unités. Un passage programmé qui appelle
 un modèle est imputé au plafond **de base** de l'administrateur qui l'a programmé, sans le

@@ -1565,9 +1565,12 @@ timezone: "Europe/Paris", programme_par_uid: String, updated_at: Timestamp }`.
 appellent un modèle lui sont imputés (plafond quotidien de base, §7.10). Lecture stricte des
 deux côtés (`parseSchedule`, `BackfillSchedule.fromMap`, fixture `backfill_schedule.json`) :
 jours et heure entiers, sans conversion ; une entrée illisible vaut « non programmé ». Sans
-entrée pour `nutrition`, `scheduledBackfills` écrit le défaut (`DEFAULT_BACKFILL_SCHEDULES` :
-tous les jours à 5 h, `programme_par_uid: null`) au premier tick ; le client n'en garde pas de
-copie. Aucune migration manuelle.
+entrée pour `nutrition`, le défaut du registre s'applique (`defaultSchedule` : tous les jours
+à 5 h), et `scheduledBackfills` l'écrit (`programme_par_uid: null`) au premier tick. Avant ce
+tick, l'écran l'affiche « Tous les jours à 5 h (par défaut) » et l'éditeur en part : un
+« Enregistrer » ne coupe pas le rattrapage quotidien. Le défaut est dans les deux registres,
+vérifié par la fixture. Une écriture du défaut en échec est journalisée (`logError`) sans
+abandonner le tick. Aucune migration manuelle.
 
 ---
 

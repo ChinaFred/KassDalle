@@ -111,10 +111,11 @@ L'admin règle jours (ISO, lundi = 1) et heure de Paris depuis l'écran ; `setBa
 au plafond). La tâche `scheduledBackfills` tourne toutes les heures : un récurrent est échu au
 jour et à l'heure programmés, ou en reprise d'un passage programmé incomplet (heure suivante,
 sauf arrêt par plafond : prochain créneau). Seule la nutrition a un défaut sans réglage
-(`DEFAULT_BACKFILL_SCHEDULES`, tous les jours à 5 h). La tâche l'écrit dans
-`app_config/backfill_schedules` au premier tick qui ne le trouve pas : le client n'en garde pas
-de copie. Un nouveau récurrent n'a pas de défaut, sauf décision explicite, qui s'ajoute à
-`DEFAULT_BACKFILL_SCHEDULES` seul.
+(`defaultSchedule` au registre, tous les jours à 5 h). La tâche l'applique et l'écrit dans
+`app_config/backfill_schedules` au premier tick qui ne le trouve pas ; d'ici là, l'écran
+l'affiche « (par défaut) » et l'éditeur en part. Un nouveau récurrent n'a pas de défaut, sauf
+décision explicite : `defaultSchedule` dans les deux registres et dans la section `registry`
+de la fixture.
 
 Un passage programmé part au nom de son auteur, s'il est encore administrateur (sinon : erreur
 « L'auteur de la programmation n'est plus administrateur. », plus de reprise), et sous le

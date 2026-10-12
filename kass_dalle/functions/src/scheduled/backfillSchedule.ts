@@ -426,6 +426,20 @@ export const scheduledBackfills = onSchedule(
         ...keys.map((k) => db.collection(COLL_APP_CONFIG).doc(backfillRunDocId(k))),
       );
       schedulesDoc = schedulesSnap.data();
+      runDocs = new Map(keys.map((k, i) => [k, runSnaps[i].data()]));
+    } catch (err) {
+      await logError({
+        message: "Backfills programmés — lecture des programmations impossible, tick abandonné",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId,
+        moduleType: "DESIGN",
+      });
+      return;
+    }
+
+    // Le défaut s'écrit à part : son échec est journalisé, et le tick continue
+    // — `effectiveSchedule` applique de toute façon le défaut du registre.
+    try {
       const seed = missingDefaultSchedules(schedulesDoc);
       if (Object.keys(seed).length > 0) {
         await db
@@ -454,15 +468,13 @@ export const scheduledBackfills = onSchedule(
           extra: { keys: Object.keys(seed) },
         });
       }
-      runDocs = new Map(keys.map((k, i) => [k, runSnaps[i].data()]));
     } catch (err) {
       await logError({
-        message: "Backfills programmés — lecture des programmations impossible, tick abandonné",
+        message: "Backfills programmés — écriture de la programmation par défaut impossible",
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId,
         moduleType: "DESIGN",
       });
-      return;
     }
 
     for (const key of recurrentKeys()) {
