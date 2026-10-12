@@ -274,7 +274,9 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
       switch (outcome.kind) {
         case InvitationOutcomeKind.sent:
           _done = true;
-          context.showSuccessSnackBar('Invitation renvoyée.');
+          context.showSuccessSnackBar(
+            invitationResentMessage(_emailCtrl.text.trim(), outcome),
+          );
           Navigator.of(context).pop(true);
         case InvitationOutcomeKind.sendFailed:
           _done = true;

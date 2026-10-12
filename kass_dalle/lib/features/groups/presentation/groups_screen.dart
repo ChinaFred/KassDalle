@@ -386,6 +386,16 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
         _emailSearching = false;
         _limitReached = true;
       });
+    } on MemberSearchRefused catch (e) {
+      // Groupe supprimé, ou propriété perdue : le message du serveur dit
+      // lequel. Signalée au rapport d'erreurs par GroupRepository.
+      if (!mounted) return;
+      setState(() {
+        _emailSearching = false;
+        if (_searchController.text.trim() != q) return;
+        _emailError = e.message;
+        _emailErrorQuery = q;
+      });
     } catch (_) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;

@@ -68,4 +68,23 @@ void main() {
       'Trop de recherches aujourd\'hui. Réessayez demain.',
     );
   });
+
+  test('groupe supprimé ou propriété perdue : le message du serveur', () {
+    expect(
+      memberSearchRefusalMessage('not-found', "Ce groupe n'existe plus."),
+      "Ce groupe n'existe plus.",
+    );
+    expect(
+      memberSearchRefusalMessage(
+        'permission-denied',
+        "Seul le propriétaire du groupe peut y inviter quelqu'un.",
+      ),
+      "Seul le propriétaire du groupe peut y inviter quelqu'un.",
+    );
+    // Autres erreurs, ou message vide : message générique de l'écran.
+    expect(memberSearchRefusalMessage('internal', 'Boom'), isNull);
+    expect(memberSearchRefusalMessage('unavailable', null), isNull);
+    expect(memberSearchRefusalMessage('not-found', '  '), isNull);
+    expect(memberSearchRefusalMessage('permission-denied', null), isNull);
+  });
 }

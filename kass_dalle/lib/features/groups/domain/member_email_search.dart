@@ -28,6 +28,28 @@ class MemberSearchLimitReached implements Exception {
   String toString() => message;
 }
 
+/// Le serveur refuse la recherche pour une raison que l'utilisateur doit lire :
+/// groupe supprimé (`not-found`) ou appelant qui n'en est plus propriétaire
+/// (`permission-denied`). [message] est celui du serveur.
+class MemberSearchRefused implements Exception {
+  const MemberSearchRefused(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Le message du serveur à afficher tel quel pour un refus de
+/// `findMemberByEmailFn`, ou `null` quand l'erreur ne se lit pas ainsi
+/// (réseau, erreur interne, message vide) : l'écran affiche alors
+/// « Recherche impossible. Réessayez. ».
+String? memberSearchRefusalMessage(String code, String? message) {
+  if (code != 'not-found' && code != 'permission-denied') return null;
+  final text = message?.trim() ?? '';
+  return text.isEmpty ? null : text;
+}
+
 /// Le compte rendu par `findMemberByEmailFn`, ou `null` si aucun compte
 /// approuvé ne porte cette adresse.
 ///

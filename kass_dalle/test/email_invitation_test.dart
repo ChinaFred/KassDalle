@@ -245,8 +245,9 @@ void main() {
     });
     expect(
       invitationSubtitle(full, EmailInvitationStatus.accepted),
-      'Lecteur · Les Kassbi · accès rétabli · groupe complet (50 invitations '
-      'en attente) : réinvitez-le dans le groupe quand une place se libère',
+      'Lecteur · Les Kassbi · accès rétabli · pas invité au groupe, complet '
+      '(50 invitations en attente) : invitez-le depuis Groupes familiaux '
+      'quand une place se libère',
     );
     // Invitant sorti du groupe au retour du compte : rien d'écrit au groupe,
     // qui existe toujours.
@@ -258,8 +259,9 @@ void main() {
     });
     expect(
       invitationSubtitle(left, EmailInvitationStatus.accepted),
-      'Lecteur · Les Kassbi · accès rétabli · invitant sorti du groupe : '
-      'réinvitez-le dans le groupe',
+      'Lecteur · Les Kassbi · accès rétabli · pas invité au groupe '
+      "(l'invitant n'en fait plus partie) : invitez-le depuis Groupes "
+      'familiaux',
     );
     final gone = EmailInvitation.fromFirestore('e', {
       ..._doc(status: 'accepted'),

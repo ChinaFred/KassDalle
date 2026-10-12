@@ -35,6 +35,7 @@ import {
   isActiveInvitation,
   isInvitableRole,
   isOpenReturnInvitationFor,
+  isStaleReturnInvitation,
   isPermanentRecipientRejection,
   maskEmails,
   normalizeEmailKey,
@@ -429,6 +430,39 @@ describe("invitations de retour sans objet", () => {
     );
     assert.equal(reason, RESTORED_BY_HAND_MESSAGE);
     assert.equal(reason, "Accès rétabli à la main : invitation sans objet.");
+  });
+
+  test("une invitation envoyée après le rétablissement n'est pas annulée", () => {
+    const before = new Date(now.getTime() - 60_000);
+    const after = new Date(now.getTime() + 60_000);
+    const { stale } = staleReturnInvitations(
+      [
+        open("avant", { last_sent_at: before }),
+        open("pile", { last_sent_at: now }),
+        open("apres", { last_sent_at: after }),
+        open("renvoyee", { created_at: before, last_sent_at: after }),
+        open("creee-seule", { created_at: before }),
+        open("sans-date"),
+      ],
+      "gab",
+      now,
+    );
+    assert.deepEqual(
+      stale.map((s) => s.id),
+      ["avant", "pile", "creee-seule", "sans-date"],
+    );
+    // Relue dans la transaction, plus tard : la date d'envoi reste comparée
+    // au rétablissement, pas à l'heure de la relecture.
+    const later = new Date(now.getTime() + 120_000);
+    assert.equal(
+      isStaleReturnInvitation(open("apres", { last_sent_at: after }).data, "gab", now, later),
+      false,
+    );
+    assert.equal(
+      isStaleReturnInvitation(open("avant", { last_sent_at: before }).data, "gab", now, later),
+      true,
+    );
+    assert.equal(isStaleReturnInvitation(undefined, "gab", now, later), false);
   });
 
   test("rétablissement par une invitation : elle est acceptée, les autres sont annulées", () => {

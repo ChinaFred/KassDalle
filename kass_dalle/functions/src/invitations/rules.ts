@@ -368,10 +368,30 @@ export const RESTORED_BY_OTHER_INVITATION_MESSAGE =
 export const RESTORED_BY_INVITATION_WINDOW_MS = 60_000;
 
 /**
+ * Vrai si l'invitation de retour est sans objet pour un rétablissement du
+ * compte `uid` à l'instant `restoredAt` : encore active à `now`, et envoyée
+ * (`last_sent_at`, à défaut `created_at`) au plus tard à `restoredAt`. Une
+ * invitation envoyée ou renvoyée après le rétablissement répond à une
+ * révocation postérieure : elle n'est pas annulée. Sans aucune date d'envoi,
+ * elle est tenue pour antérieure. Pure, testée.
+ */
+export function isStaleReturnInvitation(
+  data: Record<string, unknown> | undefined | null,
+  uid: string,
+  restoredAt: Date,
+  now: Date,
+): boolean {
+  if (!data || !isOpenReturnInvitationFor(data, uid, now)) return false;
+  const sentAt = asDate(data.last_sent_at) ?? asDate(data.created_at);
+  return sentAt === null || sentAt.getTime() <= restoredAt.getTime();
+}
+
+/**
  * Les invitations de retour à annuler quand le compte `uid` est rétabli, et
  * le motif à écrire.
  *
- * Toute invitation encore active qui vise ce compte est sans objet une fois
+ * Toute invitation encore active qui vise ce compte, envoyée au plus tard au
+ * rétablissement (`isStaleReturnInvitation`), est sans objet une fois
  * l'accès rendu : laissée active, elle le rétablirait après une nouvelle
  * révocation. Celle qu'`applyRevokedInvitation` vient d'appliquer est déjà
  * `accepted` (même transaction que le rétablissement) et n'est pas reprise.
@@ -384,7 +404,9 @@ export function staleReturnInvitations<T extends { id: string; data: Record<stri
   uid: string,
   restoredAt: Date,
 ): { stale: T[]; reason: string } {
-  const stale = candidates.filter((c) => isOpenReturnInvitationFor(c.data, uid, restoredAt));
+  const stale = candidates.filter((c) =>
+    isStaleReturnInvitation(c.data, uid, restoredAt, restoredAt),
+  );
   const byInvitation = candidates.some((c) => {
     if (c.data.status !== "accepted" || c.data.accepted_uid !== uid) return false;
     if (invitationTargetOf(c.data) !== "revoked") return false;

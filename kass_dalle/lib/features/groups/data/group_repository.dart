@@ -241,9 +241,11 @@ class GroupRepository {
   /// [groupId] ; `null` si aucun compte approuvé ne la porte.
   ///
   /// Passe par `findMemberByEmailFn` : le serveur vérifie que l'appelant est
-  /// propriétaire du groupe, compte la recherche (trente par jour) et ne rend
+  /// propriétaire du groupe, compte la recherche (dix par jour) et ne rend
   /// que l'identifiant et les noms publics. Plafond atteint :
-  /// [MemberSearchLimitReached]. Toute erreur est signalée sans l'adresse.
+  /// [MemberSearchLimitReached] ; groupe supprimé ou appelant qui n'en est
+  /// plus propriétaire : [MemberSearchRefused], avec le message du serveur.
+  /// Toute erreur est signalée sans l'adresse.
   Future<UserProfile?> findMemberByEmail(String groupId, String email) async {
     try {
       final raw = await _functions
@@ -265,6 +267,8 @@ class GroupRepository {
         },
       );
       if (limit) throw const MemberSearchLimitReached();
+      final refusal = memberSearchRefusalMessage(e.code, e.message);
+      if (refusal != null) throw MemberSearchRefused(refusal);
       rethrow;
     } catch (e, st) {
       await _errorReportService.reportError(

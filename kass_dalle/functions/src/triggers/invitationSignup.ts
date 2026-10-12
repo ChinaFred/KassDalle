@@ -50,6 +50,7 @@ import {
   groupInviteFor,
   isInvitableRole,
   isOpenReturnInvitationFor,
+  isStaleReturnInvitation,
   normalizeEmailKey,
   pickActiveInvitation,
   staleReturnInvitations,
@@ -436,9 +437,11 @@ export const applyRevokedInvitation = onDocumentUpdated(
  *
  * Laissée active, une invitation de retour rétablirait le compte après une
  * nouvelle révocation, sans que l'administrateur de cette révocation le
- * sache. Chaque invitation est relue dans sa propre transaction : seule une
- * invitation encore active qui vise ce compte passe à `cancelled`
- * (`cancelled_by: "system"`, motif lisible dans `last_error`). Celle
+ * sache. Chaque invitation est relue dans sa propre transaction, avec
+ * `users/{uid}` : rien n'est annulé si le compte est de nouveau révoqué
+ * (`is_revoked === true`), et seule une invitation encore active qui vise ce
+ * compte, envoyée au plus tard à `restoredAt` (`last_sent_at`), passe à
+ * `cancelled` (`cancelled_by: "system"`, motif lisible dans `last_error`). Celle
  * qu'`applyRevokedInvitation` vient d'appliquer est déjà `accepted`.
  *
  * Une erreur est journalisée invitation par invitation et n'interrompt pas
@@ -456,7 +459,11 @@ export async function cancelStaleReturnInvitations(uid: string, restoredAt: Date
     try {
       const cancelled = await db.runTransaction(async (tx) => {
         const snap = await tx.get(inv.ref);
-        if (!isOpenReturnInvitationFor(snap.data(), uid, new Date())) return false;
+        // Révoqué de nouveau depuis le rétablissement : l'invitation de
+        // retour a de nouveau un objet, elle reste active.
+        const userSnap = await tx.get(db.collection(COLL_USERS).doc(uid));
+        if (userSnap.data()?.is_revoked === true) return false;
+        if (!isStaleReturnInvitation(snap.data(), uid, restoredAt, new Date())) return false;
         tx.update(inv.ref, {
           status: "cancelled",
           cancelled_by: "system",

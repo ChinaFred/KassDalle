@@ -162,14 +162,23 @@ class AuthRepository {
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  Future<AppUser?> signInWithGoogle() async {
+  /// Connexion Google.
+  ///
+  /// [forceAccountChooser] ouvre toujours le choix du compte : sur le web,
+  /// `prompt: select_account` est passé à Google ; sur mobile et desktop, la
+  /// connexion silencieuse (qui reprendrait le dernier compte) est sautée et
+  /// la connexion interactive s'ouvre directement.
+  Future<AppUser?> signInWithGoogle({bool forceAccountChooser = false}) async {
     final User? user;
 
     if (kIsWeb) {
       final provider = GoogleAuthProvider();
-      if (kDebugMode && _devAutoLogin && _devBypassEmail.isNotEmpty) {
-        provider.setCustomParameters({'login_hint': _devBypassEmail});
-      }
+      final parameters = <String, String>{
+        if (kDebugMode && _devAutoLogin && _devBypassEmail.isNotEmpty)
+          'login_hint': _devBypassEmail,
+        if (forceAccountChooser) 'prompt': 'select_account',
+      };
+      if (parameters.isNotEmpty) provider.setCustomParameters(parameters);
       try {
         final userCredential = await _auth.signInWithPopup(provider);
         user = userCredential.user;
@@ -202,26 +211,30 @@ class AuthRepository {
         return null;
       }
     } else {
-      // Tentative de connexion silencieuse
+      // Tentative de connexion silencieuse, sauf si le choix du compte est
+      // demandé : elle reprendrait le dernier compte sans le montrer.
       GoogleSignInAccount? googleUser;
-      try {
-        final future = GoogleSignIn.instance.attemptLightweightAuthentication();
-        if (future != null) {
-          googleUser = await future.timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => null,
+      if (!forceAccountChooser) {
+        try {
+          final future = GoogleSignIn.instance
+              .attemptLightweightAuthentication();
+          if (future != null) {
+            googleUser = await future.timeout(
+              const Duration(seconds: 5),
+              onTimeout: () => null,
+            );
+          }
+        } catch (e) {
+          debugPrint('Lightweight sign-in failed: $e');
+          await _errorReportService.reportError(
+            feature: 'auth_lightweight_sign_in',
+            error: e,
+            context: {
+              'step': 'attemptLightweightAuthentication',
+              'platform': kIsWeb ? 'web' : 'native',
+            },
           );
         }
-      } catch (e) {
-        debugPrint('Lightweight sign-in failed: $e');
-        await _errorReportService.reportError(
-          feature: 'auth_lightweight_sign_in',
-          error: e,
-          context: {
-            'step': 'attemptLightweightAuthentication',
-            'platform': kIsWeb ? 'web' : 'native',
-          },
-        );
       }
 
       // Si la connexion silencieuse a échoué, connexion interactive
@@ -279,16 +292,18 @@ class AuthRepository {
 
   /// Nouvelle connexion d'un compte révoqué, depuis l'écran de révocation.
   ///
-  /// Sur mobile et desktop, la session en cours est d'abord fermée : ses
-  /// jetons ont été invalidés à la révocation, et sans cela la connexion
-  /// silencieuse reprendrait le dernier compte sans ouvrir le sélecteur. Sur
-  /// le web, la fenêtre Google s'ouvre de toute façon, et une attente avant
-  /// elle la ferait bloquer par le navigateur (geste utilisateur perdu). La
-  /// connexion passe ensuite par [signInWithGoogle], donc par [_upsertUser],
+  /// Le choix du compte s'ouvre toujours (`forceAccountChooser`) : sur le
+  /// web, `prompt: select_account`, sans quoi Google reconnecte en un clic le
+  /// compte révoqué ; sur mobile et desktop, sans connexion silencieuse. Sur
+  /// mobile et desktop, la session en cours est d'abord fermée : ses jetons
+  /// ont été invalidés à la révocation. Sur le web, aucune attente avant la
+  /// fenêtre Google : elle la ferait bloquer par le navigateur (geste
+  /// utilisateur perdu). La connexion passe par [signInWithGoogle], donc par
+  /// [_upsertUser],
   /// qui écrit `last_seen_at` : c'est cette écriture qui réveille
   /// `applyRevokedInvitation`.
   Future<AppUser?> signInAgainAfterRevocation() async {
-    if (kIsWeb) return signInWithGoogle();
+    if (kIsWeb) return signInWithGoogle(forceAccountChooser: true);
     try {
       await signOut();
     } catch (e, st) {
@@ -300,7 +315,7 @@ class AuthRepository {
         context: {'step': 'signOut'},
       );
     }
-    return signInWithGoogle();
+    return signInWithGoogle(forceAccountChooser: true);
   }
 
   Future<void> signOut() async {

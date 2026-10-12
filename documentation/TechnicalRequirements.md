@@ -298,7 +298,12 @@ autre invitation : invitation sans objet. » (une invitation de retour acceptée
 moins de 60 s du rétablissement). Laissée active, une telle invitation rétablirait le compte
 après une nouvelle révocation. Celle qu'`applyRevokedInvitation` applique est déjà `accepted`,
 dans la transaction qui rétablit le compte, et n'est pas reprise. Chaque invitation est relue
-dans sa transaction ; une erreur est journalisée et n'arrête pas les autres. Aucune fonction
+dans sa transaction, avec `users/{uid}` : si le compte est de nouveau révoqué
+(`is_revoked === true`), rien n'est annulé, et seule une invitation envoyée au plus tard au
+rétablissement (`last_sent_at`, à défaut `created_at`, ≤ heure de l'événement) est annulée — une
+invitation envoyée ou renvoyée après répond à une révocation postérieure
+(`isStaleReturnInvitation`, `invitations/rules.ts`). Une erreur est journalisée et n'arrête pas
+les autres. Aucune fonction
 déployée de plus. Il n'existe pas de date de révocation sur `users/{uid}` : `applyRevokedInvitation`
 ne compare donc pas `last_sent_at` à la révocation, et cette annulation tient lieu de garde.
 

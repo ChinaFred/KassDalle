@@ -2090,6 +2090,12 @@ sequenceDiagram
     MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
     MS->>UU: parcours de users (email, role, is_revoked, noms)
     MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
+    opt {found: false}
+      MS->>MD: transaction — misses + 1 (best-effort, un échec est journalisé)
+      opt cinquième réponse vide du jour
+        MS->>MS: logWarn — 5 recherches par adresse sans résultat aujourd'hui
+      end
+    end
     MS-->>R: {found: false} ou {found: true, uid, displayName, preferredName}<br/>jamais l'adresse
     R-->>G: UserProfile ou « Aucun compte pour cette adresse. »<br/>plafond : « Trop de recherches aujourd'hui. Réessayez demain. »
   end
@@ -3795,7 +3801,7 @@ sequenceDiagram
     <p class="sec-note">
       Rétablissement à la main dans l'onglet Comptes : <code>syncUserClaims</code> voit
       <code>is_revoked</code> passer de <code>true</code> à <code>false</code> et annule les
-      invitations de retour encore actives du compte.
+      invitations de retour encore actives du compte, envoyées au plus tard au rétablissement.
       <span class="path">admin_repository.dart → users/{uid} → triggers/userClaimsSync.ts →
       triggers/invitationSignup.ts:cancelStaleReturnInvitations</span>
     </p>
@@ -3811,15 +3817,21 @@ sequenceDiagram
   A->>U: is_revoked false (onglet Comptes)
   U->>CL: onDocumentWritten — révoqué avant, rétabli après
   CL->>I: where target_uid == uid
-  loop chaque invitation de retour encore active
-    CL->>I: transaction — relit, puis status cancelled, cancelled_by system, last_error
+  loop chaque invitation de retour encore active, envoyée avant le rétablissement
+    CL->>I: transaction — relit l'invitation et users/{uid}
+    alt compte de nouveau révoqué, ou last_sent_at après le rétablissement
+      Note over CL,I: rien n'est annulé
+    else
+      CL->>I: status cancelled, cancelled_by system, last_error
+    end
   end
-  Note over I: « Accès rétabli à la main : invitation sans objet. »
+  Note over I: « Accès rétabli à la main : invitation sans objet. »<br/>(« … par une autre invitation … » si une invitation acceptée a rétabli moins de 60 s avant)
 </pre>
       </div>
       <figcaption>
         Laissée active, une invitation de retour rétablirait le compte après une nouvelle
-        révocation. Une erreur sur une invitation est journalisée et n'arrête pas les autres.
+        révocation. Une invitation envoyée après le rétablissement, ou un compte révoqué de
+        nouveau entre-temps, la laisse active : elle répond à cette nouvelle révocation. Une erreur sur une invitation est journalisée et n'arrête pas les autres.
       </figcaption>
     </figure>
   </section>

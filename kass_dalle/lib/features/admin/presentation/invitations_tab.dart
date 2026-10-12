@@ -113,14 +113,15 @@ String invitationSubtitle(
       final missing = invitation.groupMissing
           ? ' · groupe supprimé'
           : invitation.groupInvite == 'missing'
-          ? ' · invitant sorti du groupe : réinvitez-le dans le groupe'
+          ? ' · pas invité au groupe (l\'invitant n\'en fait plus partie) : '
+                'invitez-le depuis Groupes familiaux'
           : '';
       final restored = invitation.targetsRevokedAccount
           ? ' · accès rétabli'
           : '';
       final full = invitation.groupInvite == 'full'
-          ? ' · groupe complet (50 invitations en attente) : réinvitez-le '
-                'dans le groupe quand une place se libère'
+          ? ' · pas invité au groupe, complet (50 invitations en attente) : '
+                'invitez-le depuis Groupes familiaux quand une place se libère'
           : '';
       return '$head${detail.isEmpty ? '' : ' · $detail'}$restored$missing$full';
     case EmailInvitationStatus.cancelled:
