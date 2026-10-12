@@ -153,7 +153,10 @@
           <tr><td>Ajouter directement un membre à un groupe, sans son acceptation</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Noter, annoter, planifier, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -171,7 +174,8 @@
           <tr><td>Importer une page trouvée par « Chercher sur le web », depuis le bandeau d'Explorer au retour du navigateur, ou par « Partager vers Kass'Dalle » sur Android — un lecteur qui partage un lien voit « Import réservé aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
-          <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Demander un conseil de dressage, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Demander un conseil de conservation sur <b>sa</b> recette — il fait partie du planning ; le lecteur lit le conseil déjà enregistré</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Demander un conseil de dressage ou de conservation, ou relancer le calcul nutritionnel, sur la recette d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Lire les allergènes d'une recette qu'on voit — même bloc pour tous les rôles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les durées d'une recette qu'on voit, et ses durées estimées par l'IA (« ≈ Prép. 20 min ») quand elle n'en donne pas — même rendu pour tous les rôles ; compter ou non les durées estimées dans le filtre « Temps total » d'Explorer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -188,10 +192,12 @@
       </table>
     </div>
     <span class="expect">
-      Un <code>reader</code> lit, note, annote, planifie et filtre la bibliothèque. Il ne crée
+      Un <code>reader</code> lit, note, annote et filtre la bibliothèque, et lit les plannings
+      que les membres de ses groupes partagent avec lui. Il ne planifie pas et ne crée
       <b>aucune</b> recette : ni saisie manuelle, ni copie, ni recette conçue par l'IA, ni
       import. Ses recettes existantes restent à lui : il les modifie, les valide et les
-      supprime. Ce que le rôle <code>editor</code> ouvre en plus, c'est la création de
+      supprime. Ses anciens repas aussi : il les lit et les supprime. Ce que le rôle
+      <code>editor</code> ouvre en plus, c'est le planning et son partage, la création de
       recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
       création de livres et la relecture des brouillons partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
@@ -225,10 +231,11 @@
     <p class="sec-note">
       Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
       la noter, composer les repas de la semaine et faire les courses. Tout compte nommé y a
-      accès, sauf à ce qui crée une recette ou demande à l'IA de choisir dans Explorer :
-      « Chercher avec l'IA », « Imaginer 3 recettes », et dans le planning les idées de repas et
-      la conception d'une recette par l'IA. Ces cas sont réservés à l'éditeur et à
-      l'administrateur.
+      accès, sauf au planning et à ce qui crée une recette ou demande à l'IA de choisir dans
+      Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
+      planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
+      sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
+      partagés avec ses groupes.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -275,6 +282,8 @@ flowchart LR
     a28(["Oublier mes refus"])
     a26(["Consulter le texte d'origine&lt;br/&gt;d'une recette traduite"])
     a29(["Consulter les allergènes&lt;br/&gt;d'une recette"])
+    a36(["Partager mon planning&lt;br/&gt;avec mes groupes"])
+    a37(["Consulter un planning partagé&lt;br/&gt;en lecture seule"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -291,6 +300,7 @@ flowchart LR
     i13(["Proposer trois recettes"])
     i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
     i15(["Trouver des pages de recettes sur Google&lt;br/&gt;50 par jour, cache partagé de 7 jours"])
+    i16(["Recalculer qui lit quel planning"])
   end
 
   LEC --- a1
@@ -309,21 +319,28 @@ flowchart LR
   a8 -.->|"les recettes filtrées, sans le texte"| a33
   a34 -.->|"inclut"| i13
   a34 -.->|"proposition retenue"| i14
-  LEC --- a9
+  EDI --- a9
   LEC --- a10
   LEC --- a11
-  LEC --- a12
-  LEC --- a13
+  EDI --- a12
+  EDI --- a13
   LEC --- a15
   LEC --- a30
   LEC --- a31
   LEC --- a16
   LEC --- a17
   LEC --- a18
-  LEC --- a22
-  LEC --- a23
-  LEC --- a24
+  EDI --- a22
+  EDI --- a23
+  EDI --- a24
   LEC --- a25
+  EDI --- a36
+  LEC --- a37
+  a36 -.->|"étend"| a13
+  a36 -.->|"inclut"| i16
+  a30 -.->|"Accepter"| i16
+  a31 -.->|"inclut"| i16
+  a37 -.->|"appui sur un repas, recette lisible"| a2
   a2 -.->|"si la recette est traduite"| a26
   a2 --- a4
   a2 --- a29
@@ -447,7 +464,7 @@ flowchart LR
         <b>Toute recette conçue par l'IA dans le planning arrive en brouillon</b> dans « Mes
         créations Kass'Dalle ✨ » : « Générer avec l'IA », la source « Conception IA » et
         « Concevoir avec l'IA ». Ces trois gestes sont réservés à l'éditeur et à
-        l'administrateur ; pour un lecteur, un créneau sans candidat reste vide.
+        l'administrateur, comme tout le planning.
         Chaque plat affiche son origine : choisie par l'IA, par Kass'Dalle, par le lecteur, ou
         conçue par l'IA.
         <b>Un plat refusé est proposé moins souvent pendant 21 jours</b> : sa chance est divisée
@@ -479,8 +496,28 @@ flowchart LR
         recette jamais analysée, et rappelle toujours : « Liste indicative établie par IA. Elle ne
         remplace pas la lecture des emballages. » Tous les rôles voient le même bloc ; aucun ne le
         modifie depuis la fiche.
-        Les garnitures d'un lecteur sont sa copie du référentiel : les modifier ne
+        Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
+        <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
+        préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
+        Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
+        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
+        les 90 derniers jours et la suite.
+        <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
+        l'éditeur coche les groupes qui voient son planning, aucun par défaut. Le serveur
+        recalcule qui lit quel planning (<code>planning_reach</code>) quand ce choix change,
+        quand un groupe change de membres, et quand un rôle ou une révocation change. Un
+        propriétaire qui n'est plus éditeur ne partage plus rien ; ses groupes cochés sont
+        conservés.
+        <b>Consulter un planning partagé</b> ouvre à tout membre du groupe, quel que soit son
+        rôle, les repas du propriétaire en lecture seule, marqués de son prénom : ni menu, ni
+        justification, ni origine du plat, ni export. Le sélecteur « Plannings affichés » choisit
+        les plannings montrés ; l'éditeur voit le sien seul par défaut, le lecteur tous ceux
+        partagés avec lui. Un appui sur un repas ouvre la fiche pour les parts du repas, sans
+        rien écrire. Une recette que le membre ne peut pas lire s'affiche par son titre, avec
+        « Recette non partagée », et ne s'ouvre pas. Sa note sur une recette ne pèse pas sur
+        les suggestions du propriétaire.
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
         propriétaire cherche une personne par son nom (« Rechercher une personne à inviter… ») et
         l'invite (« Inviter dans le groupe ») ; il peut annuler tant que l'invitation attend
@@ -491,7 +528,7 @@ flowchart LR
         confirmation. Un membre autre que le propriétaire peut quitter le groupe ; le propriétaire
         en reste membre. Accepter, quitter ou être retiré change la portée des groupes,
         recalculée par le serveur (<code>syncGroupReach</code>) sans appel d'IA : la bibliothèque,
-        Explorer et le planning suivent. Les membres ajoutés directement avant la v0.23.19
+        Explorer, le planning et les plannings partagés suivent. Les membres ajoutés directement avant la v0.23.19
         restent membres.
       </figcaption>
     </figure>
@@ -846,7 +883,7 @@ flowchart LR
         sont listés, le total est toujours donné. La liste du dernier passage reste sur la tuile
         jusqu'au passage suivant.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
-        dans Référentiels ; chaque lecteur en garde sa copie dans ses préférences.
+        dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">
           <b>Le bac à sable ne figure pas ici, et c'est voulu.</b>
           <span class="path">/admin/sandbox</span> existe et n'est ouvert qu'aux administrateurs,
@@ -874,12 +911,12 @@ flowchart LR
           <tr>
             <td>Redirection go_router (<code>resolveRedirect</code>)</td>
             <td><code>appUserProvider</code>, document Firestore</td>
-            <td>Login obligatoire, avec l'adresse demandée gardée dans <code>/login?next=…</code> et rouverte après la connexion (route interne seulement, ni <code>/login</code> ni <code>/pending</code>), comptes révoqués renvoyés, comptes <code>pending</code> menés à la salle d'attente, <code>/admin</code> réservé</td>
+            <td>Login obligatoire, avec l'adresse demandée gardée dans <code>/login?next=…</code> et rouverte après la connexion (route interne seulement, ni <code>/login</code> ni <code>/pending</code>), comptes révoqués renvoyés, comptes <code>pending</code> menés à la salle d'attente, <code>/admin</code> réservé, <code>/planning/batch</code>, <code>/planning/config</code> et <code>/planning/staples</code> fermés au <code>reader</code></td>
           </tr>
           <tr>
             <td>Firestore Security Rules</td>
             <td><code>request.auth.token.role</code>, repli sur <code>get(users/{uid}).role</code> ; révocation toujours relue sur le document</td>
-            <td>Chaque lecture et chaque écriture de document. Tout ce qui est partagé passe par <code>isApproved()</code>. Un livre ou une recette non privé d'un autre compte ne se lit que s'il partage un groupe avec le lecteur (<code>sharesGroupWith</code>, une lecture de <code>group_reach/{lecteur}</code>) ; annotations, notes et texte d'origine suivent la recette par <code>canReadRecipe</code></td>
+            <td>Chaque lecture et chaque écriture de document. Tout ce qui est partagé passe par <code>isApproved()</code>. Un livre ou une recette non privé d'un autre compte ne se lit que s'il partage un groupe avec le lecteur (<code>sharesGroupWith</code>, une lecture de <code>group_reach/{lecteur}</code>) ; annotations, notes et texte d'origine suivent la recette par <code>canReadRecipe</code>. Un repas planifié se lit par son propriétaire, ou par un compte nommé dont <code>planning_reach/{lecteur}</code> contient ce propriétaire ; seuls l'<code>editor</code> et l'<code>admin</code> créent ou modifient un repas</td>
           </tr>
           <tr>
             <td>Storage Security Rules</td>
@@ -921,10 +958,12 @@ flowchart LR
   </section>
 
   <section class="callout">
-    <h2>Le routeur ne garde que /admin</h2>
+    <h2>Le routeur ne garde que /admin et trois écrans du planning</h2>
     <p>
-      La redirection de <code>app_router.dart</code> ne bloque que les chemins commençant par
-      <code>/admin</code>. Les écrans <span class="path">/logs</span>,
+      La redirection de <code>app_router.dart</code> bloque les chemins commençant par
+      <code>/admin</code>, et renvoie le <code>reader</code> de <span class="path">/planning/batch</span>,
+      <span class="path">/planning/config</span> et <span class="path">/planning/staples</span>
+      vers <span class="path">/planning</span>, avec « Planification réservée aux éditeurs ». Les écrans <span class="path">/logs</span>,
       <span class="path">/error-reports</span> et <span class="path">/dead-letters</span> sont
       atteignables par URL directe pour tout compte connecté.
     </p>

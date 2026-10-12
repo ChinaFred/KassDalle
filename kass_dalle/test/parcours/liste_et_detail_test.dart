@@ -159,10 +159,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Recette introuvable'), findsOneWidget);
+      // Supprimée ou non partagée : le client ne distingue pas les deux.
+      expect(find.text('Recette non partagée'), findsOneWidget);
+      expect(
+        find.text('Son auteur ne l\'a pas partagée avec vous.'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('une erreur de lecture passe par l\'état d\'erreur partagé', (
+    testWidgets('une recette refusée par les règles se dit non partagée', (
       tester,
     ) async {
       final backend = TestBackend();
@@ -191,10 +196,45 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(AppErrorState), findsOneWidget);
-      expect(find.text('Accès refusé'), findsOneWidget);
-      // Refus de droits : pas de bouton qui promette un résultat différent.
+      // Ouverte depuis le planning partagé d'un autre membre : réessayer
+      // n'y changerait rien.
+      expect(find.text('Recette non partagée'), findsOneWidget);
+      expect(find.byType(AppErrorState), findsNothing);
       expect(find.text('Réessayer'), findsNothing);
+    });
+
+    testWidgets('une erreur de lecture passe par l\'état d\'erreur partagé', (
+      tester,
+    ) async {
+      final backend = TestBackend();
+
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: appProviderRetry,
+          overrides: [
+            ...backend.overrides,
+            recipeDetailProvider('r1').overrideWith(
+              (ref) => Stream.error(
+                FirebaseException(
+                  plugin: 'cloud_firestore',
+                  code: 'unauthenticated',
+                ),
+              ),
+            ),
+          ],
+          child: const MaterialApp(
+            locale: Locale('fr'),
+            home: RecipeDetailScreen(recipeId: 'r1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AppErrorState), findsOneWidget);
+      expect(find.text('Session expirée'), findsOneWidget);
+      expect(find.text('Recette non partagée'), findsNothing);
     });
   });
 }

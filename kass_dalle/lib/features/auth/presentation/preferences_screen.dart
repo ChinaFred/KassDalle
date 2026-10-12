@@ -7,6 +7,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/services/error_reporting.dart';
 import '../data/user_preferences_repository.dart';
+import 'auth_providers.dart';
 
 /// Les réglages du compte, rassemblés en un endroit.
 ///
@@ -49,6 +50,7 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final preferences = ref.watch(userPreferencesProvider);
+    final canPlan = ref.watch(canEditProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Préférences')),
@@ -76,31 +78,35 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            Text('Planification', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.tune_outlined),
-                title: const Text('Préférences de planification'),
-                subtitle: const Text('Cycle, contraintes, Calendar'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.planningConfig),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.rice_bowl_outlined),
-                title: const Text('Mes garnitures'),
-                subtitle: const Text(
-                  'Riz, pâtes, salade, yaourt : la part par personne, à '
-                  'votre main. Ne change rien pour les autres.',
+            // Le lecteur ne planifie pas : ni préférences du planning, ni
+            // garnitures.
+            if (canPlan) ...[
+              const SizedBox(height: 24),
+              Text('Planification', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.tune_outlined),
+                  title: const Text('Préférences du planning'),
+                  subtitle: const Text('Cycle, contraintes, Calendar'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.planningConfig),
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.myStaples),
               ),
-            ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.rice_bowl_outlined),
+                  title: const Text('Mes garnitures'),
+                  subtitle: const Text(
+                    'Riz, pâtes, salade, yaourt : la part par personne, à '
+                    'votre main. Ne change rien pour les autres.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.myStaples),
+                ),
+              ),
+            ],
           ],
         ),
       ),

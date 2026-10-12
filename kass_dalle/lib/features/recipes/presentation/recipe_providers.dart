@@ -37,13 +37,18 @@ final storageRepositoryProvider = Provider<StorageRepository>((ref) {
 /// Le créateur ou un administrateur : miroir de `assertCanModifyRecipe` côté
 /// Functions, qui refuse les autres comptes avant tout appel de modèle.
 ///
+/// Jamais un lecteur : depuis la v0.23.47, il ne planifie plus, et
+/// `suggestStorageAdviceFn` exige le rôle éditeur. La fiche lui montre le
+/// conseil déjà stocké, ou rien.
+///
 /// Asynchrone : la décision attend le profil. Lu avant son chargement, un
 /// provider synchrone répondait « non » au créateur lui-même, et le bandeau de
 /// préparation lui annonçait un conseil réservé.
 final canWriteRecipeAdviceProvider =
     FutureProvider<bool Function(String createdBy)>((ref) async {
       final user = await ref.watch(appUserProvider.future);
-      return (createdBy) => user?.canModifyRecipe(createdBy) ?? false;
+      return (createdBy) =>
+          (user?.canEdit ?? false) && user!.canModifyRecipe(createdBy);
     });
 
 /// Conseil de conservation déjà stocké sur la recette, ou null.

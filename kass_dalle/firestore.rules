@@ -886,23 +886,68 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Plannings partagés (v0.23.47)
+    //
+    // Un éditeur ou un administrateur coche, dans ses préférences de
+    // planning, les groupes familiaux qui voient son planning
+    // (`planning_config/{uid}.shared_group_ids`). Le serveur en tire
+    // `planning_reach/{lecteur}.uids` : les propriétaires dont ce compte lit
+    // les repas, en lecture seule. Les règles ne peuvent ni parcourir les
+    // groupes ni lire le rôle du propriétaire : elles lisent cette liste
+    // toute faite (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`
+    // et `syncPlanningReachOnRole`).
+    //
+    // Une requête du client reste prouvable : elle filtre `uid == owner` sur
+    // un seul propriétaire, et la règle vérifie la valeur contre la liste.
+    // Un compte en attente ou révoqué ne lit aucun repas d'autrui.
+    function canReadPlanningOf(ownerUid) {
+      return ownerUid is string
+        && isApproved()
+        && exists(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+        && ownerUid in get(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+             .data.get('uids', []);
+    }
+
     // Repas planifiés
     //
-    // Planifier est un geste de compte nommé : un compte en attente ou révoqué
-    // relit et supprime ses repas, il n'en crée ni n'en modifie. `uid` est
-    // figé : un repas offert à un autre compte apparaîtrait dans son planning.
+    // Planifier est un geste d'éditeur (v0.23.47) : un lecteur, un compte en
+    // attente ou révoqué relit et supprime ses repas antérieurs, il n'en crée
+    // ni n'en modifie. `uid` est figé : un repas offert à un autre compte
+    // apparaîtrait dans son planning. Les repas d'un planning partagé se
+    // lisent, jamais ne s'écrivent.
     match /planned_meals/{mealId} {
-      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
-      allow update: if isApproved() && resource.data.uid == request.auth.uid
+      allow read: if isAuthenticated()
+        && (resource.data.uid == request.auth.uid || canReadPlanningOf(resource.data.uid));
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isEditor() && request.resource.data.uid == request.auth.uid;
+      allow update: if isEditor() && resource.data.uid == request.auth.uid
         && request.resource.data.uid == resource.data.uid;
     }
 
-    // Préférences de planning — même règle : lues par leur titulaire,
-    // écrites par un compte nommé.
+    /// `shared_group_ids` de `planning_config` : une liste bornée. Les règles
+    /// ne savent pas parcourir une liste pour en vérifier chaque élément ; le
+    /// serveur ignore toute valeur qui n'est pas un identifiant de groupe.
+    function isPlanningConfig(data) {
+      return !('shared_group_ids' in data)
+        || (data.shared_group_ids is list && data.shared_group_ids.size() <= 50);
+    }
+
+    // Préférences de planning — lues par leur titulaire, écrites par un
+    // éditeur pour lui-même : le lecteur ne planifie plus.
     match /planning_config/{uid} {
       allow read: if isAuthenticated() && request.auth.uid == uid;
-      allow write: if isApproved() && request.auth.uid == uid;
+      allow create, update: if isEditor() && request.auth.uid == uid
+        && isPlanningConfig(request.resource.data);
+      allow delete: if isEditor() && request.auth.uid == uid;
+    }
+
+    // Portée des plannings : les comptes dont `uid` lit le planning. Lue par
+    // son titulaire (le client en tire ses flux) et par un administrateur.
+    // Écrite par le serveur seul : un compte qui pourrait s'ajouter la
+    // portée d'un autre lirait ses repas.
+    match /planning_reach/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if false;
     }
 
     // Rapports d'erreur
