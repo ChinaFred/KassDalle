@@ -499,7 +499,7 @@ function rankedCandidatesPayload(rankings: SlotRanking[]) {
 }
 
 export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "planning");
+  const ctx = await requireEditor(req, "planning");
   const raw = (req.data ?? {}) as Record<string, unknown>;
   // Liste blanche : seuls les champs validés atteignent le générateur.
   const input = await readAiInputs({ ...ctx, feature: "planning" }, (inputs) =>
@@ -576,7 +576,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
 });
 
 export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "shopping_list");
+  const ctx = await requireEditor(req, "shopping_list");
   const data = (req.data ?? {}) as Record<string, unknown>;
   const ingredients = await readAiInputs({ ...ctx, feature: "shopping_list" }, (inputs) =>
     inputs.list<ShoppingIngredientInput>(data.ingredients, {
@@ -1430,11 +1430,12 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
  * conservation est alors déjà posée. Dans les deux cas le client relit le
  * conseil stocké avant de demander : un plat n'est chiffré qu'une fois.
  *
- * Seuls le créateur de la recette et un administrateur le produisent. Les
- * autres lisent le conseil stocké, ou n'en ont pas.
+ * Seuls le créateur de la recette et un administrateur le produisent, et
+ * jamais un lecteur : depuis la v0.23.47, le lecteur ne planifie plus
+ * (`requireEditor`). Les autres lisent le conseil stocké, ou n'en ont pas.
  */
 export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "storage_advice");
+  const ctx = await requireEditor(req, "storage_advice");
   const { recipeId } = (req.data ?? {}) as { recipeId?: string };
   if (!recipeId) {
     throw new HttpsError("invalid-argument", "recipeId est requis.");

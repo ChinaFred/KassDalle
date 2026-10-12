@@ -104,6 +104,18 @@ class AppRoutes {
   static String sandboxExperiment(String id) => '$adminSandbox/$id';
 }
 
+/// Les écrans du planning réservés aux éditeurs : créer un planning, en
+/// régler les préférences, tenir ses garnitures.
+const kPlanningEditorRoutes = {
+  AppRoutes.batchPlanning,
+  AppRoutes.planningConfig,
+  AppRoutes.myStaples,
+};
+
+/// Paramètre de `/planning` posé par la redirection d'un lecteur : l'écran
+/// affiche alors « Planification réservée aux éditeurs ».
+const kPlanningReservedParam = 'reserve';
+
 /// Paramètre de `/login` qui porte l'adresse demandée avant la connexion.
 const kNextQueryParam = 'next';
 
@@ -183,6 +195,14 @@ String? resolveRedirect({
   // Admin requis pour /admin
   if (location.startsWith('/admin') && !user.isAdmin) {
     return AppRoutes.home;
+  }
+
+  // Planifier est réservé aux éditeurs (v0.23.47) : le lecteur lit les
+  // plannings partagés avec lui, il n'en crée pas. Les écrans de création,
+  // de préférences et de garnitures le renvoient au planning, qui dit
+  // pourquoi (voir [kPlanningReservedParam]).
+  if (!user.canEdit && kPlanningEditorRoutes.contains(location)) {
+    return '${AppRoutes.planning}?$kPlanningReservedParam=1';
   }
 
   // /processing est fusionné dans /drafts
@@ -457,7 +477,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.planning,
-            builder: (context, state) => const PlanningScreen(),
+            builder: (context, state) => PlanningScreen(
+              showReservedNotice:
+                  state.uri.queryParameters[kPlanningReservedParam] == '1',
+            ),
             routes: [
               GoRoute(
                 path: 'batch',

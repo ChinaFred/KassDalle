@@ -647,8 +647,13 @@ class _DayCell extends StatelessWidget {
         ),
     ];
 
+    // Plusieurs plannings affichés : la pastille compte les repas de tous,
+    // et le lecteur d'écran dit pour combien de personnes.
+    final people = meals.map((m) => m.uid).toSet().length;
     final mealsLabel = meals.isEmpty
         ? (prepCount > 0 ? 'jour de préparation' : 'aucun repas')
+        : people > 1
+        ? '${meals.length} repas, $people personnes'
         : '${meals.length} repas';
 
     // La bande : arrondie au premier et au dernier jour de la période,

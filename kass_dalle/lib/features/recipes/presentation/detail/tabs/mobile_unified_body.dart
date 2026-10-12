@@ -161,7 +161,8 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
               );
             }
           : null,
-      onSchedule: recipe.ingredients.isNotEmpty
+      // Planifier est un geste d'éditeur : le lecteur ne planifie plus.
+      onSchedule: ref.watch(canEditProvider) && recipe.ingredients.isNotEmpty
           ? () => showScheduleRecipeSheet(
               context,
               titre: recipe.titre,

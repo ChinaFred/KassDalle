@@ -14,7 +14,10 @@
  * Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`.
  *
  * Écrit par le déclencheur `syncGroupReach` (toute écriture sur
- * `groups/{groupId}`). Le backfill « Portée des groupes », qui l'a écrit pour
+ * `groups/{groupId}`). Le même déclencheur recalcule, pour les mêmes
+ * comptes, la portée des plannings (`planning_reach`, voir
+ * `planningReach.ts`) : être membre d'un groupe ouvre aussi la lecture des
+ * plannings que ses membres partagent avec lui. Le backfill « Portée des groupes », qui l'a écrit pour
  * les groupes antérieurs à la v0.23.19, est retiré depuis la v0.23.23. Les règles en interdisent l'écriture
  * au client : un compte qui pourrait s'ajouter la portée d'un autre lirait
  * ses livres.
@@ -28,42 +31,13 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { COLL_GROUP_REACH, COLL_GROUPS, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
+import { membersOf, sameReach, type GroupData } from "./groupMembers";
+import { syncPlanningReachFor } from "./planningReach";
 
-/** Données brutes d'un groupe, telles que lues dans Firestore. */
-export type GroupData = Record<string, unknown> | undefined | null;
-
-/**
- * Un identifiant de compte utilisable comme identifiant de document : non
- * vide, sans « / », 128 caractères au plus. L'ancienne règle laissait un
- * propriétaire écrire n'importe quelle chaîne dans `member_ids` ; sans ce
- * tri, `doc("a/b")` lèverait à chaque passage, et `retry` rejouerait
- * l'événement en boucle.
- */
-function nonEmptyString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.includes("/") || trimmed.length > 128) return null;
-  return trimmed;
-}
-
-/**
- * Les membres d'un groupe : `owner_id` et `member_ids` réunis, triés, sans
- * doublon. Un champ mal formé (absent, mauvais type, chaîne vide) est ignoré,
- * jamais une exception.
- */
-export function membersOf(group: GroupData): string[] {
-  if (!group) return [];
-  const members = new Set<string>();
-  const owner = nonEmptyString(group.owner_id);
-  if (owner) members.add(owner);
-  if (Array.isArray(group.member_ids)) {
-    for (const value of group.member_ids) {
-      const id = nonEmptyString(value);
-      if (id) members.add(id);
-    }
-  }
-  return [...members].sort();
-}
+// `membersOf`, `sameReach` et `GroupData` vivent dans `groupMembers.ts`, sans
+// dépendance : `planningReach.ts` les importe sans repasser par ce fichier.
+// Réexportés ici pour les appelants existants.
+export { membersOf, sameReach, type GroupData } from "./groupMembers";
 
 /**
  * La portée de [uid] : les autres membres des groupes dont il est membre.
@@ -97,19 +71,6 @@ export function accountsToResync(before: GroupData, after: GroupData): string[] 
     return [];
   }
   return [...new Set([...membersBefore, ...membersAfter])].sort();
-}
-
-/**
- * La portée stockée vaut-elle déjà [expected] ? Un document absent ou mal
- * formé ne vaut rien, pas même une liste vide : il faut l'écrire.
- */
-export function sameReach(
-  stored: Record<string, unknown> | undefined | null,
-  expected: string[],
-): boolean {
-  if (!stored || !Array.isArray(stored.uids)) return false;
-  const uids = stored.uids;
-  return uids.length === expected.length && expected.every((id, i) => uids[i] === id);
 }
 
 /** Ce que `syncGroupReach` a fait pour un compte. */
@@ -176,6 +137,20 @@ export const syncGroupReach = onDocumentWritten(
         failures += 1;
         await logError({
           message: `syncGroupReach: portée non recalculée pour ${uid}`,
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          userId: uid,
+          extra: { groupId },
+        });
+      }
+      // Séparée de la portée des groupes : l'une peut échouer sans l'autre.
+      try {
+        const outcome = await syncPlanningReachFor(uid);
+        if (outcome !== "unchanged") changed.push(`planning:${uid}`);
+      } catch (err) {
+        failures += 1;
+        await logError({
+          message: `syncGroupReach: portée des plannings non recalculée pour ${uid}`,
           correlationId,
           errorDescription: err instanceof Error ? err.message : String(err),
           userId: uid,
