@@ -51,8 +51,7 @@ class AdminHubScreen extends ConsumerWidget {
             icon: Icons.build_circle_outlined,
             color: theme.colorScheme.secondary,
             title: 'Backfills',
-            subtitle:
-                'Exécuter les trois backfills historiques (images, logs IA, courses).',
+            subtitle: 'Lancer, programmer et suivre les reprises de données.',
             onTap: () => context.push(AppRoutes.adminBackfills),
           ),
           _AdminTile(

@@ -536,8 +536,11 @@ quantité, conversion d'unités en grammes, normalisation des noms d'ingrédient
 regroupement des lignes de courses.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
 sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning, le **statut
-effectif d'une invitation par e-mail** et la **géométrie du redressement** : le client redresse à la main dans l'atelier de
-retouche, le serveur redresse tout seul à l'import d'une page.
+effectif d'une invitation par e-mail** et la
+**géométrie du redressement** : le client redresse à la main dans l'atelier de
+retouche, le serveur redresse tout seul à l'import d'une page. Enfin, le
+**registre des backfills** et la lecture d'une programmation : l'écran les
+affiche, la tâche planifiée les applique.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -555,6 +558,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur (section `unsafe_keys` : serveur seul) | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses : famille d'unité, conversions exactes seules (kg → g, cl → ml), écriture d'un total, identité d'un produit — le serveur regroupe à l'écriture d'une recette, le client entre recettes dans le planning et dans la feuille de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 | `allergens.json` | les quatorze allergènes majeurs de l'annexe II INCO — clés dans l'ordre du règlement et libellés, valeurs seules ; le serveur les cite dans le prompt et calcule le champ `allergens` d'une recette (serveur seul), le client les affiche sur la fiche et dans la correction admin | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
+| `backfill_schedule.json` | registre des backfills d'Admin › Backfills (clés dans l'ordre, nature ponctuel / récurrent, appel d'IA) et lecture d'une programmation stockée (jours et heure entiers sans conversion, `enabled` booléen strict) ; le registre porte aussi la programmation par défaut (`defaultSchedule` : la nutrition, tous les jours à 5 h), que le serveur applique et écrit, et que le client affiche « (par défaut) » tant que la clé manque ; la durée du verrou n'est pas en double : le serveur en écrit l'échéance `en_cours_expire_le` | `features/admin/domain/backfill_registry.dart`, `features/admin/domain/backfill_status.dart` | `backfills/registry.ts`, `backfills/schedule.ts` |
 | `email_invitation_status.json` | statut effectif d'une invitation par e-mail : `sent` ou `send_failed` expirée quand `expires_at` est passée, égale à l'instant ou absente ; statut inconnu lu `send_failed` ; `accepted` et `cancelled` fixes — le client affiche (sections, actions, compteur de l'onglet), le serveur décide (doublon, renvoi, rôle à la première connexion) | `features/admin/domain/email_invitation.dart` (`statusAt`) | `invitations/rules.ts` (`effectiveStatus`) |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
@@ -639,6 +643,12 @@ attend une bannière de progression et un compte rendu chiffré (créés, ignor�
 Le compte rendu nomme aussi les éléments à revoir : chaque backfill renvoie `aRevoir` (liste
 plafonnée à 100 entrées, total compté au-delà), que l'écran ouvre dans une feuille « À revoir »
 avec un bouton « Copier la liste ». Un compteur d'erreurs sans noms ne dit pas quoi corriger.
+
+Chaque backfill est classé **ponctuel** (un fonds à reprendre une fois ; marqué terminé quand
+un passage finit sans reste, puis retiré du code) ou **récurrent** (du travail à chaque
+nouvelle recette ; programmable par jours et heure, lancé par `scheduledBackfills`), dans les
+deux registres `functions/src/backfills/registry.ts` et `backfill_registry.dart`. Le skill
+`backfill` dit comment.
 
 Un bouton de semis posé dans l'écran du référentiel lui-même a été livré une fois
 (garnitures simples, v0.22.58) : personne ne l'a trouvé, et la réponse « ouvrez

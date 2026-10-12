@@ -57,11 +57,9 @@ export async function getBackfillCursor(args: {
 /**
  * Retient où l'on s'est arrêté. `null` remet le curseur au début.
  *
- * `lastReport`, s'il est donné, est écrit sous `last_report` avec l'heure de
- * fin : un passage dure plusieurs minutes, et son résultat affiché en fin de
- * traitement se rate — trois passages du rôle des recettes ont été lancés sans
- * que leur compte rendu soit lu. Posé à côté du curseur, il se relit à
- * l'ouverture de l'écran, jusqu'au passage suivant.
+ * Le compte rendu du passage ne s'écrit plus ici : il part dans l'état du
+ * backfill, `app_config/backfill_run_<clé>` (`backfills/runner.ts`), que
+ * l'écran lit en continu.
  */
 export async function setBackfillCursor(args: {
   db?: FirebaseFirestore.Firestore;
@@ -69,7 +67,6 @@ export async function setBackfillCursor(args: {
   lastDocId: string | null;
   operation: string;
   adminUid?: string;
-  lastReport?: Record<string, unknown>;
 }): Promise<void> {
   const db = args.db ?? getFirestore();
   await db
@@ -81,9 +78,6 @@ export async function setBackfillCursor(args: {
         last_doc_id: args.lastDocId,
         updated_at: FieldValue.serverTimestamp(),
         updated_by: args.adminUid ?? null,
-        ...(args.lastReport
-          ? { last_report: { ...args.lastReport, finished_at: FieldValue.serverTimestamp() } }
-          : {}),
       },
       { merge: true },
     );

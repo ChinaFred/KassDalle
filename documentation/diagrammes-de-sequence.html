@@ -175,6 +175,7 @@
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
       <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
+      <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
       <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
       <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
     </ol>
@@ -1790,7 +1791,6 @@ sequenceDiagram
   CF-->>N: permission-denied
 
   A->>FS: attribue un premier rôle — reader
-  Note over A,FS: ou applyEmailInvitation, si l'adresse avait été<br/>invitée par e-mail (séquence 34)
   FS->>SY: onDocumentWritten
   SY->>UP: crée le profil public — nom, couverture des recettes libres
   SY->>AU: setCustomUserClaims { role, revoked }
@@ -2717,10 +2717,13 @@ sequenceDiagram
     <h2 id="rattrapage"><span class="n">25</span>Rattrapage nutritionnel planifié</h2>
     <p class="sec-note">
       <code>onRecipeWritten</code> calcule une fois par changement d'entrée. Une nutrition en
-      échec ou incomplète est reprise par une passe à part, tous les jours à 5 h, ou à la demande
-      depuis Admin › Backfills.
-      <span class="path">scheduled/nutritionCatchUpSchedule.ts (scheduledNutritionCatchUp,
-      runNutritionCatchUp) → callable/nutritionBackfillCallable.ts (backfillNutritionFn) →
+      échec ou incomplète est reprise par une passe à part : le passage programmé de
+      « Reprendre la nutrition » (tous les jours à 5 h par défaut, réglable dans Admin ›
+      Backfills, lancé par <code>scheduledBackfills</code>, séquence 33), ou à la demande depuis
+      Admin › Backfills.
+      <span class="path">scheduled/backfillSchedule.ts (scheduledBackfills) →
+      callable/nutritionBackfillCallable.ts (backfillNutritionFn, runNutritionBackfillPass) →
+      scheduled/nutritionCatchUpSchedule.ts (runNutritionCatchUp) →
       triggers/recipeNutritionAutoSync.ts</span>
     </p>
     <figure class="fig">
@@ -2730,7 +2733,7 @@ sequenceDiagram
   autonumber
   actor A as Administrateur
   participant SCH as Cloud Scheduler
-  participant CU as scheduledNutritionCatchUp
+  participant CU as scheduledBackfills
   participant BF as backfillNutritionFn
   participant RUN as runNutritionCatchUp
   participant FS as recipes
@@ -2738,12 +2741,12 @@ sequenceDiagram
   participant NS as syncRecipeNutrition
   participant TR as onRecipeWritten
 
-  alt tous les jours à 5 h, heure de Paris
-    SCH->>CU: déclenche
-    CU->>RUN: 20 recettes au plus, arrêt à 8 min
+  alt créneau programmé (défaut : tous les jours à 5 h, heure de Paris)
+    SCH->>CU: tick horaire
+    CU->>RUN: runNutritionBackfillPass, origine programme :<br/>20 recettes au plus, sans curseur, bornes de patience actives
   else Admin › Backfills
     A->>BF: backfillNutritionFn (requireAdmin)
-    BF->>RUN: forced, 40 recettes par défaut, reprise au curseur
+    BF->>RUN: runNutritionBackfillPass, origine manuel :<br/>forced, 40 recettes par défaut, reprise au curseur
   end
 
   loop pages de 200 recettes, par identifiant
@@ -2767,14 +2770,15 @@ sequenceDiagram
 
   FS-->>TR: onWrite pour chaque recette reprise
   TR-->>FS: entrées inchangées, sortie à la garde
-  RUN-->>CU: complétées, encore incomplètes, laissées pour demain
+  RUN-->>CU: complétées, encore incomplètes, laissées<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
   RUN-->>BF: même compte rendu, curseur du passage suivant
+  Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 33)
 </pre>
       </div>
       <figcaption>
         <b>Deux bornes de patience, une borne de prudence.</b> L'âge de l'instantané (20 h) et le
         plafond de tentatives (<code>MAX_CATCH_UP_ATTEMPTS</code>, 5) ne s'appliquent qu'au passage
-        planifié. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
+        programmé. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
         second calcul pendant que le déclencheur travaille encore.
         <span class="expect">
           <b>Le compteur repart de zéro sur une entrée modifiée.</b>
@@ -3295,8 +3299,9 @@ sequenceDiagram
       Les recettes écrites avant les durées estimées n'en ont pas. L'administrateur les reprend
       depuis Admin › Backfills ; les recettes écrites ensuite sont estimées par
       <code>onRecipeWritten</code> (séquence 06).
-      <span class="path">admin_backfills_screen.dart:_runBackfillEstimatedTimes →
-      GcpBillingRepository.backfillEstimatedTimes → callable/estimatedTimesBackfillCallable.ts</span>
+      <span class="path">admin_backfills_screen.dart:_runPass →
+      GcpBillingRepository.backfillEstimatedTimes → callable/estimatedTimesBackfillCallable.ts →
+      backfills/runner.ts (verrou et état communs, séquence 33)</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -3350,8 +3355,9 @@ sequenceDiagram
   opt quota atteint
     F->>M: groupes en attente soumis, si le délai le permet
   end
-  F->>C: curseur (null si tout est parcouru), last_report
+  F->>C: curseur (null si tout est parcouru)
   F->>C: verrou levé (running_until null), s'il est toujours le sien
+  F->>C: état backfill_run_estimated_times : statut, last_report,<br/>termine_* si aucun reste (séquence 33)
   F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur), aRevoir (titre et raison)
   S-->>A: compte rendu chiffré, « relancer » si incomplet,<br/>« Voir les N à revoir » ouvre la feuille, une ligne ouvre la fiche
 </pre>
@@ -3376,7 +3382,105 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-email"><span class="n">33</span>Inviter un proche par e-mail</h2>
+    <h2 id="backfills-programmes"><span class="n">33</span>Backfills programmés, verrou et « terminé »</h2>
+    <p class="sec-note">
+      Chaque backfill d'Admin › Backfills est ponctuel ou récurrent. Un passage, lancé à la main
+      ou par la programmation, pose un verrou et écrit son état dans
+      <code>app_config/backfill_run_&lt;clé&gt;</code> ; l'écran le lit en continu.
+      <span class="path">admin_backfills_screen.dart → backfill_status_repository.dart →
+      callable/backfillAdminCallable.ts (setBackfillScheduleFn, setBackfillDoneFn) →
+      scheduled/backfillSchedule.ts (scheduledBackfills) → backfills/runner.ts
+      (runBackfillPass) → backfills/schedule.ts (dueReason)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant S as AdminBackfillsScreen
+  participant SF as setBackfillScheduleFn
+  participant SCH as scheduledBackfills
+  participant R as runBackfillPass
+  participant C as app_config
+  participant P as Passe du backfill
+  participant BU as assertWithinDailyBudget
+
+  S->>C: écoute backfill_run_* (doc_type) et backfill_schedules
+  A->>S: Programmer un récurrent : jours, heure de Paris
+  S->>SF: key, enabled, days, hour (requireAdmin)
+  SF->>C: backfill_schedules.key, programme_par_uid = l'appelant
+
+  loop toutes les heures (Europe/Paris)
+    SCH->>C: lit backfill_schedules et les états des récurrents,<br/>écrit le défaut de la nutrition s'il manque
+    loop chaque récurrent
+      SCH->>SCH: dueReason — créneau (jour et heure) ou reprise due ?
+      opt échu, et au moins 3 min devant soi
+        SCH->>C: programme_par_uid encore admin ?
+        alt plus administrateur
+          SCH->>C: erreur, « L'auteur de la programmation n'est plus administrateur. »
+        else encore administrateur
+          SCH->>BU: plafond de base de programme_par_uid, sans multiplicateur (sauf nutrition)
+          alt plafond atteint
+            SCH->>C: incomplet, arret_plafond, reprise au prochain créneau
+          else sous le plafond
+            SCH->>R: origine programme, échéance bornée par le tick
+          end
+        end
+      end
+      opt échu mais plus le temps
+        SCH->>C: reprise_due, part au tick suivant
+      end
+    end
+  end
+
+  A->>S: Lancer (confirmation)
+  S->>R: callable du backfill, origine manuel, appVersion
+
+  R->>C: transaction — verrou vivant (en_cours_expire_le) sur ce backfill<br/>ou sur un backfill du même groupe ?
+  alt verrou tenu
+    R-->>S: failed-precondition
+    S-->>A: « Un passage de « X » est déjà en cours »
+  else libre ou expiré
+    R->>C: en_cours, en_cours_depuis, en_cours_expire_le, en_cours_id
+    R->>P: passe (curseur, bornes, plafond)
+    alt passe en erreur
+      R->>C: erreur, message, verrou levé
+    else compte rendu
+      R->>C: termine ou incomplet, last_report, reprise_due,<br/>arret_plafond, verrou levé
+      opt ponctuel, tout parcouru, 0 restant, 0 à revoir
+        R->>C: termine_le, termine_version, termine_par auto
+      end
+    end
+  end
+  C-->>S: l'état change, la tuile se met à jour
+  opt ponctuel marqué à la main
+    A->>S: ⋮ Marquer comme terminé / Remettre à lancer
+    S->>C: setBackfillDoneFn → termine_* posés ou retirés
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Un verrou par backfill.</b> Deux passages du même backfill ne tournent jamais
+        ensemble ; deux backfills différents, si. Un verrou de plus de dix minutes est celui
+        d'un passage interrompu : l'écran l'affiche « En erreur — passage interrompu », et le
+        passage suivant le reprend.
+        <span class="expect">
+          <b>Reprise à l'heure suivante, sauf plafond.</b> Un passage programmé incomplet
+          reprend au tick suivant depuis son point de reprise ; arrêté par le plafond de
+          dépense, il attend le prochain créneau programmé.
+        </span>
+        <span class="expect warn">
+          <b>Qui est facturé.</b> Un passage programmé qui appelle un modèle est imputé à
+          l'administrateur qui a enregistré la programmation ; la nutrition, au propriétaire de
+          chaque recette.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-email"><span class="n">34</span>Inviter un proche par e-mail</h2>
     <p class="sec-note">
       Un administrateur invite une personne qui n'a pas encore de compte. Aucun appel de modèle.
       <span class="path">admin_screen.dart → invite_by_email_screen.dart → InvitationsRepository.create →
@@ -3451,7 +3555,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-connexion"><span class="n">34</span>Première connexion d'un invité</h2>
+    <h2 id="invitation-connexion"><span class="n">35</span>Première connexion d'un invité</h2>
     <p class="sec-note">
       La personne invitée ouvre le lien de l'e-mail et se connecte avec le compte Google de
       l'adresse invitée.
