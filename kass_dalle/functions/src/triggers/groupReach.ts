@@ -14,7 +14,10 @@
  * Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`.
  *
  * Écrit par le déclencheur `syncGroupReach` (toute écriture sur
- * `groups/{groupId}`). Le backfill « Portée des groupes », qui l'a écrit pour
+ * `groups/{groupId}`). Le même déclencheur recalcule, pour les mêmes
+ * comptes, la portée des plannings (`planning_reach`, voir
+ * `planningReach.ts`) : être membre d'un groupe ouvre aussi la lecture des
+ * plannings que ses membres partagent avec lui. Le backfill « Portée des groupes », qui l'a écrit pour
  * les groupes antérieurs à la v0.23.19, est retiré depuis la v0.23.23. Les règles en interdisent l'écriture
  * au client : un compte qui pourrait s'ajouter la portée d'un autre lirait
  * ses livres.
@@ -28,6 +31,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { COLL_GROUP_REACH, COLL_GROUPS, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
+import { syncPlanningReachFor } from "./planningReach";
 
 /** Données brutes d'un groupe, telles que lues dans Firestore. */
 export type GroupData = Record<string, unknown> | undefined | null;
@@ -176,6 +180,20 @@ export const syncGroupReach = onDocumentWritten(
         failures += 1;
         await logError({
           message: `syncGroupReach: portée non recalculée pour ${uid}`,
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          userId: uid,
+          extra: { groupId },
+        });
+      }
+      // Séparée de la portée des groupes : l'une peut échouer sans l'autre.
+      try {
+        const outcome = await syncPlanningReachFor(uid);
+        if (outcome !== "unchanged") changed.push(`planning:${uid}`);
+      } catch (err) {
+        failures += 1;
+        await logError({
+          message: `syncGroupReach: portée des plannings non recalculée pour ${uid}`,
           correlationId,
           errorDescription: err instanceof Error ? err.message : String(err),
           userId: uid,

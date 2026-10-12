@@ -24,6 +24,10 @@
  * cours n'est plus prolongé au-delà de son heure. Les callables relisent le
  * document à chaque appel (`requireAuth`) et n'attendent pas cette heure.
  *
+ * Il recalcule aussi la portée des plannings (`planningReach.ts`) quand le
+ * compte gagne ou perd le droit de partager le sien (éditeur ou
+ * administrateur, non révoqué).
+ *
  * Le même déclencheur tient le profil public `user_profiles/{uid}`
  * (`userPublicProfile.ts`, v0.23.14) : un second déclencheur sur
  * `users/{uid}` aurait doublé les réveils pour la même écriture. Le profil
@@ -37,6 +41,7 @@ import { getAuth } from "firebase-admin/auth";
 
 import { REGION } from "../config";
 import { logError, logInfo } from "../logging";
+import { canSharePlanning, resyncPlanningAudienceOf } from "./planningReach";
 import { syncPublicProfile } from "./userPublicProfile";
 
 /** Claims dérivés du document utilisateur. */
@@ -125,6 +130,16 @@ export const syncUserClaims = onDocumentWritten(
     if (sameClaims(before, after)) return;
 
     const afterExists = event.data?.after?.exists === true;
+
+    // Un propriétaire qui devient éditeur partage son planning avec les
+    // groupes qu'il a cochés ; un éditeur rétrogradé ou révoqué cesse de le
+    // partager. `resyncPlanningAudienceOf` journalise et ne lève pas.
+    if (
+      canSharePlanning(event.data?.before?.data() as Record<string, unknown> | undefined) !==
+      canSharePlanning(afterExists ? afterData : undefined)
+    ) {
+      await resyncPlanningAudienceOf(uid);
+    }
 
     if (!afterExists) {
       // Utilisateur supprimé : les claims partent avec le compte, s'il existe

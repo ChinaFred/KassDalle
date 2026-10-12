@@ -20,6 +20,49 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.44 — fonctionnel
+
+Le lecteur ne planifie plus : ni repas, ni cycle, ni préférences du planning, ni garnitures,
+ni liste des ingrédients du planning, ni conseil de conservation. Ces gestes lui sont masqués,
+et `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient au planning avec
+« Planification réservée aux éditeurs ». Ses repas antérieurs restent visibles et
+supprimables : « Mon planning » reste dans son sélecteur tant qu'il lui reste un repas, décoché
+par défaut.
+
+Un éditeur ou un administrateur partage son planning depuis « Préférences du planning »,
+section « Partager mon planning » : une case par groupe familial dont il est membre, rien de
+coché par défaut. Les membres des groupes cochés voient ses repas en lecture seule, sans ses
+courses ni ses préférences. Le partage n'est pas réciproque. Il est suspendu quand le
+propriétaire n'est plus éditeur, et reprend s'il le redevient.
+
+L'écran du planning affiche « Plannings affichés » : un bouton-puce sous la barre sur un
+téléphone, une carte au-dessus du calendrier sur grand écran. Le lecteur voit par défaut tous
+les plannings partagés avec lui, l'éditeur son planning seul ; l'appareil mémorise les
+changements. Chaque repas d'autrui porte le prénom de son propriétaire, sans menu, sans heure
+modifiable et sans ligne d'origine du choix. Une recette que le lecteur ne peut pas lire
+s'affiche par son titre avec « Recette non partagée », sur le planning comme sur une fiche
+ouverte par lien. L'écran de réglages s'appelle partout « Préférences du planning ».
+
+### v0.23.44 — technique
+
+Nouvelle collection `planning_reach/{uid}` (`uids`, `updated_at`) : les propriétaires dont
+`uid` lit le planning, écrite par le serveur seul (`triggers/planningReach.ts`). Elle est
+recalculée par `syncGroupReach` (composition d'un groupe), par le nouveau déclencheur
+`syncPlanningReachOnConfig` (`planning_config/{uid}.shared_group_ids`) et par
+`syncUserClaims` (rôle ou révocation du propriétaire). Nouveau champ
+`planning_config.shared_group_ids` (`List<String>`, 50 au plus). Aucun backfill : sans
+`shared_group_ids` rien n'est partagé.
+
+`firestore.rules` : `planned_meals` se lit aussi par un compte nommé dont `planning_reach`
+contient le propriétaire (`canReadPlanningOf`) ; création et modification exigent
+`isEditor()`, la suppression reste au propriétaire. `planning_config` s'écrit par un éditeur
+pour lui-même ; `planning_reach` ne s'écrit par aucun client. `suggestMealPlanFn`,
+`suggestStorageAdviceFn` et `consolidateShoppingListFn` passent de `requireAuth` à
+`requireEditor`. Le client ouvre un flux Firestore par planning affiché (`uid == propriétaire`),
+jamais une requête `in`, et résout la lisibilité des recettes des repas d'autrui par une
+lecture groupée. 17 tests de règles ajoutés, 4 réécrits ; tests Functions du calcul de la
+portée ; tests Dart du sélecteur, de la redirection et de l'écran.
+
 ### v0.23.43 — fonctionnel
 
 La fiche d'une recette importée depuis un lien affiche l'auteur de la recette, quand la page

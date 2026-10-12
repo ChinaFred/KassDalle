@@ -149,4 +149,5 @@ export { onRecipeWritten } from "./triggers/recipeWritten";
 export { onBookWritten } from "./triggers/bookWritten";
 export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
+export { syncPlanningReachOnConfig } from "./triggers/planningReach";
 export { enforceFounderRole } from "./triggers/founderRole";
