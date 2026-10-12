@@ -60,7 +60,7 @@ export function missingSystemBooks(books: readonly { tags?: unknown }[]): System
 
 /** Vrai pour un compte `reader`, `editor` ou `admin` non révoqué. Pur, testé. */
 export function isApprovedAccount(data: Record<string, unknown> | undefined): boolean {
-  const role = typeof data?.role === "string" ? data.role : null;
+  const role = typeof data?.role === "string" ? data.role.trim() : null;
   return accessDenial({ role, revoked: data?.is_revoked === true }, "approved") === null;
 }
 
