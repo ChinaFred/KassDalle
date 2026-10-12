@@ -1283,6 +1283,7 @@ sequenceDiagram
   participant VI as Cloud Vision
   participant DE as decideModeration
   participant FS as image_moderation
+  participant BU as ai_daily_spend
   actor A as Administrateur
 
   U->>SV: publish(PendingImage)
@@ -1298,6 +1299,10 @@ sequenceDiagram
   alt origine « asset » et empreinte d'une couverture livrée
     Note over CF: approuvée sans analyse, motif bundled_asset
   else toute autre image, « ai » déclaré par le client compris
+    CF->>BU: réserve une place, au coût de l'analyse lu dans la grille
+    alt plafond quotidien du compte atteint
+      CF-->>SV: resource-exhausted, aucune analyse lancée
+    end
     CF->>FS: crée le document, statut en attente
     CF->>VI: SafeSearch et labels
   end
@@ -1783,7 +1788,7 @@ sequenceDiagram
   L->>AU: signInWithGoogle
   AU-->>L: jeton, sans claim de rôle
   L->>FS: crée users/{uid} — les règles imposent role=pending
-  FD->>FS: si l'adresse Auth est celle du fondateur, force admin
+  FD->>FS: si le compte Auth est le fondateur — son adresse, vérifiée, connexion Google — force admin
   R->>R: user.isPending → /pending
   Note over N,R: salle d'attente : son adresse, à communiquer.<br/>Aucune lecture, aucune écriture, aucun appel d'IA
   N->>CF: tente un appel
@@ -1791,7 +1796,7 @@ sequenceDiagram
 
   A->>FS: attribue un premier rôle — reader
   FS->>SY: onDocumentWritten
-  SY->>UP: crée le profil public — nom, couverture des recettes libres
+  SY->>UP: crée le profil public — nom, couverture des recettes libres (adresse Storage du projet seulement)
   SY->>AU: setCustomUserClaims { role, revoked }
   Note over SY,AU: le jeton du compte ne porte le rôle<br/>qu'au renouvellement suivant
   FS-->>R: appUserProvider se met à jour

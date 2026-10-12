@@ -21,7 +21,7 @@ import {
   MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
-import { assertCanModifyRecipe } from "./_recipeAccess";
+import { assertCanModifyRecipe, assertCanNormalizeReferentials } from "./_recipeAccess";
 import {
   LIST_MAX_ITEMS,
   RECIPE_TEXT_MAX_CHARS,
@@ -248,6 +248,13 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
   async (req) => {
     const ctx = await requireAuth(req, "normalisation_referentiels");
     const data = (req.data ?? {}) as Record<string, unknown>;
+    // Écrit dans le référentiel partagé : éditeur, ou lecteur sur sa propre
+    // recette (`assertCanNormalizeReferentials`).
+    await assertCanNormalizeReferentials({
+      recipeId: data.recipeId,
+      callerUid: ctx.userId,
+      correlationId: ctx.correlationId,
+    });
     // Plusieurs postes d'IA partent de cette normalisation (unités, poids,
     // per100g…) : le relevé porte le nom de l'entrée, pas celui d'un poste.
     const { cooklang, ingredients } = await readAiInputs(

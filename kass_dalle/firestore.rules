@@ -124,9 +124,17 @@ service cloud.firestore {
       return 'china.fred.75@gmail.com';
     }
 
+    ///
+    /// L'adresse seule ne suffit pas : elle doit être vérifiée, et la
+    /// connexion passer par Google (audit sécurité, « à confirmer »). Un
+    /// fournisseur qui accepte une adresse non vérifiée — e-mail et mot de
+    /// passe — aurait suffi à se faire reconnaître fondateur. Même contrôle
+    /// côté serveur : `isFounderAccount` (`triggers/founderRole.ts`).
     function isFounder() {
       return isAuthenticated() && 'email' in request.auth.token
-        && request.auth.token.email.lower() == founderEmail();
+        && request.auth.token.email.lower() == founderEmail()
+        && request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'google.com';
     }
 
     // Collection users
@@ -178,6 +186,26 @@ service cloud.firestore {
                    && request.resource.data[field].size() <= 60);
       }
 
+      /// La couverture « Recette libre » (`free_recipe_cover_url`) est
+      /// absente, nulle, ou l'adresse de téléchargement exacte que produit la
+      /// modération (`targetPathFor`, `moderation/promote.ts`) :
+      /// `users/{uid du document}/free_recipe_cover_{horodatage}.{extension}`,
+      /// dans le bucket du projet, de 500 caractères au plus. Le chemin est
+      /// fermé caractère par caractère : ni `..`, ni `%2E`, ni `%25` — un
+      /// `[^/#]+` laissait viser `users%2F..%2Fquarantine%2F…`, un fichier non
+      /// modéré. Seul le titulaire change sa couverture dans le client, et
+      /// la modération la publie sous son propre uid. Elle est recopiée dans `user_profiles`, lu par
+      /// toute la famille : une adresse externe y passait sans modération
+      /// (audit sécurité, « Faible »). Même expression côté serveur
+      /// (`publicCoverUrl`, `triggers/userPublicProfile.ts`).
+      function coverUrlOk() {
+        let url = request.resource.data.get('free_recipe_cover_url', null);
+        return url == null
+          || (url is string && url.size() <= 500
+              && url.matches('https://firebasestorage[.]googleapis[.]com/v0/b/kassdale-6d948[.](firebasestorage[.]app|appspot[.]com)/o/users%2F'
+                             + uid + '%2Ffree_recipe_cover_[0-9]+[.](jpg|jpeg|png|webp)([?][^/#%]*)?'));
+      }
+
       /// À la création, les deux noms sont bornés.
       function namesBounded() {
         return nameOk('display_name') && nameOk('preferred_name');
@@ -204,13 +232,17 @@ service cloud.firestore {
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
                       && request.resource.data.email == request.auth.token.email
-                      && namesBounded();
+                      && namesBounded()
+                      && coverUrlOk();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer. Sans cette réserve, un administrateur adoubé pouvait
       // mettre dehors celui qui l'avait nommé.
       allow update: if !touchesEmail()
                       && touchedNamesBounded()
+                      && (!request.resource.data.diff(resource.data).affectedKeys()
+                             .hasAny(['free_recipe_cover_url'])
+                          || coverUrlOk())
                       && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
                           || (isAuthenticated() && request.auth.uid == uid
                               && !touchesAuthority()));
@@ -963,10 +995,38 @@ service cloud.firestore {
             && getUserData().get('is_revoked', false) == true);
     }
 
+    /// Un champ texte facultatif : absent, nul, ou une chaîne de [max]
+    /// caractères au plus.
+    function optText(data, field, max) {
+      return !(field in data) || data[field] == null
+        || (data[field] is string && data[field].size() <= max);
+    }
+
+    /// Forme d'un rapport d'erreur, tel que l'écrit `ErrorReportService`
+    /// (`ErrorReport.toFirestore`). Tout compte connecté, même en attente, en
+    /// écrit : sans liste de champs ni borne, un rapport servait de stockage
+    /// libre jusqu'au mégaoctet (audit sécurité, « Faible »). Les bornes
+    /// valent le double de la troncature du client, qui ne perd donc aucun
+    /// rapport ; le contexte est une chaîne JSON, que la règle peut mesurer.
+    function isErrorReport(data) {
+      return data.keys().hasOnly(['user_id', 'job_id', 'timestamp', 'app_version',
+                                  'feature', 'error_type', 'error_message',
+                                  'stack_trace', 'context'])
+        && data.user_id == request.auth.uid
+        && (!('timestamp' in data) || data.timestamp is timestamp)
+        && optText(data, 'job_id', 400)
+        && optText(data, 'app_version', 100)
+        && optText(data, 'feature', 400)
+        && optText(data, 'error_type', 400)
+        && optText(data, 'error_message', 8000)
+        && optText(data, 'stack_trace', 4000)
+        && optText(data, 'context', 8000);
+    }
+
     match /error_reports/{reportId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.user_id == request.auth.uid);
       allow create: if isAuthenticated() && !isKnownRevoked()
-        && request.resource.data.user_id == request.auth.uid;
+        && isErrorReport(request.resource.data);
       allow update, delete: if isAdmin();
     }
 

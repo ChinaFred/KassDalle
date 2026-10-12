@@ -6,7 +6,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { recipeWriteDenial } from "../callable/_recipeAccess";
+import { recipeWriteDenial, referentialNormalizationDenial } from "../callable/_recipeAccess";
 import { privacyWithoutBook } from "../triggers/recipePrivacy";
 
 // Faille 5 de l'audit : un conseil ou un calcul écrit sur la recette ne se
@@ -62,5 +62,53 @@ describe("privacyWithoutBook", () => {
   test("sinon partagée", () => {
     assert.equal(privacyWithoutBook(false), false);
     assert.equal(privacyWithoutBook(undefined), false);
+  });
+});
+
+// Audit sécurité : la normalisation écrit dans le référentiel partagé
+// `nutrition_ingredients`. Un lecteur ne l'appelle que pour l'une de ses
+// recettes ; l'éditeur, toujours.
+describe("referentialNormalizationDenial", () => {
+  const own = { created_by: "lecteur", is_private: false };
+
+  test("éditeur et administrateur normalisent, avec ou sans recette", () => {
+    for (const recipeId of [undefined, "r1"]) {
+      assert.equal(
+        referentialNormalizationDenial({
+          callerIsEditor: true,
+          recipeId,
+          recipeData: undefined,
+          callerUid: "editeur",
+        }),
+        null,
+      );
+    }
+  });
+
+  test("un lecteur normalise sa propre recette", () => {
+    assert.equal(
+      referentialNormalizationDenial({
+        callerIsEditor: false,
+        recipeId: "r1",
+        recipeData: own,
+        callerUid: "lecteur",
+      }),
+      null,
+    );
+  });
+
+  test("un lecteur est refusé sans recette, sur une recette absente ou d'un autre", () => {
+    const cases = [
+      { recipeId: undefined, recipeData: undefined },
+      { recipeId: "absente", recipeData: undefined },
+      { recipeId: "r2", recipeData: { created_by: "auteur", is_private: false } },
+      { recipeId: "r3", recipeData: { created_by: "", is_private: false } },
+    ];
+    for (const c of cases) {
+      assert.notEqual(
+        referentialNormalizationDenial({ callerIsEditor: false, callerUid: "lecteur", ...c }),
+        null,
+      );
+    }
   });
 });

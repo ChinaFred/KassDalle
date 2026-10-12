@@ -16,6 +16,7 @@ import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
 import { logError, logInfo, logWarn } from "../logging";
 import { isWellFormedObjectPath } from "../utils/storagePath";
+import { BudgetExceededError } from "../ai/budget";
 import { recordUsage } from "../ai/usage";
 import {
   MODERATION_FEATURE,
@@ -113,6 +114,27 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
 }
 
 /**
+ * Traduction des refus du cœur de modération qui ne demandent aucun contexte,
+ * ou `null` pour une autre erreur. Pure et exportée pour être testée.
+ *
+ * Plafond quotidien atteint (`BudgetExceededError`) : `resource-exhausted`,
+ * avec le message déjà écrit pour la personne qui le lira — ni une panne, ni
+ * un défaut de droits.
+ */
+export function moderationRefusal(err: unknown): HttpsError | null {
+  if (err instanceof BudgetExceededError) {
+    return new HttpsError("resource-exhausted", err.message);
+  }
+  if (err instanceof ImageFormatRejected) {
+    return new HttpsError("failed-precondition", err.detail);
+  }
+  if (err instanceof QuarantineFileMissing) {
+    return new HttpsError("not-found", "Fichier en quarantaine introuvable.");
+  }
+  return null;
+}
+
+/**
  * Analyse et publie un lot d'images.
  *
  * Un lot est un poste de coût à part (`image_moderation_batch`) : le distinguer
@@ -131,14 +153,11 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
       isAdmin: isAdminAccount,
     });
   } catch (err) {
-    // Les deux refus que le cœur signale par une erreur typée sont des refus
-    // d'appel, pas des verdicts : ils se rendent au client tels quels.
-    if (err instanceof ImageFormatRejected) {
-      throw new HttpsError("failed-precondition", err.detail);
-    }
-    if (err instanceof QuarantineFileMissing) {
-      throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
-    }
+    // Les refus que le cœur signale par une erreur typée sont des refus
+    // d'appel, pas des verdicts : ils se rendent au client tels quels. Le
+    // plafond atteint est déjà journalisé par `reserveDailyBudget`.
+    const refusal = moderationRefusal(err);
+    if (refusal) throw refusal;
     if (err instanceof TargetNotOwned) {
       await logWarn({
         message: "Publication refusée : destination d'un autre compte",
@@ -288,6 +307,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
   let relaunched = 0;
   let stillDown = 0;
   let unitsBilled = 0;
+  let imagesAnalysed = 0;
   let engineModel = "";
 
   for (const doc of snap.docs) {
@@ -319,6 +339,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
       const analysis = await analyseImage(bytes, config);
       engineModel = analysis.model;
       unitsBilled += analysis.units;
+      imagesAnalysed += 1;
       const decision = decideModeration(analysis.signals, config.thresholds);
       let publishedUrl: string | null = null;
       let rejectedPath: string | null = null;
@@ -389,6 +410,10 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
       userId: ctx.userId,
       correlationId: ctx.correlationId,
       analyzedImageUnits: unitsBilled,
+      // Une image analysée, un appel au plafond du jour — même compte que
+      // `moderateAndPromote`. La relance, réservée à l'administrateur, n'est
+      // pas soumise au plafond : elle est bornée à vingt images par appel.
+      dailyCalls: Math.max(1, imagesAnalysed),
       entityType: "image_moderation_retry",
     });
   }
