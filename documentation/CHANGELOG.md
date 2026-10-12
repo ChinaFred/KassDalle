@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
-### v0.23.44 — fonctionnel
+### v0.23.45 — fonctionnel
 
 Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par
 e-mail ». L'admin saisit une adresse, choisit un groupe dont il est membre et un rôle (Lecteur
@@ -30,7 +30,7 @@ le rôle et entre dans le groupe sans attendre d'approbation. Une invitation vau
 renvoie ou s'annule depuis la liste. Une adresse qui a déjà un compte est refusée : elle garde
 le parcours actuel (rôle dans l'onglet Comptes, invitation de groupe à accepter).
 
-### v0.23.44 — technique
+### v0.23.45 — technique
 
 Nouvelle callable `manageInvitationFn` (création, renvoi, annulation ; 20 envois par admin et
 par jour) qui envoie par SMTP Gmail avec `nodemailer`, chargé par `await import()`. Deux
@@ -43,6 +43,16 @@ d'écrire les claims, pour qu'une exécution en retard ne remette pas `pending`,
 document disparu comme une suppression. La création d'un compte exige désormais
 `email_verified`. Le statut effectif d'une invitation rejoint la logique dupliquée, avec la
 fixture `email_invitation_status.json`.
+
+### v0.23.44 — technique
+
+La CI ne se rejoue plus en entier sur le push qui fusionne une PR. Un job « Déjà testé en
+PR » compare l'arbre du commit poussé à celui de la tête de la PR, vérifie que cette tête
+contient la `master` d'avant le push et qu'une CI de PR a réussi dessus. Les jobs Flutter,
+Functions et Règles sont alors sautés ; seul le contrôle de version tourne. Sur les cent
+dernières exécutions, ces jobs en double représentaient environ 400 minutes Actions
+facturées sur 1 450. Le dépôt reçoit aussi un fichier `LICENSE` propriétaire : code
+consultable, tous droits réservés, en vue d'un passage du dépôt en public.
 
 ### v0.23.43 — fonctionnel
 
