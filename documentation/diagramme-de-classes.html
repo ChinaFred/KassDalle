@@ -1580,7 +1580,49 @@ classDiagram
     +bool stoppedByErrors
     +bool stoppedByDeadline
     +BackfillFailures? failures
+    +bool termineAuto
     +fromMap(map, finishedAt) RecipeProteinBackfillReport$
+  }
+
+  class BackfillDefinition {
+    +String key
+    +BackfillKind kind
+    +String title
+    +String description
+    +bool usesAi
+    +String passLimit
+    +BackfillDefaultSchedule? defaultSchedule
+  }
+
+  class BackfillRunState {
+    +String key
+    +String? statut
+    +DateTime? enCoursDepuis
+    +DateTime? enCoursExpireLe
+    +DateTime? dernierPassageLe
+    +String? dernierPassageOrigine
+    +bool arretPlafond
+    +bool repriseDue
+    +Map? lastReport
+    +DateTime? termineLe
+    +String? termineVersion
+    +String? terminePar
+    +bool isDone
+    +status(now) BackfillRunStatus
+    +fromMap(key, data) BackfillRunState$
+  }
+
+  class BackfillSchedule {
+    +bool enabled
+    +List~int~ days
+    +int hour
+    +String? programmeParUid
+    +fromMap(raw) BackfillSchedule?$
+  }
+
+  class BackfillSchedules {
+    +scheduleFor(key) BackfillSchedule?
+    +isDefault(key) bool
   }
 
   class BackfillFailure {
@@ -1619,6 +1661,9 @@ classDiagram
   RecipeRolesBackfillReport --&gt; BackfillFailures : failures
   RecipeProteinBackfillReport --&gt; BackfillFailures : failures
   BackfillCounts --&gt; BackfillFailures : failures
+  BackfillRunState --&gt; BackfillFailures : failures du last_report
+  BackfillRunState ..&gt; BackfillDefinition : même clé
+  BackfillSchedules "1" *-- "0..5" BackfillSchedule : une par récurrent
   AiRoutingDiff ..&gt; AiRoutingPolicy : compare la politique en place et celle à charger
 </pre>
       </div>
@@ -1654,15 +1699,25 @@ classDiagram
           configuration de routage enregistrée, avant de l'appliquer.
           <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
           <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
-          <code>last_report</code> de <code>app_config/recipe_roles_backfill_checkpoint</code>.
+          <code>last_report</code> de <code>app_config/backfill_run_recipe_roles</code>.
           <b><code>RecipeProteinBackfillReport</code></b> est celui de
           <code>backfillRecipeProteinFn</code> (examinées, traitées, déjà traitées, ignorées, sans
           réponse, échecs, restantes), lu de la même façon dans
-          <code>app_config/recipe_protein_backfill_checkpoint</code>.
+          <code>app_config/backfill_run_recipe_protein</code>.
           <b><code>BackfillFailures</code></b> est la liste « à revoir » qu'un backfill renvoie
           dans <code>aRevoir</code> : cent <code>BackfillFailure</code> au plus (nature, id, nom,
           raison), et le total compté au-delà. <b><code>BackfillCounts</code></b> porte les
           compteurs des backfills sans compte rendu typé, avec la même liste.
+          <b><code>BackfillDefinition</code></b> classe chaque backfill ponctuel ou récurrent
+          (<code>kBackfillRegistry</code>, même clés que <code>functions/src/backfills/registry.ts</code>).
+          <b><code>BackfillRunState</code></b> lit <code>app_config/backfill_run_&lt;clé&gt;</code> :
+          statut du dernier passage, verrou (<code>en_cours</code> dont l'échéance
+          <code>en_cours_expire_le</code>, écrite par le serveur, est passée =
+          <code>interrompu</code>), compte rendu, « terminé ».
+          <b><code>BackfillSchedules</code></b> lit <code>app_config/backfill_schedules</code>,
+          et retombe sur <code>BackfillDefinition.defaultSchedule</code> tant que la clé
+          manque (<code>isDefault</code>, affiché « (par défaut) »). Lecture stricte,
+          rejouée avec le serveur par la fixture <code>backfill_schedule.json</code>.
         </span>
       </figcaption>
     </figure>

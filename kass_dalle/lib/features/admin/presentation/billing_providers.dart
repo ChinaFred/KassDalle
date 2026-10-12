@@ -1,13 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/ai_reconciliation_repository.dart';
-import '../data/backfill_reports_repository.dart';
+import '../data/backfill_status_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 import '../domain/data_quality_report.dart';
-import '../domain/recipe_protein_backfill_report.dart';
-import '../domain/recipe_roles_backfill_report.dart';
+import '../domain/backfill_status.dart';
+import 'admin_providers.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
 
@@ -99,26 +99,22 @@ final dataQualityReportProvider = FutureProvider.autoDispose<DataQualityReport>(
   },
 );
 
-final backfillReportsRepositoryProvider = Provider<BackfillReportsRepository>(
-  (ref) => BackfillReportsRepository(),
+final backfillStatusRepositoryProvider = Provider<BackfillStatusRepository>(
+  (ref) => BackfillStatusRepository(
+    errorReportService: ref.read(errorReportServiceProvider),
+  ),
 );
 
-/// Dernier compte rendu du backfill « Rôle des recettes dans un repas », lu
-/// en continu depuis son point de contrôle. `null` tant qu'aucun passage n'a
-/// fini. Sert à qui a quitté l'écran avant la fin d'un passage, et à dire
-/// combien de recettes restent à classer avant d'en lancer un autre.
-final recipeRolesBackfillReportProvider =
-    StreamProvider.autoDispose<RecipeRolesBackfillReport?>((ref) {
-      return ref
-          .watch(backfillReportsRepositoryProvider)
-          .watchRecipeRolesReport();
+/// État de chaque backfill (dernier passage, verrou, « terminé »), lu en
+/// continu : un passage programmé apparaît sur sa tuile sans rafraîchir.
+final backfillRunsProvider =
+    StreamProvider.autoDispose<Map<String, BackfillRunState>>((ref) {
+      return ref.watch(backfillStatusRepositoryProvider).watchRuns();
     });
 
-/// Dernier compte rendu du backfill « Protéine et féculent des plats », lu en
-/// continu depuis son point de contrôle. `null` tant qu'aucun passage n'a fini.
-final recipeProteinBackfillReportProvider =
-    StreamProvider.autoDispose<RecipeProteinBackfillReport?>((ref) {
-      return ref
-          .watch(backfillReportsRepositoryProvider)
-          .watchRecipeProteinReport();
-    });
+/// Programmation des backfills récurrents, lue en continu.
+final backfillSchedulesProvider = StreamProvider.autoDispose<BackfillSchedules>(
+  (ref) {
+    return ref.watch(backfillStatusRepositoryProvider).watchSchedules();
+  },
+);

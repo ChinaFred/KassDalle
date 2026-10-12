@@ -26,7 +26,9 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { COLL_BOOKS, COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { WEB_BOOK_TAG, findOrCreateWebBook } from "../pipeline/urlImport";
-import { accessDenial, requireAdmin } from "./_auth";
+import { accessDenial, requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import { BackfillReview, shortErrorMessage, withoutReviewList } from "./_backfillReview";
 import type { BackfillReviewList } from "./_backfillReview";
 
@@ -145,117 +147,143 @@ export interface BackfillSystemBooksResponse {
   aRevoir: BackfillReviewList;
 }
 
-export const backfillSystemBooksFn = onCall(
+interface BackfillSystemBooksRequest {
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
+}
+
+export const backfillSystemBooksFn = onCall<BackfillSystemBooksRequest>(
   {
     region: REGION,
     timeoutSeconds: 540,
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillSystemBooksResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, FEATURE);
-    const db = getFirestore();
-    const deadline = Date.now() + 540_000 - DEADLINE_MARGIN_MS;
-    const response: BackfillSystemBooksResponse = {
-      examines: 0,
-      completes: 0,
-      livresCrees: 0,
-      dejaAJour: 0,
-      ignores: 0,
-      echoues: 0,
-      restants: 0,
-      stoppedByDeadline: false,
-      stoppedByBudget: false,
-      stoppedByErrors: false,
-      completed: false,
-      aRevoir: { items: [], total: 0 },
-    };
-    const review = new BackfillReview();
-
-    // Un document par compte : toute la collection tient en une lecture.
-    // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
-    // si bien qu'une relance avance toujours au-delà des précédents.
-    const users = await db.collection(COLL_USERS).get();
-    let consecutiveFailures = 0;
-    let treated = 0;
-    for (const user of users.docs) {
-      if (Date.now() > deadline) {
-        response.stoppedByDeadline = true;
-        break;
-      }
-      if (treated >= MAX_DOCS) {
-        response.stoppedByBudget = true;
-        break;
-      }
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        response.stoppedByErrors = true;
-        break;
-      }
-      response.examines += 1;
-      const data = user.data() as Record<string, unknown>;
-      if (!isApprovedAccount(data)) {
-        response.ignores += 1;
-        continue;
-      }
-      const uid = user.id;
-      const displayName = (typeof data.display_name === "string" && data.display_name.trim()) || "";
-      let created = 0;
-      try {
-        const owned = await db.collection(COLL_BOOKS).where("created_by", "==", uid).get();
-        const missing = missingSystemBooks(owned.docs.map((d) => d.data()));
-        if (missing.length === 0) {
-          response.dejaAJour += 1;
-          consecutiveFailures = 0;
-          continue;
-        }
-        const now = Timestamp.now();
-        for (const tag of missing) {
-          if (tag === WEB_BOOK_TAG) {
-            await findOrCreateWebBook(uid, ctx);
-          } else {
-            await db.collection(COLL_BOOKS).add(systemBookDocument(tag, uid, displayName, now));
-          }
-          created += 1;
-        }
-        response.completes += 1;
-        response.livresCrees += created;
-        treated += 1;
-        consecutiveFailures = 0;
-      } catch (e) {
-        // Les livres déjà créés pour ce compte restent : le passage suivant
-        // ne crée que ceux qui manquent encore.
-        response.livresCrees += created;
-        response.echoues += 1;
-        consecutiveFailures += 1;
-        review.add({
-          kind: "account",
-          id: uid,
-          label: displayName || uid,
-          reason: `Échec de création : ${shortErrorMessage(e)}`,
-        });
-        await logError("Livres système — échec sur un compte", {
-          correlationId: ctx.correlationId,
-          userId: ctx.userId,
-          moduleType: "DESIGN",
-          feature: FEATURE,
-          errorDescription: e instanceof Error ? e.message : String(e),
-          extra: { accountUid: uid, created, consecutiveFailures },
-        });
-      }
-    }
-    response.restants = users.size - response.examines;
-    response.completed = response.restants === 0 && !response.stoppedByErrors;
-    response.aRevoir = review.toJSON();
-
-    await logInfo({
-      message: "Livres système des comptes — passage",
-      correlationId: ctx.correlationId,
-      userId: ctx.userId,
-      moduleType: "DESIGN",
-      feature: FEATURE,
-      extra: { ...withoutReviewList(response) },
+    return runBackfillFromCallable({
+      key: "system_books",
+      ctx,
+      appVersion: req.data?.appVersion,
+      summarize: summarizeSystemBooks,
+      run: () => runSystemBooksPass(ctx),
     });
-
-    return response;
   },
 );
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeSystemBooks(r: BackfillSystemBooksResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.restants,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}
+
+/** Un passage sur tous les comptes, borné par le délai d'une fonction. */
+async function runSystemBooksPass(ctx: AuthContext): Promise<BackfillSystemBooksResponse> {
+  const db = getFirestore();
+  const deadline = Date.now() + 540_000 - DEADLINE_MARGIN_MS;
+  const response: BackfillSystemBooksResponse = {
+    examines: 0,
+    completes: 0,
+    livresCrees: 0,
+    dejaAJour: 0,
+    ignores: 0,
+    echoues: 0,
+    restants: 0,
+    stoppedByDeadline: false,
+    stoppedByBudget: false,
+    stoppedByErrors: false,
+    completed: false,
+    aRevoir: { items: [], total: 0 },
+  };
+  const review = new BackfillReview();
+
+  // Un document par compte : toute la collection tient en une lecture.
+  // Les comptes déjà à jour ne comptent pas dans la borne d'écritures,
+  // si bien qu'une relance avance toujours au-delà des précédents.
+  const users = await db.collection(COLL_USERS).get();
+  let consecutiveFailures = 0;
+  let treated = 0;
+  for (const user of users.docs) {
+    if (Date.now() > deadline) {
+      response.stoppedByDeadline = true;
+      break;
+    }
+    if (treated >= MAX_DOCS) {
+      response.stoppedByBudget = true;
+      break;
+    }
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      response.stoppedByErrors = true;
+      break;
+    }
+    response.examines += 1;
+    const data = user.data() as Record<string, unknown>;
+    if (!isApprovedAccount(data)) {
+      response.ignores += 1;
+      continue;
+    }
+    const uid = user.id;
+    const displayName = (typeof data.display_name === "string" && data.display_name.trim()) || "";
+    let created = 0;
+    try {
+      const owned = await db.collection(COLL_BOOKS).where("created_by", "==", uid).get();
+      const missing = missingSystemBooks(owned.docs.map((d) => d.data()));
+      if (missing.length === 0) {
+        response.dejaAJour += 1;
+        consecutiveFailures = 0;
+        continue;
+      }
+      const now = Timestamp.now();
+      for (const tag of missing) {
+        if (tag === WEB_BOOK_TAG) {
+          await findOrCreateWebBook(uid, ctx);
+        } else {
+          await db.collection(COLL_BOOKS).add(systemBookDocument(tag, uid, displayName, now));
+        }
+        created += 1;
+      }
+      response.completes += 1;
+      response.livresCrees += created;
+      treated += 1;
+      consecutiveFailures = 0;
+    } catch (e) {
+      // Les livres déjà créés pour ce compte restent : le passage suivant
+      // ne crée que ceux qui manquent encore.
+      response.livresCrees += created;
+      response.echoues += 1;
+      consecutiveFailures += 1;
+      review.add({
+        kind: "account",
+        id: uid,
+        label: displayName || uid,
+        reason: `Échec de création : ${shortErrorMessage(e)}`,
+      });
+      await logError("Livres système — échec sur un compte", {
+        correlationId: ctx.correlationId,
+        userId: ctx.userId,
+        moduleType: "DESIGN",
+        feature: FEATURE,
+        errorDescription: e instanceof Error ? e.message : String(e),
+        extra: { accountUid: uid, created, consecutiveFailures },
+      });
+    }
+  }
+  response.restants = users.size - response.examines;
+  response.completed = response.restants === 0 && !response.stoppedByErrors;
+  response.aRevoir = review.toJSON();
+
+  await logInfo({
+    message: "Livres système des comptes — passage",
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    moduleType: "DESIGN",
+    feature: FEATURE,
+    extra: { ...withoutReviewList(response) },
+  });
+
+  return response;
+}

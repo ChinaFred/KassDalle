@@ -27,7 +27,9 @@ import {
   MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { enrichUnknownUnitsWithAI, unitAcceptsOwnWeight } from "../nutrition/aiEnrichment";
-import { requireAdmin } from "./_auth";
+import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 import { logError, logInfo } from "../logging";
 import {
   AI_PER100G_MARKERS,
@@ -151,6 +153,8 @@ interface BackfillEnrichReferentialsRequest {
    * possède déjà, et coûte donc autant qu'un premier remplissage.
    */
   refreshSodium?: boolean;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
 /**
@@ -174,7 +178,7 @@ function carriesSodium(value: unknown): boolean {
   return false;
 }
 
-interface BackfillEnrichReferentialsResponse {
+export interface BackfillEnrichReferentialsResponse {
   scannedUnits: number;
   enrichedUnits: number;
   scannedIngredients: number;
@@ -211,11 +215,11 @@ async function bigQuery(): Promise<import("@google-cloud/bigquery").BigQuery> {
 export async function ensureAdminWithAudit(
   req: Parameters<typeof requireAdmin>[0],
   op: string,
-): Promise<void> {
+): Promise<AuthContext> {
   try {
     // `op` nomme déjà l'opération : il devient la racine du correlationId,
     // faute de quoi l'écran de journaux titrait ce traitement « call ».
-    await requireAdmin(req, op);
+    return await requireAdmin(req, op);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     await logError({
@@ -267,7 +271,9 @@ function getErrorInfo(err: unknown): ErrorInfo {
 async function logFailure(params: {
   operation: string;
   correlationId: string;
-  req: Parameters<typeof requireAdmin>[0];
+  /** L'appel d'origine, ou à défaut l'uid de qui a lancé (passage programmé). */
+  req?: Parameters<typeof requireAdmin>[0];
+  adminUid?: string | null;
   err: unknown;
   extra?: Record<string, unknown>;
 }): Promise<void> {
@@ -277,7 +283,7 @@ async function logFailure(params: {
     correlationId: params.correlationId,
     errorDescription: info.message,
     extra: {
-      adminUid: params.req.auth?.uid ?? null,
+      adminUid: params.adminUid ?? params.req?.auth?.uid ?? null,
       errorName: info.name,
       errorCode: info.code ?? null,
       errorStack: info.stack ?? null,
@@ -903,291 +909,341 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillEnrichReferentialsResponse> => {
-    await ensureAdminWithAudit(req, "backfill_referentiels");
-    const correlationId = `backfill-enrich-referentials-${Date.now()}`;
+  async (req) => {
+    const ctx = await ensureAdminWithAudit(req, "backfill_referentiels");
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);
     const maxMinutes = Number.isFinite(maxMinutesRaw)
       ? Math.max(2, Math.min(8.8, maxMinutesRaw))
       : 8.5;
-    const softDeadlineMs = Date.now() + Math.floor(maxMinutes * 60_000);
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
-    const refreshSodium = parseBoolean(req.data?.refreshSodium, false);
+    const options: EnrichReferentialsPassOptions = {
+      deadlineMs: Date.now() + Math.floor(maxMinutes * 60_000),
+      resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
+      resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
+      refreshSodium: parseBoolean(req.data?.refreshSodium, false),
+    };
 
-    const db = getFirestore();
-
-    let scannedUnits = 0;
-    let enrichedUnits = 0;
-    let scannedIngredients = 0;
-    let enrichedIngredients = 0;
-    let failedIngredients = 0;
-    let remainingUnitsWithoutWeight = 0;
-    let refreshedIngredients = 0;
-    let stoppedByDeadline = false;
-    const review = new BackfillReview();
-
-    await logInfo({
-      message: "backfillEnrichReferentials: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, maxMinutes, refreshSodium },
+    // Deux backfills derrière une même fonction : l'enrichissement courant
+    // (récurrent) et la réparation du sel (ponctuel). Chacun son état.
+    return runBackfillFromCallable({
+      key: options.refreshSodium ? "refresh_sodium" : "enrich_referentials",
+      ctx,
+      appVersion: req.data?.appVersion,
+      run: () => runEnrichReferentialsPass(ctx, options),
+      summarize: summarizeEnrichReferentials,
     });
+  },
+);
 
-    // ── Phase 1 : poids des unités manquants ────────────────────────────────
-    // La collection nutrition_units est petite : parcours intégral.
-    //
-    // Sautée en mode réparation : le sel doublé est une affaire de valeurs
-    // nutritionnelles, pas de poids d'unités. Repasser ici ferait dépenser des
-    // appels pour un problème qui n'existe pas.
-    if (!refreshSodium) {
-      const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
-      let cursor: string | null = null;
-      const PAGE = 300;
-      for (;;) {
-        let q = db.collection(COLL_NUTRITION_UNITS).orderBy("__name__").limit(PAGE);
-        if (cursor) q = q.startAfter(cursor);
-        const snap = await q.get();
-        if (snap.empty) break;
-        for (const doc of snap.docs) {
-          cursor = doc.id;
-          scannedUnits++;
-          // Comptage et volume n'ont pas de poids propre. Les compter ici parmi
-          // les unités « sans poids » gonflait un reste qui ne descend jamais :
-          // l'enrichissement les écarte, le rapport les réclamait encore.
-          if (!unitAcceptsOwnWeight(doc.id)) continue;
-          const data = doc.data() as Record<string, unknown>;
-          const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
-          if (hasGrams) continue;
-          const ingredients = Array.isArray(data.sample_ingredient_names)
-            ? (data.sample_ingredient_names as unknown[]).filter(
-                (v): v is string => typeof v === "string",
-              )
-            : [];
-          unitsWithoutWeight.push({ id: doc.id, ingredients });
-        }
-        if (snap.size < PAGE) break;
+/** Ce qu'un passage a le droit de faire. */
+export interface EnrichReferentialsPassOptions {
+  /** Instant au-delà duquel on s'arrête proprement. */
+  deadlineMs: number;
+  resumeFromCheckpoint: boolean;
+  resetCheckpoint: boolean;
+  /** Mode réparation du sel (`refresh_sodium`), ponctuel. */
+  refreshSodium: boolean;
+  /**
+   * Saute la phase 1 (poids des unités). Une reprise programmée, à l'heure
+   * suivante, ne reparcourt pas toutes les unités : la phase 1 n'a pas de
+   * curseur, et l'heure précédente vient de les traiter.
+   */
+  skipUnits?: boolean;
+}
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeEnrichReferentials(r: BackfillEnrichReferentialsResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.completed ? 0 : null,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}
+
+/**
+ * Un passage, quelle que soit son entrée : le callable (un administrateur) ou
+ * `scheduledBackfills` (la programmation, imputée à l'administrateur qui l'a
+ * enregistrée — `ctx.userId`).
+ */
+export async function runEnrichReferentialsPass(
+  ctx: AuthContext,
+  options: EnrichReferentialsPassOptions,
+): Promise<BackfillEnrichReferentialsResponse> {
+  const correlationId = ctx.correlationId;
+  const softDeadlineMs = options.deadlineMs;
+  const { resumeFromCheckpoint, resetCheckpoint, refreshSodium } = options;
+
+  const db = getFirestore();
+
+  let scannedUnits = 0;
+  let enrichedUnits = 0;
+  let scannedIngredients = 0;
+  let enrichedIngredients = 0;
+  let failedIngredients = 0;
+  let remainingUnitsWithoutWeight = 0;
+  let refreshedIngredients = 0;
+  let stoppedByDeadline = false;
+  const review = new BackfillReview();
+
+  await logInfo({
+    message: "backfillEnrichReferentials: démarrage",
+    correlationId,
+    extra: { adminUid: ctx.userId, refreshSodium },
+  });
+
+  // ── Phase 1 : poids des unités manquants ────────────────────────────────
+  // La collection nutrition_units est petite : parcours intégral.
+  //
+  // Sautée en mode réparation : le sel doublé est une affaire de valeurs
+  // nutritionnelles, pas de poids d'unités. Repasser ici ferait dépenser des
+  // appels pour un problème qui n'existe pas. Sautée aussi en reprise
+  // programmée (`skipUnits`).
+  if (!refreshSodium && !options.skipUnits) {
+    const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
+    let cursor: string | null = null;
+    const PAGE = 300;
+    for (;;) {
+      let q = db.collection(COLL_NUTRITION_UNITS).orderBy("__name__").limit(PAGE);
+      if (cursor) q = q.startAfter(cursor);
+      const snap = await q.get();
+      if (snap.empty) break;
+      for (const doc of snap.docs) {
+        cursor = doc.id;
+        scannedUnits++;
+        // Comptage et volume n'ont pas de poids propre. Les compter ici parmi
+        // les unités « sans poids » gonflait un reste qui ne descend jamais :
+        // l'enrichissement les écarte, le rapport les réclamait encore.
+        if (!unitAcceptsOwnWeight(doc.id)) continue;
+        const data = doc.data() as Record<string, unknown>;
+        const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
+        if (hasGrams) continue;
+        const ingredients = Array.isArray(data.sample_ingredient_names)
+          ? (data.sample_ingredient_names as unknown[]).filter(
+              (v): v is string => typeof v === "string",
+            )
+          : [];
+        unitsWithoutWeight.push({ id: doc.id, ingredients });
       }
+      if (snap.size < PAGE) break;
+    }
 
-      remainingUnitsWithoutWeight = unitsWithoutWeight.length;
+    remainingUnitsWithoutWeight = unitsWithoutWeight.length;
 
-      // Enrichissement par lots : l'IA reçoit le contexte ingrédient de chaque unité.
-      const BATCH = 15;
-      for (let i = 0; i < unitsWithoutWeight.length; i += BATCH) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        const batch = unitsWithoutWeight.slice(i, i + BATCH);
-        const unitIngredientNames = new Map<string, string[]>();
-        for (const u of batch) {
-          if (u.ingredients.length > 0) unitIngredientNames.set(u.id, u.ingredients);
-        }
-        try {
-          await enrichUnknownUnitsWithAI({
-            unitCanonicals: batch.map((u) => u.id),
-            userId: req.auth?.uid ?? undefined,
-            unitIngredientNames,
-          });
-          // Vérifie combien de docs du lot ont effectivement reçu un poids.
-          const refs = batch.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u.id));
-          const after = await db.getAll(...refs);
-          for (const s of after) {
-            const d = s.data() as Record<string, unknown> | undefined;
-            if (d && typeof d.grams_per_unit === "number" && d.grams_per_unit > 0) {
-              enrichedUnits++;
-              remainingUnitsWithoutWeight = Math.max(0, remainingUnitsWithoutWeight - 1);
-            } else {
-              review.add({
-                kind: "unit",
-                id: s.id,
-                label: s.id,
-                reason: "Poids non estimé par l'IA",
-              });
-            }
-          }
-        } catch (err) {
-          for (const u of batch) {
+    // Enrichissement par lots : l'IA reçoit le contexte ingrédient de chaque unité.
+    const BATCH = 15;
+    for (let i = 0; i < unitsWithoutWeight.length; i += BATCH) {
+      if (Date.now() >= softDeadlineMs) {
+        stoppedByDeadline = true;
+        break;
+      }
+      const batch = unitsWithoutWeight.slice(i, i + BATCH);
+      const unitIngredientNames = new Map<string, string[]>();
+      for (const u of batch) {
+        if (u.ingredients.length > 0) unitIngredientNames.set(u.id, u.ingredients);
+      }
+      try {
+        await enrichUnknownUnitsWithAI({
+          unitCanonicals: batch.map((u) => u.id),
+          userId: ctx.userId,
+          unitIngredientNames,
+        });
+        // Vérifie combien de docs du lot ont effectivement reçu un poids.
+        const refs = batch.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u.id));
+        const after = await db.getAll(...refs);
+        for (const s of after) {
+          const d = s.data() as Record<string, unknown> | undefined;
+          if (d && typeof d.grams_per_unit === "number" && d.grams_per_unit > 0) {
+            enrichedUnits++;
+            remainingUnitsWithoutWeight = Math.max(0, remainingUnitsWithoutWeight - 1);
+          } else {
             review.add({
               kind: "unit",
-              id: u.id,
-              label: u.id,
+              id: s.id,
+              label: s.id,
+              reason: "Poids non estimé par l'IA",
+            });
+          }
+        }
+      } catch (err) {
+        for (const u of batch) {
+          review.add({
+            kind: "unit",
+            id: u.id,
+            label: u.id,
+            reason: `Lot en échec : ${shortErrorMessage(err)}`,
+          });
+        }
+        await logFailure({
+          operation: "backfillEnrichReferentials.units",
+          correlationId,
+          adminUid: ctx.userId,
+          err,
+          extra: { unitIds: batch.map((u) => u.id) },
+        });
+      }
+    }
+  }
+
+  // ── Phase 2 : per100g des ingrédients manquants ─────────────────────────
+  if (!stoppedByDeadline) {
+    // Curseur propre au mode : une réparation reprise à mi-chemin ne doit pas
+    // faire croire au remplissage normal qu'il a déjà vu ces ingrédients.
+    const cursorDocId = refreshSodium
+      ? "backfill_cursor_refresh_sodium_ingredients"
+      : "backfill_cursor_enrich_referentials_ingredients";
+    let cursor: string | null = await getBackfillCursor({
+      db,
+      docId: cursorDocId,
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
+    const PAGE = 100;
+    let finishedScan = false;
+    while (Date.now() < softDeadlineMs) {
+      let q = db.collection(COLL_NUTRITION_INGREDIENTS).orderBy("__name__").limit(PAGE);
+      if (cursor) q = q.startAfter(cursor);
+      const snap = await q.get();
+      if (snap.empty) {
+        finishedScan = true;
+        break;
+      }
+
+      // Une page de cent ingrédients part en lots de vingt : le backfill
+      // dépensait auparavant un appel Gemini par ingrédient, ce qui le faisait
+      // buter sur son échéance bien avant d'avoir fini le référentiel.
+      const pageTargets: Per100gEnrichmentTarget[] = [];
+      for (const doc of snap.docs) {
+        cursor = doc.id;
+        scannedIngredients++;
+        const data = doc.data() as Record<string, unknown>;
+        // En mode normal : les profils vides. En mode réparation : ceux qui
+        // portent du sodium, remplis ou non — ce sont exactement ceux que le
+        // double comptage pouvait fausser.
+        const keep = refreshSodium ? carriesSodium(data.per100g) : !hasPer100gValues(data.per100g);
+        if (!keep) continue;
+        pageTargets.push({
+          id: doc.id,
+          canonicalName: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
+          aliases: Array.isArray(data.aliases)
+            ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
+            : [],
+        });
+      }
+
+      if (pageTargets.length > 0) {
+        try {
+          const estimated = await estimatePer100gForTargets({
+            targets: pageTargets,
+            correlationId,
+            userId: ctx.userId,
+            // Poste distinct : cette réparation est une dépense ponctuelle et
+            // massive, que personne ne saurait retrouver si elle se mêlait au
+            // rattrapage courant.
+            feature: refreshSodium
+              ? "backfill_refresh_sodium_per100g"
+              : "backfill_enrich_referentials_per100g",
+            deadlineMs: softDeadlineMs,
+          });
+          for (const [ingredientId, per100g] of estimated) {
+            const ref = db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId);
+            const payload = {
+              per100g,
+              ...AI_PER100G_MARKERS,
+              last_enriched_at: FieldValue.serverTimestamp(),
+              updated_at: FieldValue.serverTimestamp(),
+            };
+            // Une réparation REMPLACE le profil : `set(merge)` fusionne les
+            // cartes champ par champ et laisserait survivre l'ancienne valeur
+            // de sodium si la nouvelle estimation ne la citait pas. `update`
+            // écrase la carte entière — et le document existe forcément, on
+            // vient de le lire.
+            if (refreshSodium) {
+              await ref.update(payload);
+              refreshedIngredients++;
+            } else {
+              await ref.set(payload, { merge: true });
+            }
+            enrichedIngredients++;
+          }
+          failedIngredients += pageTargets.length - estimated.size;
+          for (const t of pageTargets) {
+            if (estimated.has(t.id)) continue;
+            review.add({
+              kind: "ingredient",
+              id: t.id,
+              label: t.canonicalName,
+              reason: "Valeurs nutritionnelles introuvables",
+            });
+          }
+        } catch (err) {
+          failedIngredients += pageTargets.length;
+          for (const t of pageTargets) {
+            review.add({
+              kind: "ingredient",
+              id: t.id,
+              label: t.canonicalName,
               reason: `Lot en échec : ${shortErrorMessage(err)}`,
             });
           }
           await logFailure({
-            operation: "backfillEnrichReferentials.units",
+            operation: "backfillEnrichReferentials.ingredients",
             correlationId,
-            req,
+            adminUid: ctx.userId,
             err,
-            extra: { unitIds: batch.map((u) => u.id) },
+            extra: { ingredientIds: pageTargets.map((t) => t.id) },
           });
         }
       }
-    }
 
-    // ── Phase 2 : per100g des ingrédients manquants ─────────────────────────
-    if (!stoppedByDeadline) {
-      // Curseur propre au mode : une réparation reprise à mi-chemin ne doit pas
-      // faire croire au remplissage normal qu'il a déjà vu ces ingrédients.
-      const cursorDocId = refreshSodium
-        ? "backfill_cursor_refresh_sodium_ingredients"
-        : "backfill_cursor_enrich_referentials_ingredients";
-      let cursor: string | null = await getBackfillCursor({
-        db,
-        docId: cursorDocId,
-        resumeFromCheckpoint,
-        resetCheckpoint,
-      });
-      const PAGE = 100;
-      let finishedScan = false;
-      while (Date.now() < softDeadlineMs) {
-        let q = db.collection(COLL_NUTRITION_INGREDIENTS).orderBy("__name__").limit(PAGE);
-        if (cursor) q = q.startAfter(cursor);
-        const snap = await q.get();
-        if (snap.empty) {
-          finishedScan = true;
-          break;
-        }
+      if (Date.now() >= softDeadlineMs) stoppedByDeadline = true;
 
-        // Une page de cent ingrédients part en lots de vingt : le backfill
-        // dépensait auparavant un appel Gemini par ingrédient, ce qui le faisait
-        // buter sur son échéance bien avant d'avoir fini le référentiel.
-        const pageTargets: Per100gEnrichmentTarget[] = [];
-        for (const doc of snap.docs) {
-          cursor = doc.id;
-          scannedIngredients++;
-          const data = doc.data() as Record<string, unknown>;
-          // En mode normal : les profils vides. En mode réparation : ceux qui
-          // portent du sodium, remplis ou non — ce sont exactement ceux que le
-          // double comptage pouvait fausser.
-          const keep = refreshSodium
-            ? carriesSodium(data.per100g)
-            : !hasPer100gValues(data.per100g);
-          if (!keep) continue;
-          pageTargets.push({
-            id: doc.id,
-            canonicalName: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
-            aliases: Array.isArray(data.aliases)
-              ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
-              : [],
-          });
-        }
-
-        if (pageTargets.length > 0) {
-          try {
-            const estimated = await estimatePer100gForTargets({
-              targets: pageTargets,
-              correlationId,
-              userId: req.auth?.uid ?? undefined,
-              // Poste distinct : cette réparation est une dépense ponctuelle et
-              // massive, que personne ne saurait retrouver si elle se mêlait au
-              // rattrapage courant.
-              feature: refreshSodium
-                ? "backfill_refresh_sodium_per100g"
-                : "backfill_enrich_referentials_per100g",
-              deadlineMs: softDeadlineMs,
-            });
-            for (const [ingredientId, per100g] of estimated) {
-              const ref = db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId);
-              const payload = {
-                per100g,
-                ...AI_PER100G_MARKERS,
-                last_enriched_at: FieldValue.serverTimestamp(),
-                updated_at: FieldValue.serverTimestamp(),
-              };
-              // Une réparation REMPLACE le profil : `set(merge)` fusionne les
-              // cartes champ par champ et laisserait survivre l'ancienne valeur
-              // de sodium si la nouvelle estimation ne la citait pas. `update`
-              // écrase la carte entière — et le document existe forcément, on
-              // vient de le lire.
-              if (refreshSodium) {
-                await ref.update(payload);
-                refreshedIngredients++;
-              } else {
-                await ref.set(payload, { merge: true });
-              }
-              enrichedIngredients++;
-            }
-            failedIngredients += pageTargets.length - estimated.size;
-            for (const t of pageTargets) {
-              if (estimated.has(t.id)) continue;
-              review.add({
-                kind: "ingredient",
-                id: t.id,
-                label: t.canonicalName,
-                reason: "Valeurs nutritionnelles introuvables",
-              });
-            }
-          } catch (err) {
-            failedIngredients += pageTargets.length;
-            for (const t of pageTargets) {
-              review.add({
-                kind: "ingredient",
-                id: t.id,
-                label: t.canonicalName,
-                reason: `Lot en échec : ${shortErrorMessage(err)}`,
-              });
-            }
-            await logFailure({
-              operation: "backfillEnrichReferentials.ingredients",
-              correlationId,
-              req,
-              err,
-              extra: { ingredientIds: pageTargets.map((t) => t.id) },
-            });
-          }
-        }
-
-        if (Date.now() >= softDeadlineMs) stoppedByDeadline = true;
-
-        if (stoppedByDeadline) break;
-        if (snap.size < PAGE) {
-          finishedScan = true;
-          break;
-        }
+      if (stoppedByDeadline) break;
+      if (snap.size < PAGE) {
+        finishedScan = true;
+        break;
       }
-
-      // Reprise : on garde le curseur si on n'a pas terminé, sinon on le remet à zéro.
-      await setBackfillCursor({
-        db,
-        docId: cursorDocId,
-        lastDocId: finishedScan ? null : cursor,
-        operation: "backfillEnrichReferentials",
-        adminUid: req.auth?.uid,
-      });
     }
 
-    const completed = !stoppedByDeadline;
-
-    await logInfo({
-      message: "backfillEnrichReferentials: terminé",
-      correlationId,
-      extra: {
-        scannedUnits,
-        enrichedUnits,
-        scannedIngredients,
-        enrichedIngredients,
-        failedIngredients,
-        refreshedIngredients,
-        refreshSodium,
-        completed,
-        stoppedByDeadline,
-        aRevoirTotal: review.toJSON().total,
-      },
+    // Reprise : on garde le curseur si on n'a pas terminé, sinon on le remet à zéro.
+    await setBackfillCursor({
+      db,
+      docId: cursorDocId,
+      lastDocId: finishedScan ? null : cursor,
+      operation: "backfillEnrichReferentials",
+      adminUid: ctx.userId,
     });
+  }
 
-    return {
+  const completed = !stoppedByDeadline;
+
+  await logInfo({
+    message: "backfillEnrichReferentials: terminé",
+    correlationId,
+    extra: {
       scannedUnits,
       enrichedUnits,
       scannedIngredients,
       enrichedIngredients,
       failedIngredients,
       refreshedIngredients,
-      remainingUnitsWithoutWeight,
+      refreshSodium,
       completed,
       stoppedByDeadline,
-      aRevoir: review.toJSON(),
-    };
-  },
-);
+      aRevoirTotal: review.toJSON().total,
+    },
+  });
+
+  return {
+    scannedUnits,
+    enrichedUnits,
+    scannedIngredients,
+    enrichedIngredients,
+    failedIngredients,
+    refreshedIngredients,
+    remainingUnitsWithoutWeight,
+    completed,
+    stoppedByDeadline,
+    aRevoir: review.toJSON(),
+  };
+}

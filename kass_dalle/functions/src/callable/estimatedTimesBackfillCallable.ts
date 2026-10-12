@@ -62,13 +62,15 @@ import {
 } from "../triggers/recipeEstimatedTimes";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { runBackfillFromCallable } from "../backfills/runner";
+import type { PassSummary } from "../backfills/schedule";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
   "https://kassdale-6d948.firebaseapp.com",
 ];
 
-/** Où l'on retient la dernière recette examinée, le dernier compte rendu et le verrou. */
+/** Où l'on retient la dernière recette examinée et le verrou propre aux durées estimées. */
 export const ESTIMATED_TIMES_CHECKPOINT_DOC_ID = "estimated_times_backfill_checkpoint";
 
 const FEATURE = "backfill_time_estimate_batch";
@@ -89,6 +91,8 @@ interface BackfillEstimatedTimesRequest {
   maxRecipes?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /** Version de l'application qui lance, pour l'état du backfill. */
+  appVersion?: string;
 }
 
 export interface BackfillEstimatedTimesResponse {
@@ -118,7 +122,7 @@ export interface BackfillEstimatedTimesResponse {
   /**
    * Recettes à revoir, chacune avec son titre et la raison : lot en échec,
    * pas de réponse de l'IA, aucune durée estimée, écriture refusée. Recopiée
-   * dans `last_report`, jamais dans les journaux.
+   * dans le `last_report` de l'état du backfill, jamais dans les journaux.
    */
   aRevoir: BackfillReviewList;
   /**
@@ -365,32 +369,60 @@ export const backfillEstimatedTimesFn = onCall<BackfillEstimatedTimesRequest>(
     cors: ALLOWED_ORIGINS,
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
-  async (req): Promise<BackfillEstimatedTimesResponse> => {
+  async (req) => {
     const ctx = await requireAdmin(req, FEATURE);
-    const db = getFirestore();
-    const response = emptyEstimatedTimesResponse();
-
-    const lockId = randomUUID();
-    if (!(await acquireLock(db, lockId))) {
-      response.dejaEnCours = true;
-      await logInfo({
-        message: "Durées estimées — passage déjà en cours, rien n'est lancé",
-        correlationId: ctx.correlationId,
-        userId: ctx.userId,
-        moduleType: "DESIGN",
-        feature: FEATURE,
-      });
-      return response;
-    }
-
-    try {
-      await runBackfill(db, ctx, req.data, response);
-    } finally {
-      await releaseLock(db, ctx, lockId);
-    }
-    return response;
+    return runBackfillFromCallable({
+      key: "estimated_times",
+      ctx,
+      appVersion: req.data?.appVersion,
+      summarize: summarizeEstimatedTimes,
+      run: () => runEstimatedTimesPass(ctx, req.data),
+    });
   },
 );
+
+/** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
+export function summarizeEstimatedTimes(r: BackfillEstimatedTimesResponse): PassSummary {
+  return {
+    complete: r.completed,
+    remaining: r.completed ? 0 : null,
+    toReview: r.aRevoir.total,
+    spendCapHit: false,
+  };
+}
+
+/**
+ * Un passage sous le verrou propre aux durées estimées, posé avant le verrou
+ * commun des backfills (`backfills/runner.ts`) et gardé : il protège aussi des
+ * passages lancés par une version antérieure du client.
+ */
+async function runEstimatedTimesPass(
+  ctx: AuthContext,
+  data: BackfillEstimatedTimesRequest | undefined,
+): Promise<BackfillEstimatedTimesResponse> {
+  const db = getFirestore();
+  const response = emptyEstimatedTimesResponse();
+
+  const lockId = randomUUID();
+  if (!(await acquireLock(db, lockId))) {
+    response.dejaEnCours = true;
+    await logInfo({
+      message: "Durées estimées — passage déjà en cours, rien n'est lancé",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      feature: FEATURE,
+    });
+    return response;
+  }
+
+  try {
+    await runBackfill(db, ctx, data, response);
+  } finally {
+    await releaseLock(db, ctx, lockId);
+  }
+  return response;
+}
 
 /** Une recette telle que le parcours la lit. */
 export interface ScannedDoc<T> {
@@ -581,14 +613,13 @@ async function runBackfill(
 
   // Le curseur revient au début quand tout est passé. Sinon il retient le
   // dernier document traité : un lot non soumis sera relu au prochain
-  // passage. Le compte rendu part avec lui, pour l'écran.
+  // passage. Le compte rendu part dans l'état du backfill (`backfills/runner.ts`).
   await setBackfillCursor({
     db,
     docId: ESTIMATED_TIMES_CHECKPOINT_DOC_ID,
     lastDocId: cursor,
     operation: FEATURE,
     adminUid: ctx.userId,
-    lastReport: { ...response },
   });
 
   await logInfo({
