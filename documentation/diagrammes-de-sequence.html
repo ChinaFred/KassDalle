@@ -2050,7 +2050,9 @@ sequenceDiagram
       vérifient que le créateur d'un livre ou d'une recette partage un groupe avec le lecteur, par
       une lecture de <code>group_reach/{lecteur}</code>, que le serveur seul écrit. Il n'existe pas
       de partage nominatif : un livre est partagé avec les membres de ses groupes, ou privé.
-      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId} → syncGroupReach → group_reach/{uid}</span>
+      Le propriétaire trouve la personne par son nom (profils publics) ou par son adresse
+      e-mail exacte, que le serveur seul compare (<code>findMemberByEmailFn</code>).
+      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId} → syncGroupReach → group_reach/{uid} ; recherche par adresse : group_repository.dart → callable/memberSearchCallable.ts → invitations/memberSearch.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -2063,6 +2065,9 @@ sequenceDiagram
   participant R as GroupRepository
   participant FS as groups/{groupId}
   participant US as user_profiles
+  participant MS as findMemberByEmailFn
+  participant MD as member_email_search_daily
+  participant UU as users
   participant SR as syncGroupReach
   participant GR as group_reach/{uid}
   participant BL as Bibliothèque, recherche, planning
@@ -2074,9 +2079,21 @@ sequenceDiagram
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
-  O->>G: Rechercher une personne à inviter…
-  G->>US: searchUsers — lecture plafonnée à 200 profils publics
-  US-->>G: candidats — nom seul, ni adresse ni rôle
+  O->>G: Nom ou adresse e-mail complète
+  alt saisie sans « @ » — par nom, à chaque frappe
+    G->>US: searchUsers — lecture plafonnée à 200 profils publics
+    US-->>G: candidats — nom seul, ni adresse ni rôle
+  else adresse complète — à la validation ou à la flèche « Chercher cette adresse »
+    G->>R: findMemberByEmail(groupId, adresse)
+    R->>MS: findMemberByEmailFn {groupId, email}
+    MS->>MS: requireAuth (approuvé, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
+    MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
+    MS->>UU: parcours de users (email, role, is_revoked, noms)
+    MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
+    MS-->>R: {found: false} ou {found: true, uid, displayName, preferredName}<br/>jamais l'adresse
+    R-->>G: UserProfile ou « Aucun compte pour cette adresse. »<br/>plafond : « Trop de recherches aujourd'hui. Réessayez demain. »
+  end
+  Note over G: membres et invités écartés de la liste, dans les deux cas
   O->>G: Inviter dans le groupe
   G->>R: inviteMember(groupId, uid)
   R->>FS: invited_ids += uid

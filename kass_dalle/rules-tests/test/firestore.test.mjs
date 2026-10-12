@@ -2267,6 +2267,28 @@ describe("invitations — lecture administrateur, écriture serveur seule", () =
   });
 });
 
+// ── member_email_search_daily ────────────────────────────────────────────
+
+describe("member_email_search_daily — compteur serveur seul", () => {
+  const DOC = "member_email_search_daily/reader_2026-10-12";
+
+  beforeEach(async () => {
+    await seedDocs(env, { [DOC]: { uid: READER, day: "2026-10-12", count: 3 } });
+  });
+
+  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} ne lit ni n'écrit le compteur`, async () => {
+      await assertFails(db(persona).doc(DOC).get());
+      await assertFails(db(persona).collection("member_email_search_daily").get());
+      await assertFails(db(persona).doc(DOC).update({ count: 0 }));
+      await assertFails(db(persona).doc(DOC).delete());
+      await assertFails(
+        db(persona).doc("member_email_search_daily/new").set({ uid: READER, count: 0 }),
+      );
+    });
+  }
+});
+
 // ── processing_jobs ──────────────────────────────────────────────────────
 
 describe("processing_jobs", () => {
