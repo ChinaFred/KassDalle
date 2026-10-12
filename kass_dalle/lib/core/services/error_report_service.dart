@@ -31,6 +31,10 @@ class ErrorReport {
   /// Paramètres du contexte au moment de l'erreur.
   final Map<String, dynamic> context;
 
+  /// Erreur de lecture du contexte (JSON illisible), ou `null`. Le texte est
+  /// gardé sous `brut` ; [ErrorReportService] remonte l'erreur une fois.
+  final FormatException? contextParseError;
+
   ErrorReport({
     required this.id,
     required this.userId,
@@ -42,6 +46,7 @@ class ErrorReport {
     required this.errorMessage,
     this.stackTrace,
     required this.context,
+    this.contextParseError,
   });
 
   // ── Bornes d'écriture ─────────────────────────────────────────────────────
@@ -122,26 +127,35 @@ class ErrorReport {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  /// Le contexte relu : une chaîne JSON depuis la v0.23.46, une carte avant.
-  static Map<String, dynamic> _parseContext(dynamic raw) {
+  /// Le contexte relu : une chaîne JSON depuis la v0.23.48, une carte avant.
+  /// Un JSON illisible garde son texte sous `brut` et rend son erreur, que le
+  /// service remonte.
+  static ({Map<String, dynamic> context, FormatException? error}) _parseContext(
+    dynamic raw,
+  ) {
     if (raw is Map) {
-      return raw.map((key, value) => MapEntry(key.toString(), value));
+      return (
+        context: raw.map((key, value) => MapEntry(key.toString(), value)),
+        error: null,
+      );
     }
     if (raw is String && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is Map) {
-          return decoded.map((key, value) => MapEntry(key.toString(), value));
+          return (
+            context: decoded.map(
+              (key, value) => MapEntry(key.toString(), value),
+            ),
+            error: null,
+          );
         }
-      } on FormatException {
-        // Pas de remontée ici : ce service est celui qui remonte les erreurs,
-        // et il lit sa propre collection. Le texte n'est pas perdu : il
-        // s'affiche tel quel sous `brut`.
-        return {'brut': raw};
+        return (context: {'brut': raw}, error: null);
+      } on FormatException catch (e) {
+        return (context: {'brut': raw}, error: e);
       }
-      return {'brut': raw};
     }
-    return <String, dynamic>{};
+    return (context: <String, dynamic>{}, error: null);
   }
 
   static String? _asNullableString(dynamic raw) {
@@ -150,19 +164,22 @@ class ErrorReport {
     return raw.toString();
   }
 
-  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) =>
-      ErrorReport(
-        id: id,
-        userId: _asNullableString(data['user_id']) ?? '',
-        jobId: _asNullableString(data['job_id']),
-        timestamp: _parseTimestamp(data['timestamp']),
-        appVersion: _asNullableString(data['app_version']) ?? '',
-        feature: _asNullableString(data['feature']) ?? '',
-        errorType: _asNullableString(data['error_type']) ?? '',
-        errorMessage: _asNullableString(data['error_message']) ?? '',
-        stackTrace: _asNullableString(data['stack_trace']),
-        context: _parseContext(data['context']),
-      );
+  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) {
+    final parsed = _parseContext(data['context']);
+    return ErrorReport(
+      id: id,
+      userId: _asNullableString(data['user_id']) ?? '',
+      jobId: _asNullableString(data['job_id']),
+      timestamp: _parseTimestamp(data['timestamp']),
+      appVersion: _asNullableString(data['app_version']) ?? '',
+      feature: _asNullableString(data['feature']) ?? '',
+      errorType: _asNullableString(data['error_type']) ?? '',
+      errorMessage: _asNullableString(data['error_message']) ?? '',
+      stackTrace: _asNullableString(data['stack_trace']),
+      context: parsed.context,
+      contextParseError: parsed.error,
+    );
+  }
 }
 
 /// Service de persistance des rapports d'erreur.
@@ -270,6 +287,30 @@ class ErrorReportService {
     return ref.id;
   }
 
+  /// Rapports dont le contexte illisible a déjà été remonté, par session.
+  ///
+  /// Remonter écrit un nouveau rapport, ce qui relance la lecture en flux :
+  /// sans ce registre, chaque relecture du même document en écrirait un
+  /// autre, sans fin. Le rapport écrit porte un contexte valide : il ne
+  /// déclenche rien à son tour.
+  static final Set<String> _reportedParseFailures = <String>{};
+
+  void _reportParseFailure(ErrorReport report) {
+    final error = report.contextParseError;
+    if (error == null || !_reportedParseFailures.add(report.id)) return;
+    reportError(
+      feature: 'error_report.parse',
+      error: error,
+      stackTrace: StackTrace.current,
+      context: {'reportId': report.id},
+    ).catchError((Object e, StackTrace st) {
+      // Écrire dans la collection en panne ne peut pas se remonter par ce
+      // même service : la console est le dernier recours.
+      debugPrint('[ErrorReportService] remontée impossible : $e\n$st');
+      return '';
+    });
+  }
+
   /// Tous les rapports — réservé à l'admin.
   Stream<List<ErrorReport>> watchAll() {
     return _col
@@ -280,7 +321,9 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+              final report = ErrorReport.fromFirestore(d.id, d.data());
+              reports.add(report);
+              _reportParseFailure(report);
             } catch (error, stackTrace) {
               // Un document mal formé ne doit pas casser toute la liste. On ne
               // peut pas remonter l'incident via ce service — ce serait écrire
@@ -307,7 +350,9 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+              final report = ErrorReport.fromFirestore(d.id, d.data());
+              reports.add(report);
+              _reportParseFailure(report);
             } catch (error, stackTrace) {
               // Un document mal formé ne doit pas casser toute la liste. On ne
               // peut pas remonter l'incident via ce service — ce serait écrire

@@ -117,13 +117,49 @@ export async function visionAnalysisCostUsd(): Promise<number | null> {
       table: await loadAiPricingTable(),
     });
   } catch (err) {
-    await logWarn({
+    await logError({
       message: "Modération : coût d'une analyse inconnu, réservation à la moyenne du jour",
       moduleType: "MODERATION",
       errorDescription: err instanceof Error ? err.message : String(err),
     });
     return null;
   }
+}
+
+/** Ce qu'une analyse laisse à enregistrer : modèle, unités facturées, issue. */
+export interface VisionUsageEntry {
+  /** `null` quand le moteur n'a pas répondu. */
+  model: string | null;
+  units: number;
+  status: "ok" | "error";
+}
+
+/**
+ * Lance une analyse et enregistre sa consommation **aussitôt**, réussie ou
+ * non, avant de rendre la main. Testée seule, avec des doublures.
+ *
+ * L'enregistrement se faisait en fin de lot : les analyses d'un lot de
+ * vingt-cinq images n'entraient dans la dépense du jour qu'à la fin, et le
+ * lot pouvait dépasser le plafond de vingt-cinq analyses (relecture
+ * sécurité). Appelée à l'intérieur de la réservation (`withDailyBudget`),
+ * elle inscrit la dépense avant que la place soit rendue : l'image suivante
+ * lit un plafond à jour. `record` ne doit pas lever.
+ */
+export async function analyseAndRecord<T extends { model: string; units: number }>(args: {
+  analyse: () => Promise<T>;
+  record: (entry: VisionUsageEntry) => Promise<void>;
+}): Promise<T> {
+  let analysis: T;
+  try {
+    analysis = await args.analyse();
+  } catch (err) {
+    // Un appel dont le moteur est tombé ne consomme rien, mais reste visible
+    // avec le statut `error`.
+    await args.record({ model: null, units: 0, status: "error" });
+    throw err;
+  }
+  await args.record({ model: analysis.model, units: analysis.units, status: "ok" });
+  return analysis;
 }
 
 /**
@@ -159,236 +195,230 @@ export async function moderateAndPromote(args: {
   const bucket = getStorage().bucket();
   const outcomes: ItemOutcome[] = [];
   let unitsBilled = 0;
-  let imagesAnalysed = 0;
   let engineModel = "moderation-disabled";
-  let engineFailed = false;
   // Lu une fois par lot, au premier besoin : une image sans analyse (asset,
   // image de l'IA, modération coupée) ne lit pas la grille.
   let analysisCostUsd: number | null | undefined;
 
-  // Le lot s'arrête à la première erreur (format, fichier absent, plafond
-  // atteint). Les analyses déjà faites sont facturées : `finally` les
-  // enregistre quand même, sans quoi elles sortaient du reporting et du
-  // plafond du jour.
-  try {
-    for (const item of items) {
-      const docRef = db.collection(COLLECTION).doc();
-      const file = bucket.file(item.quarantinePath);
-
-      const [exists] = await file.exists();
-      if (!exists) {
-        throw new QuarantineFileMissing(item.quarantinePath);
-      }
-      const [meta] = await file.getMetadata();
-      // La version analysée est celle qu'on promouvra : téléchargement, copie
-      // et refus portent tous sur cette génération (`pinnedGeneration`).
-      const generation = pinnedGeneration(meta.generation);
-      const [bytes] = await bucket
-        .file(item.quarantinePath, generation != null ? { generation } : undefined)
-        .download();
-
-      // Le format d'abord : inutile d'envoyer un exécutable renommé à un moteur
-      // d'analyse d'images. Ce refus-là n'est pas une décision de modération, il
-      // ne crée donc pas de ligne de journal — il rejette l'appel.
-      const fileName = item.quarantinePath.split("/").pop() ?? "upload";
-      const formatScan = scanUpload({ fileName, mimeType: meta.contentType, bytes });
-      if (!formatScan.clean) {
-        await logError({
-          message: "Image bloquée par le scan de format avant modération",
-          moduleType: "MODERATION",
-          userId,
-          correlationId,
-          extra: { quarantinePath: item.quarantinePath, reason: formatScan.reason },
-        });
-        throw new ImageFormatRejected(
-          item.quarantinePath,
-          formatScan.reason ?? "Le fichier a été bloqué par le scan de sécurité.",
-        );
-      }
-
-      // L'origine retenue, pas celle déclarée : un `asset` dont l'empreinte
-      // n'est pas celle d'une image livrée redevient une image d'utilisateur.
-      const { origin, downgraded } = resolveImageOrigin(item.origin, sha256Hex(bytes));
-      if (downgraded) {
-        await logWarn({
-          message: "Image déclarée « asset » sans empreinte connue — analysée comme une autre",
-          moduleType: "MODERATION",
-          userId,
-          correlationId,
-          extra: { quarantinePath: item.quarantinePath, targetKind: item.targetKind },
-        });
-      }
-
-      let decision: ModerationDecision;
-      let signals: Record<string, unknown> = {};
-      let provider = config.provider;
-
-      if (origin !== "user") {
-        // Ni analysée, ni facturée — mais journalisée, et à son motif propre.
-        decision = {
-          status: "approved",
-          reason: origin === "ai" ? "ai_generated" : "bundled_asset",
-          culinaryMatches: [],
-        };
-      } else if (!config.enabled) {
-        // Modération coupée : on publie, et on le dit. Approuver en prétendant
-        // qu'aucun signal n'a été vu ferait mentir le journal.
-        decision = { status: "approved", reason: "moderation_disabled", culinaryMatches: [] };
-      } else {
-        // Plafond quotidien du compte, réservé avant l'analyse : chaque image
-        // analysée est facturée par Cloud Vision. Sans cette réservation, un
-        // compte qui rappelait la fonction en boucle sur sa quarantaine
-        // déclenchait des analyses sans limite. Un refus remonte à l'appelant
-        // (`BudgetExceededError`) : ce n'est pas une panne du moteur, l'image
-        // ne passe pas en attente.
-        if (analysisCostUsd === undefined) analysisCostUsd = await visionAnalysisCostUsd();
-        const estimateUsd = analysisCostUsd;
-        let analysis: EngineAnalysis | null = null;
-        try {
-          analysis = await withDailyBudget(userId, feature, () => analyseImage(bytes, config), {
-            estimateUsd,
-          });
-        } catch (err) {
-          if (err instanceof BudgetExceededError) throw err;
-          // Pas de repli : publier par défaut, c'est modérer pour rien ; refuser
-          // par défaut, c'est accuser à tort. L'image attend.
-          engineFailed = true;
-          await logError({
-            message: "Moteur de modération injoignable — image laissée en attente",
-            moduleType: "MODERATION",
-            userId,
-            correlationId,
-            errorDescription: err instanceof Error ? err.message : String(err),
-            extra: { quarantinePath: item.quarantinePath, provider: config.provider },
-          });
-        }
-        if (analysis == null) {
-          decision = { status: "pending", reason: "engine_unavailable", culinaryMatches: [] };
-        } else {
-          engineModel = analysis.model;
-          provider = analysis.provider;
-          unitsBilled += analysis.units;
-          imagesAnalysed += 1;
-          signals = {
-            adult: analysis.signals.adult,
-            racy: analysis.signals.racy,
-            violence: analysis.signals.violence,
-            medical: analysis.signals.medical,
-            raw: analysis.signals.raw,
-            labels: analysis.signals.labels,
-          };
-          decision = decideModeration(analysis.signals, config.thresholds);
-        }
-      }
-
-      const targetPath = targetPathFor({
-        kind: item.targetKind,
-        uid: userId,
-        ownerId: item.ownerId,
-        quarantinePath: item.quarantinePath,
-        timestampMs: Date.now(),
-      });
-
-      let publishedUrl: string | null = null;
-      let rejectedPath: string | null = null;
-      if (decision.status === "approved") {
-        const promoted = await promoteImage({
-          quarantinePath: item.quarantinePath,
-          targetPath,
-          contentType: item.contentType,
-          moderationId: docRef.id,
-          correlationId,
-          sourceGeneration: generation,
-        });
-        publishedUrl = promoted.downloadUrl;
-      } else if (decision.status === "rejected") {
-        // Conservée, pas détruite : un refus qu'on ne peut pas relire ne peut pas
-        // être jugé, et ce sont les faux refus qu'il faut le plus pouvoir voir.
-        rejectedPath = await quarantineToRejected({
-          quarantinePath: item.quarantinePath,
-          moderationId: docRef.id,
-          correlationId,
-          sourceGeneration: generation,
-        });
-      }
-
-      await docRef.set({
-        status: decision.status,
-        uid: userId,
-        quarantine_path: item.quarantinePath,
-        // La version analysée : une décision d'administrateur promeut celle-ci,
-        // pas un fichier réécrit depuis dans la quarantaine.
-        quarantine_generation: generation != null ? String(generation) : null,
-        target_path: targetPath,
-        target_kind: item.targetKind,
-        owner_id: item.ownerId,
-        mime_type: meta.contentType ?? item.contentType,
-        size_bytes: bytes.length,
-        signals,
-        culinary_matches: decision.culinaryMatches,
-        engine: origin !== "user" ? "none" : config.enabled ? provider : "none",
-        engine_version: engineModel,
-        decision_reason: decision.reason,
-        correlation_id: correlationId,
-        published_url: publishedUrl,
-        rejected_path: rejectedPath,
-        attach_on_approval: item.attachOnApproval === true,
-        created_at: FieldValue.serverTimestamp(),
-        decided_at: FieldValue.serverTimestamp(),
-        reviewed_by: null,
-        reviewed_at: null,
-        review_note: null,
-      });
-
-      await attachApprovedIllustration({
-        attachOnApproval: item.attachOnApproval === true,
-        targetKind: item.targetKind,
-        ownerId: item.ownerId,
-        url: publishedUrl,
+  // Une ligne d'usage par analyse, écrite dès l'analyse faite : le lot peut
+  // s'arrêter à la première erreur (format, fichier absent, plafond atteint)
+  // sans qu'une analyse facturée sorte du reporting ni du plafond du jour.
+  const recordAnalysis = async (entry: VisionUsageEntry): Promise<void> => {
+    try {
+      await recordUsage({
+        feature,
+        provider: "vision",
+        model: entry.model ?? VISION_MODEL_ID,
+        userId,
         correlationId,
-        moderationId: docRef.id,
+        analyzedImageUnits: entry.units,
+        entityType: "image_moderation",
+        status: entry.status,
       });
-
-      outcomes.push({
-        moderationId: docRef.id,
-        status: decision.status,
-        reason: decision.reason,
-        url: publishedUrl,
+    } catch (err) {
+      // Best-effort : l'analyse est faite et facturée, la perdre ici
+      // fausserait le reporting et le plafond d'autant. Visible.
+      await logError({
+        message: "Modération : consommation Cloud Vision non enregistrée",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        feature,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        extra: { units: entry.units, status: entry.status },
       });
     }
-  } finally {
-    // Une analyse facturée est enregistrée même si le verdict a été négatif :
-    // le fournisseur l'a servie et la facture. Un appel dont le moteur est
-    // tombé ne consomme rien, mais reste visible avec le statut `error`.
-    // Chaque image analysée compte pour un appel au plafond du jour.
-    if (unitsBilled > 0 || engineFailed) {
+  };
+
+  for (const item of items) {
+    const docRef = db.collection(COLLECTION).doc();
+    const file = bucket.file(item.quarantinePath);
+
+    const [exists] = await file.exists();
+    if (!exists) {
+      throw new QuarantineFileMissing(item.quarantinePath);
+    }
+    const [meta] = await file.getMetadata();
+    // La version analysée est celle qu'on promouvra : téléchargement, copie
+    // et refus portent tous sur cette génération (`pinnedGeneration`).
+    const generation = pinnedGeneration(meta.generation);
+    const [bytes] = await bucket
+      .file(item.quarantinePath, generation != null ? { generation } : undefined)
+      .download();
+
+    // Le format d'abord : inutile d'envoyer un exécutable renommé à un moteur
+    // d'analyse d'images. Ce refus-là n'est pas une décision de modération, il
+    // ne crée donc pas de ligne de journal — il rejette l'appel.
+    const fileName = item.quarantinePath.split("/").pop() ?? "upload";
+    const formatScan = scanUpload({ fileName, mimeType: meta.contentType, bytes });
+    if (!formatScan.clean) {
+      await logError({
+        message: "Image bloquée par le scan de format avant modération",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        extra: { quarantinePath: item.quarantinePath, reason: formatScan.reason },
+      });
+      throw new ImageFormatRejected(
+        item.quarantinePath,
+        formatScan.reason ?? "Le fichier a été bloqué par le scan de sécurité.",
+      );
+    }
+
+    // L'origine retenue, pas celle déclarée : un `asset` dont l'empreinte
+    // n'est pas celle d'une image livrée redevient une image d'utilisateur.
+    const { origin, downgraded } = resolveImageOrigin(item.origin, sha256Hex(bytes));
+    if (downgraded) {
+      await logWarn({
+        message: "Image déclarée « asset » sans empreinte connue — analysée comme une autre",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        extra: { quarantinePath: item.quarantinePath, targetKind: item.targetKind },
+      });
+    }
+
+    let decision: ModerationDecision;
+    let signals: Record<string, unknown> = {};
+    let provider = config.provider;
+
+    if (origin !== "user") {
+      // Ni analysée, ni facturée — mais journalisée, et à son motif propre.
+      decision = {
+        status: "approved",
+        reason: origin === "ai" ? "ai_generated" : "bundled_asset",
+        culinaryMatches: [],
+      };
+    } else if (!config.enabled) {
+      // Modération coupée : on publie, et on le dit. Approuver en prétendant
+      // qu'aucun signal n'a été vu ferait mentir le journal.
+      decision = { status: "approved", reason: "moderation_disabled", culinaryMatches: [] };
+    } else {
+      // Plafond quotidien du compte, réservé avant l'analyse : chaque image
+      // analysée est facturée par Cloud Vision. Sans cette réservation, un
+      // compte qui rappelait la fonction en boucle sur sa quarantaine
+      // déclenchait des analyses sans limite. Un refus remonte à l'appelant
+      // (`BudgetExceededError`) : ce n'est pas une panne du moteur, l'image
+      // ne passe pas en attente.
+      if (analysisCostUsd === undefined) analysisCostUsd = await visionAnalysisCostUsd();
+      const estimateUsd = analysisCostUsd;
+      let analysis: EngineAnalysis | null = null;
       try {
-        await recordUsage({
-          feature,
-          provider: "vision",
-          model: engineModel,
+        analysis = await withDailyBudget(
           userId,
-          correlationId,
-          analyzedImageUnits: unitsBilled,
-          dailyCalls: Math.max(1, imagesAnalysed),
-          entityType: "image_moderation",
-          status: engineFailed ? "error" : "ok",
-        });
+          feature,
+          () =>
+            analyseAndRecord({
+              analyse: () => analyseImage(bytes, config),
+              record: recordAnalysis,
+            }),
+          { estimateUsd },
+        );
       } catch (err) {
-        // Best-effort : l'analyse est faite et facturée, la perdre ici
-        // fausserait le reporting d'autant. Visible, sans masquer l'erreur
-        // d'origine du lot s'il y en a une.
+        if (err instanceof BudgetExceededError) throw err;
+        // Pas de repli : publier par défaut, c'est modérer pour rien ; refuser
+        // par défaut, c'est accuser à tort. L'image attend.
         await logError({
-          message: "Modération : consommation Cloud Vision non enregistrée",
+          message: "Moteur de modération injoignable — image laissée en attente",
           moduleType: "MODERATION",
           userId,
           correlationId,
-          feature,
           errorDescription: err instanceof Error ? err.message : String(err),
-          extra: { unitsBilled, imagesAnalysed },
+          extra: { quarantinePath: item.quarantinePath, provider: config.provider },
         });
       }
+      if (analysis == null) {
+        decision = { status: "pending", reason: "engine_unavailable", culinaryMatches: [] };
+      } else {
+        engineModel = analysis.model;
+        provider = analysis.provider;
+        unitsBilled += analysis.units;
+        signals = {
+          adult: analysis.signals.adult,
+          racy: analysis.signals.racy,
+          violence: analysis.signals.violence,
+          medical: analysis.signals.medical,
+          raw: analysis.signals.raw,
+          labels: analysis.signals.labels,
+        };
+        decision = decideModeration(analysis.signals, config.thresholds);
+      }
     }
+
+    const targetPath = targetPathFor({
+      kind: item.targetKind,
+      uid: userId,
+      ownerId: item.ownerId,
+      quarantinePath: item.quarantinePath,
+      timestampMs: Date.now(),
+    });
+
+    let publishedUrl: string | null = null;
+    let rejectedPath: string | null = null;
+    if (decision.status === "approved") {
+      const promoted = await promoteImage({
+        quarantinePath: item.quarantinePath,
+        targetPath,
+        contentType: item.contentType,
+        moderationId: docRef.id,
+        correlationId,
+        sourceGeneration: generation,
+      });
+      publishedUrl = promoted.downloadUrl;
+    } else if (decision.status === "rejected") {
+      // Conservée, pas détruite : un refus qu'on ne peut pas relire ne peut pas
+      // être jugé, et ce sont les faux refus qu'il faut le plus pouvoir voir.
+      rejectedPath = await quarantineToRejected({
+        quarantinePath: item.quarantinePath,
+        moderationId: docRef.id,
+        correlationId,
+        sourceGeneration: generation,
+      });
+    }
+
+    await docRef.set({
+      status: decision.status,
+      uid: userId,
+      quarantine_path: item.quarantinePath,
+      // La version analysée : une décision d'administrateur promeut celle-ci,
+      // pas un fichier réécrit depuis dans la quarantaine.
+      quarantine_generation: generation != null ? String(generation) : null,
+      target_path: targetPath,
+      target_kind: item.targetKind,
+      owner_id: item.ownerId,
+      mime_type: meta.contentType ?? item.contentType,
+      size_bytes: bytes.length,
+      signals,
+      culinary_matches: decision.culinaryMatches,
+      engine: origin !== "user" ? "none" : config.enabled ? provider : "none",
+      engine_version: engineModel,
+      decision_reason: decision.reason,
+      correlation_id: correlationId,
+      published_url: publishedUrl,
+      rejected_path: rejectedPath,
+      attach_on_approval: item.attachOnApproval === true,
+      created_at: FieldValue.serverTimestamp(),
+      decided_at: FieldValue.serverTimestamp(),
+      reviewed_by: null,
+      reviewed_at: null,
+      review_note: null,
+    });
+
+    await attachApprovedIllustration({
+      attachOnApproval: item.attachOnApproval === true,
+      targetKind: item.targetKind,
+      ownerId: item.ownerId,
+      url: publishedUrl,
+      correlationId,
+      moderationId: docRef.id,
+    });
+
+    outcomes.push({
+      moderationId: docRef.id,
+      status: decision.status,
+      reason: decision.reason,
+      url: publishedUrl,
+    });
   }
 
   await logInfo({

@@ -19,6 +19,7 @@ import {
 import { moderationRefusal } from "../callable/moderationCallables";
 import { estimateAiCostUsd, builtinPricingTable } from "../ai/pricing";
 import { VISION_MODEL_ID, VISION_UNITS_PER_IMAGE } from "../moderation/vision";
+import { analyseAndRecord, type VisionUsageEntry } from "../moderation/moderateAndPromote";
 
 const NOW = 1_800_000_000_000;
 
@@ -95,5 +96,59 @@ describe("reservedEstimateUsd", () => {
     assert.equal(reservedEstimateUsd(0.002, undefined), 0.002);
     assert.equal(reservedEstimateUsd(0.002, 0), 0.002);
     assert.equal(reservedEstimateUsd(0.002, Number.NaN), 0.002);
+  });
+});
+
+// Relecture sécurité : la dépense n'entrait dans le plafond qu'en fin de lot.
+describe("analyseAndRecord", () => {
+  test("chaque analyse est enregistrée avant de rendre la main", async () => {
+    const events: string[] = [];
+    const records: VisionUsageEntry[] = [];
+    const record = async (e: VisionUsageEntry) => {
+      events.push(`record:${e.status}`);
+      records.push(e);
+    };
+    for (let i = 0; i < 3; i++) {
+      await analyseAndRecord({
+        analyse: async () => {
+          events.push("analyse");
+          return { model: VISION_MODEL_ID, units: VISION_UNITS_PER_IMAGE };
+        },
+        record,
+      });
+      events.push("suivante");
+    }
+    assert.deepEqual(events, [
+      "analyse",
+      "record:ok",
+      "suivante",
+      "analyse",
+      "record:ok",
+      "suivante",
+      "analyse",
+      "record:ok",
+      "suivante",
+    ]);
+    assert.deepEqual(records[0], {
+      model: VISION_MODEL_ID,
+      units: VISION_UNITS_PER_IMAGE,
+      status: "ok",
+    });
+  });
+
+  test("moteur tombé : une ligne en erreur, sans unité, et l'erreur remonte", async () => {
+    const records: VisionUsageEntry[] = [];
+    await assert.rejects(
+      analyseAndRecord({
+        analyse: async () => {
+          throw new Error("Vision injoignable");
+        },
+        record: async (e) => {
+          records.push(e);
+        },
+      }),
+      /Vision injoignable/,
+    );
+    assert.deepEqual(records, [{ model: null, units: 0, status: "error" }]);
   });
 });

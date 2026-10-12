@@ -544,6 +544,23 @@ describe("users — couverture « Recette libre »", () => {
     );
   });
 
+  // Relecture sécurité : `[^/#]+` laissait remonter hors de users/{uid}/.
+  for (const path of [
+    `users%2F..%2Fquarantine%2F${READER}%2Fx.jpg`,
+    `users%2F%2E%2E%2Fquarantine%2F${READER}%2Fx.jpg`,
+    `users%2F${READER}%2F..%2F..%2Fquarantine%2F${READER}%2Ffree_recipe_cover_1.jpg`,
+    `users%2F${READER}%2Ffree_recipe_cover_1%252Ejpg`,
+    `users%2F${OTHER}%2Ffree_recipe_cover_1.jpg`,
+  ]) {
+    it(`une adresse détournée est refusée : ${path}`, async () => {
+      const url =
+        "https://firebasestorage.googleapis.com/v0/b/kassdale-6d948.firebasestorage.app/o/" +
+        path +
+        "?alt=media&token=t";
+      await assertFails(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: url }));
+    });
+  }
+
   it("une adresse de plus de 500 caractères est refusée", async () => {
     await assertFails(
       db("reader")
@@ -1681,7 +1698,7 @@ function errorReport(uid) {
     user_id: uid,
     job_id: null,
     timestamp: new Date("2026-10-12T00:00:00Z"),
-    app_version: "0.23.46+393",
+    app_version: "0.23.48+395",
     feature: "recipe_save",
     error_type: "FirebaseException",
     error_message: "permission-denied",

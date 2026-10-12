@@ -53,26 +53,36 @@ export function truncateName(value: string): string {
 export const MAX_COVER_URL_LENGTH = 500;
 
 /**
- * Forme admise d'une couverture « Recette libre » : une adresse de
- * téléchargement du bucket du projet, sous `users/` — le dossier où seule la
- * modération dépose (`free_recipe_cover`, `moderation/promote.ts`). Même
- * expression que `freeRecipeCoverOk()` dans `firestore.rules`.
+ * Forme admise d'une couverture « Recette libre » : l'adresse de
+ * téléchargement exacte que produit la modération (`targetPathFor`,
+ * `moderation/promote.ts`) — `users/{uid}/free_recipe_cover_{horodatage}.{ext}`
+ * dans le bucket du projet. Le chemin est fermé caractère par caractère : ni
+ * `..`, ni `%2E`, ni `%25`, qui laisseraient viser un fichier hors de
+ * `users/{uid}/`. Même expression que `coverUrlOk()` dans `firestore.rules`.
  */
-const COVER_URL_PATTERN =
-  /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/kassdale-6d948\.(firebasestorage\.app|appspot\.com)\/o\/users%2F[^/#]+$/;
+function coverUrlPattern(uid: string): RegExp {
+  return new RegExp(
+    "^https://firebasestorage\\.googleapis\\.com/v0/b/kassdale-6d948\\.(firebasestorage\\.app|appspot\\.com)" +
+      `/o/users%2F${uid}%2Ffree_recipe_cover_[0-9]+\\.(jpg|jpeg|png|webp)(\\?[^/#%]*)?$`,
+  );
+}
+
+/** Un uid Firebase : alphanumérique, sans `.`, `%` ni `/`. */
+const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
- * La couverture recopiée dans le profil public, ou `null`.
+ * La couverture recopiée dans le profil public de [uid], ou `null`.
  *
  * Défense en profondeur : les règles refusent déjà une autre adresse sur
  * `users/{uid}`. Ce filtre couvre une écriture du serveur ou un document
  * antérieur à la règle — une adresse externe n'a pas été modérée, et le profil
  * public est lu par toute la famille.
  */
-export function publicCoverUrl(value: unknown): string | null {
+export function publicCoverUrl(value: unknown, uid: string): string | null {
   const url = optionalString(value);
   if (url === null || url.length > MAX_COVER_URL_LENGTH) return null;
-  return COVER_URL_PATTERN.test(url) ? url : null;
+  if (!UID_PATTERN.test(uid)) return null;
+  return coverUrlPattern(uid).test(url) ? url : null;
 }
 
 /** Les champs publics d'un compte. */
@@ -100,6 +110,7 @@ function optionalName(value: unknown): string | null {
  */
 export function publicProfileFrom(
   data: Record<string, unknown> | undefined | null,
+  uid: string,
 ): PublicProfile | null {
   if (!data) return null;
   const role = typeof data.role === "string" ? data.role.trim() : "";
@@ -107,7 +118,7 @@ export function publicProfileFrom(
   return {
     display_name: optionalName(data.display_name) ?? "",
     preferred_name: optionalName(data.preferred_name),
-    free_recipe_cover_url: publicCoverUrl(data.free_recipe_cover_url),
+    free_recipe_cover_url: publicCoverUrl(data.free_recipe_cover_url, uid),
   };
 }
 
@@ -145,7 +156,7 @@ export async function syncPublicProfile(
   userData: Record<string, unknown> | undefined | null,
 ): Promise<ProfileSyncOutcome> {
   const ref = getFirestore().collection(COLL_USER_PROFILES).doc(uid);
-  const expected = publicProfileFrom(userData);
+  const expected = publicProfileFrom(userData, uid);
   const stored = await ref.get();
 
   if (expected === null) {

@@ -15,7 +15,7 @@ void main() {
     id: '',
     userId: 'u1',
     timestamp: DateTime.utc(2026, 10, 12),
-    appVersion: '0.23.46+393',
+    appVersion: '0.23.48+395',
     feature: 'test',
     errorType: 'StateError',
     errorMessage: message,
@@ -85,5 +85,8 @@ void main() {
 
     final broken = ErrorReport.fromFirestore('id', {'context': '{pas du json'});
     expect(broken.context, {'brut': '{pas du json'});
+    // L'erreur de lecture est rendue, pour que le service la remonte.
+    expect(broken.contextParseError, isA<FormatException>());
+    expect(read.contextParseError, isNull);
   });
 }

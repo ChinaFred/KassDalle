@@ -187,9 +187,14 @@ service cloud.firestore {
       }
 
       /// La couverture « Recette libre » (`free_recipe_cover_url`) est
-      /// absente, nulle, ou une adresse de téléchargement du bucket du projet
-      /// sous `users/` — le dossier où seule la modération dépose — de 500
-      /// caractères au plus. Elle est recopiée dans `user_profiles`, lu par
+      /// absente, nulle, ou l'adresse de téléchargement exacte que produit la
+      /// modération (`targetPathFor`, `moderation/promote.ts`) :
+      /// `users/{uid du document}/free_recipe_cover_{horodatage}.{extension}`,
+      /// dans le bucket du projet, de 500 caractères au plus. Le chemin est
+      /// fermé caractère par caractère : ni `..`, ni `%2E`, ni `%25` — un
+      /// `[^/#]+` laissait viser `users%2F..%2Fquarantine%2F…`, un fichier non
+      /// modéré. Seul le titulaire change sa couverture dans le client, et
+      /// la modération la publie sous son propre uid. Elle est recopiée dans `user_profiles`, lu par
       /// toute la famille : une adresse externe y passait sans modération
       /// (audit sécurité, « Faible »). Même expression côté serveur
       /// (`publicCoverUrl`, `triggers/userPublicProfile.ts`).
@@ -197,7 +202,8 @@ service cloud.firestore {
         let url = request.resource.data.get('free_recipe_cover_url', null);
         return url == null
           || (url is string && url.size() <= 500
-              && url.matches('https://firebasestorage[.]googleapis[.]com/v0/b/kassdale-6d948[.](firebasestorage[.]app|appspot[.]com)/o/users%2F[^/#]+'));
+              && url.matches('https://firebasestorage[.]googleapis[.]com/v0/b/kassdale-6d948[.](firebasestorage[.]app|appspot[.]com)/o/users%2F'
+                             + uid + '%2Ffree_recipe_cover_[0-9]+[.](jpg|jpeg|png|webp)([?][^/#%]*)?'));
       }
 
       /// À la création, les deux noms sont bornés.
