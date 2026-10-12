@@ -500,7 +500,9 @@ flowchart LR
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
         préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, avec « Supprimer » pour seule action.
+        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
+        les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
         l'éditeur coche les groupes qui voient son planning, aucun par défaut. Le serveur
         recalcule qui lit quel planning (<code>planning_reach</code>) quand ce choix change,

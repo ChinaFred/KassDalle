@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'package:kass_dalle/core/widgets/app_states.dart';
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
@@ -38,6 +39,7 @@ void main() {
     WidgetTester tester, {
     required UserRole role,
     Set<String> reach = const {},
+    Object? reachError,
     Map<String, List<PlannedMeal>> shared = const {},
     List<PlannedMeal> mine = const [],
     List<FamilyGroup> groups = const [],
@@ -60,7 +62,11 @@ void main() {
         // plannings) lisent ces remplacements.
         overrides: [
           ...backend.overrides,
-          planningReachProvider.overrideWith((ref) => Stream.value(reach)),
+          planningReachProvider.overrideWith(
+            (ref) => reachError == null
+                ? Stream.value(reach)
+                : Stream.error(reachError),
+          ),
           sharedPlannedMealsProvider.overrideWith(
             (ref, uid) => Stream.value(shared[uid] ?? const []),
           ),
@@ -238,5 +244,36 @@ void main() {
     expect(find.byIcon(Icons.close), findsNothing);
     await tester.tap(find.text('Tarte secrète'));
     expect(opened, isFalse);
+  });
+
+  testWidgets('le lecteur sans partage qui garde d\'anciens repas est guidé', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.reader,
+      mine: [meal('own', 'uid-test', 'Gratin')],
+    );
+
+    expect(
+      find.textContaining('Cochez « Mon planning » pour revoir vos anciens'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('une portée illisible n\'est pas une portée vide', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.reader,
+      reachError: StateError('portée illisible'),
+    );
+
+    expect(find.byType(AppErrorState), findsOneWidget);
+    expect(
+      find.text('Vous ne faites partie d\'aucun groupe familial.'),
+      findsNothing,
+    );
   });
 }

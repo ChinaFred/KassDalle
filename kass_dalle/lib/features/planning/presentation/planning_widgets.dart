@@ -264,8 +264,9 @@ class PlanningDayHeader extends StatelessWidget {
 ///
 /// [readOnly] : le repas d'un autre membre, dans un planning partagé avec
 /// l'utilisateur. Ni menu, ni heure modifiable, ni retrait d'accompagnement,
-/// ni export, et pas de ligne d'origine du choix : elle dirait ce que la
-/// mémoire des refus de son propriétaire a écarté.
+/// ni export, et pas de ligne d'origine du choix. Ces champs restent lisibles
+/// dans le document par l'audience du planning : ne pas les afficher n'est
+/// pas une protection (décision provisoire, TechnicalRequirements §3.7).
 class PlanningMealTile extends StatelessWidget {
   final PlannedMeal meal;
   final bool isPast;
@@ -307,6 +308,11 @@ class PlanningMealTile extends StatelessWidget {
   /// suivi de « Recette non partagée », et ne s'ouvre pas.
   final Set<String> lockedRecipeIds;
 
+  /// Composants-recettes qui s'ouvrent. Null : tous ceux qui ne sont pas
+  /// verrouillés. Sur un repas d'autrui, une recette encore en cours de
+  /// résolution n'y figure pas.
+  final Set<String>? openableRecipeIds;
+
   const PlanningMealTile({
     super.key,
     required this.meal,
@@ -328,6 +334,7 @@ class PlanningMealTile extends StatelessWidget {
     this.readOnly = false,
     this.ownerName,
     this.lockedRecipeIds = const {},
+    this.openableRecipeIds,
   });
 
   VoidCallback? _action(VoidCallback? callback) => readOnly ? null : callback;
@@ -388,7 +395,11 @@ class PlanningMealTile extends StatelessWidget {
 
   Widget _buildComponentLine(ThemeData theme, MealComponent c) {
     final locked = c.isRecipe && _isLocked(c.recipeId);
-    final opens = c.isRecipe && !locked && onComponentTap != null;
+    final opens =
+        c.isRecipe &&
+        !locked &&
+        onComponentTap != null &&
+        (openableRecipeIds?.contains(c.recipeId) ?? true);
     Widget label = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -488,27 +499,7 @@ class PlanningMealTile extends StatelessWidget {
   /// « Recette non partagée », sous le titre d'un plat illisible.
   Widget? _buildLocked(ThemeData theme) {
     if (!_isLocked(meal.recipeId)) return null;
-    return Tooltip(
-      message: kRecipeNotSharedTooltip,
-      child: Row(
-        children: [
-          Icon(
-            Icons.lock_outline,
-            size: AppIconSize.badge,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              kRecipeNotSharedLabel,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return const PlanningRecipeNotSharedLine();
   }
 
   Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
@@ -749,6 +740,38 @@ class PlanningMealTile extends StatelessWidget {
       leading: Icon(icon),
       title: Text(label),
       contentPadding: EdgeInsets.zero,
+    );
+  }
+}
+
+/// La ligne cadenas « Recette non partagée », avec son infobulle : sous le
+/// titre d'un repas, et dans « À préparer ce jour-là ».
+class PlanningRecipeNotSharedLine extends StatelessWidget {
+  const PlanningRecipeNotSharedLine({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: kRecipeNotSharedTooltip,
+      child: Row(
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              kRecipeNotSharedLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

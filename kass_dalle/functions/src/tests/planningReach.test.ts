@@ -12,6 +12,7 @@ import {
   changedSharedGroups,
   MAX_SHARED_GROUPS,
   planningReachFrom,
+  planningShareChanged,
   sharedGroupIdsOf,
   type GroupEntry,
   type OwnerState,
@@ -167,5 +168,20 @@ describe("changedSharedGroups", () => {
   test("document créé ou supprimé", () => {
     assert.deepEqual(changedSharedGroups(undefined, { shared_group_ids: ["a"] }), ["a"]);
     assert.deepEqual(changedSharedGroups({ shared_group_ids: ["a"] }, undefined), ["a"]);
+  });
+});
+
+describe("planningShareChanged", () => {
+  test("promu éditeur, rétrogradé, révoqué, supprimé : oui", () => {
+    assert.equal(planningShareChanged(reader, editor), true);
+    assert.equal(planningShareChanged(editor, reader), true);
+    assert.equal(planningShareChanged(editor, { role: "editor", is_revoked: true }), true);
+    assert.equal(planningShareChanged(admin, undefined), true);
+  });
+
+  test("autre champ, ou éditeur devenu administrateur : non", () => {
+    assert.equal(planningShareChanged(editor, { ...editor, display_name: "Marie" }), false);
+    assert.equal(planningShareChanged(editor, admin), false);
+    assert.equal(planningShareChanged(reader, { role: "pending" }), false);
   });
 });

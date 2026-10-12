@@ -27,8 +27,8 @@
  *     qui recalcule déjà `group_reach` pour les mêmes comptes ;
  *   - un changement de `shared_group_ids` — `syncPlanningReachOnConfig`,
  *     ci-dessous ;
- *   - un changement de rôle ou de révocation d'un compte — `syncUserClaims`
- *     appelle `resyncPlanningAudienceOf`.
+ *   - un changement de rôle ou de révocation d'un compte —
+ *     `syncPlanningReachOnRole`, déclencheur dédié sur `users/{uid}`.
  *
  * Aucun backfill : sans `shared_group_ids`, rien n'est partagé, et sans
  * `planning_reach`, rien ne se lit.
@@ -53,7 +53,7 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { membersOf, sameReach, type GroupData } from "./groupReach";
+import { membersOf, sameReach, type GroupData } from "./groupMembers";
 
 /** Plafond de `shared_group_ids`, le même que celui des règles Firestore. */
 export const MAX_SHARED_GROUPS = 50;
@@ -262,26 +262,59 @@ export async function resyncPlanningReach(
 }
 
 /**
- * Le rôle ou la révocation de [owner] a changé : son planning se partage, ou
- * cesse de l'être. Relit ses groupes cochés et recalcule la portée de leurs
- * membres. Ne lève jamais : appelé par `syncUserClaims`, qui n'est pas
- * rejoué ; chaque échec est journalisé.
+ * Le droit de partager son planning a-t-il changé entre [before] et
+ * [after] (`users/{uid}`) ? Seuls `role` et `is_revoked` comptent : les
+ * autres écritures du document ne recalculent rien.
  */
-export async function resyncPlanningAudienceOf(owner: string): Promise<void> {
-  const correlationId = newCorrelationId("portee_plannings");
-  try {
-    const config = await getFirestore().collection(COLL_PLANNING_CONFIG).doc(owner).get();
-    const viewers = await audienceOf(owner, sharedGroupIdsOf(config.data()));
-    await resyncPlanningReach(viewers, { correlationId, reason: "rôle du propriétaire", owner });
-  } catch (err) {
-    await logError({
-      message: `planningReach: audience du planning de ${owner} illisible après un changement de rôle`,
-      correlationId,
-      errorDescription: err instanceof Error ? err.message : String(err),
-      userId: owner,
-    });
-  }
+export function planningShareChanged(
+  before: Record<string, unknown> | undefined | null,
+  after: Record<string, unknown> | undefined | null,
+): boolean {
+  return canSharePlanning(before) !== canSharePlanning(after);
 }
+
+export const syncPlanningReachOnRole = onDocumentWritten(
+  // Déclencheur dédié, `retry: true` : un éditeur rétrogradé ou révoqué dont
+  // la portée n'est pas recalculée resterait lisible par ses groupes. Il
+  // lève à l'échec pour que l'événement soit rejoué ; `syncPlanningReachFor`
+  // est idempotent.
+  { document: "users/{uid}", region: REGION, retry: true },
+  async (event) => {
+    const owner = event.params.uid;
+    const before = event.data?.before?.exists
+      ? (event.data.before.data() as Record<string, unknown> | undefined)
+      : undefined;
+    const after = event.data?.after?.exists
+      ? (event.data.after.data() as Record<string, unknown> | undefined)
+      : undefined;
+    if (!planningShareChanged(before, after)) return;
+
+    const correlationId = newCorrelationId("portee_plannings");
+    let viewers: string[];
+    try {
+      const config = await getFirestore().collection(COLL_PLANNING_CONFIG).doc(owner).get();
+      viewers = await audienceOf(owner, sharedGroupIdsOf(config.data()));
+    } catch (err) {
+      await logError({
+        message: `syncPlanningReachOnRole: audience du planning de ${owner} illisible`,
+        correlationId,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: owner,
+      });
+      throw err;
+    }
+    const failures = await resyncPlanningReach(viewers, {
+      correlationId,
+      reason: "rôle du propriétaire",
+      owner,
+    });
+    if (failures > 0) {
+      throw new Error(
+        `syncPlanningReachOnRole: ${failures} portée(s) non recalculée(s) pour ${owner}`,
+      );
+    }
+  },
+);
 
 export const syncPlanningReachOnConfig = onDocumentWritten(
   // `retry` : une portée non recalculée laisse un membre lire un planning qui

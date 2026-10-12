@@ -3379,7 +3379,7 @@ sequenceDiagram
       « Préférences du planning ». Le serveur en tire <code>planning_reach/{lecteur}</code>, que
       les règles Firestore relisent pour laisser lire <code>planned_meals</code>.
       <span class="path">planning_config_screen.dart → planning_config/{uid} →
-      syncPlanningReachOnConfig · syncGroupReach · syncUserClaims → triggers/planningReach.ts →
+      syncPlanningReachOnConfig · syncGroupReach · syncPlanningReachOnRole → triggers/planningReach.ts →
       planning_reach/{uid} → planning_providers.dart → planning_screen.dart</span>
     </p>
     <figure class="fig">
@@ -3405,7 +3405,7 @@ sequenceDiagram
   T->>PR: transaction par membre — relit ses groupes,<br/>puis planning_config et users de chaque autre membre
   Note over T,PR: Marie y figure si elle est éditeur ou admin non révoqué,<br/>et membre avec Paul d'un groupe coché
   opt un groupe change de membres, ou Marie change de rôle
-    Note over PR: syncGroupReach et syncUserClaims recalculent<br/>la même portée (suspendue si Marie n'est plus éditeur)
+    Note over PR: syncGroupReach et syncPlanningReachOnRole (retry: true)<br/>recalculent la même portée (suspendue si Marie n'est plus éditeur)
   end
 
   L->>S: ouvre le planning
@@ -3430,8 +3430,9 @@ sequenceDiagram
         <b>Aucun backfill.</b> Sans <code>shared_group_ids</code>, rien n'est partagé ; sans
         <code>planning_reach</code>, rien ne se lit. <b>Le partage n'est pas réciproque</b> et
         ne passe que par les membres (<code>owner_id</code>, <code>member_ids</code>), jamais par
-        les invités. Un repas d'autrui n'affiche ni sa justification ni l'origine du choix :
-        elles diraient ce que la mémoire des refus de son propriétaire a écarté.
+        les invités. L'écran n'affiche sur un repas d'autrui ni sa justification ni l'origine du
+        choix. Ces champs restent lisibles par l'audience dans le document : le masquage n'est
+        pas une protection (décision provisoire, voir TechnicalRequirements §3.7).
         <span class="expect">
           <b>Pas de requête <code>in</code>.</b> Un flux par propriétaire : un planning qui cesse
           d'être partagé fait tomber son seul flux, pas les autres.

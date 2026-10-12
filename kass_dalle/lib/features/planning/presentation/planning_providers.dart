@@ -141,8 +141,9 @@ class PlanningRepository {
   /// recette privée, un brouillon, un livre non partagé, ou une recette
   /// supprimée. On ne l'ouvre pas, on l'affiche par son titre avec
   /// « Recette non partagée ». Un lot refusé par les règles se relit recette
-  /// par recette ; un refus est ici une réponse attendue, pas une panne, et
-  /// n'est pas remonté au rapport. Toute autre erreur est relancée.
+  /// par recette. Les refus sont attendus mais pas tus : un seul rapport par
+  /// lot (`planning.shared_recipe_denied`), avec leur nombre et la première
+  /// recette refusée. Toute autre erreur est relancée.
   Future<Set<String>> readableRecipeIds(Iterable<String> ids) async {
     final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
     final readable = <String>{};
@@ -154,18 +155,31 @@ class PlanningRepository {
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
         readable.addAll(snap.docs.map((d) => d.id));
-      } on FirebaseException catch (e) {
+      } on FirebaseException catch (e, st) {
         if (e.code != 'permission-denied') rethrow;
+        final denied = <String>[];
         for (final id in chunk) {
           try {
             final doc = await _db.collection('recipes').doc(id).get();
             if (doc.exists) readable.add(id);
           } on FirebaseException catch (refusal) {
-            // Refus des règles : la recette n'est pas partagée avec ce
-            // compte. C'est la réponse cherchée, elle reste hors de la liste.
             if (refusal.code != 'permission-denied') rethrow;
+            denied.add(id);
           }
         }
+        unawaited(
+          _errorReportService.reportError(
+            feature: 'planning.shared_recipe_denied',
+            error: e,
+            stackTrace: st,
+            context: {
+              'uid': _uid,
+              'batch_size': chunk.length,
+              'denied_count': denied.length,
+              if (denied.isNotEmpty) 'first_denied_recipe_id': denied.first,
+            },
+          ),
+        );
       }
     }
     return readable;

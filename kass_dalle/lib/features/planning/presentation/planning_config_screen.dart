@@ -536,7 +536,9 @@ class _SharingSection extends ConsumerWidget {
         children: [
           Text(
             'Les membres des groupes cochés voient vos repas, sans pouvoir '
-            'les modifier. Ils ne voient ni vos courses, ni vos préférences.',
+            'les modifier. Ils ne voient ni vos courses, ni vos préférences. '
+            'Un membre qui rejoint plus tard un groupe coché verra aussi '
+            'votre planning.',
             style: hint,
           ),
           const SizedBox(height: 8),

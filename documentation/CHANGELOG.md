@@ -48,8 +48,12 @@ ouverte par lien. L'écran de réglages s'appelle partout « Préférences du pl
 Nouvelle collection `planning_reach/{uid}` (`uids`, `updated_at`) : les propriétaires dont
 `uid` lit le planning, écrite par le serveur seul (`triggers/planningReach.ts`). Elle est
 recalculée par `syncGroupReach` (composition d'un groupe), par le nouveau déclencheur
-`syncPlanningReachOnConfig` (`planning_config/{uid}.shared_group_ids`) et par
-`syncUserClaims` (rôle ou révocation du propriétaire). Nouveau champ
+`syncPlanningReachOnConfig` (`planning_config/{uid}.shared_group_ids`) et par le nouveau
+déclencheur `syncPlanningReachOnRole` (rôle ou révocation du propriétaire, `retry: true`).
+`membersOf` et `sameReach` passent dans `triggers/groupMembers.ts`. Les champs d'un repas
+partagé (`justification`, `choice_source`, `dismissed_recipe_ids`) sont lisibles par
+l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision
+provisoire). Nouveau champ
 `planning_config.shared_group_ids` (`List<String>`, 50 au plus). Aucun backfill : sans
 `shared_group_ids` rien n'est partagé.
 

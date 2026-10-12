@@ -94,7 +94,9 @@ class PlanningOwnersChipRow extends ConsumerWidget {
         alignment: Alignment.centerLeft,
         child: ActionChip(
           avatar: const Icon(Icons.people_outline),
-          label: Text(label),
+          // Borné à la largeur de la ligne : avec un texte agrandi, le
+          // libellé se coupe au lieu de déborder.
+          label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           tooltip: 'Choisir les plannings affichés',
           onPressed: () => showPlanningOwnersSheet(context),
         ),

@@ -151,7 +151,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (widget.showReservedNotice) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        context.showSnackBar('Planification réservée aux éditeurs');
+        context.showSnackBar(
+          'Planification réservée aux éditeurs. Demandez à un '
+          'administrateur de vous nommer éditeur.',
+        );
         // L'adresse perd son paramètre : un rafraîchissement de la page ne
         // répète pas le message.
         GoRouter.maybeOf(context)?.go('/planning');
@@ -1061,8 +1064,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         meals: [...myMeals, ...sharedMeals],
         isWide: isWide,
         sharedLoading: sharedLoading,
-        reachEmpty: (reachAsync.value ?? const <String>{}).isEmpty,
+        // Une portée en erreur n'est pas une portée vide.
+        reachEmpty:
+            reachAsync.hasValue && (reachAsync.value ?? const {}).isEmpty,
+        reachFailed: reachAsync.hasError && !reachAsync.hasValue,
         anyShown: options.any((o) => o.shown),
+        mineOffered: options.any((o) => o.isMine),
       );
     }
 
@@ -1227,25 +1234,48 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     required bool isWide,
     required bool sharedLoading,
     required bool reachEmpty,
+    required bool reachFailed,
     required bool anyShown,
+    required bool mineOffered,
   }) {
     if (!anyShown) {
+      // Les plannings partagés n'ont pas pu être lus : le dire, pas
+      // prétendre que personne ne partage.
+      if (reachFailed) {
+        return _withSelectorOnWide(
+          view,
+          AppErrorState(
+            error: ref.read(planningReachProvider).error,
+            title: 'Les plannings partagés n\'ont pas pu être lus',
+            onRetry: () => ref.invalidate(planningReachProvider),
+          ),
+        );
+      }
       if (!view.canPlan && reachEmpty) {
-        return _withSelectorOnWide(view, _buildReaderWithoutShares());
+        return _withSelectorOnWide(
+          view,
+          _buildReaderWithoutShares(hasOwnMeals: mineOffered),
+        );
       }
       return _withSelectorOnWide(
         view,
         AppEmptyState(
           icon: Icons.visibility_off_outlined,
           title: 'Aucun planning affiché.',
-          action: FilledButton.icon(
-            onPressed: () => showPlanningOwnersSheet(context),
-            icon: const Icon(Icons.people_outline),
-            label: const Text('Choisir les plannings'),
-          ),
+          // Sur grand écran, la carte « Plannings affichés » est déjà là.
+          action: view.selectorOnWide
+              ? null
+              : FilledButton.icon(
+                  onPressed: () => showPlanningOwnersSheet(context),
+                  icon: const Icon(Icons.people_outline),
+                  label: const Text('Choisir les plannings'),
+                ),
         ),
       );
     }
+    // Seuls des plannings partagés sont affichés, et ils arrivent encore :
+    // des jours « Rien de prévu » seraient faux.
+    if (sharedLoading && !view.mineShown) return const AppLoadingState();
     if (meals.isEmpty && view.canPlan && view.mineShown && !sharedLoading) {
       return _withSelectorOnWide(view, _buildPlannerEmptyState(theme));
     }
@@ -1267,15 +1297,28 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   /// Un lecteur à qui personne ne partage de planning : sans groupe, on lui
   /// dit d'en rejoindre un ; membre, on lui dit qui peut partager.
-  Widget _buildReaderWithoutShares() {
+  ///
+  /// Un lecteur qui garde d'anciens repas apprend où les retrouver.
+  Widget _buildReaderWithoutShares({required bool hasOwnMeals}) {
+    const ownMealsHint =
+        'Cochez « Mon planning » pour revoir vos anciens repas.';
     final groups = ref.watch(myGroupsProvider);
     if (!groups.hasValue && !groups.hasError) return const AppLoadingState();
+    if (groups.hasError && !groups.hasValue) {
+      return AppErrorState(
+        error: groups.error,
+        title: 'Vos groupes familiaux n\'ont pas pu être lus',
+        onRetry: () => ref.invalidate(myGroupsProvider),
+      );
+    }
     if ((groups.value ?? const []).isEmpty) {
       return AppEmptyState(
         icon: Icons.group_outlined,
         title: 'Vous ne faites partie d\'aucun groupe familial.',
-        message:
-            'Rejoignez le groupe de votre famille pour voir ses plannings.',
+        message: hasOwnMeals
+            ? 'Rejoignez le groupe de votre famille pour voir ses plannings. '
+                  '$ownMealsHint'
+            : 'Rejoignez le groupe de votre famille pour voir ses plannings.',
         action: FilledButton.icon(
           onPressed: () => context.push('/groups'),
           icon: const Icon(Icons.group_outlined),
@@ -1283,12 +1326,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         ),
       );
     }
-    return const AppEmptyState(
+    return AppEmptyState(
       icon: Icons.calendar_today_outlined,
       title: 'Aucun planning n\'est partagé avec vous.',
-      message:
-          'Un membre de votre groupe peut partager le sien depuis les '
-          'préférences de son planning.',
+      message: hasOwnMeals
+          ? 'Un membre de votre groupe peut partager le sien depuis les '
+                'préférences de son planning. $ownMealsHint'
+          : 'Un membre de votre groupe peut partager le sien depuis les '
+                'préférences de son planning.',
     );
   }
 
@@ -1640,11 +1685,22 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                         size: AppIconSize.small,
                       ),
                       title: Text(meal.recipeTitre),
-                      subtitle: Text(
-                        [
-                          if (view.labelsOwners) view.nameOf(meal.uid),
-                          'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
-                        ].join(' · '),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // La même ligne que la tuile du repas : la recette
+                          // d'un autre membre peut ne pas se lire.
+                          if (!view.isMine(meal) &&
+                              locked.contains(meal.recipeId))
+                            const PlanningRecipeNotSharedLine(),
+                          Text(
+                            [
+                              if (view.labelsOwners) view.nameOf(meal.uid),
+                              'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+                            ].join(' · '),
+                          ),
+                        ],
                       ),
                       onTap: _openRecipeIfReadable(meal, view),
                     ),
@@ -1701,6 +1757,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           readOnly: true,
           ownerName: view.nameOf(meal.uid),
           lockedRecipeIds: locked,
+          // Pendant la résolution, un composant-recette ne s'ouvre pas plus
+          // que le plat.
+          openableRecipeIds: {
+            for (final c in meal.components)
+              if (_canOpenShared(c.recipeId)) c.recipeId!,
+          },
           onTap: _openRecipeIfReadable(meal, view),
           onComponentTap: (c) => _openComponentRecipe(meal, c),
         ),
@@ -1754,9 +1816,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// autres une fois leur recette résolue et lisible.
   VoidCallback? _openRecipeIfReadable(PlannedMeal meal, _PlanningView view) {
     if (view.isMine(meal)) return _openRecipeFor(meal);
-    final id = meal.recipeId;
-    if (id == null || _readableRecipes[id] != true) return null;
+    if (!_canOpenShared(meal.recipeId)) return null;
     return _openRecipeFor(meal);
+  }
+
+  /// La recette d'un repas d'autrui s'ouvre-t-elle ? Oui si elle se lit ;
+  /// oui aussi quand la résolution a échoué : la fiche dit elle-même
+  /// « Recette non partagée » sur un refus. Non tant qu'elle se résout.
+  bool _canOpenShared(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return _readableRecipes[id] == true || _readableFailed.contains(id);
   }
 
   /// Résout, par une lecture groupée, la lisibilité des recettes des repas
@@ -2035,22 +2104,26 @@ class _PlanningReadFailure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-        child: Row(
-          children: [
-            Icon(Icons.error_outline, color: scheme.onErrorContainer),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(color: scheme.onErrorContainer),
+    // Région vive : le lecteur d'écran annonce l'échec sans qu'on y aille.
+    return Semantics(
+      liveRegion: true,
+      child: Material(
+        color: scheme.errorContainer,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline, color: scheme.onErrorContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: scheme.onErrorContainer),
+                ),
               ),
-            ),
-            TextButton(onPressed: onRetry, child: const Text('Réessayer')),
-          ],
+              TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+            ],
+          ),
         ),
       ),
     );
