@@ -291,7 +291,23 @@ class _ManageMembersSheet extends ConsumerStatefulWidget {
 class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
   final TextEditingController _searchController = TextEditingController();
   List<UserProfile> _searchResults = [];
+
+  /// Recherche par nom en cours.
   bool _searching = false;
+
+  /// Recherche par adresse en cours. Distincte de [_searching] : la fin de
+  /// l'une ne coupe pas l'indicateur de l'autre.
+  bool _emailSearching = false;
+
+  /// Le serveur a refusé une recherche par adresse pour plafond atteint.
+  /// Vaut tant que la feuille est ouverte : la flèche disparaît et la
+  /// validation ne part plus ; la recherche par nom reste possible.
+  bool _limitReached = false;
+
+  /// Échec de la recherche par adresse, et la saisie qu'il concerne : le
+  /// message disparaît dès que la saisie change.
+  String? _emailError;
+  String? _emailErrorQuery;
 
   /// La saisie dont [_searchResults] est la réponse. `null` tant qu'aucune
   /// recherche n'a abouti : l'état vide ne s'affiche qu'après une réponse.
@@ -329,10 +345,11 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
         _searchedQuery = q;
         _searching = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted || _searchController.text.trim() != q) return;
       setState(() => _searching = false);
-      context.showErrorSnackBar('Recherche impossible : $e');
+      // Signalée au rapport d'erreurs par GroupRepository.
+      context.showErrorSnackBar('Recherche impossible. Réessayez.');
     }
   }
 
@@ -340,30 +357,44 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
   /// bouton dédié. Le résultat prend la place des résultats par nom : même
   /// liste, même bouton « Inviter dans le groupe », même filtrage des membres
   /// et des invités.
+  ///
+  /// Une réponse qui arrive après une modification de la saisie est écartée,
+  /// sauf le plafond, qui vaut pour toute la feuille.
   Future<void> _searchByEmail(String groupId) async {
     final q = _searchController.text.trim();
-    if (!isCompleteEmailQuery(q) || _searching) return;
-    setState(() => _searching = true);
+    if (!isCompleteEmailQuery(q) || _emailSearching || _limitReached) return;
+    setState(() {
+      _emailSearching = true;
+      _emailError = null;
+      _emailErrorQuery = null;
+    });
     try {
       final found = await ref
           .read(groupRepositoryProvider)
           .findMemberByEmail(groupId, q);
-      if (!mounted || _searchController.text.trim() != q) return;
+      if (!mounted) return;
       setState(() {
+        _emailSearching = false;
+        if (_searchController.text.trim() != q) return;
         _searchResults = found == null ? [] : [found];
         _searchedQuery = q;
-        _searching = false;
       });
     } on MemberSearchLimitReached {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      setState(() => _searching = false);
-      context.showErrorSnackBar(MemberSearchLimitReached.message);
+      setState(() {
+        _emailSearching = false;
+        _limitReached = true;
+      });
     } catch (_) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      setState(() => _searching = false);
-      context.showErrorSnackBar('Recherche impossible. Réessayez.');
+      setState(() {
+        _emailSearching = false;
+        if (_searchController.text.trim() != q) return;
+        _emailError = 'Recherche impossible. Réessayez.';
+        _emailErrorQuery = q;
+      });
     }
   }
 
@@ -434,9 +465,10 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     if (confirmed != true || !mounted) return;
     try {
       await ref.read(groupRepositoryProvider).removeMember(group.id, uid);
-    } catch (e) {
+    } catch (_) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar('Retrait impossible : $e');
+      context.showErrorSnackBar('Retrait impossible. Réessayez.');
     }
   }
 
@@ -452,9 +484,39 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
         .toList();
     final typed = _searchController.text.trim();
     final searchDone =
-        !_searching && typed.isNotEmpty && _searchedQuery == typed;
+        !_searching &&
+        !_emailSearching &&
+        typed.isNotEmpty &&
+        _searchedQuery == typed;
     final emailQuery = isEmailLikeQuery(typed);
     final completeEmail = isCompleteEmailQuery(typed);
+    final busy = _searching || _emailSearching;
+    final colors = Theme.of(context).colorScheme;
+    final smallText = Theme.of(context).textTheme.bodySmall;
+    // L'aide de la recherche par adresse, ou ce qui la remplace : recherche
+    // en cours, plafond atteint, échec. `null` : rien à afficher, la réponse
+    // (liste ou état vide) occupe la place.
+    final String? emailHelp;
+    var emailHelpIsError = false;
+    if (!emailQuery) {
+      emailHelp = null;
+    } else if (_emailSearching) {
+      emailHelp = 'Recherche en cours…';
+    } else if (_limitReached) {
+      emailHelp = MemberSearchLimitReached.message;
+      emailHelpIsError = true;
+    } else if (_emailError != null && _emailErrorQuery == typed) {
+      emailHelp = _emailError;
+      emailHelpIsError = true;
+    } else if (searchDone) {
+      emailHelp = null;
+    } else if (completeEmail) {
+      emailHelp =
+          'Validez la saisie ou appuyez sur la flèche pour chercher cette '
+          'adresse.';
+    } else {
+      emailHelp = 'Saisissez l\'adresse e-mail complète.';
+    }
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.65,
@@ -485,20 +547,23 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SearchBar(
                     controller: _searchController,
-                    hintText: 'Rechercher une personne à inviter…',
-                    leading: _searching
+                    hintText: 'Nom ou adresse e-mail complète',
+                    leading: busy
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              semanticsLabel: 'Recherche en cours',
+                            ),
                           )
                         : const Icon(Icons.search),
                     trailing: [
-                      if (completeEmail)
+                      if (completeEmail && !_limitReached)
                         IconButton(
                           icon: const Icon(Icons.arrow_forward),
                           tooltip: 'Chercher cette adresse',
-                          onPressed: _searching
+                          onPressed: _emailSearching
                               ? null
                               : () => _searchByEmail(group.id),
                         ),
@@ -513,15 +578,14 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     onSubmitted: (_) => _searchByEmail(group.id),
                   ),
                 ),
-                if (emailQuery && !searchDone && !_searching)
+                if (emailHelp != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(
-                      completeEmail
-                          ? 'Validez la saisie ou appuyez sur la flèche pour '
-                                'chercher cette adresse.'
-                          : 'Saisissez l\'adresse e-mail complète.',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      emailHelp,
+                      style: emailHelpIsError
+                          ? smallText?.copyWith(color: colors.error)
+                          : smallText,
                     ),
                   ),
                 if (candidates.isNotEmpty) ...[
@@ -557,7 +621,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     ),
                   ),
                 ],
-                if (searchDone && candidates.isEmpty)
+                if (searchDone && candidates.isEmpty && emailHelp == null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(
@@ -571,8 +635,11 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                                       'e-mail complète. Un compte en attente '
                                       'de validation n\'apparaît qu\'une fois '
                                       'validé.')
-                          : 'Les personnes trouvées pour « $typed » sont déjà '
-                                'membres ou invitées.',
+                          : (emailQuery
+                                ? 'Ce compte est déjà membre du groupe ou '
+                                      'invité.'
+                                : 'Les personnes trouvées pour « $typed » '
+                                      'sont déjà membres ou invitées.'),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),

@@ -1247,10 +1247,15 @@ renvois) par administrateur et par jour, incrémenté dans la transaction qui en
 l'envoi. Écrit par les Functions seules, lu par un administrateur.
 
 `member_email_search_daily/{uid}_{AAAA-MM-JJ}` (jour UTC) : `uid` `String`, `day` `String`,
-`count` `int`, `updated_at` `Timestamp`. Compteur du plafond de 30 recherches d'un membre par
-adresse (`findMemberByEmailFn`) par compte et par jour, incrémenté dans une transaction avant
-la recherche, que le compte soit trouvé ou non. N'enregistre aucune adresse. Écrit par les
-Functions seules, lu par personne côté client. **Migration :** aucune, la collection naît vide.
+`count` `int`, `misses` `int?`, `updated_at` `Timestamp`, `expires_at` `Timestamp`. Compteur du
+plafond de 10 recherches d'un membre par adresse (`findMemberByEmailFn`) par compte et par jour,
+incrémenté dans une transaction avant la recherche, que le compte soit trouvé ou non. `misses`
+compte les réponses « aucun compte » du jour (seuil d'alerte : 5). `expires_at` vaut la dernière
+écriture + 30 jours (`searchCounterExpiry`) ; une politique TTL sur ce champ
+(`firestore.indexes.json` › `fieldOverrides`, active au déploiement des index) supprime le
+document, la suppression TTL pouvant prendre jusqu'à quelques jours. N'enregistre aucune
+adresse. Écrit par les Functions seules, lu par personne côté client. **Migration :** aucune, la
+collection naît vide.
 
 ---
 
@@ -2938,10 +2943,10 @@ compte approuvé, non révoqué, App Check selon la politique ; traitement
 3. groupe existant (`not-found` « Ce groupe n'existe plus. ») dont l'appelant est
    **propriétaire** (`searcherDenial`, `permission-denied`) — le propriétaire seul invite
    (`isManagement` dans `firestore.rules`) ;
-4. moins de 30 recherches du jour UTC pour l'appelant : transaction sur
+4. moins de 10 recherches du jour UTC pour l'appelant : transaction sur
    `member_email_search_daily/{uid}_{AAAA-MM-JJ}`, incrémentée avant la recherche, trouvée ou
-   non ; au-delà, `resource-exhausted` « Trop de recherches aujourd'hui. Réessayez demain. »
-   et un `logWarn`.
+   non, qui pose aussi `expires_at` (TTL, 30 jours) ; au-delà, `resource-exhausted` « Trop de
+   recherches aujourd'hui. Réessayez demain. » et un `logWarn`.
 
 Puis `users` est parcourue (cinq champs : `email`, `role`, `is_revoked`, `display_name`,
 `preferred_name`), comme `existingAccountFor` des invitations : une requête d'égalité
@@ -2954,9 +2959,24 @@ celle saisie.
 
 Réponse : `{found: false}`, ou `{found: true, uid, displayName, preferredName}` — les deux noms
 de `user_profiles/{uid}`, déjà lisibles par tout compte approuvé. Jamais l'adresse, jamais le
-rôle. Un compte en attente ou révoqué répond `{found: false}`, comme une adresse inconnue. Le
-journal (`logInfo`) nomme le groupe et l'issue, jamais l'adresse. Une erreur Firestore est
-journalisée (`logError`) et rendue `internal`.
+rôle. Un compte en attente ou révoqué répond `{found: false}`, comme une adresse inconnue.
+
+Une réponse `{found: false}` incrémente `misses` dans le même document (transaction
+best-effort : un échec est journalisé par `logError` et la réponse part quand même). À la
+cinquième du jour (`shouldWarnMisses`, égalité stricte : une fois par jour), un `logWarn`
+« 5 recherches par adresse sans résultat aujourd'hui » part, sans adresse, visible dans
+Admin › Logs.
+
+Journaux : jamais l'adresse. L'identifiant de groupe n'entre dans un message qu'après
+`searcherDenial` ; une erreur Firestore survenue avant ne le porte que tronqué à 32 caractères
+(`unverifiedGroupRef`), en `firestoreDocId`, avec le message « groupe non vérifié ». Une erreur
+Firestore est journalisée (`logError`) et rendue `internal`.
+
+**Écart assumé.** Un propriétaire qui connaît le nom d'un compte peut confirmer son adresse
+par devinette : il essaie des adresses plausibles jusqu'à ce que la réponse rende ce nom. Le
+plafond borne la devinette à dix essais par jour, et la cinquième réponse vide du jour
+déclenche l'avertissement. La recherche n'expose aucune liste d'adresses et n'en rend aucune ;
+elle confirme seulement une adresse que l'appelant a déjà formulée en entier.
 
 Client : `GroupRepository.findMemberByEmail(groupId, email)` appelle la callable et lit la
 réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart`) ;
@@ -2964,7 +2984,13 @@ réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart
 (`ErrorReportService`, feature `group_search_email`, contexte `group_id` et issue, sans
 l'adresse). Dans la feuille « Gérer les membres », une saisie qui contient `@` suspend la
 recherche par nom ; une adresse complète (`looksLikeEmail`) part à la validation de la saisie
-ou au bouton « Chercher cette adresse », jamais à chaque frappe.
+ou au bouton « Chercher cette adresse », jamais à chaque frappe. Les recherches par nom et par
+adresse ont chacune leur indicateur (`_searching`, `_emailSearching`) : la fin de l'une ne
+coupe pas celui de l'autre. Une réponse arrivée après une modification de la saisie est
+écartée. Le plafond pose `_limitReached` pour la durée de vie de la feuille : la flèche
+disparaît, la validation est ignorée, et le message s'affiche en ligne, en
+`colorScheme.error`, à la place de l'aide ; un échec réseau s'affiche de même, pour la saisie
+qui l'a provoqué.
 
 ---
 

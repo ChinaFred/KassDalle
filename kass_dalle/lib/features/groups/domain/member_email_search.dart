@@ -6,7 +6,7 @@ import '../../auth/domain/user_profile.dart';
 // Les adresses ne se lisent pas depuis le client (`users/{uid}` est réservé à
 // son titulaire et à l'administrateur) : la recherche passe par la callable
 // `findMemberByEmailFn`, réservée au propriétaire du groupe et plafonnée à
-// trente recherches par jour. Elle ne rend que l'identifiant et les noms
+// dix recherches par jour. Elle ne rend que l'identifiant et les noms
 // publics du compte trouvé, jamais l'adresse.
 
 /// Vrai si la saisie est en train de devenir une adresse : la recherche par

@@ -1994,6 +1994,12 @@ classDiagram
       <code>&gt;&gt; page_type:</code> dans le CookLang si le champ est absent. Ce repli existe
       pour les recettes importées avant l'introduction du champ.
     </span>
+    <span class="expect">
+      Les compteurs du jour <code>url_import_daily</code>, <code>invitation_sends_daily</code> et
+      <code>member_email_search_daily</code> ne figurent pas dans ce diagramme : ils n'ont pas de
+      classe Dart. Les Cloud Functions seules les écrivent et les relisent pour appliquer un
+      plafond. Leurs champs sont au §3 de <span class="path">TechnicalRequirements.md</span>.
+    </span>
   </section>
 
   <section class="callout">

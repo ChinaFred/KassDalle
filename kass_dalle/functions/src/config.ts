@@ -167,8 +167,9 @@ export const COLL_INVITATION_SENDS_DAILY = "invitation_sends_daily";
 /**
  * Recherches d'un membre par adresse du jour, par compte — `{uid}_{AAAA-MM-JJ}`
  * (jour UTC). Compteur du plafond quotidien de `findMemberByEmailFn`, sur le
- * modèle de `url_import_daily`. Écrit par les Functions seulement ; aucun
- * accès client.
+ * modèle de `url_import_daily`, avec le nombre de réponses vides du jour.
+ * Supprimé par la politique TTL sur `expires_at`. Écrit par les Functions
+ * seulement ; aucun accès client.
  */
 export const COLL_MEMBER_EMAIL_SEARCH_DAILY = "member_email_search_daily";
 

@@ -9,9 +9,14 @@ import assert from "node:assert/strict";
 
 import {
   MEMBER_EMAIL_SEARCH_DAILY_LIMIT,
+  MEMBER_EMAIL_SEARCH_MISS_ALERT,
+  MEMBER_EMAIL_SEARCH_RETENTION_DAYS,
   findAccountByEmail,
   readGroupId,
+  searchCounterExpiry,
   searcherDenial,
+  shouldWarnMisses,
+  unverifiedGroupRef,
 } from "../invitations/memberSearch";
 import { cleanEmail } from "../invitations/rules";
 import { accessDenial } from "../callable/_auth";
@@ -148,6 +153,31 @@ describe("findAccountByEmail", () => {
   });
 });
 
-test("plafond : trente recherches par jour", () => {
-  assert.equal(MEMBER_EMAIL_SEARCH_DAILY_LIMIT, 30);
+describe("plafond, alerte et conservation", () => {
+  test("dix recherches par jour", () => {
+    assert.equal(MEMBER_EMAIL_SEARCH_DAILY_LIMIT, 10);
+  });
+
+  test("l'avertissement part une fois, à la cinquième réponse vide", () => {
+    assert.equal(MEMBER_EMAIL_SEARCH_MISS_ALERT, 5);
+    assert.equal(shouldWarnMisses(4), false);
+    assert.equal(shouldWarnMisses(5), true);
+    assert.equal(shouldWarnMisses(6), false);
+    assert.equal(shouldWarnMisses(10), false);
+  });
+
+  test("l'alerte se déclenche avant le plafond", () => {
+    assert.ok(MEMBER_EMAIL_SEARCH_MISS_ALERT < MEMBER_EMAIL_SEARCH_DAILY_LIMIT);
+  });
+
+  test("le compteur expire trente jours après son écriture", () => {
+    const at = new Date("2026-10-12T08:00:00Z");
+    assert.equal(MEMBER_EMAIL_SEARCH_RETENTION_DAYS, 30);
+    assert.equal(searchCounterExpiry(at).toISOString(), "2026-11-11T08:00:00.000Z");
+  });
+
+  test("un groupe non vérifié n'est porté que tronqué", () => {
+    assert.equal(unverifiedGroupRef("g1"), "g1");
+    assert.equal(unverifiedGroupRef("x".repeat(128)).length, 32);
+  });
 });

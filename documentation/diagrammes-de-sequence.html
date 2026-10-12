@@ -2078,7 +2078,7 @@ sequenceDiagram
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
-  O->>G: Rechercher une personne à inviter…
+  O->>G: Nom ou adresse e-mail complète
   alt saisie sans « @ » — par nom, à chaque frappe
     G->>US: searchUsers — lecture plafonnée à 200 profils publics
     US-->>G: candidats — nom seul, ni adresse ni rôle
@@ -2086,7 +2086,7 @@ sequenceDiagram
     G->>R: findMemberByEmail(groupId, adresse)
     R->>MS: findMemberByEmailFn {groupId, email}
     MS->>MS: requireAuth (approuvé, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
-    MS->>MD: transaction — moins de 30 recherches du jour, sinon resource-exhausted
+    MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
     MS->>UU: parcours de users (email, role, is_revoked, noms)
     MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
     MS-->>R: {found: false} ou {found: true, uid, displayName, preferredName}<br/>jamais l'adresse

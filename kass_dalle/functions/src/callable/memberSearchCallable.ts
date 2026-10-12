@@ -11,12 +11,17 @@
  *    (`requireAuth`) ;
  *  - l'appelant est **propriétaire** du groupe (`searcherDenial`) ;
  *  - l'adresse a une forme valide (`cleanEmail`), sinon `invalid-argument` ;
- *  - trente recherches par compte et par jour UTC
- *    (`member_email_search_daily`), sinon `resource-exhausted`. Le plafond
- *    borne l'essai d'adresses en série.
+ *  - dix recherches par compte et par jour UTC (`member_email_search_daily`),
+ *    sinon `resource-exhausted`. Le plafond borne l'essai d'adresses en série.
  *
- * Les journaux ne portent pas l'adresse cherchée : seulement le groupe et
- * l'issue (compte trouvé ou non).
+ * Écart assumé : par devinette bornée (dix essais par jour), un propriétaire
+ * qui connaît le nom d'un compte peut confirmer son adresse. Cinq réponses
+ * « aucun compte » dans la journée font partir un avertissement
+ * (`logWarn`), visible dans Admin › Logs.
+ *
+ * Les journaux ne portent jamais l'adresse cherchée. L'identifiant de groupe
+ * n'apparaît dans un message qu'une fois le groupe confirmé ; avant, il n'est
+ * porté que tronqué, en `firestoreDocId`.
  *
  * Aucun appel de modèle : pas de poste d'IA.
  */
@@ -38,9 +43,13 @@ import { cleanEmail } from "../invitations/rules";
 import {
   MEMBER_EMAIL_SEARCH_DAILY_LIMIT,
   MEMBER_EMAIL_SEARCH_LIMIT_MESSAGE,
+  MEMBER_EMAIL_SEARCH_MISS_ALERT,
   findAccountByEmail,
   readGroupId,
+  searchCounterExpiry,
   searcherDenial,
+  shouldWarnMisses,
+  unverifiedGroupRef,
   type MemberEmailSearchResult,
 } from "../invitations/memberSearch";
 
@@ -56,8 +65,8 @@ const opts = {
   timeoutSeconds: 30,
 };
 
-function readCount(data: FirebaseFirestore.DocumentData | undefined): number {
-  const n = data?.count;
+function readCounter(data: FirebaseFirestore.DocumentData | undefined, field: string): number {
+  const n = data?.[field];
   return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
@@ -74,28 +83,32 @@ export const findMemberByEmailFn = onCall(opts, async (req): Promise<MemberEmail
     throw new HttpsError("invalid-argument", "Adresse e-mail invalide.");
   }
 
+  // Le groupe n'est nommé dans les journaux qu'une fois confirmé.
+  let groupConfirmed = false;
+
   try {
     const db = getFirestore();
     const groupSnap = await db.collection(COLL_GROUPS).doc(groupId).get();
     const denial = searcherDenial(groupSnap.exists ? groupSnap.data() : null, ctx.userId);
     if (denial) throw new HttpsError(denial.code, denial.message);
+    groupConfirmed = true;
 
     // Le compteur avance avant la recherche, trouvée ou non : c'est le
     // nombre d'essais qui se borne, pas le nombre de réponses positives.
     const now = new Date();
-    const counter = db
-      .collection(COLL_MEMBER_EMAIL_SEARCH_DAILY)
-      .doc(`${ctx.userId}_${spendDay(now)}`);
+    const day = spendDay(now);
+    const counter = db.collection(COLL_MEMBER_EMAIL_SEARCH_DAILY).doc(`${ctx.userId}_${day}`);
     const allowed = await db.runTransaction(async (tx) => {
-      const used = readCount((await tx.get(counter)).data());
+      const used = readCounter((await tx.get(counter)).data(), "count");
       if (used >= MEMBER_EMAIL_SEARCH_DAILY_LIMIT) return false;
       tx.set(
         counter,
         {
           uid: ctx.userId,
-          day: spendDay(now),
+          day,
           count: FieldValue.increment(1),
           updated_at: Timestamp.fromDate(now),
+          expires_at: Timestamp.fromDate(searchCounterExpiry(now)),
         },
         { merge: true },
       );
@@ -124,6 +137,34 @@ export const findMemberByEmailFn = onCall(opts, async (req): Promise<MemberEmail
       snap.docs.map((d) => ({ id: d.id, data: d.data() })),
     );
 
+    if (!result.found) {
+      // Même document que le plafond : les réponses vides du jour. Best-effort :
+      // un échec ici ne prive pas l'appelant de sa réponse, il est journalisé.
+      try {
+        const misses = await db.runTransaction(async (tx) => {
+          const after = readCounter((await tx.get(counter)).data(), "misses") + 1;
+          tx.set(counter, { misses: after }, { merge: true });
+          return after;
+        });
+        if (shouldWarnMisses(misses)) {
+          await logWarn({
+            message: `findMemberByEmailFn: ${MEMBER_EMAIL_SEARCH_MISS_ALERT} recherches par adresse sans résultat aujourd'hui (groupe ${groupId})`,
+            userId: ctx.userId,
+            correlationId: ctx.correlationId,
+            firestoreDocId: groupId,
+          });
+        }
+      } catch (missErr) {
+        await logError({
+          message: `findMemberByEmailFn: réponse vide non comptée (groupe ${groupId})`,
+          errorDescription: missErr instanceof Error ? missErr.message : String(missErr),
+          userId: ctx.userId,
+          correlationId: ctx.correlationId,
+          firestoreDocId: groupId,
+        });
+      }
+    }
+
     await logInfo({
       message: `findMemberByEmailFn: recherche par adresse (groupe ${groupId}) : ${
         result.found ? "compte trouvé" : "aucun compte"
@@ -136,11 +177,13 @@ export const findMemberByEmailFn = onCall(opts, async (req): Promise<MemberEmail
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     await logError({
-      message: `findMemberByEmailFn: recherche impossible (groupe ${groupId})`,
+      message: groupConfirmed
+        ? `findMemberByEmailFn: recherche impossible (groupe ${groupId})`
+        : "findMemberByEmailFn: recherche impossible (groupe non vérifié)",
       errorDescription: err instanceof Error ? err.message : String(err),
       userId: ctx.userId,
       correlationId: ctx.correlationId,
-      firestoreDocId: groupId,
+      firestoreDocId: groupConfirmed ? groupId : unverifiedGroupRef(groupId),
     });
     throw new HttpsError("internal", "Recherche impossible. Réessayez.");
   }

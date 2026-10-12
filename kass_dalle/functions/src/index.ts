@@ -122,7 +122,7 @@ export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 // au premier envoi.
 export { manageInvitationFn } from "./callable/invitationsCallable";
 // Recherche d'un membre à inviter dans un groupe, par son adresse exacte :
-// réservée au propriétaire du groupe, trente recherches par jour.
+// réservée au propriétaire du groupe, dix recherches par jour.
 export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────

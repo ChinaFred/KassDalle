@@ -25,7 +25,46 @@ import { cleanEmail } from "./rules";
 import { publicProfileFrom } from "../triggers/userPublicProfile";
 
 /** Recherches par adresse autorisées par compte et par jour UTC. */
-export const MEMBER_EMAIL_SEARCH_DAILY_LIMIT = 30;
+export const MEMBER_EMAIL_SEARCH_DAILY_LIMIT = 10;
+
+/**
+ * Réponses « aucun compte » du jour à partir desquelles un avertissement part
+ * dans les journaux (une fois par jour et par compte) : une série d'adresses
+ * essayées sans succès ressemble à une devinette, que l'administrateur doit
+ * pouvoir voir dans Admin › Logs.
+ */
+export const MEMBER_EMAIL_SEARCH_MISS_ALERT = 5;
+
+/**
+ * Durée de conservation d'un compteur du jour, comptée depuis sa dernière
+ * écriture. La politique TTL de `firestore.indexes.json` supprime le document
+ * à son `expires_at` ; le jour suivant écrit ailleurs, le compteur n'a plus
+ * d'usage passé ce délai, sinon la lecture d'un incident récent.
+ */
+export const MEMBER_EMAIL_SEARCH_RETENTION_DAYS = 30;
+
+/** L'échéance TTL d'un compteur écrit à `at`. */
+export function searchCounterExpiry(at: Date): Date {
+  return new Date(at.getTime() + MEMBER_EMAIL_SEARCH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Vrai quand le nombre de réponses « aucun compte » du jour, après celle-ci,
+ * atteint le seuil d'alerte. Égalité stricte : l'avertissement part une fois
+ * par jour, pas à chaque essai suivant.
+ */
+export function shouldWarnMisses(missesAfter: number): boolean {
+  return missesAfter === MEMBER_EMAIL_SEARCH_MISS_ALERT;
+}
+
+/**
+ * L'identifiant de groupe tel qu'il peut figurer dans un journal avant que
+ * le groupe ait été confirmé : 32 caractères au plus. Une saisie arbitraire
+ * de l'appelant ne remplit pas les journaux.
+ */
+export function unverifiedGroupRef(groupId: string): string {
+  return groupId.slice(0, 32);
+}
 
 /** Message du refus au-delà du plafond, affiché tel quel par le client. */
 export const MEMBER_EMAIL_SEARCH_LIMIT_MESSAGE =
