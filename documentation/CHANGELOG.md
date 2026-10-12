@@ -36,7 +36,8 @@ recréé. Aucun appel d'IA.
 `users` et crée les livres système absents, reconnus à leur tag, pour les comptes approuvés non
 révoqués. Les trois livres créés par le client reprennent ses champs ; « Mes recettes du web »
 passe par `findOrCreateWebBook`. La couverture reste vide : l'écran affiche l'image du livre
-système, et le client la dépose à la prochaine ouverture de la bibliothèque par un éditeur.
+système, et le client la dépose à
+la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide.
 Tests : `tests/systemBooksBackfill.test.ts`.
 
 ### v0.23.45 — fonctionnel

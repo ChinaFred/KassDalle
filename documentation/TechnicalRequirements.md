@@ -343,8 +343,8 @@ d'ailleurs la création d'un livre), et il garde ceux qu'il avait. Les trois pre
 par le client. La reprise *Admin › Backfills › Livres système des comptes*
 (`backfillSystemBooksFn`, §7.10) crée côté serveur ceux qui manquent à tout compte approuvé,
 lecteurs compris, avec les mêmes champs que le client et une couverture vide : l'écran affiche
-alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à la
-prochaine ouverture de la bibliothèque par un éditeur. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
+alors l'image du livre système (`Book.defaultCoverAsset`), et le client dépose la couverture à
+la prochaine ouverture de la bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ; pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » est créé **par le serveur** (`findOrCreateWebBook`,
 `pipeline/urlImport.ts`) : par `ensureWebBookFn` (`callable/urlImportCallable.ts`,
 `requireEditor`), appelée par `ensureSystemBooks` avec les autres livres, et à défaut au premier
 import par lien. Identifiant déterministe `books/web_{uid}` (deux appels simultanés ne créent

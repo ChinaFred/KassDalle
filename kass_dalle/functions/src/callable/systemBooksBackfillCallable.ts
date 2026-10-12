@@ -10,8 +10,9 @@
  *
  * Les livres créés ici reprennent les champs que pose le client. La couverture
  * reste vide : l'écran affiche l'image du livre système livrée avec
- * l'application, et le client la dépose à la prochaine ouverture de la
- * bibliothèque par un éditeur. « Mes recettes du web » passe par
+ * l'application. Le client la dépose à la prochaine ouverture de la
+ * bibliothèque par leur propriétaire, s'il est éditeur ou administrateur ;
+ * pour un lecteur, `url_couverture` reste vide. « Mes recettes du web » passe par
  * `findOrCreateWebBook`, comme à l'import par lien.
  *
  * Réentrant : un livre est reconnu à son tag interne, quel que soit son titre.
