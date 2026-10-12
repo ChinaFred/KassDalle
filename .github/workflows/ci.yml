@@ -16,11 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 # Lecture seule : la CI ne publie rien, n'écrit ni commentaire ni statut.
-# `pull-requests` et `actions` en lecture servent au job « Déjà testé en PR ».
 permissions:
   contents: read
-  pull-requests: read
-  actions: read
 
 # Actions épinglées par SHA de commit, version en commentaire, comme dans
 # deploy.yml : une étiquette se déplace, un SHA ne change pas de contenu.
@@ -61,14 +58,20 @@ jobs:
     # Une PR fusionnée relançait les trois jobs lourds sur master, environ
     # douze minutes facturées, pour un contenu que sa CI venait de valider.
     # Le push de fusion les saute quand trois conditions tiennent :
-    # - le commit poussé a le même arbre que la tête d'une PR qui lui est
-    #   associée (rien n'a été ajouté à la fusion) ;
+    # - le commit poussé a le même arbre que la tête d'une PR vers master qui
+    #   lui est associée (rien n'a été ajouté à la fusion) ;
     # - cette tête contient déjà la master d'avant le push : la CI de la PR,
     #   qui teste la fusion avec master, a donc testé ce même arbre ;
     # - une exécution de cette CI sur la tête de la PR a réussi.
     # Le job Version tourne toujours : il compare à la master d'avant le push.
     # Une réponse d'API manquante ou inattendue fait tourner la CI entière.
     if: github.event_name == 'push'
+    # Ces droits restent dans ce job : les jobs lourds exécutent le code de la
+    # PR et n'ont pas à lire les autres exécutions.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
@@ -82,7 +85,7 @@ jobs:
         run: |
           skip=false
           if ! tree=$(gh api "repos/$REPO/commits/$SHA" --jq .commit.tree.sha) ||
-             ! heads=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[].head.sha'); then
+             ! heads=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[] | select(.base.ref == "master") | .head.sha'); then
             echo "::warning::Lecture de l'API impossible : la CI tourne en entier."
             heads=""
           fi

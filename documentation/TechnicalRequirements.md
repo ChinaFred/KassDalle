@@ -4262,15 +4262,14 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 
 `.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
-précédente (`cancel-in-progress`). Le workflow a les droits `contents: read`,
-`pull-requests: read` et `actions: read` ; les deux derniers servent au job « Déjà testé en
-PR ». Ses actions sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme
+précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read` ; le seul
+job « Déjà testé en PR » reçoit en plus `pull-requests: read` et `actions: read`. Ses actions sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme
 celles de `deploy.yml`. Cinq jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
 | Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
-| Déjà testé en PR (push seulement, API GitHub) | Sur un push, sort `skip=true` quand le commit poussé a le même arbre que la tête d'une PR associée, que cette tête contient la `master` d'avant le push (`compare` : `ahead` ou `identical`) et qu'une exécution de `ci.yml` sur cette tête, en `pull_request`, a réussi. La CI de la PR a alors testé ce même arbre. Une réponse d'API manquante laisse `skip=false` |
+| Déjà testé en PR (push seulement, API GitHub) | Sur un push, sort `skip=true` quand le commit poussé a le même arbre que la tête d'une PR associée qui vise `master`, que cette tête contient la `master` d'avant le push (`compare` : `ahead` ou `identical`) et qu'une exécution de `ci.yml` sur cette tête, en `pull_request`, a réussi. La CI de la PR a alors testé ce même arbre. Une réponse d'API manquante laisse `skip=false` |
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
