@@ -137,7 +137,9 @@
       Le rôle est porté par <code>users/{uid}.role</code> et se propage dans le jeton
       d'authentification via le déclencheur <code>syncUserClaims</code>. Un compte neuf naît
       <code>pending</code> — les règles l'imposent à la création — et n'accède à rien avant qu'un
-      administrateur ne le nomme. Un compte révoqué est renvoyé au login par le routeur, quel que
+      administrateur ne le nomme. Seule exception : un compte neuf dont l'adresse Google
+      correspond à une invitation par e-mail active reçoit, quelques secondes après sa création,
+      le rôle et le groupe de l'invitation, posés par le serveur (<code>applyEmailInvitation</code>). Un compte révoqué est renvoyé au login par le routeur, quel que
       soit son rôle, <code>admin</code> compris.
     </p>
     <div class="tablewrap">
@@ -187,6 +189,7 @@
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Inviter un proche par e-mail (Lecteur ou Éditeur, dans un de ses groupes), renvoyer ou annuler une invitation, lire la liste des invitations</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Reprendre un job échoué, lire les logs, voir les coûts</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
         </tbody>
       </table>
@@ -222,7 +225,8 @@
       d'écrire <code>role: "admin"</code> dans son propre document pour tout obtenir. Seul le compte
       fondateur est administrateur d'office, rétabli par le déclencheur
       <code>enforceFounderRole</code> d'après l'adresse de son compte <b>Auth</b> ; les autres
-      procèdent d'une nomination.
+      procèdent d'une nomination — directe, ou par une invitation par e-mail qu'un administrateur
+      a envoyée avant la première connexion.
     </span>
   </section>
 
@@ -771,7 +775,10 @@ flowchart LR
     d28(["Lancer le backfill Durées estimées"])
     d29(["Programmer un backfill récurrent&lt;br/&gt;jours et heure de Paris"])
     d30(["Marquer un backfill ponctuel terminé&lt;br/&gt;ou le remettre à lancer"])
+    d31(["Inviter un proche par e-mail&lt;br/&gt;rôle, groupe, message"])
+    d32(["Renvoyer ou annuler une invitation"])
   end
+  INV(("Proche invité"))
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
 
   ADM --- d0
@@ -805,6 +812,14 @@ flowchart LR
   ADM --- d28
   ADM --- d29
   ADM --- d30
+  ADM --- d31
+  ADM --- d32
+  d31 -.->|"refusé si l'adresse a déjà un compte, ou si 20 envois aujourd'hui"| e13(["Enregistrer l'invitation&lt;br/&gt;puis envoyer l'e-mail"])
+  d32 -.->|"renvoi : expiration repoussée de 30 jours"| e13
+  e13 -.->|"e-mail « {Admin} via Kass'Dalle »"| INV
+  INV --- u1(["Première connexion Google&lt;br/&gt;sous l'adresse invitée"])
+  u1 -.->|"compte neuf, invitation active"| e14(["Recevoir le rôle et entrer&lt;br/&gt;dans le groupe de l'invitation"])
+  e14 -.->|"déclenche"| e1
   d23 -.->|"charger remplit le formulaire, rien n'est écrit"| d16
   d24 -.->|"lecture seule, ouvre l'écran à corriger"| d11
   d0 -.->|"est"| d1
@@ -876,6 +891,21 @@ flowchart LR
         « Copier la liste » copie une ligne « nom — raison » par élément. Cent éléments au plus
         sont listés, le total est toujours donné. La liste du dernier passage reste sur la tuile
         jusqu'au passage suivant.
+        <b>Inviter un proche par e-mail</b> se fait dans Gestion des utilisateurs, bouton
+        « Inviter par e-mail » : adresse Google, rôle Lecteur ou Éditeur (jamais Administrateur),
+        un groupe dont l'administrateur est propriétaire ou membre, et un message de 500 caractères
+        au plus. Le serveur enregistre l'invitation, puis envoie l'e-mail. S'il ne part pas,
+        l'invitation reste en « Envoi échoué » et se renvoie depuis l'onglet Invitations ; si
+        Gmail refuse l'adresse, elle est annulée, avec le motif « Adresse refusée par Gmail ».
+        Renvoyer exige d'être encore membre du groupe. Une
+        adresse qui a déjà un compte est refusée, avec le chemin à suivre (onglet Comptes, puis
+        invitation de groupe). Une invitation vaut trente jours depuis son dernier envoi ; vingt
+        envois par administrateur et par jour.
+        <b>La première connexion d'un invité</b> : la personne se connecte avec le compte Google de
+        l'adresse invitée. Son compte naît en attente, et le serveur lui donne, quelques secondes
+        plus tard, le rôle de l'invitation et l'entrée dans le groupe ; la salle d'attente se
+        referme seule. Avec une autre adresse, ou si l'administrateur qui a envoyé l'invitation
+        n'est plus administrateur, le compte reste en attente d'un rôle donné à la main.
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">

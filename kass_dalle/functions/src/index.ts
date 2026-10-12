@@ -117,6 +117,10 @@ export {
   retryPendingModerationFn,
 } from "./callable/moderationCallables";
 export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
+// Invitations par e-mail : création, renvoi, annulation. Seule fonction qui
+// monte les secrets GMAIL_SENDER et GMAIL_APP_PASSWORD ; nodemailer se charge
+// au premier envoi.
+export { manageInvitationFn } from "./callable/invitationsCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
@@ -155,3 +159,5 @@ export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
 export { syncPlanningReachOnConfig, syncPlanningReachOnRole } from "./triggers/planningReach";
 export { enforceFounderRole } from "./triggers/founderRole";
+// Première connexion d'un invité : rôle et groupe de son invitation.
+export { applyEmailInvitation } from "./triggers/invitationSignup";

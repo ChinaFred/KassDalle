@@ -1,0 +1,121 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+import '../../../core/services/error_report_service.dart';
+import '../../auth/domain/app_user.dart';
+import '../domain/email_invitation.dart';
+
+/// Invitations par e-mail : la liste se lit dans Firestore (lecture réservée
+/// à l'administrateur par les règles), les gestes passent par la callable
+/// `manageInvitationFn`, seule à écrire et à envoyer l'e-mail.
+class InvitationsRepository {
+  final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
+  final ErrorReportService _errorReportService;
+
+  static const _feature = 'admin.invitations';
+
+  InvitationsRepository({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    ErrorReportService? errorReportService,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1'),
+       _errorReportService = errorReportService ?? ErrorReportService();
+
+  /// Toutes les invitations, les plus récentes d'abord.
+  Stream<List<EmailInvitation>> watchInvitations() {
+    return _firestore
+        .collection('invitations')
+        .orderBy('created_at', descending: true)
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map((d) => EmailInvitation.fromFirestore(d.id, d.data()))
+              .toList(),
+        )
+        .transform(
+          StreamTransformer<
+            List<EmailInvitation>,
+            List<EmailInvitation>
+          >.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              unawaited(
+                _errorReportService.reportError(
+                  feature: _feature,
+                  error: error,
+                  stackTrace: stackTrace,
+                  context: {'step': 'watch'},
+                ),
+              );
+              // L'écran affiche l'erreur et propose de réessayer.
+              sink.addError(error, stackTrace);
+            },
+          ),
+        );
+  }
+
+  /// Crée l'invitation et envoie l'e-mail.
+  Future<InvitationOutcome> create({
+    required String email,
+    required UserRole role,
+    required String groupId,
+    required String message,
+  }) => _call('create', {
+    'email': email.trim(),
+    'role': role.name,
+    'groupId': groupId,
+    'message': message,
+  });
+
+  /// Renvoie l'e-mail et repousse l'expiration de trente jours.
+  Future<InvitationOutcome> resend(String invitationId) =>
+      _call('resend', {'invitationId': invitationId});
+
+  /// Annule l'invitation : elle ne donnera plus de rôle.
+  Future<InvitationOutcome> cancel(String invitationId) =>
+      _call('cancel', {'invitationId': invitationId});
+
+  Future<InvitationOutcome> _call(
+    String action,
+    Map<String, Object?> payload,
+  ) async {
+    try {
+      final raw = await _functions
+          .httpsCallable('manageInvitationFn')
+          .call<Map<String, dynamic>>({'action': action, ...payload});
+      final outcome = InvitationOutcome.fromMap(
+        Map<String, dynamic>.from(raw.data),
+      );
+      if (outcome.kind == InvitationOutcomeKind.sendFailed) {
+        // L'invitation est enregistrée, l'e-mail n'est pas parti : le serveur
+        // a déjà journalisé l'erreur SMTP, on garde la trace côté client.
+        await _errorReportService.reportError(
+          feature: _feature,
+          error: StateError(outcome.error ?? 'Envoi échoué'),
+          context: {
+            'step': action,
+            'invitation_id': outcome.invitationId,
+            'outcome': 'send_failed',
+          },
+        );
+      }
+      return outcome;
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {
+          'step': action,
+          if (payload['invitationId'] != null)
+            'invitation_id': payload['invitationId'],
+        },
+      );
+      rethrow;
+    }
+  }
+}

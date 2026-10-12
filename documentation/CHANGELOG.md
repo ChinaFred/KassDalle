@@ -20,6 +20,30 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-12
 
+### v0.23.49 — fonctionnel
+
+Admin › Gestion des utilisateurs gagne un onglet « Invitations » et un bouton « Inviter par
+e-mail ». L'admin saisit une adresse, choisit un groupe dont il est membre et un rôle (Lecteur
+ou Éditeur), relit un message prérempli, puis envoie. L'e-mail porte le lien vers l'application
+et le lien de l'APK Android. À la première connexion Google sous cette adresse, le compte reçoit
+le rôle et entre dans le groupe sans attendre d'approbation. Une invitation vaut 30 jours, se
+renvoie ou s'annule depuis la liste. Une adresse qui a déjà un compte est refusée : elle garde
+le parcours actuel (rôle dans l'onglet Comptes, invitation de groupe à accepter).
+
+### v0.23.49 — technique
+
+Nouvelle callable `manageInvitationFn` (création, renvoi, annulation ; 20 envois par admin et
+par jour) qui envoie par SMTP Gmail avec `nodemailer`, chargé par `await import()`. Deux
+secrets, `GMAIL_SENDER` et `GMAIL_APP_PASSWORD`, doivent exister dans Secret Manager avant le
+déploiement. Nouveau déclencheur `applyEmailInvitation` à la création de `users/{uid}` : il lit
+l'adresse vérifiée du compte Auth, relit l'invitant et le document dans une transaction, pose
+le rôle et ajoute le compte au groupe. Collections `invitations` et `invitation_sends_daily`,
+lisibles par un admin, écrites par le serveur seul. `syncUserClaims` relit `users/{uid}` avant
+d'écrire les claims, pour qu'une exécution en retard ne remette pas `pending`, et traite un
+document disparu comme une suppression. La création d'un compte exige désormais
+`email_verified`. Le statut effectif d'une invitation rejoint la logique dupliquée, avec la
+fixture `email_invitation_status.json`.
+
 ### v0.23.48 — fonctionnel
 
 La modération d'images compte désormais dans le plafond quotidien d'IA du compte : une image

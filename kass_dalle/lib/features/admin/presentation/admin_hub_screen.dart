@@ -35,7 +35,8 @@ class AdminHubScreen extends ConsumerWidget {
             color: theme.colorScheme.primary,
             title: 'Gestion des utilisateurs',
             subtitle:
-                'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
+                'Inviter par e-mail, gérer les rôles, révoquer ou rétablir '
+                'l\'accès.',
             onTap: () => context.push(AppRoutes.adminUsers),
           ),
           _AdminTile(

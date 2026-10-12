@@ -259,8 +259,32 @@ beforeEach(async () => {
 // ── users ────────────────────────────────────────────────────────────────
 
 describe("users — création de compte", () => {
-  const fresh = (claims = { email: "new@example.com" }) =>
+  const fresh = (claims = { email: "new@example.com", email_verified: true }) =>
     env.authenticatedContext("newcomer", claims).firestore();
+
+  it("refuse la création quand l'adresse du jeton n'est pas vérifiée", async () => {
+    await assertFails(
+      fresh({ email: "new@example.com", email_verified: false })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
+
+  it("refuse la création quand le jeton ne dit pas si l'adresse est vérifiée", async () => {
+    await assertFails(
+      fresh({ email: "new@example.com" })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
+
+  it("accepte la création quand l'adresse du jeton est vérifiée", async () => {
+    await assertSucceeds(
+      fresh({ email: "new@example.com", email_verified: true })
+        .doc("users/newcomer")
+        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+    );
+  });
 
   it("un compte neuf se crée en pending, non révoqué, à l'adresse de son jeton", async () => {
     await assertSucceeds(
@@ -574,7 +598,10 @@ describe("users — couverture « Recette libre »", () => {
   });
 
   it("un compte neuf ne naît pas avec une couverture externe", async () => {
-    const ctx = env.authenticatedContext("newcomer", { email: "new@example.com" }).firestore();
+    const ctx = env.authenticatedContext("newcomer", {
+      email: "new@example.com",
+      email_verified: true,
+    }).firestore();
     const base = { role: "pending", is_revoked: false, email: "new@example.com" };
     await assertFails(
       ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: "https://exemple.org/x.png" }),
@@ -2168,6 +2195,53 @@ describe("web_search_cache", () => {
   it("aucun rôle n'y écrit", async () => {
     await assertFails(db("editor").doc("web_search_cache/abc").set({ results: [] }));
     await assertFails(db("admin").doc("web_search_cache/new").set({ results: [] }));
+  });
+});
+
+// ── invitations ──────────────────────────────────────────────────────────
+
+describe("invitations — lecture administrateur, écriture serveur seule", () => {
+  const INVITATION = {
+    email: "marie@example.com",
+    email_key: "marie@example.com",
+    role: "reader",
+    group_id: "g1",
+    status: "sent",
+  };
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "invitations/inv1": INVITATION,
+      "invitation_sends_daily/admin_2026-10-12": { uid: "admin", count: 1 },
+    });
+  });
+
+  it("un administrateur lit une invitation et la liste", async () => {
+    await assertSucceeds(db("admin").doc("invitations/inv1").get());
+    await assertSucceeds(db("admin").collection("invitations").orderBy("created_at", "desc").get());
+  });
+
+  for (const persona of ["editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} ne lit pas les invitations`, async () => {
+      await assertFails(db(persona).doc("invitations/inv1").get());
+      await assertFails(db(persona).collection("invitations").get());
+    });
+  }
+
+  it("aucun rôle n'écrit une invitation depuis le client", async () => {
+    await assertFails(db("admin").doc("invitations/new").set(INVITATION));
+    await assertFails(db("admin").doc("invitations/inv1").update({ status: "accepted" }));
+    await assertFails(db("admin").doc("invitations/inv1").delete());
+    await assertFails(db("pending").doc("invitations/self").set(INVITATION));
+    await assertFails(db("editor").doc("invitations/inv1").update({ role: "editor" }));
+  });
+
+  it("le compteur d'envois : lu par l'administrateur, écrit par personne", async () => {
+    await assertSucceeds(db("admin").doc("invitation_sends_daily/admin_2026-10-12").get());
+    await assertFails(db("editor").doc("invitation_sends_daily/admin_2026-10-12").get());
+    await assertFails(
+      db("admin").doc("invitation_sends_daily/admin_2026-10-12").update({ count: 0 }),
+    );
   });
 });
 

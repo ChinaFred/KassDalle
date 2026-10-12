@@ -160,6 +160,8 @@ class _WideShell extends ConsumerWidget {
 /// Borner la lecture sert la prose d'une recette ; ça dessert un journal de
 /// logs ou une réconciliation comptable, où chaque pixel est une colonne.
 bool _wantsFullWidth(String location) {
+  // Un formulaire, pas un tableau : le shell lui pose `ReadableWidth`.
+  if (location.startsWith('/admin/users/invite')) return false;
   const fullWidthPrefixes = [
     '/admin',
     '/logs',

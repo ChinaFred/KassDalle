@@ -228,10 +228,15 @@ service cloud.firestore {
       // comprises, pour afficher un prénom (audit 2026-10-09).
       allow read: if isOwner(uid) || isAdmin();
 
+      // L'adresse recopiée doit être vérifiée par le fournisseur d'identité
+      // (`email_verified`, toujours vrai pour un compte Google) : le document
+      // porte l'adresse sur laquelle se décident l'invitation par e-mail et
+      // la reconnaissance du fondateur.
       allow create: if isAuthenticated() && request.auth.uid == uid
                       && request.resource.data.role == 'pending'
                       && request.resource.data.is_revoked == false
                       && request.resource.data.email == request.auth.token.email
+                      && request.auth.token.email_verified == true
                       && namesBounded()
                       && coverUrlOk();
 
@@ -900,6 +905,24 @@ service cloud.firestore {
     // Cloud Functions, lu par son titulaire.
     match /web_search_daily/{docId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Invitations par e-mail. Elles portent l'adresse d'une personne qui n'a
+    // pas encore de compte, et décident du rôle qu'elle recevra à sa première
+    // connexion : seul un administrateur les lit, et seules les Cloud
+    // Functions les écrivent (`manageInvitationFn`, `applyEmailInvitation`).
+    // Ouvertes à l'écriture, elles laisseraient un compte s'inviter lui-même
+    // sous une autre adresse avec le rôle de son choix.
+    match /invitations/{invitationId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Envois d'invitations du jour, par administrateur — le compteur du
+    // plafond de vingt envois. Écrit par les Cloud Functions seulement.
+    match /invitation_sends_daily/{docId} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 

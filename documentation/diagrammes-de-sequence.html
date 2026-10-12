@@ -177,6 +177,8 @@
       <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
       <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
       <li><a href="#plannings-partages">Partager son planning, lire celui d'un autre</a></li>
+      <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
+      <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
     </ol>
   </nav>
 
@@ -3550,6 +3552,143 @@ sequenceDiagram
           <b>Pas de requête <code>in</code>.</b> Un flux par propriétaire : un planning qui cesse
           d'être partagé fait tomber son seul flux, pas les autres.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-email"><span class="n">35</span>Inviter un proche par e-mail</h2>
+    <p class="sec-note">
+      Un administrateur invite une personne qui n'a pas encore de compte. Aucun appel de modèle.
+      <span class="path">admin_screen.dart → invite_by_email_screen.dart → InvitationsRepository.create →
+      callable/invitationsCallable.ts (manageInvitationFn) → invitations/mailer.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant S as InviteByEmailScreen
+  participant F as manageInvitationFn
+  participant G as groups
+  participant U as users
+  participant I as invitations
+  participant D as invitation_sends_daily
+  participant M as SMTP Gmail (nodemailer)
+
+  A->>S: « Inviter par e-mail » : adresse, rôle, groupe, message (prérempli)
+  A->>S: Envoyer, Entrée ou Ctrl/Cmd+S
+  S->>S: adresse saisie et de bonne forme, groupe choisi ? (sinon message sous le champ)
+  S->>F: action create
+  F->>F: requireAdmin ; rôle reader ou editor (admin : invalid-argument)
+  F->>G: groupe existant, appelant propriétaire ou membre ? (même contrôle au renvoi)
+  F->>U: parcours email, role, is_revoked — même clé d'adresse ?
+  alt compte existant
+    F-->>S: refused (account_active, account_pending + existingUid, account_revoked, founder)
+    S-->>A: message sous l'adresse ; « Lui donner le rôle (sans groupe) » si en attente
+  else adresse libre
+    F->>I: transaction — invitation active de même email_key ?
+    F->>D: transaction — moins de 20 envois aujourd'hui ?
+    alt doublon ou plafond
+      F-->>S: refused (duplicate + invitationId, daily_limit)
+      S-->>A: message ; « Renvoyer l'invitation » pour un doublon
+    else
+      F->>D: count + 1
+      F->>I: création, status send_failed, last_error « Envoi en cours ou interrompu. »
+      F->>M: e-mail « {Admin} via Kass'Dalle », Reply-To de l'admin
+      alt envoyé
+        F->>I: status sent, last_error null
+        F-->>S: sent
+        S-->>A: « Invitation envoyée à … », onglet Invitations
+      else Gmail refuse l'adresse (5.1.x sur RCPT TO)
+        F->>F: logError (adresse masquée)
+        F->>I: status cancelled, cancelled_by system, last_error « Adresse refusée par Gmail : … »
+        F-->>S: refused (address_rejected)
+        S-->>A: motif sous l'adresse ; historique : Annulée, avec ce motif
+      else échec temporaire, de configuration ou secret vide
+        F->>F: logError (adresse masquée)
+        F->>I: status send_failed, last_error lisible
+        F-->>S: send_failed
+        S-->>A: « E-mail non envoyé. L'invitation est enregistrée… »
+      end
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>L'invitation est écrite avant l'e-mail.</b> Une panne SMTP, un mot de passe
+        d'application révoqué ou une fonction interrompue laisse une invitation visible dans
+        l'onglet Invitations, en « Envoi échoué », que l'administrateur renvoie. Un renvoi
+        (<code>action resend</code>) suit le même chemin à partir de l'étape du compteur : il
+        repousse l'expiration de trente jours et compte dans les vingt envois du jour ; il
+        rejoue avant le contrôle du groupe. Le résultat de l'envoi s'écrit dans une transaction
+        qui ne touche pas une invitation acceptée ou annulée entre-temps. Un message vide part
+        sans paragraphe personnel : le serveur n'a pas de message par défaut.
+        Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
+        déjà reçu ne donne plus de rôle.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="invitation-connexion"><span class="n">36</span>Première connexion d'un invité</h2>
+    <p class="sec-note">
+      La personne invitée ouvre le lien de l'e-mail et se connecte avec le compte Google de
+      l'adresse invitée.
+      <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
+      (applyEmailInvitation) → syncUserClaims · syncGroupReach</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor P as Proche invité
+  participant C as Client Flutter
+  participant U as users/{uid}
+  participant T as applyEmailInvitation
+  participant AU as Firebase Auth
+  participant I as invitations
+  participant G as groups
+  participant CL as syncUserClaims
+  participant R as syncGroupReach
+
+  P->>C: connexion Google
+  C->>U: création role pending (imposé par les règles)
+  C-->>P: salle d'attente (/pending), flux temps réel sur users/{uid}
+  U->>T: onDocumentCreated
+  T->>AU: getUser(uid) — adresse, emailVerified
+  alt fondateur, adresse non vérifiée, ou aucune invitation active
+    T->>T: rien à faire (non vérifiée : logInfo)
+  else invitant (last_sent_by, sinon invited_by) plus admin, ou révoqué
+    T->>U: transaction — relit le compte de l'invitant
+    T->>T: rien n'est appliqué (logInfo) ; compte pending, invitation inchangée
+  else invitation active de même email_key, invitant toujours admin
+    T->>U: transaction — relit : toujours pending et non révoqué ?
+    T->>G: transaction — le groupe existe ?
+    T->>U: role = rôle de l'invitation
+    opt groupe existant
+      T->>G: member_ids + uid, invited_ids − uid
+    end
+    T->>I: status accepted, accepted_uid, accepted_at, group_missing
+    U->>CL: onDocumentWritten — relit le document, claims {role}, profil public
+    G->>R: onDocumentWritten — portée group_reach des membres
+    U-->>C: rôle reçu
+    C-->>P: la salle d'attente se referme, accueil
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le serveur décide, sur l'adresse du compte Auth.</b> Le client ne lit pas les
+        invitations et ne peut pas se donner de rôle : la règle de création de
+        <code>users/{uid}</code> impose toujours <code>pending</code>, et une adresse vérifiée
+        (<code>email_verified</code>). Le rôle arrive une à
+        quelques secondes plus tard. Deux exécutions de <code>syncUserClaims</code> se
+        croisent (création, puis rôle) : chacune relit le document avant d'écrire, si bien que la
+        dernière à passer écrit l'état final ; un document supprimé entre-temps est traité comme
+        une suppression, jamais rétabli d'après l'instantané. Avec une autre adresse Google, le compte reste en
+        attente, et l'administrateur le nomme dans l'onglet Comptes.
       </figcaption>
     </figure>
   </section>

@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/admin_repository.dart';
+import '../data/invitations_repository.dart';
+import '../domain/email_invitation.dart';
 import '../data/ai_budget_repository.dart';
 import '../data/app_check_repository.dart';
 import '../data/nutrition_ingredients_repository.dart';
@@ -58,3 +60,13 @@ final allErrorReportsProvider = StreamProvider.autoDispose<List<ErrorReport>>((
 ) {
   return ref.watch(errorReportServiceProvider).watchAll();
 });
+
+final invitationsRepositoryProvider = Provider<InvitationsRepository>((ref) {
+  return InvitationsRepository();
+});
+
+/// Invitations par e-mail, les plus récentes d'abord (lecture admin).
+final emailInvitationsProvider =
+    StreamProvider.autoDispose<List<EmailInvitation>>((ref) {
+      return ref.watch(invitationsRepositoryProvider).watchInvitations();
+    });
