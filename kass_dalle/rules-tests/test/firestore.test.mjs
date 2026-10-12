@@ -598,7 +598,10 @@ describe("users — couverture « Recette libre »", () => {
   });
 
   it("un compte neuf ne naît pas avec une couverture externe", async () => {
-    const ctx = env.authenticatedContext("newcomer", { email: "new@example.com" }).firestore();
+    const ctx = env.authenticatedContext("newcomer", {
+      email: "new@example.com",
+      email_verified: true,
+    }).firestore();
     const base = { role: "pending", is_revoked: false, email: "new@example.com" };
     await assertFails(
       ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: "https://exemple.org/x.png" }),
