@@ -99,16 +99,17 @@ Deux fournisseurs d'inférence cohabitent : **Google Gemini** (historique, tous 
 `functions/src/ai/` porte le routage, la tarification et le client Claude.
 
 **Trois fichiers, et trois seulement, importent un SDK de fournisseur** :
-`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — ce dernier par un
-`await import()` dynamique, jamais statique : le SDK Vision tire gRPC et protobuf, et le
+`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — le premier et le dernier
+par un `await import()` dynamique, jamais statique : le SDK Vision tire gRPC et protobuf, et le
 charger au démarrage d'`index.ts` fait dépasser le budget de 10 s du déploiement et
-ralentit le démarrage à froid des cinquante fonctions du bundle.
+ralentit le démarrage à froid des cinquante fonctions du bundle ; `@google/genai` coûte une
+centaine de millisecondes à l'import.
 
 Le troisième sert la modération d'images, seul poste facturé à l'unité et seul à ne pas passer
 par `callModel` — il lit la même politique, il n'emprunte pas la même exécution.
 
-**Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging, BigQuery et
-Cloud Vision se chargent par `await import()` au premier usage, et leur client est
+**Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging, BigQuery,
+Cloud Vision et `@google/genai` se chargent par `await import()` au premier usage, et leur client est
 mémorisé. Ils tirent gRPC, protobuf et une pile d'authentification que les cinquante
 fonctions du bundle chargeaient toutes — y compris celles qui ne s'en servent jamais.
 Le budget de découverte du déploiement est de dix secondes ; c'est ce plafond qui faisait

@@ -58,8 +58,8 @@ export function documentPart(mimeType: string, dataBase64: string): ModelPart {
 /**
  * Fragment binaire construit depuis des octets, classé d'après son type MIME.
  *
- * Remplace `dataPart` de `gemini/client.ts` pour les postes routés : le reste
- * du backend fabrique ses entrées sans savoir quel moteur les servira.
+ * Le reste du backend fabrique ses entrées sans savoir quel moteur les
+ * servira : `ai/router.ts` les traduit pour Gemini ou pour Claude.
  */
 export function filePart(mimeType: string, bytes: Buffer): ModelPart {
   const kind = mimeType.startsWith("image/") ? "image" : "document";

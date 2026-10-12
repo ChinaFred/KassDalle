@@ -49,10 +49,13 @@ choix du moteur de se faire dans un document Firestore plutôt que dans un dépl
 ```
 
 Trois fichiers, et trois seulement, importent un SDK de fournisseur :
-`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — ce dernier par un
-`await import()` **dynamique**. Le SDK Vision tire gRPC et protobuf : le charger au
-démarrage d'`index.ts` fait dépasser le budget de dix secondes du déploiement et ralentit
-le démarrage à froid des cinquante fonctions du bundle.
+`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — le premier et le
+dernier par un `await import()` **dynamique**. Le SDK Vision tire gRPC et protobuf : le
+charger au démarrage d'`index.ts` fait dépasser le budget de dix secondes du déploiement et
+ralentit le démarrage à froid des cinquante fonctions du bundle. `@google/genai` coûte une
+centaine de millisecondes à l'import (contre 4 ms pour l'ancien `@google/generative-ai`) :
+`gemini/client.ts` ne l'importe qu'en `import type` au niveau module et le charge au premier
+appel de modèle (`loadSdk()`, promesse mémorisée, oubliée si l'import échoue).
 
 **Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging (écriture *et*
 lecture) et BigQuery se chargent par `await import()` au premier usage, leur client
@@ -168,7 +171,7 @@ Côté Cloud Functions (Node 22, TypeScript) :
 | Composant | Paquet |
 |---|---|
 | Runtime Functions | `firebase-functions` ^7.2.5, `firebase-admin` ^12.7.0 |
-| Gemini | `@google/generative-ai` ^0.21.0 |
+| Gemini | `@google/genai` ^2.28.0, chargé au premier appel |
 | Claude | `@anthropic-ai/sdk` ^0.116.0 |
 | Modération d'images | `@google-cloud/vision` ^6.0.0, chargé dynamiquement |
 | File d'import | `@google-cloud/tasks` ^5.5.2 |
@@ -595,8 +598,9 @@ coût réel. Aucune erreur, aucun écran cassé — juste un chiffre plausible e
 faux, et un écart de réconciliation qu'on attribuait à autre chose.
 
 `thinkingTokensOf()` (dans `gemini/client.ts`) retient le maximum du champ dédié
-et de `totalTokenCount − prompt − candidates` : ce que le total compte en plus
-de l'entrée et de la sortie ne peut être que du raisonnement, et ce repli
+et de `totalTokenCount − prompt − candidates − toolUsePrompt` : ce que le total
+compte en plus de l'entrée, de la sortie et du résultat d'un outil (recherche
+Google, facturé au tarif d'entrée) ne peut être que du raisonnement, et ce repli
 survit à une version du SDK qui cesserait de remonter le champ. Le coût est
 calculé sur `outputTokens + thinkingTokens` ; les deux restent stockés
 séparément (`thinking_tokens`, `total_thinking_tokens`,
@@ -609,12 +613,37 @@ reste à zéro, sans quoi il serait compté deux fois.
 `app_config/ai_routing_policy` porte `thinking_budget` (global) et
 `thinking_budgets` (par poste, l'emporte sur le global) ; `0` coupe le
 raisonnement, `null` — le défaut — laisse le modèle décider, comportement
-inchangé tant que personne n'a tranché. Le budget est transmis en
-`generationConfig.thinkingConfig.thinkingBudget` ; le type n'existe pas dans
-`@google/generative-ai` 0.21, qui transmet néanmoins `generationConfig` tel
-quel — d'où un cast, doublé d'un repli : une erreur nommant `thinking` fait
+inchangé tant que personne n'a tranché. Le budget est passé au SDK en
+`config.thinkingConfig.thinkingBudget` (typé par `@google/genai`), qui l'envoie
+à l'API en `generationConfig.thinkingConfig` ; `buildGeminiRequest()` construit
+la requête. Un repli s'y ajoute : une erreur nommant `thinking` fait
 retenter l'appel **une fois sans le plafond**, parce qu'une facture plus lourde
 vaut mieux qu'un poste qui ne répond plus. Réglable dans Admin → Moteur d'IA.
+
+**Réessais et erreurs Gemini.** `@google/genai` ne retente rien tant que
+`httpOptions.retryOptions` n'est pas posé, et `client.ts` ne le pose pas : les
+seuls réessais restent ceux de `callGemini` (quota, backoff exponentiel plafonné à
+60 s, jusqu'au délai de l'appel), chacun journalisé. Le SDK lève une `ApiError`
+dont `status` porte le code HTTP et dont le message est le corps JSON de
+l'erreur ; `classifyError()` classe `status === 429`, puis à défaut un message
+contenant le nombre `429` (mot entier), `quota` ou `resource_exhausted`, en `QUOTA_EXCEEDED`.
+Le délai d'un appel `callGemini` annule la requête HTTP (`config.abortSignal`) : la
+connexion est fermée et la réponse n'est plus attendue. Le client est construit avec
+`vertexai: false` et l'hôte `https://generativelanguage.googleapis.com` en dur : le SDK
+ignore donc `GOOGLE_GEMINI_BASE_URL` et `GOOGLE_GENAI_USE_VERTEXAI`, qui sinon pourraient
+envoyer la clé vers un autre hôte.
+
+**Recherche Google (grounding), préparée mais inutilisée.**
+`GeminiCallContext.googleSearch` ajoute l'outil `{ googleSearch: {} }` à la
+requête, et `toGeminiResponse()` remplit `GeminiResponse.grounding` depuis le
+`groundingMetadata` du premier candidat : `sources` (`groundingChunks[].web` —
+URI obligatoire, doublons retirés, titre facultatif), `webSearchQueries`, et
+`searchEntryPointHtml` (`searchEntryPoint.renderedContent`, le bloc de
+suggestions Google à afficher avec la réponse). Aucun poste ne pose
+`googleSearch`, et `callModel` ne le transmet pas. Avant le premier poste qui
+l'active : la recherche est facturée à la requête en plus des jetons, et la
+grille (`ai/pricing.ts`, `app_config/ai_pricing`) ne sait pas encore la
+compter.
 
 **Une mesure du poids réel** : sur août 2026, Google a facturé 2 457 734 jetons
 de sortie Gemini là où l'application en comptait 323 900. Les 2 133 834
