@@ -11,7 +11,10 @@
  *  - l'appelant appartient au groupe choisi (propriétaire ou membre), à la
  *    création comme au renvoi ;
  *  - l'adresse n'a pas de compte (comparée sur sa clé normalisée,
- *    `normalizeEmailKey`) ;
+ *    `normalizeEmailKey`), ou un compte révoqué qui n'est pas le fondateur.
+ *    Dans ce cas l'invitation porte `target: "revoked"` et l'uid du compte
+ *    (`target_uid`) : le compte reste révoqué à l'envoi, et seul ce compte-là
+ *    retrouve l'accès, à sa reconnexion (`applyRevokedInvitation`) ;
  *  - une seule invitation active par adresse ;
  *  - vingt envois par administrateur et par jour UTC, créations et renvois
  *    confondus (`invitation_sends_daily`).
@@ -51,7 +54,7 @@ import { FOUNDER_EMAIL, isFounderEmail } from "../triggers/founderRole";
 import {
   ADDRESS_REJECTED_PREFIX,
   INVITATION_DAILY_LIMIT,
-  accountRefusal,
+  accountDecision,
   buildInvitationEmail,
   cleanEmail,
   cleanMessage,
@@ -61,8 +64,11 @@ import {
   isInvitableRole,
   isPermanentRecipientRejection,
   normalizeEmailKey,
+  invitationTargetOf,
   readableSendError,
+  resendRefusal,
   type ExistingAccount,
+  type InvitationTarget,
 } from "../invitations/rules";
 import { mailCredentials, sendMail } from "../invitations/mailer";
 
@@ -91,9 +97,13 @@ type Refusal = {
   existingUid?: string;
 };
 
+/**
+ * `target` dit au client quel compte l'invitation vise : `revoked` lui fait
+ * annoncer que l'accès sera rétabli à la prochaine connexion.
+ */
 type SendOutcome =
-  | { status: "sent"; invitationId: string }
-  | { status: "send_failed"; invitationId: string; error: string }
+  | { status: "sent"; invitationId: string; target: InvitationTarget }
+  | { status: "send_failed"; invitationId: string; error: string; target: InvitationTarget }
   | Refusal;
 
 function refused(
@@ -205,6 +215,7 @@ async function deliver(
     groupName: string;
     message: string;
     expiresAt: Date;
+    target: InvitationTarget;
   },
 ): Promise<SendOutcome> {
   const db = getFirestore();
@@ -219,6 +230,7 @@ async function deliver(
       message: mail.message,
       toEmail: mail.to,
       expiresAt: mail.expiresAt,
+      restoresAccess: mail.target === "revoked",
     });
     await sendMail(credentials, {
       fromName: email.fromName,
@@ -276,11 +288,11 @@ async function deliver(
     });
   }
 
-  if (error === null) return { status: "sent", invitationId };
+  if (error === null) return { status: "sent", invitationId, target: mail.target };
   if (rejected) {
     return refused("address_rejected", error, "email", { invitationId });
   }
-  return { status: "send_failed", invitationId, error };
+  return { status: "send_failed", invitationId, error, target: mail.target };
 }
 
 async function createInvitation(
@@ -314,11 +326,18 @@ async function createInvitation(
   const groupName = group.name;
 
   const existing = await existingAccountFor(key);
-  const accountDenial = accountRefusal(existing?.account ?? null);
-  if (accountDenial) {
-    return refused(accountDenial.reason, accountDenial.message, "email", {
+  const decision = accountDecision(existing?.account ?? null);
+  if (decision.kind === "refused") {
+    return refused(decision.reason, decision.message, "email", {
       ...(existing?.uid ? { existingUid: existing.uid } : {}),
     });
+  }
+  const target: InvitationTarget = decision.kind;
+  const targetUid = target === "revoked" ? (existing?.uid ?? null) : null;
+  if (target === "revoked" && !targetUid) {
+    // Impossible par construction (seul le fondateur n'a pas d'uid, et il est
+    // refusé) ; sans uid, l'invitation ne pourrait viser aucun compte.
+    throw new HttpsError("internal", "Compte révoqué sans identifiant.");
   }
 
   const message = cleanMessage(data.message);
@@ -371,13 +390,18 @@ async function createInvitation(
       cancelled_by: null,
       cancelled_at: null,
       group_missing: false,
+      target,
+      target_uid: targetUid,
+      group_invite: null,
     });
     return null;
   });
   if (outcome) return outcome;
 
   await logInfo({
-    message: `manageInvitationFn: invitation enregistrée (${role}, groupe ${groupId})`,
+    message:
+      `manageInvitationFn: invitation enregistrée (${role}, groupe ${groupId}` +
+      (target === "revoked" ? `, compte révoqué ${targetUid})` : ")"),
     userId: ctx.userId,
     correlationId: ctx.correlationId,
     firestoreDocId: invRef.id,
@@ -390,6 +414,7 @@ async function createInvitation(
     groupName,
     message,
     expiresAt,
+    target,
   });
 }
 
@@ -419,11 +444,12 @@ async function resendInvitation(
   if ("status" in group) return group;
 
   // Un compte a pu naître entre-temps sous une autre adresse Google, ou sous
-  // celle-ci avant que l'invitation n'ait été lue : il n'y a plus rien à envoyer.
+  // celle-ci avant que l'invitation n'ait été lue ; un compte révoqué a pu
+  // être rétabli à la main. Le renvoi garde le compte visé à la création.
   const existing = await existingAccountFor(key);
-  const accountDenial = accountRefusal(existing?.account ?? null);
-  if (accountDenial) {
-    return refused(accountDenial.reason, accountDenial.message, null, {
+  const denial = resendRefusal(current, existing);
+  if (denial) {
+    return refused(denial.reason, denial.message, null, {
       ...(existing?.uid ? { existingUid: existing.uid } : {}),
     });
   }
@@ -492,6 +518,7 @@ async function resendInvitation(
     groupName: group.name,
     message: cleanMessage(current.message),
     expiresAt,
+    target: invitationTargetOf(current),
   });
 }
 

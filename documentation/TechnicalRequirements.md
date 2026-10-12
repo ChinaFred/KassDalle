@@ -264,7 +264,34 @@ active de même `email_key` (§3.5 ter). S'il en trouve une et que le document e
 `role` (`reader` ou `editor`), ajoute l'uid à `member_ids` du groupe et passe l'invitation à
 `accepted`, dans une seule transaction. Un invitant destitué ou révoqué : rien n'est appliqué,
 le compte reste `pending` et l'invitation inchangée. Le fondateur n'est jamais concerné. Le document est toujours créé `pending` par
-le client : le rôle arrive une à quelques secondes plus tard.
+le client : le rôle arrive une à quelques secondes plus tard. Seules les invitations de compte
+neuf (`target` absent ou `new`) s'appliquent ici ; une invitation de compte révoqué ne nomme
+jamais un compte qui naît.
+
+**Seconde exception — le retour d'un compte révoqué invité par e-mail :** le déclencheur
+`applyRevokedInvitation` (même fichier, `onDocumentUpdated` sur `users/{uid}`) ne réagit qu'à
+une écriture où le compte est révoqué avant et après, et où `last_seen_at` change
+(`isRevokedSignIn`) : c'est l'écriture de connexion du client (`AuthRepository._upsertUser`),
+que les règles permettent au titulaire révoqué, puisqu'elle ne touche ni `role` ni `is_revoked`.
+Il lit l'adresse **Auth** (`getUser`, `emailVerified` exigé) et cherche l'invitation active de
+même `email_key` qui vise **ce** compte (`target: "revoked"`, `target_uid == uid`). Dans une
+transaction, il relit : le compte toujours révoqué et non fondateur, l'invitant (dernier envoi)
+encore `admin` non révoqué. Il écrit alors `is_revoked: false` et le `role` de l'invitation,
+ajoute l'uid à `invited_ids` du groupe — **jamais** à `member_ids` : l'invité accepte dans
+Groupes familiaux —, et passe l'invitation à `accepted` avec `group_invite`. Il n'écrit rien au
+groupe si le compte y est déjà membre ou invité, ou si 50 invitations y attendent (plafond de
+`boundedGroup`) ; groupe supprimé : rôle seul, `group_missing: true`. Le statut `accepted`, relu
+dans la transaction, empêche une seconde application. L'écriture réveille `syncUserClaims`
+(claims `revoked: false` et nouveau rôle, sans couper la session) et `syncPlanningReachOnRole`.
+
+**Jeton en retard sur le document.** À sa reconnexion, le compte reçoit un jeton dont le claim
+`revoked` vaut encore `true` : les règles croient un jeton qui confirme une révocation. Le
+client ne laisse donc passer une nouvelle version de `users/{uid}` qu'après avoir renouvelé le
+jeton tant que ses claims sont en retard (`tokenLagsBehind` : jeton révoqué alors que le
+document ne l'est plus, ou rôle du jeton différent du rôle nommé du document), huit fois au plus
+à 1,5 s d'intervalle (`AuthRepository.watchAppUser`). L'écran de révocation reste affiché
+pendant ce temps, puis se ferme seul. Au-delà, le document passe quand même, et l'écart est
+rapporté (`auth_token_claims_lag`).
 
 **Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
 `admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
@@ -1193,8 +1220,9 @@ et un administrateur.
 
 ### 3.5 ter Collection `invitations` — invitations par e-mail
 
-Une invitation envoyée par un administrateur à une personne qui n'a pas encore de compte.
-Écrite par le serveur seul (`manageInvitationFn`, `applyEmailInvitation`) ; lue par un
+Une invitation envoyée par un administrateur à une personne qui n'a pas encore de compte, ou
+dont le compte est révoqué. Écrite par le serveur seul (`manageInvitationFn`,
+`applyEmailInvitation`, `applyRevokedInvitation`) ; lue par un
 administrateur (Admin › Gestion des utilisateurs › Invitations, tri `created_at` décroissant,
 index simple).
 
@@ -1220,6 +1248,9 @@ index simple).
 | `cancelled_by` | `String?` | UID de l'administrateur qui a annulé, ou `system` quand le serveur SMTP a refusé définitivement l'adresse |
 | `cancelled_at` | `Timestamp?` | Date de l'annulation |
 | `group_missing` | `Boolean` | `true` si le groupe n'existait plus à l'acceptation : le rôle a été donné sans groupe |
+| `target` | `String` | Compte visé, fixé à la création : `new` (aucun compte sous l'adresse ; appliquée par `applyEmailInvitation`) ou `revoked` (compte révoqué ; appliquée par `applyRevokedInvitation`). Absent sur les invitations créées avant l'invitation des comptes révoqués : lu `new`. Aucun backfill |
+| `target_uid` | `String?` | Pour `target: "revoked"`, l'uid du compte révoqué visé. Seul ce compte peut l'appliquer, même si un autre compte avait la même clé d'adresse. `null` sinon |
+| `group_invite` | `String?` | Pour un compte révoqué revenu : `invited` (uid ajouté à `invited_ids`), `already_member`, `already_invited`, `full` (50 invitations en attente, rien écrit) ou `missing` (groupe supprimé). `null` sinon |
 
 **Statut effectif.** Une invitation `sent` ou `send_failed` dont `expires_at` est passée,
 égale à l'instant présent ou absente est **expirée** à la lecture, côté serveur
@@ -2292,7 +2323,7 @@ service cloud.firestore {
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 | `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
-| `invitations` · `invitation_sends_daily` | admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn` et `applyEmailInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; editor, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
+| `invitations` · `invitation_sends_daily` | admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn`, `applyEmailInvitation` et `applyRevokedInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; editor, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 
@@ -2310,7 +2341,9 @@ tout, comme avant. On n'entre dans un groupe qu'en acceptant une invitation (§3
 le cloisonnement se contournait en ajoutant n'importe quel compte à son propre groupe. Seule
 exception, écrite par le serveur et non par une règle : `applyEmailInvitation` ajoute un compte
 **neuf** au groupe de l'invitation par e-mail qu'un administrateur, propriétaire ou membre de ce
-groupe, a envoyée à son adresse (§3.5 ter). Le
+groupe, a envoyée à son adresse (§3.5 ter). Un compte **révoqué** invité par e-mail n'en
+bénéficie pas : à son retour, `applyRevokedInvitation` ne fait que l'ajouter à `invited_ids`, et
+il accepte comme toute invitation de groupe. Le
 cloisonnement existait déjà côté client (`groupMemberIdsProvider`) ; une
 requête Firestore directe le contournait.
 
@@ -2662,6 +2695,11 @@ L'invitation par e-mail ajoute 3 tests à « users — création de compte » : 
 Les tests de création existants fournissent `email_verified: true` dans leur jeton. Compte
 relevé le 2026-10-12 : 466 tests, aucun `todo`.
 
+L'invitation des comptes révoqués ajoute 2 tests à « users — rôle et révocation », sans
+changer les règles : un compte révoqué écrit sa connexion (`last_seen_at`, nom, photo), écriture
+sur laquelle se déclenche `applyRevokedInvitation` ; il ne se donne pas de rôle dans la même
+écriture. Compte relevé le 2026-10-12 : 509 tests (Firestore et Storage), aucun `todo`.
+
 La v0.23.16 ajoute 5 tests sur `recipes/{id}/origine/texte` : un lecteur lit le texte d'origine
 d'une recette visible, ne lit pas celui d'une recette privée d'autrui, un compte en attente ne
 le lit pas, un administrateur ne le réécrit pas, un éditeur ne le crée pas. Ces tests n'ont pas
@@ -2739,6 +2777,14 @@ Firebase Auth state listener
     │                   │ → applyEmailInvitation pose le   │
     │                   │   rôle et le groupe ; la salle   │
     │                   │   d'attente se referme seule     │
+    │                   │ Existant ?                       │
+    │                   │ → last_seen_at mis à jour        │
+    │                   │ Révoqué et invité par e-mail ?   │
+    │                   │ → applyRevokedInvitation rétablit│
+    │                   │   l'accès, pose le rôle et       │
+    │                   │   l'invitation de groupe ; jeton │
+    │                   │   renouvelé, l'écran de          │
+    │                   │   révocation se referme seul     │
     │                   └──────────────────────────────────┘
     │                        │
     └─ Connecté ──────────── ▼
@@ -2795,30 +2841,38 @@ champ : `founderUid()` le résout depuis Auth.
 ### Invitations par e-mail
 
 Un administrateur invite une personne qui n'a pas encore de compte. À sa première connexion
-Google sous l'adresse invitée, le compte reçoit le rôle et entre dans le groupe. Aucun appel de
-modèle : ce n'est pas un poste d'IA.
+Google sous l'adresse invitée, le compte reçoit le rôle et entre dans le groupe. Il peut aussi
+inviter l'adresse d'un compte révoqué : le compte reste révoqué à l'envoi ; à sa
+reconnexion sous cette adresse, son accès est rétabli avec le rôle de l'invitation, et il
+reçoit une invitation de groupe à accepter. Aucun appel de modèle : ce n'est pas un poste d'IA.
 
 **`manageInvitationFn`** (`callable/invitationsCallable.ts`, `onCall`, `requireAdmin` — admin
 non révoqué, App Check selon la politique) aiguille sur `action` :
 
 | `action` | Entrée | Ce que le serveur vérifie, puis fait |
 |---|---|---|
-| `create` | `email`, `role`, `groupId`, `message` | `role` vaut `reader` ou `editor` (`admin` → `invalid-argument`) ; adresse de forme valide (`cleanEmail`, `normalizeEmailKey`) ; groupe existant dont l'appelant est propriétaire ou membre ; aucun compte `users` dont la clé d'adresse est la même (parcours de `users`, trois champs, comparaison sur `email_key` : une requête d'égalité ne retrouverait pas `jean.dupont@gmail.com` saisi `jeandupont@gmail.com`) ; puis, dans une transaction : aucune invitation active de même `email_key`, moins de 20 envois du jour (`invitation_sends_daily`), écriture de l'invitation et du compteur. L'e-mail part ensuite |
-| `resend` | `invitationId` | invitation ni acceptée ni annulée (une expirée se renvoie) ; même contrôle de groupe qu'à la création (groupe existant — sinon « Ce groupe n'existe plus. » —, appelant propriétaire ou membre) ; aucun compte né entre-temps sous cette adresse, aucune autre invitation active pour elle, plafond du jour ; `last_sent_at`, `expires_at` (+30 jours), `send_count`, `last_sent_by`, `group_name` mis à jour, puis envoi |
+| `create` | `email`, `role`, `groupId`, `message` | `role` vaut `reader` ou `editor` (`admin` → `invalid-argument`) ; adresse de forme valide (`cleanEmail`, `normalizeEmailKey`) ; groupe existant dont l'appelant est propriétaire ou membre ; aucun compte `users` dont la clé d'adresse est la même, ou un compte révoqué qui n'est pas le fondateur (parcours de `users`, trois champs, comparaison sur `email_key` : une requête d'égalité ne retrouverait pas `jean.dupont@gmail.com` saisi `jeandupont@gmail.com` ; décision `accountDecision`). Compte révoqué : l'invitation porte `target: "revoked"` et `target_uid` ; sinon `target: "new"`. Puis, dans une transaction : aucune invitation active de même `email_key`, moins de 20 envois du jour (`invitation_sends_daily`), écriture de l'invitation et du compteur. L'e-mail part ensuite |
+| `resend` | `invitationId` | invitation ni acceptée ni annulée (une expirée se renvoie) ; même contrôle de groupe qu'à la création (groupe existant — sinon « Ce groupe n'existe plus. » —, appelant propriétaire ou membre) ; le compte visé n'a pas changé (`resendRefusal` : invitation de compte neuf, toujours aucun compte ; invitation de compte révoqué, le même `target_uid` toujours révoqué ; sinon refus `target_changed`, « Le compte de cette adresse a changé depuis l'invitation. Annulez-la, puis invitez de nouveau. », ou le refus du compte actif ou en attente), aucune autre invitation active pour elle, plafond du jour ; `last_sent_at`, `expires_at` (+30 jours), `send_count`, `last_sent_by`, `group_name` mis à jour, puis envoi |
 | `cancel` | `invitationId` | invitation non acceptée ; `status: cancelled`, `cancelled_by`, `cancelled_at` |
 
-Réponses : `{status: "sent", invitationId}`, `{status: "send_failed", invitationId, error}`,
-`{status: "cancelled", invitationId}`, ou un refus métier `{status: "refused", reason, message,
-field, invitationId?, existingUid?}` — `reason` parmi `invalid_email`, `group_required`,
-`group_missing`, `group_not_member`, `account_active`, `account_pending`, `account_revoked`,
-`founder`, `duplicate`, `daily_limit`, `not_found`, `not_resendable`, `not_cancellable`,
+Réponses : `{status: "sent", invitationId, target}`, `{status: "send_failed", invitationId,
+error, target}` (`target` : `new` ou `revoked`, pour que le formulaire annonce le
+rétablissement), `{status: "cancelled", invitationId}`, ou un refus métier `{status: "refused",
+reason, message, field, invitationId?, existingUid?}` — `reason` parmi `invalid_email`,
+`group_required`, `group_missing`, `group_not_member`, `account_active`, `account_pending`,
+`founder`, `target_changed`, `duplicate`, `daily_limit`, `not_found`, `not_resendable`, `not_cancellable`,
 `address_rejected` (Gmail a refusé l'adresse, l'invitation est annulée ; `invitationId` fourni) ;
 `field` (`email`, `group` ou `null`) dit sous quel champ le formulaire affiche le message.
 Un refus n'est pas une exception : le client l'affiche sans rapport d'erreur. `existingUid`
 accompagne `account_pending` : le formulaire propose alors « Lui donner le rôle (sans
 groupe) », qui passe par `AdminRepository.updateRole`, le geste de l'onglet Comptes. L'arrivée
 automatique dans le groupe est réservée aux comptes neufs : pour un compte existant, l'ajout
-au groupe passe par l'invitation de groupe (Groupes familiaux), ce que le formulaire dit.
+au groupe passe par l'invitation de groupe (Groupes familiaux), ce que le formulaire dit. Un
+compte révoqué n'est plus refusé (le refus `account_revoked` a disparu) : le
+formulaire le signale sous l'adresse avant l'envoi quand l'adresse saisie est, sans casse,
+celle d'un compte révoqué de la liste des comptes (`isRevokedAccountEmail`, indication du
+client seul ; une autre écriture d'une adresse Gmail n'est reconnue qu'à la réponse du
+serveur, par `target`).
 
 **Enregistrer, puis envoyer.** Un échec SMTP temporaire (4xx, réseau) ou de configuration
 (secret vide, `535` sur `AUTH`) ne lève pas : l'invitation passe en `send_failed` avec
@@ -2843,7 +2897,10 @@ Corps en texte et en HTML simple : le message, s'il n'est pas vide (échappé da
 le nom de l'admin et celui du groupe ; le serveur n'a pas de message par défaut, le formulaire
 seul en préremplit un), un bouton « Ouvrir Kass'Dalle » vers `https://kassdale-6d948.web.app`, le lien
 de l'APK (`/app-release.apk`, servi par le Hosting), « Connecte-toi avec le compte Google
-{adresse}. Avec une autre adresse, ton accès devra être validé à la main. », la date
+{adresse}. Avec une autre adresse, ton accès devra être validé à la main. » (compte révoqué :
+« Connecte-toi avec le compte Google {adresse} : ton accès sera rétabli, et l'invitation au
+groupe « {groupe} » t'attendra dans Groupes familiaux. », `restoresAccess` ; l'aperçu du
+formulaire compose la même ligne, `invitationAccountLine`), la date
 d'expiration (jj/mm/aaaa, heure de Paris) et la signature. Le nom de l'en-tête `From` est
 nettoyé (`headerSafeName` : ni retour à la ligne, ni guillemet, ni chevron) ; l'adresse
 destinataire a passé `cleanEmail`, qui refuse espace, virgule, chevron et retour à la ligne.
@@ -2856,6 +2913,14 @@ sinon `invited_by`) et n'applique rien s'il n'est plus `admin` ou s'il est révo
 `pending`, invitation inchangée. Un rôle illisible ou un invitant absent de l'invitation est
 journalisé en `logError`. Échec journalisé, sans nouvelle tentative : le compte reste en
 attente, l'administrateur peut le nommer à la main, et l'invitation reste active.
+
+**`applyRevokedInvitation`** (`triggers/invitationSignup.ts`, `onDocumentUpdated` sur
+`users/{uid}`) : voir §3.1, « Seconde exception ». Mêmes gardes (adresse Auth vérifiée,
+invitant encore admin, rôle invitable), mêmes journaux, préfixés `applyRevokedInvitation`.
+L'invitation n'est cherchée que pour une écriture de connexion d'un compte révoqué
+(`isRevokedSignIn`) ; un compte révoqué sans invitation qui se connecte coûte une lecture Auth
+et une requête, sans écriture. Un échec n'est pas rejoué : la connexion suivante relance le
+déclencheur, et l'invitation reste active.
 
 **Claims et course entre deux déclencheurs.** La création du document (`pending`) et la pose
 du rôle par `applyEmailInvitation`, une seconde plus tard, réveillent deux exécutions de
@@ -5351,7 +5416,7 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, syncPlanningReachOnConfig, syncPlanningReachOnRole, applyEmailInvitation
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, syncPlanningReachOnConfig, syncPlanningReachOnRole, applyEmailInvitation, applyRevokedInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 

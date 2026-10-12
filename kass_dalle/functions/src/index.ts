@@ -159,5 +159,5 @@ export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
 export { syncPlanningReachOnConfig, syncPlanningReachOnRole } from "./triggers/planningReach";
 export { enforceFounderRole } from "./triggers/founderRole";
-// Première connexion d'un invité : rôle et groupe de son invitation.
-export { applyEmailInvitation } from "./triggers/invitationSignup";
+// Invitations par e-mail : première connexion d'un compte neuf, reconnexion d'un compte révoqué.
+export { applyEmailInvitation, applyRevokedInvitation } from "./triggers/invitationSignup";

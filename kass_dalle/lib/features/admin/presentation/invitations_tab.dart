@@ -109,7 +109,13 @@ String invitationSubtitle(
       final when = at == null ? '' : 'le ${formatDayMonth(at)}';
       final detail = [by, when].where((s) => s.isNotEmpty).join(', ');
       final missing = invitation.groupMissing ? ' · groupe supprimé' : '';
-      return '$head${detail.isEmpty ? '' : ' · $detail'}$missing';
+      final restored = invitation.targetsRevokedAccount
+          ? ' · accès rétabli'
+          : '';
+      final full = invitation.groupInvite == 'full'
+          ? ' · groupe complet, invitation au groupe à refaire'
+          : '';
+      return '$head${detail.isEmpty ? '' : ' · $detail'}$restored$missing$full';
     case EmailInvitationStatus.cancelled:
       return head;
     case EmailInvitationStatus.sent:
@@ -299,7 +305,10 @@ class _InvitationMenu extends ConsumerWidget {
           switch (outcome.kind) {
             case InvitationOutcomeKind.sent:
               context.showSuccessSnackBar(
-                'Invitation renvoyée à ${invitation.email}',
+                outcome.restoresAccess
+                    ? 'Invitation renvoyée à ${invitation.email} — accès '
+                          'rétabli à sa prochaine connexion.'
+                    : 'Invitation renvoyée à ${invitation.email}',
               );
             case InvitationOutcomeKind.sendFailed:
               context.showErrorSnackBar(

@@ -196,7 +196,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
       switch (outcome.kind) {
         case InvitationOutcomeKind.sent:
           _done = true;
-          context.showSuccessSnackBar('Invitation envoyée à $email');
+          context.showSuccessSnackBar(invitationSentMessage(email, outcome));
           Navigator.of(context).pop(true);
         case InvitationOutcomeKind.sendFailed:
           _done = true;
@@ -311,6 +311,12 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
 
     final group = _selectedGroup(groups);
     final canSend = !_sending && groupsAsync.hasValue && groups.isNotEmpty;
+    // Adresse d'un compte révoqué : l'aide et l'aperçu annoncent le
+    // rétablissement. Le serveur reste seul juge (clé normalisée).
+    final revokedTarget = isRevokedAccountEmail(
+      ref.watch(allUsersProvider).value ?? const <AppUser>[],
+      _emailCtrl.text,
+    );
 
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
@@ -322,10 +328,17 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
         groupName: group?.name ?? '…',
         message: _messageCtrl.text,
         toEmail: _emailCtrl.text.trim().isEmpty ? '…' : _emailCtrl.text.trim(),
+        restoresAccess: revokedTarget,
       ),
     );
 
-    final form = _buildForm(context, groupsAsync, groups, canSend);
+    final form = _buildForm(
+      context,
+      groupsAsync,
+      groups,
+      canSend,
+      revokedTarget,
+    );
 
     final screen = PopScope(
       canPop: !_hasInput,
@@ -403,6 +416,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
     AsyncValue<List<FamilyGroup>> groupsAsync,
     List<FamilyGroup> groups,
     bool canSend,
+    bool revokedTarget,
   ) {
     final theme = Theme.of(context);
     final enabled = !_sending;
@@ -425,10 +439,11 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
             },
             decoration: InputDecoration(
               labelText: 'Adresse e-mail',
-              helperText:
-                  'L\'adresse du compte Google qu\'il utilisera pour se '
-                  'connecter.',
-              helperMaxLines: 2,
+              helperText: revokedTarget
+                  ? kRevokedAccountHelper
+                  : 'L\'adresse du compte Google qu\'il utilisera pour se '
+                        'connecter.',
+              helperMaxLines: 3,
               errorText: _emailError,
               errorMaxLines: 3,
               border: const OutlineInputBorder(),
@@ -536,7 +551,11 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: 'Groupe',
-                helperText: 'Il en deviendra membre à sa première connexion.',
+                helperText: revokedTarget
+                    ? 'Il devra accepter l\'invitation au groupe dans Groupes '
+                          'familiaux.'
+                    : 'Il en deviendra membre à sa première connexion.',
+                helperMaxLines: 2,
                 errorText: _groupError,
                 border: const OutlineInputBorder(),
               ),
@@ -598,12 +617,14 @@ class _EmailPreview extends StatelessWidget {
   final String groupName;
   final String message;
   final String toEmail;
+  final bool restoresAccess;
 
   const _EmailPreview({
     required this.inviterName,
     required this.groupName,
     required this.message,
     required this.toEmail,
+    required this.restoresAccess,
   });
 
   @override
@@ -651,8 +672,11 @@ class _EmailPreview extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Connecte-toi avec le compte Google $toEmail. Avec une autre '
-            'adresse, ton accès devra être validé à la main.',
+            invitationAccountLine(
+              toEmail: toEmail,
+              groupName: groupName,
+              restoresAccess: restoresAccess,
+            ),
             style: muted,
           ),
           const SizedBox(height: 4),
@@ -667,6 +691,31 @@ class _EmailPreview extends StatelessWidget {
     );
   }
 }
+
+/// Aide sous l'adresse quand elle est celle d'un compte révoqué.
+const kRevokedAccountHelper =
+    'Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion '
+    'avec cette adresse, et il devra accepter l\'invitation au groupe.';
+
+/// Le message de succès d'un envoi : il annonce le rétablissement quand le
+/// serveur dit que l'invitation vise un compte révoqué.
+String invitationSentMessage(String email, InvitationOutcome outcome) =>
+    outcome.restoresAccess
+    ? 'Invitation envoyée à $email — accès rétabli à sa prochaine connexion.'
+    : 'Invitation envoyée à $email';
+
+/// La ligne d'adresse du pied de l'e-mail, telle que la compose le serveur
+/// (`buildInvitationEmail`, `functions/src/invitations/rules.ts`).
+String invitationAccountLine({
+  required String toEmail,
+  required String groupName,
+  required bool restoresAccess,
+}) => restoresAccess
+    ? 'Connecte-toi avec le compte Google $toEmail : ton accès sera rétabli, '
+          'et l\'invitation au groupe « $groupName » t\'attendra dans Groupes '
+          'familiaux.'
+    : 'Connecte-toi avec le compte Google $toEmail. Avec une autre adresse, '
+          'ton accès devra être validé à la main.';
 
 /// jj/mm/aaaa.
 String formatDayMonthYear(DateTime d) =>

@@ -443,6 +443,28 @@ describe("users — rôle et révocation", () => {
     );
   });
 
+  // `applyRevokedInvitation` se déclenche sur cette écriture : un compte
+  // révoqué invité de nouveau par e-mail retrouve l'accès en se connectant.
+  it("un compte révoqué écrit sa connexion (last_seen_at, nom, photo)", async () => {
+    await assertSucceeds(
+      db("revoked")
+        .doc(`users/${PERSONAS.revoked.uid}`)
+        .update({
+          last_seen_at: new Date("2026-10-12T10:00:00Z"),
+          display_name: "Gabriel",
+          photo_url: "https://lh3.googleusercontent.com/a/photo",
+        }),
+    );
+  });
+
+  it("un compte révoqué ne se donne pas de rôle en écrivant sa connexion", async () => {
+    await assertFails(
+      db("revoked")
+        .doc(`users/${PERSONAS.revoked.uid}`)
+        .update({ last_seen_at: serverTimestamp(), role: "admin" }),
+    );
+  });
+
   it("un compte pending ne se nomme pas lui-même", async () => {
     await assertFails(
       db("pending").doc(`users/${PERSONAS.pending.uid}`).update({ role: "reader" }),

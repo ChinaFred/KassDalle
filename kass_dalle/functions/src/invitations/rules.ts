@@ -2,9 +2,10 @@
  * Invitations par e-mail : les règles, sans Firestore ni SMTP.
  *
  * Tout ce qui décide se trouve ici et se teste sans émulateur : la clé d'une
- * adresse, le statut effectif d'une invitation, le refus d'une adresse qui a
- * déjà un compte, la composition de l'e-mail et la lecture d'une erreur SMTP. La
- * callable (`callable/invitationsCallable.ts`) et le déclencheur
+ * adresse, le statut effectif d'une invitation, le compte qu'elle vise (neuf
+ * ou révoqué), le refus d'une adresse qui a déjà un compte actif, la
+ * composition de l'e-mail et la lecture d'une erreur SMTP. La callable
+ * (`callable/invitationsCallable.ts`) et les deux déclencheurs
  * (`triggers/invitationSignup.ts`) ne font qu'appliquer ces décisions.
  *
  * Logique **serveur seule**, sauf le statut effectif : le client envoie
@@ -136,17 +137,63 @@ export function expiryFrom(sentAt: Date): Date {
 }
 
 /**
- * Parmi des invitations pour une même adresse, celle qui s'applique : la
- * plus récemment envoyée des actives. `null` si aucune n'est active.
+ * Le compte qu'une invitation vise, fixé à sa création :
+ *  - `new` : un compte qui n'existe pas encore. Il s'applique à la création
+ *    d'un compte `pending` sous l'adresse (`applyEmailInvitation`). Une
+ *    invitation antérieure au champ `target` est de ce type ;
+ *  - `revoked` : le compte révoqué `target_uid`, qui porte l'adresse. Il
+ *    s'applique à la reconnexion de ce compte-là, et de lui seul
+ *    (`applyRevokedInvitation`).
+ */
+export type InvitationTarget = "new" | "revoked";
+
+/** Le type de compte visé par une invitation stockée. */
+export function invitationTargetOf(
+  data: Record<string, unknown> | undefined | null,
+): InvitationTarget {
+  return data?.target === "revoked" ? "revoked" : "new";
+}
+
+/** L'uid du compte révoqué visé, ou `null` (invitation d'un compte neuf, ou champ illisible). */
+export function targetUidOf(data: Record<string, unknown> | undefined | null): string | null {
+  if (invitationTargetOf(data) !== "revoked") return null;
+  const v = data?.target_uid;
+  return typeof v === "string" && v.trim() && !v.includes("/") ? v.trim() : null;
+}
+
+/** Le compte pour lequel on cherche une invitation à appliquer. */
+export type InvitationSeeker = { kind: "new" } | { kind: "revoked"; uid: string };
+
+/**
+ * L'invitation peut-elle s'appliquer à ce compte ? Une invitation de compte
+ * neuf ne rétablit jamais un compte révoqué, et une invitation de compte
+ * révoqué ne nomme ni un compte neuf, ni un autre compte révoqué qui aurait la
+ * même clé d'adresse.
+ */
+export function invitationFits(
+  data: Record<string, unknown> | undefined | null,
+  seeker: InvitationSeeker,
+): boolean {
+  const target = invitationTargetOf(data);
+  if (seeker.kind === "new") return target === "new";
+  return target === "revoked" && targetUidOf(data) === seeker.uid;
+}
+
+/**
+ * Parmi des invitations pour une même adresse, celle qui s'applique à
+ * `seeker` : la plus récemment envoyée des actives qui le visent. `null` si
+ * aucune.
  */
 export function pickActiveInvitation<T extends { data: Record<string, unknown> }>(
   candidates: T[],
   now: Date,
+  seeker: InvitationSeeker,
 ): T | null {
   let best: T | null = null;
   let bestAt = -Infinity;
   for (const c of candidates) {
     if (!isActiveInvitation(c.data, now)) continue;
+    if (!invitationFits(c.data, seeker)) continue;
     const at = asDate(c.data.last_sent_at)?.getTime() ?? 0;
     if (best === null || at > bestAt) {
       best = c;
@@ -164,8 +211,7 @@ export interface ExistingAccount {
 }
 
 /** Pourquoi une adresse ne peut pas être invitée. */
-export type AccountRefusalReason =
-  "account_active" | "account_pending" | "account_revoked" | "founder";
+export type AccountRefusalReason = "account_active" | "account_pending" | "founder";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "administrateur",
@@ -173,35 +219,106 @@ const ROLE_LABELS: Record<string, string> = {
   reader: "lecteur",
 };
 
+/** Ce que permet le compte qui porte l'adresse. */
+export type AccountDecision =
+  | { kind: "new" }
+  | { kind: "revoked" }
+  | { kind: "refused"; reason: AccountRefusalReason; message: string };
+
 /**
- * Le refus à opposer à une adresse qui a déjà un compte, ou `null` si aucun
- * compte n'existe. Une invitation n'agit que sur un compte neuf : un compte
- * existant change de rôle dans l'onglet Comptes, et entre dans un groupe par
- * l'invitation de groupe.
+ * Le type d'invitation que permet le compte qui porte déjà l'adresse :
+ *  - aucun compte : invitation d'un compte neuf ;
+ *  - compte révoqué (hors fondateur) : invitation de retour. Le compte reste
+ *    révoqué à l'envoi ; son accès est rétabli à sa reconnexion ;
+ *  - fondateur, compte actif ou en attente : refus. Un compte actif change
+ *    de rôle dans l'onglet Comptes et entre dans un groupe par l'invitation de
+ *    groupe.
  */
-export function accountRefusal(
-  account: ExistingAccount | null,
-): { reason: AccountRefusalReason; message: string } | null {
-  if (account === null) return null;
+export function accountDecision(account: ExistingAccount | null): AccountDecision {
+  if (account === null) return { kind: "new" };
   if (account.isFounder) {
-    return { reason: "founder", message: "Cette adresse est celle du compte fondateur." };
-  }
-  if (account.isRevoked) {
     return {
-      reason: "account_revoked",
-      message: "Cette adresse a un compte révoqué. Rétablissez son accès dans l'onglet Comptes.",
+      kind: "refused",
+      reason: "founder",
+      message: "Cette adresse est celle du compte fondateur.",
     };
   }
+  if (account.isRevoked) return { kind: "revoked" };
   if (account.role === "pending" || account.role === null) {
-    return { reason: "account_pending", message: "Ce compte attend déjà un rôle." };
+    return {
+      kind: "refused",
+      reason: "account_pending",
+      message: "Ce compte attend déjà un rôle.",
+    };
   }
   const label = ROLE_LABELS[account.role] ?? account.role;
   return {
+    kind: "refused",
     reason: "account_active",
     message:
       `Cette adresse a déjà un compte (${label}). Changez son rôle dans l'onglet ` +
       "Comptes, et invitez-le depuis le groupe.",
   };
+}
+
+/** Message du refus d'un renvoi dont le compte visé a changé depuis l'envoi. */
+export const TARGET_CHANGED_MESSAGE =
+  "Le compte de cette adresse a changé depuis l'invitation. Annulez-la, puis invitez de nouveau.";
+
+/**
+ * Peut-on renvoyer cette invitation, vu le compte qui porte l'adresse
+ * aujourd'hui ? Le renvoi garde le type fixé à la création : une invitation
+ * de compte neuf exige toujours qu'aucun compte n'existe, et une invitation
+ * de retour exige que le même compte soit toujours révoqué. `null` : renvoi
+ * permis.
+ */
+export function resendRefusal(
+  invitation: Record<string, unknown>,
+  existing: { uid: string; account: ExistingAccount } | null,
+): { reason: AccountRefusalReason | "target_changed"; message: string } | null {
+  const decision = accountDecision(existing?.account ?? null);
+  if (decision.kind === "refused") return { reason: decision.reason, message: decision.message };
+  const target = invitationTargetOf(invitation);
+  if (decision.kind === "new" && target === "new") return null;
+  if (
+    decision.kind === "revoked" &&
+    target === "revoked" &&
+    existing?.uid === targetUidOf(invitation)
+  ) {
+    return null;
+  }
+  return { reason: "target_changed", message: TARGET_CHANGED_MESSAGE };
+}
+
+/**
+ * Plafond des invitations de groupe en attente (`invited_ids`), le même que
+ * celui des règles Firestore (`boundedGroup`). Le dépasser bloquerait toute
+ * écriture de gestion du groupe depuis le client.
+ */
+export const GROUP_INVITED_MAX = 50;
+
+/**
+ * Ce que devient le groupe au retour d'un compte révoqué invité par e-mail :
+ *  - `invited` : son uid entre dans `invited_ids`, il accepte dans Groupes ;
+ *  - `already_member` / `already_invited` : rien à écrire ;
+ *  - `full` : 50 invitations déjà en attente, rien à écrire ;
+ *  - `missing` : groupe supprimé entre-temps.
+ * Le compte révoqué n'entre jamais directement dans `member_ids`.
+ */
+export type GroupInviteResult =
+  "invited" | "already_member" | "already_invited" | "full" | "missing";
+
+export function groupInviteFor(
+  group: Record<string, unknown> | undefined | null,
+  uid: string,
+): GroupInviteResult {
+  if (!group) return "missing";
+  const members = Array.isArray(group.member_ids) ? group.member_ids : [];
+  if (group.owner_id === uid || members.includes(uid)) return "already_member";
+  const invited = Array.isArray(group.invited_ids) ? group.invited_ids : [];
+  if (invited.includes(uid)) return "already_invited";
+  if (invited.length >= GROUP_INVITED_MAX) return "full";
+  return "invited";
 }
 
 /**
@@ -252,6 +369,8 @@ export interface InvitationEmailInput {
   message: string;
   toEmail: string;
   expiresAt: Date;
+  /** Invitation d'un compte révoqué : le pied annonce le rétablissement. */
+  restoresAccess?: boolean;
 }
 
 export interface InvitationEmail {
@@ -267,16 +386,20 @@ export interface InvitationEmail {
  *
  * Le message libre, le nom de l'invitant et celui du groupe sont échappés
  * dans le HTML : ils viennent d'une saisie. Le pied (lien, APK, adresse à
- * utiliser, expiration, signature) n'est pas modifiable.
+ * utiliser, expiration, signature) n'est pas modifiable ; pour un compte
+ * révoqué, sa ligne d'adresse annonce le rétablissement de l'accès et
+ * l'invitation de groupe à accepter.
  */
 export function buildInvitationEmail(input: InvitationEmailInput): InvitationEmail {
   const inviter = headerSafeName(input.inviterName);
   const group = input.groupName.replace(/[\r\n]+/g, " ").trim();
   const expires = formatDateFr(input.expiresAt);
   const subject = `${inviter} t'invite dans « ${group} » sur Kass'Dalle`;
-  const accountLine =
-    `Connecte-toi avec le compte Google ${input.toEmail}. Avec une autre adresse, ` +
-    "ton accès devra être validé à la main.";
+  const accountLine = input.restoresAccess
+    ? `Connecte-toi avec le compte Google ${input.toEmail} : ton accès sera rétabli, ` +
+      `et l'invitation au groupe « ${group} » t'attendra dans Groupes familiaux.`
+    : `Connecte-toi avec le compte Google ${input.toEmail}. Avec une autre adresse, ` +
+      "ton accès devra être validé à la main.";
   const expiryLine = `Cette invitation expire le ${expires}.`;
 
   const message = input.message.trim();

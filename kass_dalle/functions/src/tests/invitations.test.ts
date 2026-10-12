@@ -16,12 +16,17 @@ import {
   INVITATION_MESSAGE_MAX,
   INVITATION_TTL_DAYS,
   ADDRESS_REJECTED_PREFIX,
-  accountRefusal,
+  GROUP_INVITED_MAX,
+  TARGET_CHANGED_MESSAGE,
+  accountDecision,
   buildInvitationEmail,
   cleanEmail,
   cleanMessage,
   effectiveStatus,
   escapeHtml,
+  groupInviteFor,
+  invitationFits,
+  invitationTargetOf,
   expiryFrom,
   headerSafeName,
   isActiveInvitation,
@@ -31,10 +36,18 @@ import {
   normalizeEmailKey,
   pickActiveInvitation,
   readableSendError,
+  resendRefusal,
+  targetUidOf,
 } from "../invitations/rules";
 import { MailNotConfiguredError, mailCredentials } from "../invitations/mailer";
-import { awaitsRole, inviterStillAdmin, inviterUidOf } from "../triggers/invitationSignup";
-import { stateAfterReread } from "../triggers/userClaimsSync";
+import {
+  awaitsRole,
+  inviterStillAdmin,
+  inviterUidOf,
+  isRevokedSignIn,
+} from "../triggers/invitationSignup";
+import { claimsFrom, shouldRevokeSessions, stateAfterReread } from "../triggers/userClaimsSync";
+import { planningShareChanged } from "../triggers/planningReach";
 
 const STATUS_FIXTURE = path.join(
   __dirname,
@@ -169,45 +182,169 @@ describe("statut effectif", () => {
         { id: "gone", data: { status: "cancelled", expires_at: LATER, last_sent_at: LATER } },
       ],
       NOW,
+      { kind: "new" },
     );
     assert.equal(picked?.id, "new");
     assert.equal(
-      pickActiveInvitation([{ id: "x", data: { status: "sent", expires_at: EARLIER } }], NOW),
+      pickActiveInvitation([{ id: "x", data: { status: "sent", expires_at: EARLIER } }], NOW, {
+        kind: "new",
+      }),
       null,
     );
   });
 });
 
+describe("compte visé par une invitation", () => {
+  const active = { status: "sent", expires_at: LATER, last_sent_at: NOW };
+  const legacy = { id: "legacy", data: { ...active } };
+  const fresh = { id: "fresh", data: { ...active, target: "new", target_uid: null } };
+  const back = { id: "back", data: { ...active, target: "revoked", target_uid: "gabriel" } };
+  const other = { id: "other", data: { ...active, target: "revoked", target_uid: "autre" } };
+
+  test("sans champ target : invitation de compte neuf", () => {
+    assert.equal(invitationTargetOf(legacy.data), "new");
+    assert.equal(invitationTargetOf(back.data), "revoked");
+    assert.equal(invitationTargetOf({ target: "n'importe quoi" }), "new");
+    assert.equal(targetUidOf(back.data), "gabriel");
+    assert.equal(targetUidOf(fresh.data), null);
+    assert.equal(targetUidOf({ target: "revoked", target_uid: "a/b" }), null);
+    assert.equal(targetUidOf({ target: "revoked" }), null);
+  });
+
+  test("un compte neuf ne prend jamais une invitation de retour", () => {
+    assert.equal(invitationFits(legacy.data, { kind: "new" }), true);
+    assert.equal(invitationFits(fresh.data, { kind: "new" }), true);
+    assert.equal(invitationFits(back.data, { kind: "new" }), false);
+    assert.equal(pickActiveInvitation([back, other], NOW, { kind: "new" }), null);
+  });
+
+  test("un compte révoqué ne prend que l'invitation qui le vise", () => {
+    assert.equal(invitationFits(back.data, { kind: "revoked", uid: "gabriel" }), true);
+    assert.equal(invitationFits(other.data, { kind: "revoked", uid: "gabriel" }), false);
+    assert.equal(invitationFits(fresh.data, { kind: "revoked", uid: "gabriel" }), false);
+    assert.equal(invitationFits(legacy.data, { kind: "revoked", uid: "gabriel" }), false);
+    assert.equal(
+      pickActiveInvitation([legacy, other, back], NOW, { kind: "revoked", uid: "gabriel" })?.id,
+      "back",
+    );
+    assert.equal(
+      pickActiveInvitation([legacy, other], NOW, { kind: "revoked", uid: "gabriel" }),
+      null,
+    );
+  });
+
+  test("une invitation de retour expirée, annulée ou acceptée ne s'applique plus", () => {
+    for (const data of [
+      { ...back.data, expires_at: EARLIER },
+      { ...back.data, status: "cancelled" },
+      { ...back.data, status: "accepted" },
+    ]) {
+      assert.equal(
+        pickActiveInvitation([{ id: "x", data }], NOW, { kind: "revoked", uid: "gabriel" }),
+        null,
+      );
+    }
+  });
+});
+
 describe("compte existant", () => {
-  test("aucun compte : pas de refus", () => {
-    assert.equal(accountRefusal(null), null);
+  test("aucun compte : invitation de compte neuf", () => {
+    assert.deepEqual(accountDecision(null), { kind: "new" });
   });
 
   test("compte actif : refus avec le rôle", () => {
-    const r = accountRefusal({ role: "editor", isRevoked: false, isFounder: false });
-    assert.equal(r?.reason, "account_active");
+    const r = accountDecision({ role: "editor", isRevoked: false, isFounder: false });
+    assert.equal(r.kind, "refused");
+    assert.equal(r.kind === "refused" ? r.reason : null, "account_active");
     assert.equal(
-      r?.message,
+      r.kind === "refused" ? r.message : null,
       "Cette adresse a déjà un compte (éditeur). Changez son rôle dans l'onglet Comptes, " +
         "et invitez-le depuis le groupe.",
     );
   });
 
   test("compte en attente", () => {
-    const r = accountRefusal({ role: "pending", isRevoked: false, isFounder: false });
-    assert.equal(r?.reason, "account_pending");
-    assert.equal(r?.message, "Ce compte attend déjà un rôle.");
+    const r = accountDecision({ role: "pending", isRevoked: false, isFounder: false });
+    assert.equal(r.kind === "refused" ? r.reason : null, "account_pending");
+    assert.equal(r.kind === "refused" ? r.message : null, "Ce compte attend déjà un rôle.");
   });
 
-  test("compte révoqué et fondateur", () => {
+  test("compte révoqué : invitation de retour", () => {
+    assert.deepEqual(accountDecision({ role: "reader", isRevoked: true, isFounder: false }), {
+      kind: "revoked",
+    });
+    assert.deepEqual(accountDecision({ role: "pending", isRevoked: true, isFounder: false }), {
+      kind: "revoked",
+    });
+  });
+
+  test("fondateur, révoqué ou non : refus", () => {
+    for (const isRevoked of [false, true]) {
+      const r = accountDecision({ role: "admin", isRevoked, isFounder: true });
+      assert.equal(r.kind === "refused" ? r.reason : null, "founder");
+    }
+  });
+});
+
+describe("renvoi selon le compte visé", () => {
+  const revoked = { role: "reader", isRevoked: true, isFounder: false };
+  const active = { role: "reader", isRevoked: false, isFounder: false };
+  const back = { target: "revoked", target_uid: "gabriel" };
+
+  test("compte neuf : toujours sans compte", () => {
+    assert.equal(resendRefusal({}, null), null);
+    assert.equal(resendRefusal({ target: "new" }, null), null);
+    assert.equal(resendRefusal({}, { uid: "x", account: active })?.reason, "account_active");
+    assert.deepEqual(resendRefusal({}, { uid: "x", account: revoked }), {
+      reason: "target_changed",
+      message: TARGET_CHANGED_MESSAGE,
+    });
+  });
+
+  test("compte révoqué : le même compte, toujours révoqué", () => {
+    assert.equal(resendRefusal(back, { uid: "gabriel", account: revoked }), null);
+    assert.equal(resendRefusal(back, { uid: "autre", account: revoked })?.reason, "target_changed");
+    assert.equal(resendRefusal(back, null)?.reason, "target_changed");
     assert.equal(
-      accountRefusal({ role: "reader", isRevoked: true, isFounder: false })?.reason,
-      "account_revoked",
+      resendRefusal(back, { uid: "gabriel", account: active })?.reason,
+      "account_active",
+    );
+  });
+});
+
+describe("groupe au retour d'un compte révoqué", () => {
+  test("invitation de groupe, jamais d'entrée directe", () => {
+    assert.equal(
+      groupInviteFor({ owner_id: "o", member_ids: ["o"], invited_ids: [] }, "g"),
+      "invited",
+    );
+    assert.equal(groupInviteFor({ owner_id: "o", member_ids: ["o"] }, "g"), "invited");
+  });
+
+  test("déjà membre, propriétaire ou déjà invité : rien à écrire", () => {
+    assert.equal(groupInviteFor({ owner_id: "o", member_ids: ["o", "g"] }, "g"), "already_member");
+    assert.equal(groupInviteFor({ owner_id: "g", member_ids: [] }, "g"), "already_member");
+    assert.equal(
+      groupInviteFor({ owner_id: "o", member_ids: ["o"], invited_ids: ["g"] }, "g"),
+      "already_invited",
+    );
+  });
+
+  test("plafond de 50 invitations en attente", () => {
+    const full = Array.from({ length: GROUP_INVITED_MAX }, (_, i) => `u${i}`);
+    assert.equal(
+      groupInviteFor({ owner_id: "o", member_ids: ["o"], invited_ids: full }, "g"),
+      "full",
     );
     assert.equal(
-      accountRefusal({ role: "admin", isRevoked: false, isFounder: true })?.reason,
-      "founder",
+      groupInviteFor({ owner_id: "o", member_ids: ["o"], invited_ids: full.slice(1) }, "g"),
+      "invited",
     );
+  });
+
+  test("groupe supprimé", () => {
+    assert.equal(groupInviteFor(null, "g"), "missing");
+    assert.equal(groupInviteFor(undefined, "g"), "missing");
   });
 });
 
@@ -265,6 +402,25 @@ describe("e-mail", () => {
     }
     assert.ok(mail.text.trimEnd().endsWith("Fred"));
     assert.ok(mail.html.includes("Ouvrir Kass'Dalle"));
+  });
+
+  test("compte révoqué : le pied annonce le rétablissement et le groupe à accepter", () => {
+    const back = buildInvitationEmail({
+      inviterName: "Fred",
+      groupName: "Les Kassbi",
+      message: "",
+      toEmail: "gabriel@gmail.com",
+      expiresAt: new Date("2026-11-11T10:00:00Z"),
+      restoresAccess: true,
+    });
+    const line =
+      "Connecte-toi avec le compte Google gabriel@gmail.com : ton accès sera rétabli, " +
+      "et l'invitation au groupe « Les Kassbi » t'attendra dans Groupes familiaux.";
+    assert.ok(back.text.includes(line));
+    assert.ok(back.html.includes(escapeHtml(line)));
+    assert.ok(!back.text.includes("validé à la main"));
+    assert.ok(back.text.includes("Cette invitation expire le 11/11/2026."));
+    assert.ok(back.text.trimEnd().endsWith("Fred"));
   });
 
   test("nom d'en-tête nettoyé", () => {
@@ -384,6 +540,89 @@ describe("déclencheur de première connexion", () => {
     assert.equal(inviterStillAdmin({ role: "editor", is_revoked: false }), false);
     assert.equal(inviterStillAdmin({ role: "pending" }), false);
     assert.equal(inviterStillAdmin(undefined), false);
+  });
+});
+
+describe("déclencheur de reconnexion d'un compte révoqué", () => {
+  const t1 = new Date("2026-10-01T10:00:00Z");
+  const t2 = new Date("2026-10-12T10:00:00Z");
+
+  test("révoqué avant et après, last_seen_at changé : connexion", () => {
+    assert.equal(
+      isRevokedSignIn(
+        { is_revoked: true, last_seen_at: t1 },
+        { is_revoked: true, last_seen_at: t2 },
+      ),
+      true,
+    );
+    assert.equal(
+      isRevokedSignIn({ is_revoked: true }, { is_revoked: true, last_seen_at: t2 }),
+      true,
+    );
+  });
+
+  test("toute autre écriture ne déclenche rien", () => {
+    // Même instant : écriture d'un autre champ.
+    assert.equal(
+      isRevokedSignIn(
+        { is_revoked: true, last_seen_at: t1 },
+        { is_revoked: true, last_seen_at: t1 },
+      ),
+      false,
+    );
+    // Rétablissement (le déclencheur lui-même, ou l'onglet Comptes).
+    assert.equal(
+      isRevokedSignIn(
+        { is_revoked: true, last_seen_at: t1 },
+        { is_revoked: false, last_seen_at: t2 },
+      ),
+      false,
+    );
+    // Compte actif qui se connecte.
+    assert.equal(
+      isRevokedSignIn(
+        { is_revoked: false, last_seen_at: t1 },
+        { is_revoked: false, last_seen_at: t2 },
+      ),
+      false,
+    );
+    // Révocation au moment d'une connexion.
+    assert.equal(
+      isRevokedSignIn(
+        { is_revoked: false, last_seen_at: t1 },
+        { is_revoked: true, last_seen_at: t2 },
+      ),
+      false,
+    );
+    assert.equal(isRevokedSignIn(undefined, { is_revoked: true, last_seen_at: t2 }), false);
+    assert.equal(
+      isRevokedSignIn({ is_revoked: true, last_seen_at: t1 }, { is_revoked: true }),
+      false,
+    );
+  });
+
+  test("le rétablissement repose les claims sans couper la session", () => {
+    const before = claimsFrom({ role: "reader", is_revoked: true });
+    const after = claimsFrom({ role: "editor", is_revoked: false });
+    assert.deepEqual(after, { role: "editor", revoked: false });
+    assert.equal(shouldRevokeSessions(before, after, true), false);
+  });
+
+  test("le rétablissement d'un éditeur recalcule la portée de ses plannings", () => {
+    assert.equal(
+      planningShareChanged(
+        { role: "editor", is_revoked: true },
+        { role: "editor", is_revoked: false },
+      ),
+      true,
+    );
+    assert.equal(
+      planningShareChanged(
+        { role: "reader", is_revoked: true },
+        { role: "reader", is_revoked: false },
+      ),
+      false,
+    );
   });
 });
 

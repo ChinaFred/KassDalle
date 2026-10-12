@@ -17,6 +17,28 @@ const _devBypassEmail = String.fromEnvironment(
   defaultValue: 'china.fred.75@gmail.com',
 );
 
+/// Nombre de renouvellements du jeton tentés quand ses claims sont en retard
+/// sur le document du compte.
+const kTokenAlignAttempts = 8;
+
+/// Attente entre deux renouvellements.
+const kTokenAlignDelay = Duration(milliseconds: 1500);
+
+/// Vrai si les claims du jeton sont en retard sur le document [user], d'une
+/// façon qui fait refuser par les règles ce que le document permet :
+///  - le jeton dit révoqué, le document ne l'est plus (les règles croient le
+///    jeton quand il confirme une révocation) ;
+///  - le jeton porte un rôle autre que celui, nommé, du document (les règles
+///    lisent le rôle du jeton quand il en porte un).
+/// Un document révoqué ou en attente ne demande rien : il n'ouvre rien, quel
+/// que soit le jeton. Pure, testée.
+bool tokenLagsBehind(Map<String, dynamic>? claims, AppUser user) {
+  if (claims == null || user.isRevoked || user.isPending) return false;
+  if (claims['revoked'] == true) return true;
+  final role = claims['role'];
+  return role is String && role.isNotEmpty && role != user.role.name;
+}
+
 class AuthRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -124,12 +146,60 @@ class AuthRepository {
     ]);
   }
 
+  /// Le compte [uid] en temps réel.
+  ///
+  /// Chaque version du document attend que le jeton suive avant d'être
+  /// émise ([_alignTokenWith]) : un compte rétabli à sa reconnexion par une
+  /// invitation par e-mail (`applyRevokedInvitation`) garde sinon, jusqu'à
+  /// une heure, un jeton dont le claim `revoked` vaut encore `true`, et les
+  /// règles lui refusent tout alors que l'écran de révocation s'est fermé.
   Stream<AppUser?> watchAppUser(String uid) {
     return _firestore
         .collection('users')
         .doc(uid)
         .snapshots()
-        .map((doc) => doc.exists ? AppUser.fromFirestore(doc.data()!) : null);
+        .map((doc) => doc.exists ? AppUser.fromFirestore(doc.data()!) : null)
+        .asyncMap((user) async {
+          if (user != null) await _alignTokenWith(user);
+          return user;
+        });
+  }
+
+  /// Renouvelle le jeton tant que ses claims sont en retard sur [user]
+  /// ([tokenLagsBehind]), au plus [kTokenAlignAttempts] fois : les claims
+  /// sont posés par `syncUserClaims` quelques secondes après l'écriture du
+  /// document. Au-delà, le document est émis quand même, et l'écart est
+  /// rapporté.
+  Future<void> _alignTokenWith(AppUser user) async {
+    final current = _auth.currentUser;
+    if (current == null || current.uid != user.uid) return;
+    try {
+      var claims = (await current.getIdTokenResult()).claims;
+      if (!tokenLagsBehind(claims, user)) return;
+      for (var attempt = 0; attempt < kTokenAlignAttempts; attempt++) {
+        if (attempt > 0) await Future<void>.delayed(kTokenAlignDelay);
+        claims = (await current.getIdTokenResult(true)).claims;
+        if (!tokenLagsBehind(claims, user)) return;
+      }
+      await _errorReportService.reportError(
+        feature: 'auth_token_claims_lag',
+        error: StateError('Claims du jeton toujours en retard sur le compte'),
+        context: {
+          'uid': user.uid,
+          'doc_role': user.role.name,
+          'doc_revoked': user.isRevoked,
+          'claim_role': claims?['role'],
+          'claim_revoked': claims?['revoked'],
+        },
+      );
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'auth_token_claims_lag',
+        error: e,
+        stackTrace: st,
+        context: {'uid': user.uid, 'step': 'getIdTokenResult'},
+      );
+    }
   }
 
   /// Crée ou met à jour le profil utilisateur dans Firestore.

@@ -1,5 +1,15 @@
 /**
- * Première connexion d'un invité : le rôle et le groupe de son invitation.
+ * Invitations par e-mail appliquées à la connexion : deux déclencheurs.
+ *
+ * `applyEmailInvitation` — première connexion d'un compte neuf : le rôle et
+ * le groupe de son invitation (`target: "new"`).
+ *
+ * `applyRevokedInvitation` — reconnexion d'un compte révoqué invité de nouveau
+ * (`target: "revoked"`, `target_uid`) : accès rétabli, rôle de l'invitation, et
+ * une invitation de groupe à accepter. Détail plus bas.
+ *
+ * ## Compte neuf
+ *
  *
  * Un compte neuf naît `pending` (règle de création de `users/{uid}`). Si son
  * adresse Google correspond à une invitation active, ce déclencheur lui donne
@@ -27,7 +37,7 @@
  * suit `users/{uid}` en temps réel : la salle d'attente se ferme seule.
  */
 
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 
@@ -35,7 +45,13 @@ import { COLL_GROUPS, COLL_INVITATIONS, COLL_USERS, REGION } from "../config";
 import { accessDenial } from "../callable/_auth";
 import { logError, logInfo } from "../logging";
 import { isFounderEmail } from "./founderRole";
-import { isInvitableRole, normalizeEmailKey, pickActiveInvitation } from "../invitations/rules";
+import {
+  asDate,
+  groupInviteFor,
+  isInvitableRole,
+  normalizeEmailKey,
+  pickActiveInvitation,
+} from "../invitations/rules";
 
 /** Vrai si le document décrit un compte qui attend un rôle. Pure, testée. */
 export function awaitsRole(data: Record<string, unknown> | undefined | null): boolean {
@@ -98,9 +114,12 @@ export const applyEmailInvitation = onDocumentCreated(
         const sameKey = await tx.get(invitations.where("email_key", "==", key));
         if (sameKey.empty) return null;
         const now = new Date();
+        // Seules les invitations de compte neuf : une invitation de retour
+        // vise un compte révoqué précis, jamais un compte qui naît.
         const chosen = pickActiveInvitation(
           sameKey.docs.map((d) => ({ ref: d.ref, id: d.id, data: d.data() })),
           now,
+          { kind: "new" },
         );
         if (chosen === null) return null;
         // Adresse non vérifiée : on ne donne rien, mais on le dit.
@@ -190,6 +209,187 @@ export const applyEmailInvitation = onDocumentCreated(
     } catch (err) {
       await logError({
         message: `applyEmailInvitation: invitation non appliquée pour ${uid}`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+      });
+    }
+  },
+);
+
+/**
+ * Vrai si l'écriture est la connexion d'un compte révoqué : révoqué avant et
+ * après, et `last_seen_at` a changé. C'est ce qu'écrit le client à chaque
+ * connexion (`AuthRepository._upsertUser`), et les règles laissent le
+ * titulaire révoqué l'écrire. Toute autre écriture (rétablissement, rôle,
+ * nom préféré) ne déclenche rien. Pure, testée.
+ */
+export function isRevokedSignIn(
+  before: Record<string, unknown> | undefined | null,
+  after: Record<string, unknown> | undefined | null,
+): boolean {
+  if (!before || !after) return false;
+  if (before.is_revoked !== true || after.is_revoked !== true) return false;
+  const seenAfter = asDate(after.last_seen_at)?.getTime() ?? null;
+  if (seenAfter === null) return false;
+  const seenBefore = asDate(before.last_seen_at)?.getTime() ?? null;
+  return seenBefore !== seenAfter;
+}
+
+/**
+ * Reconnexion d'un compte révoqué invité de nouveau par e-mail.
+ *
+ * L'administrateur a invité l'adresse d'un compte révoqué : l'invitation porte
+ * `target: "revoked"` et l'uid du compte (`target_uid`). Le compte reste
+ * révoqué jusqu'à ce que son titulaire se reconnecte. À cette connexion, le
+ * client écrit `last_seen_at` (`isRevokedSignIn`), et ce déclencheur, dans une
+ * transaction :
+ *  - relit l'invitation active de même clé d'adresse qui vise **ce** compte
+ *    (`pickActiveInvitation`, `{ kind: "revoked", uid }`) ;
+ *  - exige l'adresse **Auth** vérifiée (`getUser`, `emailVerified`) ;
+ *  - exige que le compte soit toujours révoqué et ne soit pas le fondateur ;
+ *  - exige que l'administrateur du dernier envoi soit toujours administrateur
+ *    et non révoqué (même garde que pour un compte neuf) ;
+ *  - rétablit le compte (`is_revoked: false`) avec le rôle de l'invitation ;
+ *  - ajoute son uid à `invited_ids` du groupe (`groupInviteFor`) : il accepte
+ *    dans Groupes familiaux. Jamais d'entrée directe dans `member_ids`. Groupe
+ *    supprimé : rôle seul, `group_missing: true` ;
+ *  - passe l'invitation à `accepted`, avec `group_invite`.
+ *
+ * Le statut `accepted`, relu dans la transaction, empêche une seconde
+ * application. L'écriture de `is_revoked` réveille `syncUserClaims` (claims,
+ * profil public) et `syncPlanningReachOnRole` (portée des plannings) ; l'ajout
+ * à `invited_ids` ne change aucune portée. Le client suit `users/{uid}` :
+ * l'écran de révocation se ferme seul, après le renouvellement du jeton
+ * (`AuthRepository.watchAppUser`).
+ */
+export const applyRevokedInvitation = onDocumentUpdated(
+  { document: "users/{uid}", region: REGION },
+  async (event) => {
+    const uid = event.params.uid;
+    const before = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after?.data() as Record<string, unknown> | undefined;
+    if (!isRevokedSignIn(before, after)) return;
+
+    let authEmail: string | undefined;
+    let verified = false;
+    try {
+      const user = await getAuth().getUser(uid);
+      authEmail = user.email;
+      verified = user.emailVerified === true;
+    } catch (err) {
+      await logError({
+        message: `applyRevokedInvitation: compte Auth introuvable pour ${uid}`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+      });
+      return;
+    }
+
+    if (!authEmail || isFounderEmail(authEmail)) return;
+    const key = normalizeEmailKey(authEmail);
+    if (key === null) return;
+
+    const db = getFirestore();
+    const userRef = db.doc(`users/${uid}`);
+    const invitations = db.collection(COLL_INVITATIONS);
+
+    try {
+      const outcome = await db.runTransaction(async (tx) => {
+        const sameKey = await tx.get(invitations.where("email_key", "==", key));
+        if (sameKey.empty) return null;
+        const now = new Date();
+        const chosen = pickActiveInvitation(
+          sameKey.docs.map((d) => ({ ref: d.ref, id: d.id, data: d.data() })),
+          now,
+          { kind: "revoked", uid },
+        );
+        if (chosen === null) return null;
+        if (!verified) {
+          return { skipped: "unverified" as const, invitationId: chosen.id, inviterUid: null };
+        }
+
+        const role = chosen.data.role;
+        if (!isInvitableRole(role)) {
+          return { skipped: "bad_role" as const, invitationId: chosen.id, inviterUid: null };
+        }
+
+        const inviterUid = inviterUidOf(chosen.data);
+        if (inviterUid === null) {
+          return { skipped: "no_inviter" as const, invitationId: chosen.id, inviterUid: null };
+        }
+        const inviterSnap = await tx.get(db.collection(COLL_USERS).doc(inviterUid));
+        if (!inviterStillAdmin(inviterSnap.data())) {
+          return { skipped: "inviter_not_admin" as const, invitationId: chosen.id, inviterUid };
+        }
+
+        const userSnap = await tx.get(userRef);
+        const userData = userSnap.data();
+        if (!userSnap.exists || userData?.is_revoked !== true) return null;
+        const docEmail = typeof userData.email === "string" ? userData.email : null;
+        if (isFounderEmail(docEmail)) return null;
+
+        const groupId = typeof chosen.data.group_id === "string" ? chosen.data.group_id : "";
+        const groupRef = groupId ? db.collection(COLL_GROUPS).doc(groupId) : null;
+        const groupSnap = groupRef ? await tx.get(groupRef) : null;
+        const groupInvite = groupInviteFor(groupSnap?.exists ? groupSnap.data() : null, uid);
+
+        tx.update(userRef, { is_revoked: false, role });
+        if (groupInvite === "invited" && groupRef) {
+          tx.update(groupRef, { invited_ids: FieldValue.arrayUnion(uid) });
+        }
+        tx.update(chosen.ref, {
+          status: "accepted",
+          accepted_uid: uid,
+          accepted_at: Timestamp.fromDate(now),
+          group_missing: groupInvite === "missing",
+          group_invite: groupInvite,
+        });
+        return { applied: true as const, invitationId: chosen.id, role, groupId, groupInvite };
+      });
+
+      if (outcome === null) return;
+      if ("skipped" in outcome) {
+        switch (outcome.skipped) {
+          case "unverified":
+            await logInfo({
+              message: "applyRevokedInvitation: adresse non vérifiée, accès non rétabli",
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+          case "inviter_not_admin":
+            await logInfo({
+              message:
+                `applyRevokedInvitation: l'invitant ${outcome.inviterUid} n'est plus ` +
+                "administrateur (ou est révoqué), accès non rétabli",
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+          case "bad_role":
+          case "no_inviter":
+            await logError({
+              message:
+                outcome.skipped === "bad_role"
+                  ? "applyRevokedInvitation: rôle d'invitation illisible, accès non rétabli"
+                  : "applyRevokedInvitation: invitant absent de l'invitation, accès non rétabli",
+              errorDescription: `invitation ${outcome.invitationId}`,
+              userId: uid,
+              firestoreDocId: outcome.invitationId,
+            });
+            return;
+        }
+      }
+      await logInfo({
+        message:
+          `applyRevokedInvitation: accès rétabli (rôle ${outcome.role}, groupe ` +
+          `${outcome.groupId || "aucun"} : ${outcome.groupInvite})`,
+        userId: uid,
+        firestoreDocId: outcome.invitationId,
+      });
+    } catch (err) {
+      await logError({
+        message: `applyRevokedInvitation: invitation de retour non appliquée pour ${uid}`,
         errorDescription: err instanceof Error ? err.message : String(err),
         userId: uid,
       });

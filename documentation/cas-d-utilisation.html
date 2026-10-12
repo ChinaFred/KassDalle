@@ -140,7 +140,9 @@
       administrateur ne le nomme. Seule exception : un compte neuf dont l'adresse Google
       correspond à une invitation par e-mail active reçoit, quelques secondes après sa création,
       le rôle et le groupe de l'invitation, posés par le serveur (<code>applyEmailInvitation</code>). Un compte révoqué est renvoyé au login par le routeur, quel que
-      soit son rôle, <code>admin</code> compris.
+      soit son rôle, <code>admin</code> compris ; invité de nouveau par e-mail, il retrouve
+      l'accès et le rôle de l'invitation à sa reconnexion sous cette adresse
+      (<code>applyRevokedInvitation</code>), et reçoit une invitation de groupe à accepter.
     </p>
     <div class="tablewrap">
       <table>
@@ -814,12 +816,15 @@ flowchart LR
   ADM --- d30
   ADM --- d31
   ADM --- d32
-  d31 -.->|"refusé si l'adresse a déjà un compte, ou si 20 envois aujourd'hui"| e13(["Enregistrer l'invitation&lt;br/&gt;puis envoyer l'e-mail"])
+  d31 -.->|"refusé si l'adresse a un compte actif ou en attente, ou si 20 envois aujourd'hui"| e13(["Enregistrer l'invitation&lt;br/&gt;puis envoyer l'e-mail"])
   d32 -.->|"renvoi : expiration repoussée de 30 jours"| e13
   e13 -.->|"e-mail « {Admin} via Kass'Dalle »"| INV
   INV --- u1(["Première connexion Google&lt;br/&gt;sous l'adresse invitée"])
   u1 -.->|"compte neuf, invitation active"| e14(["Recevoir le rôle et entrer&lt;br/&gt;dans le groupe de l'invitation"])
   e14 -.->|"déclenche"| e1
+  INV --- u2(["Reconnexion Google d'un compte révoqué&lt;br/&gt;sous l'adresse invitée"])
+  u2 -.->|"invitation active qui vise ce compte"| e15(["Retrouver l'accès avec le rôle de l'invitation,&lt;br/&gt;invitation de groupe à accepter"])
+  e15 -.->|"déclenche"| e1
   d23 -.->|"charger remplit le formulaire, rien n'est écrit"| d16
   d24 -.->|"lecture seule, ouvre l'écran à corriger"| d11
   d0 -.->|"est"| d1
@@ -898,14 +903,22 @@ flowchart LR
         l'invitation reste en « Envoi échoué » et se renvoie depuis l'onglet Invitations ; si
         Gmail refuse l'adresse, elle est annulée, avec le motif « Adresse refusée par Gmail ».
         Renvoyer exige d'être encore membre du groupe. Une
-        adresse qui a déjà un compte est refusée, avec le chemin à suivre (onglet Comptes, puis
-        invitation de groupe). Une invitation vaut trente jours depuis son dernier envoi ; vingt
+        adresse qui a déjà un compte actif ou en attente est refusée, avec le chemin à suivre
+        (onglet Comptes, puis invitation de groupe). L'adresse d'un compte révoqué est acceptée :
+        le formulaire le signale sous l'adresse (« Ce compte est révoqué. Son accès sera rétabli
+        à sa prochaine connexion avec cette adresse, et il devra accepter l'invitation au
+        groupe. »), et le compte reste révoqué jusqu'à sa reconnexion. Une invitation vaut trente jours depuis son dernier envoi ; vingt
         envois par administrateur et par jour.
         <b>La première connexion d'un invité</b> : la personne se connecte avec le compte Google de
         l'adresse invitée. Son compte naît en attente, et le serveur lui donne, quelques secondes
         plus tard, le rôle de l'invitation et l'entrée dans le groupe ; la salle d'attente se
         referme seule. Avec une autre adresse, ou si l'administrateur qui a envoyé l'invitation
         n'est plus administrateur, le compte reste en attente d'un rôle donné à la main.
+        <b>Le retour d'un compte révoqué invité</b> : la personne se reconnecte avec le compte
+        Google de l'adresse invitée. L'écran « Votre accès a été révoqué » reste affiché quelques
+        secondes, puis se referme seul : le serveur a rétabli l'accès avec le rôle de
+        l'invitation, et l'invitation au groupe attend dans Groupes familiaux. Dans l'onglet
+        Invitations, la ligne devient « Acceptée … · accès rétabli ».
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
         dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">
