@@ -871,6 +871,11 @@ describe("books", () => {
     await assertSucceeds(db("editor").doc(`books/secretes_${EDITOR}`).get());
   });
 
+  it("un lecteur ou un compte en attente ne lit pas son identifiant fixe absent", async () => {
+    await assertFails(db("reader").doc(`books/secretes_${READER}`).get());
+    await assertFails(db("pending").doc("books/secretes_pending").get());
+  });
+
   it("un éditeur ne lit pas l'identifiant fixe absent d'un autre compte", async () => {
     await assertFails(db("editor").doc(`books/secretes_${OTHER}`).get());
   });
