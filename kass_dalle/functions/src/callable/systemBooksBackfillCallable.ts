@@ -105,6 +105,9 @@ export function summarizeSystemBooks(r: BackfillSystemBooksResponse): PassSummar
     remaining: r.restants,
     toReview: r.aRevoir.total,
     spendCapHit: false,
+    // Ponctuel sans appel de modèle : un compte en échec reste dans `restants`
+    // et dans la liste à revoir, ce qui empêche déjà de le marquer terminé.
+    unresolved: 0,
   };
 }
 

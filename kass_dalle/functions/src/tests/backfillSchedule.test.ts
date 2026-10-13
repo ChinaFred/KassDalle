@@ -2,8 +2,10 @@
  * Programmation des backfills récurrents et état d'un passage.
  *
  * Ce que ces tests verrouillent : un passage programmé part au jour et à
- * l'heure de Paris, une seule fois par créneau ; un passage incomplet reprend
- * l'heure suivante, sauf arrêt par plafond de dépense ; un verrou expiré se
+ * l'heure de Paris, une seule fois par créneau ; un passage arrêté avant la
+ * fin de son parcours reprend l'heure suivante, sauf arrêt par plafond de
+ * dépense ; un parcours fini qui laisse des échecs est « incomplet » sans
+ * reprise horaire ; un verrou expiré se
  * reprend ; un ponctuel n'est marqué terminé que sans aucun reste.
  */
 
@@ -37,6 +39,10 @@ import { BACKFILLS, backfillDefinition, lockSiblings, recurrentKeys } from "../b
 import { validateScheduleRequest } from "../callable/backfillAdminCallable";
 import { UNATTRIBUTED, effectiveBudgetMultiplier } from "../ai/budget";
 import { runWithBaseBudgetCap } from "../ai/callOrigin";
+import { summarizeNutrition } from "../callable/nutritionBackfillCallable";
+import { summarizeEnrichReferentials } from "../callable/billingCallable";
+import { summarizeAllergens } from "../callable/allergensBackfillCallable";
+import { summarizeRecipeRoles } from "../callable/recipeRolesBackfillCallable";
 
 const IDLE: RunStateForDue = {
   enCours: false,
@@ -127,9 +133,35 @@ describe("verrou", () => {
   });
 });
 
-const COMPLETE: PassSummary = { complete: true, remaining: 0, toReview: 0, spendCapHit: false };
-const PARTIAL: PassSummary = { complete: false, remaining: 23, toReview: 0, spendCapHit: false };
-const CAPPED: PassSummary = { complete: false, remaining: null, toReview: 0, spendCapHit: true };
+const COMPLETE: PassSummary = {
+  complete: true,
+  remaining: 0,
+  toReview: 0,
+  spendCapHit: false,
+  unresolved: 0,
+};
+const PARTIAL: PassSummary = {
+  complete: false,
+  remaining: 23,
+  toReview: 0,
+  spendCapHit: false,
+  unresolved: 0,
+};
+const CAPPED: PassSummary = {
+  complete: false,
+  remaining: null,
+  toReview: 0,
+  spendCapHit: true,
+  unresolved: 0,
+};
+/** Parcours fini, mais des éléments traités restés en échec. */
+const FAILED_LEFT: PassSummary = {
+  complete: true,
+  remaining: 0,
+  toReview: 9,
+  spendCapHit: false,
+  unresolved: 9,
+};
 
 describe("après un passage", () => {
   test("statut", () => {
@@ -150,6 +182,147 @@ describe("après un passage", () => {
     assert.equal(repriseDueAfter("manuel", PARTIAL, true), true);
     assert.equal(repriseDueAfter("manuel", PARTIAL, false), false);
   });
+  test("parcours fini avec des échecs : incomplet, sans reprise à l'heure suivante", () => {
+    // Neuf reprises, aucune complétée : « Terminé » était faux. Mais une
+    // reprise une heure plus tard reposerait les mêmes questions au modèle,
+    // et les facturerait de nouveau.
+    assert.equal(passStatus(FAILED_LEFT), "incomplet");
+    assert.equal(repriseDueAfter("programme", FAILED_LEFT, false), false);
+    assert.equal(repriseDueAfter("programme", FAILED_LEFT, true), false);
+    assert.equal(repriseDueAfter("manuel", FAILED_LEFT, true), false);
+  });
+});
+
+describe("statut rendu par chaque backfill récurrent", () => {
+  const review = (total: number) => ({ items: [], total });
+
+  test("nutrition : reprises toujours incomplètes, incomplet sans reprise horaire", () => {
+    const summary = summarizeNutrition({
+      examinees: 120,
+      reprises: 9,
+      completees: 0,
+      echouees: 9,
+      laissees: 0,
+      abandonnees: 2,
+      nonReprenables: 4,
+      collectionParcourue: true,
+      stoppedByDeadline: false,
+      stoppedByBudget: false,
+      completed: true,
+      aRevoir: review(15),
+    });
+    assert.equal(summary.unresolved, 9);
+    assert.equal(passStatus(summary), "incomplet");
+    assert.equal(repriseDueAfter("programme", summary, false), false);
+  });
+
+  test("nutrition : laissées faute de temps, reprise à l'heure suivante", () => {
+    const summary = summarizeNutrition({
+      examinees: 80,
+      reprises: 20,
+      completees: 20,
+      echouees: 0,
+      laissees: 7,
+      abandonnees: 0,
+      nonReprenables: 0,
+      collectionParcourue: true,
+      stoppedByDeadline: false,
+      stoppedByBudget: false,
+      completed: false,
+      aRevoir: review(0),
+    });
+    assert.equal(passStatus(summary), "incomplet");
+    assert.equal(repriseDueAfter("programme", summary, false), true);
+  });
+
+  test("nutrition : abandonnées et non reprenables seules, terminé et listées", () => {
+    // Aucun passage automatique ne les reprendra : elles ne rendent pas le
+    // passage incomplet, mais la liste « à revoir » les nomme.
+    const summary = summarizeNutrition({
+      examinees: 120,
+      reprises: 0,
+      completees: 0,
+      echouees: 0,
+      laissees: 0,
+      abandonnees: 3,
+      nonReprenables: 5,
+      collectionParcourue: true,
+      stoppedByDeadline: false,
+      stoppedByBudget: false,
+      completed: true,
+      aRevoir: review(8),
+    });
+    assert.equal(passStatus(summary), "termine");
+    assert.equal(summary.toReview, 8);
+  });
+
+  test("enrichir : des échecs non exclus rendent le passage incomplet, sans reprise", () => {
+    const summary = summarizeEnrichReferentials({
+      scannedUnits: 40,
+      enrichedUnits: 1,
+      scannedIngredients: 300,
+      enrichedIngredients: 10,
+      failedIngredients: 2,
+      remainingUnitsWithoutWeight: 3,
+      completed: true,
+      stoppedByDeadline: false,
+      refreshedIngredients: 0,
+      excludedUnits: 1,
+      excludedIngredients: 4,
+      unresolvedFailures: 2,
+      aRevoir: review(7),
+    });
+    assert.equal(passStatus(summary), "incomplet");
+    assert.equal(repriseDueAfter("programme", summary, false), false);
+    assert.equal(passStatus({ ...summary, unresolved: 0 }), "termine");
+  });
+
+  test("allergènes et rôles : même règle", () => {
+    const allergens = summarizeAllergens({
+      ingredientsLus: 300,
+      ingredientsExamines: 38,
+      ingredientsIgnores: 250,
+      ingredientsEnErreur: 2,
+      ingredientsExclus: 3,
+      echecsNonExclus: 2,
+      referentielParcouru: true,
+      recettesExaminees: 10,
+      recettesCalculees: 1,
+      recettesIdentiques: 9,
+      recettesIncompletes: 0,
+      recettesHorsRecette: 0,
+      recettesEchouees: 0,
+      recettesParcourues: true,
+      stoppedByDeadline: false,
+      stoppedByBudget: false,
+      stoppedByErrors: false,
+      completed: true,
+      aRevoir: review(5),
+    });
+    assert.equal(passStatus(allergens), "incomplet");
+    assert.equal(repriseDueAfter("programme", allergens, false), false);
+
+    const roles = summarizeRecipeRoles({
+      examinees: 50,
+      classees: 3,
+      dejaClassees: 40,
+      horsRecette: 2,
+      sansRole: 1,
+      echouees: 0,
+      exclues: 4,
+      echecsNonExclus: 0,
+      restantes: 5,
+      collectionParcourue: true,
+      stoppedByDeadline: false,
+      stoppedByBudget: false,
+      stoppedByErrors: false,
+      completed: true,
+      aRevoir: review(5),
+    });
+    // La seule recette sans rôle vient d'atteindre trois échecs : exclue,
+    // elle ne rend pas le passage incomplet.
+    assert.equal(passStatus(roles), "termine");
+  });
 });
 
 describe("terminé automatiquement", () => {
@@ -161,6 +334,7 @@ describe("terminé automatiquement", () => {
     assert.equal(shouldAutoMarkDone("ponctuel", { ...COMPLETE, remaining: 4 }), false);
     assert.equal(shouldAutoMarkDone("ponctuel", { ...COMPLETE, remaining: null }), false);
     assert.equal(shouldAutoMarkDone("ponctuel", PARTIAL), false);
+    assert.equal(shouldAutoMarkDone("ponctuel", { ...FAILED_LEFT, toReview: 0 }), false);
   });
   test("récurrent : jamais", () => {
     assert.equal(shouldAutoMarkDone("recurrent", COMPLETE), false);

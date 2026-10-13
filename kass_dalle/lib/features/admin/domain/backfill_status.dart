@@ -275,6 +275,12 @@ class BackfillRunState {
   final String? dernierPassageErreur;
   final bool arretPlafond;
   final bool repriseDue;
+
+  /// Éléments traités par le dernier passage et restés en échec, sans être
+  /// exclus (`echecs_restants`). Un passage au parcours fini qui en laisse est
+  /// « incomplet » sans reprise à l'heure suivante : le serveur ne reposerait
+  /// pas les mêmes questions une heure plus tard.
+  final int echecsRestants;
   final Map<String, dynamic>? lastReport;
   final DateTime? termineLe;
   final String? termineVersion;
@@ -291,6 +297,7 @@ class BackfillRunState {
     this.dernierPassageErreur,
     this.arretPlafond = false,
     this.repriseDue = false,
+    this.echecsRestants = 0,
     this.lastReport,
     this.termineLe,
     this.termineVersion,
@@ -311,6 +318,7 @@ class BackfillRunState {
     }
 
     final report = data['last_report'];
+    final echecs = data['echecs_restants'];
     return BackfillRunState(
       key: key,
       statut: str('dernier_passage_statut'),
@@ -322,6 +330,7 @@ class BackfillRunState {
       dernierPassageErreur: str('dernier_passage_erreur'),
       arretPlafond: data['arret_plafond'] == true,
       repriseDue: data['reprise_due'] == true,
+      echecsRestants: echecs is num && echecs > 0 ? echecs.toInt() : 0,
       lastReport: report is Map ? Map<String, dynamic>.from(report) : null,
       termineLe: date('termine_le'),
       termineVersion: str('termine_version'),
@@ -368,6 +377,19 @@ String _count(int n, String singular, String plural) =>
 String backfillReportSummary(String key, Map<String, dynamic>? report) {
   if (report == null) return '';
   int n(String k) => (report[k] as num?)?.toInt() ?? 0;
+
+  /// « , 4 exclus après 3 échecs » quand le compteur est positif, sinon rien.
+  String exclus(String k, String singular, String plural) {
+    final v = n(k);
+    return v > 0 ? ', ${_count(v, singular, plural)} après 3 échecs' : '';
+  }
+
+  /// Un compteur cité seulement quand il est positif.
+  String siPositif(String k, String singular, String plural) {
+    final v = n(k);
+    return v > 0 ? ', ${_count(v, singular, plural)}' : '';
+  }
+
   String restantes(String k, String singular, String plural) {
     final v = report[k];
     if (v is! num) return 'reste inconnu';
@@ -376,20 +398,30 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
 
   switch (key) {
     case BackfillKeys.nutrition:
+      // « laissees » ne compte que les recettes laissées faute de temps ou de
+      // plafond : les appeler « restantes » faisait lire « 0 restante » à côté
+      // de neuf recettes reprises sans succès.
       return '${_count(n('reprises'), 'reprise', 'reprises')}, '
           '${_count(n('completees'), 'complétée', 'complétées')}, '
-          '${_count(n('laissees'), 'restante', 'restantes')}';
+          '${_count(n('echouees'), 'encore incomplète', 'encore incomplètes')}'
+          '${siPositif('laissees', 'laissée faute de temps', 'laissées faute de temps')}'
+          '${siPositif('nonReprenables', 'sans reprise possible', 'sans reprise possible')}'
+          '${siPositif('abandonnees', 'abandonnée', 'abandonnées')}';
     case BackfillKeys.enrichReferentials:
       return '${_count(n('enrichedUnits'), 'unité enrichie', 'unités enrichies')}, '
           '${_count(n('enrichedIngredients'), 'ingrédient enrichi', 'ingrédients enrichis')}, '
-          '${_count(n('failedIngredients'), 'échec', 'échecs')}';
+          '${_count(n('failedIngredients'), 'échec', 'échecs')}'
+          '${exclus('excludedUnits', 'unité exclue', 'unités exclues')}'
+          '${exclus('excludedIngredients', 'ingrédient exclu', 'ingrédients exclus')}';
     case BackfillKeys.allergens:
       return '${_count(n('ingredientsExamines'), 'ingrédient examiné', 'ingrédients examinés')}, '
           '${_count(n('recettesCalculees'), 'recette recalculée', 'recettes recalculées')}, '
-          '${_count(n('recettesIncompletes'), 'incomplète', 'incomplètes')}';
+          '${_count(n('recettesIncompletes'), 'incomplète', 'incomplètes')}'
+          '${exclus('ingredientsExclus', 'ingrédient exclu', 'ingrédients exclus')}';
     case BackfillKeys.recipeRoles:
       return '${_count(n('classees'), 'classée', 'classées')}, '
-          '${restantes('restantes', 'restante', 'restantes')}';
+          '${restantes('restantes', 'restante', 'restantes')}'
+          '${exclus('exclues', 'recette exclue', 'recettes exclues')}';
     case BackfillKeys.shoppingProducts:
       return '${_count(n('recalculees'), 'recalculée', 'recalculées')}, '
           '${_count(n('identiques'), 'identique', 'identiques')}, '
@@ -490,6 +522,21 @@ String backfillStatusLine({
         );
         return 'Incomplet$when$withSummary · reprise à '
             '${formatParisTime(nextHour)}';
+      }
+      // Parcours fini, mais des éléments en échec : pas de reprise à l'heure
+      // suivante. Ils reviennent au prochain passage programmé, s'il y en a
+      // un ; sinon, seul un passage manuel les reprend.
+      if (state.echecsRestants > 0) {
+        final echecs = _count(
+          state.echecsRestants,
+          'élément en échec',
+          'éléments en échec',
+        );
+        final next = def.isRecurrent ? nextScheduledRun(schedule, now) : null;
+        return next == null
+            ? 'Incomplet$when$withSummary · $echecs. Relancez pour réessayer.'
+            : 'Incomplet$when$withSummary · $echecs, nouvel essai '
+                  '${formatNextRunShort(next, now)}';
       }
       return 'Incomplet$when$withSummary. Relancez pour continuer.';
   }

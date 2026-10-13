@@ -57,6 +57,27 @@ void main() {
       expect(zero.passSummary, endsWith('— terminé'));
     });
 
+    test(
+      'exclues après trois échecs, et incomplet tant qu\'un échec reste',
+      () {
+        final r = RecipeRolesBackfillReport.fromMap({
+          'classees': 3,
+          'sansRole': 1,
+          'exclues': 2,
+          'echecsNonExclus': 1,
+          'restantes': 3,
+          'completed': true,
+        });
+        expect(r.exclues, 2);
+        expect(r.echecsNonExclus, 1);
+        expect(
+          r.passSummary,
+          'examinées=0, classées=3, déjà classées=0, hors recette=0, '
+          'sans rôle=1, échecs=0, exclues après 3 échecs=2 — incomplet',
+        );
+      },
+    );
+
     test('un nombre décimal venu du JSON est tronqué en entier', () {
       final r = RecipeRolesBackfillReport.fromMap({
         'restantes': 1.0,

@@ -308,17 +308,22 @@ class GcpBillingRepository {
   /// [refreshSodium] change la cible : au lieu des profils vides, la passe
   /// reprend ceux qui portent du sodium. C'est la réparation du sel compté deux
   /// fois — une dépense volontaire, jamais le mode par défaut.
+  ///
+  /// [retryExcluded] redemande aussi les unités et les ingrédients exclus
+  /// après trois échecs (« Réessayer aussi les éléments exclus après 3 échecs »).
   Future<BackfillCounts> backfillEnrichReferentials({
     double maxMinutes = 4,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
     bool refreshSodium = false,
+    bool retryExcluded = false,
   }) async {
     final payload = <String, dynamic>{
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
       'refreshSodium': refreshSodium,
+      'retryExcluded': retryExcluded,
       'appVersion': kAppVersion,
     };
 
@@ -342,6 +347,10 @@ class GcpBillingRepository {
           (data['refreshedIngredients'] as num?)?.toInt() ?? 0,
       'remainingUnitsWithoutWeight':
           (data['remainingUnitsWithoutWeight'] as num?)?.toInt() ?? 0,
+      'excludedUnits': (data['excludedUnits'] as num?)?.toInt() ?? 0,
+      'excludedIngredients':
+          (data['excludedIngredients'] as num?)?.toInt() ?? 0,
+      'unresolvedFailures': (data['unresolvedFailures'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
       'termineAuto': (data['termineAuto'] == true) ? 1 : 0,
@@ -389,6 +398,8 @@ class GcpBillingRepository {
       'completees': (data['completees'] as num?)?.toInt() ?? 0,
       'echouees': (data['echouees'] as num?)?.toInt() ?? 0,
       'laissees': (data['laissees'] as num?)?.toInt() ?? 0,
+      'abandonnees': (data['abandonnees'] as num?)?.toInt() ?? 0,
+      'nonReprenables': (data['nonReprenables'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
       'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
@@ -406,14 +417,17 @@ class GcpBillingRepository {
   ///
   /// Réentrante, reprise sur point de contrôle : relancer tant que le
   /// résultat indique « incomplet ». [force] reclasse aussi les recettes
-  /// déjà classées. Le compte rendu porte `restantes`, compté sur toute la
-  /// collection : ce qu'il reste à classer, et non ce que ce passage a fait.
+  /// déjà classées. [retryExcluded] redemande aussi les recettes exclues
+  /// après trois échecs. Le compte rendu porte `restantes`, compté sur toute
+  /// la collection : ce qu'il reste à classer, et non ce que ce passage a
+  /// fait.
   Future<RecipeRolesBackfillReport> backfillRecipeRoles({
     double maxMinutes = 8,
     int maxRecipes = 40,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
     bool force = false,
+    bool retryExcluded = false,
   }) async {
     final payload = <String, dynamic>{
       'maxMinutes': maxMinutes,
@@ -421,6 +435,7 @@ class GcpBillingRepository {
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
       'force': force,
+      'retryExcluded': retryExcluded,
       'appVersion': kAppVersion,
     };
 
@@ -508,16 +523,19 @@ class GcpBillingRepository {
   /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec
   /// reprise sur point de contrôle. Rend les compteurs tels quels ; les
   /// drapeaux valent 1 ou 0. Ingrédients et recettes à revoir dans
-  /// `failures`.
+  /// `failures`. [retryExcluded] redemande aussi les ingrédients exclus après
+  /// trois échecs.
   Future<BackfillCounts> backfillAllergens({
     double maxMinutes = 8,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
+    bool retryExcluded = false,
   }) async {
     final payload = <String, dynamic>{
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'retryExcluded': retryExcluded,
       'appVersion': kAppVersion,
     };
 

@@ -280,6 +280,9 @@ export function summarizeMoveMealsToGroup(r: BackfillMoveMealsToGroupResponse): 
     complete: r.completed,
     remaining: null,
     toReview: r.aRevoir.total,
+    // Sans IA ni mémoire des échecs : un repas en échec se relance au passage
+    // suivant et reste nommé dans « à revoir » (`toReview`).
+    unresolved: 0,
     spendCapHit: false,
   };
 }
