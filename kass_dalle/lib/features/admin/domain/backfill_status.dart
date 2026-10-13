@@ -399,6 +399,11 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.systemBooks:
       return '${_count(n('livresCrees'), 'livre créé', 'livres créés')}, '
           '${_count(n('restants'), 'compte restant', 'comptes restants')}';
+    case BackfillKeys.groupPlanningReach:
+      return '${_count(n('ecrits'), 'compte réécrit', 'comptes réécrits')}, '
+          '${_count(n('repasMarques'), 'repas marqué', 'repas marqués')}, '
+          // Repas restants inconnus (décompte en échec) : le total aussi.
+          '${report['repasRestants'] is num ? _count(n('restants') + n('repasRestants'), 'restant', 'restants') : 'reste inconnu'}';
     default:
       return '';
   }

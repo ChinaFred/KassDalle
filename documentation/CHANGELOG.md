@@ -46,6 +46,61 @@ Collections `tickets` et `ticket_quotas`, documents `app_config/tickets` et
 avant le déploiement : `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`. Aucun appel d'IA.
 `CLAUDE.md` reçoit une section « Tickets » : analyse en commentaire, traitement des seules
 Issues `validé`, texte d'un ticket traité comme une entrée non fiable.
+Un planning est désormais personnel, ou celui d'un groupe familial. Le propriétaire du
+groupe, éditeur ou administrateur, y planifie seul : « Nouveau planning » demande « Planifier
+pour… » dès qu'il possède un groupe, un jour libre propose « Rien de prévu pour Famille
+Dupont », et la feuille « Planifier » d'une recette porte une ligne « Planning ». Tous les
+membres du groupe lisent son planning, lecteurs compris, marqué de l'icône et du nom du
+groupe ; un invité ne le lit pas. Les suggestions de repas par les membres ne font pas partie
+de cette version. Un repas de groupe se met aux courses comme les autres, et le décompte d'un
+ajout nomme le groupe. Un lecteur ne supprime plus ses anciens repas : il les relit et les
+ajoute à ses courses. Un groupe dont le propriétaire n'est plus éditeur est mis en pause pour
+tous ses membres, sans rien effacer : son planning est masqué, ses livres ne sont plus partagés
+par lui, et ses invitations en attente sont masquées aux invités. L'écran Groupes le liste
+marqué « En pause » : son propriétaire y retire un membre, annule une invitation ou le
+supprime, un membre le quitte. Dans le planning, le propriétaire lit « Votre groupe … est en
+pause. », un membre « Le groupe … est en pause » avec le nom de son propriétaire, et un membre
+de plusieurs groupes en pause les lit tous nommés ; tout revient s'il redevient éditeur. Dans
+« Partager mon planning », un groupe en pause reste cochable, et dit que les repas seront
+visibles quand il reprendra. Un planning personnel partagé ne montre plus les repas des groupes de
+son propriétaire. La feuille « Planifier » d'une recette enregistre le repas avant de poser
+l'événement (« Ajouter au planning et à l'agenda ») et nomme le planning visé. Le titre d'une
+recette privée planifiée pour un groupe se lit sur le repas ; la recette reste fermée.
+
+Après le déploiement, un administrateur lance **Admin › Backfills › « Portée des groupes et
+des plannings »**, et le relance tant qu'il indique « incomplet ». Jusqu'à ce passage, les
+membres des groupes existants ne lisent pas le planning de leur groupe, et les plannings
+personnels partagés n'affichent aucun repas antérieur.
+
+### v0.23.56 — technique
+
+`planned_meals` reçoit `group_id` (`null` pour un repas personnel, toujours écrit par le
+client) ; seul le propriétaire du groupe écrit un repas qui le porte (`ownsMealGroup`), le
+champ est figé, et la suppression d'un repas exige `isEditor()`. `planning_reach` reçoit
+`group_ids` (groupes actifs dont le compte est membre, lus par les règles) et
+`masked_group_ids` (groupes dont le propriétaire ne planifie plus). Le partage personnel ne
+lit que `group_id == null` : la règle porte `resource.data.group_id == null`, car la forme
+`.get('group_id', null)` laissait une requête `uid ==` sans filtre ramener les repas de
+groupe. La lecture d'un repas de groupe exige aussi que son `uid` soit le propriétaire actuel
+du groupe (`get(groups/{group_id}).owner_id`) : un groupe recréé sous le même identifiant par
+un autre compte n'ouvre pas les repas de l'ancien ; le client filtre donc `group_id` et `uid`.
+Un index composite `uid` + `group_id` + `planned_at` sert le planning partagé et celui d'un
+groupe. Un groupe masqué sort aussi de `group_reach` : les livres qu'il ouvrait cessent
+d'être lisibles, sans vérification de plus dans les règles des livres. `planning_reach` reçoit
+aussi `masked_invitation_ids` (invitations vers un groupe en pause, masquées par le client),
+recalculé pour les invités ajoutés ou retirés (`invitationsToResync`) et pour ceux des groupes
+d'un compte dont le rôle change. `planning_config.group_portions` (parts par défaut de chaque
+groupe possédé) est borné à 50 entrées par `isPlanningConfig`.
+`syncPlanningReachOnRole` passe dans `triggers/plannerRole.ts` et recalcule les membres des
+groupes possédés ; `syncGroupReach` supprime les repas d'un groupe supprimé
+(`deleteGroupMeals`). `suggestMealPlanFn` accepte `groupId`, vérifie que l'appelant est
+propriétaire du groupe et l'écrit dans `planning_runs.group_id` ; aucun poste d'IA de plus.
+Nouveau backfill ponctuel `group_planning_reach` (`backfillGroupPlanningReachFn`) : il
+recalcule les deux portées de chaque membre et de chaque invité de groupe, puis pose `group_id: null` sur les
+repas antérieurs depuis un point de reprise (4 000 par passage). `showAdaptiveSheet`
+(`core/presentation/adaptive_sheet.dart`) sert la feuille « Planifier pour… » et l'éditeur
+de programmation des backfills.
+
 ### v0.23.55 — fonctionnel
 
 La liste de courses devient un panier personnel, le même sur tous les appareils : « Mes

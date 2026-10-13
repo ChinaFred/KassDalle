@@ -131,6 +131,10 @@ const kPlanningEditorRoutes = {
 /// affiche alors « Planification réservée aux éditeurs ».
 const kPlanningReservedParam = 'reserve';
 
+/// Paramètre de `/planning/batch` : le groupe dont on génère le planning.
+/// Absent, l'écran planifie « Mon planning ».
+const kPlanningGroupParam = 'group';
+
 /// Paramètre de `/login` qui porte l'adresse demandée avant la connexion.
 const kNextQueryParam = 'next';
 
@@ -537,7 +541,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'batch',
-                builder: (context, state) => const BatchPlanningScreen(),
+                builder: (context, state) => BatchPlanningScreen(
+                  groupId: state.uri.queryParameters[kPlanningGroupParam],
+                ),
               ),
               GoRoute(
                 path: 'config',

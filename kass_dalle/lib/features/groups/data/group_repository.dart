@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -33,7 +35,13 @@ class GroupRepository {
 
   // ── Lecture ─────────────────────────────────────────────────────────────────
 
-  /// Groupes dont [uid] est membre.
+  /// Groupes dont [uid] est membre, groupes en pause compris.
+  ///
+  /// Un groupe dont le propriétaire n'est plus éditeur est « en pause » : le
+  /// serveur le pose dans `planning_reach/{uid}.masked_group_ids` (voir
+  /// [watchMaskedGroupIds]). L'écran Groupes le liste toujours, marqué « En
+  /// pause », pour que son propriétaire en retire des membres ou le supprime,
+  /// et qu'un membre le quitte ; seul le planning le masque.
   Stream<List<FamilyGroup>> watchMyGroups(String uid) {
     return _col.where('member_ids', arrayContains: uid).snapshots().map((snap) {
       final list = snap.docs
@@ -44,17 +52,94 @@ class GroupRepository {
     });
   }
 
-  /// Groupes qui invitent [uid] et attendent sa réponse.
+  /// Les groupes de [uid] en pause : `planning_reach/{uid}.masked_group_ids`.
+  /// Document ou champ absent (portée antérieure au planning de groupe) :
+  /// aucun. Une lecture en échec est signalée au rapport, puis transmise.
+  Stream<Set<String>> watchMaskedGroupIds(String uid) =>
+      _watchReachField(uid, 'masked_group_ids');
+
+  /// Groupes qui invitent [uid] et attendent sa réponse, hors ceux en pause.
+  ///
+  /// Une invitation vers un groupe dont le propriétaire n'est plus éditeur
+  /// est masquée à l'invité : le serveur la pose dans
+  /// `planning_reach/{uid}.masked_invitation_ids`. Les deux lectures sont
+  /// réunies : la liste n'est rendue qu'une fois les deux connues, pour
+  /// qu'une invitation masquée n'apparaisse pas un instant. Une portée
+  /// illisible ne masque rien : mieux vaut une invitation de trop qu'aucune.
   Stream<List<FamilyGroup>> watchMyInvitations(String uid) {
-    return _col.where('invited_ids', arrayContains: uid).snapshots().map((
-      snap,
-    ) {
-      final list = snap.docs
-          .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
-          .toList();
-      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      return list;
-    });
+    final invitations = _col
+        .where('invited_ids', arrayContains: uid)
+        .snapshots()
+        .map((snap) {
+          final list = snap.docs
+              .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
+              .toList();
+          list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          return list;
+        });
+    late final StreamController<List<FamilyGroup>> controller;
+    StreamSubscription<List<FamilyGroup>>? invitationsSub;
+    StreamSubscription<Set<String>>? maskedSub;
+    List<FamilyGroup>? lastInvitations;
+    Set<String>? lastMasked;
+    void emit() {
+      final g = lastInvitations, m = lastMasked;
+      if (g == null || m == null) return;
+      controller.add([
+        for (final group in g)
+          if (!m.contains(group.id)) group,
+      ]);
+    }
+
+    controller = StreamController<List<FamilyGroup>>(
+      onListen: () {
+        invitationsSub = invitations.listen((g) {
+          lastInvitations = g;
+          emit();
+        }, onError: controller.addError);
+        maskedSub = _watchReachField(uid, 'masked_invitation_ids').listen(
+          (m) {
+            lastMasked = m;
+            emit();
+          },
+          onError: (Object e, StackTrace st) {
+            // Déjà signalée par `_watchReachField`.
+            lastMasked = const {};
+            emit();
+          },
+        );
+      },
+      onCancel: () async {
+        await invitationsSub?.cancel();
+        await maskedSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Une liste d'identifiants de `planning_reach/{uid}`. Une lecture en échec
+  /// est signalée au rapport, puis transmise.
+  Stream<Set<String>> _watchReachField(String uid, String field) {
+    return _firestore
+        .collection('planning_reach')
+        .doc(uid)
+        .snapshots()
+        .map((doc) {
+          final raw = doc.data()?[field];
+          if (raw is! List) return <String>{};
+          return raw.whereType<String>().toSet();
+        })
+        .handleError((Object e, StackTrace st) {
+          unawaited(
+            _errorReportService.reportError(
+              feature: 'group_reach_field',
+              error: e,
+              stackTrace: st,
+              context: {'uid': uid, 'field': field},
+            ),
+          );
+          Error.throwWithStackTrace(e, st);
+        });
   }
 
   /// Les autres comptes avec qui [uid] partage un groupe : `group_reach/{uid}`.

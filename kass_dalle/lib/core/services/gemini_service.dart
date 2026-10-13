@@ -428,6 +428,9 @@ class GeminiService {
   /// [mode] `model` (défaut) : présélection serveur puis un appel de modèle ;
   /// `code` : présélection seule, sans appel de modèle ni coût. Le client
   /// résout les identifiants rendus.
+  ///
+  /// [groupId] : le planning généré est celui de ce groupe ; le serveur
+  /// vérifie que l'appelant en est le propriétaire.
   Future<MealPlanResponse> suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
     required List<String> slotDates,
@@ -439,6 +442,7 @@ class GeminiService {
     List<Map<String, dynamic>> recentlyServed = const [],
     String? mode,
     List<List<String>?>? slotDismissed,
+    String? groupId,
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -453,6 +457,7 @@ class GeminiService {
       if (recentlyServed.isNotEmpty) 'recentlyServed': recentlyServed,
       'mode': ?mode,
       'slotDismissed': ?slotDismissed,
+      'groupId': ?groupId,
     });
     return MealPlanResponse.fromMap(data is Map ? data : const {});
   }

@@ -32,7 +32,7 @@ const ERROR_MESSAGE_MAX_LENGTH = 120;
  * référentiel, une recette dans sa fiche. Une nature qu'il ne connaît pas
  * s'affiche sans lien.
  */
-export type BackfillReviewKind = "ingredient" | "unit" | "recipe" | "account";
+export type BackfillReviewKind = "ingredient" | "unit" | "recipe" | "account" | "meal";
 
 export interface BackfillReviewItem {
   kind: BackfillReviewKind;

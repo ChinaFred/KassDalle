@@ -25,6 +25,7 @@ import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { assertCanModifyRecipe } from "./_recipeAccess";
 import {
   readConceptInput,
+  readPlanningGroupId,
   readPlanningInput,
   readRefineInput,
   readSearchInput,
@@ -57,6 +58,7 @@ import {
 import {
   PlanningRunDenied,
   addPlanningRunCost,
+  assertGroupPlanningOwner,
   ceilingEstimator,
   generationCapUsd,
   getPlanningPolicy,
@@ -505,13 +507,24 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
   const input = await readAiInputs({ ...ctx, feature: "planning" }, (inputs) =>
     readPlanningInput(raw, inputs),
   );
+  // Le planning d'un groupe se génère par son propriétaire seul. Aucun poste
+  // d'IA de plus : le coût reste imputé à `planning`, au nom de l'appelant.
+  const groupId = readPlanningGroupId(raw);
+  if (groupId != null) {
+    await assertGroupPlanningOwner({
+      uid: ctx.userId,
+      groupId,
+      correlationId: ctx.correlationId,
+    });
+  }
   try {
     const mode = input.mode ?? "model";
     const cycleStart = [...input.slotDates].sort()[0]?.slice(0, 10) ?? "";
     const nowMs = Date.now();
     const today = new Date(nowMs).toISOString().slice(0, 10);
     // Ce qui sert à décider se lit à la source : l'historique, les notes et
-    // les refus de l'appelant, jamais ceux d'un autre membre.
+    // les refus de l'appelant, jamais ceux d'un autre membre. Pour un planning
+    // de groupe, l'appelant est le propriétaire du groupe : ce sont les siens.
     const [policy, history, ratings, refusals] = await Promise.all([
       getPlanningPolicy(),
       readServedHistory({
@@ -556,6 +569,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
             suggestion: data,
             policy,
             costCapUsd,
+            groupId,
           });
     return {
       runId: conceptsMax != null ? runId : null,

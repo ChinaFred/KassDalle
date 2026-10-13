@@ -13,8 +13,11 @@
 import { randomUUID } from "node:crypto";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 
+import { HttpsError } from "firebase-functions/v2/https";
+
 import {
   COLL_APP_CONFIG,
+  COLL_GROUPS,
   COLL_PLANNED_MEALS,
   COLL_PLANNING_RUNS,
   COLL_RECIPE_RATINGS,
@@ -84,12 +87,51 @@ function isoDayMinus(day: string, days: number): string {
 }
 
 /**
+ * Vérifie que [uid] est propriétaire du groupe [groupId] avant de générer son
+ * planning. Le planning d'un groupe est tenu par son propriétaire seul : ses
+ * préférences, sa mémoire des refus et son historique servent la génération.
+ *
+ * Groupe absent ou d'un autre propriétaire : `permission-denied`, sans dire
+ * lequel des deux (un compte ne sonde pas l'existence d'un groupe). Lecture en
+ * échec : `logError` puis `unavailable`.
+ */
+export async function assertGroupPlanningOwner(args: {
+  uid: string;
+  groupId: string;
+  correlationId?: string;
+}): Promise<void> {
+  let ownerId: unknown;
+  try {
+    const snap = await getFirestore().collection(COLL_GROUPS).doc(args.groupId).get();
+    ownerId = snap.exists ? snap.get("owner_id") : null;
+  } catch (err) {
+    await logError({
+      message: "Planning de groupe — groupe illisible, génération refusée",
+      correlationId: args.correlationId,
+      userId: args.uid,
+      feature: "planning",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { groupId: args.groupId },
+    });
+    throw new HttpsError("unavailable", "Le groupe n'a pas pu être lu. Réessayez.");
+  }
+  if (ownerId !== args.uid) {
+    throw new HttpsError("permission-denied", "Seul le propriétaire du groupe planifie pour lui.");
+  }
+}
+
+/**
  * Dernière date servie de chaque recette, dans les 90 jours avant le cycle.
  *
  * Lu à la source plutôt qu'envoyé par le client : une donnée qui sert à
  * décider ne vient pas d'une liste qu'un écran a pu tronquer. Une lecture en
  * échec rend une carte vide et `available: false` : la génération continue,
  * et aucune justification n'affirme alors un fait de service.
+ *
+ * Filtré sur `uid` (le cuisinier), sans regarder `group_id` : un plat servi
+ * à la famille mardi compte pour la variété du planning personnel de son
+ * cuisinier, et l'inverse. Le planning d'un groupe est tenu par son
+ * propriétaire, dont `uid` est porté par chaque repas du groupe.
  */
 export async function readServedHistory(args: {
   uid: string;
@@ -272,6 +314,8 @@ export async function writePlanningRun(args: {
   suggestion: PlanningSuggestion;
   policy: PlanningPolicy;
   costCapUsd: number | null;
+  /** Le groupe dont le planning est généré, `null` pour le planning personnel. */
+  groupId?: string | null;
 }): Promise<number | null> {
   const { suggestion } = args;
   const conceptsMax = conceptsAllowance({
@@ -295,6 +339,7 @@ export async function writePlanningRun(args: {
       created_at: Timestamp.fromDate(now),
       expires_at: Timestamp.fromDate(expires),
       correlation_id: args.correlationId,
+      group_id: args.groupId ?? null,
       cycle_start: (args.slotDates[0] ?? "").slice(0, 10),
       slots: args.slotDates.length,
       corpus_size: suggestion.stats.corpus,

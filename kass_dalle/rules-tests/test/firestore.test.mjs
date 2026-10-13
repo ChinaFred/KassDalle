@@ -246,8 +246,8 @@ beforeEach(async () => {
       type: "recipeUrlImport",
       error_code: "page_blocked",
     },
-    "planned_meals/m1": { uid: READER, date: "2026-10-09" },
-    "planned_meals/m-editor": { uid: EDITOR, date: "2026-10-12" },
+    "planned_meals/m1": { uid: READER, group_id: null, date: "2026-10-09" },
+    "planned_meals/m-editor": { uid: EDITOR, group_id: null, date: "2026-10-12" },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
@@ -1946,9 +1946,11 @@ describe("plannings partagés — le lecteur ne planifie plus", () => {
     await assertFails(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
   });
 
-  it("un lecteur relit et supprime son ancien repas", async () => {
+  // Planning de groupe : un lecteur ne supprime plus aucun repas, pas même
+  // un ancien repas à lui. Il le relit.
+  it("un lecteur relit son ancien repas, sans le supprimer", async () => {
     await assertSucceeds(db("reader").doc("planned_meals/m1").get());
-    await assertSucceeds(db("reader").doc("planned_meals/m1").delete());
+    await assertFails(db("reader").doc("planned_meals/m1").delete());
   });
 
   it("un lecteur n'écrit pas planning_config", async () => {
@@ -1995,10 +1997,57 @@ describe("plannings partagés — lecture", () => {
     await assertFails(db("pending").doc("planned_meals/m-editor").get());
   });
 
-  it("requête uid == propriétaire partagé : acceptée", async () => {
+  it("requête uid == propriétaire partagé et group_id == null : acceptée", async () => {
     await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Le partage personnel n'ouvre pas les repas des groupes du propriétaire :
+  // le lecteur n'est pas membre de `g2`.
+  it("un repas de groupe ne se lit pas par le partage personnel", async () => {
+    await seedDocs(env, {
+      "planning_reach/reader": { uids: [EDITOR], group_ids: [] },
+      "planned_meals/gm2": { uid: EDITOR, group_id: "g2", date: "2026-10-12" },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm2").get());
+    await assertFails(
       db("reader").collection("planned_meals").where("uid", "==", EDITOR).get(),
     );
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Un repas antérieur sans le champ ne se lit plus par le partage — ni un
+  // par un, ni par la requête `group_id == null` — tant que le backfill
+  // « Portée des groupes et des plannings » n'y a pas posé `group_id: null`.
+  // Son propriétaire le relit toujours.
+  it("un repas antérieur sans group_id attend le backfill pour être partagé", async () => {
+    await seedDocs(env, {
+      "planned_meals/m-old": { uid: EDITOR, date: "2026-10-01" },
+    });
+    await assertFails(db("reader").doc("planned_meals/m-old").get());
+    await assertSucceeds(db("editor").doc("planned_meals/m-old").get());
+    const snap = await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+    const ids = snap.docs.map((d) => d.id);
+    if (!ids.includes("m-editor") || ids.includes("m-old")) {
+      throw new Error(`requête partagée inattendue : ${ids.join(", ")}`);
+    }
   });
 
   it("requête uid == propriétaire non partagé : refusée", async () => {
@@ -2052,6 +2101,190 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
       db("editor")
         .doc(`planning_config/${READER}`)
         .set({ shared_group_ids: ["famille"] }),
+    );
+  });
+
+  it("group_portions : table de 50 groupes au plus", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ group_portions: { gp: 4 } }),
+    );
+    const many = Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`g${i}`, 4]));
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: many }),
+    );
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: [4] }),
+    );
+  });
+});
+
+// ── plannings de groupe ──────────────────────────────────────────────────
+//
+// Le groupe `gp` appartient à l'éditeur ; le lecteur en est membre, l'autre
+// lecteur seulement invité. `planning_reach/{uid}.group_ids` porte les
+// groupes actifs dont le compte est membre, propriétaire compris, écrit par
+// le serveur seul.
+
+describe("plannings de groupe", () => {
+  const STRANGER = PERSONAS.stranger.uid;
+  const at = new Date("2026-10-16T19:00:00Z");
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "groups/gp": {
+        name: "Famille Dupont",
+        owner_id: EDITOR,
+        member_ids: [EDITOR, READER],
+        invited_ids: [OTHER],
+      },
+      "planning_reach/editor": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
+      "planning_reach/reader": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
+      "planning_reach/other-reader": { uids: [], group_ids: [], masked_group_ids: [] },
+      "planned_meals/gm1": { uid: EDITOR, group_id: "gp", planned_at: at },
+    });
+  });
+
+  // La requête du client : le groupe ET son propriétaire.
+  const groupQuery = (name) =>
+    db(name)
+      .collection("planned_meals")
+      .where("group_id", "==", "gp")
+      .where("uid", "==", EDITOR)
+      .where("planned_at", ">=", new Date("2026-10-01T00:00:00Z"))
+      .orderBy("planned_at");
+
+  it("groupe recréé sous le même identifiant : les repas de l'ancien propriétaire restent fermés", async () => {
+    // `gp` est supprimé puis recréé par un autre compte, dont le lecteur est
+    // membre. Le repas de l'ancien propriétaire (l'éditeur) reste en base.
+    await seedDocs(env, {
+      "groups/gp": {
+        name: "Autre famille",
+        owner_id: OTHER,
+        member_ids: [OTHER, READER],
+      },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+    // Le planning du nouveau propriétaire se lit normalement.
+    await seedDocs(env, {
+      "planned_meals/gm-new": { uid: OTHER, group_id: "gp", planned_at: at },
+    });
+    await assertSucceeds(db("reader").doc("planned_meals/gm-new").get());
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("group_id", "==", "gp")
+        .where("uid", "==", OTHER)
+        .get(),
+    );
+  });
+
+  it("groupe supprimé, portée pas encore recalculée : le planning reste fermé", async () => {
+    // `gp` est supprimé ; `planning_reach/reader.group_ids` contient encore
+    // "gp" tant que `syncGroupReach` n'est pas passé.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc("groups/gp").delete();
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+  });
+
+  it("requête sans filtre sur le propriétaire du groupe : refusée", async () => {
+    await assertFails(
+      db("reader").collection("planned_meals").where("group_id", "==", "gp").get(),
+    );
+  });
+
+  it("un membre lit le planning du groupe, un repas et la requête", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/gm1").get());
+    await assertSucceeds(groupQuery("reader").get());
+  });
+
+  it("un invité ne lit pas le planning du groupe", async () => {
+    await assertFails(db("otherReader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("otherReader").get());
+  });
+
+  it("un compte hors du groupe ne lit pas son planning", async () => {
+    await assertFails(db("stranger").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("stranger").get());
+  });
+
+  it("un membre n'écrit pas le planning du groupe", async () => {
+    await assertFails(
+      db("reader").doc("planned_meals/new").set({ uid: READER, group_id: "gp", planned_at: at }),
+    );
+    await assertFails(db("reader").doc("planned_meals/gm1").update({ recipe_titre: "x" }));
+    await assertFails(db("reader").doc("planned_meals/gm1").delete());
+  });
+
+  it("le propriétaire du groupe crée, modifie, lit et supprime", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+    );
+    await assertSucceeds(db("editor").doc("planned_meals/gm1").update({ recipe_titre: "Gratin" }));
+    await assertSucceeds(groupQuery("editor").get());
+    await assertSucceeds(db("editor").doc("planned_meals/gm1").delete());
+  });
+
+  it("un éditeur ne planifie pas avec le group_id d'un autre", async () => {
+    await assertFails(
+      db("stranger")
+        .doc("planned_meals/new")
+        .set({ uid: STRANGER, group_id: "gp", planned_at: at }),
+    );
+    // Groupe inexistant, ou valeur qui n'est pas un identifiant : refusé.
+    await assertFails(
+      db("editor")
+        .doc("planned_meals/new")
+        .set({ uid: EDITOR, group_id: "absent", planned_at: at }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: 42, planned_at: at }),
+    );
+  });
+
+  it("un membre éditeur non propriétaire ne planifie pas pour le groupe", async () => {
+    await seedDocs(env, {
+      "groups/gp": { name: "Famille Dupont", owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+    });
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+    );
+  });
+
+  it("group_id est figé", async () => {
+    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: null }));
+    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: deleteField() }));
+    await assertFails(db("editor").doc("planned_meals/m-editor").update({ group_id: "gp" }));
+  });
+
+  it("un lecteur ne supprime aucun repas, pas même le sien", async () => {
+    await assertFails(db("reader").doc("planned_meals/m1").delete());
+  });
+
+  it("propriétaire rétrogradé : les membres perdent le planning et les livres du groupe", async () => {
+    // Avant : le lecteur lit le planning du groupe et le livre de l'éditeur.
+    await assertSucceeds(db("reader").doc("planned_meals/gm1").get());
+    await assertSucceeds(db("reader").doc("books/public").get());
+    // Le serveur masque le groupe : `group_ids` et `group_reach` ne le
+    // portent plus (déclencheur `syncPlanningReachOnRole`). Rien n'est effacé.
+    await seedDocs(env, {
+      [`users/${EDITOR}`]: { ...PERSONAS.editor.doc, role: "reader" },
+      "planning_reach/reader": { uids: [], group_ids: [], masked_group_ids: ["gp"] },
+      "group_reach/reader": { uids: [] },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+    await assertFails(db("reader").doc("books/public").get());
+    await assertFails(
+      db("reader")
+        .collection("books")
+        .where("created_by", "in", [EDITOR])
+        .where("is_private", "==", false)
+        .get(),
     );
   });
 });

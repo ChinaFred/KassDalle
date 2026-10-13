@@ -617,6 +617,7 @@ classDiagram
   class PlannedMeal {
     +String id
     +String uid
+    +String? groupId
     +String? recipeId
     +String recipeTitre
     +DateTime plannedAt
@@ -659,6 +660,8 @@ classDiagram
   AppUser "0..*" --o "0..*" FamilyGroup : invitedIds
   AppUser "1" --&gt; "0..1" GroupReach : group_reach/uid
   FamilyGroup ..> GroupReach : syncGroupReach recalcule
+  FamilyGroup "0..1" --&gt; "0..*" PlannedMeal : planning du groupe (groupId), écrit par ownerId
+  AppUser ..> GroupReach : rôle du propriétaire, groupe masqué s'il n'est plus éditeur
   AppUser "1" --&gt; "0..*" EmailInvitation : invitedBy (admin)
   EmailInvitation "0..*" --&gt; "1" FamilyGroup : groupId
   EmailInvitation "0..1" --&gt; "0..1" AppUser : acceptedUid
@@ -994,11 +997,13 @@ classDiagram
     +String calendarName
     +int varietyWindowWeeks
     +List~String~ sharedGroupIds
+    +Map~String, int~ groupPortions
   }
 
   class PlanningReach {
-    +List~String~ uids
-    +DateTime updatedAt
+    +Set~String~ uids
+    +Set~String~? groupIds
+    +Set~String~? maskedGroupIds
   }
 
   class PlanningOwnerOption {
@@ -1006,6 +1011,16 @@ classDiagram
     +String name
     +bool isMine
     +bool shown
+    +String? groupId
+    +String? organizer
+    +bool isOrganizer
+  }
+
+  class PlanningTarget {
+    +String? groupId
+    +String groupName
+    +int memberCount
+    +isGroup
   }
 
   class DayConstraint {
@@ -1266,7 +1281,9 @@ classDiagram
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
   PlanningPreferences ..> PlanningReach : sharedGroupIds, recalculé par le serveur
   PlanningReach ..> PlannedMeal : uids, lecture seule
-  PlanningReach ..> PlanningOwnerOption : un planning proposé par propriétaire
+  PlanningReach ..> PlannedMeal : groupIds, planning de groupe en lecture seule
+  PlanningTarget ..> PlannedMeal : groupId, le planning où l'on écrit
+  PlanningReach ..> PlanningOwnerOption : un planning proposé par propriétaire ou par groupe
   DayConstraint --> MealFormat : plat seul par défaut, sinon entrée, dessert ou léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
@@ -1292,14 +1309,18 @@ classDiagram
         utilisateur, jamais dans le document commun.
         <span class="expect">
           <b>Partager son planning</b> (v0.23.47) : <code>sharedGroupIds</code> liste les groupes
-          dont les membres lisent ce planning. <b><code>PlanningReach</code> n'a pas de classe
-          Dart</b> : c'est le document <code>planning_reach/{uid}</code>, les propriétaires dont
-          le compte lit les <code>PlannedMeal</code>, écrit par le serveur seul et relu par les
-          règles Firestore. Le client le lit en <code>Set&lt;String&gt;</code>
-          (<code>PlanningRepository.watchPlanningReach</code>) et en tire les
+          dont les membres lisent ce planning. <b><code>PlanningReach</code></b> lit le document
+          <code>planning_reach/{uid}</code> : les propriétaires dont le compte lit les
+          <code>PlannedMeal</code> (<code>uids</code>), ses groupes actifs et masqués, écrit par
+          le serveur seul et relu par les règles Firestore. Le client le lit par
+          <code>PlanningRepository.watchPlanningReach</code> et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
           décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore.
+          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
+          pause) n'entre pas dans <code>PlanningReach</code> :
+          <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces
+          invitations.
         </span>
         <span class="expect">
           <b><code>MealPrepContext</code> n'est jamais stocké.</b> Il est construit par l'écran de

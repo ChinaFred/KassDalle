@@ -285,13 +285,16 @@ void main() {
         'recipe_roles',
         'shopping_products',
       ]);
-      expect(sections.ponctuelsALancer.map((d) => d.key), ['refresh_sodium']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'refresh_sodium',
+        'group_planning_reach',
+      ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(2));
+      expect(sections.ponctuelsALancer, hasLength(3));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
@@ -321,6 +324,27 @@ void main() {
       expect(sections.ponctuelsTermines, isEmpty);
       expect(backfillDefinition('estimated_times'), isNull);
       expect(backfillReportSummary('recipe_protein', {'traitees': 3}), '');
+    });
+
+    test('portée des groupes : repas restants inconnus, reste inconnu', () {
+      expect(
+        backfillReportSummary('group_planning_reach', {
+          'ecrits': 2,
+          'repasMarques': 40,
+          'restants': 0,
+          'repasRestants': 12,
+        }),
+        '2 comptes réécrits, 40 repas marqués, 12 restants',
+      );
+      expect(
+        backfillReportSummary('group_planning_reach', {
+          'ecrits': 1,
+          'repasMarques': 0,
+          'restants': 3,
+          'repasRestants': null,
+        }),
+        '1 compte réécrit, 0 repas marqué, reste inconnu',
+      );
     });
   });
 
