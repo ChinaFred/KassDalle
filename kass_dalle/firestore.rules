@@ -632,9 +632,18 @@ service cloud.firestore {
     // `member_ids` : n'importe quel compte créait un groupe, y ajoutait un
     // inconnu, et lisait ses livres.
     //
-    // Quatre écritures, et elles seules :
-    //  • gestion (propriétaire ou administrateur) : renommer, inviter,
-    //    annuler une invitation, retirer un membre — jamais en ajouter un ;
+    // Créer un groupe et le gérer demandent le rôle éditeur (v0.23.53) : un
+    // lecteur rejoint un groupe sur invitation, il n'en ouvre pas. Un groupe
+    // créé par un lecteur avant cette version reste lisible ; son
+    // propriétaire peut encore le réduire (annuler une invitation, retirer un
+    // membre) et le supprimer, mais plus le renommer ni y inviter.
+    //
+    // Cinq écritures, et elles seules :
+    //  • gestion (propriétaire éditeur, ou administrateur) : renommer,
+    //    inviter, annuler une invitation, retirer un membre — jamais en
+    //    ajouter un ;
+    //  • réduction (propriétaire, quel que soit son rôle) : annuler une
+    //    invitation, retirer un membre — ni renommer, ni inviter ;
     //  • accepter (l'invité) : passer de `invited_ids` à `member_ids` ;
     //  • refuser (l'invité) : sortir de `invited_ids` ;
     //  • quitter (un membre autre que le propriétaire) : sortir de
@@ -668,17 +677,30 @@ service cloud.firestore {
           && data.get('invited_ids', []).size() <= 50;
       }
 
-      /// Le propriétaire (ou un administrateur) gère le groupe sans y faire
-      /// entrer personne : `member_ids` ne peut que perdre des comptes, le
-      /// propriétaire y reste, et une invitation ne vise pas un compte déjà
-      /// membre.
+      /// Le propriétaire éditeur (ou un administrateur) gère le groupe sans y
+      /// faire entrer personne : `member_ids` ne peut que perdre des comptes,
+      /// le propriétaire y reste, et une invitation ne vise pas un compte déjà
+      /// membre. Être propriétaire ne suffit pas : un lecteur propriétaire
+      /// d'un groupe créé avant v0.23.53 n'y invite plus personne.
       function isManagement() {
-        return (isOwner(resource.data.owner_id) || isAdmin())
+        return ((isOwner(resource.data.owner_id) && isEditor()) || isAdmin())
           && onlyTouches(['name', 'member_ids', 'invited_ids'])
           && boundedGroup(request.resource.data)
           && oldMembers().hasAll(newMembers())
           && newMembers().hasAll([resource.data.owner_id])
           && !newInvited().hasAny(newMembers());
+      }
+
+      /// Le propriétaire, quel que soit son rôle, ne fait que réduire son
+      /// groupe : `invited_ids` et `member_ids` ne perdent que des comptes, il
+      /// reste membre, le nom ne change pas. Laisse au lecteur propriétaire
+      /// d'un groupe antérieur à v0.23.53 de quoi en faire sortir quelqu'un.
+      function isShrinking() {
+        return isOwner(resource.data.owner_id)
+          && onlyTouches(['member_ids', 'invited_ids'])
+          && oldMembers().hasAll(newMembers())
+          && newMembers().hasAll([resource.data.owner_id])
+          && oldInvited().hasAll(newInvited());
       }
 
       function isAcceptance() {
@@ -706,7 +728,7 @@ service cloud.firestore {
         (resource.data.owner_id == request.auth.uid
           || request.auth.uid in resource.data.member_ids
           || request.auth.uid in resource.data.get('invited_ids', []));
-      allow create: if isApproved()
+      allow create: if isEditor()
         && request.resource.data.owner_id == request.auth.uid
         && request.resource.data.member_ids == [request.auth.uid]
         && request.resource.data.get('invited_ids', []).size() == 0
@@ -716,7 +738,10 @@ service cloud.firestore {
       // attribuerait la gestion sans son accord.
       allow update: if isApproved()
         && request.resource.data.owner_id == resource.data.owner_id
-        && (isManagement() || isAcceptance() || isRefusal() || isLeaving());
+        && (isManagement() || isShrinking() || isAcceptance() || isRefusal() || isLeaving());
+      // La suppression reste ouverte au propriétaire quel que soit son rôle :
+      // un lecteur propriétaire ne peut pas quitter son groupe (`isLeaving`),
+      // et supprimer est sa seule façon d'en sortir.
       allow delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
     }
 

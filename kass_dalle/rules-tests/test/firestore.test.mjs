@@ -194,7 +194,11 @@ beforeEach(async () => {
     "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
     "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
     "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
-    "groups/g1": { name: "Famille", owner_id: READER, member_ids: [READER] },
+    // `g1` appartient à l'éditeur : créer et gérer un groupe demandent le
+    // rôle éditeur (v0.23.53). `g-reader` est un groupe de lecteur créé
+    // avant cette version.
+    "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] },
+    "groups/g-reader": { name: "Ancien", owner_id: READER, member_ids: [READER] },
     // La famille : lecteur, autre lecteur et éditeur partagent un groupe.
     // `stranger` n'en partage aucun. La portée est ce qu'écrit
     // `syncGroupReach` à partir des groupes.
@@ -1731,15 +1735,15 @@ describe("champs propriétaire", () => {
 
   it("un groupe se crée à son nom, soi seul membre", async () => {
     await assertSucceeds(
-      db("reader")
+      db("editor")
         .doc("groups/new")
-        .set({ name: "Famille", owner_id: READER, member_ids: [READER] }),
+        .set({ name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] }),
     );
   });
 
   it("un groupe ne se crée pas au nom d'un autre", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("groups/new")
         .set({ name: "Famille", owner_id: OTHER, member_ids: [OTHER] }),
     );
@@ -1758,16 +1762,16 @@ describe("champs propriétaire", () => {
   });
 
   it("groupe : owner_id figé en mise à jour", async () => {
-    await assertFails(db("reader").doc("groups/g1").update({ owner_id: OTHER }));
+    await assertFails(db("editor").doc("groups/g1").update({ owner_id: OTHER }));
   });
 
   // Depuis les invitations, le propriétaire n'ajoute plus personne : il
   // invite, et l'invité accepte (voir « groupes — invitations »).
   it("groupe : son propriétaire n'ajoute pas un membre directement", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("groups/g1")
-        .update({ member_ids: [READER, OTHER] }),
+        .update({ member_ids: [EDITOR, OTHER] }),
     );
   });
 
@@ -2926,22 +2930,22 @@ describe("group_reach — portée des groupes", () => {
 // ── Invitations ──────────────────────────────────────────────────────────
 //
 // Entrer dans un groupe ouvre la lecture des livres des autres membres, dans
-// les deux sens : on n'y entre que de son propre chef. `g1` appartient au
-// lecteur, seul membre.
+// les deux sens : on n'y entre que de son propre chef. `g1` appartient à
+// l'éditeur, seul membre.
 
 describe("groupes — invitations", () => {
   const STRANGER = PERSONAS.stranger.uid;
   const invite = () =>
     seedDocs(env, {
-      "groups/g1": { name: "Famille", owner_id: READER, member_ids: [READER], invited_ids: [STRANGER] },
+      "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR], invited_ids: [STRANGER] },
     });
 
   it("le propriétaire invite un compte", async () => {
-    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: [STRANGER] }));
+    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: [STRANGER] }));
   });
 
   it("le propriétaire n'invite pas un compte déjà membre", async () => {
-    await assertFails(db("reader").doc("groups/g1").update({ invited_ids: [READER] }));
+    await assertFails(db("editor").doc("groups/g1").update({ invited_ids: [EDITOR] }));
   });
 
   it("un membre qui n'est pas propriétaire n'invite pas", async () => {
@@ -2954,17 +2958,17 @@ describe("groupes — invitations", () => {
 
   it("un compte ne crée pas un groupe avec des invités", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("groups/new")
-        .set({ name: "Famille", owner_id: READER, member_ids: [READER], invited_ids: [OTHER] }),
+        .set({ name: "Famille", owner_id: EDITOR, member_ids: [EDITOR], invited_ids: [OTHER] }),
     );
   });
 
   it("le propriétaire n'ajoute pas un membre en même temps qu'il invite", async () => {
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("groups/g1")
-        .update({ member_ids: [READER, OTHER], invited_ids: [STRANGER] }),
+        .update({ member_ids: [EDITOR, OTHER], invited_ids: [STRANGER] }),
     );
   });
 
@@ -2972,7 +2976,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("admin")
         .doc("groups/g1")
-        .update({ member_ids: [READER, OTHER] }),
+        .update({ member_ids: [EDITOR, OTHER] }),
     );
   });
 
@@ -2994,7 +2998,7 @@ describe("groupes — invitations", () => {
     await assertSucceeds(
       db("stranger")
         .doc("groups/g1")
-        .update({ member_ids: [READER, STRANGER], invited_ids: [] }),
+        .update({ member_ids: [EDITOR, STRANGER], invited_ids: [] }),
     );
   });
 
@@ -3003,7 +3007,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("stranger")
         .doc("groups/g1")
-        .update({ member_ids: [READER, STRANGER] }),
+        .update({ member_ids: [EDITOR, STRANGER] }),
     );
   });
 
@@ -3012,7 +3016,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("stranger")
         .doc("groups/g1")
-        .update({ member_ids: [READER, STRANGER, OTHER], invited_ids: [] }),
+        .update({ member_ids: [EDITOR, STRANGER, OTHER], invited_ids: [] }),
     );
   });
 
@@ -3021,7 +3025,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("stranger")
         .doc("groups/g1")
-        .update({ member_ids: [READER, STRANGER], invited_ids: [], name: "x" }),
+        .update({ member_ids: [EDITOR, STRANGER], invited_ids: [], name: "x" }),
     );
   });
 
@@ -3030,7 +3034,7 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("otherReader")
         .doc("groups/g1")
-        .update({ member_ids: [READER, OTHER] }),
+        .update({ member_ids: [EDITOR, OTHER] }),
     );
   });
 
@@ -3041,7 +3045,7 @@ describe("groupes — invitations", () => {
 
   it("le propriétaire annule l'invitation", async () => {
     await invite();
-    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: [] }));
+    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: [] }));
   });
 
   it("un membre quitte le groupe", async () => {
@@ -3069,27 +3073,196 @@ describe("groupes — invitations", () => {
   });
 
   it("le nom d'un groupe compte 60 caractères au plus", async () => {
-    await assertSucceeds(db("reader").doc("groups/g1").update({ name: "a".repeat(60) }));
-    await assertFails(db("reader").doc("groups/g1").update({ name: "a".repeat(61) }));
+    await assertSucceeds(db("editor").doc("groups/g1").update({ name: "a".repeat(60) }));
+    await assertFails(db("editor").doc("groups/g1").update({ name: "a".repeat(61) }));
     await assertFails(
-      db("reader")
+      db("editor")
         .doc("groups/new")
-        .set({ name: "a".repeat(61), owner_id: READER, member_ids: [READER] }),
+        .set({ name: "a".repeat(61), owner_id: EDITOR, member_ids: [EDITOR] }),
     );
   });
 
   it("un groupe compte 50 invitations en attente au plus", async () => {
     const many = (n) => Array.from({ length: n }, (_, i) => `invite-${i}`);
-    await assertSucceeds(db("reader").doc("groups/g1").update({ invited_ids: many(50) }));
-    await assertFails(db("reader").doc("groups/g1").update({ invited_ids: many(51) }));
+    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: many(50) }));
+    await assertFails(db("editor").doc("groups/g1").update({ invited_ids: many(51) }));
   });
 
-  it("le propriétaire retire un membre", async () => {
+  it("le propriétaire éditeur retire un membre", async () => {
+    await seedDocs(env, {
+      "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR, OTHER, READER] },
+    });
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/g1")
+        .update({ member_ids: [EDITOR, OTHER] }),
+    );
+  });
+});
+
+// ── Rôle éditeur pour créer et gérer un groupe (v0.23.53) ───────────────
+//
+// Un lecteur rejoint un groupe sur invitation ; il n'en crée pas. Un groupe
+// qu'il a créé avant cette version, il peut encore le réduire (annuler une
+// invitation, retirer un membre) et le supprimer, mais plus y inviter ni le
+// renommer. Sortir d'un groupe reste ouvert à tous.
+
+describe("groupes — rôle éditeur requis", () => {
+  const STRANGER = PERSONAS.stranger.uid;
+
+  it("un lecteur ne crée pas de groupe", async () => {
+    await assertFails(
+      db("reader")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: READER, member_ids: [READER] }),
+    );
+  });
+
+  it("un éditeur crée un groupe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] }),
+    );
+  });
+
+  it("un administrateur crée un groupe", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: "admin", member_ids: ["admin"] }),
+    );
+  });
+
+  it("un lecteur sans claim de rôle et un compte en attente ne créent pas de groupe", async () => {
+    await assertFails(
+      db("readerNoClaim")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: "reader-no-claim", member_ids: ["reader-no-claim"] }),
+    );
+    await assertFails(
+      db("pending")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: "pending", member_ids: ["pending"] }),
+    );
+  });
+
+  it("un lecteur ne recrée pas un groupe existant à son nom", async () => {
+    await assertFails(
+      db("reader")
+        .doc("groups/g1")
+        .set({ name: "x", owner_id: READER, member_ids: [READER] }),
+    );
+  });
+
+  it("un éditeur révoqué ne crée pas de groupe", async () => {
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("groups/new")
+        .set({ name: "Famille", owner_id: "revoked-stale", member_ids: ["revoked-stale"] }),
+    );
+  });
+
+  it("un lecteur propriétaire ne renomme plus son groupe", async () => {
+    await assertFails(db("reader").doc("groups/g-reader").update({ name: "Autre" }));
+  });
+
+  it("un lecteur propriétaire n'invite plus", async () => {
+    await assertFails(db("reader").doc("groups/g-reader").update({ invited_ids: [STRANGER] }));
+  });
+
+  it("un lecteur propriétaire annule encore une invitation", async () => {
+    await seedDocs(env, {
+      "groups/g-reader": {
+        name: "Ancien",
+        owner_id: READER,
+        member_ids: [READER],
+        invited_ids: [STRANGER],
+      },
+    });
+    await assertSucceeds(db("reader").doc("groups/g-reader").update({ invited_ids: [] }));
+  });
+
+  it("un lecteur propriétaire ne remplace pas une invitation par une autre", async () => {
+    await seedDocs(env, {
+      "groups/g-reader": {
+        name: "Ancien",
+        owner_id: READER,
+        member_ids: [READER],
+        invited_ids: [STRANGER],
+      },
+    });
+    await assertFails(db("reader").doc("groups/g-reader").update({ invited_ids: [OTHER] }));
+  });
+
+  it("un lecteur propriétaire retire encore un membre", async () => {
     await assertSucceeds(
       db("otherReader")
         .doc("groups/famille")
         .update({ member_ids: [OTHER, READER] }),
     );
+  });
+
+  it("un lecteur propriétaire ne se retire pas de son groupe", async () => {
+    await assertFails(
+      db("otherReader")
+        .doc("groups/famille")
+        .update({ member_ids: [READER, EDITOR] }),
+    );
+  });
+
+  it("un lecteur propriétaire ne renomme pas en retirant un membre", async () => {
+    await assertFails(
+      db("otherReader")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER, READER], name: "Autre" }),
+    );
+  });
+
+  it("un membre non propriétaire ne supprime pas le groupe", async () => {
+    await assertFails(db("reader").doc("groups/famille").delete());
+    await assertFails(db("editor").doc("groups/famille").delete());
+  });
+
+  it("un administrateur gère le groupe d'un lecteur", async () => {
+    await assertSucceeds(db("admin").doc("groups/g-reader").update({ name: "Autre" }));
+    await assertSucceeds(
+      db("admin").doc("groups/g-reader").update({ invited_ids: [STRANGER] }),
+    );
+    await assertSucceeds(
+      db("admin")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER, READER] }),
+    );
+  });
+
+  it("un lecteur propriétaire supprime encore son groupe", async () => {
+    await assertSucceeds(db("reader").doc("groups/g-reader").delete());
+  });
+
+  it("un lecteur membre quitte le groupe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("groups/famille")
+        .update({ member_ids: [OTHER, EDITOR] }),
+    );
+  });
+
+  it("un lecteur invité accepte puis un autre refuse", async () => {
+    await seedDocs(env, {
+      "groups/g1": {
+        name: "Famille",
+        owner_id: EDITOR,
+        member_ids: [EDITOR],
+        invited_ids: [READER, OTHER],
+      },
+    });
+    await assertSucceeds(
+      db("reader")
+        .doc("groups/g1")
+        .update({ member_ids: [EDITOR, READER], invited_ids: [OTHER] }),
+    );
+    await assertSucceeds(db("otherReader").doc("groups/g1").update({ invited_ids: [] }));
   });
 });
 

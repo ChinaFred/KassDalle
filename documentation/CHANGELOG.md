@@ -20,6 +20,37 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.53 — fonctionnel
+
+Seuls un éditeur et un administrateur créent un groupe familial. Un lecteur rejoint le
+groupe d'un proche sur invitation : le bouton « Créer un groupe » ne lui est plus proposé,
+et son écran vide dit « Vous rejoignez un groupe sur invitation d'un proche ». Jusqu'ici
+tout compte nommé ouvrait un groupe, y invitait qui il voulait et lisait les livres de ceux
+qui acceptaient, alors que le rôle lecteur n'ouvre rien d'autre que la lecture.
+
+Un lecteur propriétaire d'un groupe créé avant cette version n'y invite plus personne et ne
+le renomme plus : la recherche et « Renommer » lui sont masqués, et la feuille des membres
+dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. ». Il garde ce qui
+réduit son groupe : annuler une invitation en attente, retirer un membre, supprimer le
+groupe. Les membres de ce groupe restent membres, acceptent ou refusent une invitation et
+quittent le groupe comme avant. Le menu d'un groupe affiche « Gérer les membres » au
+propriétaire et « Voir les membres » aux autres membres. Un administrateur gère tout groupe.
+
+### v0.23.53 — technique
+
+`firestore.rules`, collection `groups` : la création exige `isEditor()`. `isManagement()`
+(renommer, inviter) exige `isEditor()` en plus de la propriété ; un administrateur passe
+toujours. Une nouvelle écriture `isShrinking()` laisse le propriétaire, quel que soit son
+rôle, ne faire que réduire son groupe : `invited_ids` et `member_ids` ne perdent que des
+comptes, le propriétaire reste membre, le nom ne change pas. Acceptation, refus, sortie et
+suppression par le propriétaire ne changent pas. La callable `findMemberByEmailFn` passe de
+`requireAuth` à `requireEditor`, pour refuser la recherche par adresse au lecteur
+propriétaire d'un ancien groupe, que la règle empêche déjà d'inviter. `rules-tests` : le
+groupe `g1` des données de test appartient désormais à l'éditeur, un groupe `g-reader`
+représente un groupe de lecteur créé avant la v0.23.53, et une suite « groupes — rôle
+éditeur requis » couvre création, gestion, réduction, suppression, sortie et acceptation
+selon le rôle. Aucune donnée à reprendre : les groupes existants restent tels quels.
+
 ### v0.23.52 — technique
 
 Trois backfills ponctuels sortent du code. Ils ont été menés au bout et marqués terminés en

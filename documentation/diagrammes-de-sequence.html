@@ -2062,7 +2062,7 @@ sequenceDiagram
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor O as Propriétaire
+  actor O as Propriétaire (éditeur ou admin)
   actor I as Invité
   participant G as GroupsScreen
   participant R as GroupRepository
@@ -2078,7 +2078,7 @@ sequenceDiagram
   O->>G: Créer un groupe — nom libre
   G->>R: createGroup(nom, ownerUid)
   R->>FS: owner_id, member_ids [owner]
-  Note over R,FS: un reader peut créer un groupe et en être propriétaire
+  Note over R,FS: create, renommer et inviter exigent isEditor() (v0.23.53) —<br/>un reader ne crée pas de groupe, le bouton lui est masqué
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
@@ -2089,7 +2089,7 @@ sequenceDiagram
   else adresse complète — à la validation ou à la flèche « Chercher cette adresse »
     G->>R: findMemberByEmail(groupId, adresse)
     R->>MS: findMemberByEmailFn {groupId, email}
-    MS->>MS: requireAuth (approuvé, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
+    MS->>MS: requireEditor (éditeur ou admin, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
     MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
     MS->>UU: parcours de users (email, role, is_revoked, noms)
     MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
