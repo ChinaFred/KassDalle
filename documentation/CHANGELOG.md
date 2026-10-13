@@ -18,6 +18,33 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-13
+
+### v0.23.52 — technique
+
+Trois backfills ponctuels sortent du code. Ils ont été menés au bout et marqués terminés en
+production : « Protéine et féculent des plats » (`backfillRecipeProteinFn`), « Durées
+estimées » (`backfillEstimatedTimesFn`) et « Contraintes de variété par défaut »
+(`backfillPlanningDefaultsFn`).
+
+Les trois callables, leurs méthodes de `GcpBillingRepository`, leurs tuiles et
+`RecipeProteinBackfillReport` sont supprimés. Les clés `recipe_protein`, `estimated_times` et
+`planning_defaults` quittent les deux registres et la fixture `backfill_schedule.json`. Code
+devenu mort, supprimé aussi : `suggestMainProteinStarch`, `hasBothMainIngredients` et
+`MAIN_INGREDIENTS_CHECKED_FIELD`.
+
+Les postes `backfill_recipe_protein` et `backfill_time_estimate_batch` quittent
+`ROUTABLE_FEATURES` et restent au catalogue comptable. Les documents
+`app_config/backfill_run_<clé>` et les points de reprise restent en base. Plus rien ne les
+lit, et l'écran ignore une clé absente du registre.
+
+L'aide sous les listes « Protéine principale » et « Féculent principal » disait « il sera
+proposé par l'IA ». Plus aucun traitement automatique ne la redemande pour une recette déjà
+classée : elle dit maintenant « « Suggérer les tags » peut le proposer ».
+
+Le déclencheur `onRecipeWritten` continue d'estimer les durées et de classer les recettes
+neuves. Un compte sans contraintes enregistrées lit toujours `kDefaultGlobalConstraints`.
+
 ## 2026-10-12
 
 ### v0.23.51 — fonctionnel

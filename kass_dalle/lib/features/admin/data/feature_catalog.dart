@@ -295,7 +295,8 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Estime la préparation et la cuisson des recettes existantes qui '
         'n\'en donnent pas, huit recettes par appel, lancé depuis Admin › '
-        'Backfills.',
+        'Backfills. Retiré du code en v0.23.52, son travail fait ; gardé ici '
+        'pour nommer les mois déjà comptés.',
   ),
   'backfill_recipe_roles': FeatureInfo(
     label: 'Rôle des recettes (backfill)',
@@ -311,7 +312,8 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Pose la protéine principale et le féculent principal sur chaque '
         'plat ou accompagnement existant qui n\'en a pas, pour que le '
         'planning varie les protéines et alterne les féculents. Un appel par '
-        'recette, lancé depuis Admin › Backfills.',
+        'recette, lancé depuis Admin › Backfills. Retiré du code en v0.23.52, '
+        'son travail fait ; gardé ici pour nommer les mois déjà comptés.',
   ),
   'inline_meal_role_classification': FeatureInfo(
     label: 'Rôle des recettes (à l\'écriture)',

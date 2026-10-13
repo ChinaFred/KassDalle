@@ -10,7 +10,6 @@ import '../../../core/app_version.dart';
 import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
 import '../domain/backfill_failures.dart';
-import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
 const String _functionsRegion = 'europe-west1';
@@ -436,46 +435,6 @@ class GcpBillingRepository {
     );
   }
 
-  /// Protéine et féculent principaux des plats et accompagnements qui n'en
-  /// ont pas. Un appel de modèle par recette concernée ; rien d'autre n'est
-  /// réécrit. Réentrante, reprise sur point de contrôle : relancer tant que
-  /// le résultat indique « incomplet ».
-  Future<RecipeProteinBackfillReport> backfillRecipeProtein({
-    double maxMinutes = 8,
-    int maxRecipes = 40,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final dynamic raw = await _callViaSdk('backfillRecipeProteinFn', {
-      'maxMinutes': maxMinutes,
-      'maxRecipes': maxRecipes,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-      'appVersion': kAppVersion,
-    }, timeout: const Duration(minutes: 9));
-
-    return RecipeProteinBackfillReport.fromMap(
-      Map<String, dynamic>.from(raw as Map),
-      finishedAt: DateTime.now(),
-    );
-  }
-
-  /// Pose [text] dans les contraintes globales de planning des autres comptes :
-  /// vides, il les remplace ; écrites, il s'ajoute à la suite ; déjà présent,
-  /// rien. Sans appel de modèle. Les drapeaux valent 1 ou 0 ; les comptes
-  /// laissés tels quels ou en échec sont dans `failures`.
-  Future<BackfillCounts> backfillPlanningDefaults({
-    required String text,
-  }) async {
-    final dynamic raw = await _callViaSdk(
-      'backfillPlanningDefaultsFn',
-      <String, dynamic>{'text': text, 'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
   /// Crée, pour chaque compte approuvé (lecteur, éditeur, administrateur), les
   /// livres système qui lui manquent. Sans appel de modèle. Les drapeaux
   /// valent 1 ou 0 ; les comptes en échec sont dans `failures`.
@@ -538,32 +497,6 @@ class GcpBillingRepository {
       timeout: const Duration(minutes: 9),
     );
 
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Durées estimées : estime, huit recettes par appel de modèle (poste
-  /// `backfill_time_estimate_batch`), la préparation et la cuisson des
-  /// recettes qui n'en donnent pas. Une recette déjà estimée pour son contenu
-  /// n'est ni redemandée ni refacturée. Réentrante, avec reprise sur point de
-  /// contrôle. Rend les compteurs (drapeaux à 1 ou 0) et la liste des
-  /// recettes à revoir (`aRevoir`).
-  Future<BackfillCounts> backfillEstimatedTimes({
-    double maxMinutes = 8,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final payload = <String, dynamic>{
-      'maxMinutes': maxMinutes,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-      'appVersion': kAppVersion,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillEstimatedTimesFn',
-      payload,
-      timeout: const Duration(minutes: 9),
-    );
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 

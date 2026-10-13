@@ -28,7 +28,7 @@
  * pendant l'appel — écriture du rôle dans un repas, de la nutrition —
  * trouvent la réservation et passent leur chemin. Une réservation restée
  * sans réponse (appel en échec) expire après `PENDING_TTL_MS` : la prochaine
- * écriture, ou le backfill « Durées estimées », reprend la recette.
+ * écriture reprend la recette.
  */
 
 import { createHash, randomUUID } from "node:crypto";

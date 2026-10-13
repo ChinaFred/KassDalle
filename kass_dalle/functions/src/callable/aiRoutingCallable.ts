@@ -232,11 +232,8 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Rôle des recettes dans un repas (backfill)",
     group: "Planning",
   },
-  {
-    id: "backfill_recipe_protein",
-    label: "Protéine et féculent des plats (backfill)",
-    group: "Planning",
-  },
+  // `backfill_recipe_protein` a quitté cette liste avec `backfillRecipeProteinFn`,
+  // retiré le 13 octobre 2026 (v0.23.52). Il reste au catalogue comptable.
   {
     id: "inline_meal_role_classification",
     label: "Rôle des recettes dans un repas (à l'écriture)",
@@ -247,11 +244,9 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Durées estimées d'une recette (à l'écriture)",
     group: "Rédaction",
   },
-  {
-    id: "backfill_time_estimate_batch",
-    label: "Durées estimées des recettes (backfill)",
-    group: "Rédaction",
-  },
+  // `backfill_time_estimate_batch` a quitté cette liste avec
+  // `backfillEstimatedTimesFn`, retiré le 13 octobre 2026 (v0.23.52). Il reste au
+  // catalogue comptable.
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
   {
     id: "storage_advice",

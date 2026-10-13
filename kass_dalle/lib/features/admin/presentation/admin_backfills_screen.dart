@@ -12,9 +12,7 @@ import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_failures.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
-import '../domain/recipe_protein_backfill_report.dart';
 import '../domain/recipe_roles_backfill_report.dart';
-import '../../planning/domain/planning_preferences.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -130,18 +128,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'règle du jour. Une recette dont le résultat ne change pas n\'est '
             'pas réécrite.\n\n'
             'Aucun appel d\'IA. Cinq cents recettes par passage.';
-      case BackfillKeys.recipeProtein:
-        final report = _proteinReport();
-        final reste = report == null ? '' : '\n\n${report.restantesSentence}';
-        return 'Demande à l\'IA la protéine et le féculent principaux des '
-            'plats et accompagnements qui n\'en ont pas. Rien d\'autre n\'est '
-            'modifié. Un appel par recette, quarante au plus.\n\n'
-            'Appels d\'IA facturés.$reste';
-      case BackfillKeys.estimatedTimes:
-        return 'Demande à l\'IA la préparation et la cuisson des recettes qui '
-            'n\'en donnent pas : huit recettes par appel, cent soixante au '
-            'plus. Une durée lue dans la recette n\'est jamais remplacée.\n\n'
-            'Appels d\'IA facturés.';
       case BackfillKeys.refreshSodium:
         return 'Le sel et le sodium d\'un ingrédient étaient additionnés : '
             'tout ingrédient salé porte un sel deux fois trop élevé. Ce '
@@ -149,12 +135,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'sodium.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
-      case BackfillKeys.planningDefaults:
-        return 'Pose les règles de variété (protéine, féculent, cuisine) dans '
-            'les contraintes du planning des autres comptes. Votre compte '
-            'n\'est pas modifié. Un texte déjà présent n\'est pas ajouté deux '
-            'fois.\n\n'
-            'Aucun appel d\'IA.';
       case BackfillKeys.systemBooks:
         return 'Crée, pour chaque compte lecteur, éditeur ou administrateur, '
             'ceux des quatre livres système qui lui manquent : « Mes '
@@ -174,14 +154,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         .value?[BackfillKeys.recipeRoles]
         ?.lastReport;
     return raw == null ? null : RecipeRolesBackfillReport.fromMap(raw);
-  }
-
-  RecipeProteinBackfillReport? _proteinReport() {
-    final raw = ref
-        .read(backfillRunsProvider)
-        .value?[BackfillKeys.recipeProtein]
-        ?.lastReport;
-    return raw == null ? null : RecipeProteinBackfillReport.fromMap(raw);
   }
 
   _PassOutcome _fromCounts(BackfillCounts r, String message) => _PassOutcome(
@@ -261,44 +233,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.recipeProtein:
-        final r = await _repo.backfillRecipeProtein();
-        return _PassOutcome(
-          message: '${r.restantesSentence}\nCe passage : ${r.passSummary}',
-          failures: r.failures,
-          termineAuto: r.termineAuto,
-        );
-      case BackfillKeys.estimatedTimes:
-        final r = await _repo.backfillEstimatedTimes();
-        return _fromCounts(
-          r,
-          (r['dejaEnCours'] ?? 0) == 1
-              ? 'Un passage est déjà en cours : rien n\'a été lancé. Relancez '
-                    'quand il sera terminé.'
-              : 'Recettes : estimées=${r['estimees']}, '
-                    'sans estimation du modèle=${r['sansEstimation']}, '
-                    'ignorées (durées lues ou déjà estimées)=${r['ignorees']}, '
-                    'hors recette=${r['horsRecette']}, '
-                    'en erreur=${r['enErreur']}'
-                    '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-                    '${(r['enErreur'] ?? 0) > 0 ? ' (recettes en erreur : voir la liste à revoir avant de relancer)' : ''}'
-                    '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint)')}'
-                    '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-                    '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif)')}',
-        );
-      case BackfillKeys.planningDefaults:
-        final r = await _repo.backfillPlanningDefaults(
-          text: kDefaultGlobalConstraints,
-        );
-        return _fromCounts(
-          r,
-          'Comptes : examinés=${r['examines']}, posés=${r['poses']}, '
-          'complétés=${r['completes']}, déjà à jour=${r['dejaAJour']}, '
-          'le vôtre ignoré=${r['ignores']}, '
-          'trop longs (laissés tels quels)=${r['tropLongs']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
       case BackfillKeys.systemBooks:
         final r = await _repo.backfillSystemBooks();
@@ -668,7 +602,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  // Huit opérations ont quitté cet écran, et le code derrière elles avec.
+  // Douze opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
   // le déclencheur `syncUserClaims` n'existe. Ce déclencheur écrit désormais les
@@ -720,6 +654,27 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // `ai/pricing.ts`) — la correction déjà posée. Une dérive de tarif future
   // se corrige directement depuis Admin › Moteur d'IA (`setAiPricingFn`),
   // qui écrit le même document sans dupliquer aucun chiffre dans le code.
+  //
+  // Trois ponctuels, menés au bout et marqués terminés en production, sont
+  // retirés en v0.23.52 (13 octobre 2026) :
+  //
+  // « Protéine et féculent des plats » (`backfillRecipeProteinFn`, v0.23.24) a
+  // posé `tags.main_protein` et `tags.main_starch` sur les plats et
+  // accompagnements déjà classés. Le classement à l'écriture
+  // (`onRecipeWritten`) et l'import les posent sur toute recette neuve.
+  //
+  // « Durées estimées » (`backfillEstimatedTimesFn`, v0.23.38) a estimé la
+  // préparation et la cuisson des recettes qui n'en donnaient pas. Le
+  // déclencheur `onRecipeWritten` (`recipeEstimatedTimes.ts`) estime une
+  // recette neuve ou modifiée.
+  //
+  // « Contraintes de variété par défaut » (`backfillPlanningDefaultsFn`,
+  // v0.23.28) a posé `kDefaultGlobalConstraints` dans les contraintes du
+  // planning des comptes existants. Un compte sans contraintes enregistrées
+  // lit ce texte par défaut (`PlanningPreferences.fromFirestore`).
+  //
+  // Leurs documents `app_config/backfill_run_<clé>` et leurs curseurs restent
+  // en base : l'écran ignore une clé absente du registre.
   //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
@@ -872,10 +827,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.allergens: Icons.no_food_outlined,
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
-    BackfillKeys.recipeProtein: Icons.set_meal_outlined,
-    BackfillKeys.estimatedTimes: Icons.timer_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
-    BackfillKeys.planningDefaults: Icons.restaurant_menu_outlined,
     BackfillKeys.systemBooks: Icons.library_books_outlined,
   };
 

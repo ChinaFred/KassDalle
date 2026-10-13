@@ -24,7 +24,6 @@ import {
   normalizeRoleKey,
   parseMealContains,
   parseMealRole,
-  hasBothMainIngredients,
   mainIngredientsPatch,
   parseMainProtein,
   parseMainProteinStarch,
@@ -127,7 +126,7 @@ describe("protéine et féculent principaux", () => {
     assert.equal(parseMainStarch(undefined), null);
   });
 
-  test("lecture sans rôle : pour le backfill, dont le rôle est déjà connu", () => {
+  test("lecture sans rôle : la protéine et le féculent seuls", () => {
     assert.deepEqual(parseMainProteinStarch({ main_protein: "porc", main_starch: "riz" }), {
       mainProtein: "porc",
       mainStarch: "riz",
@@ -287,7 +286,7 @@ describe("protéine et féculent : la question a-t-elle reçu une réponse ?", (
   });
 });
 
-describe("backfill : seuls les champs absents sont écrits", () => {
+describe("protéine et féculent : seuls les champs absents sont écrits", () => {
   test("recette vide : protéine et féculent", () => {
     assert.deepEqual(mainIngredientsPatch({}, { mainProtein: "porc", mainStarch: "riz" }), {
       main_protein: "porc",
@@ -322,7 +321,7 @@ describe("backfill : seuls les champs absents sont écrits", () => {
 
 describe("fixture partagée avec le client", () => {
   // Le client propose ces rôles dans une liste et les affiche en français ;
-  // un rôle de plus ici sans son jumeau là-bas se choisirait au backfill et ne
+  // un rôle de plus ici sans son jumeau là-bas serait choisi par le modèle et ne
   // se verrait jamais dans le formulaire.
   test("la liste des rôles est la même que côté client", () => {
     const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
@@ -342,21 +341,5 @@ describe("fixture partagée avec le client", () => {
     assert.deepEqual([...MAIN_PROTEINS], fixture.main_proteins);
     assert.deepEqual([...MAIN_STARCHES], fixture.main_starches);
     assert.deepEqual([...ROLES_WITH_MAIN_INGREDIENTS], fixture.roles_with_main_ingredients);
-  });
-});
-
-describe("backfill : marqueur sans appel seulement si les deux champs sont posés", () => {
-  test("protéine et féculent posés : pas d'appel", () => {
-    assert.equal(hasBothMainIngredients({ main_protein: "boeuf", main_starch: "aucun" }), true);
-  });
-
-  test("protéine choisie à la main, féculent non renseigné : le modèle propose le féculent", () => {
-    assert.equal(hasBothMainIngredients({ main_protein: "boeuf" }), false);
-  });
-
-  test("féculent seul, ou valeurs vides ou d'un autre type : appel", () => {
-    assert.equal(hasBothMainIngredients({ main_starch: "riz" }), false);
-    assert.equal(hasBothMainIngredients({ main_protein: " ", main_starch: "riz" }), false);
-    assert.equal(hasBothMainIngredients({ main_protein: 3, main_starch: "riz" }), false);
   });
 });

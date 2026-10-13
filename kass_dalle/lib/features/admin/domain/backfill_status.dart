@@ -393,18 +393,9 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
       return '${_count(n('recalculees'), 'recalculée', 'recalculées')}, '
           '${_count(n('identiques'), 'identique', 'identiques')}, '
           '${_count(n('echouees'), 'échec', 'échecs')}';
-    case BackfillKeys.recipeProtein:
-      return '${_count(n('traitees'), 'traitée', 'traitées')}, '
-          '${restantes('restantes', 'restante', 'restantes')}';
-    case BackfillKeys.estimatedTimes:
-      return '${_count(n('estimees'), 'estimée', 'estimées')}, '
-          '${_count(n('enErreur'), 'en erreur', 'en erreur')}';
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
-    case BackfillKeys.planningDefaults:
-      return '${_count(n('poses') + n('completes'), 'compte mis à jour', 'comptes mis à jour')}, '
-          '${_count(n('restants'), 'restant', 'restants')}';
     case BackfillKeys.systemBooks:
       return '${_count(n('livresCrees'), 'livre créé', 'livres créés')}, '
           '${_count(n('restants'), 'compte restant', 'comptes restants')}';

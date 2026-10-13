@@ -1646,23 +1646,6 @@ classDiagram
     +fromMap(map, finishedAt) RecipeRolesBackfillReport$
   }
 
-  class RecipeProteinBackfillReport {
-    +DateTime? finishedAt
-    +int examinees
-    +int traitees
-    +int dejaTraitees
-    +int ignorees
-    +int sansReponse
-    +int echouees
-    +int? restantes
-    +bool completed
-    +bool stoppedByBudget
-    +bool stoppedByErrors
-    +bool stoppedByDeadline
-    +BackfillFailures? failures
-    +bool termineAuto
-    +fromMap(map, finishedAt) RecipeProteinBackfillReport$
-  }
 
   class BackfillDefinition {
     +String key
@@ -1739,7 +1722,6 @@ classDiagram
   DataQualityCheck "1" *-- "0..200" DataQualityExample : examples
   BackfillFailures "1" *-- "0..100" BackfillFailure : items
   RecipeRolesBackfillReport --&gt; BackfillFailures : failures
-  RecipeProteinBackfillReport --&gt; BackfillFailures : failures
   BackfillCounts --&gt; BackfillFailures : failures
   BackfillRunState --&gt; BackfillFailures : failures du last_report
   BackfillRunState ..&gt; BackfillDefinition : même clé
@@ -1780,10 +1762,6 @@ classDiagram
           <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
           <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
           <code>last_report</code> de <code>app_config/backfill_run_recipe_roles</code>.
-          <b><code>RecipeProteinBackfillReport</code></b> est celui de
-          <code>backfillRecipeProteinFn</code> (examinées, traitées, déjà traitées, ignorées, sans
-          réponse, échecs, restantes), lu de la même façon dans
-          <code>app_config/backfill_run_recipe_protein</code>.
           <b><code>BackfillFailures</code></b> est la liste « à revoir » qu'un backfill renvoie
           dans <code>aRevoir</code> : cent <code>BackfillFailure</code> au plus (nature, id, nom,
           raison), et le total compté au-delà. <b><code>BackfillCounts</code></b> porte les
@@ -1992,7 +1970,7 @@ classDiagram
           <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>
           <tr><td><code>allergens</code></td><td><code>allergens</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill) ; <code>toFirestore</code> l'omet, une mise à jour partielle le laisse en place. Absent tant qu'aucun calcul n'a eu lieu</td></tr>
-          <tr><td><code>estimatedTimes</code></td><td><code>estimated_times</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill « Durées estimées ») ; les règles refusent au client de le poser, le changer ou l'effacer. <code>toFirestore</code> l'omet, une copie ne le reprend pas. Seules <code>prep</code> et <code>cook</code> sont relues, quand <code>status</code> vaut <code>done</code></td></tr>
+          <tr><td><code>estimatedTimes</code></td><td><code>estimated_times</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>) ; les règles refusent au client de le poser, le changer ou l'effacer. <code>toFirestore</code> l'omet, une copie ne le reprend pas. Seules <code>prep</code> et <code>cook</code> sont relues, quand <code>status</code> vaut <code>done</code></td></tr>
           <tr><td>—</td><td><code>pipeline_correlation_id</code></td><td>Trace du job d'import, pour rapprocher recette et logs</td></tr>
         </tbody>
       </table>
