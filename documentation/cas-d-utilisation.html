@@ -158,9 +158,11 @@
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, en lecture seule : il ne les supprime plus</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -290,6 +292,8 @@ flowchart LR
     a29(["Consulter les allergènes&lt;br/&gt;d'une recette"])
     a36(["Partager mon planning&lt;br/&gt;avec mes groupes"])
     a37(["Consulter un planning partagé&lt;br/&gt;en lecture seule"])
+    a38(["Planifier pour mon groupe&lt;br/&gt;propriétaire, éditeur"])
+    a39(["Consulter le planning&lt;br/&gt;de mon groupe"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -342,6 +346,11 @@ flowchart LR
   LEC --- a25
   EDI --- a36
   LEC --- a37
+  EDI --- a38
+  LEC --- a39
+  a38 -.->|"étend : « Planifier pour… »"| a12
+  a38 -.->|"inclut, même cuisinier"| i4
+  a39 -.->|"appui sur un repas, recette lisible"| a2
   a36 -.->|"étend"| a13
   a36 -.->|"inclut"| i16
   a30 -.->|"Accepter"| i16
@@ -507,7 +516,7 @@ flowchart LR
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
         préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        décoché par défaut, en lecture seule : il ne les supprime plus. « Mon planning » n'apparaît
         que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
         les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
@@ -524,6 +533,19 @@ flowchart LR
         rien écrire. Une recette que le membre ne peut pas lire s'affiche par son titre, avec
         « Recette non partagée », et ne s'ouvre pas. Sa note sur une recette ne pèse pas sur
         les suggestions du propriétaire.
+        <b>Planifier pour mon groupe</b> : un planning est personnel, ou celui d'un groupe.
+        Le propriétaire du groupe, éditeur ou administrateur, y planifie seul — « Nouveau
+        planning » demande « Planifier pour… » dès qu'il possède un groupe, un jour libre
+        propose « Rien de prévu pour Famille Dupont », la feuille « Planifier » d'une recette
+        porte une ligne « Planning ». Les repas du groupe portent <code>group_id</code> ; le
+        serveur vérifie à la génération que l'appelant est propriétaire du groupe, et sa
+        mémoire des refus, son historique et ses préférences servent, sans poste d'IA de plus.
+        <b>Consulter le planning de mon groupe</b> ouvre à chaque membre, lecteur compris, les
+        repas du groupe en lecture seule, marqués de l'icône et du nom du groupe. Un invité ne
+        les lit pas. Un groupe supprimé emporte ses repas. Un groupe dont le propriétaire est
+        rétrogradé est masqué à tous ses membres — planning, livres partagés par le groupe,
+        écran des groupes — sans rien effacer ; tout revient s'il redevient éditeur
+        (<code>syncPlanningReachOnRole</code>).
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),
         ou par son adresse e-mail complète : celle-ci part au serveur
