@@ -52,17 +52,25 @@ describe("searcherDenial", () => {
   });
 });
 
-describe("garde de rôle de la callable (requireAuth, besoin « approved »)", () => {
-  test("lecteur, éditeur, administrateur passent", () => {
-    for (const role of ["reader", "editor", "admin"]) {
-      assert.equal(accessDenial({ role, revoked: false }, "approved"), null);
+describe("garde de rôle de la callable (requireEditor, besoin « editor »)", () => {
+  test("éditeur et administrateur passent", () => {
+    for (const role of ["editor", "admin"]) {
+      assert.equal(accessDenial({ role, revoked: false }, "editor"), null);
     }
   });
 
+  test("un lecteur est refusé, même propriétaire d'un ancien groupe", () => {
+    assert.equal(
+      accessDenial({ role: "reader", revoked: false }, "editor")?.code,
+      "permission-denied",
+    );
+  });
+
   test("un compte en attente ou révoqué est refusé", () => {
-    assert.notEqual(accessDenial({ role: "pending", revoked: false }, "approved"), null);
-    assert.notEqual(accessDenial({ role: null, revoked: false }, "approved"), null);
-    assert.notEqual(accessDenial({ role: "admin", revoked: true }, "approved"), null);
+    assert.notEqual(accessDenial({ role: "pending", revoked: false }, "editor"), null);
+    assert.notEqual(accessDenial({ role: null, revoked: false }, "editor"), null);
+    assert.notEqual(accessDenial({ role: "editor", revoked: true }, "editor"), null);
+    assert.notEqual(accessDenial({ role: "admin", revoked: true }, "editor"), null);
   });
 });
 
