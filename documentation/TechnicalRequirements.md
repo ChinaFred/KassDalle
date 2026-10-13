@@ -540,8 +540,8 @@ la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_por
 | `per_100g` | `Map<String, double>?` | Valeurs ramenées à 100 g. Absent quand le poids total n'est pas connu |
 | `quality` | `Map` | `{score: int, level: String, warnings: List<String>}` — `level` vaut `A` au-dessus de 80, `B` au-dessus de 60, `C` en dessous. Trois niveaux seulement, pas cinq |
 | `missing_ingredients` | `List<String>` | Ce que le référentiel ne sait pas peser ni chiffrer : l'union de `missing_weight` et `missing_profile`, que l'écran lit |
-| `missing_weight` | `List<Map>` | Lignes impossibles à peser, `{name, cause}`. `cause` : `quantite_illisible` (un nombre manque ou ne se lit pas devant une unité), `quantite_absente` (ni nombre ni unité, pas encore de portion usuelle), `comptage_sans_poids` (compté à la pièce sans poids à la pièce connu), `unite_sans_poids` (unité que ni le référentiel ni la table ne savent peser). `missingWeightCause`, `nutrition/recipeNutrition.ts`. Absent des instantanés antérieurs à la v0.23.53 |
-| `missing_profile` | `List<String>` | Ingrédients pesés dont le référentiel n'a pas de valeurs pour 100 g. Absent des instantanés antérieurs à la v0.23.53 : le rattrapage ne sait alors pas séparer les causes, et reprend la recette |
+| `missing_weight` | `List<Map>` | Lignes impossibles à peser, `{name, cause}`. `cause` : `quantite_illisible` (un nombre manque ou ne se lit pas devant une unité), `quantite_absente` (ni nombre ni unité, pas encore de portion usuelle), `comptage_sans_poids` (compté à la pièce sans poids à la pièce connu), `unite_sans_poids` (unité que ni le référentiel ni la table ne savent peser). `missingWeightCause`, `nutrition/recipeNutrition.ts`. Absent des instantanés antérieurs à la v0.23.54 |
+| `missing_profile` | `List<String>` | Ingrédients pesés dont le référentiel n'a pas de valeurs pour 100 g. Absent des instantanés antérieurs à la v0.23.54 : le rattrapage ne sait alors pas séparer les causes, et reprend la recette |
 | `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
 | `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
 
@@ -1628,7 +1628,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `shopping_product_source` | `String?` | `ai_estimated` \| `admin` |
 | `allergens` | `String[]?` | Allergènes majeurs de l'ingrédient, clés de la liste de l'annexe II INCO (fixture `allergens.json`). **Absent** : jamais examiné. **Vide** : examiné, aucun. Posé par le modèle (`allergenExamination.ts`, lots de quarante, schéma JSON fermé) pour un ingrédient de la recette pas encore examiné, juste après sa création par `syncRecipeNutrition` (poste `allergens_auto`), ou par le backfill « Allergènes des ingrédients et des recettes » (poste `backfill_allergens`). **Jamais redemandé** une fois posé, et **jamais écrasé** par le modèle : l'écriture est conditionnelle, dans une transaction. L'examen ne **crée** jamais de document : un document créé avec ce seul champ ferait échouer le `create` de la nutrition, qui ne poserait plus ni `canonical_name`, ni `per100g`, ni le produit acheté. Corrigé à la main depuis *Admin › Référentiels › Ingrédients* ; les recettes ne le reprennent qu'au backfill ou à la prochaine modification de leurs ingrédients |
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
-| `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.53, par le backfill « Enrichir unités et ingrédients » sur un échec |
+| `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.54, par le backfill « Enrichir unités et ingrédients » sur un échec |
 | `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments en échec » ; il est listé « Exclu après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. Serveur seul |
 | `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) ne le lit pas. Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
@@ -1640,7 +1640,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 des exemples d'ingrédients associés et un `grams_per_unit` — **jamais** posé sur une unité
 de volume ni de comptage, où il n'aurait aucun sens. Une unité que le modèle n'a pas su peser
 porte `ai_weight_attempt_at` (`Timestamp`, la question n'est pas reposée avant vingt heures)
-et `ai_weight_status: "estimation_failed"`. Depuis la v0.23.53, `ai_weight_failure_count`
+et `ai_weight_status: "estimation_failed"`. Depuis la v0.23.54, `ai_weight_failure_count`
 (`int?`) compte les échecs du backfill « Enrichir unités et ingrédients » sur cette unité :
 à 3, elle n'est plus soumise au modèle par ce backfill, sauf case « Réessayer aussi les
 éléments en échec » ; remis à 0 par une estimation réussie. L'enrichissement à l'écriture
@@ -4615,7 +4615,7 @@ phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parc
 Le passage manuel lève les trois dernières bornes : c'est lui qu'on lance après avoir corrigé
 un poids à la pièce ou le poids d'une unité, puisque le passage programmé ne reprend plus ces
 recettes. Les vingt heures sont celles du délai de relance de l'enrichissement
-(`ENRICHMENT_RETRY_AFTER_MS`, ramené de 24 h à 20 h en v0.23.53) : les marques d'essai
+(`ENRICHMENT_RETRY_AFTER_MS`, ramené de 24 h à 20 h en v0.23.54) : les marques d'essai
 s'écrivent pendant le calcul, juste avant l'instantané. Un instantané assez vieux pour être
 repris garantit donc des marques assez vieilles pour que la reprise redemande au modèle.
 Avec 24 h d'un côté et 20 h de l'autre, le passage quotidien de 5 h trouvait la marque de la
@@ -4625,7 +4625,7 @@ portions usuelles) : une question restée sans réponse y est reposée quatre he
 qu'avant. Une recette reprise et toujours incomplète compte dans `echouees` : le passage est
 « incomplet » sans reprise horaire, et elle revient le lendemain, jusqu'à cinq tentatives.
 
-**Mémoire des échecs** (`backfills/failureMemory.ts`, v0.23.53). Trois récurrents qui
+**Mémoire des échecs** (`backfills/failureMemory.ts`, v0.23.54). Trois récurrents qui
 appellent un modèle comptent les échecs de chaque élément, sur son propre document : poids des
 unités (`ai_weight_failure_count`) et valeurs pour 100 g (`enrichment_failure_count`) pour
 « Enrichir unités et ingrédients », allergènes des ingrédients (`allergens_failure_count`),
