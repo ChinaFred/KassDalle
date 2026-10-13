@@ -817,12 +817,14 @@ service cloud.firestore {
     // Un administrateur qui les écrirait directement pourrait programmer un
     // passage imputé au plafond d'un autre compte, ou lever un verrou.
     function isServerOnlyConfig(docId) {
-      return docId == 'backfill_schedules' || docId.matches('backfill_run_.*');
+      return docId == 'backfill_schedules' || docId.matches('backfill_run_.*')
+        || docId == 'tickets_status';
     }
 
     match /app_config/{docId} {
       allow read: if isAdmin() ||
-                     (isApproved() && (docId == 'usage' || docId == 'ai_pricing'));
+                     (isApproved() && (docId == 'usage' || docId == 'ai_pricing'
+                                       || docId == 'tickets'));
       allow write: if (isAdmin() && !isServerOnlyConfig(docId)) || (
         isApproved() && docId == 'usage' &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -1243,6 +1245,34 @@ service cloud.firestore {
     match /meal_staples/{stapleId} {
       allow read: if isApproved();
       allow write: if isAdmin();
+    }
+
+    // Tickets des membres (bugs, idées, questions publiés en Issues GitHub).
+    //
+    // Privés : l'auteur lit les siens, l'administrateur lit tout. Écrits par
+    // les Cloud Functions seules (`submitTicket`, `attachTicketScreenshot`,
+    // le webhook GitHub, la tâche horaire), avec une exception : l'auteur pose
+    // `seen_by_author_at` en ouvrant le détail, ce champ seul, à l'heure du
+    // serveur (`request.time`), pour éteindre le point de notification.
+    // Un ticket absent se lit comme absent (`resource == null`) par un compte
+    // approuvé : le détail affiche « Ce ticket n'existe plus » au lieu d'un
+    // refus. Un identifiant aléatoire inexistant ne révèle rien.
+    match /tickets/{ticketId} {
+      allow read: if isAdmin()
+        || (isApproved()
+            && (resource == null || resource.data.author_uid == request.auth.uid));
+      allow update: if isApproved()
+        && resource.data.author_uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['seen_by_author_at'])
+        && request.resource.data.seen_by_author_at == request.time;
+      allow create, delete: if false;
+    }
+
+    // Compteurs du plafond quotidien des tickets : `submitTicket` les lit et
+    // les incrémente dans sa transaction. Aucun accès client.
+    match /ticket_quotas/{docId} {
+      allow read, write: if false;
     }
 
     // Journal de modération des images.

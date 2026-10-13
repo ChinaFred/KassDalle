@@ -180,6 +180,8 @@
       <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
       <li><a href="#invitation-retour">Retour d'un compte révoqué invité</a></li>
       <li><a href="#planning-groupe">Planning d'un groupe : générer, lire, masquer</a></li>
+      <li><a href="#ticket-creation">Envoyer un ticket</a></li>
+      <li><a href="#ticket-statut">Retour de statut d'un ticket</a></li>
     </ol>
   </nav>
 
@@ -3855,6 +3857,150 @@ sequenceDiagram
           écrit <code>group_ids</code> et <code>masked_group_ids</code> pour les groupes existants,
           puis <code>group_id: null</code> sur les repas antérieurs.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-creation"><span class="n">39</span>Envoyer un ticket</h2>
+    <p class="sec-note">
+      Un membre approuvé signale un bug, propose une évolution ou une fonctionnalité, ou pose
+      une question. Le ticket est enregistré dans Firestore, puis publié en Issue sur le dépôt
+      public. Aucun appel de modèle.
+      <span class="path">menu du compte (app_shell.dart) → formulaire « Signaler ou proposer » →
+      callable/ticketsCallable.ts (submitTicket, attachTicketScreenshot) → tickets/service.ts →
+      tickets/github.ts → API REST GitHub</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor M as Membre approuvé
+  participant C as Formulaire Signaler ou proposer
+  participant F as submitTicket
+  participant Q as ticket_quotas
+  participant T as tickets
+  participant G as GitHub (dépôt public)
+  participant ST as Storage tickets/{uid}/
+  participant A as attachTicketScreenshot
+
+  M->>C: type, titre, description, écran (modèle de route), capture facultative
+  C->>F: { type, title, description, screen, app_version, platform }
+  F->>F: requireAuth (approuvé, non révoqué), bornes (readTicketInput), écran hors modèle → « inconnu »
+  F->>F: plafonds lus dans app_config/tickets (absent : 5 et 30, illisible : failed-precondition)
+  F->>Q: transaction — compteurs du jour Europe/Paris, membre et famille
+  alt plafond atteint (membre non admin)
+    F-->>C: resource-exhausted { reason: member_daily_limit | global_daily_limit, limit }
+    C-->>M: « Vous avez envoyé N tickets aujourd'hui… » ou « Trop de tickets… par la famille »
+  else
+    F->>Q: count + 1 (sauf admin)
+    F->>T: création, status sending, send_attempts 0 (même transaction)
+    F->>T: bail send_lease_until (transaction)
+    F->>G: POST /issues — titre et corps sur gabarit fixe, mentions @ et renvois #N neutralisés,<br/>étiquettes source:app, type:…, statut:à-analyser. Ni nom, ni uid, ni capture
+    alt Issue créée
+      F->>T: github_issue_number, github_url, status received, status_changed_at
+      F->>F: tickets_status.token_invalid_since effacé s'il était posé
+      F-->>C: { ticketId, status: received, remaining_today }
+    else échec (réseau, limite de débit, jeton refusé)
+      F->>F: logError
+      F->>T: send_attempts + 1 (pas pour un jeton refusé), last_send_error
+      opt jeton absent ou refusé (401, 403, 404 sur le dépôt)
+        F->>F: app_config/tickets_status.token_invalid_since posé
+      end
+      F-->>C: { ticketId, status: sending, remaining_today }
+    end
+    alt sans capture
+      C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+    else capture jointe
+      C->>ST: tickets/{uid}/{ticketId}/screenshot.png|jpg (règle : soi-même, PNG/JPEG, 5 Mo)
+      C->>A: { ticketId, path }
+      A->>T: auteur du ticket ? chemin attendu ?
+      A->>ST: objet présent, type MIME et taille, puis 8 premiers octets :<br/>signature PNG ou JPEG du format annoncé
+      alt capture jointe
+        A->>T: screenshot_path
+        A-->>C: { ok: true }
+        C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+      else dépôt ou rattachement en échec (octets refusés, réseau…)
+        A-->>C: invalid-argument | internal
+        C->>C: rapport d'erreur (feature tickets)
+        C-->>M: « Ticket envoyé sans la capture. Vous pouvez le suivre dans Mes tickets. »
+      end
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le ticket est écrit avant l'Issue.</b> Un envoi en échec ne fait pas échouer l'appel :
+        le membre voit « Envoi en cours », et <code>ticketsSyncSchedule</code> reprend le ticket
+        chaque heure, jusqu'à dix essais ; au-delà, il est « en anomalie » dans Admin › Tickets,
+        d'où <code>retryTicketSend</code> le relance. Avant chaque reprise, l'Issue est cherchée
+        par la référence du ticket : une création réussie dont le numéro n'a pas été écrit n'est
+        pas publiée deux fois. La capture part après le ticket et avant le message de succès ;
+        son échec n'annule pas le ticket, le message le dit. Elle ne part jamais sur GitHub :
+        l'Issue dit qu'elle est disponible dans Admin › Tickets.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-statut"><span class="n">40</span>Retour de statut d'un ticket</h2>
+    <p class="sec-note">
+      L'administrateur traite l'Issue sur GitHub ; le statut revient dans l'application par un
+      webhook signé, doublé d'une relecture horaire.
+      <span class="path">GitHub → tickets/webhook.ts (githubTicketWebhook) → tickets/rules.ts
+      (verifyGithubSignature, statusFromIssue, nextTicketStatus, replyFromComment) →
+      tickets/service.ts (applyGithubUpdate) ; scheduled/ticketsSyncSchedule.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur (ChinaFred)
+  participant G as GitHub
+  participant W as githubTicketWebhook
+  participant T as tickets
+  participant S as ticketsSyncSchedule
+  actor M as Membre
+
+  AD->>G: étiquette statut:analysé ou validé, PR « Closes #N », fermeture,<br/>commentaire « Réponse : … »
+  G->>W: POST, X-Hub-Signature-256, X-GitHub-Event
+  alt corps de plus de 25 Mo
+    W-->>G: 413 (avant tout HMAC)
+  else en-tête X-GitHub-Event absent
+    W-->>G: 400 (avant tout HMAC)
+  end
+  W->>W: HMAC SHA-256 du corps brut, comparaison à temps constant
+  alt signature absente ou fausse
+    W-->>G: 401 (logWarn au plus une fois par minute et par instance, avec le nombre de refus)
+  else secret vide
+    W-->>G: 503 (logError échantillonné)
+  else autre dépôt, autre événement, Issue sans ticket,<br/>PR d'un auteur hors mainteneur, OWNER, MEMBER, COLLABORATOR
+    W-->>G: 200 ignoré
+  else issues · issue_comment · pull_request
+    W->>T: requête github_issue_number == N
+    W->>T: transaction — statut dérivé (étiquettes, état, PR ouverte),<br/>jamais en recul, fin suivie d'une réouverture → statut des étiquettes
+    opt commentaire du compte 16348852 (ChinaFred) commençant par « Réponse : »
+      W->>T: reply_text (préfixe retiré)
+    end
+    W->>T: status_changed_at si le statut change, ou si une réponse arrive sur un ticket clos
+    W-->>G: 200
+  end
+  loop toutes les heures
+    S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance), commentaires — tickets non finaux
+    S->>T: même transaction de mise à jour
+  end
+  M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)
+  Note over M,T: point sur la puce du compte tant que status ∈ {answered, refused, delivered}<br/>et seen_by_author_at absent ou antérieur à status_changed_at
+</pre>
+      </div>
+      <figcaption>
+        Aucun texte de GitHub n'entre dans Firestore, hormis la réponse filtrée : le statut se
+        déduit des étiquettes et de l'état de l'Issue, jamais d'un texte libre. Une panne
+        Firestore rend 500, GitHub montre la livraison en échec, et la relecture horaire
+        rattrape l'état. Les tickets clos ne sont pas relus : une réouverture dont le webhook
+        est perdu n'est pas rattrapée.
       </figcaption>
     </figure>
   </section>

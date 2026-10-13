@@ -66,6 +66,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures et l'auteur de chacun (Admin › Tickets des membres), et relance un envoi en anomalie. Un compte en attente ou révoqué n'envoie rien.
+
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
 ### 3.3 Gestion des utilisateurs (Admin)
@@ -674,10 +676,10 @@ autre membre, et toute recette d'un compte qui ne partage aucun groupe avec le l
 
 ### 5.6 Module Administration (Admin uniquement)
 
-L'accueil d'administration range **quatorze entrées en quatre groupes** — Gestion,
+L'accueil d'administration range **quinze entrées en quatre groupes** — Gestion,
 Comptabilité, Monitoring, Laboratoire. Un cinquième groupe, **Outils**, porte le
 téléchargement de l'APK ; il est masqué dans l'application Android ou iOS native.
-Les quatorze entrées sont ouvertes sur mobile : rien n'est réservé au grand écran.
+Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand écran.
 
 **Gestion**
 
@@ -697,6 +699,7 @@ Les quatorze entrées sont ouvertes sur mobile : rien n'est réservé au grand �
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
+- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. Rien ne s'y décide : valider, refuser, répondre se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -1009,6 +1012,175 @@ déjà transmise continue de fonctionner.
   télécharge ; sur Android, iOS et Windows, un dialogue « Enregistrer sous »
   demande où la poser.
 
+### 5.13 Module Tickets (tous les clients — suivi réservé à l'Admin)
+
+Un membre signale un bug, propose une évolution ou une nouvelle fonctionnalité, ou pose une
+question, sans quitter l'application. Le ticket part en Issue sur le dépôt GitHub **public**
+`ChinaFred/KassDalle`, où l'administrateur le traite. Le membre suit l'avancement dans
+« Mes tickets ».
+
+- **Qui.** Tout compte nommé et non révoqué : Reader, Editor, Admin. Un compte en attente ou
+  révoqué n'envoie rien et ne lit rien. Un membre ne lit que ses propres tickets ; l'Admin les
+  lit tous.
+- **Aucun appel d'IA.** Créer, envoyer, suivre un ticket n'appelle aucun modèle et n'est pas
+  facturé. L'analyse d'un ticket est faite par l'administrateur avec sa session Claude Code,
+  à sa demande, en dehors de l'application.
+- **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
+  proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
+  a pas d'autre.
+- **Quatre types** : « Bug », « Évolution », « Nouvelle fonctionnalité », « Question ».
+
+#### Signaler ou proposer (`/tickets/new`)
+
+- Au moment de l'appui sur « Signaler ou proposer », l'application note l'écran d'où vient le
+  membre et, quand c'est possible, prend une image de cet écran.
+- Le formulaire demande :
+  - le **type**, sans présélection (« Choisissez le type de ticket. ») ;
+  - le **titre**, de 5 à 100 caractères (« Le titre doit faire au moins 5 caractères. ») ;
+  - la **description**, de 1 à 2000 caractères, avec une aide propre au type. Bug : « Ce que
+    vous faisiez : … / Ce qui s'est passé : … / Ce que vous attendiez : … ». Évolution : « Ce
+    qui existe aujourd'hui : … / Ce que vous aimeriez changer : … / Pourquoi ce serait
+    utile : … ». Nouvelle fonctionnalité : « Ce que vous aimeriez pouvoir faire : … / Dans
+    quelle situation (en cuisine, en préparant la semaine…) : … / Comment vous faites
+    aujourd'hui : … ». Question : « Votre question : … / Ce que vous avez déjà essayé : … » ;
+  - l'**écran concerné**, prérempli par l'écran d'origine sous son nom français (« Fiche
+    recette », « Planning », « Administration — … »…), avec « Autre écran » et « Je ne sais
+    pas » en fin de liste ;
+  - la **capture**, facultative. La case « Joindre une capture de l'écran précédent » est
+    décochée par défaut ; sa vignette reste visible, et disparaît seulement quand une image
+    choisie s'affiche, pour qu'une seule capture paraisse jointe. À la place, « Choisir dans la galerie » (mobile)
+    ou « Choisir un fichier » (web, desktop). PNG ou JPEG, 5 Mo au plus : « Cette image dépasse
+    5 Mo. Choisissez une image plus légère. », « Seules les images PNG ou JPEG sont
+    acceptées. ». Une image que l'appareil ne parvient pas à ouvrir : « Cette image n'a pas pu
+    être ouverte. Choisissez-en une autre. ». « Retirer la capture » l'enlève. Le serveur vérifie
+    aussi les premiers octets du fichier : un fichier qui n'est ni un PNG ni un JPEG n'est pas
+    joint.
+- Un avertissement dit, au-dessus de l'envoi : « Le titre et la description seront publiés sur
+  un site public. N'y mettez ni nom, ni adresse, ni recette privée. » et « Votre nom et la
+  capture ne sont jamais publiés : seul l'administrateur les voit. »
+- La version de l'application et la plateforme partent avec le ticket ; l'écran l'affiche
+  (« Envoyé avec : version …, … »).
+- « Envoyer » reste actif. Les erreurs s'affichent à l'appui, et le premier champ en erreur
+  reçoit le focus. Une erreur affichée reste tant que le champ ne convient pas (titre de moins
+  de 5 caractères, description vide). Ctrl/Cmd+S envoie aussi. Pendant l'envoi, le bouton
+  affiche « Envoi… » et les champs sont verrouillés.
+- Succès : « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. », avec « Voir ». Si la
+  capture n'a pas pu être jointe : « Ticket envoyé sans la capture. Vous pouvez le suivre dans
+  Mes tickets. ».
+- **Plafonds**, comptés par jour calendaire à l'heure de Paris : 5 tickets par membre et 30
+  pour toute la famille, réglés dans `app_config/tickets`. L'Admin n'a pas de plafond. Plafond
+  du membre : « Vous avez envoyé 5 tickets aujourd'hui, réessayez demain. » (le nombre réel).
+  Plafond de la famille : « Trop de tickets ont été envoyés aujourd'hui par la famille.
+  Réessayez demain. ». Quand il reste 1 ou 2 envois, le formulaire affiche « Il vous reste
+  N envoi(s) aujourd'hui » sous le bouton ; quand il n'en reste aucun, « Vous avez atteint le
+  nombre de tickets permis aujourd'hui. Réessayez demain. » ; rien pour l'Admin.
+- Réseau absent : « Le ticket n'est pas parti. Vérifiez la connexion, puis appuyez sur
+  Envoyer. » Le texte saisi est conservé.
+- Quitter avec une saisie demande « Abandonner ce ticket ? » — « Le texte saisi sera perdu. »,
+  « Continuer la saisie » ou « Abandonner ».
+- Disposition : une colonne sous le seuil large, deux colonnes au-delà (aide du type,
+  avertissement et informations d'envoi à droite).
+
+#### Ce qui est publié, et ce qui ne l'est pas
+
+- **Publié sur GitHub** : le titre, la description, le type, la version, la plateforme,
+  l'écran sous la forme de son modèle de route (`/recipes/:recipeId`, jamais un identifiant ni
+  un paramètre), et une référence opaque au ticket.
+- **Jamais publié** : le nom, l'adresse e-mail ou l'identifiant du membre, le contenu d'une
+  recette, la capture. L'Issue dit « Capture disponible dans Admin › Tickets ».
+- Une mention `@…` écrite par le membre est neutralisée : elle ne notifie personne sur GitHub.
+  Un renvoi `#12` ou `compte/dépôt#12` l'est aussi : il ne crée aucun lien vers une autre
+  Issue ou pull request.
+- Le membre ne reçoit aucun lien vers l'Issue.
+
+#### Mes tickets (`/tickets`, `/tickets/:ticketId`)
+
+- Liste du plus récent au plus ancien : icône du type, titre, puis sous le titre la date
+  `jj/mm/aa` et la puce de statut (icône et texte, jamais la couleur seule). Un point à droite
+  signale un ticket à rouvrir ; un lecteur d'écran l'annonce « Nouveau suivi à lire ». Liste et détail côte à côte au-delà du seuil
+  large. Bouton flottant « Signaler ou proposer ».
+- Détail : type, titre, statut, « Envoyé le jj/mm/aa à hh:mm », frise des étapes,
+  description, « Écran : … », « Version … — plateforme », capture agrandissable. Une phrase dit
+  où en est le ticket :
+  - Envoi en cours : « Votre ticket est enregistré. Il sera transmis dans quelques minutes. »
+    Au-delà d'une heure, s'y ajoute « La transmission prend du retard. L'administrateur est
+    prévenu. » ;
+  - Reçu : « L'administrateur a reçu votre ticket. » ;
+  - Analysé : « Votre ticket a été lu et étudié. » ;
+  - Validé : « Votre demande sera traitée. » ;
+  - En cours : « Le travail a commencé. » ;
+  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. » ;
+  - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
+    s'il existe ;
+  - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable.
+- **Notification.** Un point s'affiche sur la puce du compte quand un ticket du membre passe à
+  Répondu, Refusé ou Livré et qu'il ne l'a pas encore ouvert. Ouvrir le détail du ticket
+  l'efface. Pas de notification push ni d'e-mail.
+- États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
+  l'instant » — « Un bug, une idée, une question ? Envoyez-les à l'administrateur. », avec
+  « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;
+  ticket disparu « Ce ticket n'existe plus. » avec « Retour à mes tickets » ; grand écran sans
+  sélection « Choisissez un ticket pour voir son suivi. ».
+- Un ticket envoyé ne se modifie pas et ne s'annule pas depuis l'application.
+
+#### Le statut vient de GitHub
+
+Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme en 8.5) :
+
+| Sur GitHub | Statut affiché |
+|---|---|
+| Issue pas encore créée | Envoi en cours |
+| Issue créée (étiquettes `source:app`, `type:…`, `statut:à-analyser`) | Reçu |
+| Étiquette `statut:analysé` | Analysé |
+| Étiquette `validé` | Validé |
+| Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
+| Issue fermée comme terminée | Livré — Répondu pour une Question |
+| Issue fermée comme non prévue | Refusé |
+
+- Un statut peut sauter une étape ; il ne recule jamais. Répondu, Refusé et Livré sont
+  finaux, sauf si l'Issue est rouverte : le statut revient alors à celui que donnent ses
+  étiquettes.
+- Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
+  change aucun statut, même si elle dit « Closes #N ».
+- **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
+  (`ChinaFred`, reconnu par son identifiant numérique et non par son nom) qui commence par « Réponse : » est repris dans l'application, sans ce
+  préfixe. Il sert de réponse à une Question et de motif à un refus. Aucun autre commentaire
+  n'est relayé.
+- GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
+  avis perdu et renvoie les tickets restés en « Envoi en cours ».
+- L'application ne valide, ne refuse et ne ferme rien : ces décisions se prennent sur GitHub.
+
+#### Tickets des membres (Admin, `/admin/tickets`, `/admin/tickets/:ticketId`)
+
+- Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
+  questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
+  (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
+- **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
+  pas un statut : le membre continue de voir « Envoi en cours ».
+- Filtres : statut (« Tous », « En anomalie », puis les huit statuts) et type (« Tous les
+  types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
+  qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, auteur (son nom dans l'application),
+  statut, date, et la puce « En anomalie ».
+- Détail : auteur, date, type, version, plateforme, écran, statut, description, capture en
+  grand. « Ouvrir sur GitHub » et « Copier le lien ». Pour un ticket en anomalie : « Essais
+  d'envoi : N », « Dernière erreur : … » et « Relancer l'envoi ». Une relance qui échoue encore
+  affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une relance réussie,
+  « Envoi relancé : <statut>. ». Le motif d'un refus s'affiche sous « Motif du refus ».
+- Jeton GitHub refusé : un bandeau dit « Jeton GitHub invalide : aucun ticket n'est transmis
+  à GitHub depuis le jj/mm/aa à hh:mm. Remplacez le jeton dans Secret Manager. Les tickets en
+  attente repartiront ensuite. » Il disparaît au premier envoi réussi.
+- États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
+  signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
+  tous les tickets » ; « Impossible de charger les tickets. » ; capture illisible « Capture
+  illisible. ».
+
+#### Hors de cette version
+
+Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
+envoyé ; notification push ou e-mail ; version exacte de la livraison ; valider depuis
+l'application ; détection des doublons ; plusieurs captures ; purge des captures ; analyse ou
+traitement automatiques.
+
 ---
 
 ## 6. Règles Métier
@@ -1052,6 +1224,7 @@ déjà transmise continue de fonctionner.
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
 | Allergènes : prudence et indication | Les quatorze allergènes majeurs de l'UE sont estimés par l'IA, ingrédient par ingrédient, dans le référentiel nutritionnel. En cas de doute, l'allergène est signalé ; un produit composé est jugé dans sa forme du commerce habituelle. Les traces ne sont pas signalées. La recette porte l'union de ses ingrédients, calculée par le serveur à l'écriture, jamais saisie à la main. L'écran dit quand l'analyse est incomplète et rappelle toujours que la liste est indicative et ne remplace pas la lecture des emballages. Seul un Admin corrige un ingrédient ; la correction atteint les recettes au prochain passage du backfill « Allergènes ». |
+| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub et ne recule jamais ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -1081,6 +1254,7 @@ déjà transmise continue de fonctionner.
 - Modération de toutes les images par Cloud Vision, avec journal de revue
 - Qualité des données : diagnostic en lecture seule des référentiels nutrition (Admin)
 - Attestation App Check (web, Android)
+- Tickets : un membre signale un bug, propose une évolution ou une fonctionnalité, ou pose une question ; le ticket part en Issue sur GitHub, son statut revient dans « Mes tickets », et l'administrateur suit tous les tickets dans Admin › Tickets des membres
 - Plateformes : Android, Web, Windows desktop
 
 ### Reste à faire
@@ -1306,6 +1480,57 @@ sequenceDiagram
         App->>User: Retour liste des brouillons
     end
 ```
+
+### 8.5 États d'un ticket (`status`)
+
+Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
+sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée.
+
+```mermaid
+stateDiagram-v2
+    [*] --> sending : « Envoyer »\n(ticket enregistré)
+
+    sending --> received : Issue créée\n(à l'envoi, à la vérification horaire\nou par « Relancer l'envoi »)
+    received --> analyzed : Étiquette statut:analysé
+    analyzed --> validated : Étiquette validé
+    validated --> in_progress : PR ouverte qui référence l'Issue
+    in_progress --> delivered : Issue fermée, terminée
+
+    received --> answered : Issue fermée, terminée\n(type Question)
+    analyzed --> answered : Issue fermée, terminée\n(type Question)
+
+    received --> refused : Issue fermée, non prévue
+    analyzed --> refused : Issue fermée, non prévue
+    validated --> refused : Issue fermée, non prévue
+
+    delivered --> received : Issue rouverte\n(statut repris des étiquettes)
+    refused --> received : Issue rouverte\n(statut repris des étiquettes)
+    answered --> received : Issue rouverte\n(statut repris des étiquettes)
+
+    delivered --> [*]
+    refused --> [*]
+    answered --> [*]
+
+    note right of sending
+        Envoi en cours. Après 10 essais
+        sans Issue : « en anomalie »
+        dans Admin › Tickets des membres.
+        Le membre voit toujours « Envoi en cours ».
+    end note
+
+    note right of answered
+        Réponse : commentaire de ChinaFred
+        qui commence par « Réponse : ».
+        Le même commentaire sert de motif
+        à un refus.
+    end note
+```
+
+Le diagramme ne trace que les passages courants. Toute fermeture donne Livré (Répondu pour
+une Question) ou Refusé, quel que soit le statut de départ. Une réouverture ramène au statut
+que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Les trois états finaux
+allument le point de notification sur la puce du compte de l'auteur, jusqu'à ce qu'il ouvre
+le ticket.
 
 ---
 

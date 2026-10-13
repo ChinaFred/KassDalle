@@ -47,6 +47,10 @@ import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
 import '../../features/planning/presentation/my_staples_screen.dart';
+import '../../features/tickets/presentation/admin_tickets_screen.dart';
+import '../../features/tickets/presentation/my_tickets_screen.dart';
+import '../../features/tickets/presentation/ticket_launcher.dart';
+import '../../features/tickets/presentation/ticket_form_screen.dart';
 import '../presentation/app_shell.dart';
 
 /// Notifie GoRouter sans exposer notifyListeners() comme protected.
@@ -101,6 +105,15 @@ class AppRoutes {
   static const batchPlanning = '/planning/batch';
   static const planningConfig = '/planning/config';
   static const myStaples = '/planning/staples';
+  static const tickets = '/tickets';
+  static const ticketNew = '/tickets/new';
+  static const adminTickets = '/admin/tickets';
+
+  /// Suivi d'un ticket du membre.
+  static String ticketDetail(String id) => '$tickets/$id';
+
+  /// Un ticket dans Admin › Tickets des membres.
+  static String adminTicketDetail(String id) => '$adminTickets/$id';
 
   /// Une expérience du bac à sable, désignée par son identifiant.
   static String sandboxExperiment(String id) => '$adminSandbox/$id';
@@ -446,6 +459,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const AdminModerationScreen(),
               ),
               GoRoute(
+                path: 'tickets',
+                builder: (context, state) => const AdminTicketsScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':ticketId',
+                    builder: (context, state) => AdminTicketsScreen(
+                      selectedTicketId: state.pathParameters['ticketId'],
+                    ),
+                  ),
+                ],
+              ),
+              GoRoute(
                 path: 'sandbox',
                 builder: (context, state) => const SandboxHubScreen(),
                 routes: [
@@ -474,6 +499,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.search,
             builder: (context, state) => const SearchScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.tickets,
+            builder: (context, state) => const MyTicketsScreen(),
+            routes: [
+              // Avant `:ticketId`, qui prendrait « new » pour un identifiant.
+              GoRoute(
+                path: 'new',
+                builder: (context, state) => TicketFormScreen(
+                  initialScreen:
+                      state.uri.queryParameters[kTicketScreenQueryParam],
+                ),
+              ),
+              GoRoute(
+                path: ':ticketId',
+                builder: (context, state) => MyTicketsScreen(
+                  selectedTicketId: state.pathParameters['ticketId'],
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: AppRoutes.errorReports,

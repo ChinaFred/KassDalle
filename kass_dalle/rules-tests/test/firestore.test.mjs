@@ -3775,3 +3775,198 @@ describe("users/{uid}/preferences/explore_filters — bornes", () => {
     await assertFails(db("reader").doc(path).set({ filters }));
   });
 });
+
+// ── tickets ──────────────────────────────────────────────────────────────
+
+describe("tickets — lecture et écriture", () => {
+  const MINE = "tickets/t-reader";
+  const ticket = (author) => ({
+    type: "bug",
+    title: "Liste vide",
+    description: "Ce qui s'est passé : …",
+    screen: "/planning",
+    app_version: "0.23.53",
+    platform: "web",
+    screenshot_path: null,
+    author_uid: author,
+    status: "answered",
+    github_issue_number: 12,
+    github_url: "https://github.com/ChinaFred/KassDalle/issues/12",
+    send_attempts: 0,
+    last_send_error: null,
+    reply_text: "C'est prévu.",
+    seen_by_author_at: null,
+  });
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [MINE]: ticket(READER),
+      "tickets/t-revoked": ticket(PERSONAS.revoked.uid),
+      "tickets/t-stale": ticket(PERSONAS.revokedStaleToken.uid),
+      "tickets/t-pending": ticket(PERSONAS.pending.uid),
+    });
+  });
+
+  it("l'auteur lit son ticket", async () => {
+    await assertSucceeds(db("reader").doc(MINE).get());
+  });
+
+  it("l'auteur liste ses tickets", async () => {
+    await assertSucceeds(
+      db("reader").collection("tickets").where("author_uid", "==", READER).get(),
+    );
+  });
+
+  it("un compte approuvé lit un ticket absent comme absent", async () => {
+    await assertSucceeds(db("reader").doc("tickets/inexistant").get());
+  });
+
+  it("un compte en attente ne lit pas un ticket absent", async () => {
+    await assertFails(db("pending").doc("tickets/inexistant").get());
+  });
+
+  it("un autre membre ne lit pas le ticket", async () => {
+    await assertFails(db("otherReader").doc(MINE).get());
+    await assertFails(db("editor").doc(MINE).get());
+  });
+
+  it("un membre ne liste pas tous les tickets", async () => {
+    await assertFails(db("reader").collection("tickets").get());
+  });
+
+  it("l'administrateur lit et liste tous les tickets", async () => {
+    await assertSucceeds(db("admin").doc(MINE).get());
+    await assertSucceeds(db("admin").collection("tickets").get());
+  });
+
+  it("un compte révoqué ne lit plus son ticket, même avec un jeton ancien", async () => {
+    await assertFails(db("revoked").doc("tickets/t-revoked").get());
+    await assertFails(db("revokedStaleToken").doc("tickets/t-stale").get());
+  });
+
+  it("un compte en attente ne lit pas son ticket", async () => {
+    await assertFails(db("pending").doc("tickets/t-pending").get());
+  });
+
+  it("un anonyme ne lit rien", async () => {
+    await assertFails(db("anonymous").doc(MINE).get());
+  });
+
+  it("l'auteur pose seen_by_author_at à l'heure du serveur", async () => {
+    await assertSucceeds(db("reader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+  });
+
+  it("l'auteur ne pose pas seen_by_author_at à une date de son choix", async () => {
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: firebase.firestore.Timestamp.fromDate(new Date(2099, 0, 1)) }),
+    );
+  });
+
+  it("l'auteur ne modifie aucun autre champ", async () => {
+    await assertFails(db("reader").doc(MINE).update({ status: "delivered" }));
+    await assertFails(db("reader").doc(MINE).update({ reply_text: "faux" }));
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: serverTimestamp(), title: "Autre titre" }),
+    );
+    await assertFails(db("reader").doc(MINE).update({ screenshot_path: "tickets/x/y.png" }));
+  });
+
+  it("un autre membre ne pose pas seen_by_author_at", async () => {
+    await assertFails(
+      db("otherReader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
+    );
+  });
+
+  it("un compte révoqué ou en attente ne pose pas seen_by_author_at", async () => {
+    await assertFails(
+      db("revoked").doc("tickets/t-revoked").update({ seen_by_author_at: serverTimestamp() }),
+    );
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("tickets/t-stale")
+        .update({ seen_by_author_at: serverTimestamp() }),
+    );
+    await assertFails(
+      db("pending").doc("tickets/t-pending").update({ seen_by_author_at: serverTimestamp() }),
+    );
+  });
+
+  it("personne ne crée ni ne supprime un ticket depuis le client", async () => {
+    await assertFails(db("reader").doc("tickets/nouveau").set(ticket(READER)));
+    await assertFails(db("admin").doc("tickets/nouveau").set(ticket(PERSONAS.admin.uid)));
+    await assertFails(db("reader").doc(MINE).delete());
+    await assertFails(db("admin").doc(MINE).delete());
+  });
+
+  it("l'administrateur ne modifie pas le ticket d'un membre", async () => {
+    await assertFails(db("admin").doc(MINE).update({ status: "refused" }));
+    await assertFails(db("admin").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+  });
+});
+
+describe("ticket_quotas — compteur serveur seul", () => {
+  const DOC = `ticket_quotas/${READER}_20261013`;
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [DOC]: { uid: READER, day: "20261013", count: 2 },
+      "ticket_quotas/_global_20261013": { day: "20261013", count: 7 },
+    });
+  });
+
+  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} ne lit ni n'écrit les compteurs`, async () => {
+      await assertFails(db(persona).doc(DOC).get());
+      await assertFails(db(persona).doc("ticket_quotas/_global_20261013").get());
+      await assertFails(db(persona).collection("ticket_quotas").get());
+      await assertFails(db(persona).doc(DOC).update({ count: 0 }));
+      await assertFails(db(persona).doc(DOC).delete());
+      await assertFails(db(persona).doc("ticket_quotas/new").set({ count: 0 }));
+    });
+  }
+});
+
+describe("app_config — tickets et tickets_status", () => {
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "app_config/tickets": { per_member_per_day: 5, global_per_day: 30 },
+      "app_config/tickets_status": { token_invalid_since: null },
+    });
+  });
+
+  it("un membre approuvé lit les plafonds des tickets", async () => {
+    await assertSucceeds(db("reader").doc("app_config/tickets").get());
+  });
+
+  it("un compte en attente ou révoqué ne lit pas les plafonds", async () => {
+    await assertFails(db("pending").doc("app_config/tickets").get());
+    await assertFails(db("revoked").doc("app_config/tickets").get());
+  });
+
+  it("un membre n'écrit pas les plafonds", async () => {
+    await assertFails(db("reader").doc("app_config/tickets").update({ per_member_per_day: 99 }));
+  });
+
+  it("l'administrateur écrit les plafonds des tickets", async () => {
+    await assertSucceeds(
+      db("admin").doc("app_config/tickets").set({ per_member_per_day: 3, global_per_day: 20 }),
+    );
+    await assertSucceeds(db("admin").doc("app_config/tickets").update({ global_per_day: 40 }));
+  });
+
+  it("seul l'administrateur lit l'état du jeton GitHub", async () => {
+    await assertSucceeds(db("admin").doc("app_config/tickets_status").get());
+    await assertFails(db("reader").doc("app_config/tickets_status").get());
+    await assertFails(db("editor").doc("app_config/tickets_status").get());
+  });
+
+  it("personne n'écrit l'état du jeton depuis le client, pas même l'administrateur", async () => {
+    await assertFails(
+      db("admin").doc("app_config/tickets_status").set({ token_invalid_since: null }),
+    );
+  });
+});
