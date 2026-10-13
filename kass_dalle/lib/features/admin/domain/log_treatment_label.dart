@@ -127,6 +127,13 @@ const Map<String, String> kLogTreatmentLabels = {
   'relance_job_en_echec': 'Relance d\'un job en échec',
   'suppression_job_en_echec': 'Suppression d\'un job en échec',
 
+  // ── Tickets ────────────────────────────────────────────────────────────
+  'ticket': 'Envoi d\'un ticket',
+  'ticket_capture': 'Capture jointe à un ticket',
+  'ticket_relance': 'Relance de l\'envoi d\'un ticket',
+  'ticket_webhook': 'Retour de GitHub sur un ticket',
+  'tickets_sync': 'Synchronisation horaire des tickets',
+
   // ── Ce qui n'a jamais eu de nom ────────────────────────────────────────
   // Le défaut historique de toutes les fonctions appelables. Il ne devrait
   // plus apparaître : s'il revient, c'est qu'une fonction a été ajoutée sans

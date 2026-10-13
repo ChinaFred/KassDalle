@@ -469,6 +469,50 @@ classDiagram
     expired
   }
 
+  class Ticket {
+    &lt;&lt;tickets, écrit par le serveur, lu par l'auteur et l'admin&gt;&gt;
+    +String id
+    +TicketType type
+    +String title
+    +String description
+    +String screen
+    +String appVersion
+    +String platform
+    +String? screenshotPath
+    +String authorUid
+    +DateTime? createdAt
+    +DateTime? updatedAt
+    +TicketStatus status
+    +String rawStatus
+    +DateTime? statusChangedAt
+    +DateTime? seenByAuthorAt
+    +int? githubIssueNumber
+    +String? githubUrl
+    +int sendAttempts
+    +String? lastSendError
+    +String? replyText
+  }
+
+  class TicketType {
+    &lt;&lt;enumeration&gt;&gt;
+    bug
+    evolution
+    feature
+    question
+  }
+
+  class TicketStatus {
+    &lt;&lt;enumeration&gt;&gt;
+    sending
+    received
+    analyzed
+    validated
+    in_progress
+    delivered
+    refused
+    answered
+  }
+
   class Book {
     +String id
     +String titre
@@ -640,6 +684,9 @@ classDiagram
   EmailInvitation "0..*" --&gt; "1" FamilyGroup : groupId
   EmailInvitation "0..1" --&gt; "0..1" AppUser : acceptedUid
   EmailInvitation ..> EmailInvitationStatus : statusAt (expirée calculée)
+  AppUser "1" --&gt; "0..*" Ticket : authorUid
+  Ticket "1" --&gt; "1" TicketType
+  Ticket "1" --&gt; "1" TicketStatus
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
   Book "0..1" --&gt; "0..*" Recipe : bookId
@@ -660,7 +707,7 @@ classDiagram
         défaut au lieu d'une image téléversée.
         <b>Un invité n'est pas membre</b> (v0.23.19) : son uid vit dans <code>invitedIds</code>
         jusqu'à ce qu'il accepte, et passe alors dans <code>memberIds</code>.
-        <b>MealSuggestion</b> (<code>meal_suggestions/{id}</code>, v0.23.57) : un membre d'un
+        <b>MealSuggestion</b> (<code>meal_suggestions/{id}</code>, v0.23.58) : un membre d'un
         groupe actif, autre que son propriétaire, propose un plat pour un jour du planning du
         groupe — une recette (<code>recipeId</code>, titre copié dans <code>recipeTitre</code>,
         lisible du propriétaire même si la recette est privée) ou un nom libre
@@ -684,6 +731,14 @@ classDiagram
         <code>RecipeViewer.groupPeers</code>, les comptes nommés dans ses requêtes
         <code>created_by in</code> ; les règles Firestore le relisent pour laisser lire un
         <code>Book</code> ou une <code>Recipe</code> non privé d'un autre compte.
+        <b>Ticket</b> (<code>tickets/{id}</code>) est un bug, une évolution, une nouvelle
+        fonctionnalité ou une question d'un membre, publié en Issue GitHub sans son nom, son uid
+        ni sa capture. Écrit par les Cloud Functions ; l'auteur ne pose que
+        <code>seenByAuthorAt</code>. <code>status</code> ne recule jamais ; il revient de GitHub
+        (webhook et relecture horaire). Un ticket est « en anomalie » quand
+        <code>sendAttempts</code> atteint 10 sans <code>githubIssueNumber</code>. Les noms Dart
+        sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
+        <span class="path">TechnicalRequirements.md</span>).
       </figcaption>
     </figure>
 
@@ -2067,8 +2122,8 @@ classDiagram
       pour les recettes importées avant l'introduction du champ.
     </span>
     <span class="expect">
-      Les compteurs du jour <code>url_import_daily</code>, <code>invitation_sends_daily</code> et
-      <code>member_email_search_daily</code> ne figurent pas dans ce diagramme : ils n'ont pas de
+      Les compteurs du jour <code>url_import_daily</code>, <code>invitation_sends_daily</code>,
+      <code>member_email_search_daily</code> et <code>ticket_quotas</code> ne figurent pas dans ce diagramme : ils n'ont pas de
       classe Dart. Les Cloud Functions seules les écrivent et les relisent pour appliquer un
       plafond. Leurs champs sont au §3 de <span class="path">TechnicalRequirements.md</span>.
     </span>

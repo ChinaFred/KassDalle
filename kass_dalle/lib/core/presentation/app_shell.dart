@@ -19,6 +19,9 @@ import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
 import '../../features/groups/presentation/group_providers.dart';
 import '../../features/moderation/presentation/moderation_providers.dart';
+import '../../features/tickets/presentation/ticket_launcher.dart';
+import '../../features/tickets/presentation/tickets_providers.dart';
+import '../theme/app_icons.dart';
 import 'usage_warning_banner.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -60,6 +63,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
+    // L'écran courant seul, sans la navigation ni le menu du compte : c'est
+    // l'image que « Signaler ou proposer » propose de joindre au ticket.
+    final child = RepaintBoundary(
+      key: ticketShellCaptureKey,
+      child: widget.child,
+    );
+
     // Ctrl+K posé au niveau du shell : la recherche est joignable depuis
     // n'importe quel écran, sans que chacun ait à le savoir. Ctrl+S reste
     // local aux écrans d'édition, seuls à savoir ce qu'enregistrer veut dire.
@@ -79,9 +89,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       // « Partager vers Kass'Dalle » (Android) : la boîte d'import s'ouvre
       // par-dessus l'écran courant.
       child: SharedLinkImportHost(
-        child: isWide
-            ? _WideShell(child: widget.child)
-            : _NarrowShell(child: widget.child),
+        child: isWide ? _WideShell(child: child) : _NarrowShell(child: child),
       ),
     );
   }
@@ -313,7 +321,14 @@ bool _isOnRootDestination(String location, List<_NavDestination> destinations) {
   return false;
 }
 
-enum _AccountAction { profile, preferences, groups, signOut }
+enum _AccountAction {
+  profile,
+  preferences,
+  groups,
+  newTicket,
+  myTickets,
+  signOut,
+}
 
 class _AccountBadge extends ConsumerWidget {
   @override
@@ -336,9 +351,17 @@ class _AccountBadge extends ConsumerWidget {
           context.push(AppRoutes.groups);
           return;
         }
+        if (action == _AccountAction.newTicket) {
+          openTicketForm(context, ref);
+          return;
+        }
+        if (action == _AccountAction.myTickets) {
+          context.push(AppRoutes.tickets);
+          return;
+        }
         ref.read(authRepositoryProvider).signOut();
       },
-      child: _InvitationsDot(
+      child: _AccountDot(
         child: Chip(
           avatar:
               (FirebaseAuth.instance.currentUser?.photoURL ??
@@ -421,6 +444,26 @@ class _AccountBadge extends ConsumerWidget {
           ),
         ),
         const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.newTicket,
+          child: Row(
+            children: [
+              Icon(AppIcons.ticketNew),
+              SizedBox(width: 8),
+              Text('Signaler ou proposer'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.myTickets,
+          child: Row(
+            children: [
+              _MyTicketsIcon(),
+              SizedBox(width: 8),
+              Text('Mes tickets'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<_AccountAction>(
           value: _AccountAction.signOut,
           child: Row(
             children: [
@@ -470,22 +513,42 @@ class _AdminIcon extends ConsumerWidget {
   }
 }
 
-/// Point sur le compte = invitation(s) de groupe en attente.
+/// Point sur le compte = invitation(s) de groupe en attente, ou ticket
+/// arrivé à Répondu, Refusé ou Livré que son auteur n'a pas encore ouvert.
 ///
-/// L'écran Groupes ne s'ouvre que par le menu du compte : sans ce signal, un
-/// invité ne trouverait pas son invitation, et le propriétaire croirait que
-/// l'invitation n'est pas partie.
-class _InvitationsDot extends ConsumerWidget {
+/// Les Groupes et « Mes tickets » ne s'ouvrent que par le menu du compte :
+/// sans ce signal, un invité ne trouverait pas son invitation, et un membre
+/// ne saurait pas que l'administrateur lui a répondu.
+class _AccountDot extends ConsumerWidget {
   final Widget child;
-  const _InvitationsDot({required this.child});
+  const _AccountDot({required this.child});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(pendingInvitationsCountProvider);
-    if (pending == 0) return child;
+    final invitations = ref.watch(pendingInvitationsCountProvider);
+    final tickets = ref.watch(unseenTicketsCountProvider);
+    if (invitations == 0 && tickets == 0) return child;
     return Semantics(
-      label: 'Invitation(s) de groupe en attente',
+      label: [
+        if (invitations > 0) 'Invitation(s) de groupe en attente',
+        if (tickets > 0) 'Ticket(s) avec un nouveau suivi',
+      ].join(', '),
       child: Badge(child: child),
+    );
+  }
+}
+
+/// Icône « Mes tickets » du menu compte — badge = tickets à lire.
+class _MyTicketsIcon extends ConsumerWidget {
+  const _MyTicketsIcon();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unseen = ref.watch(unseenTicketsCountProvider);
+    if (unseen == 0) return const Icon(AppIcons.tickets);
+    return Semantics(
+      label: '$unseen ticket(s) avec un nouveau suivi',
+      child: Badge(label: Text('$unseen'), child: const Icon(AppIcons.tickets)),
     );
   }
 }

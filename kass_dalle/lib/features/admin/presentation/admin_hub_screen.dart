@@ -6,12 +6,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/app_update_service.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../moderation/presentation/moderation_providers.dart';
+import '../../tickets/presentation/tickets_providers.dart';
 
 /// Page d'accueil de la section Administration.
 ///
 /// Sections :
-/// - Gestion : utilisateurs, référentiels, backfills
+/// - Gestion : utilisateurs, référentiels, backfills, modération, tickets
 /// - Comptabilité : coûts de l'application, mois par mois
 /// - Monitoring : rapports d'erreurs, dead letter queue, cloud logging
 /// - Laboratoire : bac à sable des fonctionnalités expérimentales
@@ -71,6 +73,16 @@ class AdminHubScreen extends ConsumerWidget {
                 'qui attend une décision.',
             trailing: const _ModerationBadge(),
             onTap: () => context.push(AppRoutes.adminModeration),
+          ),
+          _AdminTile(
+            icon: AppIcons.tickets,
+            color: theme.colorScheme.primary,
+            title: 'Tickets des membres',
+            subtitle:
+                'Bugs, idées et questions de la famille, et leur suivi sur '
+                'GitHub.',
+            trailing: const _TicketAnomalyBadge(),
+            onTap: () => context.push(AppRoutes.adminTickets),
           ),
           _AdminTile(
             icon: Icons.verified_user_outlined,
@@ -265,6 +277,25 @@ class _ModerationBadge extends ConsumerWidget {
       padding: const EdgeInsets.only(right: 8),
       child: Semantics(
         label: '$count image(s) en attente de décision',
+        child: Badge(label: Text('$count')),
+      ),
+    );
+  }
+}
+
+/// Badge du nombre de tickets en anomalie : ceux que le serveur n'arrive plus
+/// à transmettre à GitHub. Masqué à zéro, comme celui de la modération.
+class _TicketAnomalyBadge extends ConsumerWidget {
+  const _TicketAnomalyBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(ticketAnomalyCountProvider).value ?? 0;
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Semantics(
+        label: '$count ticket(s) en anomalie',
         child: Badge(label: Text('$count')),
       ),
     );

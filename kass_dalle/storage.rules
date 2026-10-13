@@ -186,6 +186,21 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Capture d'écran jointe à un ticket — privée, jamais publiée.
+    //
+    // `tickets/{uid}/{ticketId}/screenshot.png|jpg`. Écriture par le compte
+    // `uid` lui-même, nommé et non révoqué, PNG ou JPEG de 5 Mo au plus ;
+    // lecture par ce compte ou l'administrateur. Pas de lecture Firestore
+    // ici : `attachTicketScreenshot` vérifie ensuite que le ticket appartient
+    // à l'appelant avant d'écrire `screenshot_path`.
+    match /tickets/{uid}/{ticketId}/{fileName} {
+      allow read: if (isActive() && isOwner(uid)) || isAdmin();
+      allow create, update: if isOwner(uid) && isApprovedToken()
+        && fileName.matches('screenshot[.](png|jpg)')
+        && request.resource.size <= 5 * 1024 * 1024
+        && baseContentType() in ['image/png', 'image/jpeg'];
+    }
+
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
       // Lire un fichier par son adresse : tout compte actif. Lister : admin.
