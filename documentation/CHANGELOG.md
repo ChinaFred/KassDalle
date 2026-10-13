@@ -81,7 +81,8 @@ Mémoire des échecs (`backfills/failureMemory.ts`) : `ai_weight_failure_count`,
 passe `retryExcluded`. `syncRecipeMealRole` ne demande plus le rôle d'une recette exclue, ni
 pour une écriture qui ne change que `meal_role_failure_count` et `meal_role_attempt_at`
 (`mealRoleCallAllowed`) : chaque échec du backfill coûtait un second appel au déclencheur.
-L'examen des allergènes à l'écriture ne lit pas `allergens_failure_count`.
+L'examen des allergènes à l'écriture d'une recette (`allergens_auto`) écarte aussi un
+ingrédient à trois échecs : il ne le redemande plus à chaque écriture.
 
 Règles Firestore : `nutrition_catch_up_attempts`, `meal_role_failure_count` et
 `meal_role_attempt_at` deviennent serveur seul sur `recipes` (`serverOnlyRetryFields`), à la

@@ -1631,7 +1631,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
 | `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.54, par le backfill « Enrichir unités et ingrédients » sur un échec |
 | `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ; il est listé « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. L'enrichissement à l'écriture d'une recette et celui du rattrapage de la nutrition ne redemandent plus un ingrédient qui en porte 3 (`ingredientEnrichmentAllowed`). Serveur seul |
-| `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) ne le lit pas. Serveur seul |
+| `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) l'applique aussi, sans exception (`allergenAutoExaminationAllowed`). Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
@@ -4657,7 +4657,8 @@ rôle à l'écriture (`mealRoleCallAllowed`, `recipeMealRoleAutoSync.ts`) ne red
 recette exclue. Ce dernier ne réagit pas non plus à l'écriture par laquelle le backfill compte
 un échec (seuls `meal_role_failure_count` et `meal_role_attempt_at` changent) : sans cette
 garde, chaque échec coûtait un second appel. L'examen des allergènes à l'écriture
-(`allergens_auto`) ne lit pas `allergens_failure_count`. L'écriture de la mémoire est
+(`allergens_auto`, `examineIngredientAllergens`) écarte aussi un ingrédient à trois échecs
+(`allergenAutoExaminationAllowed`, compté dans `excluded`). L'écriture de la mémoire est
 best-effort (`writeFailureMemory`, `logError` en cas d'échec).
 
 **Auteur de la programmation.** Avant chaque passage programmé, le rôle de
