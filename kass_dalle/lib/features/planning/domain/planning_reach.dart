@@ -6,8 +6,8 @@
 /// - [groupIds] : les groupes actifs dont il est membre, propriétaire
 ///   compris, dont il lit le planning de groupe ;
 /// - [maskedGroupIds] : les groupes dont il est membre et que leur
-///   propriétaire, qui n'est plus éditeur, masque. Les écrans des groupes ne
-///   les listent plus.
+///   propriétaire n'est plus éditeur (« en pause »). Les écrans des groupes
+///   les listent avec la mention « En pause » ; seul le planning les masque.
 ///
 /// Un document antérieur au planning de groupe n'a que `uids` : [groupIds] et
 /// [maskedGroupIds] valent alors `null` (« inconnu »), et rien n'est masqué.

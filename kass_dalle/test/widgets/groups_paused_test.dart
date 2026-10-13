@@ -57,6 +57,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Gérer les membres'), findsOneWidget);
     expect(find.text('Supprimer le groupe'), findsOneWidget);
+
+    await tester.tap(find.text('Gérer les membres'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(
+        'Ce groupe est en pause : son planning n\'apparaît plus tant que '
+        'vous n\'êtes pas éditeur.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('un membre voit le groupe en pause et peut le quitter', (

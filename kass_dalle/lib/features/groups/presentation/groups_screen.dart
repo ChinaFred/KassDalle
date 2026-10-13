@@ -540,6 +540,10 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     // quel que soit son rôle (`isShrinking`).
     final isOwner = group.isOwner(widget.myUid);
     final canManage = isOwner && ref.watch(canEditProvider);
+    // Groupe en pause : son propriétaire n'est plus éditeur. Une portée
+    // illisible ne marque rien (l'erreur est déjà au rapport).
+    final paused =
+        ref.watch(maskedGroupIdsProvider).value?.contains(group.id) ?? false;
     final candidates = _searchResults
         .where((u) => !group.isMember(u.uid) && !group.isInvited(u.uid))
         .toList();
@@ -726,8 +730,13 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Seul un éditeur invite de nouveaux membres et renomme '
-                      'le groupe.',
+                      paused
+                          ? 'Seul un éditeur invite de nouveaux membres et '
+                                'renomme le groupe. Ce groupe est en pause : '
+                                'son planning n\'apparaît plus tant que vous '
+                                'n\'êtes pas éditeur.'
+                          : 'Seul un éditeur invite de nouveaux membres et '
+                                'renomme le groupe.',
                       style: smallText,
                     ),
                   ),

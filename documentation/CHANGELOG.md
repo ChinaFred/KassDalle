@@ -35,8 +35,10 @@ tous ses membres, sans rien effacer : son planning est masqué, ses livres ne so
 par lui, et ses invitations en attente sont masquées aux invités. L'écran Groupes le liste
 marqué « En pause » : son propriétaire y retire un membre, annule une invitation ou le
 supprime, un membre le quitte. Dans le planning, le propriétaire lit « Votre groupe … est en
-pause. », un membre « Le groupe … est en pause » avec le nom de son propriétaire ; tout revient
-s'il redevient éditeur. Un planning personnel partagé ne montre plus les repas des groupes de
+pause. », un membre « Le groupe … est en pause » avec le nom de son propriétaire, et un membre
+de plusieurs groupes en pause les lit tous nommés ; tout revient s'il redevient éditeur. Dans
+« Partager mon planning », un groupe en pause reste cochable, et dit que les repas seront
+visibles quand il reprendra. Un planning personnel partagé ne montre plus les repas des groupes de
 son propriétaire. La feuille « Planifier » d'une recette enregistre le repas avant de poser
 l'événement (« Ajouter au planning et à l'agenda ») et nomme le planning visé. Le titre d'une
 recette privée planifiée pour un groupe se lit sur le repas ; la recette reste fermée.

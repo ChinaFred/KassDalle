@@ -60,13 +60,22 @@ String pausedGroupsMessage(int count) => count > 1
     ? 'Ils reviendront quand vous serez de nouveau éditeur.'
     : 'Il reviendra quand vous serez de nouveau éditeur.';
 
-/// Pour un membre : « Le groupe Famille Dupont est en pause : Marie, qui en
-/// est propriétaire, n'est plus éditeur. Il reviendra quand Marie le sera de
-/// nouveau. »
-String pausedMemberGroupMessage(FamilyGroup group, String ownerName) =>
-    'Le groupe ${group.name} est en pause : $ownerName, qui en est '
-    'propriétaire, n\'est plus éditeur. Il reviendra quand $ownerName le '
-    'sera de nouveau.';
+/// Pour un membre, sous le titre « Le groupe Famille Dupont est en pause. » :
+/// « Marie, qui en est propriétaire, n'a plus le rôle d'éditeur. Il reviendra
+/// quand Marie retrouvera ce rôle. »
+String pausedMemberGroupMessage(String ownerName) =>
+    '$ownerName, qui en est propriétaire, n\'a plus le rôle d\'éditeur. '
+    'Il reviendra quand $ownerName retrouvera ce rôle.';
+
+/// Pour un membre de plusieurs groupes en pause : « Vos groupes A et B sont
+/// en pause : leurs propriétaires n'ont plus le rôle d'éditeur. » ; `null`
+/// avec moins de deux groupes.
+String? pausedMemberGroupsTitle(List<FamilyGroup> paused) {
+  if (paused.length < 2) return null;
+  final title = pausedGroupsTitle(paused)!;
+  return '${title.substring(0, title.length - 1)} : leurs propriétaires '
+      'n\'ont plus le rôle d\'éditeur.';
+}
 
 /// Groupes qui invitent l'utilisateur connecté et attendent sa réponse.
 final myInvitationsProvider = StreamProvider<List<FamilyGroup>>((ref) {

@@ -443,13 +443,36 @@ void main() {
 
     expect(find.text('Le groupe Famille Dupont est en pause.'), findsOneWidget);
     expect(
-      find.textContaining(
-        'Marie, qui en est propriétaire, n\'est plus éditeur',
+      find.text(
+        'Marie, qui en est propriétaire, n\'a plus le rôle d\'éditeur. '
+        'Il reviendra quand Marie retrouvera ce rôle.',
       ),
       findsOneWidget,
     );
     expect(find.text('Voir les groupes familiaux'), findsNothing);
     expect(find.text('Aucun planning n\'est partagé avec vous.'), findsNothing);
+  });
+
+  testWidgets('un membre de deux groupes en pause les lit tous les deux', (
+    tester,
+  ) async {
+    final martin = FamilyGroup(
+      id: 'gm',
+      name: 'Famille Martin',
+      ownerId: 'paul',
+      memberIds: const ['paul', 'uid-test'],
+      createdAt: DateTime.utc(2026),
+    );
+    await pump(tester, role: UserRole.reader, pausedGroups: [martin, dupont()]);
+
+    expect(
+      find.text(
+        'Vos groupes Famille Dupont et Famille Martin sont en pause : leurs '
+        'propriétaires n\'ont plus le rôle d\'éditeur.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Le groupe Famille'), findsNothing);
   });
 
   testWidgets('« Nouveau planning » demande pour qui au propriétaire', (

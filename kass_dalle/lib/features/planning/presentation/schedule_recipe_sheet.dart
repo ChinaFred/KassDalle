@@ -223,7 +223,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       );
       if (mounted) {
         Navigator.of(context).pop();
-        context.showSuccessSnackBar('$_addedTo et à Google Calendar ✓');
+        context.showSuccessSnackBar('$_addedTo et à l\'agenda.');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -237,7 +237,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         // ce qui manque.
         Navigator.of(context).pop();
         context.showErrorSnackBar(
-          '$_addedTo. Google Calendar n\'a pas reçu l\'événement.',
+          '$_addedTo. L\'agenda n\'a pas reçu l\'événement.',
         );
       }
     }

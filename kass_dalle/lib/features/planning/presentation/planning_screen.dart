@@ -1569,14 +1569,22 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           message: withHint(pausedGroupsMessage(owned.length)),
         );
       }
-      final group = pausedGroups.first;
+      final several = pausedMemberGroupsTitle(pausedGroups);
+      if (several != null) {
+        return AppEmptyState(
+          icon: Icons.pause_circle_outline,
+          title: several,
+          message: hasOwnMeals ? ownMealsHint : null,
+        );
+      }
+      final group = pausedGroups.single;
       final ownerName =
           ref.watch(memberNameProvider(group.ownerId)) ??
           UserProfile.fallbackName;
       return AppEmptyState(
         icon: Icons.pause_circle_outline,
         title: 'Le groupe ${group.name} est en pause.',
-        message: withHint(pausedMemberGroupMessage(group, ownerName)),
+        message: withHint(pausedMemberGroupMessage(ownerName)),
       );
     }
     if (all.isEmpty) {

@@ -949,7 +949,6 @@ classDiagram
     +List~String~ uids
     +List~String~? groupIds
     +List~String~? maskedGroupIds
-    +List~String~? maskedInvitationIds
     +DateTime updatedAt
   }
 
@@ -1263,7 +1262,11 @@ classDiagram
           (<code>PlanningRepository.watchPlanningReach</code>) et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
           décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore.
+          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
+          pause) n'entre pas dans <code>PlanningReach</code> :
+          <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces
+          invitations.
         </span>
         <span class="expect">
           <b><code>MealPrepContext</code> n'est jamais stocké.</b> Il est construit par l'écran de

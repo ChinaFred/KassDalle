@@ -1525,22 +1525,27 @@ ni croiser les groupes avec le rôle de leur propriétaire.
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
 **Qui l'écrit :** le serveur seul (`triggers/planningReach.ts`, `syncPlanningReachFor`, dans
-une transaction qui relit les groupes du titulaire, puis `planning_config` et `users` de chaque
-membre, titulaire compris). Trois déclencheurs :
+une transaction qui relit les groupes du titulaire et les groupes qui l'invitent, puis
+`planning_config` et `users` de chaque membre, titulaire compris, et du propriétaire de chaque
+groupe qui l'invite). Trois déclencheurs :
 
 - `syncGroupReach` (écriture d'un groupe dont la composition change) recalcule, pour les
-  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre ;
+  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre. Il
+  recalcule aussi `planning_reach` des invités ajoutés ou retirés, et de tous les invités d'un
+  groupe supprimé (`invitationsToResync`) : leur `masked_invitation_ids` peut changer ;
 - `syncPlanningReachOnConfig` (écriture de `planning_config/{uid}` dont `shared_group_ids`
   change) recalcule les membres des groupes ajoutés ou retirés, `retry: true` ;
 - `syncPlanningReachOnRole` (`triggers/plannerRole.ts` ; écriture de `users/{uid}` dont `role`
   ou `is_revoked` fait changer le droit de planifier, `planningShareChanged`) recalcule les
   membres des groupes cochés par ce compte et ceux des groupes dont il est propriétaire, lui
-  compris — `planning_reach`, puis `group_reach` de ces derniers —, `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
+  compris — `planning_reach`, puis `group_reach` de ces derniers —, ainsi que `planning_reach`
+  des invités des groupes dont il est propriétaire (`invitedOfOwnedGroups`), `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
   un éditeur rétrogradé ou révoqué ne doit pas rester lisible. `syncUserClaims` ne s'en
   occupe pas.
 
 Un backfill, « Portée des groupes et des plannings » (`backfillGroupPlanningReachFn`, §7.10),
-écrit `group_ids` et `masked_group_ids` sur les comptes antérieurs — sans lui, un membre d'un
+écrit `group_ids`, `masked_group_ids` et `masked_invitation_ids` sur les comptes antérieurs,
+membres et invités de tous les groupes (`groupAccounts`) — sans lui, un membre d'un
 groupe que personne n'a touché depuis le déploiement ne lirait pas le planning du groupe —, puis
 pose `group_id: null` sur les repas antérieurs, sans quoi un planning partagé n'en montrerait
 aucun.

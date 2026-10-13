@@ -2181,6 +2181,16 @@ describe("plannings de groupe", () => {
     );
   });
 
+  it("groupe supprimé, portée pas encore recalculée : le planning reste fermé", async () => {
+    // `gp` est supprimé ; `planning_reach/reader.group_ids` contient encore
+    // "gp" tant que `syncGroupReach` n'est pas passé.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc("groups/gp").delete();
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+  });
+
   it("requête sans filtre sur le propriétaire du groupe : refusée", async () => {
     await assertFails(
       db("reader").collection("planned_meals").where("group_id", "==", "gp").get(),
