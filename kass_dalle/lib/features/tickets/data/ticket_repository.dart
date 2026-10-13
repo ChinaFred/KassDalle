@@ -106,17 +106,25 @@ class TicketRepository {
   }
 
   /// Le plafond quotidien d'un membre (`app_config/tickets`,
-  /// `per_member_per_day`), ou `null` s'il ne se lit pas.
+  /// `per_member_per_day`), quand le document le règle.
   ///
-  /// `null` n'est pas remplacé par la valeur par défaut du serveur : le
-  /// formulaire se rabat alors sur `remaining_today` du dernier envoi, et ne
-  /// dit rien avant. Une lecture refusée ou une valeur illisible est remontée.
+  /// Document ou champ absent : `null`, sans rapport — le serveur applique
+  /// alors son réglage par défaut, que le client ne recopie pas (pas de
+  /// logique dupliquée) ; le formulaire se rabat sur `remaining_today` du
+  /// dernier envoi. Champ présent mais pas un entier strictement positif : le
+  /// serveur refuse tout envoi ; `null`, remonté par un rapport d'erreur. Une
+  /// lecture refusée rend aussi `null`.
   Future<int?> fetchPerMemberDailyLimit() async {
     try {
       final snap = await _db.collection('app_config').doc('tickets').get();
-      if (!snap.exists) return null;
-      final raw = snap.data()?['per_member_per_day'];
-      if (raw is num && raw >= 0) return raw.toInt();
+      final data = snap.data();
+      if (!snap.exists || data == null) return null;
+      if (!data.containsKey('per_member_per_day')) return null;
+      final raw = data['per_member_per_day'];
+      if (raw is int && raw > 0) return raw;
+      if (raw is double && raw > 0 && raw == raw.truncateToDouble()) {
+        return raw.toInt();
+      }
       await _errorReportService.reportError(
         feature: _feature,
         error: FormatException(

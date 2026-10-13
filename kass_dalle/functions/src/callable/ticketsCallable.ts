@@ -8,7 +8,8 @@
  *   ticket reste « Envoi en cours » et la tâche horaire le reprend.
  *   Rend `{ ticketId, status, remaining_today }` (`null` pour l'admin).
  * - `attachTicketScreenshot` — l'auteur du ticket. Vérifie le chemin
- *   `tickets/{uid}/{ticketId}/screenshot.(png|jpg)` et l'objet Storage, puis
+ *   `tickets/{uid}/{ticketId}/screenshot.(png|jpg)` et l'objet Storage (type
+ *   MIME, taille, et signature PNG ou JPEG de ses premiers octets), puis
  *   écrit `screenshot_path`. La capture ne part jamais sur GitHub.
  * - `retryTicketSend` — administrateur (`requireAdmin`). Remet le compteur
  *   d'essais à zéro et tente l'envoi une fois.
@@ -39,6 +40,7 @@ import { SHORT_TEXT_MAX_CHARS, requireBoundedText } from "./_inputBounds";
 import { logError, logInfo, logWarn } from "../logging";
 import {
   SCREENSHOT_MAX_BYTES,
+  SCREENSHOT_SIGNATURE_BYTES,
   TicketInputError,
   globalQuotaDocId,
   isPlausibleDocId,
@@ -48,6 +50,7 @@ import {
   quotaRefusal,
   readTicketInput,
   readTicketLimits,
+  screenshotBytesMatch,
   screenshotContentType,
   screenshotPaths,
   type TicketStatus,
@@ -258,6 +261,22 @@ export const attachTicketScreenshot = onCall(opts, async (req): Promise<{ ok: tr
       contentType !== screenshotContentType(path) ||
       !(size > 0 && size <= SCREENSHOT_MAX_BYTES)
     ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Seules les images PNG ou JPEG de 5 Mo au plus sont acceptées.",
+      );
+    }
+
+    // Le type MIME est posé par le client : seuls les octets disent le format.
+    const [head] = await file.download({ start: 0, end: SCREENSHOT_SIGNATURE_BYTES - 1 });
+    if (!screenshotBytesMatch(head, contentType)) {
+      await logWarn({
+        message: `attachTicketScreenshot : capture refusée, octets autres que ${contentType}`,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
       throw new HttpsError(
         "invalid-argument",
         "Seules les images PNG ou JPEG de 5 Mo au plus sont acceptées.",

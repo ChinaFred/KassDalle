@@ -480,10 +480,11 @@ classDiagram
     +String platform
     +String? screenshotPath
     +String authorUid
-    +DateTime createdAt
-    +DateTime updatedAt
+    +DateTime? createdAt
+    +DateTime? updatedAt
     +TicketStatus status
-    +DateTime statusChangedAt
+    +String rawStatus
+    +DateTime? statusChangedAt
     +DateTime? seenByAuthorAt
     +int? githubIssueNumber
     +String? githubUrl

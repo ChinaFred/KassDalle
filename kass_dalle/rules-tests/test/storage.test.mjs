@@ -302,6 +302,12 @@ describe("tickets/ — capture d'un ticket", () => {
     await assertFails(storage("editor").ref(mine("jpg")).getMetadata());
   });
 
+  it("un autre membre approuvé ne liste pas le dossier de l'auteur", async () => {
+    await assertFails(storage("otherReader").ref(`tickets/${READER}`).listAll());
+    await assertFails(storage("otherReader").ref(`tickets/${READER}/t1`).listAll());
+    await assertFails(storage("editor").ref(`tickets/${READER}/t1`).listAll());
+  });
+
   it("un compte révoqué ne relit pas sa capture", async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await ctx

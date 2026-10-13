@@ -11,7 +11,8 @@
  * passagère. Le message ne contient jamais le jeton.
  */
 
-import { GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
+import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
+import { isTrustedPrAuthor } from "./rules";
 
 const API = "https://api.github.com";
 const TIMEOUT_MS = 15_000;
@@ -163,7 +164,8 @@ export async function getIssue(token: string, issueNumber: number): Promise<Remo
 }
 
 export interface RemoteComment {
-  authorLogin: string | null;
+  /** Identifiant numérique du compte auteur (`user.id`), ou `null`. */
+  authorId: number | null;
   body: string | null;
 }
 
@@ -182,9 +184,9 @@ export async function listIssueComments(
       `${REPO_PATH}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
     );
     for (const c of batch) {
-      const user = c.user as { login?: unknown } | null | undefined;
+      const user = c.user as { id?: unknown } | null | undefined;
       out.push({
-        authorLogin: typeof user?.login === "string" ? user.login : null,
+        authorId: typeof user?.id === "number" ? user.id : null,
         body: typeof c.body === "string" ? c.body : null,
       });
     }
@@ -196,6 +198,10 @@ export async function listIssueComments(
 /**
  * Corps des PR **ouvertes** qui mentionnent l'Issue, lus dans sa chronologie
  * (événements `cross-referenced`). L'appelant y cherche « Closes #N ».
+ *
+ * Seules les PR d'un auteur de confiance sont rendues (`isTrustedPrAuthor`) :
+ * une PR ouverte depuis un fork par un autre compte ne fait pas passer un
+ * ticket « En cours ».
  */
 export async function openPullRequestBodiesReferencing(
   token: string,
@@ -220,7 +226,16 @@ export async function openPullRequestBodiesReferencing(
       ) {
         continue;
       }
-      if (typeof issue.body === "string") bodies.push(issue.body);
+      const user = issue.user as { id?: unknown } | null | undefined;
+      const trusted = isTrustedPrAuthor(
+        {
+          id: typeof user?.id === "number" ? user.id : null,
+          association:
+            typeof issue.author_association === "string" ? issue.author_association : null,
+        },
+        GITHUB_TICKETS_MAINTAINER_ID,
+      );
+      if (trusted && typeof issue.body === "string") bodies.push(issue.body);
     }
     if (batch.length < 100) break;
   }

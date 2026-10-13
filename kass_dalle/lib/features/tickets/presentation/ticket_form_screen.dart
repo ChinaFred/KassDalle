@@ -12,7 +12,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
-import '../../../core/widgets/error_message.dart';
+import '../../../core/widgets/app_shortcuts.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../data/ticket_repository.dart';
 import '../domain/ticket.dart';
@@ -92,15 +92,20 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   }
 
   void _onTextChanged() {
-    // La faute d'un champ disparaît dès qu'on le corrige.
+    // Une faute affichée reste tant que le champ ne convient pas (titre de
+    // moins de 5 caractères, description vide), et disparaît dès qu'il
+    // convient. Aucune faute n'apparaît avant l'appui sur « Envoyer ».
     if (_errors.title != null || _errors.description != null) {
+      final now = validateTicketForm(
+        type: _type,
+        title: _titleCtrl.text,
+        description: _descriptionCtrl.text,
+      );
       setState(() {
         _errors = TicketFormErrors(
           type: _errors.type,
-          title: _titleCtrl.text.trim().isEmpty ? _errors.title : null,
-          description: _descriptionCtrl.text.trim().isEmpty
-              ? _errors.description
-              : null,
+          title: _errors.title == null ? null : now.title,
+          description: _errors.description == null ? null : now.description,
         );
       });
     } else {
@@ -194,7 +199,7 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
       );
       if (mounted) {
         context.showErrorSnackBar(
-          'Image non ouverte : ${shortErrorMessage(e)}',
+          'Cette image n\'a pas pu être ouverte. Choisissez-en une autre.',
         );
       }
     }
@@ -265,8 +270,8 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
       final router = GoRouter.of(context);
       context.showSuccessSnackBar(
         result.screenshotFailed
-            ? 'Ticket envoyé, sans la capture : elle n\'a pas pu être '
-                  'jointe. Vous pouvez le suivre dans Mes tickets.'
+            ? 'Ticket envoyé sans la capture. Vous pouvez le suivre dans '
+                  'Mes tickets.'
             : 'Ticket envoyé. Vous pouvez le suivre dans Mes tickets.',
         action: SnackBarAction(
           label: 'Voir',
@@ -424,9 +429,12 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
         if (didPop) return;
         _leaveAfterConfirmation();
       },
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Signaler ou proposer')),
-        body: AbsorbPointer(absorbing: _sending, child: body),
+      child: AppShortcuts(
+        onSave: _sending ? null : _send,
+        child: Scaffold(
+          appBar: AppBar(title: const Text('Signaler ou proposer')),
+          body: AbsorbPointer(absorbing: _sending, child: body),
+        ),
       ),
     );
   }
@@ -589,8 +597,13 @@ class _CaptureSection extends StatelessWidget {
             onChanged: enabled ? (v) => onAttachChanged(v ?? false) : null,
             title: const Text('Joindre une capture de l\'écran précédent'),
           ),
-          _Thumbnail(bytes: shell, label: 'Capture de l\'écran précédent'),
-          const SizedBox(height: 8),
+          // La vignette reste visible case décochée, pour que le membre voie
+          // ce qu'il joindrait ; elle disparaît seulement quand une image
+          // choisie s'affiche, pour qu'une seule capture paraisse jointe.
+          if (attachShellCapture || chosen == null) ...[
+            _Thumbnail(bytes: shell, label: 'Capture de l\'écran précédent'),
+            const SizedBox(height: 8),
+          ],
         ],
         if (!attachShellCapture) ...[
           if (chosen != null) ...[

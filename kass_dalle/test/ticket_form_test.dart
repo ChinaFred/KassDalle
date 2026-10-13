@@ -180,7 +180,11 @@ void main() {
       expect(remainingTicketsNotice(null), isNull);
       expect(remainingTicketsNotice(2), 'Il vous reste 2 envois aujourd\'hui');
       expect(remainingTicketsNotice(1), 'Il vous reste 1 envoi aujourd\'hui');
-      expect(remainingTicketsNotice(0), 'Il vous reste 0 envoi aujourd\'hui');
+      expect(
+        remainingTicketsNotice(0),
+        'Vous avez atteint le nombre de tickets permis aujourd\'hui. '
+        'Réessayez demain.',
+      );
     });
   });
 

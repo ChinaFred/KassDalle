@@ -123,7 +123,8 @@ class _Pill extends StatelessWidget {
   }
 }
 
-/// Icône du type, annoncée par son libellé.
+/// Icône du type, annoncée une fois par son libellé : l'infobulle ne
+/// s'ajoute pas aux sémantiques, seul `semanticLabel` est lu.
 class TicketTypeIcon extends StatelessWidget {
   final TicketType type;
   const TicketTypeIcon({super.key, required this.type});
@@ -132,6 +133,7 @@ class TicketTypeIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: type.label,
+      excludeFromSemantics: true,
       child: Icon(ticketTypeIcon(type), semanticLabel: type.label),
     );
   }

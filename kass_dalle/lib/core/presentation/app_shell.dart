@@ -531,7 +531,7 @@ class _AccountDot extends ConsumerWidget {
     return Semantics(
       label: [
         if (invitations > 0) 'Invitation(s) de groupe en attente',
-        if (tickets > 0) 'Ticket(s) avec une réponse à lire',
+        if (tickets > 0) 'Ticket(s) avec un nouveau suivi',
       ].join(', '),
       child: Badge(child: child),
     );
@@ -547,7 +547,7 @@ class _MyTicketsIcon extends ConsumerWidget {
     final unseen = ref.watch(unseenTicketsCountProvider);
     if (unseen == 0) return const Icon(AppIcons.tickets);
     return Semantics(
-      label: '$unseen ticket(s) avec une réponse à lire',
+      label: '$unseen ticket(s) avec un nouveau suivi',
       child: Badge(label: Text('$unseen'), child: const Icon(AppIcons.tickets)),
     );
   }

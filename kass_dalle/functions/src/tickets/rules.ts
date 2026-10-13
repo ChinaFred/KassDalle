@@ -4,10 +4,13 @@
  * Rien ici ne lit Firestore ni GitHub. On y trouve :
  *  - la lecture des entrées de `submitTicket` (types, bornes, écran) ;
  *  - le corps de l'Issue publiée sur un dépôt PUBLIC, construit sur un gabarit
- *    fixe : ni nom, ni adresse, ni uid, ni capture, mentions `@` neutralisées ;
+ *    fixe : ni nom, ni adresse, ni uid, ni capture, mentions `@` et renvois
+ *    `#N` neutralisés ;
  *  - la correspondance état GitHub → statut du ticket, et la règle de
  *    non-recul ;
- *  - le filtre de la réponse de l'administrateur (`reply_text`) ;
+ *  - le filtre de la réponse de l'administrateur (`reply_text`) et des PR
+ *    qui comptent pour « En cours » ;
+ *  - la signature des octets d'une capture ;
  *  - la vérification de la signature HMAC d'un webhook ;
  *  - le jour calendaire Europe/Paris du plafond, et la lecture des plafonds.
  */
@@ -238,15 +241,30 @@ export function neutralizeMentions(text: string): string {
   return text.replace(/@(?=[A-Za-z0-9-])/g, `@${ZERO_WIDTH_SPACE}`);
 }
 
+/**
+ * Neutralise les renvois `#12` et `owner/repo#12` : GitHub ne
+ * lie pas le texte à une autre Issue ou PR, et n'ajoute pas d'événement
+ * « mentioned this » à leur chronologie. Un `#` suivi d'un chiffre reçoit une
+ * espace sans chasse ; un titre Markdown (`### Description`) n'est pas touché.
+ */
+export function neutralizeIssueReferences(text: string): string {
+  return text.replace(/#(?=\d)/g, `#${ZERO_WIDTH_SPACE}`);
+}
+
+/** Texte d'un membre publié sur le dépôt public : mentions et renvois neutralisés. */
+function publicText(text: string): string {
+  return neutralizeIssueReferences(neutralizeMentions(text));
+}
+
 function screenLabel(screen: string): string {
   if (screen === SCREEN_OTHER) return "Autre écran";
   if (screen === SCREEN_UNKNOWN) return "Non précisé";
   return `\`${screen}\``;
 }
 
-/** Titre de l'Issue : celui du ticket, mentions neutralisées. */
+/** Titre de l'Issue : celui du ticket, mentions et renvois neutralisés. */
 export function buildIssueTitle(title: string): string {
-  return neutralizeMentions(singleLine(title));
+  return publicText(singleLine(title));
 }
 
 /**
@@ -256,7 +274,7 @@ export function buildIssueTitle(title: string): string {
  * référence opaque (l'identifiant du document `tickets`), description.
  * Ce qui ne part jamais : nom, adresse, uid, capture, contenu de recette.
  * Le texte du membre n'est pas échappé en Markdown, seulement privé de ses
- * mentions.
+ * mentions et de ses renvois `#N`.
  */
 export function buildIssueBody(args: {
   ticketId: string;
@@ -275,7 +293,7 @@ export function buildIssueBody(args: {
     "",
     "### Description",
     "",
-    neutralizeMentions(args.description),
+    publicText(args.description),
     "",
     "---",
     "_Ticket envoyé depuis l'application Kass'Dalle. Capture éventuelle disponible dans " +
@@ -351,6 +369,25 @@ export function closingIssueNumbers(
   return [...numbers].sort((a, b) => a - b);
 }
 
+/** Rôles GitHub d'un auteur de PR qui a un accès au dépôt. */
+const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/**
+ * Vrai si une PR de cet auteur peut faire passer un ticket « En cours ».
+ *
+ * N'importe quel compte peut ouvrir une PR depuis un fork avec « Closes #N »
+ * dans son corps. Seules comptent celles du mainteneur (identifiant
+ * numérique) ou d'un compte que GitHub déclare `OWNER`, `MEMBER` ou
+ * `COLLABORATOR` du dépôt (`author_association`).
+ */
+export function isTrustedPrAuthor(
+  author: { id: number | null | undefined; association: string | null | undefined },
+  maintainerId: number,
+): boolean {
+  if (typeof author.id === "number" && author.id === maintainerId) return true;
+  return typeof author.association === "string" && TRUSTED_ASSOCIATIONS.has(author.association);
+}
+
 // ── Réponse de l'administrateur ─────────────────────────────────────────────
 
 const REPLY_PREFIX = /^Réponse\s*:\s*/u;
@@ -358,15 +395,16 @@ const REPLY_PREFIX = /^Réponse\s*:\s*/u;
 /**
  * La réponse montrée au membre, ou `null` si ce commentaire n'en est pas une.
  *
- * Seul un commentaire de `maintainer` qui commence par « Réponse : » compte ;
+ * Seul un commentaire du compte `maintainerId` (identifiant numérique GitHub,
+ * pas le login, qui se renomme) qui commence par « Réponse : » compte ;
  * le préfixe est retiré. Les espaces (y compris insécables) autour des deux
  * points sont tolérés, et le « é » composé comme décomposé.
  */
 export function replyFromComment(
-  comment: { authorLogin: string | null | undefined; body: string | null | undefined },
-  maintainer: string,
+  comment: { authorId: number | null | undefined; body: string | null | undefined },
+  maintainerId: number,
 ): string | null {
-  if (!comment.authorLogin || comment.authorLogin !== maintainer) return null;
+  if (typeof comment.authorId !== "number" || comment.authorId !== maintainerId) return null;
   if (typeof comment.body !== "string") return null;
   const body = comment.body.normalize("NFC").replace(/\r\n?/g, "\n").trimStart();
   if (!REPLY_PREFIX.test(body)) return null;
@@ -486,6 +524,28 @@ export function screenshotContentType(path: string): "image/png" | "image/jpeg" 
 }
 
 export const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Octets lus en tête d'une capture pour en vérifier la signature. */
+export const SCREENSHOT_SIGNATURE_BYTES = 8;
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
+
+/**
+ * Vrai si les premiers octets d'une capture sont ceux du format annoncé :
+ * signature PNG sur 8 octets, ou `FF D8 FF` pour un JPEG. Le type MIME posé
+ * par le client à l'envoi ne prouve rien sur le contenu.
+ */
+export function screenshotBytesMatch(head: Uint8Array, contentType: string): boolean {
+  const signature =
+    contentType === "image/png"
+      ? PNG_SIGNATURE
+      : contentType === "image/jpeg"
+        ? JPEG_SIGNATURE
+        : null;
+  if (signature === null || head.length < signature.length) return false;
+  return signature.every((byte, i) => head[i] === byte);
+}
 
 /** Identifiant de document Firestore plausible (pas de `/`, borné). */
 export function isPlausibleDocId(value: unknown): value is string {

@@ -1023,24 +1023,33 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
     recette », « Planning », « Administration — … »…), avec « Autre écran » et « Je ne sais
     pas » en fin de liste ;
   - la **capture**, facultative. La case « Joindre une capture de l'écran précédent » est
-    décochée par défaut, sa vignette visible. À la place, « Choisir dans la galerie » (mobile)
+    décochée par défaut ; sa vignette reste visible, et disparaît seulement quand une image
+    choisie s'affiche, pour qu'une seule capture paraisse jointe. À la place, « Choisir dans la galerie » (mobile)
     ou « Choisir un fichier » (web, desktop). PNG ou JPEG, 5 Mo au plus : « Cette image dépasse
     5 Mo. Choisissez une image plus légère. », « Seules les images PNG ou JPEG sont
-    acceptées. ». « Retirer la capture » l'enlève.
+    acceptées. ». Une image que l'appareil ne parvient pas à ouvrir : « Cette image n'a pas pu
+    être ouverte. Choisissez-en une autre. ». « Retirer la capture » l'enlève. Le serveur vérifie
+    aussi les premiers octets du fichier : un fichier qui n'est ni un PNG ni un JPEG n'est pas
+    joint.
 - Un avertissement dit, au-dessus de l'envoi : « Le titre et la description seront publiés sur
   un site public. N'y mettez ni nom, ni adresse, ni recette privée. » et « Votre nom et la
   capture ne sont jamais publiés : seul l'administrateur les voit. »
 - La version de l'application et la plateforme partent avec le ticket ; l'écran l'affiche
   (« Envoyé avec : version …, … »).
 - « Envoyer » reste actif. Les erreurs s'affichent à l'appui, et le premier champ en erreur
-  reçoit le focus. Pendant l'envoi, le bouton affiche « Envoi… » et les champs sont verrouillés.
-- Succès : « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. », avec « Voir ».
+  reçoit le focus. Une erreur affichée reste tant que le champ ne convient pas (titre de moins
+  de 5 caractères, description vide). Ctrl/Cmd+S envoie aussi. Pendant l'envoi, le bouton
+  affiche « Envoi… » et les champs sont verrouillés.
+- Succès : « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. », avec « Voir ». Si la
+  capture n'a pas pu être jointe : « Ticket envoyé sans la capture. Vous pouvez le suivre dans
+  Mes tickets. ».
 - **Plafonds**, comptés par jour calendaire à l'heure de Paris : 5 tickets par membre et 30
   pour toute la famille, réglés dans `app_config/tickets`. L'Admin n'a pas de plafond. Plafond
   du membre : « Vous avez envoyé 5 tickets aujourd'hui, réessayez demain. » (le nombre réel).
   Plafond de la famille : « Trop de tickets ont été envoyés aujourd'hui par la famille.
-  Réessayez demain. ». Quand il reste 2 envois ou moins, le formulaire affiche « Il vous reste
-  N envoi(s) aujourd'hui » sous le bouton ; rien pour l'Admin.
+  Réessayez demain. ». Quand il reste 1 ou 2 envois, le formulaire affiche « Il vous reste
+  N envoi(s) aujourd'hui » sous le bouton ; quand il n'en reste aucun, « Vous avez atteint le
+  nombre de tickets permis aujourd'hui. Réessayez demain. » ; rien pour l'Admin.
 - Réseau absent : « Le ticket n'est pas parti. Vérifiez la connexion, puis appuyez sur
   Envoyer. » Le texte saisi est conservé.
 - Quitter avec une saisie demande « Abandonner ce ticket ? » — « Le texte saisi sera perdu. »,
@@ -1056,12 +1065,15 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
 - **Jamais publié** : le nom, l'adresse e-mail ou l'identifiant du membre, le contenu d'une
   recette, la capture. L'Issue dit « Capture disponible dans Admin › Tickets ».
 - Une mention `@…` écrite par le membre est neutralisée : elle ne notifie personne sur GitHub.
+  Un renvoi `#12` ou `compte/dépôt#12` l'est aussi : il ne crée aucun lien vers une autre
+  Issue ou pull request.
 - Le membre ne reçoit aucun lien vers l'Issue.
 
 #### Mes tickets (`/tickets`, `/tickets/:ticketId`)
 
-- Liste du plus récent au plus ancien : icône du type, titre, puce de statut (icône et texte,
-  jamais la couleur seule), date `jj/mm/aa`. Liste et détail côte à côte au-delà du seuil
+- Liste du plus récent au plus ancien : icône du type, titre, puis sous le titre la date
+  `jj/mm/aa` et la puce de statut (icône et texte, jamais la couleur seule). Un point à droite
+  signale un ticket à rouvrir ; un lecteur d'écran l'annonce « Nouveau suivi à lire ». Liste et détail côte à côte au-delà du seuil
   large. Bouton flottant « Signaler ou proposer ».
 - Détail : type, titre, statut, « Envoyé le jj/mm/aa à hh:mm », frise des étapes,
   description, « Écran : … », « Version … — plateforme », capture agrandissable. Une phrase dit
@@ -1074,7 +1086,8 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   - Validé : « Votre demande sera traitée. » ;
   - En cours : « Le travail a commencé. » ;
   - Livré : « C'est fait. Mettez l'application à jour pour en profiter. » ;
-  - Refusé : « Cette demande ne sera pas traitée. », suivi du motif s'il existe ;
+  - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
+    s'il existe ;
   - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable.
 - **Notification.** Un point s'affiche sur la puce du compte quand un ticket du membre passe à
   Répondu, Refusé ou Livré et qu'il ne l'a pas encore ouvert. Ouvrir le détail du ticket
@@ -1096,15 +1109,17 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Issue créée (étiquettes `source:app`, `type:…`, `statut:à-analyser`) | Reçu |
 | Étiquette `statut:analysé` | Analysé |
 | Étiquette `validé` | Validé |
-| Pull request ouverte qui dit « Closes #N » | En cours |
+| Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
 | Issue fermée comme terminée | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
 - Un statut peut sauter une étape ; il ne recule jamais. Répondu, Refusé et Livré sont
   finaux, sauf si l'Issue est rouverte : le statut revient alors à celui que donnent ses
   étiquettes.
+- Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
+  change aucun statut, même si elle dit « Closes #N ».
 - **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
-  (`ChinaFred`) qui commence par « Réponse : » est repris dans l'application, sans ce
+  (`ChinaFred`, reconnu par son identifiant numérique et non par son nom) qui commence par « Réponse : » est repris dans l'application, sans ce
   préfixe. Il sert de réponse à une Question et de motif à un refus. Aucun autre commentaire
   n'est relayé.
 - GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
@@ -1119,11 +1134,14 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
   pas un statut : le membre continue de voir « Envoi en cours ».
 - Filtres : statut (« Tous », « En anomalie », puis les huit statuts) et type (« Tous les
-  types », puis les quatre). Chaque ligne : type, titre, auteur (son nom dans l'application),
+  types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
+  qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, auteur (son nom dans l'application),
   statut, date, et la puce « En anomalie ».
 - Détail : auteur, date, type, version, plateforme, écran, statut, description, capture en
   grand. « Ouvrir sur GitHub » et « Copier le lien ». Pour un ticket en anomalie : « Essais
-  d'envoi : N », « Dernière erreur : … » et « Relancer l'envoi ».
+  d'envoi : N », « Dernière erreur : … » et « Relancer l'envoi ». Une relance qui échoue encore
+  affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une relance réussie,
+  « Envoi relancé : <statut>. ». Le motif d'un refus s'affiche sous « Motif du refus ».
 - Jeton GitHub refusé : un bandeau dit « Jeton GitHub invalide : aucun ticket n'est transmis
   à GitHub depuis le jj/mm/aa à hh:mm. Remplacez le jeton dans Secret Manager. Les tickets en
   attente repartiront ensuite. » Il disparaît au premier envoi réussi.

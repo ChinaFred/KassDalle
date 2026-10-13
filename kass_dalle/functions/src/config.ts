@@ -332,8 +332,12 @@ export const GITHUB_TICKETS_REPO = "KassDalle";
 /**
  * Seul compte GitHub dont un commentaire « Réponse : … » devient la réponse
  * montrée au membre (`reply_text`). Tout autre commentaire reste sur GitHub.
+ *
+ * La comparaison porte sur l'identifiant numérique du compte
+ * (`user.id`), qui ne change pas : un login se renomme, et un login libéré
+ * peut être repris par un autre compte.
  */
-export const GITHUB_TICKETS_MAINTAINER = "ChinaFred";
+export const GITHUB_TICKETS_MAINTAINER_ID = 16348852; // compte ChinaFred
 
 /**
  * Essais d'envoi au-delà desquels un ticket « Envoi en cours » n'est plus

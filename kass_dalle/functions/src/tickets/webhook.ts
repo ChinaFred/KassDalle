@@ -5,10 +5,15 @@
  * jeton Google. L'authentification est la signature `X-Hub-Signature-256`,
  * HMAC SHA-256 du corps BRUT sous `GITHUB_WEBHOOK_SECRET`, comparée à temps
  * constant (`verifyGithubSignature`). Corps non signé ou mal signé : 401.
+ * Avant tout calcul de HMAC : un corps de plus de 25 Mo (le plafond des
+ * livraisons GitHub) rend 413, une requête sans en-tête `X-GitHub-Event` rend
+ * 400. Les refus de signature sont journalisés une fois par minute et par
+ * instance au plus, avec leur nombre (`SignatureRejectionLog`).
  *
  * Événements traités : `issues` (étiquettes, fermeture, réouverture),
  * `issue_comment` (réponse de l'administrateur), `pull_request` (PR ouverte
- * qui ferme l'Issue → « En cours »), `ping`. Tout autre événement, une Issue
+ * qui ferme l'Issue → « En cours », si son auteur est le mainteneur ou un
+ * `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt), `ping`. Tout autre événement, une Issue
  * d'un autre dépôt ou une Issue qui ne vient pas de l'application (aucun
  * ticket sous ce numéro) : 200, ignoré.
  *
@@ -22,11 +27,12 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 
-import { GITHUB_TICKETS_MAINTAINER, GITHUB_WEBHOOK_SECRET, REGION } from "../config";
+import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_WEBHOOK_SECRET, REGION } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
 import { GITHUB_REPO_FULL_NAME, readRemoteIssue } from "./github";
 import {
   closingIssueNumbers,
+  isTrustedPrAuthor,
   replyFromComment,
   statusFromIssue,
   verifyGithubSignature,
@@ -38,6 +44,36 @@ const COMMENT_ACTIONS = new Set(["created", "edited"]);
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "ready_for_review"]);
 
 type Payload = Record<string, unknown>;
+
+/** Plafond d'une livraison GitHub : au-delà, le corps est refusé avant le HMAC. */
+export const WEBHOOK_MAX_BODY_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Échantillonnage des journaux de signature refusée : un relevé par
+ * intervalle au plus, qui porte le nombre de refus depuis le précédent. Un
+ * envoi massif de requêtes non signées n'écrit qu'une ligne par minute et par
+ * instance.
+ */
+export class SignatureRejectionLog {
+  private pending = 0;
+  private lastLoggedAt: number | null = null;
+
+  constructor(private readonly intervalMs = 60_000) {}
+
+  /** Compte un refus ; rend le nombre à journaliser, ou `null` s'il faut se taire. */
+  record(now: number): number | null {
+    this.pending++;
+    if (this.lastLoggedAt !== null && now - this.lastLoggedAt < this.intervalMs) return null;
+    const count = this.pending;
+    this.pending = 0;
+    this.lastLoggedAt = now;
+    return count;
+  }
+}
+
+const signatureRejections = new SignatureRejectionLog();
+/** Même échantillonnage pour les livraisons refusées faute de secret. */
+const missingSecretRejections = new SignatureRejectionLog();
 
 /** Les mises à jour qu'un événement propose, par numéro d'Issue. Pure. */
 export function updatesFromEvent(
@@ -71,13 +107,13 @@ export function updatesFromEvent(
     if (!issue || typeof issue.number !== "number" || issue.pull_request != null || !comment) {
       return [];
     }
-    const user = comment.user as { login?: unknown } | undefined;
+    const user = comment.user as { id?: unknown } | undefined;
     const reply = replyFromComment(
       {
-        authorLogin: typeof user?.login === "string" ? user.login : null,
+        authorId: typeof user?.id === "number" ? user.id : null,
         body: typeof comment.body === "string" ? comment.body : null,
       },
-      GITHUB_TICKETS_MAINTAINER,
+      GITHUB_TICKETS_MAINTAINER_ID,
     );
     return reply === null ? [] : [{ issueNumber: issue.number, update: { reply } }];
   }
@@ -85,6 +121,16 @@ export function updatesFromEvent(
   if (event === "pull_request" && PR_ACTIONS.has(action)) {
     const pr = payload.pull_request as Payload | undefined;
     if (!pr || pr.state !== "open") return [];
+    // Une PR de fork par un compte quelconque ne fait pas passer « En cours ».
+    const author = pr.user as { id?: unknown } | undefined;
+    const trusted = isTrustedPrAuthor(
+      {
+        id: typeof author?.id === "number" ? author.id : null,
+        association: typeof pr.author_association === "string" ? pr.author_association : null,
+      },
+      GITHUB_TICKETS_MAINTAINER_ID,
+    );
+    if (!trusted) return [];
     const body = typeof pr.body === "string" ? pr.body : null;
     return closingIssueNumbers(body, GITHUB_REPO_FULL_NAME).map((issueNumber) => ({
       issueNumber,
@@ -110,31 +156,55 @@ export const githubTicketWebhook = onRequest(
       return;
     }
 
+    const rawBody: Buffer = req.rawBody ?? Buffer.alloc(0);
+    const declaredLength = Number(req.get("content-length") ?? 0);
+    if (rawBody.length > WEBHOOK_MAX_BODY_BYTES || declaredLength > WEBHOOK_MAX_BODY_BYTES) {
+      res.status(413).send("Corps trop volumineux.");
+      return;
+    }
+    const event = req.get("x-github-event") ?? "";
+    if (!event) {
+      res.status(400).send("En-tête X-GitHub-Event absent.");
+      return;
+    }
+
     const secret = (process.env.GITHUB_WEBHOOK_SECRET ?? "").trim();
     if (!secret) {
-      await logError({
-        message: "githubTicketWebhook : secret GITHUB_WEBHOOK_SECRET vide, livraison refusée",
-        correlationId,
-        feature: "tickets",
-      });
+      const refused = missingSecretRejections.record(Date.now());
+      if (refused !== null) {
+        await logError({
+          message:
+            `githubTicketWebhook : secret GITHUB_WEBHOOK_SECRET vide, ${refused} livraison(s) ` +
+            "refusée(s) depuis le dernier relevé",
+          correlationId,
+          feature: "tickets",
+        });
+      }
       res.status(503).send("Webhook non configuré.");
       return;
     }
 
     const signature = req.get("x-hub-signature-256");
-    const rawBody: Buffer = req.rawBody ?? Buffer.alloc(0);
     if (!verifyGithubSignature(rawBody, signature, secret)) {
-      await logWarn({
-        message: "githubTicketWebhook : signature absente ou invalide, livraison refusée",
-        correlationId,
-        feature: "tickets",
-        extra: { has_signature: typeof signature === "string" },
-      });
+      const rejected = signatureRejections.record(Date.now());
+      if (rejected !== null) {
+        await logWarn({
+          message:
+            `githubTicketWebhook : ${rejected} livraison(s) refusée(s) ` +
+            "pour signature absente ou invalide depuis le dernier relevé",
+          correlationId,
+          feature: "tickets",
+          extra: {
+            has_signature: typeof signature === "string",
+            rejected,
+            event: event.slice(0, 64),
+          },
+        });
+      }
       res.status(401).send("Signature invalide.");
       return;
     }
 
-    const event = req.get("x-github-event") ?? "";
     const delivery = req.get("x-github-delivery") ?? null;
     if (event === "ping") {
       res.status(200).send("pong");

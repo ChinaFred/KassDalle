@@ -3789,7 +3789,7 @@ sequenceDiagram
     F->>Q: count + 1 (sauf admin)
     F->>T: création, status sending, send_attempts 0 (même transaction)
     F->>T: bail send_lease_until (transaction)
-    F->>G: POST /issues — titre et corps sur gabarit fixe, mentions @ neutralisées,<br/>étiquettes source:app, type:…, statut:à-analyser. Ni nom, ni uid, ni capture
+    F->>G: POST /issues — titre et corps sur gabarit fixe, mentions @ et renvois #N neutralisés,<br/>étiquettes source:app, type:…, statut:à-analyser. Ni nom, ni uid, ni capture
     alt Issue créée
       F->>T: github_issue_number, github_url, status received, status_changed_at
       F->>F: tickets_status.token_invalid_since effacé s'il était posé
@@ -3802,12 +3802,22 @@ sequenceDiagram
       end
       F-->>C: { ticketId, status: sending, remaining_today }
     end
-    C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
-    opt capture jointe
+    alt sans capture
+      C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+    else capture jointe
       C->>ST: tickets/{uid}/{ticketId}/screenshot.png|jpg (règle : soi-même, PNG/JPEG, 5 Mo)
       C->>A: { ticketId, path }
-      A->>T: auteur du ticket ? chemin attendu ? objet présent, type et taille ?
-      A->>T: screenshot_path
+      A->>T: auteur du ticket ? chemin attendu ?
+      A->>ST: objet présent, type MIME et taille, puis 8 premiers octets :<br/>signature PNG ou JPEG du format annoncé
+      alt capture jointe
+        A->>T: screenshot_path
+        A-->>C: { ok: true }
+        C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+      else dépôt ou rattachement en échec (octets refusés, réseau…)
+        A-->>C: invalid-argument | internal
+        C->>C: rapport d'erreur (feature tickets)
+        C-->>M: « Ticket envoyé sans la capture. Vous pouvez le suivre dans Mes tickets. »
+      end
     end
   end
 </pre>
@@ -3818,8 +3828,9 @@ sequenceDiagram
         chaque heure, jusqu'à dix essais ; au-delà, il est « en anomalie » dans Admin › Tickets,
         d'où <code>retryTicketSend</code> le relance. Avant chaque reprise, l'Issue est cherchée
         par la référence du ticket : une création réussie dont le numéro n'a pas été écrit n'est
-        pas publiée deux fois. La capture ne part jamais sur GitHub : l'Issue dit qu'elle est
-        disponible dans Admin › Tickets.
+        pas publiée deux fois. La capture part après le ticket et avant le message de succès ;
+        son échec n'annule pas le ticket, le message le dit. Elle ne part jamais sur GitHub :
+        l'Issue dit qu'elle est disponible dans Admin › Tickets.
       </figcaption>
     </figure>
   </section>
@@ -3847,24 +3858,29 @@ sequenceDiagram
 
   AD->>G: étiquette statut:analysé ou validé, PR « Closes #N », fermeture,<br/>commentaire « Réponse : … »
   G->>W: POST, X-Hub-Signature-256, X-GitHub-Event
+  alt corps de plus de 25 Mo
+    W-->>G: 413 (avant tout HMAC)
+  else en-tête X-GitHub-Event absent
+    W-->>G: 400 (avant tout HMAC)
+  end
   W->>W: HMAC SHA-256 du corps brut, comparaison à temps constant
   alt signature absente ou fausse
-    W-->>G: 401
+    W-->>G: 401 (logWarn au plus une fois par minute et par instance, avec le nombre de refus)
   else secret vide
-    W-->>G: 503 (logError)
-  else autre dépôt, autre événement, Issue sans ticket
+    W-->>G: 503 (logError échantillonné)
+  else autre dépôt, autre événement, Issue sans ticket,<br/>PR d'un auteur hors mainteneur, OWNER, MEMBER, COLLABORATOR
     W-->>G: 200 ignoré
   else issues · issue_comment · pull_request
     W->>T: requête github_issue_number == N
     W->>T: transaction — statut dérivé (étiquettes, état, PR ouverte),<br/>jamais en recul, fin suivie d'une réouverture → statut des étiquettes
-    opt commentaire de ChinaFred commençant par « Réponse : »
+    opt commentaire du compte 16348852 (ChinaFred) commençant par « Réponse : »
       W->>T: reply_text (préfixe retiré)
     end
     W->>T: status_changed_at si le statut change, ou si une réponse arrive sur un ticket clos
     W-->>G: 200
   end
   loop toutes les heures
-    S->>G: GET issue, chronologie (PR ouvertes), commentaires — tickets non finaux
+    S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance), commentaires — tickets non finaux
     S->>T: même transaction de mise à jour
   end
   M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)

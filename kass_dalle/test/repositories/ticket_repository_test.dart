@@ -28,6 +28,24 @@ class _FakeCallables extends GeminiService {
   }
 }
 
+/// Garde les rapports d'erreur sans passer par Firebase Auth.
+class _RecordingErrorReportService extends ErrorReportService {
+  final reports = <Map<String, Object?>>[];
+
+  @override
+  Future<String> reportError({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Object error,
+    StackTrace? stackTrace,
+    Map<String, dynamic> context = const {},
+  }) async {
+    reports.add({'feature': feature, 'error': error, ...context});
+    return 'rapport';
+  }
+}
+
 void main() {
   late FakeFirebaseFirestore firestore;
   late _FakeCallables callables;
@@ -141,8 +159,48 @@ void main() {
       expect(await repo.fetchPerMemberDailyLimit(), 5);
     });
 
-    test('document absent : null, sans valeur inventée', () async {
-      expect(await repo.fetchPerMemberDailyLimit(), isNull);
+    late _RecordingErrorReportService errors;
+    late TicketRepository limitRepo;
+
+    setUp(() {
+      errors = _RecordingErrorReportService();
+      limitRepo = TicketRepository(
+        firestore: firestore,
+        callables: callables,
+        errorReportService: errors,
+      );
+    });
+
+    test('document absent : null, sans rapport', () async {
+      expect(await limitRepo.fetchPerMemberDailyLimit(), isNull);
+      expect(errors.reports, isEmpty);
+    });
+
+    test('champ absent : null, sans rapport', () async {
+      await firestore.collection('app_config').doc('tickets').set({
+        'global_per_day': 30,
+      });
+      expect(await limitRepo.fetchPerMemberDailyLimit(), isNull);
+      expect(errors.reports, isEmpty);
+    });
+
+    for (final bad in <Object?>[0, -1, 2.5, '5', null]) {
+      test('valeur $bad : illisible, null et rapport d\'erreur', () async {
+        await firestore.collection('app_config').doc('tickets').set({
+          'per_member_per_day': bad,
+        });
+        expect(await limitRepo.fetchPerMemberDailyLimit(), isNull);
+        expect(errors.reports.single['feature'], 'tickets');
+        expect(errors.reports.single['step'], 'fetch_limits');
+      });
+    }
+
+    test('entier écrit en flottant (3.0) : lu comme 3', () async {
+      await firestore.collection('app_config').doc('tickets').set({
+        'per_member_per_day': 3.0,
+      });
+      expect(await limitRepo.fetchPerMemberDailyLimit(), 3);
+      expect(errors.reports, isEmpty);
     });
   });
 

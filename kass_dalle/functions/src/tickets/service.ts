@@ -26,7 +26,7 @@ import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import {
   COLL_APP_CONFIG,
   COLL_TICKETS,
-  GITHUB_TICKETS_MAINTAINER,
+  GITHUB_TICKETS_MAINTAINER_ID,
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
@@ -370,11 +370,11 @@ export async function ticketIdsForIssue(issueNumber: number): Promise<string[]> 
 
 /** La dernière réponse de l'administrateur parmi des commentaires, ou `undefined`. */
 export function lastReply(
-  comments: Array<{ authorLogin: string | null; body: string | null }>,
+  comments: Array<{ authorId: number | null; body: string | null }>,
 ): string | undefined {
   let reply: string | undefined;
   for (const c of comments) {
-    const r = replyFromComment(c, GITHUB_TICKETS_MAINTAINER);
+    const r = replyFromComment(c, GITHUB_TICKETS_MAINTAINER_ID);
     if (r !== null) reply = r;
   }
   return reply;

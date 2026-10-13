@@ -21,8 +21,10 @@ import {
   buildIssueTitle,
   closingIssueNumbers,
   creationLabels,
+  isTrustedPrAuthor,
   globalQuotaDocId,
   memberQuotaDocId,
+  neutralizeIssueReferences,
   neutralizeMentions,
   nextTicketStatus,
   parisDay,
@@ -32,6 +34,7 @@ import {
   readTicketLimits,
   replyFromComment,
   routeTemplateOrNull,
+  screenshotBytesMatch,
   screenshotPaths,
   statusFromIssue,
   verifyGithubSignature,
@@ -39,9 +42,12 @@ import {
   type TicketStatus,
 } from "../tickets/rules";
 import { classifyGithubFailure, labelNames, readRemoteIssue } from "../tickets/github";
-import { updatesFromEvent } from "../tickets/webhook";
+import { SignatureRejectionLog, updatesFromEvent } from "../tickets/webhook";
+import { GITHUB_TICKETS_MAINTAINER_ID } from "../config";
 
 const REPO = "ChinaFred/KassDalle";
+/** Identifiant numérique du compte ChinaFred. */
+const MAINTAINER_ID = 16348852;
 /** Espace sans chasse, écrite par son code pour rester visible dans le source. */
 const ZWSP = String.fromCharCode(0x200b);
 
@@ -182,6 +188,23 @@ describe("buildIssueBody", () => {
     assert.equal(buildIssueTitle("Aide @ChinaFred\nsvp"), `Aide @${ZWSP}ChinaFred svp`);
   });
 
+  test("neutralise les renvois #N et owner/repo#N, titre et description", () => {
+    const withRefs = buildIssueBody({
+      ticketId: "r",
+      type: "bug",
+      description: "Comme #12 et autre/depot#3, voir aussi (#4).",
+      screen: "/planning",
+      app_version: "1",
+      platform: "web",
+    });
+    assert.doesNotMatch(withRefs, /#\d/);
+    assert.ok(withRefs.includes(`#${ZWSP}12`));
+    assert.ok(withRefs.includes(`autre/depot#${ZWSP}3`));
+    assert.ok(withRefs.includes("### Description"));
+    assert.equal(buildIssueTitle("Doublon de #7"), `Doublon de #${ZWSP}7`);
+    assert.equal(neutralizeIssueReferences("# titre et C#"), "# titre et C#");
+  });
+
   test("neutralizeMentions laisse un @ isolé intact", () => {
     assert.equal(neutralizeMentions("a @ b"), "a @ b");
   });
@@ -261,11 +284,15 @@ describe("closingIssueNumbers", () => {
 // ── Réponse ─────────────────────────────────────────────────────────────────
 
 describe("replyFromComment", () => {
-  test("garde un commentaire de ChinaFred qui commence par « Réponse : »", () => {
+  test("le mainteneur est comparé par son identifiant numérique", () => {
+    assert.equal(GITHUB_TICKETS_MAINTAINER_ID, MAINTAINER_ID);
+  });
+
+  test("garde un commentaire du mainteneur qui commence par « Réponse : »", () => {
     assert.equal(
       replyFromComment(
-        { authorLogin: "ChinaFred", body: "Réponse : oui, c'est prévu." },
-        "ChinaFred",
+        { authorId: MAINTAINER_ID, body: "Réponse : oui, c'est prévu." },
+        MAINTAINER_ID,
       ),
       "oui, c'est prévu.",
     );
@@ -274,46 +301,44 @@ describe("replyFromComment", () => {
   test("tolère l'espace insécable, l'absence d'espace et le é décomposé", () => {
     assert.equal(
       replyFromComment(
-        { authorLogin: "ChinaFred", body: `Réponse${String.fromCharCode(0xa0)}: A` },
-        "ChinaFred",
+        { authorId: MAINTAINER_ID, body: `Réponse${String.fromCharCode(0xa0)}: A` },
+        MAINTAINER_ID,
       ),
       "A",
     );
     assert.equal(
-      replyFromComment({ authorLogin: "ChinaFred", body: "Réponse:B" }, "ChinaFred"),
+      replyFromComment({ authorId: MAINTAINER_ID, body: "Réponse:B" }, MAINTAINER_ID),
       "B",
     );
     assert.equal(
       replyFromComment(
-        { authorLogin: "ChinaFred", body: `Re${String.fromCharCode(0x301)}ponse : C` },
-        "ChinaFred",
+        { authorId: MAINTAINER_ID, body: `Re${String.fromCharCode(0x301)}ponse : C` },
+        MAINTAINER_ID,
       ),
       "C",
     );
   });
 
   test("ignore un autre auteur, un autre préfixe et une réponse vide", () => {
+    assert.equal(replyFromComment({ authorId: 1, body: "Réponse : non" }, MAINTAINER_ID), null);
+    // Le login du mainteneur sous un autre identifiant (login repris) : ignoré.
     assert.equal(
-      replyFromComment({ authorLogin: "quelquun", body: "Réponse : non" }, "ChinaFred"),
+      replyFromComment({ authorId: MAINTAINER_ID + 1, body: "Réponse : non" }, MAINTAINER_ID),
       null,
     );
     assert.equal(
-      replyFromComment({ authorLogin: "chinafred", body: "Réponse : non" }, "ChinaFred"),
+      replyFromComment({ authorId: MAINTAINER_ID, body: "Analyse : à faire" }, MAINTAINER_ID),
       null,
     );
     assert.equal(
-      replyFromComment({ authorLogin: "ChinaFred", body: "Analyse : à faire" }, "ChinaFred"),
+      replyFromComment({ authorId: MAINTAINER_ID, body: "Merci. Réponse : x" }, MAINTAINER_ID),
       null,
     );
     assert.equal(
-      replyFromComment({ authorLogin: "ChinaFred", body: "Merci. Réponse : x" }, "ChinaFred"),
+      replyFromComment({ authorId: MAINTAINER_ID, body: "Réponse :  " }, MAINTAINER_ID),
       null,
     );
-    assert.equal(
-      replyFromComment({ authorLogin: "ChinaFred", body: "Réponse :  " }, "ChinaFred"),
-      null,
-    );
-    assert.equal(replyFromComment({ authorLogin: null, body: "Réponse : x" }, "ChinaFred"), null);
+    assert.equal(replyFromComment({ authorId: null, body: "Réponse : x" }, MAINTAINER_ID), null);
   });
 });
 
@@ -464,7 +489,10 @@ describe("updatesFromEvent", () => {
       action: "created",
       repository,
       issue: { number: 9 },
-      comment: { user: { login: "ChinaFred" }, body: "Réponse : c'est en place." },
+      comment: {
+        user: { login: "ChinaFred", id: MAINTAINER_ID },
+        body: "Réponse : c'est en place.",
+      },
     });
     assert.deepEqual(
       ok.map((u) => [u.issueNumber, u.update.reply]),
@@ -475,7 +503,17 @@ describe("updatesFromEvent", () => {
         action: "created",
         repository,
         issue: { number: 9 },
-        comment: { user: { login: "intrus" }, body: "Réponse : faux" },
+        comment: { user: { login: "intrus", id: 99 }, body: "Réponse : faux" },
+      }),
+      [],
+    );
+    // Login du mainteneur sans son identifiant : ignoré.
+    assert.deepEqual(
+      updatesFromEvent("issue_comment", {
+        action: "created",
+        repository,
+        issue: { number: 9 },
+        comment: { user: { login: "ChinaFred", id: 99 }, body: "Réponse : faux" },
       }),
       [],
     );
@@ -485,7 +523,7 @@ describe("updatesFromEvent", () => {
         action: "created",
         repository,
         issue: { number: 9, pull_request: {} },
-        comment: { user: { login: "ChinaFred" }, body: "Réponse : x" },
+        comment: { user: { login: "ChinaFred", id: MAINTAINER_ID }, body: "Réponse : x" },
       }),
       [],
     );
@@ -495,7 +533,12 @@ describe("updatesFromEvent", () => {
     const updates = updatesFromEvent("pull_request", {
       action: "opened",
       repository,
-      pull_request: { state: "open", body: "Closes #5\nFixes #6" },
+      pull_request: {
+        state: "open",
+        body: "Closes #5\nFixes #6",
+        user: { id: MAINTAINER_ID },
+        author_association: "OWNER",
+      },
     });
     assert.deepEqual(
       updates.map((u) => [u.issueNumber, u.update.openClosingPr]),
@@ -504,6 +547,65 @@ describe("updatesFromEvent", () => {
         [6, true],
       ],
     );
+  });
+
+  test("pull_request d'un autre compte (fork) : aucune mise à jour", () => {
+    assert.deepEqual(
+      updatesFromEvent("pull_request", {
+        action: "opened",
+        repository,
+        pull_request: {
+          state: "open",
+          body: "Closes #5",
+          user: { login: "ChinaFred", id: 4242 },
+          author_association: "CONTRIBUTOR",
+        },
+      }),
+      [],
+    );
+    assert.deepEqual(
+      updatesFromEvent("pull_request", {
+        action: "opened",
+        repository,
+        pull_request: { state: "open", body: "Closes #5", user: { id: 4242 } },
+      }),
+      [],
+    );
+    // Un collaborateur du dépôt compte.
+    assert.equal(
+      updatesFromEvent("pull_request", {
+        action: "opened",
+        repository,
+        pull_request: {
+          state: "open",
+          body: "Closes #5",
+          user: { id: 4242 },
+          author_association: "COLLABORATOR",
+        },
+      }).length,
+      1,
+    );
+  });
+
+  test("isTrustedPrAuthor : mainteneur ou OWNER, MEMBER, COLLABORATOR", () => {
+    assert.equal(isTrustedPrAuthor({ id: MAINTAINER_ID, association: null }, MAINTAINER_ID), true);
+    for (const a of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+      assert.equal(isTrustedPrAuthor({ id: 1, association: a }, MAINTAINER_ID), true);
+    }
+    for (const a of ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", null]) {
+      assert.equal(isTrustedPrAuthor({ id: 1, association: a }, MAINTAINER_ID), false);
+    }
+    assert.equal(isTrustedPrAuthor({ id: null, association: undefined }, MAINTAINER_ID), false);
+  });
+
+  test("SignatureRejectionLog : un relevé par intervalle, avec le compte", () => {
+    const log = new SignatureRejectionLog(60_000);
+    assert.equal(log.record(0), 1);
+    assert.equal(log.record(10_000), null);
+    assert.equal(log.record(59_999), null);
+    assert.equal(log.record(60_000), 3);
+    assert.equal(log.record(60_001), null);
+    assert.equal(log.record(200_000), 2);
   });
 
   test("autre dépôt, autre événement, action non suivie : rien", () => {
@@ -524,5 +626,25 @@ describe("updatesFromEvent", () => {
       }),
       [],
     );
+  });
+});
+
+// ── Capture ─────────────────────────────────────────────────────────────────
+
+describe("screenshotBytesMatch", () => {
+  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
+
+  test("accepte un PNG et un JPEG annoncés comme tels", () => {
+    assert.equal(screenshotBytesMatch(png, "image/png"), true);
+    assert.equal(screenshotBytesMatch(jpeg, "image/jpeg"), true);
+  });
+
+  test("refuse un format croisé, un faux contenu, un objet trop court", () => {
+    assert.equal(screenshotBytesMatch(png, "image/jpeg"), false);
+    assert.equal(screenshotBytesMatch(jpeg, "image/png"), false);
+    assert.equal(screenshotBytesMatch(Buffer.from("<svg onload=x>"), "image/png"), false);
+    assert.equal(screenshotBytesMatch(Uint8Array.from([0xff, 0xd8]), "image/jpeg"), false);
+    assert.equal(screenshotBytesMatch(png, "image/gif"), false);
   });
 });

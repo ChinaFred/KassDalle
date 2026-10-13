@@ -42,7 +42,9 @@ class AdminTicketsScreen extends ConsumerWidget {
     final list = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Filters(),
+        // Sous le seuil large, chaque rangée de filtres défile de côté : la
+        // liste reste visible à 200 % et en paysage.
+        _Filters(scrollable: !isWide),
         const Divider(height: 1),
         Expanded(
           child: _AdminTicketList(selectedTicketId: selected, isWide: isWide),
@@ -118,7 +120,27 @@ class _TokenBanner extends ConsumerWidget {
 }
 
 class _Filters extends ConsumerWidget {
-  const _Filters();
+  /// Vrai : une ligne par rangée, qui défile horizontalement. Faux : les
+  /// puces passent à la ligne.
+  final bool scrollable;
+  const _Filters({required this.scrollable});
+
+  Widget _row(List<Widget> chips) {
+    if (!scrollable) {
+      return Wrap(spacing: 6, runSpacing: 6, children: chips);
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final (i, chip) in chips.indexed) ...[
+            if (i > 0) const SizedBox(width: 6),
+            chip,
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -131,47 +153,38 @@ class _Filters extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
+          _row([
+            ChoiceChip(
+              label: const Text('Tous'),
+              selected: status == null,
+              onSelected: (_) => statusNotifier.set(null),
+            ),
+            ChoiceChip(
+              label: const Text('En anomalie'),
+              selected: status == kAdminTicketAnomalyFilter,
+              onSelected: (_) => statusNotifier.set(kAdminTicketAnomalyFilter),
+            ),
+            for (final s in TicketStatus.values)
               ChoiceChip(
-                label: const Text('Tous'),
-                selected: status == null,
-                onSelected: (_) => statusNotifier.set(null),
+                label: Text(s.label),
+                selected: status == s.value,
+                onSelected: (_) => statusNotifier.set(s.value),
               ),
-              ChoiceChip(
-                label: const Text('En anomalie'),
-                selected: status == kAdminTicketAnomalyFilter,
-                onSelected: (_) =>
-                    statusNotifier.set(kAdminTicketAnomalyFilter),
-              ),
-              for (final s in TicketStatus.values)
-                ChoiceChip(
-                  label: Text(s.label),
-                  selected: status == s.value,
-                  onSelected: (_) => statusNotifier.set(s.value),
-                ),
-            ],
-          ),
+          ]),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
+          _row([
+            ChoiceChip(
+              label: const Text('Tous les types'),
+              selected: type == null,
+              onSelected: (_) => typeNotifier.set(null),
+            ),
+            for (final t in TicketType.values)
               ChoiceChip(
-                label: const Text('Tous les types'),
-                selected: type == null,
-                onSelected: (_) => typeNotifier.set(null),
+                label: Text(t.label),
+                selected: type == t,
+                onSelected: (_) => typeNotifier.set(t),
               ),
-              for (final t in TicketType.values)
-                ChoiceChip(
-                  label: Text(t.label),
-                  selected: type == t,
-                  onSelected: (_) => typeNotifier.set(t),
-                ),
-            ],
-          ),
+          ]),
         ],
       ),
     );
@@ -336,10 +349,18 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           .read(ticketRepositoryProvider)
           .retrySend(widget.ticket.id);
       if (!mounted) return;
-      final label = TicketStatus.fromValue(status)?.label;
-      context.showSuccessSnackBar(
-        label == null ? 'Envoi relancé.' : 'Envoi relancé : $label.',
-      );
+      final next = TicketStatus.fromValue(status);
+      if (next == TicketStatus.sending) {
+        // Le serveur n'a toujours pas pu créer l'Issue : `last_send_error`
+        // du ticket, affichée ci-dessous, dit pourquoi.
+        context.showErrorSnackBar(
+          'L\'envoi a encore échoué. Voir la dernière erreur ci-dessous.',
+        );
+      } else {
+        context.showSuccessSnackBar(
+          next == null ? 'Envoi relancé.' : 'Envoi relancé : ${next.label}.',
+        );
+      }
     } catch (e) {
       // Déjà remontée par `TicketRepository` (feature `tickets`).
       if (mounted) {
@@ -405,7 +426,8 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         children: [
           Row(
             children: [
-              TicketTypeIcon(type: ticket.type),
+              // Le libellé suit : l'icône n'est pas annoncée une seconde fois.
+              ExcludeSemantics(child: TicketTypeIcon(type: ticket.type)),
               const SizedBox(width: 8),
               Text(ticket.type.label, style: theme.textTheme.labelLarge),
             ],
@@ -470,7 +492,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
             const SizedBox(height: 12),
             TicketReplyBox(
               title: ticket.status == TicketStatus.refused
-                  ? 'Motif'
+                  ? 'Motif du refus'
                   : 'Réponse de l\'administrateur',
               text: reply,
             ),

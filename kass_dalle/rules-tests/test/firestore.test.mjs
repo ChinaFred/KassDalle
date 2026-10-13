@@ -3515,6 +3515,13 @@ describe("app_config — tickets et tickets_status", () => {
     await assertFails(db("reader").doc("app_config/tickets").update({ per_member_per_day: 99 }));
   });
 
+  it("l'administrateur écrit les plafonds des tickets", async () => {
+    await assertSucceeds(
+      db("admin").doc("app_config/tickets").set({ per_member_per_day: 3, global_per_day: 20 }),
+    );
+    await assertSucceeds(db("admin").doc("app_config/tickets").update({ global_per_day: 40 }));
+  });
+
   it("seul l'administrateur lit l'état du jeton GitHub", async () => {
     await assertSucceeds(db("admin").doc("app_config/tickets_status").get());
     await assertFails(db("reader").doc("app_config/tickets_status").get());

@@ -1758,7 +1758,7 @@ ne partent jamais sur GitHub.
 | `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
 | `send_attempts` | `int` | Essais d'envoi en échec. À 10 (`TICKET_MAX_SEND_ATTEMPTS`) sans numéro d'Issue, le ticket est « en anomalie » et la tâche horaire ne le reprend plus. Un jeton GitHub absent ou refusé n'use pas les essais |
 | `last_send_error` | `String?` | Dernière erreur d'envoi (300 caractères au plus, jamais le jeton), `null` après un envoi réussi |
-| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire de `ChinaFred` qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
+| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire du compte `ChinaFred` (identifiant numérique 16348852) qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
 | `send_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé pendant un envoi, pour qu'un « Relancer l'envoi » et la tâche horaire ne publient pas deux Issues. Retiré à la fin de l'envoi |
 
 **Correspondance GitHub → statut** (`statusFromIssue`, `nextTicketStatus`,
@@ -1769,7 +1769,7 @@ ne partent jamais sur GitHub.
 | créée (étiquettes `source:app`, `type:<type>`, `statut:à-analyser`) | `received` |
 | étiquette `statut:analysé` | `analyzed` |
 | étiquette `validé` | `validated` |
-| PR ouverte dont le corps porte un mot-clé de fermeture (« Closes #N », « Fixes #N », « Resolves #N ») | `in_progress` |
+| PR ouverte dont le corps porte un mot-clé de fermeture (« Closes #N », « Fixes #N », « Resolves #N »), et dont l'auteur est le mainteneur ou un `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt (`isTrustedPrAuthor`) | `in_progress` |
 | fermée `completed` | `delivered`, ou `answered` pour une Question |
 | fermée `not_planned` (ou `duplicate`) | `refused` |
 
@@ -1805,7 +1805,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
 | `planning_policy` | Présélection du planning : `plats_per_slot` (5, de 3 à 10), `starters_per_slot` et `desserts_per_slot` (3, de 1 à 10), `ranked_depth` (15, de `plats_per_slot` à 30 — profondeur de la liste gardée pour « Autre suggestion »), `concepts_per_generation` (2, de 0 à 7), `cost_cap_eur_per_generation` (0,50, de 0,05 à 5). Lu par `getPlanningPolicy` (cache 60 s), borné par `readPlanningPolicy` ; absent ou illisible : valeurs par défaut du code — ce sont des réglages, pas des prix. Aucun écran ne l'édite encore : il s'écrit depuis la console par un admin |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
-| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Aucun semis : l'absence est un état lu et documenté |
+| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Le client lit `per_member_per_day` sans recopier le réglage par défaut du serveur (`fetchPerMemberDailyLimit`, `ticket_repository.dart`) : document ou champ absent → plafond inconnu, sans rapport, et le formulaire attend `remaining_today` du premier envoi ; valeur qui n'est pas un entier strictement positif → plafond inconnu et rapport d'erreur `tickets`. Ainsi la valeur 5 n'existe que côté serveur. Aucun semis : l'absence est un état lu et documenté |
 | `tickets_status` | État du jeton GitHub des tickets : `token_invalid_since` (`Timestamp?`), posé au premier refus du jeton (401, 403 hors limite de débit, 404 sur le dépôt) ou quand le secret est vide, effacé au premier appel GitHub réussi. Lu par l'administrateur seul (bandeau d'Admin › Tickets), écrit par le serveur seul — les règles refusent l'écriture client, administrateur compris |
 
 `ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
@@ -2047,8 +2047,8 @@ URL de téléchargement des images promues sont stockées dans `recipes.image_ur
 
 La capture d'un ticket est la seule autre écriture client : PNG ou JPEG de 5 Mo au plus,
 déposée par l'auteur sous son uid après `submitTicket`, puis rattachée au ticket par
-`attachTicketScreenshot`, qui vérifie l'auteur, le chemin et l'objet. Elle n'est jamais
-publiée — ni dans l'application, ni sur GitHub — et ne passe donc pas par la modération.
+`attachTicketScreenshot`, qui vérifie l'auteur, le chemin et l'objet, y compris la signature
+PNG ou JPEG de ses premiers octets. Elle n'est jamais publiée — ni dans l'application, ni sur GitHub — et ne passe donc pas par la modération.
 Aucune purge en V1.
 
 Les images refusées sont **conservées** sous `rejected/` : sans l'image, personne ne peut
@@ -2915,7 +2915,7 @@ membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, p
 recherche par adresse exacte passe par la callable `findMemberByEmailFn` (§5, « Recherche d'un
 membre par adresse ») : le client ne lit toujours aucune adresse.
 
-Les tickets ajoutent 36 tests. Firestore (28) : `tickets` — l'auteur lit et liste les siens, un
+Les tickets ajoutent 38 tests. Firestore (29) : `tickets` — l'auteur lit et liste les siens, un
 ticket absent se lit comme absent par un compte approuvé et non par un compte en attente, un
 autre membre et un éditeur ne les lisent pas, un membre ne liste pas toute la collection,
 l'administrateur lit tout ; un compte révoqué (jeton à jour ou périmé) et un compte en attente ne
@@ -2924,12 +2924,13 @@ date de son choix, et ne modifie aucun autre champ ; un autre membre, un compte 
 attente ne le posent pas ; personne ne crée ni ne supprime un ticket, administrateur compris, et
 l'administrateur ne modifie pas le ticket d'un membre ; `ticket_quotas` ne se lit ni ne s'écrit
 par aucun rôle ; `app_config/tickets` se lit par un compte approuvé, pas par un compte en
-attente ou révoqué, et ne s'écrit pas par un membre ; `app_config/tickets_status` se lit par
-l'administrateur seul et ne s'écrit par aucun client. Storage (8) : `tickets/` — l'auteur dépose
+attente ou révoqué, ne s'écrit pas par un membre et s'écrit par l'administrateur ; `app_config/tickets_status` se lit par
+l'administrateur seul et ne s'écrit par aucun client. Storage (9) : `tickets/` — l'auteur dépose
 une capture PNG ou JPEG sous son uid, nommée `screenshot`, de 5 Mo au plus ; personne ne dépose
 chez un autre, administrateur compris ; un compte en attente, révoqué ou anonyme ne dépose
 rien ; l'auteur et l'administrateur lisent la capture, un autre membre non ; un compte révoqué
-ne relit pas la sienne ; l'auteur ne la supprime pas. Compte relevé le 2026-10-13 : 558 tests
+ne relit pas la sienne ; l'auteur ne la supprime pas ; un autre membre ne liste pas le dossier de
+l'auteur. Compte relevé le 2026-10-13 : 560 tests
 (Firestore et Storage), aucun `todo`.
 
 ---
@@ -3248,7 +3249,7 @@ Code serveur : `functions/src/tickets/` — `rules.ts` (règles pures, testées 
 | Fonction | Type | Garde | Contrat |
 |---|---|---|---|
 | `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field`), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
-| `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus |
+| `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus, et ses 8 premiers octets porter la signature de ce format (`screenshotBytesMatch` : `89 50 4E 47 0D 0A 1A 0A` pour PNG, `FF D8 FF` pour JPEG), sinon `invalid-argument` |
 | `retryTicketSend` | Callable | `requireAdmin` | `{ ticketId }` → `{ status }`. Remet `send_attempts` à zéro et tente l'envoi une fois ; sans effet sur un ticket déjà publié |
 | `githubTicketWebhook` | HTTPS (`onRequest`, `invoker: "public"`) | signature `X-Hub-Signature-256` | voir ci-dessous |
 | `ticketsSyncSchedule` | Cloud Scheduler, toutes les heures | — | reprise des envois, resynchronisation |
@@ -3262,7 +3263,9 @@ l'Issue : titre du ticket, corps sur un gabarit fixe (`buildIssueBody` : type, �
 plateforme, référence opaque = identifiant du document, description), étiquettes `source:app`,
 `type:<type>`, `statut:à-analyser`. Ne partent **jamais** : nom, adresse, uid, capture, contenu
 de recette. Les mentions `@nom` du titre et de la description reçoivent une espace sans chasse
-(`neutralizeMentions`) : GitHub ne notifie personne. Le numéro et l'adresse de l'Issue sont
+(`neutralizeMentions`) : GitHub ne notifie personne. Les renvois `#N` et `owner/repo#N`
+reçoivent la même espace après le `#` (`neutralizeIssueReferences`) : l'Issue ne crée aucun
+lien ni aucun événement « mentioned this » sur une autre Issue ou PR. Le numéro et l'adresse de l'Issue sont
 écrits avec `status: received` avant que l'envoi soit tenu pour fait. En échec :
 `send_attempts` + 1, `last_send_error`, `logError`, et la callable réussit quand même avec
 `status: "sending"`.
@@ -3280,16 +3283,24 @@ premier jeton refusé.
 
 **Webhook.** `githubTicketWebhook` n'accepte que `POST`, et calcule le HMAC SHA-256 du corps
 **brut** (`req.rawBody`) sous `GITHUB_WEBHOOK_SECRET`, comparé à temps constant
-(`verifyGithubSignature`, `timingSafeEqual`). Secret vide : 503 ; signature absente ou fausse :
-401 ; corps illisible : 400. Événements traités (`updatesFromEvent`) :
+(`verifyGithubSignature`, `timingSafeEqual`). Avant le HMAC, un corps de plus de 25 Mo
+(`WEBHOOK_MAX_BODY_BYTES`, plafond des livraisons GitHub) rend 413, et une requête sans en-tête
+`X-GitHub-Event` rend 400. Secret vide : 503, journalisé au plus une fois par minute et par instance ; signature absente ou fausse : 401, journalisé
+par un `logWarn` au plus une fois par minute et par instance, qui porte le nombre de refus
+depuis le relevé précédent (`SignatureRejectionLog`) ; corps illisible : 400. Événements
+traités (`updatesFromEvent`) :
 
 - `issues` (`opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`) : statut dérivé
   des étiquettes et de l'état (§3.12 bis) ;
-- `issue_comment` (`created`, `edited`, hors commentaires de PR) : seul un commentaire de
-  `ChinaFred` (`GITHUB_TICKETS_MAINTAINER`) qui commence par « Réponse : » devient
-  `reply_text`, préfixe retiré ;
+- `issue_comment` (`created`, `edited`, hors commentaires de PR) : seul un commentaire du
+  compte `ChinaFred` qui commence par « Réponse : » devient `reply_text`, préfixe retiré. Le
+  contrôle compare `comment.user.id` à l'identifiant numérique `GITHUB_TICKETS_MAINTAINER_ID`
+  (16348852), pas le login : un login se renomme et peut être repris par un autre compte ;
 - `pull_request` (`opened`, `reopened`, `edited`, `ready_for_review`, PR ouverte) : chaque
-  Issue citée par un mot-clé de fermeture passe à `in_progress`, jamais depuis une fin ;
+  Issue citée par un mot-clé de fermeture passe à `in_progress`, jamais depuis une fin, si
+  l'auteur de la PR est le mainteneur (`user.id`) ou si `author_association` vaut `OWNER`,
+  `MEMBER` ou `COLLABORATOR` (`isTrustedPrAuthor`). Une PR ouverte depuis un fork par un autre
+  compte ne change aucun ticket ;
 - `ping` : 200.
 
 Tout autre événement, un autre dépôt, ou une Issue sans ticket (elle ne vient pas de
@@ -3300,7 +3311,9 @@ rattrape l'état. Un commentaire supprimé ne retire pas `reply_text`.
 **Resynchronisation.** Chaque heure, `ticketsSyncSchedule` relit l'Issue de chaque ticket
 `received`, `analyzed`, `validated` ou `in_progress` (200 au plus) : état et étiquettes
 (`GET /issues/{n}`), PR ouvertes qui la ferment (chronologie, événements `cross-referenced`,
-« Closes #N » dans leur corps), dernière réponse de `ChinaFred` (commentaires). Les tickets
+« Closes #N » dans leur corps, auteur de confiance selon la même règle que le webhook, lue sur
+`source.issue.user.id` et `source.issue.author_association`), dernière réponse du compte
+16348852 (commentaires). Les tickets
 clos ne sont pas relus : une réouverture dont le webhook est perdu n'est pas rattrapée.
 
 **Secrets.** `GITHUB_TICKETS_TOKEN` : jeton « fine-grained » limité au dépôt

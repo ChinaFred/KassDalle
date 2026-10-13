@@ -127,11 +127,24 @@ class _MyTicketTile extends StatelessWidget {
       selected: selected,
       leading: TicketTypeIcon(type: ticket.type),
       title: Text(ticket.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(created == null ? '…' : formatTicketDate(created)),
-      trailing: Badge(
-        isLabelVisible: ticket.hasUnseenUpdate,
-        child: TicketStatusChip(status: ticket.status),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(created == null ? '…' : formatTicketDate(created)),
+            TicketStatusChip(status: ticket.status),
+          ],
+        ),
       ),
+      trailing: ticket.hasUnseenUpdate
+          ? Semantics(
+              label: 'Nouveau suivi à lire',
+              child: const ExcludeSemantics(child: Badge()),
+            )
+          : null,
       onTap: onTap,
     );
   }
@@ -214,7 +227,8 @@ class _MemberTicketDetail extends StatelessWidget {
         children: [
           Row(
             children: [
-              TicketTypeIcon(type: ticket.type),
+              // Le libellé suit : l'icône n'est pas annoncée une seconde fois.
+              ExcludeSemantics(child: TicketTypeIcon(type: ticket.type)),
               const SizedBox(width: 8),
               Text(ticket.type.label, style: theme.textTheme.labelLarge),
             ],
@@ -238,7 +252,7 @@ class _MemberTicketDetail extends StatelessWidget {
           ],
           if (ticket.status == TicketStatus.refused && reply != null) ...[
             const SizedBox(height: 12),
-            TicketReplyBox(title: 'Motif', text: reply),
+            TicketReplyBox(title: 'Motif du refus', text: reply),
           ],
           const SizedBox(height: 16),
           TicketTimeline(status: ticket.status),

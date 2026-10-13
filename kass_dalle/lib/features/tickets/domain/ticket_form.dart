@@ -164,12 +164,19 @@ int? remainingTicketsToday({
   return null;
 }
 
+/// Annonce du plafond atteint : plus aucun envoi possible aujourd'hui.
+const kTicketLimitReachedNotice =
+    'Vous avez atteint le nombre de tickets permis aujourd\'hui. '
+    'Réessayez demain.';
+
 /// « Il vous reste N envoi(s) aujourd'hui », quand il en reste
-/// [kTicketRemainingNoticeThreshold] ou moins ; `null` sinon.
+/// [kTicketRemainingNoticeThreshold] ou moins ; [kTicketLimitReachedNotice]
+/// quand il n'en reste aucun ; `null` sinon.
 String? remainingTicketsNotice(int? remaining) {
   if (remaining == null || remaining > kTicketRemainingNoticeThreshold) {
     return null;
   }
+  if (remaining <= 0) return kTicketLimitReachedNotice;
   final plural = remaining > 1 ? 's' : '';
   return 'Il vous reste $remaining envoi$plural aujourd\'hui';
 }
