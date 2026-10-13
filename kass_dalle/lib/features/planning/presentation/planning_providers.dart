@@ -12,6 +12,8 @@ import '../data/planning_refusals_repository.dart';
 import '../data/planning_visibility_store.dart';
 import '../services/planning_ai_service.dart';
 import '../../books/data/book_repository.dart';
+import '../../groups/domain/family_group.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
@@ -19,7 +21,9 @@ import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_reach.dart';
 import '../domain/planning_refusals.dart';
+import '../domain/planning_target.dart';
 import '../domain/planning_visibility.dart';
 import '../domain/recipe_search_scope.dart';
 
@@ -63,21 +67,34 @@ class PlanningRepository {
   /// chaque ouverture — une facture de lectures qui ne fait que croître.
   static const historyWindow = Duration(days: 90);
 
-  /// Stream des repas planifiés de l'utilisateur, triés par date.
-  Stream<List<PlannedMeal>> watchMeals() => _watchMealsOf(_uid);
+  /// Stream des repas du planning personnel de l'utilisateur, triés par date.
+  ///
+  /// La requête `uid == moi` rend aussi les repas des groupes dont il est le
+  /// propriétaire (il en est le cuisinier) : ils sont écartés ici, ils
+  /// appartiennent au planning du groupe ([watchGroupMeals]). Le titulaire
+  /// garde la requête `uid == moi`, sans filtre sur `group_id` : un repas
+  /// antérieur que le backfill n'aurait pas encore marqué `group_id: null`
+  /// lui reste visible.
+  Stream<List<PlannedMeal>> watchMeals() => _watchPersonalMealsOf(_uid);
 
   /// Stream des repas d'un autre compte qui partage son planning avec
   /// l'utilisateur, en lecture seule.
   ///
-  /// Un flux par planning, filtré sur `uid == ownerUid` : les règles
-  /// Firestore vérifient cette égalité contre `planning_reach/{moi}`. Une
-  /// requête `in` sur plusieurs comptes serait refusée en entier dès qu'un
-  /// seul cesse de partager ; ici, seul son flux tombe en erreur.
+  /// Un flux par planning, filtré sur `uid == ownerUid` et `group_id ==
+  /// null` : les règles Firestore vérifient la première égalité contre
+  /// `planning_reach/{moi}`, et n'ouvrent par le partage personnel que les
+  /// repas personnels. Sans le second filtre, la requête serait refusée en
+  /// entier ; les repas des groupes du propriétaire ne se lisent que par
+  /// les membres de ces groupes, dans le planning du groupe. Une requête `in`
+  /// sur plusieurs comptes serait refusée en entier dès qu'un seul cesse de
+  /// partager ; ici, seul son flux tombe en erreur.
   ///
   /// L'erreur est remontée au rapport puis transmise : l'écran l'affiche
   /// sous le nom du planning, sans masquer les autres.
   Stream<List<PlannedMeal>> watchSharedMeals(String ownerUid) {
-    return _watchMealsOf(ownerUid).handleError((Object e, StackTrace st) {
+    return _mealsOf(
+      _col.where('uid', isEqualTo: ownerUid).where('group_id', isEqualTo: null),
+    ).handleError((Object e, StackTrace st) {
       unawaited(
         _errorReportService.reportError(
           feature: 'planning_shared_meals',
@@ -90,11 +107,45 @@ class PlanningRepository {
     });
   }
 
-  Stream<List<PlannedMeal>> _watchMealsOf(String ownerUid) {
+  /// Stream des repas du planning du groupe [groupId], triés par date : le
+  /// propriétaire [ownerUid] les écrit, chaque membre les lit.
+  ///
+  /// Filtré sur `group_id == groupId` et `uid == ownerUid` : les règles
+  /// Firestore vérifient le groupe contre `planning_reach/{moi}.group_ids`, et
+  /// que `uid` est le propriétaire actuel du groupe. Un groupe supprimé puis
+  /// recréé sous le même identifiant par un autre compte n'ouvre donc pas les
+  /// repas de l'ancien. Un flux par groupe : l'erreur de l'un ne masque pas
+  /// les autres. L'erreur est remontée au rapport puis transmise.
+  Stream<List<PlannedMeal>> watchGroupMeals(String groupId, String ownerUid) {
+    return _mealsOf(
+      _col
+          .where('group_id', isEqualTo: groupId)
+          .where('uid', isEqualTo: ownerUid),
+    ).handleError((Object e, StackTrace st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'planning_group_meals',
+          error: e,
+          stackTrace: st,
+          context: {'uid': _uid, 'group_id': groupId, 'owner_uid': ownerUid},
+        ),
+      );
+      Error.throwWithStackTrace(e, st);
+    });
+  }
+
+  Stream<List<PlannedMeal>> _watchPersonalMealsOf(String ownerUid) =>
+      _mealsOf(_col.where('uid', isEqualTo: ownerUid)).map(
+        (meals) => [
+          for (final m in meals)
+            if (!m.isGroupMeal) m,
+        ],
+      );
+
+  Stream<List<PlannedMeal>> _mealsOf(Query<Map<String, dynamic>> query) {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day).subtract(historyWindow);
-    return _col
-        .where('uid', isEqualTo: ownerUid)
+    return query
         .where('planned_at', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
         .orderBy('planned_at')
         .snapshots()
@@ -105,23 +156,19 @@ class PlanningRepository {
         );
   }
 
-  // ── Plannings partagés ──────────────────────────────────────────────────────
+  // ── Plannings partagés et plannings de groupe ───────────────────────────────
 
-  /// Les comptes dont l'utilisateur peut lire le planning :
-  /// `planning_reach/{uid}.uids`, tenu par le serveur seul.
+  /// Ce que l'utilisateur peut lire des plannings d'autrui :
+  /// `planning_reach/{uid}`, tenu par le serveur seul (voir [PlanningReach]).
   ///
   /// Document absent (aucun partage, ou pas encore calculé) : vide. Jamais
-  /// l'utilisateur lui-même.
-  Stream<Set<String>> watchPlanningReach() {
+  /// l'utilisateur lui-même dans les comptes.
+  Stream<PlanningReach> watchPlanningReach() {
     return _db
         .collection('planning_reach')
         .doc(_uid)
         .snapshots()
-        .map((doc) {
-          final raw = doc.data()?['uids'];
-          if (raw is! List) return <String>{};
-          return raw.whereType<String>().where((id) => id != _uid).toSet();
-        })
+        .map((doc) => PlanningReach.fromMap(doc.data(), _uid))
         .handleError((Object e, StackTrace st) {
           unawaited(
             _errorReportService.reportError(
@@ -144,9 +191,17 @@ class PlanningRepository {
   /// par recette. Les refus sont attendus mais pas tus : un seul rapport par
   /// lot (`planning.shared_recipe_denied`), avec leur nombre et la première
   /// recette refusée. Toute autre erreur est relancée.
-  Future<Set<String>> readableRecipeIds(Iterable<String> ids) async {
+  Future<Set<String>> readableRecipeIds(Iterable<String> ids) async =>
+      (await readableRecipeTitles(ids)).keys.toSet();
+
+  /// Comme [readableRecipeIds], avec le titre actuel de chaque recette
+  /// lisible : la fenêtre des suggestions affiche ce titre plutôt que celui
+  /// copié dans la suggestion.
+  Future<Map<String, String>> readableRecipeTitles(Iterable<String> ids) async {
+    String titleOf(Map<String, dynamic>? data) =>
+        data?['titre'] is String ? data!['titre'] as String : '';
     final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
-    final readable = <String>{};
+    final readable = <String, String>{};
     for (var i = 0; i < unique.length; i += 30) {
       final chunk = unique.sublist(i, (i + 30).clamp(0, unique.length));
       try {
@@ -154,14 +209,16 @@ class PlanningRepository {
             .collection('recipes')
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
-        readable.addAll(snap.docs.map((d) => d.id));
+        for (final d in snap.docs) {
+          readable[d.id] = titleOf(d.data());
+        }
       } on FirebaseException catch (e, st) {
         if (e.code != 'permission-denied') rethrow;
         final denied = <String>[];
         for (final id in chunk) {
           try {
             final doc = await _db.collection('recipes').doc(id).get();
-            if (doc.exists) readable.add(id);
+            if (doc.exists) readable[id] = titleOf(doc.data());
           } on FirebaseException catch (refusal) {
             if (refusal.code != 'permission-denied') rethrow;
             denied.add(id);
@@ -185,9 +242,10 @@ class PlanningRepository {
     return readable;
   }
 
-  /// Ajoute un repas planifié.
-  Future<void> addMeal(PlannedMeal meal) async {
-    await _col.add(meal.toFirestore());
+  /// Ajoute un repas planifié et rend son identifiant.
+  Future<String> addMeal(PlannedMeal meal) async {
+    final ref = await _col.add(meal.toFirestore());
+    return ref.id;
   }
 
   /// Enregistre un lot de repas planifiés (batch planning) et rend leurs
@@ -214,18 +272,58 @@ class PlanningRepository {
     await _col.doc(id).delete();
   }
 
-  /// Repas déjà planifiés entre [from] et [to], journées entières incluses.
+  /// Repas déjà planifiés entre [from] et [to], journées entières incluses,
+  /// dans le planning personnel, ou dans celui du groupe [groupId].
   ///
   /// Sert à savoir ce qu'un nouveau cycle recouvre : sans cette lecture, valider
-  /// un planning empile deux repas sur le même créneau sans le dire.
+  /// un planning empile deux repas sur le même créneau sans le dire. Chaque
+  /// planning ne voit que ses repas : un repas de groupe n'occupe pas le
+  /// créneau du planning personnel, ni l'inverse.
   Future<List<PlannedMeal>> getMealsBetween({
+    required DateTime from,
+    required DateTime to,
+    String? groupId,
+  }) async {
+    if (groupId != null) {
+      // Seul le propriétaire planifie pour son groupe : ses repas.
+      return _mealsBetween(
+        _col
+            .where('group_id', isEqualTo: groupId)
+            .where('uid', isEqualTo: _uid),
+        from: from,
+        to: to,
+      );
+    }
+    final meals = await getCookedMealsBetween(from: from, to: to);
+    return [
+      for (final m in meals)
+        if (!m.isGroupMeal) m,
+    ];
+  }
+
+  /// Tous les repas que l'utilisateur cuisine entre [from] et [to] : ceux de
+  /// son planning personnel et ceux des groupes dont il est le propriétaire.
+  ///
+  /// Sert la fenêtre de variété : un plat servi à la famille mardi compte
+  /// pour le planning personnel de son cuisinier, et l'inverse — le serveur
+  /// lit de même l'historique sur `uid` (`readServedHistory`).
+  Future<List<PlannedMeal>> getCookedMealsBetween({
+    required DateTime from,
+    required DateTime to,
+  }) => _mealsBetween(
+    _col.where('uid', isEqualTo: _uid),
+    from: from,
+    to: to,
+  );
+
+  Future<List<PlannedMeal>> _mealsBetween(
+    Query<Map<String, dynamic>> query, {
     required DateTime from,
     required DateTime to,
   }) async {
     final start = DateTime(from.year, from.month, from.day);
     final end = DateTime(to.year, to.month, to.day, 23, 59, 59, 999);
-    final snap = await _col
-        .where('uid', isEqualTo: _uid)
+    final snap = await query
         .where('planned_at', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where('planned_at', isLessThanOrEqualTo: Timestamp.fromDate(end))
         .get();
@@ -571,11 +669,11 @@ final plannedMealsProvider = StreamProvider.autoDispose<List<PlannedMeal>>((
   return repo.watchMeals();
 });
 
-/// Les comptes dont l'utilisateur peut lire le planning
+/// Ce que l'utilisateur peut lire des plannings d'autrui
 /// (`planning_reach/{uid}`). Vide sans compte.
-final planningReachProvider = StreamProvider.autoDispose<Set<String>>((ref) {
+final planningReachProvider = StreamProvider.autoDispose<PlanningReach>((ref) {
   final repo = ref.watch(planningRepositoryProvider);
-  if (repo == null) return Stream.value(const <String>{});
+  if (repo == null) return Stream.value(PlanningReach.empty);
   return repo.watchPlanningReach();
 });
 
@@ -586,6 +684,37 @@ final sharedPlannedMealsProvider = StreamProvider.autoDispose
       final repo = ref.watch(planningRepositoryProvider);
       if (repo == null) return Stream.value(const <PlannedMeal>[]);
       return repo.watchSharedMeals(ownerUid);
+    });
+
+/// Les repas du planning d'un groupe, un flux par groupe et par
+/// propriétaire : l'erreur de l'un ne masque pas les autres.
+final groupPlannedMealsProvider = StreamProvider.autoDispose
+    .family<List<PlannedMeal>, ({String groupId, String ownerUid})>((ref, key) {
+      final repo = ref.watch(planningRepositoryProvider);
+      if (repo == null) return Stream.value(const <PlannedMeal>[]);
+      return repo.watchGroupMeals(key.groupId, key.ownerUid);
+    });
+
+/// Les groupes où l'utilisateur planifie : ceux dont il est le propriétaire,
+/// non masqués, s'il est éditeur ou administrateur. Triés par nom.
+///
+/// En chargement ou en erreur tant que ses groupes ne sont pas lus : « Nouveau
+/// planning » et la feuille « Planifier » attendent de savoir s'ils proposent
+/// « Planifier pour… ».
+final ownedPlanningGroupsProvider =
+    Provider.autoDispose<AsyncValue<List<FamilyGroup>>>((ref) {
+      final me = ref.watch(appUserProvider).value;
+      if (me == null) return const AsyncData([]);
+      final groups = ref.watch(myGroupsProvider);
+      final reach = ref.watch(planningReachProvider).value;
+      return groups.whenData(
+        (list) => ownedPlanningGroups(
+          groups: list,
+          myUid: me.uid,
+          canPlan: me.canEdit,
+          reach: reach,
+        ),
+      );
     });
 
 // ── Plannings affichés ────────────────────────────────────────────────────────
@@ -661,34 +790,72 @@ class PlanningVisibilityNotifier extends AsyncNotifier<Set<String>> {
   }
 }
 
-/// Une entrée du sélecteur « Plannings affichés ».
+/// Une entrée du sélecteur « Plannings affichés » : un planning personnel, ou
+/// le planning d'un groupe.
 class PlanningOwnerOption {
+  /// La clé du planning : l'identifiant du compte pour un planning
+  /// personnel, [groupPlanningKey] pour un planning de groupe.
   final String uid;
 
   /// Le prénom du propriétaire, ou « Membre » ; non utilisé pour le sien.
+  /// Pour un planning de groupe : le nom du groupe.
   final String name;
   final bool isMine;
   final bool shown;
+
+  /// Le groupe, pour un planning de groupe ; `null` sinon.
+  final String? groupId;
+
+  /// Le propriétaire du groupe, pour un planning de groupe.
+  final String? groupOwnerId;
+
+  /// Prénom du propriétaire du groupe, « vous » si c'est l'utilisateur.
+  final String? organizer;
+
+  /// L'utilisateur est le propriétaire du groupe : il y planifie.
+  final bool isOrganizer;
 
   const PlanningOwnerOption({
     required this.uid,
     required this.name,
     required this.isMine,
     required this.shown,
+    this.groupId,
+    this.groupOwnerId,
+    this.organizer,
+    this.isOrganizer = false,
   });
 
-  /// « Mon planning », « Planning de Marie ».
-  String get title => isMine ? 'Mon planning' : 'Planning de $name';
+  bool get isGroup => groupId != null;
 
-  /// « Moi », « Marie » : le libellé court du bouton-puce.
+  /// La clé du flux de ce planning de groupe.
+  ({String groupId, String ownerUid}) get groupKey =>
+      (groupId: groupId!, ownerUid: groupOwnerId!);
+
+  /// « Mon planning », « Planning de Marie », « Famille Dupont ».
+  String get title => isGroup
+      ? name
+      : isMine
+      ? 'Mon planning'
+      : 'Planning de $name';
+
+  /// « Planning du groupe · organisé par Marie » ; rien pour un planning
+  /// personnel.
+  String? get subtitle =>
+      isGroup ? 'Planning du groupe · organisé par ${organizer ?? ''}' : null;
+
+  /// « Moi », « Marie », « Famille Dupont » : le libellé court du bouton-puce.
   String get shortName => isMine ? 'Moi' : name;
 }
 
 /// Les entrées du sélecteur, dans l'ordre : « Mon planning », puis les
-/// plannings partagés par ordre alphabétique des prénoms.
+/// plannings partagés par ordre alphabétique des prénoms, puis les plannings
+/// de groupe lisibles par ordre alphabétique des noms de groupe.
 ///
 /// « Mon planning » n'est offert au lecteur que s'il lui reste au moins un
-/// repas : il ne planifie plus, il garde ses repas antérieurs.
+/// repas : il ne planifie plus, il garde ses repas antérieurs. Un planning de
+/// groupe est offert à chaque membre, propriétaire compris, tant que le
+/// serveur l'ouvre (`planning_reach.group_ids`), et coché par défaut.
 final planningOwnerOptionsProvider =
     Provider.autoDispose<AsyncValue<List<PlanningOwnerOption>>>((ref) {
       final me = ref.watch(appUserProvider).value;
@@ -697,18 +864,23 @@ final planningOwnerOptionsProvider =
       final toggled = ref.watch(planningVisibilityProvider);
       final myMeals = ref.watch(plannedMealsProvider);
       final reach = ref.watch(planningReachProvider);
+      final groups = ref.watch(myGroupsProvider);
       if (!toggled.hasValue) return const AsyncLoading();
-      // Le lecteur attend de savoir s'il lui reste des repas et ce qu'on
-      // partage avec lui ; l'éditeur voit les siens sans attendre.
+      // Le lecteur attend de savoir s'il lui reste des repas, ce qu'on
+      // partage avec lui et de quels groupes il est membre ; l'éditeur voit
+      // les siens sans attendre.
       if (!canPlan && (!myMeals.hasValue && !myMeals.hasError)) {
         return const AsyncLoading();
       }
       if (!canPlan && (!reach.hasValue && !reach.hasError)) {
         return const AsyncLoading();
       }
+      if (!canPlan && (!groups.hasValue && !groups.hasError)) {
+        return const AsyncLoading();
+      }
       final offerMine = canPlan || (myMeals.value?.isNotEmpty ?? false);
       final names = <String, String>{
-        for (final uid in reach.value ?? const <String>{})
+        for (final uid in reach.value?.uids ?? const <String>{})
           uid: ref.watch(memberNameProvider(uid)) ?? UserProfile.fallbackName,
       };
       final others = names.keys.toList()
@@ -718,7 +890,18 @@ final planningOwnerOptionsProvider =
           );
           return byName != 0 ? byName : a.compareTo(b);
         });
-      final available = [if (offerMine) me.uid, ...others];
+      final readableGroups =
+          [
+            for (final g in groups.value ?? const <FamilyGroup>[])
+              if (reach.value?.readsGroup(g.id) ?? false) g,
+          ]..sort((a, b) {
+            final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            return byName != 0 ? byName : a.id.compareTo(b.id);
+          });
+      final groupKeys = [
+        for (final g in readableGroups) groupPlanningKey(g.id),
+      ];
+      final available = [if (offerMine) me.uid, ...others, ...groupKeys];
       final shown = displayedPlannings(
         available: available,
         myUid: me.uid,
@@ -726,12 +909,26 @@ final planningOwnerOptionsProvider =
         toggled: toggled.value!,
       ).toSet();
       return AsyncData([
-        for (final uid in available)
+        for (final uid in [if (offerMine) me.uid, ...others])
           PlanningOwnerOption(
             uid: uid,
             name: uid == me.uid ? 'Vous' : names[uid]!,
             isMine: uid == me.uid,
             shown: shown.contains(uid),
+          ),
+        for (final g in readableGroups)
+          PlanningOwnerOption(
+            uid: groupPlanningKey(g.id),
+            name: g.name,
+            isMine: false,
+            shown: shown.contains(groupPlanningKey(g.id)),
+            groupId: g.id,
+            groupOwnerId: g.ownerId,
+            isOrganizer: g.ownerId == me.uid,
+            organizer: g.ownerId == me.uid
+                ? 'vous'
+                : ref.watch(memberNameProvider(g.ownerId)) ??
+                      UserProfile.fallbackName,
           ),
       ]);
     });

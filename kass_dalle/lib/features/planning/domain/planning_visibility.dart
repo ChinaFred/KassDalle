@@ -4,19 +4,39 @@
 /// - un éditeur ou un administrateur voit son planning, et pas ceux qu'on
 ///   partage avec lui — y compris ceux reçus après coup ;
 /// - un lecteur voit tous les plannings partagés avec lui, et pas le sien
-///   (il ne planifie plus ; il ne garde que ses repas antérieurs).
+///   (il ne planifie plus ; il ne garde que ses repas antérieurs) ;
+/// - le planning d'un groupe dont on est membre ou propriétaire s'affiche
+///   par défaut, quel que soit le rôle : c'est le planning de la famille.
 ///
 /// L'appareil ne mémorise que l'**écart** à ce défaut : les plannings que la
 /// personne a basculés. Un planning partagé demain s'affiche donc selon le
 /// défaut du rôle, sans rien réécrire.
 library;
 
+/// Préfixe de la clé d'un planning de groupe, parmi les clés des plannings
+/// personnels (identifiants de compte, qui ne contiennent pas « : »).
+const _groupKeyPrefix = 'group:';
+
+/// La clé du planning du groupe [groupId] dans le sélecteur et la mémoire des
+/// bascules.
+String groupPlanningKey(String groupId) => '$_groupKeyPrefix$groupId';
+
+/// Le groupe désigné par [key], ou `null` pour un planning personnel.
+String? groupIdOfPlanningKey(String key) => key.startsWith(_groupKeyPrefix)
+    ? key.substring(_groupKeyPrefix.length)
+    : null;
+
 /// Le planning [ownerUid] est-il affiché par défaut pour [myUid] ?
+/// [ownerUid] est un identifiant de compte, ou la clé d'un planning de
+/// groupe ([groupPlanningKey]), affiché par défaut pour tous.
 bool planningShownByDefault({
   required String ownerUid,
   required String myUid,
   required bool canPlan,
-}) => ownerUid == myUid ? canPlan : !canPlan;
+}) {
+  if (groupIdOfPlanningKey(ownerUid) != null) return true;
+  return ownerUid == myUid ? canPlan : !canPlan;
+}
 
 /// Les plannings affichés parmi [available], d'après le défaut du rôle et
 /// les plannings basculés [toggled]. L'ordre de [available] est gardé.

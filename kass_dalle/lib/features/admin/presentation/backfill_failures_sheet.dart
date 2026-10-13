@@ -32,6 +32,7 @@ const _kindOrder = [
   BackfillFailureKind.unit,
   BackfillFailureKind.recipe,
   BackfillFailureKind.account,
+  BackfillFailureKind.meal,
 ];
 
 String _groupLabel(String kind, int count) => switch (kind) {
@@ -39,6 +40,7 @@ String _groupLabel(String kind, int count) => switch (kind) {
   BackfillFailureKind.unit => 'Unités ($count)',
   BackfillFailureKind.recipe => 'Recettes ($count)',
   BackfillFailureKind.account => 'Comptes ($count)',
+  BackfillFailureKind.meal => 'Repas planifiés ($count)',
   _ => 'Autres ($count)',
 };
 

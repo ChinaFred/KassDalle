@@ -464,7 +464,7 @@ describe("verrou commun", () => {
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, cinq ponctuels, clés uniques", () => {
+  test("cinq récurrents, trois ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -472,7 +472,7 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 2);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 3);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
     // Ponctuels retirés en v0.23.52 : leur clé n'est plus connue.

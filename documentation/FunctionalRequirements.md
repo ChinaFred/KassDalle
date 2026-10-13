@@ -53,16 +53,20 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 | Rôle | Accès |
 |---|---|
-| **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. Planifie, et choisit dans Préférences du planning les groupes qui voient son planning, en lecture seule. Voit les plannings que les membres de ses groupes partagent avec lui. |
-| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis une page « Sur le web » d'Explorer, le bandeau au retour du navigateur et « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. Planifie, et choisit dans Préférences du planning les groupes qui voient son planning, en lecture seule. Voit les plannings que les membres de ses groupes partagent avec lui. Crée des groupes familiaux et gère ceux dont il est propriétaire (5.7). |
-| **Reader** | Consultation, annotation, notation, export PDF. **Il ne planifie pas** : ni repas, ni cycle, ni préférences de planning, ni liste des ingrédients du planning, ni conseil de conservation. Ces gestes lui sont masqués, et `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient au planning avec « Planification réservée aux éditeurs ». **Il lit les plannings partagés** avec un groupe dont il est membre, en lecture seule, chaque repas marqué du prénom de son propriétaire ; une recette qu'il ne peut pas lire s'affiche par son titre, avec « Recette non partagée ». Ses repas antérieurs restent lisibles et supprimables. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur le web » : il voit les pages trouvées et les ouvre dans le navigateur intégré (Android, iOS) ou dans son navigateur, sans bouton « Importer ». « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour du navigateur. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. **Il ne crée pas de groupe familial** (v0.23.54) : il en rejoint un sur invitation d'un proche, l'accepte ou la refuse, et le quitte quand il veut, sauf un groupe dont il est propriétaire (créé avant la v0.23.54) : il peut alors annuler les invitations, retirer des membres ou supprimer le groupe. |
+| **Admin** | Tout : gestion des utilisateurs, des rôles, des livres, des recettes, des annotations. Lit les livres et recettes privés de tous, et agit sur le contenu d'autrui comme son créateur : modifier, supprimer, changer une couverture ou une illustration. Peut promouvoir d'autres utilisateurs en Admin ou Editor. Planifie, et choisit dans Préférences du planning les groupes qui voient son planning, en lecture seule. Voit les plannings que les membres de ses groupes partagent avec lui. Planifie aussi pour chaque groupe dont il est le propriétaire (planning du groupe, 5.8), lu par tous les membres du groupe ; lit le planning des autres groupes dont il est membre. Suggère un plat dans le planning des groupes dont il est membre sans en être le propriétaire, et lit les suggestions que reçoivent les groupes dont il est le propriétaire (5.8, « Suggestions de repas »). |
+| **Editor** | Création de livres et de recettes, rangées dans **ses** livres ; modification et suppression de **ses propres** livres et recettes, couvertures et illustrations comprises. Il ne modifie ni ne supprime le livre ou la recette d'un autre, et ne lit pas leur contenu privé. Relit les brouillons partagés des autres, sans les modifier. Validation de ses brouillons IA. Import d'une page, d'un livre entier et d'une recette depuis un lien (4.6), y compris depuis une page « Sur le web » d'Explorer, le bandeau au retour du navigateur et « Partager vers Kass'Dalle » sur Android. Saisie manuelle et copie d'une recette. Dans Explorer (5.5), « Chercher avec l'IA » et « Imaginer 3 recettes ». Peut annoter. Planifie, et choisit dans Préférences du planning les groupes qui voient son planning, en lecture seule. Voit les plannings que les membres de ses groupes partagent avec lui. Crée des groupes familiaux et gère ceux dont il est propriétaire (5.7). Planifie aussi pour chaque groupe dont il est le propriétaire (planning du groupe, 5.8), lu par tous les membres du groupe ; lit le planning des autres groupes dont il est membre. Suggère un plat dans le planning des groupes dont il est membre sans en être le propriétaire, et lit les suggestions que reçoivent les groupes dont il est le propriétaire (5.8, « Suggestions de repas »). |
+| **Reader** | Consultation, annotation, notation, export PDF. **Il ne planifie pas** : ni repas, ni cycle, ni préférences de planning, ni conseil de conservation. Il garde sa liste de courses personnelle, qu'il remplit depuis un repas, une période ou une fiche recette (5.10). Ces gestes lui sont masqués, et `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient au planning avec « Planification réservée aux éditeurs ». **Il lit les plannings partagés** avec un groupe dont il est membre, en lecture seule, chaque repas marqué du prénom de son propriétaire ; une recette qu'il ne peut pas lire s'affiche par son titre, avec « Recette non partagée ». **Il lit aussi le planning de chaque groupe dont il est membre**, en lecture seule, chaque repas marqué du nom du groupe. Ses repas antérieurs restent lisibles ; il ne les modifie ni ne les supprime plus. **Il ne crée aucune recette** : ni saisie manuelle (4.3), ni copie d'une recette d'un autre membre, ni recette conçue par l'IA (Explorer, planning), ni import (`/scan`, lien 4.6). Ces gestes lui sont masqués. **Ses recettes existantes restent à lui** : il les modifie, les valide et les supprime comme avant. Il ne touche ni aux livres, ni aux recettes d'autrui, ni à ce qui produit une image. Dans Explorer, il garde la liste, les filtres et « Chercher sur le web » : il voit les pages trouvées et les ouvre dans le navigateur intégré (Android, iOS) ou dans son navigateur, sans bouton « Importer ». « Chercher avec l'IA » ne lui est pas proposé, ni le bandeau d'import au retour du navigateur. S'il ouvre `/scan` par un lien, l'écran lui dit que l'import est réservé aux éditeurs ; s'il partage un lien vers Kass'Dalle sur Android, une boîte « Import réservé aux éditeurs » le lui dit. **Il ne crée pas de groupe familial** (v0.23.54) : il en rejoint un sur invitation d'un proche, l'accepte ou la refuse, et le quitte quand il veut, sauf un groupe dont il est propriétaire (créé avant la v0.23.54) : il peut alors annuler les invitations, retirer des membres ou supprimer le groupe. Tant qu'il n'est pas éditeur, un groupe dont il est propriétaire est en pause (5.7) : masqué dans le planning de tous ses membres, il reste listé dans l'écran Groupes, où il garde ces trois gestes. **Il suggère un plat** pour un jour du planning d'un groupe actif dont il est membre (5.8, « Suggestions de repas ») : c'est son seul geste d'écriture sur un planning. |
 | **Pending** | Rien. Ni livre, ni recette, ni référentiel, ni appel d'IA. C'est l'état par défaut d'un compte qui vient d'être créé. |
 
 > Le compte d'un membre — adresse, rôle, révocation — ne se lit que par son titulaire et par un Admin (v0.23.14). Les autres membres, Reader compris, voient son **profil public** : son nom et la couverture de ses recettes libres. Un nom que le profil ne fournit pas encore s'affiche « Membre » — le seul nom de remplacement de l'application ; une section devient alors « Livres d'un membre » ou « Recettes libres d'un membre ». Un nom, préféré ou Google, compte au plus 60 caractères.
 
 > On ne lit les livres et recettes non privés d'un autre compte que s'il partage au moins un groupe familial avec soi (v0.23.19) ; leurs annotations, leurs notes et leur texte d'origine suivent. Un compte hors de mes groupes ne voit rien de moi, et je ne vois rien de lui. Un Admin lit tout.
 
+> **Un groupe vit tant que son propriétaire est Editor ou Admin.** Si le propriétaire est rétrogradé en Reader, mis en attente ou révoqué, tout le groupe est masqué pour tous ses membres, propriétaire compris : les livres et recettes qu'il leur ouvrait, son planning, et sa présence dans les écrans des groupes. Rien n'est effacé ; tout revient s'il redevient Editor.
+
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
+
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures et l'auteur de chacun (Admin › Tickets des membres), et relance un envoi en anomalie. Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -672,10 +676,10 @@ autre membre, et toute recette d'un compte qui ne partage aucun groupe avec le l
 
 ### 5.6 Module Administration (Admin uniquement)
 
-L'accueil d'administration range **quatorze entrées en quatre groupes** — Gestion,
+L'accueil d'administration range **quinze entrées en quatre groupes** — Gestion,
 Comptabilité, Monitoring, Laboratoire. Un cinquième groupe, **Outils**, porte le
 téléchargement de l'APK ; il est masqué dans l'application Android ou iOS native.
-Les quatorze entrées sont ouvertes sur mobile : rien n'est réservé au grand écran.
+Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand écran.
 
 **Gestion**
 
@@ -692,11 +696,12 @@ Les quatorze entrées sont ouvertes sur mobile : rien n'est réservé au grand �
   - **Disposition.** Téléphone : une colonne, actions en bas de tuile. Web et desktop (à partir de 800 px) : deux colonnes par section, en-têtes pleine largeur, élévation de la tuile au survol.
   - **Ce que dit le résumé de « Reprendre la nutrition ».** « 9 reprises, 0 complétée, 9 encore incomplètes », suivi, s'il y en a, de « N laissées faute de temps » (reprises une heure plus tard), « N sans reprise possible » et « N abandonnées ». Le passage n'est « Terminé » que si aucune recette reprise ne reste incomplète. Une recette dont il ne manque que des lignes impossibles à peser — quantité illisible, compté à la pièce sans poids à la pièce, unité sans poids — n'est plus reprise par le passage programmé, puisqu'un appel d'IA n'y changerait rien ; de même quand il ne lui manque, en plus, que des ingrédients que l'IA a manqués trois fois (« Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : … ») ; après avoir corrigé un poids dans un référentiel, l'administrateur lance le passage manuel. Une recette reprise cinq fois sans succès est « abandonnée ». Les deux restent nommées dans la liste « à revoir ».
   - **Éléments exclus après trois échecs.** Pour « Enrichir unités et ingrédients », « Allergènes » et « Rôle des recettes », un élément que l'IA n'a pas su traiter trois fois n'est plus redemandé ; le résumé de la tuile le compte (« 4 ingrédients exclus après 3 échecs ») et la liste « à revoir » le nomme « Plus redemandé à l'IA après 3 échecs ». Un succès, après la case « Réessayer aussi les éléments exclus après 3 échecs », remet son compteur à zéro. Une recette exclue de « Rôle des recettes » est aussi reprise quand quelqu'un modifie son titre, ses ingrédients ou ses étapes : l'enregistrement remet son compteur à zéro et redemande son rôle à l'IA. Un enregistrement qui ne change pas ce contenu ne la relance pas.
-  - **Éléments à revoir.** Le compte rendu de chaque backfill nomme les éléments que le passage n'a pas pu traiter : éléments en erreur et éléments incomplets, réunis dans une seule liste. Quand il y en a, l'icône de la bannière passe à l'avertissement et un lien s'affiche sous le message : « Voir l'élément à revoir », « Voir les 56 à revoir », ou « Voir les 100 premiers sur 240 à revoir » au-delà de cent. Le lien ouvre une feuille « À revoir — {nom du backfill} » : une ligne par élément, son nom et la raison (« Pas de réponse de l'IA », « Lot en échec : … », « Recette incomplète : beurre, farine non examinés », « Valeurs nutritionnelles introuvables », « Impossible à peser : œufs (pas de poids à la pièce) · Sans valeurs pour 100 g : beurre », « Calcul de nutrition en échec : <raison> », « Abandonnée après 5 reprises — … », « Plus redemandé à l'IA après 3 échecs »…), triées par raison puis par nom, regroupées par nature (« Ingrédients », « Unités », « Recettes », « Comptes ») dès que deux natures sont présentes. Toucher un ingrédient ou une unité l'ouvre dans son référentiel, toucher une recette ouvre sa fiche ; un compte du planning n'ouvre rien. « Copier la liste » copie une ligne « nom — raison » par élément. Si le serveur compte des éléments sans les nommer, le message le dit : « Détail indisponible pour cette opération. » La liste du dernier passage reste sur la tuile jusqu'au passage suivant ; celle de la bannière disparaît à sa fermeture. Mêmes écrans sur téléphone, web et desktop.
+  - **Éléments à revoir.** Le compte rendu de chaque backfill nomme les éléments que le passage n'a pas pu traiter : éléments en erreur et éléments incomplets, réunis dans une seule liste. Quand il y en a, l'icône de la bannière passe à l'avertissement et un lien s'affiche sous le message : « Voir l'élément à revoir », « Voir les 56 à revoir », ou « Voir les 100 premiers sur 240 à revoir » au-delà de cent. Le lien ouvre une feuille « À revoir — {nom du backfill} » : une ligne par élément, son nom et la raison (« Pas de réponse de l'IA », « Lot en échec : … », « Recette incomplète : beurre, farine non examinés », « Valeurs nutritionnelles introuvables », « Impossible à peser : œufs (pas de poids à la pièce) · Sans valeurs pour 100 g : beurre », « Calcul de nutrition en échec : <raison> », « Abandonnée après 5 reprises — … », « Plus redemandé à l'IA après 3 échecs »…), triées par raison puis par nom, regroupées par nature (« Ingrédients », « Unités », « Recettes », « Comptes », « Repas planifiés ») dès que deux natures sont présentes. Toucher un ingrédient ou une unité l'ouvre dans son référentiel, toucher une recette ouvre sa fiche ; un compte du planning n'ouvre rien. « Copier la liste » copie une ligne « nom — raison » par élément. Si le serveur compte des éléments sans les nommer, le message le dit : « Détail indisponible pour cette opération. » La liste du dernier passage reste sur la tuile jusqu'au passage suivant ; celle de la bannière disparaît à sa fermeture. Mêmes écrans sur téléphone, web et desktop.
   - **Allergènes** se déroule en deux phases. Phase 1 : chaque ingrédient du référentiel encore non examiné reçoit sa liste d'allergènes par l'IA ; elle est facturée, et ne touche ni un ingrédient déjà examiné ni une liste vérifiée par l'admin. Phase 2 : toutes les recettes reçoivent l'union des allergènes de leurs ingrédients, sans appel d'IA. Le compte rendu donne, pour chaque phase, les nombres de documents traités, ignorés et en erreur. L'administrateur la lance une fois après le déploiement qui introduit les allergènes, puis après chaque correction faite dans *Ingrédients nutrition*.
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
+- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. Rien ne s'y décide : valider, refuser, répondre se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -771,6 +776,8 @@ rechargement. iOS n'autorise aucune installation hors App Store.
 - **Sortir d'un groupe vaut suppression pour ce groupe.** Le membre sorti ne lit plus les livres et recettes du groupe, et le groupe ne lit plus les siens. Il garde ses propres livres et recettes.
 - Les membres ajoutés directement par un propriétaire avant la v0.23.19 restent membres.
 - **Un Editor ou un Admin peut partager son planning avec ses groupes**, en lecture seule (voir 5.8, « Partager son planning »). Le partage se coche groupe par groupe ; entrer dans un groupe ne partage pas son planning. Seuls les membres du groupe le lisent, pas les invités.
+- **Chaque groupe a son planning** (5.8, « Planning d'un groupe »). Son propriétaire y planifie ; tous les membres le lisent, Reader compris ; un invité ne le lit pas. Les autres membres y suggèrent des plats au propriétaire (5.8, « Suggestions de repas »). Supprimer le groupe supprime ses repas planifiés et ses suggestions ; un membre qui quitte le groupe, ou que le propriétaire en retire, emporte ses suggestions.
+- **Un groupe dont le propriétaire n'est plus Editor ni Admin est en pause** pour tous ses membres, propriétaire compris : ses livres et recettes cessent d'être partagés par lui, et son planning est masqué dans l'écran du planning. Il reste listé dans l'écran Groupes, sous « Mes groupes », avec le sous-titre « En pause · 3 membre(s) · 1 invitation(s) en attente ». Le propriétaire Reader y garde « Gérer les membres » (retirer un membre, annuler une invitation) et « Supprimer le groupe », sans renommer ni inviter ; la feuille des membres lui dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. Ce groupe est en pause : son planning n'apparaît plus tant que vous n'êtes pas éditeur. ». Un membre peut le quitter. Rien n'est effacé ; il revient si son propriétaire redevient Editor. Les invitations en attente vers un groupe en pause sont masquées à l'invité, et réapparaissent avec le groupe.
 - Accès depuis le menu compte (icône en haut à droite) → "Groupes familiaux".
 - Une fois membre d'un groupe, les livres et recettes validés et non privés des autres membres deviennent visibles dans la bibliothèque et les recettes libres, organisés par sections. **Seuls les membres de mes groupes** : un compte nommé qui n'en partage aucun avec moi ne lit rien de moi, et je ne lis rien de lui. Les règles Firestore l'imposent, y compris à un compte qui interroge la base directement. Un Admin lit tout.
 
@@ -814,16 +821,22 @@ déjà transmise continue de fonctionner.
 ### 5.8 Module Planning des Repas (tous les clients)
 
 - Écran dédié "Planning des repas" accessible depuis la navigation principale (5e entrée, icône calendrier).
-- **Seuls l'Editor et l'Admin planifient.** Créer, modifier ou replanifier un repas, composer un cycle, régler les préférences du planning et ses garnitures, ouvrir la liste des ingrédients du planning et demander un conseil de conservation leur sont réservés. Le Reader ne voit ces gestes ni sur l'écran du planning, ni sur la fiche recette (pas de « Planifier »), ni dans les préférences (ni « Préférences du planning », ni « Mes garnitures »). `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient à `/planning` avec « Planification réservée aux éditeurs ». Les règles Firestore refusent la création et la modification d'un repas par un Reader, et le serveur refuse ses demandes de suggestions et de conseil de conservation. La liste de courses d'une recette, depuis sa fiche, lui reste ouverte.
-- **Les repas antérieurs d'un Reader restent à lui.** « Mon planning » figure dans son sélecteur tant qu'il lui reste au moins un repas dans les 90 derniers jours, décoché par défaut. Un planning partagé montre les 90 derniers jours et la suite. Sur ces repas, la seule action est « Supprimer ». Rien n'est migré.
-- **Partager son planning.** Dans Préférences du planning, la section « Partager mon planning » liste les groupes dont l'Editor ou l'Admin est membre, ceux dont il est propriétaire compris : une case par groupe, avec le sous-titre « N membres », aucune cochée par défaut. Le texte d'aide dit : « Les membres des groupes cochés voient vos repas, sans pouvoir les modifier. Ils ne voient ni vos courses, ni vos préférences. » Le choix s'enregistre avec le bouton « Enregistrer » ; quitter l'écran avec un choix non enregistré demande confirmation. Sans groupe, la section dit « Vous ne faites partie d'aucun groupe familial. » avec le bouton « Voir les groupes familiaux » ; avec des invitations en attente, elle dit « Vous avez N invitation(s) en attente. » avec le même bouton.
-- **Qui lit un planning partagé.** Les membres des groupes cochés, tous rôles confondus, en lecture seule. Un invité qui n'a pas encore accepté ne lit rien. Le partage n'est pas réciproque : partager mon planning ne m'ouvre pas celui des autres. Un compte révoqué ou en attente ne lit aucun planning d'autrui ; il garde la lecture et la suppression de ses propres repas. Un propriétaire qui n'est plus Editor ni Admin — rétrogradé en Reader, révoqué — ne partage plus rien : ses groupes cochés sont conservés, et le partage reprend s'il redevient Editor. Un groupe supprimé cesse de compter.
-- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Le choix est retenu sur l'appareil. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
-- **Une seule liste par jour.** Mes repas d'abord, puis ceux des autres par ordre alphabétique du prénom, par heure pour chacun. Dès qu'un autre planning est affiché, chaque repas porte en première ligne le prénom de son propriétaire, lu « Repas de Marie » par le lecteur d'écran. Les pastilles du calendrier comptent les repas de tous les plannings affichés (« 3 repas, 2 personnes »).
-- **Un repas d'autrui se lit, il ne se modifie pas.** Ni menu, ni heure modifiable, ni retrait d'un composant, ni export vers Google Calendar ; ni justification du choix, ni origine du plat. Un appui ouvre la fiche recette pour les parts du repas, sans rien écrire. Une recette que je ne peux pas lire — privée, brouillon, livre non partagé, auteur hors de mes groupes, supprimée — s'affiche par son titre, avec un cadenas et « Recette non partagée » (infobulle « Son auteur ne l'a pas partagée avec vous ») ; elle ne s'ouvre pas. L'entrée, le dessert et un accompagnement qui est une recette suivent la même règle. Ouverte par un lien, la fiche d'une telle recette dit « Recette non partagée » — « Son auteur ne l'a pas partagée avec vous. » Le partage d'un planning n'ouvre aucune recette en plus.
-- **« Liste des ingrédients » et « Exporter le planning » ne portent que sur mes repas.** Ils sont masqués au Reader, et quand aucun de mes repas n'est affiché. Un jour libre dit « Rien de prévu pour vous » avec « Choisir une recette », placé avant les repas des autres ; pour un Reader, « Rien de prévu », sans bouton.
-- **Un planning illisible ne masque pas les autres.** Chaque planning affiché se lit à part. Si la lecture de l'un échoue, un bandeau dit « Le planning de Marie n'a pas pu être lu. » avec « Réessayer », et les autres restent affichés. Pendant que les plannings partagés arrivent, l'Editor voit déjà ses repas, avec une barre de progression sous le sélecteur. Un planning qui cesse d'être partagé quitte le sélecteur, et un message le dit une fois : « Le planning de Marie n'est plus partagé avec vous. »
-- **États vides.** Reader sans groupe : « Vous ne faites partie d'aucun groupe familial. » — « Rejoignez le groupe de votre famille pour voir ses plannings. », avec « Voir les groupes familiaux ». Reader membre d'un groupe où personne ne partage : « Aucun planning n'est partagé avec vous. » — « Un membre de votre groupe peut partager le sien depuis les préférences de son planning. », sans bouton. Tous les plannings décochés : « Aucun planning affiché. », avec « Choisir les plannings ». L'invitation à générer un nouveau planning ne s'adresse qu'à l'Editor et à l'Admin.
+- **Seuls l'Editor et l'Admin planifient.** Créer, modifier ou replanifier un repas, composer un cycle, régler les préférences du planning et ses garnitures et demander un conseil de conservation leur sont réservés. Le Reader ne voit ces gestes ni sur l'écran du planning, ni sur la fiche recette (pas de « Planifier »), ni dans les préférences (ni « Préférences du planning », ni « Mes garnitures »). `/planning/batch`, `/planning/config` et `/planning/staples` le renvoient à `/planning` avec « Planification réservée aux éditeurs ». Les règles Firestore refusent la création, la modification et la suppression d'un repas par un Reader, et le serveur refuse ses demandes de suggestions et de conseil de conservation. Les courses lui restent ouvertes : « Ajouter aux courses » sur un repas, « Ajouter la période aux courses » et « Mes courses » dans le planning, « Ajouter aux courses » sur la fiche d'une recette (voir 5.10).
+- **Les repas antérieurs d'un Reader restent à lui.** « Mon planning » figure dans son sélecteur tant qu'il lui reste au moins un repas dans les 90 derniers jours, décoché par défaut. Un planning partagé montre les 90 derniers jours et la suite. Sur ces repas, la seule action est « Ajouter aux courses » (repas à venir) : les règles Firestore refusent au Reader de supprimer un repas. Ses anciens repas reçoivent `group_id: null` par le backfill « Portée des groupes et des plannings » ; rien d'autre n'est repris.
+- **Partager son planning.** Dans Préférences du planning, la section « Partager mon planning » liste les groupes dont l'Editor ou l'Admin est membre, ceux dont il est propriétaire compris : une case par groupe, avec le sous-titre « N membres », aucune cochée par défaut. Un groupe en pause (5.7) reste cochable, avec le sous-titre « En pause · N membres — vos repas seront visibles quand le groupe reprendra ». Le texte d'aide dit : « Les membres des groupes cochés voient vos repas, sans pouvoir les modifier. Ils ne voient ni vos courses, ni vos préférences. » Le choix s'enregistre avec le bouton « Enregistrer » ; quitter l'écran avec un choix non enregistré demande confirmation. Sans groupe, la section dit « Vous ne faites partie d'aucun groupe familial. » avec le bouton « Voir les groupes familiaux » ; avec des invitations en attente, elle dit « Vous avez N invitation(s) en attente. » avec le même bouton.
+- **Qui lit un planning partagé.** Les membres des groupes cochés, tous rôles confondus, en lecture seule. Un invité qui n'a pas encore accepté ne lit rien. Le partage n'est pas réciproque : partager mon planning ne m'ouvre pas celui des autres. Un compte révoqué ou en attente ne lit aucun planning d'autrui ; il garde la lecture de ses propres repas. Un groupe masqué (propriétaire rétrogradé, 5.7) ne transmet plus aucun partage. Un propriétaire qui n'est plus Editor ni Admin — rétrogradé en Reader, révoqué — ne partage plus rien : ses groupes cochés sont conservés, et le partage reprend s'il redevient Editor. Un groupe supprimé cesse de compter.
+- **Planning d'un groupe.** Un planning est personnel, ou celui d'un groupe familial. Le propriétaire du groupe, Editor ou Admin, est le seul à y planifier : « Nouveau planning », un jour libre, la feuille « Planifier » d'une recette. Chaque repas du groupe est cuisiné par lui : sa mémoire des refus, son historique et ses préférences servent la génération, et un plat servi au groupe compte dans sa fenêtre de variété, comme ceux de son planning personnel. Les parts par défaut d'un repas de groupe valent le nombre de membres du groupe, propriétaire compris. Tous les membres lisent le planning du groupe, Reader compris, avec les mêmes règles qu'un planning partagé ; un invité ne le lit pas. Un repas de groupe n'apparaît pas dans « Mon planning » de son propriétaire. Supprimer le groupe supprime ses repas. Un groupe masqué (5.7) cache son planning à tous, sans l'effacer.
+- **« Nouveau planning » demande pour qui.** Si l'utilisateur possède au moins un groupe, le bouton ouvre « Planifier pour… » : « Mon planning », puis chaque groupe possédé, avec le sous-titre « Planning du groupe · N membres ». C'est une feuille du bas sur un téléphone, une boîte de dialogue de 480 px au plus sur grand écran. Pendant la lecture des groupes, un indicateur de chargement ; en cas d'échec, « Vos groupes n'ont pas pu être lus » avec « Réessayer ». Sans groupe possédé, le bouton ouvre directement « Mon planning ». Ouvert sur un groupe dont on n'est pas propriétaire, l'écran dit « Le planning de ce groupe ne vous est pas accessible. » avec « Retour au planning ». L'écran s'ouvre sur la cible : titre « Nouveau planning — Famille Dupont », bandeau « Famille Dupont · 16 → 22 oct. · 7/7 repas » ; « Ce que le planning contient déjà », « Reprendre une semaine passée » et « Valider » lisent et écrivent le planning du groupe.
+- **La feuille « Planifier » d'une recette** porte en tête une ligne « Planning » (« Mon planning » par défaut, ou un groupe possédé), seulement si l'utilisateur possède un groupe ; son icône suit la cible. Un repas de groupe y prend les parts du groupe. Le bouton dit « Ajouter au planning et à l'agenda ». Le repas est enregistré d'abord, puis l'événement posé dans l'agenda Google. Le message dit « Ajouté au planning de Famille Dupont et à l'agenda. », ou, si l'agenda refuse, « Ajouté au planning de Famille Dupont. L'agenda n'a pas reçu l'événement. » ; pour « Mon planning », « Ajouté à votre planning et à l'agenda. ». Un repas non enregistré le dit (« Repas non enregistré. Réessayez. ») et la feuille reste ouverte ; le détail de l'erreur part au rapport d'erreurs.
+- **Un planning personnel partagé ne montre que les repas personnels** de son propriétaire : ses repas de groupe ne se lisent que par les membres de ces groupes, règles Firestore comprises.
+- **Une recette privée planifiée pour un groupe** : son titre est visible des membres du groupe, sur le repas ; la recette reste fermée (« Recette non partagée »), comme pour un planning personnel partagé. Rien n'est ouvert de plus.
+- **Un groupe supprimé puis recréé sous le même identifiant** par un autre compte n'ouvre pas aux nouveaux membres les repas de l'ancien propriétaire : les règles vérifient que le repas est celui du propriétaire actuel du groupe.
+- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom), puis une case par planning de groupe lisible : le nom du groupe, et le sous-titre « Planning du groupe · organisé par Marie » (« organisé par vous » pour son propriétaire). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Les plannings de groupe sont cochés par défaut pour tous les membres, propriétaire compris. La puce du téléphone nomme aussi le groupe (« Plannings : Moi, Famille Dupont »). Le choix est retenu sur l'appareil. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
+- **Une seule liste par jour.** Mes repas d'abord, puis ceux des groupes par ordre alphabétique de leur nom, puis ceux des plannings personnels des autres par ordre alphabétique du prénom, par heure pour chacun. Dès qu'un autre planning est affiché, chaque repas porte en première ligne le prénom de son propriétaire, lu « Repas de Marie » par le lecteur d'écran ; un repas de groupe porte l'icône du groupe et son nom, lu « Repas du groupe Famille Dupont ». Sur un repas de son groupe, le propriétaire a toutes les actions ; un membre le lit seulement. Les pastilles du calendrier comptent les repas de tous les plannings affichés (« 3 repas, 2 personnes »).
+- **Un repas d'autrui se lit, il ne se modifie pas.** Ni menu, ni heure modifiable, ni retrait d'un composant, ni export vers Google Calendar ; ni justification du choix, ni origine du plat. Seule action : l'icône « Ajouter aux courses », qui met ses produits dans **mon** panier. Un appui ouvre la fiche recette pour les parts du repas, sans rien écrire. Une recette que je ne peux pas lire — privée, brouillon, livre non partagé, auteur hors de mes groupes, supprimée — s'affiche par son titre, avec un cadenas et « Recette non partagée » (infobulle « Son auteur ne l'a pas partagée avec vous ») ; elle ne s'ouvre pas. L'entrée, le dessert et un accompagnement qui est une recette suivent la même règle. Ouverte par un lien, la fiche d'une telle recette dit « Recette non partagée » — « Son auteur ne l'a pas partagée avec vous. » Le partage d'un planning n'ouvre aucune recette en plus.
+- **« Exporter le planning » ne porte que sur mes repas.** Il est masqué au Reader, et quand aucun de mes repas n'est affiché. **Les courses portent sur tous les plannings affichés**, pour tous les rôles (voir 5.10). Un jour libre dit « Rien de prévu pour vous » avec « Choisir une recette », placé avant les repas des autres ; pour un Reader, « Rien de prévu », sans bouton. Le propriétaire d'un groupe dont le planning est affiché voit une ligne par planning où il planifie et qui est vide ce jour-là : « Rien de prévu pour vous », « Rien de prévu pour Famille Dupont », chacune avec « Choisir une recette ». Avec un seul planning où il planifie, l'écran reste celui d'avant.
+- **Un planning illisible ne masque pas les autres.** Chaque planning affiché se lit à part. Si la lecture de l'un échoue, un bandeau dit « Le planning de Marie n'a pas pu être lu. » avec « Réessayer », et les autres restent affichés. Pendant que les plannings partagés arrivent, l'Editor voit déjà ses repas, avec une barre de progression sous le sélecteur. Un planning qui cesse d'être partagé quitte le sélecteur, et un message le dit une fois : « Le planning de Marie n'est plus partagé avec vous. » De même pour un planning de groupe : « Le planning du groupe Famille Dupont n'a pas pu être lu. » avec « Réessayer » ; un groupe devenu inaccessible (sortie, suppression, propriétaire rétrogradé) le dit une fois : « Le planning du groupe Famille Dupont ne vous est plus accessible. »
+- **États vides.** Reader sans groupe : « Vous ne faites partie d'aucun groupe familial. » — « Rejoignez le groupe de votre famille pour voir ses plannings. », avec « Voir les groupes familiaux ». Reader membre d'un groupe où personne ne partage et dont le planning n'est pas lisible : « Aucun planning n'est partagé avec vous. » — « Un membre de votre groupe peut partager le sien depuis les préférences de son planning. », sans bouton. Un membre d'un groupe actif lit le planning du groupe et ne voit plus cet état vide. Quand tous ses groupes sont en pause, un Reader lit, au lieu de « Vous ne faites partie d'aucun groupe familial. » : s'il en est propriétaire, « Votre groupe Famille Dupont est en pause. » — « Il reviendra quand vous serez de nouveau éditeur. » ; sinon, « Le groupe Famille Dupont est en pause. » — « Marie, qui en est propriétaire, n'a plus le rôle d'éditeur. Il reviendra quand Marie retrouvera ce rôle. », sans bouton. Membre de plusieurs groupes en pause, il lit « Vos groupes Famille Dupont et Famille Martin sont en pause : leurs propriétaires n'ont plus le rôle d'éditeur. » (les noms par ordre alphabétique, séparés par des virgules au-delà de deux). Une lecture des groupes en échec le dit avant tout état vide : « Vos groupes familiaux n'ont pas pu être lus », avec « Réessayer ». Tous les plannings décochés : « Aucun planning affiché. », avec « Choisir les plannings ». L'invitation à générer un nouveau planning ne s'adresse qu'à l'Editor et à l'Admin.
 - **Les notes restent celles de la recette.** Un membre note une recette vue dans un planning partagé comme toute autre recette. Sa note ne pèse pas sur les suggestions du propriétaire du planning : seule la note de celui qui planifie compte.
 - **Un seul écran : le calendrier en haut, la période choisie en dessous.** La période par défaut compte sept jours à partir du jour de démarrage du cycle, réglé dans Préférences du planning (vendredi par défaut). À l'ouverture, c'est celle qui contient aujourd'hui : rien n'est retenu d'une ouverture à l'autre.
 - **Le calendrier va du lundi au dimanche.** La période choisie y est surlignée d'une bande continue, arrondie à son premier et à son dernier jour, qui passe d'une ligne à l'autre quand elle chevauche deux semaines. Le jour courant est entouré. **Un appui sur un jour choisit la période par défaut qui le contient.** Les jours des mois voisins s'affichent atténués sur la première et la dernière ligne.
@@ -887,7 +900,7 @@ déjà transmise continue de fonctionner.
   - **Plafond quotidien du compte atteint** : même chose. Kass'Dalle remplit les créneaux au lieu d'afficher une erreur, et le bandeau dit « Votre plafond d'IA du jour est atteint. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé. »
 - **Le nombre de parts ne guide plus le choix.** L'application signale elle-même une recette écrite pour un autre nombre de parts que celui du jour (« Écrite pour 4 parts, servie pour 6. »). Les quantités sont recalculées à l'affichage. Rien n'est écrit dans la recette.
 - **Chaque génération est consignée sous le compte de l'utilisateur** : recettes proposées par créneau, origine, durée, coût. Ce journal sert à mesurer la répétition et le coût. Il n'apparaît pas dans l'application ; un administrateur peut le lire. Il est effacé au bout de six mois.
-- **Chaque compte planifie pour lui-même.** Ses repas servis, ses notes, ses écarts, ses refus et son journal ne valent que pour lui. Deux membres de la famille peuvent recevoir la même recette la même semaine. Seuls l'`editor` et l'`admin` planifient ; partager son planning n'y change rien, un membre qui le lit n'y écrit rien.
+- **Chaque compte planifie pour lui-même.** Ses repas servis, ses notes, ses écarts, ses refus et son journal ne valent que pour lui. Deux membres de la famille peuvent recevoir la même recette la même semaine. Seuls l'`editor` et l'`admin` planifient ; partager son planning n'y change rien, un membre qui le lit n'y écrit rien. Le planning d'un groupe se génère au nom de son propriétaire : le serveur vérifie qu'il l'est, et le coût reste celui du poste « planning ».
 - **Fenêtre de variété** : un plat servi dans les N semaines qui précèdent le cycle n'est pas reproposé, N de 0 à 4 dans les préférences (2 par défaut, 0 désactive). Elle vaut pour le cycle entier, pour un créneau isolé, pour « Autre suggestion » et pour « Changer la recette » dans le planning. Le retrait se fait **avant** la présélection, tant qu'il reste au moins autant de recettes que de créneaux à remplir ; au-delà, les plats récents ne reviennent que par le relâchement décrit plus haut, et la justification le dit. L'IA reçoit aussi les derniers repas servis, pour enchaîner sans répéter la protéine ni le féculent de la veille. Le message de fin dit combien de plats récents ont été écartés.
 - **Préférences du planning** (Editor et Admin) : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, fenêtre de variété, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible, groupes qui voient mon planning (« Partager mon planning », voir plus haut). Un compte qui n'a jamais réglé ses contraintes globales part de règles de variété par défaut (protéines, féculents et cuisines alternés d'un jour à l'autre, majorité de cuisine française), modifiables librement.
   - **Plats refusés récemment** : une ligne de la section « Paramètres du cycle », sous « Ne pas reproposer un plat récent ». Le sous-titre dit « N plats proposés moins souvent pendant 21 jours », « Aucun plat refusé ces 21 derniers jours », « Chargement… » pendant la lecture, ou « Effacement… » pendant l'effacement. Si la lecture échoue, le sous-titre dit « Liste des refus illisible » et le bouton devient *Réessayer*, qui relance la lecture.
@@ -899,6 +912,83 @@ déjà transmise continue de fonctionner.
 - **Un repas, c'est un plat et son accompagnement.** Quand le plat choisi n'apporte pas de féculent ou de légume, le **programme** lui pose un accompagnement — jamais le modèle au moment du planning : d'abord parmi les accompagnements classiques du plat (« blanquette » suggère riz, pommes vapeur), en préférant une recette d'accompagnement du corpus quand elle existe (les frites maison plutôt que les frites surgelées), sinon une garniture de la famille qui manque, par rang. Le même accompagnement ne revient pas deux jours de suite quand un autre est possible, ni deux fois dans le cycle tant qu'il en reste. Chaque créneau de « Nouveau planning » montre son accompagnement, la raison en infobulle, et permet de le changer ou de le retirer d'un appui — un choix fait à la main n'est plus recalculé tant que le plat ne change pas. « Changer la recette » et « Autre suggestion » dans le planning, et la pose d'une recette sur un jour libre, recomposent l'accompagnement de la même façon. Une garniture est **figée** dans le repas — nom, part par personne, produit de courses — : le repas dit ce qu'on a décidé ce jour-là, même si le référentiel change ensuite. Un plat complet, une entrée, un dessert, une recette non classée ne reçoivent rien. **Dans la liste du planning, un accompagnement qui est une recette s'ouvre d'un appui** : icône de livre, titre souligné, fiche ouverte pour les parts du repas. Une garniture reste un texte avec sa part par personne. La tuile entière, elle, ouvre le plat.
 - **Le format du repas se règle par jour de la semaine, et se corrige par créneau.** Plat seul (le défaut), plat et dessert, entrée et plat, entrée, plat et dessert, ou repas léger (entrée, snack ou petit plat, sans dessert). Le réglage vit dans les préférences, sous chaque jour, à côté de l'heure et des parts ; un jour qui n'en a pas suit le plat seul et ne stocke rien. Dans le nouveau planning, chaque créneau peut prendre un autre format, le temps du cycle. Quand le format le demande, l'entrée et le dessert viennent **du même appel** que le plat — parmi trois entrées et trois desserts candidats, classés entrée ou dessert, une fois chacun dans le cycle — et se changent ou se retirent depuis le créneau, comme l'accompagnement. Un mot « dessert » dans une contrainte en langage naturel n'ouvre plus un créneau de dessert : seul le format compte.
 - **Chaque jour de la semaine peut porter sa propre heure de repas**, à côté du temps de préparation et des parts. Un jour qui n'en a pas suit l'heure par défaut, et ne stocke rien. **Changer l'heure par défaut ramène tous les jours à elle** — l'écran annonce combien de jours personnalisés seront remis à l'heure avant de le faire.
+
+#### Suggestions de repas
+
+Un membre d'un groupe propose un plat au propriétaire, pour un jour du planning du
+groupe. Le propriétaire reste seul à planifier : il lit les suggestions et planifie
+lui-même celles qu'il retient.
+
+- **Qui suggère.** Tout membre d'un groupe actif autre que son propriétaire, Reader
+  compris. Un invité, un compte hors du groupe, le propriétaire lui-même et les
+  membres d'un groupe en pause (5.7) ne suggèrent rien. Les règles Firestore
+  l'imposent.
+- **Où.** Sur un jour d'aujourd'hui ou des 59 jours suivants du planning du groupe,
+  quand ce planning est affiché ; un membre sans aucun repas sur la période garde la
+  liste des jours, pour y suggérer. Un jour sans repas du groupe porte « Rien de prévu ·
+  Suggérer un plat » ; un jour avec des repas porte « Suggérer un plat » sous les
+  repas du groupe. Aucun bouton sur un jour passé. Depuis une fiche recette, l'icône
+  ampoule « Suggérer pour un planning de groupe », à côté de « Planifier » et
+  « Ajouter aux courses », ouvre la même feuille avec la recette choisie ; elle n'est
+  proposée qu'à un membre d'au moins un groupe actif dont il n'est pas le propriétaire.
+- **La feuille « Suggérer un plat ».** Sous-titre « Famille Dupont · samedi 17
+  octobre ». Ligne « Plat » : « Choisir une recette » ouvre le sélecteur, avec les
+  recettes que le membre lit (les siennes et celles des membres de ses groupes) et la
+  saisie d'un nom libre de 60 caractères au plus ; ni génération ni conception par
+  l'IA : une suggestion ne coûte aucun appel d'IA. Champ « Un mot pour Marie
+  (facultatif) », 200 caractères au plus. « Envoyer la suggestion » s'active dès
+  qu'un plat est choisi. Depuis une fiche recette, la feuille demande aussi le
+  « Groupe » (s'il y en a plusieurs) et le « Jour » (d'aujourd'hui à 59 jours après).
+  Une erreur de lecture des recettes se dit dans la feuille : « Les recettes n'ont pas
+  pu être lues. Réessayez. » ; un nom libre reste possible. Succès :
+  « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée. Réessayez. », la
+  feuille reste ouverte et la saisie est conservée. Feuille du bas sur un téléphone,
+  boîte de dialogue de 480 px sur grand écran ; Ctrl+Entrée ou Ctrl+S (Cmd sur Mac)
+  envoient, Échap ferme.
+- **Une recette privée se suggère par son titre.** La feuille le dit : « Recette
+  privée : Marie ne verra que son titre. » Le propriétaire lit ce titre, avec un
+  cadenas « Recette non partagée », sans pouvoir ouvrir la fiche. Une recette qu'il
+  lit s'affiche sous son titre actuel, pas sous celui copié à l'envoi.
+- **Cinq suggestions au plus** par membre, par groupe et par jour, imposées par les
+  règles Firestore. Au-delà, la feuille dit « Vous avez déjà fait 5 suggestions pour
+  ce jour. » Une suggestion retirée libère sa place.
+- **Pas de statut.** Le propriétaire n'accepte ni ne décline. Une suggestion déjà
+  reprise par le planning du groupe ce jour-là (même recette ou même titre) porte
+  « Au planning » avec une coche ; rien n'est enregistré pour cela.
+- **Ce que voit l'auteur.** Dans la liste du jour, sous les repas du groupe : « Votre
+  suggestion : Lasagnes », le mot entre guillemets, et « Retirer ma suggestion »,
+  sans confirmation (« Suggestion retirée. », avec « Annuler » ; échec : « La
+  suggestion n'a pas pu être retirée. »). Un membre ne voit pas les suggestions des
+  autres membres. Le bouton ampoule « Mes suggestions » de la barre du planning les
+  liste par jour.
+- **Ce que voit le propriétaire.** Le bouton ampoule « Suggestions des membres » de
+  la barre du planning, sur les deux tailles d'écran, porte le nombre de suggestions
+  des jours à venir (aujourd'hui compris). Il n'apparaît qu'au propriétaire d'un
+  groupe actif qui compte un autre membre. Un jour du planning du groupe porte la
+  ligne « 2 suggestions » ; un appui ouvre la fenêtre sur ce jour (« Afficher tous les
+  jours » rend les autres), jours passés dépliés si ce jour est passé. Un utilisateur
+  propriétaire d'un groupe et membre d'un autre bascule entre « Reçues (n) » et
+  « Envoyées (n) » ; n compte les suggestions des jours à venir, comme le badge, et
+  ne change pas d'un onglet à l'autre.
+- **La fenêtre des suggestions.** Une puce par groupe (« Tous » d'abord) quand il y
+  en a plusieurs ; une section par jour, d'aujourd'hui vers l'avenir, qui dit « Déjà
+  prévu : … » ou « Rien de prévu ce jour-là ». Chaque suggestion : son titre (icône
+  livre si la recette s'ouvre, cadenas « Recette non partagée » sinon, rien pour un
+  nom libre), « Proposé par Léo · il y a 2 jours », le mot sur trois lignes, dépliable.
+  Sur un jour à venir, « Planifier ce jour-là » pose une recette lisible dans le
+  planning du groupe, aux parts du groupe, avec « Annuler » ; un nom libre ou une
+  recette privée ouvre le sélecteur, pré-rempli du titre. Le message « Repas planifié
+  le samedi 17 octobre pour Famille Dupont : Lasagnes. », avec « Annuler », s'affiche
+  dans la fenêtre, comme « Suggestion retirée. ». Les jours passés se replient sous
+  « Jours passés (n) », sans bouton ; la fenêtre lit 90 jours, puis « Voir les plus
+  anciennes » — directement, sans section repliée, quand aucun jour passé n'a de
+  suggestion. Sans suggestion plus ancienne : « Aucune suggestion plus ancienne. ».
+  Feuille à 75 % de la hauteur sur un téléphone, boîte de dialogue de 640 px sur grand
+  écran.
+- **Rien n'est purgé.** Une suggestion reste visible après son jour. Elle disparaît
+  quand son auteur la retire, quand le groupe est supprimé, ou quand son auteur
+  quitte le groupe ou en est retiré.
+- **Pas de notification.** Le propriétaire découvre les suggestions dans le planning.
 
 ### 5.9 Module Nutrition (tous les clients)
 
@@ -936,10 +1026,21 @@ déjà transmise continue de fonctionner.
 
 ### 5.10 Module Liste de courses (tous les clients)
 
-- Construite depuis les repas **à venir** du planning : une liste qui reprend les courses de repas déjà mangés ne sert à rien.
-- **Elle ne prend que mes repas**, jamais ceux d'un planning partagé avec moi. Le Reader, qui ne planifie pas, n'a pas de liste du planning ; la liste de courses d'une recette, depuis sa fiche, lui reste ouverte.
-- **Elle couvre la période qu'on lit** dans le planning : la semaine du cycle, ou la période libre choisie. Une période sans repas à venir ne produit pas de liste, et l'écran le dit.
-- Une liste déjà faite le jour même n'est pas écrasée sans demander : « Remplacer » repart de la période choisie, « Enrichir » ajoute ses produits à la liste existante.
+- **Un panier personnel, le même sur tous mes appareils.** Chaque compte a une seule liste de courses, enregistrée à son nom et synchronisée en temps réel : une case cochée sur le téléphone l'est aussitôt sur l'ordinateur. Personne d'autre ne la lit, administrateur compris. Elle n'expire plus : elle reste jusqu'à ce que je la vide ou que je la remplace.
+- **Les produits vont toujours dans le panier de celui qui ajoute**, quel que soit le planning dont vient le repas. Ajouter le repas de Marie remplit ma liste, pas la sienne. Les quantités suivent les parts du repas ; rien n'est écrit dans la recette ni dans le repas.
+- **Trois façons d'ajouter, pour tous les rôles, Reader compris :**
+  - « Ajouter aux courses » sur un repas : entrée du menu ⋮ (icône chariot +) ; sur un repas en lecture seule, sans menu, une icône avec l'infobulle « Ajouter aux courses » ; sur grand écran, la même icône sur toutes les tuiles, à côté de l'export Calendar, et l'entrée ne figure plus dans le menu ⋮. L'action est absente, pas grisée, sur un repas passé, sur un plat dont la recette ne se lit pas (cadenas) et sur un repas libre sans accompagnement.
+  - « Ajouter la période aux courses » : sur grand écran, une icône de la barre du planning ; sur téléphone, une entrée du menu ⋮. Elle couvre les repas **à venir** de la période lue — la semaine du cycle, ou la période libre choisie —, dans **tous les plannings affichés** (cochés). Elle n'apparaît que si un repas à venir est affiché.
+  - « Ajouter aux courses » sur la fiche d'une recette, pour les parts affichées.
+- **Ajouter ou remplacer.** Panier vide : les produits sont ajoutés directement. Panier non vide : une boîte s'ouvre à chaque ajout. Titre : « Votre liste contient déjà 18 articles ». Texte pour un repas ou une recette : « « Poulet basquaise » apporte 9 articles. Ajouter les fusionne avec votre liste. Remplacer efface la liste actuelle. » Pour une période : « 12 repas à venir apportent 41 articles. », puis le décompte par planning quand les repas viennent de plusieurs plannings (« 5 de Mon planning, 3 du groupe Famille Dupont, 7 du planning de Marie. » : un repas de groupe compte pour son groupe), puis les deux mêmes phrases. Boutons : « Annuler », « Remplacer », « Ajouter ».
+  - Après « Ajouter » (ou un ajout direct) : « 9 articles ajoutés aux courses. », avec « Voir » qui ouvre la liste.
+  - Après « Remplacer » : « Liste remplacée : 9 articles. », avec « Annuler » qui rend la liste précédente (« Liste précédente rendue. »).
+  - Un second appui pendant un ajout est ignoré : l'icône du repas ou de la période montre un indicateur jusqu'à la fin ; sur la fiche recette, le second appui affiche « Ajout aux courses en cours… ».
+  - Une recette non comptée ne disparaît pas sans un mot : « Recette non partagée, ingrédients non comptés : … » pour un plat au cadenas, « Recette introuvable, ingrédients non comptés : … » pour les autres. Ce message suit l'ajout, pour ne pas retarder celui qui porte « Annuler ».
+  - La liste compte 300 articles au plus ; un ajout qui la dépasserait est refusé avec un message, sans rien écrire.
+- **« Mes courses »** : une icône chariot dans la barre du planning, sur téléphone comme sur grand écran, avec une pastille du nombre d'articles non cochés. Elle ouvre la liste : une feuille sur téléphone, une fenêtre de 560 px au plus sur grand écran. Titre « Mes courses », sous-titre « 18 articles · 5 cochés ». Le menu ⋮ propose « Retirer les articles cochés » (« 5 articles retirés. », avec « Annuler », puis « Articles rendus. ») et « Vider la liste » ; vider demande confirmation (« Vider la liste de courses ? » — « Les 18 articles seront retirés, sur tous vos appareils. », « Annuler » / « Vider »). Une case qui n'a pas pu être enregistrée reprend son état, avec « La case n'a pas pu être enregistrée. » Une case cochée hors ligne part au retour du réseau.
+- **États de la liste.** Pendant la lecture, un indicateur de chargement. Lecture impossible : « Votre liste de courses n'a pas pu être lue. », avec « Réessayer ». Liste vide : « Votre liste de courses est vide. » — « Ajoutez un repas depuis le planning, ou une recette depuis sa fiche. »
+- **La liste d'avant la mise à jour est reprise.** La liste locale d'un appareil (version précédente, valable le jour même) est recopiée dans le panier au premier lancement si celui-ci est vide, puis effacée de l'appareil. Un panier déjà rempli depuis un autre appareil fait foi.
 - Elle connaît les brouillons et les recettes des autres membres du groupe, pas seulement les recettes validées de l'utilisateur.
 - **Les accompagnements comptent** : une garniture (riz, salade verte) entre pour sa part par personne multipliée par les parts du repas, sous son produit de courses — la purée s'achète en pommes de terre —, et se fond dans la ligne d'une recette qui demande le même produit ; une recette d'accompagnement entre avec ses ingrédients, à l'échelle du repas.
 - **Une ligne par produit.** Les quantités s'additionnent quand la conversion est exacte — kilo et grammes, litre et millilitre — et restent côte à côte sinon : « 400 ml + 250 g de lait de coco », « 2 kg + 6 pommes de terre ». Aucune densité ni poids moyen inventé : ce qui est affiché est vrai. Singulier et pluriel, casse et accents ne font pas deux produits.
@@ -990,6 +1091,175 @@ déjà transmise continue de fonctionner.
   télécharge ; sur Android, iOS et Windows, un dialogue « Enregistrer sous »
   demande où la poser.
 
+### 5.13 Module Tickets (tous les clients — suivi réservé à l'Admin)
+
+Un membre signale un bug, propose une évolution ou une nouvelle fonctionnalité, ou pose une
+question, sans quitter l'application. Le ticket part en Issue sur le dépôt GitHub **public**
+`ChinaFred/KassDalle`, où l'administrateur le traite. Le membre suit l'avancement dans
+« Mes tickets ».
+
+- **Qui.** Tout compte nommé et non révoqué : Reader, Editor, Admin. Un compte en attente ou
+  révoqué n'envoie rien et ne lit rien. Un membre ne lit que ses propres tickets ; l'Admin les
+  lit tous.
+- **Aucun appel d'IA.** Créer, envoyer, suivre un ticket n'appelle aucun modèle et n'est pas
+  facturé. L'analyse d'un ticket est faite par l'administrateur avec sa session Claude Code,
+  à sa demande, en dehors de l'application.
+- **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
+  proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
+  a pas d'autre.
+- **Quatre types** : « Bug », « Évolution », « Nouvelle fonctionnalité », « Question ».
+
+#### Signaler ou proposer (`/tickets/new`)
+
+- Au moment de l'appui sur « Signaler ou proposer », l'application note l'écran d'où vient le
+  membre et, quand c'est possible, prend une image de cet écran.
+- Le formulaire demande :
+  - le **type**, sans présélection (« Choisissez le type de ticket. ») ;
+  - le **titre**, de 5 à 100 caractères (« Le titre doit faire au moins 5 caractères. ») ;
+  - la **description**, de 1 à 2000 caractères, avec une aide propre au type. Bug : « Ce que
+    vous faisiez : … / Ce qui s'est passé : … / Ce que vous attendiez : … ». Évolution : « Ce
+    qui existe aujourd'hui : … / Ce que vous aimeriez changer : … / Pourquoi ce serait
+    utile : … ». Nouvelle fonctionnalité : « Ce que vous aimeriez pouvoir faire : … / Dans
+    quelle situation (en cuisine, en préparant la semaine…) : … / Comment vous faites
+    aujourd'hui : … ». Question : « Votre question : … / Ce que vous avez déjà essayé : … » ;
+  - l'**écran concerné**, prérempli par l'écran d'origine sous son nom français (« Fiche
+    recette », « Planning », « Administration — … »…), avec « Autre écran » et « Je ne sais
+    pas » en fin de liste ;
+  - la **capture**, facultative. La case « Joindre une capture de l'écran précédent » est
+    décochée par défaut ; sa vignette reste visible, et disparaît seulement quand une image
+    choisie s'affiche, pour qu'une seule capture paraisse jointe. À la place, « Choisir dans la galerie » (mobile)
+    ou « Choisir un fichier » (web, desktop). PNG ou JPEG, 5 Mo au plus : « Cette image dépasse
+    5 Mo. Choisissez une image plus légère. », « Seules les images PNG ou JPEG sont
+    acceptées. ». Une image que l'appareil ne parvient pas à ouvrir : « Cette image n'a pas pu
+    être ouverte. Choisissez-en une autre. ». « Retirer la capture » l'enlève. Le serveur vérifie
+    aussi les premiers octets du fichier : un fichier qui n'est ni un PNG ni un JPEG n'est pas
+    joint.
+- Un avertissement dit, au-dessus de l'envoi : « Le titre et la description seront publiés sur
+  un site public. N'y mettez ni nom, ni adresse, ni recette privée. » et « Votre nom et la
+  capture ne sont jamais publiés : seul l'administrateur les voit. »
+- La version de l'application et la plateforme partent avec le ticket ; l'écran l'affiche
+  (« Envoyé avec : version …, … »).
+- « Envoyer » reste actif. Les erreurs s'affichent à l'appui, et le premier champ en erreur
+  reçoit le focus. Une erreur affichée reste tant que le champ ne convient pas (titre de moins
+  de 5 caractères, description vide). Ctrl/Cmd+S envoie aussi. Pendant l'envoi, le bouton
+  affiche « Envoi… » et les champs sont verrouillés.
+- Succès : « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. », avec « Voir ». Si la
+  capture n'a pas pu être jointe : « Ticket envoyé sans la capture. Vous pouvez le suivre dans
+  Mes tickets. ».
+- **Plafonds**, comptés par jour calendaire à l'heure de Paris : 5 tickets par membre et 30
+  pour toute la famille, réglés dans `app_config/tickets`. L'Admin n'a pas de plafond. Plafond
+  du membre : « Vous avez envoyé 5 tickets aujourd'hui, réessayez demain. » (le nombre réel).
+  Plafond de la famille : « Trop de tickets ont été envoyés aujourd'hui par la famille.
+  Réessayez demain. ». Quand il reste 1 ou 2 envois, le formulaire affiche « Il vous reste
+  N envoi(s) aujourd'hui » sous le bouton ; quand il n'en reste aucun, « Vous avez atteint le
+  nombre de tickets permis aujourd'hui. Réessayez demain. » ; rien pour l'Admin.
+- Réseau absent : « Le ticket n'est pas parti. Vérifiez la connexion, puis appuyez sur
+  Envoyer. » Le texte saisi est conservé.
+- Quitter avec une saisie demande « Abandonner ce ticket ? » — « Le texte saisi sera perdu. »,
+  « Continuer la saisie » ou « Abandonner ».
+- Disposition : une colonne sous le seuil large, deux colonnes au-delà (aide du type,
+  avertissement et informations d'envoi à droite).
+
+#### Ce qui est publié, et ce qui ne l'est pas
+
+- **Publié sur GitHub** : le titre, la description, le type, la version, la plateforme,
+  l'écran sous la forme de son modèle de route (`/recipes/:recipeId`, jamais un identifiant ni
+  un paramètre), et une référence opaque au ticket.
+- **Jamais publié** : le nom, l'adresse e-mail ou l'identifiant du membre, le contenu d'une
+  recette, la capture. L'Issue dit « Capture disponible dans Admin › Tickets ».
+- Une mention `@…` écrite par le membre est neutralisée : elle ne notifie personne sur GitHub.
+  Un renvoi `#12` ou `compte/dépôt#12` l'est aussi : il ne crée aucun lien vers une autre
+  Issue ou pull request.
+- Le membre ne reçoit aucun lien vers l'Issue.
+
+#### Mes tickets (`/tickets`, `/tickets/:ticketId`)
+
+- Liste du plus récent au plus ancien : icône du type, titre, puis sous le titre la date
+  `jj/mm/aa` et la puce de statut (icône et texte, jamais la couleur seule). Un point à droite
+  signale un ticket à rouvrir ; un lecteur d'écran l'annonce « Nouveau suivi à lire ». Liste et détail côte à côte au-delà du seuil
+  large. Bouton flottant « Signaler ou proposer ».
+- Détail : type, titre, statut, « Envoyé le jj/mm/aa à hh:mm », frise des étapes,
+  description, « Écran : … », « Version … — plateforme », capture agrandissable. Une phrase dit
+  où en est le ticket :
+  - Envoi en cours : « Votre ticket est enregistré. Il sera transmis dans quelques minutes. »
+    Au-delà d'une heure, s'y ajoute « La transmission prend du retard. L'administrateur est
+    prévenu. » ;
+  - Reçu : « L'administrateur a reçu votre ticket. » ;
+  - Analysé : « Votre ticket a été lu et étudié. » ;
+  - Validé : « Votre demande sera traitée. » ;
+  - En cours : « Le travail a commencé. » ;
+  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. » ;
+  - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
+    s'il existe ;
+  - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable.
+- **Notification.** Un point s'affiche sur la puce du compte quand un ticket du membre passe à
+  Répondu, Refusé ou Livré et qu'il ne l'a pas encore ouvert. Ouvrir le détail du ticket
+  l'efface. Pas de notification push ni d'e-mail.
+- États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
+  l'instant » — « Un bug, une idée, une question ? Envoyez-les à l'administrateur. », avec
+  « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;
+  ticket disparu « Ce ticket n'existe plus. » avec « Retour à mes tickets » ; grand écran sans
+  sélection « Choisissez un ticket pour voir son suivi. ».
+- Un ticket envoyé ne se modifie pas et ne s'annule pas depuis l'application.
+
+#### Le statut vient de GitHub
+
+Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme en 8.5) :
+
+| Sur GitHub | Statut affiché |
+|---|---|
+| Issue pas encore créée | Envoi en cours |
+| Issue créée (étiquettes `source:app`, `type:…`, `statut:à-analyser`) | Reçu |
+| Étiquette `statut:analysé` | Analysé |
+| Étiquette `validé` | Validé |
+| Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
+| Issue fermée comme terminée | Livré — Répondu pour une Question |
+| Issue fermée comme non prévue | Refusé |
+
+- Un statut peut sauter une étape ; il ne recule jamais. Répondu, Refusé et Livré sont
+  finaux, sauf si l'Issue est rouverte : le statut revient alors à celui que donnent ses
+  étiquettes.
+- Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
+  change aucun statut, même si elle dit « Closes #N ».
+- **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
+  (`ChinaFred`, reconnu par son identifiant numérique et non par son nom) qui commence par « Réponse : » est repris dans l'application, sans ce
+  préfixe. Il sert de réponse à une Question et de motif à un refus. Aucun autre commentaire
+  n'est relayé.
+- GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
+  avis perdu et renvoie les tickets restés en « Envoi en cours ».
+- L'application ne valide, ne refuse et ne ferme rien : ces décisions se prennent sur GitHub.
+
+#### Tickets des membres (Admin, `/admin/tickets`, `/admin/tickets/:ticketId`)
+
+- Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
+  questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
+  (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
+- **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
+  pas un statut : le membre continue de voir « Envoi en cours ».
+- Filtres : statut (« Tous », « En anomalie », puis les huit statuts) et type (« Tous les
+  types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
+  qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, auteur (son nom dans l'application),
+  statut, date, et la puce « En anomalie ».
+- Détail : auteur, date, type, version, plateforme, écran, statut, description, capture en
+  grand. « Ouvrir sur GitHub » et « Copier le lien ». Pour un ticket en anomalie : « Essais
+  d'envoi : N », « Dernière erreur : … » et « Relancer l'envoi ». Une relance qui échoue encore
+  affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une relance réussie,
+  « Envoi relancé : <statut>. ». Le motif d'un refus s'affiche sous « Motif du refus ».
+- Jeton GitHub refusé : un bandeau dit « Jeton GitHub invalide : aucun ticket n'est transmis
+  à GitHub depuis le jj/mm/aa à hh:mm. Remplacez le jeton dans Secret Manager. Les tickets en
+  attente repartiront ensuite. » Il disparaît au premier envoi réussi.
+- États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
+  signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
+  tous les tickets » ; « Impossible de charger les tickets. » ; capture illisible « Capture
+  illisible. ».
+
+#### Hors de cette version
+
+Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
+envoyé ; notification push ou e-mail ; version exacte de la livraison ; valider depuis
+l'application ; détection des doublons ; plusieurs captures ; purge des captures ; analyse ou
+traitement automatiques.
+
 ---
 
 ## 6. Règles Métier
@@ -1033,6 +1303,7 @@ déjà transmise continue de fonctionner.
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
 | Allergènes : prudence et indication | Les quatorze allergènes majeurs de l'UE sont estimés par l'IA, ingrédient par ingrédient, dans le référentiel nutritionnel. En cas de doute, l'allergène est signalé ; un produit composé est jugé dans sa forme du commerce habituelle. Les traces ne sont pas signalées. La recette porte l'union de ses ingrédients, calculée par le serveur à l'écriture, jamais saisie à la main. L'écran dit quand l'analyse est incomplète et rappelle toujours que la liste est indicative et ne remplace pas la lecture des emballages. Seul un Admin corrige un ingrédient ; la correction atteint les recettes au prochain passage du backfill « Allergènes ». |
+| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub et ne recule jamais ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -1052,7 +1323,7 @@ déjà transmise continue de fonctionner.
 - Annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation
 - Partage de son planning avec ses groupes, en lecture seule ; lecture des plannings partagés par le Reader
-- Liste de courses des repas à venir, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
+- Liste de courses personnelle, synchronisée sur tous les appareils, remplie depuis un repas, une période ou une recette, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
 - Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
 - Allergènes : les quatorze allergènes majeurs de l'UE, estimés par l'IA pour chaque ingrédient du référentiel, affichés sur la fiche recette, corrigés par l'administrateur
 - Export PDF d'une recette, partagé ou téléchargé selon la plateforme
@@ -1062,6 +1333,7 @@ déjà transmise continue de fonctionner.
 - Modération de toutes les images par Cloud Vision, avec journal de revue
 - Qualité des données : diagnostic en lecture seule des référentiels nutrition (Admin)
 - Attestation App Check (web, Android)
+- Tickets : un membre signale un bug, propose une évolution ou une fonctionnalité, ou pose une question ; le ticket part en Issue sur GitHub, son statut revient dans « Mes tickets », et l'administrateur suit tous les tickets dans Admin › Tickets des membres
 - Plateformes : Android, Web, Windows desktop
 
 ### Reste à faire
@@ -1287,6 +1559,57 @@ sequenceDiagram
         App->>User: Retour liste des brouillons
     end
 ```
+
+### 8.5 États d'un ticket (`status`)
+
+Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
+sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée.
+
+```mermaid
+stateDiagram-v2
+    [*] --> sending : « Envoyer »\n(ticket enregistré)
+
+    sending --> received : Issue créée\n(à l'envoi, à la vérification horaire\nou par « Relancer l'envoi »)
+    received --> analyzed : Étiquette statut:analysé
+    analyzed --> validated : Étiquette validé
+    validated --> in_progress : PR ouverte qui référence l'Issue
+    in_progress --> delivered : Issue fermée, terminée
+
+    received --> answered : Issue fermée, terminée\n(type Question)
+    analyzed --> answered : Issue fermée, terminée\n(type Question)
+
+    received --> refused : Issue fermée, non prévue
+    analyzed --> refused : Issue fermée, non prévue
+    validated --> refused : Issue fermée, non prévue
+
+    delivered --> received : Issue rouverte\n(statut repris des étiquettes)
+    refused --> received : Issue rouverte\n(statut repris des étiquettes)
+    answered --> received : Issue rouverte\n(statut repris des étiquettes)
+
+    delivered --> [*]
+    refused --> [*]
+    answered --> [*]
+
+    note right of sending
+        Envoi en cours. Après 10 essais
+        sans Issue : « en anomalie »
+        dans Admin › Tickets des membres.
+        Le membre voit toujours « Envoi en cours ».
+    end note
+
+    note right of answered
+        Réponse : commentaire de ChinaFred
+        qui commence par « Réponse : ».
+        Le même commentaire sert de motif
+        à un refus.
+    end note
+```
+
+Le diagramme ne trace que les passages courants. Toute fermeture donne Livré (Répondu pour
+une Question) ou Refusé, quel que soit le statut de départ. Une réouverture ramène au statut
+que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Les trois états finaux
+allument le point de notification sur la puce du compte de l'auteur, jusqu'à ce qu'il ouvre
+le ticket.
 
 ---
 

@@ -37,6 +37,10 @@ class RecipePickerSheet extends StatefulWidget {
   /// en repas libre, sans recette.
   final MealIdeaConceiver? onConceiveIdea;
 
+  /// Recherche pré-remplie à l'ouverture : le titre d'une suggestion de
+  /// repas à planifier.
+  final String initialQuery;
+
   const RecipePickerSheet({
     super.key,
     required this.recipes,
@@ -46,6 +50,7 @@ class RecipePickerSheet extends StatefulWidget {
     this.freeNameAlways = false,
     this.onGenerateIdeas,
     this.onConceiveIdea,
+    this.initialQuery = '',
   });
 
   @override
@@ -53,10 +58,17 @@ class RecipePickerSheet extends StatefulWidget {
 }
 
 class _RecipePickerSheetState extends State<RecipePickerSheet> {
-  String _query = '';
+  late String _query = widget.initialQuery;
+  late final _searchCtrl = TextEditingController(text: widget.initialQuery);
   bool _showDismissed = false;
   RecipeFilter _filter = RecipeFilter.none;
   late final _facets = recipeTagFacets(widget.recipes);
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   bool _isDismissed(Recipe r) => widget.dismissedRecipeIds.contains(r.id);
 
@@ -230,6 +242,7 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: TextField(
+                controller: _searchCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),

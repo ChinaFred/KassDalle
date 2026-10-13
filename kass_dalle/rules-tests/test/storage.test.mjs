@@ -250,3 +250,77 @@ describe("rejected/", () => {
     await assertFails(put("admin", `rejected/${PERSONAS.admin.uid}/x.jpg`, "image/jpeg"));
   });
 });
+
+// ── tickets/ ─────────────────────────────────────────────────────────────
+
+describe("tickets/ — capture d'un ticket", () => {
+  const mine = (ext = "png") => `tickets/${READER}/t1/screenshot.${ext}`;
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.storage().ref(`tickets/${OTHER}/t2/screenshot.png`).put(small(), {
+        contentType: "image/png",
+      });
+      await ctx.storage().ref(mine("jpg")).put(small(), { contentType: "image/jpeg" });
+    });
+  });
+
+  it("l'auteur dépose une capture PNG ou JPEG dans son dossier", async () => {
+    await assertSucceeds(put("reader", mine("png"), "image/png"));
+    await assertSucceeds(put("reader", mine("jpg"), "image/jpeg"));
+  });
+
+  it("refuse un autre nom de fichier ou un autre type", async () => {
+    await assertFails(put("reader", `tickets/${READER}/t1/autre.png`, "image/png"));
+    await assertFails(put("reader", `tickets/${READER}/t1/screenshot.gif`, "image/gif"));
+    await assertFails(put("reader", mine("png"), "application/pdf"));
+  });
+
+  it("refuse une capture de plus de 5 Mo", async () => {
+    await assertFails(put("reader", mine("png"), "image/png", new Uint8Array(5 * MB + 1)));
+  });
+
+  it("personne ne dépose dans le dossier d'un autre, pas même l'administrateur", async () => {
+    await assertFails(put("reader", `tickets/${OTHER}/t2/screenshot.png`, "image/png"));
+    await assertFails(put("admin", `tickets/${OTHER}/t2/screenshot.png`, "image/png"));
+  });
+
+  it("un compte en attente, révoqué ou anonyme ne dépose rien", async () => {
+    await assertFails(
+      put("pending", `tickets/${PERSONAS.pending.uid}/t/screenshot.png`, "image/png"),
+    );
+    await assertFails(
+      put("revoked", `tickets/${PERSONAS.revoked.uid}/t/screenshot.png`, "image/png"),
+    );
+    await assertFails(put("anonymous", `tickets/anon/t/screenshot.png`, "image/png"));
+  });
+
+  it("l'auteur et l'administrateur lisent la capture, un autre membre non", async () => {
+    await assertSucceeds(storage("reader").ref(mine("jpg")).getMetadata());
+    await assertSucceeds(storage("admin").ref(mine("jpg")).getMetadata());
+    await assertFails(storage("otherReader").ref(mine("jpg")).getMetadata());
+    await assertFails(storage("editor").ref(mine("jpg")).getMetadata());
+  });
+
+  it("un autre membre approuvé ne liste pas le dossier de l'auteur", async () => {
+    await assertFails(storage("otherReader").ref(`tickets/${READER}`).listAll());
+    await assertFails(storage("otherReader").ref(`tickets/${READER}/t1`).listAll());
+    await assertFails(storage("editor").ref(`tickets/${READER}/t1`).listAll());
+  });
+
+  it("un compte révoqué ne relit pas sa capture", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx
+        .storage()
+        .ref(`tickets/${PERSONAS.revoked.uid}/t/screenshot.png`)
+        .put(small(), { contentType: "image/png" });
+    });
+    await assertFails(
+      storage("revoked").ref(`tickets/${PERSONAS.revoked.uid}/t/screenshot.png`).getMetadata(),
+    );
+  });
+
+  it("l'auteur ne supprime pas sa capture", async () => {
+    await assertFails(storage("reader").ref(mine("jpg")).delete());
+  });
+});

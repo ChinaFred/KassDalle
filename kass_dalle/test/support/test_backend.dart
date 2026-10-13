@@ -15,8 +15,10 @@ import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
+import 'package:kass_dalle/features/planning/data/meal_suggestion_repository.dart';
 import 'package:kass_dalle/features/planning/data/planning_visibility_store.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
+import 'package:kass_dalle/features/planning/presentation/meal_suggestion_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/processing/domain/processing_job.dart';
 import 'package:kass_dalle/features/processing/presentation/processing_providers.dart';
@@ -49,12 +51,18 @@ class TestBackend {
   final RecipeRatingRepository ratings;
   final NutritionIngredientsRepository nutrition;
   final NutritionUnitsReference units;
+  final MealSuggestionRepository mealSuggestions;
 
   /// Mes repas planifiés, rendus par `plannedMealsProvider`.
   final List<PlannedMeal> plannedMeals;
 
   /// Mes groupes familiaux, rendus par `myGroupsProvider`.
   final List<FamilyGroup> groups;
+
+  /// Mes groupes en pause (propriétaire qui n'est plus éditeur) : rendus par
+  /// `myGroupsProvider` avec les autres, et nommés par
+  /// `maskedGroupIdsProvider`.
+  final List<FamilyGroup> pausedGroups;
 
   late final overrides = [
     // `appUserProvider` est remplacé directement plutôt que reconstruit depuis
@@ -71,6 +79,8 @@ class TestBackend {
     // en dur, sans passer par un provider injectable : un écran de planning
     // testé le prend donc null, ce qui est son cas « pas de compte ».
     planningRepositoryProvider.overrideWithValue(null),
+    // Les suggestions de repas lisent le Firestore en mémoire.
+    mealSuggestionRepositoryProvider.overrideWithValue(mealSuggestions),
     // Les groupes ne sont pas le sujet des parcours testés : un ensemble vide
     // évite d'ouvrir des flux Firestore sans rapport.
     groupMemberIdsProvider.overrideWith(
@@ -87,7 +97,12 @@ class TestBackend {
     planningVisibilityStoreProvider.overrideWithValue(
       InMemoryPlanningVisibilityStore(),
     ),
-    myGroupsProvider.overrideWith((ref) => Stream.value(groups)),
+    myGroupsProvider.overrideWith(
+      (ref) => Stream.value([...groups, ...pausedGroups]),
+    ),
+    maskedGroupIdsProvider.overrideWith(
+      (ref) => Stream.value({for (final g in pausedGroups) g.id}),
+    ),
     processingJobsProvider.overrideWith(
       (ref) => Stream.value(const <ProcessingJob>[]),
     ),
@@ -98,22 +113,26 @@ class TestBackend {
     this.user, {
     this.plannedMeals = const [],
     this.groups = const [],
+    this.pausedGroups = const [],
   }) : recipes = RecipeRepository(firestore: firestore),
        books = BookRepository(firestore: firestore),
        annotations = AnnotationRepository(firestore: firestore),
        ratings = RecipeRatingRepository(firestore: firestore),
        nutrition = NutritionIngredientsRepository(firestore: firestore),
-       units = NutritionUnitsReference(firestore: firestore);
+       units = NutritionUnitsReference(firestore: firestore),
+       mealSuggestions = MealSuggestionRepository(firestore: firestore);
 
   factory TestBackend({
     AppUser? user,
     List<PlannedMeal> plannedMeals = const [],
     List<FamilyGroup> groups = const [],
+    List<FamilyGroup> pausedGroups = const [],
   }) => TestBackend._(
     FakeFirebaseFirestore(),
     user ?? testUser(),
     plannedMeals: plannedMeals,
     groups: groups,
+    pausedGroups: pausedGroups,
   );
 
   // ── Semis ──────────────────────────────────────────────────────────────────

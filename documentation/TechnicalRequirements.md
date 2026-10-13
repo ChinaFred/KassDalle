@@ -191,7 +191,8 @@ firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
 │   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals
-│   └── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   ├── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   └── shopping/current                           ← panier de courses personnel, titulaire seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
@@ -204,9 +205,10 @@ firestore/
 ├── member_email_search_daily/{uid}_{AAAA-MM-JJ}/  ← compteur du plafond de recherches de membre par adresse
 ├── processing_jobs/{jobId}/
 ├── dead_letters/{jobId}/
-├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
+├── planned_meals/{mealId}/                        ← porteur du contexte (personne ou groupe, date)
+├── meal_suggestions/{suggestionId}/               ← suggestions de plats des membres d'un groupe à son propriétaire
 ├── planning_config/{uid}/
-├── planning_reach/{uid}/                          ← plannings lisibles par uid, écrit par le serveur seul
+├── planning_reach/{uid}/                          ← plannings lisibles par uid (personnels et de groupe), écrit par le serveur seul
 ├── nutrition_ingredients/{ingredientId}/
 ├── nutrition_units/{unitId}/
 ├── meal_staples/{stapleId}/                       ← garnitures simples, référentiel partagé
@@ -221,6 +223,8 @@ firestore/
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
+├── tickets/{ticketId}/                            ← tickets des membres, écrits par le serveur (sauf seen_by_author_at)
+├── ticket_quotas/{uid}_{AAAAMMJJ}, _global_{AAAAMMJJ} ← compteurs du plafond quotidien des tickets, serveur seul
 └── app_config/{decision}/                         ← routage, tarifs, plafonds, attestation…
 ```
 
@@ -506,7 +510,7 @@ Document principal d'une recette.
 | `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes` ; le backfill « Durées estimées », qui a repris les recettes antérieures, est retiré en v0.23.52) ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent tant que la recette n'a jamais manqué d'une durée. Quand les deux durées sont lues, le champ est **vidé** (`prep` et `cook` à `null`) et garde l'empreinte, pas supprimé. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
-| `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie. À 5, la recette n'est plus reprise par le passage programmé ; elle est comptée « abandonnée » et nommée dans la liste « à revoir ». **Serveur seul** depuis la v0.23.55 : les règles refusent au client de le poser, de le changer ou de l'effacer (`serverOnlyRetryFields`, §4) |
+| `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie. À 5, la recette n'est plus reprise par le passage programmé ; elle est comptée « abandonnée » et nommée dans la liste « à revoir ». **Serveur seul** depuis la v0.23.59 : les règles refusent au client de le poser, de le changer ou de l'effacer (`serverOnlyRetryFields`, §4) |
 | `meal_role_failure_count` | `int?` | Échecs du backfill « Rôle des recettes dans un repas » sur cette recette : le modèle n'a pas su la classer, ou l'appel a échoué. Écrit par le serveur seul (`runRecipeRolesPass`, par `update` : une recette supprimée ne renaît pas). À 3, la recette n'est plus soumise au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ou `force` ; elle est listée « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par un classement réussi. Le déclencheur `onRecipeWritten` le lit (`mealRoleCallAllowed`) : à 3, il ne demande plus le rôle non plus, sauf si l'écriture change le contenu de la recette (`titre`, `draft_cooklang` ou `raw_cooklang`, `mealRoleContentChanged`) ; une écriture qui ne change que ce champ et `meal_role_attempt_at` ne lui coûte aucun appel. Quand le contenu change et que le compteur est positif, le déclencheur le remet à 0 avant l'appel (`mealRoleFailureResetNeeded`, Admin SDK ; `meal_role_attempt_at` est gardé), que l'appel aboutisse ou non : un échec du déclencheur n'est pas compté, et le backfill reprend la recette avec un compteur à 0. L'écho de cette remise à zéro ne change que ce champ : ni appel, ni nouvelle remise. **Serveur seul** : les règles refusent au client de le poser à la création, de le changer ou de l'effacer, administrateur compris (`serverOnlyRetryFields`, §4) |
 | `meal_role_attempt_at` | `Timestamp?` | Date du dernier échec compté dans `meal_role_failure_count`. Serveur seul, même règle |
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
@@ -540,8 +544,8 @@ la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_por
 | `per_100g` | `Map<String, double>?` | Valeurs ramenées à 100 g. Absent quand le poids total n'est pas connu |
 | `quality` | `Map` | `{score: int, level: String, warnings: List<String>}` — `level` vaut `A` au-dessus de 80, `B` au-dessus de 60, `C` en dessous. Trois niveaux seulement, pas cinq |
 | `missing_ingredients` | `List<String>` | Ce que le référentiel ne sait pas peser ni chiffrer : l'union de `missing_weight` et `missing_profile`, que l'écran lit |
-| `missing_weight` | `List<Map>` | Lignes impossibles à peser, `{name, cause}`. `cause` : `quantite_illisible` (un nombre manque ou ne se lit pas devant une unité), `quantite_absente` (ni nombre ni unité, pas encore de portion usuelle), `comptage_sans_poids` (compté à la pièce sans poids à la pièce connu), `unite_sans_poids` (unité que ni le référentiel ni la table ne savent peser). `missingWeightCause`, `nutrition/recipeNutrition.ts`. Absent des instantanés antérieurs à la v0.23.55 |
-| `missing_profile` | `List<String>` | Ingrédients pesés dont le référentiel n'a pas de valeurs pour 100 g. Absent des instantanés antérieurs à la v0.23.55 : le rattrapage ne sait alors pas séparer les causes, et reprend la recette |
+| `missing_weight` | `List<Map>` | Lignes impossibles à peser, `{name, cause}`. `cause` : `quantite_illisible` (un nombre manque ou ne se lit pas devant une unité), `quantite_absente` (ni nombre ni unité, pas encore de portion usuelle), `comptage_sans_poids` (compté à la pièce sans poids à la pièce connu), `unite_sans_poids` (unité que ni le référentiel ni la table ne savent peser). `missingWeightCause`, `nutrition/recipeNutrition.ts`. Absent des instantanés antérieurs à la v0.23.59 |
+| `missing_profile` | `List<String>` | Ingrédients pesés dont le référentiel n'a pas de valeurs pour 100 g. Absent des instantanés antérieurs à la v0.23.59 : le rattrapage ne sait alors pas séparer les causes, et reprend la recette |
 | `missing_profile_excluded` | `List<String>` | Parmi `missing_profile`, les ingrédients dont un document du référentiel porte `enrichment_failure_count` ≥ 3 : plus rien ne les redemande au modèle. Le rattrapage ne reprend pas une recette qui n'attend plus qu'eux et des lignes impossibles à peser |
 | `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
 | `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
@@ -1262,18 +1266,27 @@ répondre à cette question ; la portée la leur donne en une lecture.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uids` | `List<String>` | UIDs des comptes qui partagent un groupe avec le titulaire, sans lui, triés, sans doublon. Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id` |
+| `uids` | `List<String>` | UIDs des comptes qui partagent un groupe **actif** avec le titulaire, sans lui, triés, sans doublon. Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`. Groupe actif = son propriétaire est éditeur ou administrateur non révoqué (`isPlannerAccount`, `triggers/groupMembers.ts`) : un groupe dont le propriétaire est rétrogradé ne relie plus personne, propriétaire compris, sans que rien ne soit effacé |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
 **Qui l'écrit :** le serveur seul. `syncGroupReach`, déclencheur sur `groups/{groupId}`, recalcule
 la portée de chaque compte présent avant ou après l'écriture, dans une transaction qui relit
-tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`). Un renommage ne déclenche
-rien. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
+tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`) et le document `users`
+de leurs propriétaires. Un renommage ne déclenche rien. `syncPlanningReachOnRole`
+(`triggers/plannerRole.ts`) la recalcule aussi pour les membres des groupes d'un compte dont le
+droit de planifier change : un propriétaire rétrogradé masque son groupe, et le rétablit en
+redevenant éditeur. **Pourquoi par la portée et non par les règles** : `group_reach` ne dit pas
+quel groupe relie deux comptes ; vérifier le rôle du propriétaire dans les règles des livres et
+recettes coûterait une lecture de plus par document lu, à chaque requête. Le retrait de la
+portée ne coûte que des lectures de déclencheur, à chaque changement de rôle. Le délai est
+celui de `syncGroupReach` (quelques secondes). Le backfill « Portée des groupes et des
+plannings » (`backfillGroupPlanningReachFn`, §7.10) recalcule les portées antérieures. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
 Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée périmée laisserait
 un membre sorti lire encore les livres du groupe. `backfillGroupReachFn`, qui a semé le fonds
 après la v0.23.19, est retiré depuis la v0.23.23 : lancé en production, son travail est fait.
 
-**Risque accepté (v0.23.23).** Aucun outil ne recalcule plus la portée en masse. Si
+**Risque accepté (v0.23.23).** Hors du backfill ponctuel `group_planning_reach` (§7.10),
+aucun outil ne recalcule la portée en masse ; une fois ce backfill retiré du code, plus aucun. Si
 `syncGroupReach` échoue au-delà de la fenêtre de nouvelles tentatives d'Eventarc (environ
 7 jours), la portée des comptes concernés reste périmée jusqu'à la prochaine modification des
 membres de ce groupe ; un renommage ne la corrige pas. Un membre retiré pendant cette panne
@@ -1410,10 +1423,44 @@ adaptation d'une recette — un nombre de parts différent — vit ici, jamais d
 partagée.
 
 Depuis v0.23.47, seul un éditeur ou un administrateur crée et modifie ses repas. Un lecteur
-garde la lecture et la suppression de ses repas antérieurs, sans migration. Les repas d'un
-propriétaire se lisent aussi, en lecture seule, par les comptes de `planning_reach` (§3.8
-quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
-`planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais une requête `in`.
+garde la lecture de ses repas antérieurs ; depuis le planning de groupe, il ne les supprime
+plus (`delete` exige `isEditor()`).
+
+**Planning de groupe.** Un repas est personnel (`group_id` `null` ; absent sur les repas
+antérieurs jusqu'au passage du backfill `group_planning_reach`, qui le pose), ou du planning
+d'un groupe familial (`group_id` =
+identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
+propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
+request.auth.uid` à la création et à la modification). `group_id` est figé à la modification.
+Les membres du groupe le lisent par `planning_reach/{lecteur}.group_ids` (§3.8 quater) ; le
+client ouvre **un flux par groupe affiché** (`group_id == groupe` et `uid == propriétaire du
+groupe`, `planned_at` sur 90 jours, `PlanningRepository.watchGroupMeals`, index composite
+`uid`, `group_id`, `planned_at`). La règle vérifie que `uid` est le propriétaire **actuel** du
+groupe (`get(groups/{group_id}).owner_id`) : un groupe supprimé puis recréé sous le même
+identifiant par un autre compte n'ouvre pas aux nouveaux membres les repas de l'ancien
+propriétaire. Une requête sans le filtre `uid` est refusée. Le titre d'une recette privée
+planifiée pour le groupe se lit sur le repas ; la recette, elle, reste fermée.
+**Un repas personnel porte `group_id: null` explicite** (`PlannedMeal.toFirestore`), et le
+partage d'un planning personnel n'ouvre que ces repas : la règle de lecture n'accepte
+`canReadPlanningOf(uid)` que si `resource.data.group_id == null` — le champ présent et nul : la
+forme `.get('group_id', null)` rendait la condition vraie sur une requête qui ne contraint pas
+`group_id`, et `uid == propriétaire` seul ramenait les repas de groupe. Sans cela, un compte qui lit le planning
+personnel d'un membre recevait aussi, par `uid == propriétaire`, les repas des groupes de ce
+membre dont il n'est pas membre. Le flux d'un planning partagé filtre donc `uid ==
+propriétaire` **et** `group_id == null` (index `uid`, `group_id`, `planned_at`) ; une égalité à
+`null` ne trouve pas un document sans le champ, et le backfill « Portée des groupes et des
+plannings » (§7.10) pose `group_id: null` sur les repas antérieurs ; d'ici là, un repas
+antérieur sans le champ ne se lit plus par le partage, ni un par un ni par requête. Le titulaire garde sa
+requête `uid == moi` sans filtre (« Mon planning », archive, reprise de « Nouveau planning ») :
+les repas qui portent un `group_id` y sont écartés côté client, et un repas antérieur non encore
+marqué lui reste visible. La fenêtre de variété lit tous les repas du cuisinier
+(`getCookedMealsBetween`, et `readServedHistory` côté serveur sur `uid ==`). La suppression
+d'un groupe supprime ses repas (`deleteGroupMeals`, appelé par `syncGroupReach`), et ses
+suggestions de repas (`meal_suggestions`, §3.7 bis). Les repas
+personnels d'un propriétaire se lisent, en lecture seule, par les comptes de `planning_reach`
+(§3.8 quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
+`group_id == null`, `planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais
+une requête `in`.
 Le client n'affiche sur un repas d'autrui ni `justification`, ni `choice_source`, ni
 menu, ni heure modifiable. L'écran d'un planning partagé couvre les 90 derniers jours et la suite ;
 il ne propose l'archive plus ancienne que pour son propre planning. C'est une limite du
@@ -1434,7 +1481,8 @@ attendant une décision.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uid` | `String` | Propriétaire du repas |
+| `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Absent sur un repas antérieur jusqu'au passage du backfill `group_planning_reach`, qui le pose à `null`. Figé |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -1448,6 +1496,59 @@ attendant une décision.
 | `choice_source` | `String?` | **Qui a choisi la recette** : `ai` (le modèle, parmi les candidats présélectionnés), `rules` (le code de Kass'Dalle, sans modèle : « Autre suggestion », panne du modèle, plafond), `concept` (recette conçue par l'IA), `manual` (l'utilisateur). Écrit à la validation d'un cycle et à chaque changement de recette depuis le planning ; « Remettre à blanc » le retire, avec `justification`. L'écran affiche la ligne d'origine « Choisie par l'IA » · « Choisie par Kass'Dalle » · « Conçue par l'IA » · « Choisie par vous », suivie de `justification`. Absent sur un repas antérieur à v0.23.18 : pas de ligne d'origine, et une `justification` « Sélection manuelle… » est lue comme `manual`. Aucun backfill |
 | `components` | `List<Map>?` | **Ce qui accompagne le plat.** Une entrée par composant : `role` (`accompagnement` \| `entree` \| `dessert`), soit `recipe_id` (une recette d'accompagnement), soit `staple_id` (une garniture), `label`, et pour une garniture la part **figée** au choix — `quantity_per_portion`, `unit`, `shopping_product`, `note` — plus `justification` (« le plat n'apporte pas de féculent : riz, accompagnement classique »). Le plat lui-même n'y figure pas, il reste dans `recipe_id`. Choisi par le **programme** (`side_chooser.dart` : ce que le plat n'apporte pas, ses accompagnements classiques, les garnitures visibles du compte, rotation sur les jours voisins), jamais par le modèle au moment du planning. L'**entrée** et le **dessert**, eux, viennent du même appel de planning que le plat, quand le format du jour (`meal_format`) en demande, parmi les recettes de ce rôle, une fois chacun dans le cycle (`starter_id`, `dessert_id`). Absent = aucun composant |
 | `created_at` | `Timestamp` | Création |
+
+---
+
+### 3.7 bis Collection `meal_suggestions` — les suggestions de repas (v0.23.58)
+
+Un membre d'un groupe actif, autre que son propriétaire, lecteur compris, suggère au
+propriétaire un plat pour un jour du planning du groupe. Pas de statut : le propriétaire
+lit, et planifie lui-même ce qu'il retient (« Planifier ce jour-là », qui écrit un
+`planned_meals` ordinaire). La suggestion n'est jamais modifiée ; « Au planning » se calcule
+à l'affichage (`plannedMatchFor`, `meal_suggestion.dart` : même groupe, même jour, même
+recette ou même titre sans casse). Aucun appel d'IA, aucun poste de coût.
+
+| Champ | Type | Description |
+|---|---|---|
+| `group_id` | `String` | Le groupe, 128 caractères au plus |
+| `group_owner_id` | `String` | Le propriétaire du groupe, **dénormalisé** et vérifié à la création contre `groups/{group_id}.owner_id` (figé) : la requête du propriétaire, `group_owner_id == moi`, est prouvable par les règles |
+| `author_uid` | `String` | L'auteur ; égal à l'appelant à la création |
+| `day` | `String` | Le jour visé, `AAAA-MM-JJ` (jour local de l'auteur). Les règles exigent une date réelle (`isSuggestionDay` : mois 1 à 12, jour cohérent via `timestamp.date`) dont la fin tombe au plus tôt un jour avant `request.time` (la veille UTC passe, pour le décalage de fuseau) et le début au plus tard 60 jours après. Le client propose aujourd'hui à aujourd'hui + 59 jours (`kSuggestionDaysAhead`, marge d'un fuseau en avance sur UTC) |
+| `recipe_id` | `String?` | La recette suggérée — exclusif de `free_title` |
+| `recipe_titre` | `String?` | Le titre de la recette, **copié** (200 caractères au plus) : le propriétaire le lit si la recette lui est fermée (privée), sans ouvrir la fiche (« Recette non partagée »). Une recette qu'il lit s'affiche sous son titre actuel, relu par `PlanningRepository.readableRecipeTitles` : un auteur ne fait pas passer un autre texte sous le nom d'une recette ouverte |
+| `free_title` | `String?` | Un nom libre, 1 à 60 caractères — exclusif de `recipe_id` et `recipe_titre` |
+| `note` | `String?` | Le mot de l'auteur, 200 caractères au plus ; absent s'il est vide |
+| `created_at` | `Timestamp` | Heure du serveur (`request.time`), seule valeur admise |
+
+**Identifiant imposé.** `{group_id}_{author_uid}_{day}_{n}`, n de 0 à 4
+(`suggestionIds`, règles ; `mealSuggestionId`, client). Le client lit ses suggestions du
+jour pour ce groupe (trois égalités, sans index composite) et prend le premier n libre ;
+une suggestion retirée libère le sien, et « Annuler » la recrée sous le même identifiant.
+
+**Lectures du client** (`MealSuggestionRepository`, `features/planning/data/`) : le
+propriétaire, `group_owner_id == moi` et `day` d'aujourd'hui − 90 jours à aujourd'hui +
+60 jours, triées par `day`, 500 au plus (`watchReceived`) ; l'auteur, `author_uid == moi`
+sur la même fenêtre (`watchSent`).
+« Voir les plus anciennes » lit `day <` cette borne, du plus récent au plus ancien, 100 au plus
+(`loadOlder`). Quatre index composites : (`group_owner_id`, `day` croissant et décroissant),
+(`author_uid`, `day` croissant et décroissant). Un document mal formé est écarté, et signalé
+une fois par lecture (`meal_suggestions.malformed`). Les flux ne s'ouvrent que pour un
+propriétaire d'un groupe actif qui compte un autre membre, ou pour un membre d'un groupe actif
+d'un autre propriétaire (`suggestionOwnerGroups`, `suggestableGroups`).
+
+**Plafond.** Cinq suggestions au plus par auteur, par groupe et par jour
+(`kSuggestionsPerAuthorPerDay`), **tenu par les règles** (revue sécurité v0.23.58) : une
+sixième n'a pas d'identifiant admis, et réécrire un identifiant pris est une mise à jour,
+refusée. Avec le jour borné à soixante et un jours, un membre écrit au plus
+5 × 61 suggestions par groupe à un instant donné, chacune de quelques centaines d'octets.
+
+**Suppressions.** L'auteur retire sa suggestion (« Annuler » la recrée sous le même
+identifiant, `created_at` reprenant l'heure du serveur) ; le propriétaire peut aussi la
+supprimer (règles), sans geste dans l'écran. Le serveur supprime, dans `syncGroupReach`, les
+suggestions d'un groupe supprimé (`deleteGroupSuggestions`) et celles d'un membre sorti du
+groupe — départ ou retrait par le propriétaire (`departedMembers`,
+`deleteMemberSuggestions`), par lots de 400, `retry: true`. Rien d'autre n'est purgé : une
+suggestion reste après son jour. Aucune migration : la collection est neuve.
 
 ---
 
@@ -1468,36 +1569,51 @@ Un document par utilisateur (`{uid}`), écrit depuis « Préférences du plannin
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
 | `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
 | `shared_group_ids` | `List<String>` | **Partager mon planning** (v0.23.47) : les groupes familiaux dont les membres voient ce planning, en lecture seule. Absent ou vide = rien n'est partagé (aucune migration). Cochés parmi les groupes dont le compte est membre, propriétaire compris ; 50 au plus (règles). Le serveur ignore un identifiant de groupe disparu, quitté ou mal formé (`sharedGroupIdsOf`). Un propriétaire qui n'est plus éditeur ou administrateur, ou révoqué, garde ses groupes en base : le partage est **suspendu**, et reprend s'il redevient éditeur. Un changement déclenche `syncPlanningReachOnConfig` |
+| `group_portions` | `Map<String, int>?` | Parts par défaut des repas de chaque groupe dont le compte est propriétaire (identifiant du groupe → parts). Absent ou groupe absent = nombre de membres du groupe, propriétaire compris (`groupDefaultPortions`). 50 entrées au plus (`isPlanningConfig`). Lu par « Nouveau planning » et un jour libre du planning d'un groupe ; aucun écran ne l'écrit encore |
 
 ---
 
 ### 3.8 quater Collection `planning_reach` — la portée des plannings
 
-Un document par compte lecteur : les propriétaires dont il peut lire le planning
-(`planned_meals`). Les règles Firestore le relisent (§4, `canReadPlanningOf`) : elles ne
-peuvent ni parcourir `groups`, ni croiser les groupes cochés avec le rôle du propriétaire.
+Un document par compte lecteur : les propriétaires dont il peut lire le planning personnel,
+et les groupes dont il lit le planning (`planned_meals`). Les règles Firestore le relisent
+(§4, `canReadPlanningOf`, `canReadGroupPlanning`) : elles ne peuvent ni parcourir `groups`,
+ni croiser les groupes avec le rôle de leur propriétaire.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
+| `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning personnel, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe **actif** de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
+| `group_ids` | `List<String>` | Groupes actifs dont le titulaire est membre, propriétaire compris, triés : il en lit le planning (`canReadGroupPlanning`), et, s'il n'en est pas le propriétaire, y suggère un plat (`meal_suggestions`, §3.7 bis). Groupe actif = propriétaire éditeur ou administrateur non révoqué |
+| `masked_group_ids` | `List<String>` | Groupes « en pause » : le titulaire en est membre et leur propriétaire ne planifie plus. Lu par le client (`GroupRepository.watchMaskedGroupIds`) : le planning les masque, l'écran Groupes les liste marqués « En pause » (le propriétaire y garde retirer, annuler une invitation, supprimer ; un membre les quitte) ; aucune règle ne le lit. Absent sur un document antérieur : rien n'est en pause |
+| `masked_invitation_ids` | `List<String>` | Groupes qui invitent le titulaire et sont en pause. Le client masque ces invitations (`GroupRepository.watchMyInvitations`) ; aucune règle ne le lit. Recalculé pour les invités ajoutés ou retirés d'un groupe (`invitationsToResync`, `syncGroupReach`) et pour les invités des groupes d'un compte dont le rôle change (`syncPlanningReachOnRole`) |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
 **Qui l'écrit :** le serveur seul (`triggers/planningReach.ts`, `syncPlanningReachFor`, dans
-une transaction qui relit les groupes du titulaire, puis `planning_config` et `users` de chaque
-autre membre). Trois déclencheurs :
+une transaction qui relit les groupes du titulaire et les groupes qui l'invitent, puis
+`planning_config` et `users` de chaque membre, titulaire compris, et du propriétaire de chaque
+groupe qui l'invite). Trois déclencheurs :
 
 - `syncGroupReach` (écriture d'un groupe dont la composition change) recalcule, pour les
-  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre ;
+  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre. Il
+  recalcule aussi `planning_reach` des invités ajoutés ou retirés, et de tous les invités d'un
+  groupe supprimé (`invitationsToResync`) : leur `masked_invitation_ids` peut changer ;
 - `syncPlanningReachOnConfig` (écriture de `planning_config/{uid}` dont `shared_group_ids`
   change) recalcule les membres des groupes ajoutés ou retirés, `retry: true` ;
-- `syncPlanningReachOnRole` (écriture de `users/{uid}` dont `role` ou `is_revoked` fait
-  changer le droit de partager, `planningShareChanged`) recalcule les membres des groupes
-  cochés par ce compte, `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
+- `syncPlanningReachOnRole` (`triggers/plannerRole.ts` ; écriture de `users/{uid}` dont `role`
+  ou `is_revoked` fait changer le droit de planifier, `planningShareChanged`) recalcule les
+  membres des groupes cochés par ce compte et ceux des groupes dont il est propriétaire, lui
+  compris — `planning_reach`, puis `group_reach` de ces derniers —, ainsi que `planning_reach`
+  des invités des groupes dont il est propriétaire (`invitedOfOwnedGroups`), `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
   un éditeur rétrogradé ou révoqué ne doit pas rester lisible. `syncUserClaims` ne s'en
   occupe pas.
 
-Aucun backfill : sans `shared_group_ids` rien n'est partagé, et sans `planning_reach` rien ne
-se lit. Le même risque accepté que `group_reach` (§3.5 bis) vaut ici : un échec au-delà de la
+Un backfill, « Portée des groupes et des plannings » (`backfillGroupPlanningReachFn`, §7.10),
+écrit `group_ids`, `masked_group_ids` et `masked_invitation_ids` sur les comptes antérieurs,
+membres et invités de tous les groupes (`groupAccounts`) — sans lui, un membre d'un
+groupe que personne n'a touché depuis le déploiement ne lirait pas le planning du groupe —, puis
+pose `group_id: null` sur les repas antérieurs, sans quoi un planning partagé n'en montrerait
+aucun.
+Sans `shared_group_ids` rien n'est partagé, et sans `planning_reach` rien ne se lit. Le même risque accepté que `group_reach` (§3.5 bis) vaut ici : un échec au-delà de la
 fenêtre de nouvelles tentatives laisse une portée périmée jusqu'au prochain changement, et se
 voit dans Admin › Journaux.
 
@@ -1525,6 +1641,7 @@ déploiement des index).
 |---|---|---|
 | `created_at` · `expires_at` | `Timestamp` | heure serveur ; `created_at` + 180 jours |
 | `correlation_id` | `String` | fil des journaux de la génération |
+| `group_id` | `String?` | groupe dont le planning est généré, `null` pour le planning personnel |
 | `cycle_start` | `String` | `YYYY-MM-DD` du premier créneau |
 | `slots` | `int` | créneaux du cycle |
 | `corpus_size` · `candidates_sent` · `duration_ms` · `rejected_choices` | `int` | recettes reçues, candidats envoyés au modèle, durée, choix du modèle remplacés |
@@ -1585,6 +1702,60 @@ document naît au premier refus.
 
 ---
 
+### 3.8 quinquies Document `users/{uid}/shopping/current` — le panier de courses
+
+Un seul document par compte : la liste de courses du titulaire, la même sur tous ses
+appareils, lue en temps réel (`myShoppingCartProvider`). Écrit et lu par le client seul
+(`ShoppingCartRepository`, `features/recipes/data/`) ; aucune Cloud Function ne le touche.
+Les produits ajoutés depuis le repas d'un autre membre vont dans le panier de **celui qui
+ajoute** : rien n'est écrit dans la recette, dans le repas ni dans le planning d'origine. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`), calculées en mémoire.
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `items` | `Map<String, Map>` | clé : l'identité du produit (`shoppingProductKey` du nom, 200 caractères au plus) ; valeur : un article. 300 articles au plus (`kShoppingCartMaxItems`, même borne dans les règles) |
+| `items.*.name` | `String` | nom du produit acheté, 200 caractères au plus |
+| `items.*.quantities` | `List<Map>` | une entrée `{qty: String, unit: String}` par famille d'unité (« 400 ml + 250 g »), 10 au plus, 40 caractères par champ |
+| `items.*.category` | `String` | rayon (`IngredientCategorizer`), 60 caractères au plus |
+| `items.*.source` | `String?` | d'où vient la ligne : « Curry de poulet (400 ml) · Riz (250 g) », 500 caractères au plus |
+| `items.*.checked` | `bool` | article déjà dans le panier |
+| `items.*.pos` | `int` | rang d'ajout, pour l'ordre d'affichage dans un rayon |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Pourquoi une carte et pas une liste.** Cocher une case écrit le seul champ
+`items.<clé>.checked` (`update` par `FieldPath`) : l'écriture part aussi hors ligne, dans le
+magasin, et deux appareils qui cochent des articles différents ne s'écrasent pas. « Retirer les
+articles cochés » supprime les clés montrées cochées (`FieldValue.delete()`) ; « Vider la
+liste » écrit une carte vide.
+
+**Ajouter et remplacer** passent par une transaction (`addItems`) : la fusion part de la liste
+à jour. « Ajouter » fusionne (`mergeShoppingItems` : même produit → même ligne, quantités
+additionnées famille par famille par `mergeShoppingProducts`, provenances réunies ; une ligne
+cochée qui reçoit une quantité redevient à acheter). « Remplacer » écrit les seuls nouveaux
+articles et rend l'ancienne liste, que « Annuler » réécrit (`restore`). Un résultat de plus de
+300 articles lève `ShoppingCartFullException` et n'écrit rien. Une transaction exige le
+réseau : hors ligne, l'ajout échoue avec un message, la case cochée non.
+
+**Lecture tolérante.** Un article sans nom ou mal formé est écarté, le reste s'affiche ; un
+document absent est un panier vide.
+
+**Reprise de l'ancienne liste locale** (`migrateLocalList`, côté client, pas de backfill). Avant
+ce document, la liste vivait dans `SharedPreferences` (`sl_items_{uid}`, `sl_date_{uid}`),
+valable le jour même, propre à un appareil. À la première lecture du panier sur un appareil, si
+`sl_items_{uid}` existe et que le panier Firestore est vide, ses lignes y sont écrites (en
+transaction, après fusion des doublons) ; dans tous les cas, les deux clés locales sont
+ensuite effacées. Un panier déjà rempli depuis un autre appareil fait foi. Un texte local
+illisible est remonté (`shopping.migrateLocal.parse`) et la clé effacée ; un échec d'écriture
+est remonté (`shopping.migrateLocal`), les clés restent pour le lancement suivant, et le panier
+s'affiche quand même.
+
+**Erreurs.** Chaque écriture en échec est remontée par le repository
+(`shopping.load`, `shopping.addItems`, `shopping.restore`, `shopping.setChecked`,
+`shopping.removeItems`, `shopping.clear`), sans attendre l'écriture du rapport, puis relancée à
+l'écran qui la dit.
+
+---
+
 ### 3.9 Collection `recipe_ratings`
 
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
@@ -1631,7 +1802,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `shopping_product_source` | `String?` | `ai_estimated` \| `admin` |
 | `allergens` | `String[]?` | Allergènes majeurs de l'ingrédient, clés de la liste de l'annexe II INCO (fixture `allergens.json`). **Absent** : jamais examiné. **Vide** : examiné, aucun. Posé par le modèle (`allergenExamination.ts`, lots de quarante, schéma JSON fermé) pour un ingrédient de la recette pas encore examiné, juste après sa création par `syncRecipeNutrition` (poste `allergens_auto`), ou par le backfill « Allergènes des ingrédients et des recettes » (poste `backfill_allergens`). **Jamais redemandé** une fois posé, et **jamais écrasé** par le modèle : l'écriture est conditionnelle, dans une transaction. L'examen ne **crée** jamais de document : un document créé avec ce seul champ ferait échouer le `create` de la nutrition, qui ne poserait plus ni `canonical_name`, ni `per100g`, ni le produit acheté. Corrigé à la main depuis *Admin › Référentiels › Ingrédients* ; les recettes ne le reprennent qu'au backfill ou à la prochaine modification de leurs ingrédients |
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
-| `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.55, par le backfill « Enrichir unités et ingrédients » sur un échec |
+| `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.59, par le backfill « Enrichir unités et ingrédients » sur un échec |
 | `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ; il est listé « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. L'enrichissement à l'écriture d'une recette et celui du rattrapage de la nutrition ne redemandent plus un ingrédient qui en porte 3 (`ingredientEnrichmentAllowed`). Serveur seul |
 | `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) l'applique aussi, sans exception (`allergenAutoExaminationAllowed`). Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
@@ -1643,7 +1814,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 des exemples d'ingrédients associés et un `grams_per_unit` — **jamais** posé sur une unité
 de volume ni de comptage, où il n'aurait aucun sens. Une unité que le modèle n'a pas su peser
 porte `ai_weight_attempt_at` (`Timestamp`, la question n'est pas reposée avant vingt heures)
-et `ai_weight_status: "estimation_failed"`. Depuis la v0.23.55, `ai_weight_failure_count`
+et `ai_weight_status: "estimation_failed"`. Depuis la v0.23.59, `ai_weight_failure_count`
 (`int?`) compte les échecs du backfill « Enrichir unités et ingrédients » sur cette unité :
 à 3, elle n'est plus soumise au modèle par ce backfill, sauf case « Réessayer aussi les
 éléments exclus après 3 échecs » ; remis à 0 par une estimation réussie. L'enrichissement à l'écriture
@@ -1743,6 +1914,69 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 
 ---
 
+### 3.12 bis Collection `tickets` — bugs, idées et questions des membres
+
+Un ticket créé par un membre approuvé depuis le menu du compte (« Signaler ou proposer »),
+publié en Issue sur le dépôt **public** `ChinaFred/KassDalle`, et suivi dans « Mes tickets »
+et Admin › Tickets (§5, « Tickets »). Écrit par les Functions seules (`submitTicket`,
+`attachTicketScreenshot`, `retryTicketSend`, `githubTicketWebhook`, `ticketsSyncSchedule`),
+à une exception : l'auteur pose `seen_by_author_at`. Lu par l'auteur (approuvé, non révoqué)
+et par l'administrateur. Le document est **privé** : le nom de l'auteur, son uid et la capture
+ne partent jamais sur GitHub.
+
+| Champ | Type | Description |
+|---|---|---|
+| `type` | `String` | `bug` \| `evolution` \| `feature` \| `question` |
+| `title` | `String` | 5 à 100 caractères, une ligne (espaces et retours à la ligne ramenés à une espace) |
+| `description` | `String` | 1 à 2 000 caractères, caractères de contrôle retirés sauf retour à la ligne et tabulation |
+| `screen` | `String` | Modèle de route go_router (`/recipes/:recipeId`), `autre` ou `inconnu`. Jamais d'identifiant ni de requête : un écran reçu sans la forme d'un modèle (segment autre qu'un littéral en minuscules ou un `:param`) est remplacé par `inconnu` (`routeTemplateOrNull`) |
+| `app_version` | `String` | Version de l'application qui a envoyé (`0.23.53+400`), 40 caractères au plus |
+| `platform` | `String` | `android` \| `ios` \| `web` \| `windows` |
+| `screenshot_path` | `String?` | `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg`, écrit par `attachTicketScreenshot` ; `null` sans capture |
+| `author_uid` | `String` | Compte auteur |
+| `created_at` | `Timestamp` | Heure serveur de création |
+| `updated_at` | `Timestamp` | Heure serveur de la dernière écriture serveur |
+| `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
+| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume le point de notification du compte quand `status` ∈ {`answered`, `refused`, `delivered`} et que `seen_by_author_at` est absent ou antérieur |
+| `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
+| `github_issue_number` | `int?` | Numéro de l'Issue, `null` tant que l'envoi n'a pas abouti |
+| `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
+| `send_attempts` | `int` | Essais d'envoi en échec. À 10 (`TICKET_MAX_SEND_ATTEMPTS`) sans numéro d'Issue, le ticket est « en anomalie » et la tâche horaire ne le reprend plus. Un jeton GitHub absent ou refusé n'use pas les essais |
+| `last_send_error` | `String?` | Dernière erreur d'envoi (300 caractères au plus, jamais le jeton), `null` après un envoi réussi |
+| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire du compte `ChinaFred` (identifiant numérique 16348852) qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
+| `send_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé pendant un envoi, pour qu'un « Relancer l'envoi » et la tâche horaire ne publient pas deux Issues. Retiré à la fin de l'envoi |
+
+**Correspondance GitHub → statut** (`statusFromIssue`, `nextTicketStatus`,
+`functions/src/tickets/rules.ts`, logique serveur seule) :
+
+| État de l'Issue | Statut |
+|---|---|
+| créée (étiquettes `source:app`, `type:<type>`, `statut:à-analyser`) | `received` |
+| étiquette `statut:analysé` | `analyzed` |
+| étiquette `validé` | `validated` |
+| PR ouverte dont le corps porte un mot-clé de fermeture (« Closes #N », « Fixes #N », « Resolves #N »), et dont l'auteur est le mainteneur ou un `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt (`isTrustedPrAuthor`) | `in_progress` |
+| fermée `completed` | `delivered`, ou `answered` pour une Question |
+| fermée `not_planned` (ou `duplicate`) | `refused` |
+
+Un statut ne recule jamais : une étiquette retirée ou une PR refermée ne le font pas
+redescendre. Une fin suit l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes.
+
+**Plafonds.** `ticket_quotas/{uid}_{AAAAMMJJ}` (`uid` `String`, `day` `String`, `count` `int`,
+`expires_at` `Timestamp`) et `ticket_quotas/_global_{AAAAMMJJ}` (mêmes champs sans `uid`),
+jour calendaire Europe/Paris (`parisDay`). Lus et incrémentés dans la transaction de
+`submitTicket` qui crée le ticket. `expires_at` vaut la création + 7 jours ; une politique TTL
+(`firestore.indexes.json` › `fieldOverrides`) supprime les compteurs. L'administrateur n'a pas
+de plafond et n'incrémente pas le compteur de la famille. Aucun accès client.
+
+**Index.** Aucun index composite : « Mes tickets » filtre sur `author_uid` et trie côté
+client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (`status ==`,
+`status in`, `github_issue_number ==`) se servent des index simples.
+
+**Migration :** aucune. Les deux collections naissent vides ; `app_config/tickets` n'a pas
+besoin d'être semé (§3.13).
+
+---
+
 ### 3.13 Collection `app_config` — les décisions
 
 Un document par décision. Aucune ne demande de déploiement pour changer.
@@ -1756,6 +1990,8 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
 | `planning_policy` | Présélection du planning : `plats_per_slot` (5, de 3 à 10), `starters_per_slot` et `desserts_per_slot` (3, de 1 à 10), `ranked_depth` (15, de `plats_per_slot` à 30 — profondeur de la liste gardée pour « Autre suggestion »), `concepts_per_generation` (2, de 0 à 7), `cost_cap_eur_per_generation` (0,50, de 0,05 à 5). Lu par `getPlanningPolicy` (cache 60 s), borné par `readPlanningPolicy` ; absent ou illisible : valeurs par défaut du code — ce sont des réglages, pas des prix. Aucun écran ne l'édite encore : il s'écrit depuis la console par un admin |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
+| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Le client lit `per_member_per_day` sans recopier le réglage par défaut du serveur (`fetchPerMemberDailyLimit`, `ticket_repository.dart`) : document ou champ absent → plafond inconnu, sans rapport, et le formulaire attend `remaining_today` du premier envoi ; valeur qui n'est pas un entier strictement positif → plafond inconnu et rapport d'erreur `tickets`. Ainsi la valeur 5 n'existe que côté serveur. Aucun semis : l'absence est un état lu et documenté |
+| `tickets_status` | État du jeton GitHub des tickets : `token_invalid_since` (`Timestamp?`), posé au premier refus du jeton (401, 403 hors limite de débit, 404 sur le dépôt) ou quand le secret est vide, effacé au premier appel GitHub réussi. Lu par l'administrateur seul (bandeau d'Admin › Tickets), écrit par le serveur seul — les règles refusent l'écriture client, administrateur compris |
 
 `ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
 jour où la politique en vigueur a été recopiée dans une première configuration.
@@ -1777,6 +2013,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn`, retiré en v0.23.52 : le document reste en base, verrou `running_until` compris, plus rien ne l'écrit ni ne le lit |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `group_planning_reach_backfill_checkpoint` | `backfillGroupPlanningReachFn` : `last_doc_id`, le dernier repas planifié parcouru par la phase des repas ; `null` quand `planned_meals` a été parcourue en entier |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1792,7 +2029,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `system_books` — ponctuels). Les ponctuels `recipe_protein`,
+récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach` — ponctuels). Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52 : leur `backfill_run_<clé>`
 reste en base, et l'écran ignore une clé absente du registre. Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
@@ -1976,7 +2213,8 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
 
 ```
 gs://{bucket}/
-├── quarantine/{uid}/…      ← SEULE porte d'entrée : le client n'écrit que là
+├── quarantine/{uid}/…      ← SEULE porte d'entrée des images publiées
+├── tickets/{uid}/{ticketId}/screenshot.(png|jpg) ← capture privée d'un ticket, écrite par l'auteur, lue par lui et l'admin
 ├── covers/{bookId}/…       ← écriture serveur uniquement
 ├── scans/{uid}/…           ← écriture serveur uniquement
 ├── illustrations/{uid}/…   ← écriture serveur uniquement
@@ -1993,6 +2231,12 @@ L'import par lien écrit deux fichiers avec l'Admin SDK : le texte de la page so
 Le fichier atterrit en quarantaine, le serveur l'inspecte (extension, type MIME, signature
 binaire, taille), la modération le juge, et lui seul le promeut dans un dossier publié. Les
 URL de téléchargement des images promues sont stockées dans `recipes.image_urls`.
+
+La capture d'un ticket est la seule autre écriture client : PNG ou JPEG de 5 Mo au plus,
+déposée par l'auteur sous son uid après `submitTicket`, puis rattachée au ticket par
+`attachTicketScreenshot`, qui vérifie l'auteur, le chemin et l'objet, y compris la signature
+PNG ou JPEG de ses premiers octets. Elle n'est jamais publiée — ni dans l'application, ni sur GitHub — et ne passe donc pas par la modération.
+Aucune purge en V1.
 
 Les images refusées sont **conservées** sous `rejected/` : sans l'image, personne ne peut
 dire si le refus était fondé, et une modération qu'on ne peut pas évaluer ne se corrige
@@ -2339,7 +2583,7 @@ service cloud.firestore {
       function serverOnlySourceFields() {
         return ['source_nutrition', 'source_nutrition_check'];
       }
-      // Compteurs des reprises automatiques (v0.23.55) : serveur seul. Un
+      // Compteurs des reprises automatiques (v0.23.59) : serveur seul. Un
       // créateur qui les remettrait à zéro relancerait des appels facturés.
       function serverOnlyRetryFields() {
         return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
@@ -2407,15 +2651,17 @@ service cloud.firestore {
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
+| `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
-| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`) — la requête du client filtre `uid == propriétaire`. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7) | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par son propriétaire seul, quel que soit son rôle (le lecteur supprime ses repas antérieurs) |
-| `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
+| `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
+| `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*` et `tickets_status` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -2429,6 +2675,8 @@ service cloud.firestore {
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
+| `tickets` | admin, ou l'auteur (`author_uid`) approuvé et non révoqué — un compte en attente ou révoqué ne relit pas ses tickets ; un ticket absent se lit comme absent par un compte approuvé (`resource == null`), pour que le détail affiche « Ce ticket n'existe plus » au lieu d'un refus | **serveur seul**, sauf une mise à jour de l'auteur approuvé et non révoqué qui ne touche que `seen_by_author_at` (`affectedKeys().hasOnly`) et le pose à `request.time`. Création et suppression refusées à tous, administrateur compris : un ticket créé par le client échapperait aux plafonds, et un statut écrit par le client ne dirait plus l'état de l'Issue |
+| `ticket_quotas` | **personne** | **serveur seul** (`allow read, write: if false`) — `submitTicket`. Un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
 
@@ -2705,12 +2953,25 @@ service firebase.storage {
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
+
+    // Capture d'un ticket — privée, jamais publiée. Pas de lecture Firestore :
+    // `attachTicketScreenshot` vérifie ensuite que le ticket est à l'appelant.
+    match /tickets/{uid}/{ticketId}/{fileName} {
+      allow read: if (isActive() && isOwner(uid)) || isAdmin();
+      allow create, update: if isOwner(uid) && isApprovedToken()
+        && fileName.matches('screenshot[.](png|jpg)')
+        && request.resource.size <= 5 * 1024 * 1024
+        && baseContentType() in ['image/png', 'image/jpeg'];
+    }
   }
 }
 ```
 
 > Les six dossiers publiés (`covers/`, `scans/`, `rejected/`, `illustrations/`, `recipes/`,
 > `users/`) sont fermés en écriture : seul le serveur y dépose, par l'Admin SDK.
+> `tickets/` est le seul dossier écrit par le client hors de la quarantaine : par le compte
+> lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
+> suppression est refusée à tous (aucune purge en V1).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
@@ -2742,7 +3003,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
   rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
   propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels, mémoire des
-  refus du planning (`preferences/planning_refusals`) ; côté
+  refus du planning (`preferences/planning_refusals`) ; `test/mealSuggestions.test.mjs` couvre
+  les suggestions de repas (création par un membre, refus au propriétaire, à l'invité, à
+  l'étranger, au groupe en pause, à un `group_owner_id` faux ; lecture par l'auteur et le
+  propriétaire seuls ; aucune mise à jour ; identifiant imposé `_0` à `_4` et sixième
+  refusée ; jour mal formé, impossible ou hors de la veille à J+60 refusé ; bornes) ; côté
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
@@ -2767,7 +3032,7 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   administrateur compris ; `source_nutrition` et `source_nutrition_check` ne se posent pas à la
   création, même sur une copie, et ne se modifient ni ne s'effacent ;
   `nutrition_catch_up_attempts`, `meal_role_failure_count` et `meal_role_attempt_at`
-  (`serverOnlyRetryFields`, v0.23.55) ne se posent pas à la création et ne se modifient ni ne
+  (`serverOnlyRetryFields`, v0.23.59) ne se posent pas à la création et ne se modifient ni ne
   s'effacent, éditeur créateur compris, alors que le même éditeur change le titre seul
   (« recipes — compteurs des reprises automatiques ») ; aucune écriture du client ne les
   recopie (`Recipe.toFirestore` ne les connaît pas, les modifications passent par `update`) ;
@@ -2824,6 +3089,21 @@ client ; l'éditeur écrit `shared_group_ids`, liste de 50 au plus, pour lui seu
 « repas créé au nom d'un autre », « modifier son repas », « uid figé » et « planifier et
 écrire `planning_config` » portent désormais sur l'éditeur.
 
+Le planning de groupe ajoute 11 tests (« plannings de groupe ») et en réécrit 1 : un membre lit
+le repas du groupe et la requête `group_id ==` ; un invité et un compte hors du groupe ne lisent
+rien ; un membre n'écrit ni ne supprime ; le propriétaire crée, modifie, lit et supprime ; un
+éditeur ne planifie pas avec le `group_id` d'un groupe dont il n'est pas propriétaire, ni avec
+un groupe inexistant ou un `group_id` non textuel ; `group_id` est figé ; un lecteur ne supprime
+aucun repas (le test « le relit et le supprime » devient « le relit, sans le supprimer ») ; un
+propriétaire rétrogradé, dont le serveur a retiré le groupe de `group_ids` et de `group_reach`,
+ne laisse plus ses membres lire ni le planning ni les livres du groupe ; `group_portions` est
+bornée à 50 entrées. La correction de relecture ajoute 2 tests et en réécrit 1 : un compte qui
+lit le planning personnel d'un éditeur ne lit pas son repas de groupe (`get` refusé, requête
+`uid ==` sans filtre refusée, requête `uid ==` et `group_id == null` acceptée) ; un repas
+antérieur sans le champ ne se lit plus par le partage, ni un par un ni par requête, et son
+propriétaire le relit ; le test
+« requête uid == propriétaire partagé » filtre désormais `group_id == null`.
+
 La v0.23.14 rend bloquant le dernier `todo`, « un éditeur ne lit pas le document d'un autre »,
 et ajoute 13 tests : un éditeur ne liste pas `users`, un administrateur lit et liste `users` ;
 sur `user_profiles`, un lecteur et un éditeur lisent le profil d'un autre, un lecteur liste les
@@ -2854,6 +3134,24 @@ groupe — lisent désormais le profil public `user_profiles/{uid}` (§3.1 bis),
 membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, par nom. La
 recherche par adresse exacte passe par la callable `findMemberByEmailFn` (§5, « Recherche d'un
 membre par adresse ») : le client ne lit toujours aucune adresse.
+
+Les tickets ajoutent 38 tests. Firestore (29) : `tickets` — l'auteur lit et liste les siens, un
+ticket absent se lit comme absent par un compte approuvé et non par un compte en attente, un
+autre membre et un éditeur ne les lisent pas, un membre ne liste pas toute la collection,
+l'administrateur lit tout ; un compte révoqué (jeton à jour ou périmé) et un compte en attente ne
+relisent pas leur ticket ; l'auteur pose `seen_by_author_at` à l'heure du serveur, pas à une
+date de son choix, et ne modifie aucun autre champ ; un autre membre, un compte révoqué ou en
+attente ne le posent pas ; personne ne crée ni ne supprime un ticket, administrateur compris, et
+l'administrateur ne modifie pas le ticket d'un membre ; `ticket_quotas` ne se lit ni ne s'écrit
+par aucun rôle ; `app_config/tickets` se lit par un compte approuvé, pas par un compte en
+attente ou révoqué, ne s'écrit pas par un membre et s'écrit par l'administrateur ; `app_config/tickets_status` se lit par
+l'administrateur seul et ne s'écrit par aucun client. Storage (9) : `tickets/` — l'auteur dépose
+une capture PNG ou JPEG sous son uid, nommée `screenshot`, de 5 Mo au plus ; personne ne dépose
+chez un autre, administrateur compris ; un compte en attente, révoqué ou anonyme ne dépose
+rien ; l'auteur et l'administrateur lisent la capture, un autre membre non ; un compte révoqué
+ne relit pas la sienne ; l'auteur ne la supprime pas ; un autre membre ne liste pas le dossier de
+l'auteur. Compte relevé le 2026-10-13 : 560 tests
+(Firestore et Storage), aucun `todo`.
 
 ---
 
@@ -3154,6 +3452,125 @@ coupe pas celui de l'autre. Une réponse arrivée après une modification de la 
 disparaît, la validation est ignorée, et le message s'affiche en ligne, en
 `colorScheme.error`, à la place de l'aide ; un échec réseau s'affiche de même, pour la saisie
 qui l'a provoqué.
+
+
+### Tickets — bugs, idées et questions envoyés sur GitHub
+
+Un membre approuvé (`reader`, `editor`, `admin`) envoie un ticket depuis le menu du compte. Le
+serveur l'enregistre dans `tickets` (§3.12 bis), le publie en Issue sur le dépôt **public**
+`ChinaFred/KassDalle`, et en suit le statut par un webhook GitHub, doublé d'une relecture
+horaire. Aucun appel de modèle : pas de poste d'IA, rien au reporting de coûts. L'analyse des
+tickets est faite par une session Claude Code, sur demande de l'administrateur.
+
+Code serveur : `functions/src/tickets/` — `rules.ts` (règles pures, testées par
+`tests/tickets.test.ts`), `github.ts` (client REST par `fetch`, aucun SDK), `service.ts`
+(envoi et application des retours), `webhook.ts` ; `callable/ticketsCallable.ts` ;
+`scheduled/ticketsSyncSchedule.ts`.
+
+| Fonction | Type | Garde | Contrat |
+|---|---|---|---|
+| `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field`), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
+| `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus, et ses 8 premiers octets porter la signature de ce format (`screenshotBytesMatch` : `89 50 4E 47 0D 0A 1A 0A` pour PNG, `FF D8 FF` pour JPEG), sinon `invalid-argument` |
+| `retryTicketSend` | Callable | `requireAdmin` | `{ ticketId }` → `{ status }`. Remet `send_attempts` à zéro et tente l'envoi une fois ; sans effet sur un ticket déjà publié |
+| `githubTicketWebhook` | HTTPS (`onRequest`, `invoker: "public"`) | signature `X-Hub-Signature-256` | voir ci-dessous |
+| `ticketsSyncSchedule` | Cloud Scheduler, toutes les heures | — | reprise des envois, resynchronisation |
+
+**Envoi.** `submitTicket` valide les entrées (`readTicketInput` : titre 5 à 100 caractères,
+description 1 à 2 000, écran réduit à un modèle de route, version, plateforme), après une garde
+de taille brute (`requireBoundedText`, `_inputBounds.ts`). Les plafonds (`app_config/tickets`,
+5 par membre et 30 pour la famille par jour Europe/Paris, l'admin exempté) sont lus et
+incrémentés dans la transaction qui crée le ticket en `sending`. Puis `sendTicket` publie
+l'Issue : titre du ticket, corps sur un gabarit fixe (`buildIssueBody` : type, écran, version,
+plateforme, référence opaque = identifiant du document, description), étiquettes `source:app`,
+`type:<type>`, `statut:à-analyser`. Ne partent **jamais** : nom, adresse, uid, capture, contenu
+de recette. Les mentions `@nom` du titre et de la description reçoivent une espace sans chasse
+(`neutralizeMentions`) : GitHub ne notifie personne. Les renvois `#N` et `owner/repo#N`
+reçoivent la même espace après le `#` (`neutralizeIssueReferences`) : l'Issue ne crée aucun
+lien ni aucun événement « mentioned this » sur une autre Issue ou PR. Le numéro et l'adresse de l'Issue sont
+écrits avec `status: received` avant que l'envoi soit tenu pour fait. En échec :
+`send_attempts` + 1, `last_send_error`, `logError`, et la callable réussit quand même avec
+`status: "sending"`.
+
+**Pas de double publication.** Un bail de deux minutes (`send_lease_until`, posé en
+transaction) empêche deux envois simultanés du même ticket. Une reprise (`retryTicketSend`,
+tâche horaire) cherche d'abord l'Issue par la référence du ticket (`GET /search/issues`) : une
+création réussie chez GitHub dont le numéro n'a pas été écrit est rattachée, pas republiée.
+
+**Jeton refusé.** Un secret `GITHUB_TICKETS_TOKEN` vide, une réponse 401, 403 (hors limite de
+débit) ou 404 sur le dépôt posent `app_config/tickets_status.token_invalid_since` ; le premier
+appel réussi l'efface. Ces échecs n'usent pas `send_attempts` : les tickets repartent quand le
+jeton est remplacé, comme l'annonce le bandeau d'Admin › Tickets. La tâche horaire s'arrête au
+premier jeton refusé.
+
+**Webhook.** `githubTicketWebhook` n'accepte que `POST`, et calcule le HMAC SHA-256 du corps
+**brut** (`req.rawBody`) sous `GITHUB_WEBHOOK_SECRET`, comparé à temps constant
+(`verifyGithubSignature`, `timingSafeEqual`). Avant le HMAC, un corps de plus de 25 Mo
+(`WEBHOOK_MAX_BODY_BYTES`, plafond des livraisons GitHub) rend 413, et une requête sans en-tête
+`X-GitHub-Event` rend 400. Secret vide : 503, journalisé au plus une fois par minute et par instance ; signature absente ou fausse : 401, journalisé
+par un `logWarn` au plus une fois par minute et par instance, qui porte le nombre de refus
+depuis le relevé précédent (`SignatureRejectionLog`) ; corps illisible : 400. Événements
+traités (`updatesFromEvent`) :
+
+- `issues` (`opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`) : statut dérivé
+  des étiquettes et de l'état (§3.12 bis) ;
+- `issue_comment` (`created`, `edited`, hors commentaires de PR) : seul un commentaire du
+  compte `ChinaFred` qui commence par « Réponse : » devient `reply_text`, préfixe retiré. Le
+  contrôle compare `comment.user.id` à l'identifiant numérique `GITHUB_TICKETS_MAINTAINER_ID`
+  (16348852), pas le login : un login se renomme et peut être repris par un autre compte ;
+- `pull_request` (`opened`, `reopened`, `edited`, `ready_for_review`, PR ouverte) : chaque
+  Issue citée par un mot-clé de fermeture passe à `in_progress`, jamais depuis une fin, si
+  l'auteur de la PR est le mainteneur (`user.id`) ou si `author_association` vaut `OWNER`,
+  `MEMBER` ou `COLLABORATOR` (`isTrustedPrAuthor`). Une PR ouverte depuis un fork par un autre
+  compte ne change aucun ticket ;
+- `ping` : 200.
+
+Tout autre événement, un autre dépôt, ou une Issue sans ticket (elle ne vient pas de
+l'application) : 200, ignoré. Aucun texte de GitHub n'est écrit hormis `reply_text` filtré.
+Une panne Firestore rend 500 : GitHub affiche la livraison en échec, et la tâche horaire
+rattrape l'état. Un commentaire supprimé ne retire pas `reply_text`.
+
+**Resynchronisation.** Chaque heure, `ticketsSyncSchedule` relit l'Issue de chaque ticket
+`received`, `analyzed`, `validated` ou `in_progress` (200 au plus) : état et étiquettes
+(`GET /issues/{n}`), PR ouvertes qui la ferment (chronologie, événements `cross-referenced`,
+« Closes #N » dans leur corps, auteur de confiance selon la même règle que le webhook, lue sur
+`source.issue.user.id` et `source.issue.author_association`), dernière réponse du compte
+16348852 (commentaires). Les tickets
+clos ne sont pas relus : une réouverture dont le webhook est perdu n'est pas rattrapée.
+
+**Secrets.** `GITHUB_TICKETS_TOKEN` : jeton « fine-grained » limité au dépôt
+`ChinaFred/KassDalle`, permissions Issues lecture-écriture, Metadata lecture, Pull requests
+lecture ; attaché à `submitTicket`, `retryTicketSend` et `ticketsSyncSchedule`.
+`GITHUB_WEBHOOK_SECRET` : secret partagé du webhook, attaché à `githubTicketWebhook` seule. Les
+deux sont lus par `process.env`, comme `ANTHROPIC_API_KEY` : une valeur vide n'arrête aucune
+fonction, elle laisse les tickets en « Envoi en cours » (jeton) ou refuse les livraisons du
+webhook (secret). Comme `GMAIL_SENDER`, un secret déclaré mais **absent** de Secret Manager fait
+échouer tout le déploiement des Functions : les deux doivent exister avant de fusionner (une
+valeur vide suffit pour débloquer le déploiement) :
+
+1. `firebase functions:secrets:set GITHUB_TICKETS_TOKEN --project kassdale-6d948`, coller le
+   jeton (GitHub › Settings › Developer settings › Fine-grained tokens, dépôt
+   `ChinaFred/KassDalle` seul) ;
+2. `firebase functions:secrets:set GITHUB_WEBHOOK_SECRET --project kassdale-6d948`, coller une
+   chaîne aléatoire longue (par exemple `openssl rand -hex 32`).
+
+Remplacer un jeton demande un `functions:secrets:set` puis un redéploiement des trois fonctions
+qui le montent (une version de secret est figée au déploiement).
+
+**Mise en place du webhook GitHub** (dépôt `ChinaFred/KassDalle` › Settings › Webhooks › Add
+webhook), après le premier déploiement :
+
+- *Payload URL* : `https://europe-west1-kassdale-6d948.cloudfunctions.net/githubTicketWebhook`
+  (l'adresse exacte est affichée par `firebase deploy` et dans la console Cloud Run) ;
+- *Content type* : `application/json` — le format `x-www-form-urlencoded` n'est pas lu ;
+- *Secret* : la valeur de `GITHUB_WEBHOOK_SECRET` ;
+- *SSL verification* : activée ;
+- *Which events* : « Let me select individual events » › **Issues**, **Issue comments**,
+  **Pull requests** ;
+- *Active* : coché. GitHub envoie un `ping` à l'enregistrement : il doit revenir en 200.
+
+Les étiquettes `source:app`, `type:bug`, `type:evolution`, `type:feature`, `type:question`,
+`statut:à-analyser`, `statut:analysé` et `validé` sont créées par GitHub à la première Issue qui
+les porte, si elles n'existent pas.
 
 ---
 
@@ -3503,6 +3920,16 @@ ses `recipe_ratings` (`readUserRatings`), et depuis v0.23.22 sa mémoire des ref
 (`readUserRefusals`, §3.8 ter). Une lecture en échec : `logError`, la génération continue
 sans historique (`historyAvailable: false`, aucun fait de service affirmé), sans note ou sans
 pénalité de refus.
+
+**Planning d'un groupe.** `suggestMealPlanFn` accepte `groupId` (identifiant de document,
+`readPlanningGroupId`) : le planning généré est celui de ce groupe. Le serveur lit
+`groups/{groupId}` et refuse (`permission-denied`, « Seul le propriétaire du groupe planifie
+pour lui. ») si l'appelant n'en est pas `owner_id` (`assertGroupPlanningOwner`) ; une lecture
+en échec rend `unavailable` après `logError`. Rien d'autre ne change : l'appelant est le
+propriétaire, et ce sont son historique (`uid ==`, repas de groupe compris : même cuisinier),
+ses notes, sa mémoire des refus et ses préférences qui servent. `groupId` ne part pas au
+modèle ; il est écrit dans le document de génération (`planning_runs.group_id`). Aucun poste
+d'IA de plus : le coût reste imputé à `planning` (et `planning_concept`), au nom de l'appelant.
 
 **Présélection** (`preselect`), créneau par créneau dans l'ordre des dates :
 
@@ -3934,12 +4361,15 @@ l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») pa
 sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` et
 `suggestMealIdeasFn`. Les règles `planned_meals` et `planning_config` exigent `isEditor()` à
 l'écriture (§4). Côté client, `canEditProvider` masque « Planifier » sur la fiche recette,
-« Nouveau planning », « Préférences du planning », « Liste des ingrédients », l'export du
+« Nouveau planning », « Préférences du planning », l'export du
 planning, « Choisir une recette » d'un jour libre, l'heure et le menu d'un repas (sauf
-« Supprimer » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
+« Supprimer » et « Ajouter aux courses » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
 l'écran Préférences ; `canWriteRecipeAdviceProvider` rend faux pour un lecteur, et la fiche lui
-montre le conseil de conservation déjà stocké, ou rien. La liste de courses d'une fiche recette
-reste ouverte au lecteur : elle est locale et ne coûte rien.
+montre le conseil de conservation déjà stocké, ou rien. Les courses restent ouvertes au
+lecteur — « Ajouter aux courses » sur un repas (le sien, ou celui d'un planning partagé),
+« Ajouter la période aux courses », « Mes courses », et la fiche recette — : elles s'écrivent
+dans son seul panier (`users/{uid}/shopping/current`, §3.8 quinquies) et n'appellent aucun
+modèle.
 
 **Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
 callables qui produisent une recette à enregistrer exigent `requireEditor` —
@@ -4380,7 +4810,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `searchWebRecipesFn` | `web_recipe_search` | `query` → 200 car., requis (`readWebSearchQuery`, caractères de contrôle retirés, espaces resserrées) |
 | `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
-| `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée |
+| `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée ; `groupId` → absent, `null`, ou identifiant de document (lettres, chiffres, `_`, `-`, 128 car. au plus), lu hors de l'entrée du modèle |
 | `generateRecipeConceptFn` | `planning_concept` | `slotDate` → 5 000 car., requis ; `globalConstraints` → 5 000 car. ; `dayConstraint`, `requestedDish` → 20 000 car. JSON ; `alreadyPlanned` → 500 éléments de 5 000 car. ; `runId` → motif `^pr_[0-9a-f]{32}$`, sinon refusé |
 | `suggestMealIdeasFn` | `planning_meal_ideas` | règles propres au poste (voir ci-dessus) ; tailles relevées avant troncature : `prompt`, `previousTitles`, `globalConstraints` |
 | `consolidateShoppingListFn` | `shopping_list` | `ingredients` → 500 éléments de 20 000 car., requis et non vide |
@@ -4538,7 +4968,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
+Quatre tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -4547,6 +4977,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
+| `ticketsSyncSchedule` | `every 60 minutes` | renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu) ; s'arrête au premier jeton refusé (§5, « Tickets ») |
 
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
@@ -4555,6 +4986,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillSystemBooksFn` | `admin` | parcourt `users` et crée, pour chaque compte `reader`, `editor` ou `admin` non révoqué, ceux des quatre livres système qui lui manquent, reconnus à leur tag (`missingSystemBooks`) : `__kassdale_ia`, `__libres`, `__secretes` par `books.add` avec les champs de `BookRepository.findOrCreate…Book`, `__web` par `findOrCreateWebBook`. Couverture vide. Comptes en attente ou révoqués sautés. 500 comptes complétés par appel au plus, arrêt sur trois échecs de suite. Sans appel de modèle, sans curseur : réentrant parce qu'un compte complet est sauté |
+| `backfillGroupPlanningReachFn` | `admin` | ponctuel `group_planning_reach`. Lit tous les `groups` une fois, et recalcule pour chacun de leurs membres et de leurs invités `group_reach` (`syncReachFor`) et `planning_reach` (`syncPlanningReachFor`, dont `group_ids`, `masked_group_ids` et `masked_invitation_ids`), les fonctions des déclencheurs ; un document déjà juste n'est pas réécrit. Puis, si la première phase n'a pas été arrêtée, parcourt `planned_meals` par identifiant depuis le point de reprise `app_config/group_planning_reach_backfill_checkpoint` (pages de 400, projection `group_id`) et pose `group_id: null` sur chaque repas qui n'a pas le champ, par lots ; un lot en échec est repris repas par repas. À lancer une fois après le déploiement du planning de groupe : sans lui, un membre d'un groupe que personne n'a touché depuis ne lit pas le planning du groupe, un groupe dont le propriétaire est déjà lecteur reste ouvert, et un planning personnel partagé ne montre aucun repas antérieur. 500 comptes réécrits et 4 000 repas marqués par appel au plus, arrêt sur trois échecs de suite dans chaque phase. Sans appel de modèle. Réentrant : un compte à jour est sauté, un repas qui porte le champ n'est pas réécrit |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
@@ -4634,7 +5066,7 @@ phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parc
 Le passage manuel lève les trois dernières bornes : c'est lui qu'on lance après avoir corrigé
 un poids à la pièce ou le poids d'une unité, puisque le passage programmé ne reprend plus ces
 recettes. Les vingt heures sont celles du délai de relance de l'enrichissement
-(`ENRICHMENT_RETRY_AFTER_MS`, ramené de 24 h à 20 h en v0.23.55) : les marques d'essai
+(`ENRICHMENT_RETRY_AFTER_MS`, ramené de 24 h à 20 h en v0.23.59) : les marques d'essai
 s'écrivent pendant le calcul, juste avant l'instantané. Un instantané assez vieux pour être
 repris garantit donc des marques assez vieilles pour que la reprise redemande au modèle.
 Avec 24 h d'un côté et 20 h de l'autre, le passage quotidien de 5 h trouvait la marque de la
@@ -4644,7 +5076,7 @@ portions usuelles) : une question restée sans réponse y est reposée quatre he
 qu'avant. Une recette reprise et toujours incomplète compte dans `echouees` : le passage est
 « incomplet » sans reprise horaire, et elle revient le lendemain, jusqu'à cinq tentatives.
 
-**Mémoire des échecs** (`backfills/failureMemory.ts`, v0.23.55). Trois récurrents qui
+**Mémoire des échecs** (`backfills/failureMemory.ts`, v0.23.59). Trois récurrents qui
 appellent un modèle comptent les échecs de chaque élément, sur son propre document : poids des
 unités (`ai_weight_failure_count`) et valeurs pour 100 g (`enrichment_failure_count`) pour
 « Enrichir unités et ingrédients », allergènes des ingrédients (`allergens_failure_count`),
@@ -4713,6 +5145,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
+| `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
@@ -5235,7 +5668,7 @@ GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`.
 - `Service Account User`, sur le compte d'exécution des fonctions ;
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
-  `GMAIL_SENDER` et `GMAIL_APP_PASSWORD`, et la CLI accorde au compte d'exécution l'accès à ces
+  `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`, et la CLI accorde au compte d'exécution l'accès à ces
   secrets. Le workflow ne transporte aucune valeur de secret : il n'a rien à connaître de plus
   pour un secret ajouté, mais le secret doit exister dans Secret Manager avant le déploiement
   qui le déclare (§5, « Invitations par e-mail ») ;
@@ -5631,7 +6064,7 @@ lib/
     ├── moderation/                # Publication d'images et écran de revue
     ├── planning/                  # Repas planifiés, batch planning, conservation (+ services/)
     ├── processing/                # Jobs d'import et leur avancement
-    ├── recipes/                   # Scan, révision, détail, liste, nutrition (+ services/)
+    ├── recipes/                   # Scan, révision, détail, liste, nutrition, courses (+ services/)
     ├── sandbox/                   # Bac à sable — hors release, voir 13.3
     └── search/                    # Recherche, filtres, génération de recette
 ```
@@ -5658,13 +6091,13 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, syncPlanningReachOnConfig, syncPlanningReachOnRole, applyEmailInvitation, applyRevokedInvitation
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach (+ suppression des repas et des suggestions d'un groupe supprimé, et des suggestions d'un membre sorti, groupMeals.ts), syncPlanningReachOnConfig, syncPlanningReachOnRole (plannerRole.ts), applyEmailInvitation, applyRevokedInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 
 ---
 
-### 13.1 Carte de navigation — les 45 routes
+### 13.1 Carte de navigation — les 50 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -5706,13 +6139,16 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
 | `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
-| `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui, supprime ses repas antérieurs ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
-| `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2) |
+| `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui et ceux de ses groupes, relit ses repas antérieurs et les ajoute aux courses ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
+| `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2). `?group=<groupId>` (`kPlanningGroupParam`) ouvre le planning d'un groupe dont l'utilisateur est le propriétaire ; sinon l'écran dit « Le planning de ce groupe ne vous est pas accessible. » |
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
+| `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |
+| `/tickets/new` | `TicketFormScreen` — « Signaler ou proposer » | `reader` — paramètre `?ecran=` : le modèle de route de l'écran d'où vient le membre, jamais l'adresse réelle ; envoi par `submitTicket` (§5, « Tickets ») |
+| `/tickets/:ticketId` | `MyTicketsScreen`, ticket sélectionné | `reader` — l'auteur seul ; ouvrir le détail pose `seen_by_author_at` |
 | `/logs` | `LogsScreen` | *voir l'avertissement ci-dessous* |
 | `/error-reports` | `ErrorReportsScreen` | *idem* |
 | `/dead-letters` | `DeadLettersScreen` | *idem* |
@@ -5737,6 +6173,8 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
+| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, et le bandeau « Jeton GitHub invalide » (`app_config/tickets_status`) |
+| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
 

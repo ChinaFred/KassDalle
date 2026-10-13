@@ -5,7 +5,9 @@ import '../domain/planning_visibility.dart';
 import 'planning_providers.dart';
 
 /// Le sélecteur « Plannings affichés » : « Mon planning », puis
-/// « Planning de Marie » pour chaque planning partagé avec l'utilisateur.
+/// « Planning de Marie » pour chaque planning partagé avec l'utilisateur,
+/// puis une case par planning de groupe lisible (« Famille Dupont »,
+/// « Planning du groupe · organisé par Marie »).
 ///
 /// Deux présentations, un même état ([planningOwnerOptionsProvider]) :
 /// - sur un téléphone, une ligne sous la barre, avec un bouton-puce qui
@@ -32,6 +34,10 @@ class _OwnerCheckboxes extends ConsumerWidget {
             value: option.shown,
             onChanged: (_) => notifier.toggle(option.uid),
             title: Text(option.title),
+            subtitle: option.subtitle == null ? null : Text(option.subtitle!),
+            secondary: option.isGroup
+                ? const Icon(Icons.groups_outlined)
+                : null,
             controlAffinity: ListTileControlAffinity.leading,
             dense: true,
           ),

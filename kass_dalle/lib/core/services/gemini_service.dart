@@ -428,6 +428,9 @@ class GeminiService {
   /// [mode] `model` (défaut) : présélection serveur puis un appel de modèle ;
   /// `code` : présélection seule, sans appel de modèle ni coût. Le client
   /// résout les identifiants rendus.
+  ///
+  /// [groupId] : le planning généré est celui de ce groupe ; le serveur
+  /// vérifie que l'appelant en est le propriétaire.
   Future<MealPlanResponse> suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
     required List<String> slotDates,
@@ -439,6 +442,7 @@ class GeminiService {
     List<Map<String, dynamic>> recentlyServed = const [],
     String? mode,
     List<List<String>?>? slotDismissed,
+    String? groupId,
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -453,6 +457,7 @@ class GeminiService {
       if (recentlyServed.isNotEmpty) 'recentlyServed': recentlyServed,
       'mode': ?mode,
       'slotDismissed': ?slotDismissed,
+      'groupId': ?groupId,
     });
     return MealPlanResponse.fromMap(data is Map ? data : const {});
   }
@@ -634,6 +639,36 @@ class GeminiService {
   Future<UrlImportQuota> getUrlImportQuota() async {
     final data = await _call('getUrlImportQuotaFn', const <String, dynamic>{});
     return UrlImportQuota.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  // ── Tickets ─────────────────────────────────────────────────────────────────
+  //
+  // Aucun appel d'IA : ces callables passent ici pour le contournement web du
+  // SDK `cloud_functions_web` (voir [_call]). Le repository des tickets lit
+  // les réponses et traduit les refus.
+
+  /// Crée un ticket. Entrée `{type, title, description, screen, app_version,
+  /// platform}` ; sortie `{ticketId, status, remaining_today}`.
+  Future<Map<String, dynamic>> submitTicket(
+    Map<String, dynamic> payload,
+  ) async {
+    final data = await _call('submitTicket', payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Rattache la capture envoyée sur [path] au ticket [ticketId].
+  Future<void> attachTicketScreenshot({
+    required String ticketId,
+    required String path,
+  }) async {
+    await _call('attachTicketScreenshot', {'ticketId': ticketId, 'path': path});
+  }
+
+  /// Relance l'envoi à GitHub d'un ticket en anomalie (administrateur).
+  /// Rend le statut du ticket après l'essai.
+  Future<String> retryTicketSend(String ticketId) async {
+    final data = await _call('retryTicketSend', {'ticketId': ticketId});
+    return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
   }
 
   /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par

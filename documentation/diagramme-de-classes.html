@@ -304,7 +304,7 @@ classDiagram
         côté serveur et peut être absent. Les champs <code>totals</code>, <code>perPortion</code>
         et <code>per100g</code> sont des <code>Map&lt;String, double&gt;</code> indexées par
         nutriment. <code>missingIngredients</code> est l'union de deux listes que le serveur
-        écrit à côté depuis la v0.23.55, et que le modèle Dart ne lit pas :
+        écrit à côté depuis la v0.23.59, et que le modèle Dart ne lit pas :
         <code>missing_weight</code> (<code>{name, cause}</code>, lignes impossibles à peser —
         <code>quantite_illisible</code>, <code>quantite_absente</code>,
         <code>comptage_sans_poids</code>, <code>unite_sans_poids</code>) et
@@ -477,6 +477,50 @@ classDiagram
     expired
   }
 
+  class Ticket {
+    &lt;&lt;tickets, écrit par le serveur, lu par l'auteur et l'admin&gt;&gt;
+    +String id
+    +TicketType type
+    +String title
+    +String description
+    +String screen
+    +String appVersion
+    +String platform
+    +String? screenshotPath
+    +String authorUid
+    +DateTime? createdAt
+    +DateTime? updatedAt
+    +TicketStatus status
+    +String rawStatus
+    +DateTime? statusChangedAt
+    +DateTime? seenByAuthorAt
+    +int? githubIssueNumber
+    +String? githubUrl
+    +int sendAttempts
+    +String? lastSendError
+    +String? replyText
+  }
+
+  class TicketType {
+    &lt;&lt;enumeration&gt;&gt;
+    bug
+    evolution
+    feature
+    question
+  }
+
+  class TicketStatus {
+    &lt;&lt;enumeration&gt;&gt;
+    sending
+    received
+    analyzed
+    validated
+    in_progress
+    delivered
+    refused
+    answered
+  }
+
   class Book {
     +String id
     +String titre
@@ -581,6 +625,7 @@ classDiagram
   class PlannedMeal {
     +String id
     +String uid
+    +String? groupId
     +String? recipeId
     +String recipeTitre
     +DateTime plannedAt
@@ -595,6 +640,20 @@ classDiagram
     +List~MealComponent~ components
     +MealChoiceSource? choiceSource
     +DateTime createdAt
+  }
+
+  class MealSuggestion {
+    +String id
+    +String groupId
+    +String groupOwnerId
+    +String authorUid
+    +DateTime day
+    +String? recipeId
+    +String? recipeTitre
+    +String? freeTitle
+    +String? note
+    +DateTime? createdAt
+    +String title()
   }
 
   class ModerationEntry {
@@ -623,10 +682,19 @@ classDiagram
   AppUser "0..*" --o "0..*" FamilyGroup : invitedIds
   AppUser "1" --&gt; "0..1" GroupReach : group_reach/uid
   FamilyGroup ..> GroupReach : syncGroupReach recalcule
+  FamilyGroup "0..1" --&gt; "0..*" PlannedMeal : planning du groupe (groupId), écrit par ownerId
+  FamilyGroup "1" --&gt; "0..*" MealSuggestion : groupId, lue par ownerId (groupOwnerId)
+  AppUser "1" --&gt; "0..*" MealSuggestion : authorUid, membre non propriétaire
+  Recipe "0..1" --&gt; "0..*" MealSuggestion : recipeId, titre copié
+  MealSuggestion ..> PlannedMeal : « Au planning » calculé (plannedMatchFor)
+  AppUser ..> GroupReach : rôle du propriétaire, groupe masqué s'il n'est plus éditeur
   AppUser "1" --&gt; "0..*" EmailInvitation : invitedBy (admin)
   EmailInvitation "0..*" --&gt; "1" FamilyGroup : groupId
   EmailInvitation "0..1" --&gt; "0..1" AppUser : acceptedUid
   EmailInvitation ..> EmailInvitationStatus : statusAt (expirée calculée)
+  AppUser "1" --&gt; "0..*" Ticket : authorUid
+  Ticket "1" --&gt; "1" TicketType
+  Ticket "1" --&gt; "1" TicketStatus
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
   Book "0..1" --&gt; "0..*" Recipe : bookId
@@ -647,6 +715,12 @@ classDiagram
         défaut au lieu d'une image téléversée.
         <b>Un invité n'est pas membre</b> (v0.23.19) : son uid vit dans <code>invitedIds</code>
         jusqu'à ce qu'il accepte, et passe alors dans <code>memberIds</code>.
+        <b>MealSuggestion</b> (<code>meal_suggestions/{id}</code>, v0.23.58) : un membre d'un
+        groupe actif, autre que son propriétaire, propose un plat pour un jour du planning du
+        groupe — une recette (<code>recipeId</code>, titre copié dans <code>recipeTitre</code>,
+        lisible du propriétaire même si la recette est privée) ou un nom libre
+        (<code>freeTitle</code>), et un mot (<code>note</code>). Pas de statut ; « Au planning »
+        se calcule contre les repas du groupe. Supprimée avec le groupe, ou au départ de son auteur.
         <b>EmailInvitation</b> (<code>invitations/{id}</code>) est l'invitation par e-mail d'une
         personne qui n'a pas encore de compte, ou dont le compte est révoqué : écrite par le
         serveur seul, lue par l'administrateur. <code>target</code> dit lequel (<code>new</code>
@@ -665,6 +739,14 @@ classDiagram
         <code>RecipeViewer.groupPeers</code>, les comptes nommés dans ses requêtes
         <code>created_by in</code> ; les règles Firestore le relisent pour laisser lire un
         <code>Book</code> ou une <code>Recipe</code> non privé d'un autre compte.
+        <b>Ticket</b> (<code>tickets/{id}</code>) est un bug, une évolution, une nouvelle
+        fonctionnalité ou une question d'un membre, publié en Issue GitHub sans son nom, son uid
+        ni sa capture. Écrit par les Cloud Functions ; l'auteur ne pose que
+        <code>seenByAuthorAt</code>. <code>status</code> ne recule jamais ; il revient de GitHub
+        (webhook et relecture horaire). Un ticket est « en anomalie » quand
+        <code>sendAttempts</code> atteint 10 sans <code>githubIssueNumber</code>. Les noms Dart
+        sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
+        <span class="path">TechnicalRequirements.md</span>).
       </figcaption>
     </figure>
 
@@ -947,11 +1029,13 @@ classDiagram
     +String calendarName
     +int varietyWindowWeeks
     +List~String~ sharedGroupIds
+    +Map~String, int~ groupPortions
   }
 
   class PlanningReach {
-    +List~String~ uids
-    +DateTime updatedAt
+    +Set~String~ uids
+    +Set~String~? groupIds
+    +Set~String~? maskedGroupIds
   }
 
   class PlanningOwnerOption {
@@ -959,6 +1043,16 @@ classDiagram
     +String name
     +bool isMine
     +bool shown
+    +String? groupId
+    +String? organizer
+    +bool isOrganizer
+  }
+
+  class PlanningTarget {
+    +String? groupId
+    +String groupName
+    +int memberCount
+    +isGroup
   }
 
   class DayConstraint {
@@ -1166,6 +1260,25 @@ classDiagram
     +isActiveAt(now) bool
   }
 
+  class ShoppingCart {
+    &lt;&lt;users/uid/shopping/current&gt;&gt;
+    +List~ShoppingItem~ items
+    +int checkedCount
+    +int uncheckedCount
+    +fromFirestore(data) ShoppingCart$
+    +itemsToFirestore(items) Map$
+  }
+
+  class ShoppingItem {
+    +String name
+    +List~ShoppingQuantity~ quantities
+    +String category
+    +String? source
+    +bool checked
+    +String key
+    +fromLegacyJson(json) ShoppingItem$
+  }
+
   class PlanningPolicy {
     &lt;&lt;app_config&gt;&gt;
     +int platsPerSlot
@@ -1200,7 +1313,9 @@ classDiagram
   PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
   PlanningPreferences ..> PlanningReach : sharedGroupIds, recalculé par le serveur
   PlanningReach ..> PlannedMeal : uids, lecture seule
-  PlanningReach ..> PlanningOwnerOption : un planning proposé par propriétaire
+  PlanningReach ..> PlannedMeal : groupIds, planning de groupe en lecture seule
+  PlanningTarget ..> PlannedMeal : groupId, le planning où l'on écrit
+  PlanningReach ..> PlanningOwnerOption : un planning proposé par propriétaire ou par groupe
   DayConstraint --> MealFormat : plat seul par défaut, sinon entrée, dessert ou léger
   PlanningPreferences ..> RecentlyServedMeal : fenêtre de variété, N semaines avant le cycle
   PlannedMeal ..> RecentlyServedMeal : recentlyServedBefore, une fois par recette
@@ -1209,23 +1324,35 @@ classDiagram
   PlannedMeal ..> MealPrepContext : construit quand la préparation précède le repas
   MealPrepContext ..> RecipeDetailScreen : passé en paramètres d'URL
   MealPrepContext --> MealStorageMode : au-delà de kMaxFridgeDays
+  ShoppingCart "1" *-- "0..300" ShoppingItem : items, par produit
+  PlannedMeal ..> ShoppingItem : « Ajouter aux courses », parts du repas, dans le panier de qui ajoute
+  Recipe ..> ShoppingItem : fiche recette, parts affichées
 </pre>
       </div>
       <figcaption>
+        <b><code>ShoppingCart</code> — <code>users/{uid}/shopping/current</code></b> : la liste
+        de courses d'un compte, la même sur tous ses appareils, lue et écrite par lui seul.
+        Ajouter un repas, qu'il soit à soi ou à un autre membre, écrit dans le panier de celui qui
+        ajoute ; la recette et le repas ne sont jamais touchés. <code>items</code> est une carte
+        indexée par <code>ShoppingItem.key</code> : cocher n'écrit qu'un champ, hors ligne aussi.
         <b><code>planning_config/{uid}</code> — un document par personne</b>, lisible par elle
         seule et modifiable par elle si elle est éditeur ou administrateur (v0.23.47). C'est
         l'application directe de la règle : un état propre à un utilisateur vit sous cet
         utilisateur, jamais dans le document commun.
         <span class="expect">
           <b>Partager son planning</b> (v0.23.47) : <code>sharedGroupIds</code> liste les groupes
-          dont les membres lisent ce planning. <b><code>PlanningReach</code> n'a pas de classe
-          Dart</b> : c'est le document <code>planning_reach/{uid}</code>, les propriétaires dont
-          le compte lit les <code>PlannedMeal</code>, écrit par le serveur seul et relu par les
-          règles Firestore. Le client le lit en <code>Set&lt;String&gt;</code>
-          (<code>PlanningRepository.watchPlanningReach</code>) et en tire les
+          dont les membres lisent ce planning. <b><code>PlanningReach</code></b> lit le document
+          <code>planning_reach/{uid}</code> : les propriétaires dont le compte lit les
+          <code>PlannedMeal</code> (<code>uids</code>), ses groupes actifs et masqués, écrit par
+          le serveur seul et relu par les règles Firestore. Le client le lit par
+          <code>PlanningRepository.watchPlanningReach</code> et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
           décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore.
+          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
+          pause) n'entre pas dans <code>PlanningReach</code> :
+          <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces
+          invitations.
         </span>
         <span class="expect">
           <b><code>MealPrepContext</code> n'est jamais stocké.</b> Il est construit par l'écran de
@@ -1903,6 +2030,19 @@ classDiagram
     +retryPending() Future
   }
 
+  class ShoppingCartRepository {
+    -FirebaseFirestore _db
+    -ErrorReportService _errorReportService
+    +watchAfterMigration(uid) Stream~ShoppingCart~
+    +load(uid) Future~ShoppingCart~
+    +addItems(uid, items, mode) Future~ShoppingAddResult~
+    +restore(uid, items) Future
+    +setChecked(uid, key, checked) Future
+    +removeItems(uid, keys) Future
+    +clear(uid) Future
+    +migrateLocalList(uid) Future~bool~
+  }
+
   class ErrorReportService {
     +reportError(feature, error, stackTrace, context) Future
   }
@@ -1914,6 +2054,7 @@ classDiagram
 
   RecipeRepository --&gt; ErrorReportService
   OriginalTextRepository --&gt; ErrorReportService
+  ShoppingCartRepository --&gt; ErrorReportService
   RecipeRepository --&gt; GeminiService : scanAndPromoteUpload
   RecipeRepository --&gt; CloudFunctions : normalizeRecipeReferentialsFn, computeRecipeNutritionFn
   GeminiService --&gt; CloudFunctions
@@ -1997,8 +2138,8 @@ classDiagram
       pour les recettes importées avant l'introduction du champ.
     </span>
     <span class="expect">
-      Les compteurs du jour <code>url_import_daily</code>, <code>invitation_sends_daily</code> et
-      <code>member_email_search_daily</code> ne figurent pas dans ce diagramme : ils n'ont pas de
+      Les compteurs du jour <code>url_import_daily</code>, <code>invitation_sends_daily</code>,
+      <code>member_email_search_daily</code> et <code>ticket_quotas</code> ne figurent pas dans ce diagramme : ils n'ont pas de
       classe Dart. Les Cloud Functions seules les écrivent et les relisent pour appliquer un
       plafond. Leurs champs sont au §3 de <span class="path">TechnicalRequirements.md</span>.
     </span>

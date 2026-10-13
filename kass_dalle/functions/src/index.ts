@@ -125,6 +125,14 @@ export { manageInvitationFn } from "./callable/invitationsCallable";
 // réservée au propriétaire du groupe, dix recherches par jour.
 export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
+// ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
+// Création par un membre approuvé, capture jointe par l'auteur, relance par
+// l'administrateur. Seules fonctions qui montent GITHUB_TICKETS_TOKEN (avec la
+// tâche horaire) ; le webhook seul monte GITHUB_WEBHOOK_SECRET. Aucun appel d'IA.
+export { submitTicket, attachTicketScreenshot, retryTicketSend } from "./callable/ticketsCallable";
+export { githubTicketWebhook } from "./tickets/webhook";
+export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";
+
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
@@ -138,6 +146,7 @@ export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
+export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.
@@ -162,7 +171,8 @@ export { onRecipeWritten } from "./triggers/recipeWritten";
 export { onBookWritten } from "./triggers/bookWritten";
 export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
-export { syncPlanningReachOnConfig, syncPlanningReachOnRole } from "./triggers/planningReach";
+export { syncPlanningReachOnConfig } from "./triggers/planningReach";
+export { syncPlanningReachOnRole } from "./triggers/plannerRole";
 export { enforceFounderRole } from "./triggers/founderRole";
 // Invitations par e-mail : première connexion d'un compte neuf, reconnexion d'un compte révoqué.
 export { applyEmailInvitation, applyRevokedInvitation } from "./triggers/invitationSignup";

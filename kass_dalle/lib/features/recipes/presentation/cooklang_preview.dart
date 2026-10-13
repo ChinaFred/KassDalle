@@ -39,13 +39,17 @@ class CooklangPreview extends StatefulWidget {
   /// Callback appelé avec l'URL de la miniature à supprimer.
   final void Function(String url)? onDeleteIllustration;
 
-  /// Callback optionnel pour déclencher la création de la liste de courses.
+  /// Callback optionnel pour « Ajouter aux courses ».
   /// Si null, le bouton n'est pas affiché dans la section ingrédients.
   final VoidCallback? onCreateShoppingList;
 
   /// Callback optionnel pour planifier la recette dans Google Calendar.
   /// Si null, le bouton calendrier n'est pas affiché.
   final VoidCallback? onSchedule;
+
+  /// Callback optionnel « Suggérer pour un planning de groupe ». Si null,
+  /// l'icône n'est pas affichée.
+  final VoidCallback? onSuggest;
 
   /// Types de plat à afficher (viande, dessert, etc.)
   /// Optionnel — si null ou vide, la section n'est pas affichée.
@@ -90,6 +94,7 @@ class CooklangPreview extends StatefulWidget {
     this.onDeleteIllustration,
     this.onCreateShoppingList,
     this.onSchedule,
+    this.onSuggest,
     this.recipeTags,
     this.dishTypes,
     this.basePortions,
@@ -218,7 +223,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               expanded: _ingredientsExpanded,
               onTap: () =>
                   setState(() => _ingredientsExpanded = !_ingredientsExpanded),
-              action: (onCreateShoppingList != null || onSchedule != null)
+              action:
+                  (onCreateShoppingList != null ||
+                      onSchedule != null ||
+                      widget.onSuggest != null)
                   ? Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -228,16 +236,22 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             icon: const Icon(Icons.calendar_month_outlined),
                             tooltip: 'Planifier',
                             iconSize: AppIconSize.small,
-                            visualDensity: VisualDensity.compact,
+                            color: theme.colorScheme.primary,
+                          ),
+                        if (widget.onSuggest != null)
+                          IconButton(
+                            onPressed: widget.onSuggest,
+                            icon: const Icon(Icons.lightbulb_outline),
+                            tooltip: 'Suggérer pour un planning de groupe',
+                            iconSize: AppIconSize.small,
                             color: theme.colorScheme.primary,
                           ),
                         if (onCreateShoppingList != null)
                           IconButton(
                             onPressed: onCreateShoppingList,
-                            icon: const Icon(Icons.shopping_cart_outlined),
-                            tooltip: 'Liste de courses',
+                            icon: const Icon(Icons.add_shopping_cart),
+                            tooltip: 'Ajouter aux courses',
                             iconSize: AppIconSize.small,
-                            visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),
                       ],

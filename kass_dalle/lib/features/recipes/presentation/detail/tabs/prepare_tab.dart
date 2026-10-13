@@ -12,6 +12,7 @@ import '../../url_import/recipe_source_link.dart';
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
+import '../../../../planning/presentation/suggest_meal_sheet.dart';
 import '../recipe_allergens_block.dart';
 
 /// Onglet « Préparer » : illustrations, ingrédients et étapes de la recette.
@@ -131,20 +132,16 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                     ? deleteIllustration
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
-                    ? () {
-                        final uid = ref.read(appUserProvider).value?.uid ?? '';
-                        final scaledProducts = scaleShoppingProducts(
+                    ? () => addRecipeToShoppingList(
+                        context,
+                        ref,
+                        products: scaleShoppingProducts(
                           recipe.shoppingProducts,
                           scaleFactor,
-                        );
-                        showShoppingListSheet(
-                          context,
-                          scaledProducts,
-                          scaledIngredients,
-                          recipe.titre,
-                          uid,
-                        );
-                      }
+                        ),
+                        fallbackIngredients: scaledIngredients,
+                        recipeTitre: recipe.titre,
+                      )
                     : null,
                 // Planifier est un geste d'éditeur : le lecteur ne planifie plus.
                 onSchedule:
@@ -155,9 +152,11 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                         recipeId: recipe.id,
                         prepTimeMin: recipe.tags.prepTime,
                         cookTimeMin: recipe.tags.cookTime,
+                        portions: recipe.portions,
                         ingredients: recipe.ingredients,
                       )
                     : null,
+                onSuggest: suggestRecipeAction(context, ref, recipe),
                 recipeTags: recipe.tags,
               ),
             ],

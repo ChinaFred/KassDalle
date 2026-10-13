@@ -51,6 +51,29 @@ export const ANTHROPIC_ADMIN_KEY = defineSecret("ANTHROPIC_ADMIN_KEY");
 export const GMAIL_SENDER = defineSecret("GMAIL_SENDER");
 export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
 
+/**
+ * Jeton GitHub des tickets (Secret Manager) : jeton « fine-grained » limité au
+ * dépôt `ChinaFred/KassDalle`, Issues en lecture-écriture, Metadata et Pull
+ * requests en lecture.
+ *
+ * Attaché à `submitTicket`, `retryTicketSend` et `ticketsSyncSchedule`, et lu
+ * par `process.env.GITHUB_TICKETS_TOKEN` comme `ANTHROPIC_API_KEY` : une valeur
+ * vide n'est pas une erreur, le ticket reste « Envoi en cours » et
+ * `app_config/tickets_status.token_invalid_since` le signale à l'administrateur.
+ * Comme pour `GMAIL_SENDER`, le secret doit EXISTER dans Secret Manager avant le
+ * premier déploiement qui le déclare (une valeur vide suffit) : un secret
+ * déclaré et absent fait échouer tout le déploiement des Functions.
+ */
+export const GITHUB_TICKETS_TOKEN = defineSecret("GITHUB_TICKETS_TOKEN");
+
+/**
+ * Secret partagé du webhook GitHub des tickets (Secret Manager), attaché à
+ * `githubTicketWebhook` seule. Vide : chaque livraison est refusée (HTTP 503)
+ * et journalisée ; la tâche horaire resynchronise les statuts quand même.
+ * Même condition d'existence que `GITHUB_TICKETS_TOKEN`.
+ */
+export const GITHUB_WEBHOOK_SECRET = defineSecret("GITHUB_WEBHOOK_SECRET");
+
 // ── Région ───────────────────────────────────────────────────────────────────
 
 /**
@@ -279,6 +302,56 @@ export const COLL_RECIPE_RATINGS = "recipe_ratings";
 
 /** Repas planifiés — `planned_meals/{mealId}`, champ `uid`. */
 export const COLL_PLANNED_MEALS = "planned_meals";
+
+/**
+ * Suggestions de repas des membres d'un groupe au propriétaire —
+ * `meal_suggestions/{id}`, champs `group_id`, `author_uid`. Supprimées avec
+ * leur groupe, et avec le départ de leur auteur (`syncGroupReach`).
+ */
+export const COLL_MEAL_SUGGESTIONS = "meal_suggestions";
+
+// ── Tickets (bugs, idées, questions des membres → Issues GitHub) ────────────
+
+/**
+ * Tickets des membres — `tickets/{ticketId}`. Écrits par les Functions seules,
+ * sauf `seen_by_author_at`, que l'auteur pose en ouvrant le détail.
+ */
+export const COLL_TICKETS = "tickets";
+
+/**
+ * Compteurs du plafond quotidien des tickets — `{uid}_{AAAAMMJJ}` et
+ * `_global_{AAAAMMJJ}` (jour calendaire Europe/Paris). Écrits par
+ * `submitTicket` seule, dans la transaction qui crée le ticket ; aucun accès
+ * client. Supprimés par la politique TTL sur `expires_at`.
+ */
+export const COLL_TICKET_QUOTAS = "ticket_quotas";
+
+/** Plafonds des tickets — `app_config/tickets` (`per_member_per_day`, `global_per_day`). */
+export const TICKETS_CONFIG_DOC_ID = "tickets";
+
+/** État du jeton GitHub — `app_config/tickets_status` (`token_invalid_since`). Admin seul. */
+export const TICKETS_STATUS_DOC_ID = "tickets_status";
+
+/** Dépôt PUBLIC qui reçoit les Issues des tickets. */
+export const GITHUB_TICKETS_OWNER = "ChinaFred";
+export const GITHUB_TICKETS_REPO = "KassDalle";
+
+/**
+ * Seul compte GitHub dont un commentaire « Réponse : … » devient la réponse
+ * montrée au membre (`reply_text`). Tout autre commentaire reste sur GitHub.
+ *
+ * La comparaison porte sur l'identifiant numérique du compte
+ * (`user.id`), qui ne change pas : un login se renomme, et un login libéré
+ * peut être repris par un autre compte.
+ */
+export const GITHUB_TICKETS_MAINTAINER_ID = 16348852; // compte ChinaFred
+
+/**
+ * Essais d'envoi au-delà desquels un ticket « Envoi en cours » n'est plus
+ * repris par la tâche horaire : il passe « en anomalie » dans Admin › Tickets,
+ * d'où `retryTicketSend` le relance.
+ */
+export const TICKET_MAX_SEND_ATTEMPTS = 10;
 
 // ── Collections backup ───────────────────────────────────────────────────────
 export const COLL_BACKUP_RECIPES = "backup_recipes";

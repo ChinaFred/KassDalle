@@ -158,6 +158,9 @@ class PlanningAiService {
   /// [recentlyServed] : les repas servis avant le cycle, dans la fenêtre de
   /// variété. Le serveur les retire du corpus tant qu'il en reste assez, et
   /// rend combien il en a retiré.
+  ///
+  /// [groupId] : le planning généré est celui de ce groupe, dont l'appelant
+  /// est le propriétaire. Le coût reste celui du poste `planning`.
   Future<MealPlanSuggestion> suggestMealPlan({
     required List<Recipe> recipes,
     required List<DateTime> slotDates,
@@ -169,6 +172,7 @@ class PlanningAiService {
     List<RecentlyServedMeal> recentlyServed = const [],
     bool withoutModel = false,
     List<Set<String>?>? slotDismissed,
+    String? groupId,
   }) async {
     // Un corpus vide part quand même : le serveur ouvre la génération à
     // laquelle se rattachent les conceptions, et leur plafond.
@@ -208,6 +212,7 @@ class PlanningAiService {
       slotDismissed: slotDismissed
           ?.map((d) => d == null || d.isEmpty ? null : _lastDismissed(d))
           .toList(),
+      groupId: groupId,
     );
 
     // Traduction pure de ce que le serveur a décidé : identifiant → recette.

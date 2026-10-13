@@ -286,6 +286,34 @@ service cloud.firestore {
         allow read: if isAdmin();
         allow write: if false;
       }
+
+      // ── Panier de courses personnel (`users/{uid}/shopping/current`) ──────
+      //
+      // Un seul document par compte, le même sur tous ses appareils. Il ne se
+      // lit et ne s'écrit que par son titulaire nommé ; un administrateur n'y
+      // a pas accès : ce qu'un membre achète ne regarde que lui.
+      // Les produits ajoutés depuis le planning d'un autre membre vont dans le
+      // panier de celui qui ajoute (`ShoppingCartRepository`).
+      //
+      // Forme bornée : `items` est une carte d'au plus 300 articles, et rien
+      // d'autre que `items` et `updated_at`. Les règles ne parcourent pas une
+      // carte : la longueur de chaque champ d'un article est bornée par le
+      // client (`ShoppingItem.toFirestore`), le document entier par la limite
+      // de 1 Mio de Firestore.
+      match /shopping/{docId} {
+        function isShoppingCart(data) {
+          return data.keys().hasOnly(['items', 'updated_at'])
+            && data.items is map
+            && data.items.size() <= 300
+            && (!('updated_at' in data) || data.updated_at is timestamp);
+        }
+
+        allow read, delete: if docId == 'current'
+          && isOwner(uid) && isApproved();
+        allow create, update: if docId == 'current'
+          && isOwner(uid) && isApproved()
+          && isShoppingCart(request.resource.data);
+      }
     }
 
     // Profils publics : la part d'un compte que les autres membres voient.
@@ -800,12 +828,14 @@ service cloud.firestore {
     // Un administrateur qui les écrirait directement pourrait programmer un
     // passage imputé au plafond d'un autre compte, ou lever un verrou.
     function isServerOnlyConfig(docId) {
-      return docId == 'backfill_schedules' || docId.matches('backfill_run_.*');
+      return docId == 'backfill_schedules' || docId.matches('backfill_run_.*')
+        || docId == 'tickets_status';
     }
 
     match /app_config/{docId} {
       allow read: if isAdmin() ||
-                     (isApproved() && (docId == 'usage' || docId == 'ai_pricing'));
+                     (isApproved() && (docId == 'usage' || docId == 'ai_pricing'
+                                       || docId == 'tickets'));
       allow write: if (isAdmin() && !isServerOnlyConfig(docId)) || (
         isApproved() && docId == 'usage' &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -1028,28 +1058,85 @@ service cloud.firestore {
              .data.get('uids', []);
     }
 
+    // Plannings de groupe
+    //
+    // Un repas dont `group_id` vaut un groupe appartient au planning de ce
+    // groupe : son propriétaire (`owner_id`, éditeur ou administrateur) le
+    // tient, tous les membres le lisent, un invité non. Le serveur pose dans
+    // `planning_reach/{lecteur}.group_ids` les groupes ACTIFS dont ce compte
+    // est membre, propriétaire compris ; un groupe dont le propriétaire est
+    // rétrogradé en sort, et son planning n'est plus lu par personne, sans
+    // être effacé.
+    //
+    // Une requête du client reste prouvable : elle filtre `group_id == X` et
+    // `uid == propriétaire` sur un seul groupe, et la règle vérifie le groupe
+    // contre la liste, puis que `uid` est le propriétaire ACTUEL du groupe :
+    // un groupe supprimé puis recréé sous le même identifiant par un autre
+    // compte n'ouvre pas aux nouveaux membres les repas de l'ancien
+    // propriétaire.
+    function canReadGroupPlanning(groupId) {
+      return groupId is string
+        && isApproved()
+        && exists(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+        && groupId in get(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+             .data.get('group_ids', []);
+    }
+
+    /// Le repas écrit est personnel (`group_id` absent ou nul), ou d'un groupe
+    /// dont l'appelant est le propriétaire. Une lecture du groupe par écriture
+    /// d'un repas de groupe ; aucune pour un repas personnel.
+    function ownsMealGroup(data) {
+      return data.get('group_id', null) == null
+        || (data.group_id is string
+            && get(/databases/$(database)/documents/groups/$(data.group_id)).data.owner_id
+                 == request.auth.uid);
+    }
+
     // Repas planifiés
     //
     // Planifier est un geste d'éditeur (v0.23.47) : un lecteur, un compte en
-    // attente ou révoqué relit et supprime ses repas antérieurs, il n'en crée
-    // ni n'en modifie. `uid` est figé : un repas offert à un autre compte
-    // apparaîtrait dans son planning. Les repas d'un planning partagé se
-    // lisent, jamais ne s'écrivent.
+    // attente ou révoqué ne crée, ne modifie ni ne supprime aucun repas. Il
+    // relit ses repas antérieurs ; il les supprimait aussi, jusqu'au planning
+    // de groupe. `uid` est figé : un repas offert à un autre compte
+    // apparaîtrait dans son planning. `group_id` est figé aussi : un repas ne
+    // change pas de planning. Les repas d'un planning partagé ou d'un groupe
+    // se lisent ; seul leur propriétaire les écrit.
     match /planned_meals/{mealId} {
+      // Le partage d'un planning personnel n'ouvre que ses repas personnels
+      // (`group_id` nul) : les repas des groupes du propriétaire ne se lisent
+      // que par les membres de ces groupes. La requête d'un planning partagé
+      // filtre donc `uid == propriétaire` ET `group_id == null` ; un repas
+      // personnel porte `group_id: null` explicite (le backfill « Portée des
+      // groupes et des plannings » le pose sur les repas antérieurs).
+      // `resource.data.group_id`, et non `.get('group_id', null)` : sur une
+      // requête qui ne contraint pas `group_id`, la valeur par défaut rendrait
+      // la condition vraie, et `uid == propriétaire` seul ramènerait ses
+      // repas de groupe. Un champ absent fait échouer la condition.
       allow read: if isAuthenticated()
-        && (resource.data.uid == request.auth.uid || canReadPlanningOf(resource.data.uid));
-      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      allow create: if isEditor() && request.resource.data.uid == request.auth.uid;
+        && (resource.data.uid == request.auth.uid
+            || (canReadPlanningOf(resource.data.uid)
+                && resource.data.group_id == null)
+            || (canReadGroupPlanning(resource.data.get('group_id', null))
+                && resource.data.uid == get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id));
+      allow delete: if isEditor() && resource.data.uid == request.auth.uid;
+      allow create: if isEditor() && request.resource.data.uid == request.auth.uid
+        && ownsMealGroup(request.resource.data);
       allow update: if isEditor() && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == resource.data.uid;
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.get('group_id', null) == resource.data.get('group_id', null)
+        && ownsMealGroup(request.resource.data);
     }
 
     /// `shared_group_ids` de `planning_config` : une liste bornée. Les règles
     /// ne savent pas parcourir une liste pour en vérifier chaque élément ; le
     /// serveur ignore toute valeur qui n'est pas un identifiant de groupe.
+    /// `group_portions` (parts par défaut de chaque groupe possédé) : une
+    /// table bornée de la même façon.
     function isPlanningConfig(data) {
-      return !('shared_group_ids' in data)
-        || (data.shared_group_ids is list && data.shared_group_ids.size() <= 50);
+      return (!('shared_group_ids' in data)
+          || (data.shared_group_ids is list && data.shared_group_ids.size() <= 50))
+        && (!('group_portions' in data)
+          || (data.group_portions is map && data.group_portions.size() <= 50));
     }
 
     // Préférences de planning — lues par leur titulaire, écrites par un
@@ -1068,6 +1155,105 @@ service cloud.firestore {
     match /planning_reach/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if false;
+    }
+
+    // Suggestions de repas (v0.23.58)
+    //
+    // Un membre d'un groupe actif, autre que son propriétaire, lecteur
+    // compris, suggère au propriétaire un plat pour un jour du planning du
+    // groupe : une recette (`recipe_id` + son titre copié `recipe_titre`) ou
+    // un nom libre (`free_title`), et un mot facultatif (`note`). Pas de
+    // statut : le propriétaire lit, et planifie lui-même s'il retient l'idée.
+    //
+    // `group_owner_id` est dénormalisé et vérifié à la création contre
+    // `groups/{group_id}.owner_id` (figé) : les deux requêtes du client
+    // restent prouvables — `group_owner_id == moi` pour le propriétaire,
+    // `author_uid == moi` pour l'auteur. Un autre membre ne lit pas les
+    // suggestions des autres.
+    //
+    // Le titre d'une recette privée suggérée est copié dans la suggestion :
+    // le propriétaire le lit, sans pouvoir ouvrir la fiche.
+    //
+    // Volume borné par la règle (revue sécurité v0.23.58) : l'identifiant est
+    // imposé, `{group_id}_{auteur}_{day}_{n}` avec n de 0 à 4 — cinq
+    // suggestions au plus par auteur, groupe et jour, une sixième tomberait
+    // sur un identifiant existant, donc sur une mise à jour refusée. Le jour
+    // (`AAAA-MM-JJ`) est une date réelle, dont la fin tombe au plus tôt un
+    // jour avant l'heure du serveur (la veille UTC passe : elle couvre le
+    // décalage entre le jour local de l'auteur et l'heure UTC), et dont le
+    // début tombe au plus tard soixante jours après.
+    //
+    // Aucune mise à jour. L'auteur retire sa suggestion ; le propriétaire
+    // peut aussi la supprimer. Le serveur supprime les suggestions d'un
+    // groupe supprimé et celles d'un membre qui en sort (`syncGroupReach`).
+    /// Le jour `AAAA-MM-JJ` de [day], à minuit UTC, après vérification de la
+    /// forme. Une date impossible (mois 13, 30 février) fait échouer la
+    /// comparaison de `isSuggestionDay`.
+    function suggestionDate(day) {
+      return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10]));
+    }
+
+    function isSuggestionDay(day) {
+      return day is string && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && int(day[5:7]) >= 1 && int(day[5:7]) <= 12
+        && int(day[8:10]) >= 1 && int(day[8:10]) <= 31
+        && suggestionDate(day).month() == int(day[5:7])
+        && suggestionDate(day).day() == int(day[8:10])
+        && suggestionDate(day) + duration.value(1, 'd') >= request.time - duration.value(1, 'd')
+        && suggestionDate(day) <= request.time + duration.value(60, 'd');
+    }
+
+    /// Les cinq identifiants admis pour une suggestion de l'appelant :
+    /// `{group_id}_{uid}_{day}_0` à `_4`.
+    function suggestionIds(data) {
+      let prefix = data.group_id + '_' + request.auth.uid + '_' + data.day + '_';
+      return [prefix + '0', prefix + '1', prefix + '2', prefix + '3', prefix + '4'];
+    }
+
+    function isMealSuggestion(data) {
+      return data.keys().hasOnly(['group_id', 'group_owner_id', 'author_uid', 'day',
+                                  'recipe_id', 'recipe_titre', 'free_title',
+                                  'note', 'created_at'])
+        && data.keys().hasAll(['group_id', 'group_owner_id', 'author_uid', 'day',
+                               'created_at'])
+        && data.group_id is string && data.group_id.size() > 0
+        && data.group_id.size() <= 128
+        && data.group_owner_id is string
+        && isSuggestionDay(data.day)
+        && data.created_at == request.time
+        && optText(data, 'note', 200)
+        && ((('recipe_id' in data) && !('free_title' in data)
+              && data.recipe_id is string && data.recipe_id.size() > 0
+              && data.recipe_id.size() <= 128
+              && data.recipe_titre is string && data.recipe_titre.size() > 0
+              && data.recipe_titre.size() <= 200)
+          || (('free_title' in data) && !('recipe_id' in data)
+              && !('recipe_titre' in data)
+              && data.free_title is string && data.free_title.size() > 0
+              && data.free_title.size() <= 60));
+    }
+
+    match /meal_suggestions/{suggestionId} {
+      // Groupe actif dont l'auteur est membre (`planning_reach.group_ids`,
+      // propriétaire compris), membre présent dans le groupe lui-même — la
+      // portée suit d'une seconde un départ —, et pas le propriétaire.
+      allow create: if isApproved()
+        && isMealSuggestion(request.resource.data)
+        && suggestionId in suggestionIds(request.resource.data)
+        && request.resource.data.author_uid == request.auth.uid
+        && canReadGroupPlanning(request.resource.data.group_id)
+        && request.resource.data.group_owner_id
+             == get(/databases/$(database)/documents/groups/$(request.resource.data.group_id)).data.owner_id
+        && request.resource.data.group_owner_id != request.auth.uid
+        && request.auth.uid
+             in get(/databases/$(database)/documents/groups/$(request.resource.data.group_id)).data.get('member_ids', []);
+      allow read: if isApproved()
+        && (resource.data.author_uid == request.auth.uid
+            || resource.data.group_owner_id == request.auth.uid);
+      allow update: if false;
+      allow delete: if isApproved()
+        && (resource.data.author_uid == request.auth.uid
+            || resource.data.group_owner_id == request.auth.uid);
     }
 
     // Rapports d'erreur
@@ -1169,6 +1355,34 @@ service cloud.firestore {
     match /meal_staples/{stapleId} {
       allow read: if isApproved();
       allow write: if isAdmin();
+    }
+
+    // Tickets des membres (bugs, idées, questions publiés en Issues GitHub).
+    //
+    // Privés : l'auteur lit les siens, l'administrateur lit tout. Écrits par
+    // les Cloud Functions seules (`submitTicket`, `attachTicketScreenshot`,
+    // le webhook GitHub, la tâche horaire), avec une exception : l'auteur pose
+    // `seen_by_author_at` en ouvrant le détail, ce champ seul, à l'heure du
+    // serveur (`request.time`), pour éteindre le point de notification.
+    // Un ticket absent se lit comme absent (`resource == null`) par un compte
+    // approuvé : le détail affiche « Ce ticket n'existe plus » au lieu d'un
+    // refus. Un identifiant aléatoire inexistant ne révèle rien.
+    match /tickets/{ticketId} {
+      allow read: if isAdmin()
+        || (isApproved()
+            && (resource == null || resource.data.author_uid == request.auth.uid));
+      allow update: if isApproved()
+        && resource.data.author_uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['seen_by_author_at'])
+        && request.resource.data.seen_by_author_at == request.time;
+      allow create, delete: if false;
+    }
+
+    // Compteurs du plafond quotidien des tickets : `submitTicket` les lit et
+    // les incrémente dans sa transaction. Aucun accès client.
+    match /ticket_quotas/{docId} {
+      allow read, write: if false;
     }
 
     // Journal de modération des images.

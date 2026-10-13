@@ -246,8 +246,8 @@ beforeEach(async () => {
       type: "recipeUrlImport",
       error_code: "page_blocked",
     },
-    "planned_meals/m1": { uid: READER, date: "2026-10-09" },
-    "planned_meals/m-editor": { uid: EDITOR, date: "2026-10-12" },
+    "planned_meals/m1": { uid: READER, group_id: null, date: "2026-10-09" },
+    "planned_meals/m-editor": { uid: EDITOR, group_id: null, date: "2026-10-12" },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
@@ -1946,9 +1946,11 @@ describe("plannings partagés — le lecteur ne planifie plus", () => {
     await assertFails(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
   });
 
-  it("un lecteur relit et supprime son ancien repas", async () => {
+  // Planning de groupe : un lecteur ne supprime plus aucun repas, pas même
+  // un ancien repas à lui. Il le relit.
+  it("un lecteur relit son ancien repas, sans le supprimer", async () => {
     await assertSucceeds(db("reader").doc("planned_meals/m1").get());
-    await assertSucceeds(db("reader").doc("planned_meals/m1").delete());
+    await assertFails(db("reader").doc("planned_meals/m1").delete());
   });
 
   it("un lecteur n'écrit pas planning_config", async () => {
@@ -1995,10 +1997,57 @@ describe("plannings partagés — lecture", () => {
     await assertFails(db("pending").doc("planned_meals/m-editor").get());
   });
 
-  it("requête uid == propriétaire partagé : acceptée", async () => {
+  it("requête uid == propriétaire partagé et group_id == null : acceptée", async () => {
     await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Le partage personnel n'ouvre pas les repas des groupes du propriétaire :
+  // le lecteur n'est pas membre de `g2`.
+  it("un repas de groupe ne se lit pas par le partage personnel", async () => {
+    await seedDocs(env, {
+      "planning_reach/reader": { uids: [EDITOR], group_ids: [] },
+      "planned_meals/gm2": { uid: EDITOR, group_id: "g2", date: "2026-10-12" },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm2").get());
+    await assertFails(
       db("reader").collection("planned_meals").where("uid", "==", EDITOR).get(),
     );
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Un repas antérieur sans le champ ne se lit plus par le partage — ni un
+  // par un, ni par la requête `group_id == null` — tant que le backfill
+  // « Portée des groupes et des plannings » n'y a pas posé `group_id: null`.
+  // Son propriétaire le relit toujours.
+  it("un repas antérieur sans group_id attend le backfill pour être partagé", async () => {
+    await seedDocs(env, {
+      "planned_meals/m-old": { uid: EDITOR, date: "2026-10-01" },
+    });
+    await assertFails(db("reader").doc("planned_meals/m-old").get());
+    await assertSucceeds(db("editor").doc("planned_meals/m-old").get());
+    const snap = await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+    const ids = snap.docs.map((d) => d.id);
+    if (!ids.includes("m-editor") || ids.includes("m-old")) {
+      throw new Error(`requête partagée inattendue : ${ids.join(", ")}`);
+    }
   });
 
   it("requête uid == propriétaire non partagé : refusée", async () => {
@@ -2052,6 +2101,190 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
       db("editor")
         .doc(`planning_config/${READER}`)
         .set({ shared_group_ids: ["famille"] }),
+    );
+  });
+
+  it("group_portions : table de 50 groupes au plus", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ group_portions: { gp: 4 } }),
+    );
+    const many = Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`g${i}`, 4]));
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: many }),
+    );
+    await assertFails(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: [4] }),
+    );
+  });
+});
+
+// ── plannings de groupe ──────────────────────────────────────────────────
+//
+// Le groupe `gp` appartient à l'éditeur ; le lecteur en est membre, l'autre
+// lecteur seulement invité. `planning_reach/{uid}.group_ids` porte les
+// groupes actifs dont le compte est membre, propriétaire compris, écrit par
+// le serveur seul.
+
+describe("plannings de groupe", () => {
+  const STRANGER = PERSONAS.stranger.uid;
+  const at = new Date("2026-10-16T19:00:00Z");
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "groups/gp": {
+        name: "Famille Dupont",
+        owner_id: EDITOR,
+        member_ids: [EDITOR, READER],
+        invited_ids: [OTHER],
+      },
+      "planning_reach/editor": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
+      "planning_reach/reader": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
+      "planning_reach/other-reader": { uids: [], group_ids: [], masked_group_ids: [] },
+      "planned_meals/gm1": { uid: EDITOR, group_id: "gp", planned_at: at },
+    });
+  });
+
+  // La requête du client : le groupe ET son propriétaire.
+  const groupQuery = (name) =>
+    db(name)
+      .collection("planned_meals")
+      .where("group_id", "==", "gp")
+      .where("uid", "==", EDITOR)
+      .where("planned_at", ">=", new Date("2026-10-01T00:00:00Z"))
+      .orderBy("planned_at");
+
+  it("groupe recréé sous le même identifiant : les repas de l'ancien propriétaire restent fermés", async () => {
+    // `gp` est supprimé puis recréé par un autre compte, dont le lecteur est
+    // membre. Le repas de l'ancien propriétaire (l'éditeur) reste en base.
+    await seedDocs(env, {
+      "groups/gp": {
+        name: "Autre famille",
+        owner_id: OTHER,
+        member_ids: [OTHER, READER],
+      },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+    // Le planning du nouveau propriétaire se lit normalement.
+    await seedDocs(env, {
+      "planned_meals/gm-new": { uid: OTHER, group_id: "gp", planned_at: at },
+    });
+    await assertSucceeds(db("reader").doc("planned_meals/gm-new").get());
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("group_id", "==", "gp")
+        .where("uid", "==", OTHER)
+        .get(),
+    );
+  });
+
+  it("groupe supprimé, portée pas encore recalculée : le planning reste fermé", async () => {
+    // `gp` est supprimé ; `planning_reach/reader.group_ids` contient encore
+    // "gp" tant que `syncGroupReach` n'est pas passé.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc("groups/gp").delete();
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+  });
+
+  it("requête sans filtre sur le propriétaire du groupe : refusée", async () => {
+    await assertFails(
+      db("reader").collection("planned_meals").where("group_id", "==", "gp").get(),
+    );
+  });
+
+  it("un membre lit le planning du groupe, un repas et la requête", async () => {
+    await assertSucceeds(db("reader").doc("planned_meals/gm1").get());
+    await assertSucceeds(groupQuery("reader").get());
+  });
+
+  it("un invité ne lit pas le planning du groupe", async () => {
+    await assertFails(db("otherReader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("otherReader").get());
+  });
+
+  it("un compte hors du groupe ne lit pas son planning", async () => {
+    await assertFails(db("stranger").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("stranger").get());
+  });
+
+  it("un membre n'écrit pas le planning du groupe", async () => {
+    await assertFails(
+      db("reader").doc("planned_meals/new").set({ uid: READER, group_id: "gp", planned_at: at }),
+    );
+    await assertFails(db("reader").doc("planned_meals/gm1").update({ recipe_titre: "x" }));
+    await assertFails(db("reader").doc("planned_meals/gm1").delete());
+  });
+
+  it("le propriétaire du groupe crée, modifie, lit et supprime", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+    );
+    await assertSucceeds(db("editor").doc("planned_meals/gm1").update({ recipe_titre: "Gratin" }));
+    await assertSucceeds(groupQuery("editor").get());
+    await assertSucceeds(db("editor").doc("planned_meals/gm1").delete());
+  });
+
+  it("un éditeur ne planifie pas avec le group_id d'un autre", async () => {
+    await assertFails(
+      db("stranger")
+        .doc("planned_meals/new")
+        .set({ uid: STRANGER, group_id: "gp", planned_at: at }),
+    );
+    // Groupe inexistant, ou valeur qui n'est pas un identifiant : refusé.
+    await assertFails(
+      db("editor")
+        .doc("planned_meals/new")
+        .set({ uid: EDITOR, group_id: "absent", planned_at: at }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: 42, planned_at: at }),
+    );
+  });
+
+  it("un membre éditeur non propriétaire ne planifie pas pour le groupe", async () => {
+    await seedDocs(env, {
+      "groups/gp": { name: "Famille Dupont", owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+    });
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+    );
+  });
+
+  it("group_id est figé", async () => {
+    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: null }));
+    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: deleteField() }));
+    await assertFails(db("editor").doc("planned_meals/m-editor").update({ group_id: "gp" }));
+  });
+
+  it("un lecteur ne supprime aucun repas, pas même le sien", async () => {
+    await assertFails(db("reader").doc("planned_meals/m1").delete());
+  });
+
+  it("propriétaire rétrogradé : les membres perdent le planning et les livres du groupe", async () => {
+    // Avant : le lecteur lit le planning du groupe et le livre de l'éditeur.
+    await assertSucceeds(db("reader").doc("planned_meals/gm1").get());
+    await assertSucceeds(db("reader").doc("books/public").get());
+    // Le serveur masque le groupe : `group_ids` et `group_reach` ne le
+    // portent plus (déclencheur `syncPlanningReachOnRole`). Rien n'est effacé.
+    await seedDocs(env, {
+      [`users/${EDITOR}`]: { ...PERSONAS.editor.doc, role: "reader" },
+      "planning_reach/reader": { uids: [], group_ids: [], masked_group_ids: ["gp"] },
+      "group_reach/reader": { uids: [] },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+    await assertFails(db("reader").doc("books/public").get());
+    await assertFails(
+      db("reader")
+        .collection("books")
+        .where("created_by", "in", [EDITOR])
+        .where("is_private", "==", false)
+        .get(),
     );
   });
 });
@@ -3591,5 +3824,200 @@ describe("users/{uid}/preferences/explore_filters — bornes", () => {
   it("des filtres à 21 clés sont refusés", async () => {
     const filters = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`f${i}`, []]));
     await assertFails(db("reader").doc(path).set({ filters }));
+  });
+});
+
+// ── tickets ──────────────────────────────────────────────────────────────
+
+describe("tickets — lecture et écriture", () => {
+  const MINE = "tickets/t-reader";
+  const ticket = (author) => ({
+    type: "bug",
+    title: "Liste vide",
+    description: "Ce qui s'est passé : …",
+    screen: "/planning",
+    app_version: "0.23.53",
+    platform: "web",
+    screenshot_path: null,
+    author_uid: author,
+    status: "answered",
+    github_issue_number: 12,
+    github_url: "https://github.com/ChinaFred/KassDalle/issues/12",
+    send_attempts: 0,
+    last_send_error: null,
+    reply_text: "C'est prévu.",
+    seen_by_author_at: null,
+  });
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [MINE]: ticket(READER),
+      "tickets/t-revoked": ticket(PERSONAS.revoked.uid),
+      "tickets/t-stale": ticket(PERSONAS.revokedStaleToken.uid),
+      "tickets/t-pending": ticket(PERSONAS.pending.uid),
+    });
+  });
+
+  it("l'auteur lit son ticket", async () => {
+    await assertSucceeds(db("reader").doc(MINE).get());
+  });
+
+  it("l'auteur liste ses tickets", async () => {
+    await assertSucceeds(
+      db("reader").collection("tickets").where("author_uid", "==", READER).get(),
+    );
+  });
+
+  it("un compte approuvé lit un ticket absent comme absent", async () => {
+    await assertSucceeds(db("reader").doc("tickets/inexistant").get());
+  });
+
+  it("un compte en attente ne lit pas un ticket absent", async () => {
+    await assertFails(db("pending").doc("tickets/inexistant").get());
+  });
+
+  it("un autre membre ne lit pas le ticket", async () => {
+    await assertFails(db("otherReader").doc(MINE).get());
+    await assertFails(db("editor").doc(MINE).get());
+  });
+
+  it("un membre ne liste pas tous les tickets", async () => {
+    await assertFails(db("reader").collection("tickets").get());
+  });
+
+  it("l'administrateur lit et liste tous les tickets", async () => {
+    await assertSucceeds(db("admin").doc(MINE).get());
+    await assertSucceeds(db("admin").collection("tickets").get());
+  });
+
+  it("un compte révoqué ne lit plus son ticket, même avec un jeton ancien", async () => {
+    await assertFails(db("revoked").doc("tickets/t-revoked").get());
+    await assertFails(db("revokedStaleToken").doc("tickets/t-stale").get());
+  });
+
+  it("un compte en attente ne lit pas son ticket", async () => {
+    await assertFails(db("pending").doc("tickets/t-pending").get());
+  });
+
+  it("un anonyme ne lit rien", async () => {
+    await assertFails(db("anonymous").doc(MINE).get());
+  });
+
+  it("l'auteur pose seen_by_author_at à l'heure du serveur", async () => {
+    await assertSucceeds(db("reader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+  });
+
+  it("l'auteur ne pose pas seen_by_author_at à une date de son choix", async () => {
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: firebase.firestore.Timestamp.fromDate(new Date(2099, 0, 1)) }),
+    );
+  });
+
+  it("l'auteur ne modifie aucun autre champ", async () => {
+    await assertFails(db("reader").doc(MINE).update({ status: "delivered" }));
+    await assertFails(db("reader").doc(MINE).update({ reply_text: "faux" }));
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: serverTimestamp(), title: "Autre titre" }),
+    );
+    await assertFails(db("reader").doc(MINE).update({ screenshot_path: "tickets/x/y.png" }));
+  });
+
+  it("un autre membre ne pose pas seen_by_author_at", async () => {
+    await assertFails(
+      db("otherReader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
+    );
+  });
+
+  it("un compte révoqué ou en attente ne pose pas seen_by_author_at", async () => {
+    await assertFails(
+      db("revoked").doc("tickets/t-revoked").update({ seen_by_author_at: serverTimestamp() }),
+    );
+    await assertFails(
+      db("revokedStaleToken")
+        .doc("tickets/t-stale")
+        .update({ seen_by_author_at: serverTimestamp() }),
+    );
+    await assertFails(
+      db("pending").doc("tickets/t-pending").update({ seen_by_author_at: serverTimestamp() }),
+    );
+  });
+
+  it("personne ne crée ni ne supprime un ticket depuis le client", async () => {
+    await assertFails(db("reader").doc("tickets/nouveau").set(ticket(READER)));
+    await assertFails(db("admin").doc("tickets/nouveau").set(ticket(PERSONAS.admin.uid)));
+    await assertFails(db("reader").doc(MINE).delete());
+    await assertFails(db("admin").doc(MINE).delete());
+  });
+
+  it("l'administrateur ne modifie pas le ticket d'un membre", async () => {
+    await assertFails(db("admin").doc(MINE).update({ status: "refused" }));
+    await assertFails(db("admin").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+  });
+});
+
+describe("ticket_quotas — compteur serveur seul", () => {
+  const DOC = `ticket_quotas/${READER}_20261013`;
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      [DOC]: { uid: READER, day: "20261013", count: 2 },
+      "ticket_quotas/_global_20261013": { day: "20261013", count: 7 },
+    });
+  });
+
+  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} ne lit ni n'écrit les compteurs`, async () => {
+      await assertFails(db(persona).doc(DOC).get());
+      await assertFails(db(persona).doc("ticket_quotas/_global_20261013").get());
+      await assertFails(db(persona).collection("ticket_quotas").get());
+      await assertFails(db(persona).doc(DOC).update({ count: 0 }));
+      await assertFails(db(persona).doc(DOC).delete());
+      await assertFails(db(persona).doc("ticket_quotas/new").set({ count: 0 }));
+    });
+  }
+});
+
+describe("app_config — tickets et tickets_status", () => {
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "app_config/tickets": { per_member_per_day: 5, global_per_day: 30 },
+      "app_config/tickets_status": { token_invalid_since: null },
+    });
+  });
+
+  it("un membre approuvé lit les plafonds des tickets", async () => {
+    await assertSucceeds(db("reader").doc("app_config/tickets").get());
+  });
+
+  it("un compte en attente ou révoqué ne lit pas les plafonds", async () => {
+    await assertFails(db("pending").doc("app_config/tickets").get());
+    await assertFails(db("revoked").doc("app_config/tickets").get());
+  });
+
+  it("un membre n'écrit pas les plafonds", async () => {
+    await assertFails(db("reader").doc("app_config/tickets").update({ per_member_per_day: 99 }));
+  });
+
+  it("l'administrateur écrit les plafonds des tickets", async () => {
+    await assertSucceeds(
+      db("admin").doc("app_config/tickets").set({ per_member_per_day: 3, global_per_day: 20 }),
+    );
+    await assertSucceeds(db("admin").doc("app_config/tickets").update({ global_per_day: 40 }));
+  });
+
+  it("seul l'administrateur lit l'état du jeton GitHub", async () => {
+    await assertSucceeds(db("admin").doc("app_config/tickets_status").get());
+    await assertFails(db("reader").doc("app_config/tickets_status").get());
+    await assertFails(db("editor").doc("app_config/tickets_status").get());
+  });
+
+  it("personne n'écrit l'état du jeton depuis le client, pas même l'administrateur", async () => {
+    await assertFails(
+      db("admin").doc("app_config/tickets_status").set({ token_invalid_since: null }),
+    );
   });
 });

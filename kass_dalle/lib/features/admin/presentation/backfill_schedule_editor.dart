@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
+import '../../../core/presentation/adaptive_sheet.dart';
 import '../../../core/theme/app_icon_size.dart';
-import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_shortcuts.dart';
 
 /// Ce que l'éditeur rend à l'enregistrement.
@@ -21,8 +21,8 @@ class BackfillScheduleChoice {
 }
 
 /// Ouvre le contrôle de programmation d'un backfill récurrent : feuille du
-/// bas sur téléphone, dialogue au-delà de `PlatformUtils.wideBreakpoint`.
-/// Même contenu dans les deux cas.
+/// bas sur téléphone, dialogue au-delà de `PlatformUtils.wideBreakpoint`
+/// (`showAdaptiveSheet`). Même contenu dans les deux cas.
 ///
 /// [onSave] enregistre ; s'il lève, l'éditeur reste ouvert et dit pourquoi.
 /// Rend `true` quand la programmation a été enregistrée.
@@ -39,30 +39,14 @@ Future<bool> showBackfillScheduleEditor(
     onSave: onSave,
     onOpenSpendCap: onOpenSpendCap,
   );
-  final wide = MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
-  final saved = wide
-      ? await showDialog<bool>(
-          context: context,
-          builder: (_) => Dialog(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: editor,
-            ),
-          ),
-        )
-      : await showModalBottomSheet<bool>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          // Le glisser fermerait la feuille sans passer par `PopScope` : la
-          // fermeture passe par « Annuler », le fond ou Échap, refusés tant
-          // qu'un enregistrement est en cours.
-          enableDrag: false,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (_) => editor,
-        );
+  final saved = await showAdaptiveSheet<bool>(
+    context,
+    child: editor,
+    // Le glisser fermerait la feuille sans passer par `PopScope` : la
+    // fermeture passe par « Annuler », le fond ou Échap, refusés tant
+    // qu'un enregistrement est en cours.
+    enableDrag: false,
+  );
   return saved == true;
 }
 

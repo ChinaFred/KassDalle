@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.55 — fonctionnel
+### v0.23.59 — fonctionnel
 
 Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurrents.
 
@@ -54,7 +54,7 @@ Un passage qui a tout parcouru mais laisse des échecs s'affiche « Incomplet »
 de page dans le CookLang quand le champ manque. Une page non-recette n'est plus listée à
 revoir.
 
-### v0.23.55 — technique
+### v0.23.59 — technique
 
 `PassSummary` gagne `unresolved` : les éléments traités et restés en échec, non exclus.
 `passStatus` ne rend `termine` que si `unresolved` vaut 0. `repriseDueAfter` ne change pas :
@@ -96,6 +96,164 @@ premier échec : aucun backfill à lancer.
 
 `shoppingBackfillCallable`, `recipeRolesBackfillCallable` et `allergensBackfillCallable`
 lisent le type de page par `resolvePageType`.
+
+### v0.23.58 — fonctionnel
+
+Les membres d'un groupe suggèrent des plats au propriétaire. Tout membre d'un groupe actif
+autre que son propriétaire, lecteur compris, ouvre « Suggérer un plat » sur un jour
+d'aujourd'hui ou à venir du planning du groupe, ou « Suggérer pour un planning de groupe »
+depuis une fiche recette : une recette qu'il lit ou un nom libre, et un mot facultatif. Une
+recette privée se suggère par son titre : le propriétaire le lit, sans ouvrir la fiche. Cinq
+suggestions au plus par membre, par groupe et par jour. L'auteur voit sa suggestion sous les
+repas du groupe et la retire ; il ne voit pas celles des autres. Le propriétaire lit le nombre
+de suggestions des jours à venir sur le bouton « Suggestions des membres », un repère
+« 2 suggestions » sur le jour, et une fenêtre qui les range par jour, avec « Planifier ce
+jour-là ». Pas de statut : le propriétaire planifie lui-même ce qu'il retient, et « Au
+planning » s'affiche quand le planning du groupe reprend déjà le plat. Rien n'est purgé ; un
+groupe supprimé emporte ses suggestions, un membre qui sort emporte les siennes. Pas de
+notification, aucun appel d'IA.
+
+Après relecture : on suggère d'aujourd'hui à 59 jours après ; une recette que le
+propriétaire lit s'affiche sous son titre actuel ; les messages de la fenêtre des
+suggestions (« Repas planifié… », « Suggestion retirée. », avec « Annuler ») s'affichent
+dans la fenêtre ; un repère sur un jour passé ouvre la fenêtre sur ce jour, jours passés
+dépliés ; un membre sans repas sur la période garde la liste des jours pour suggérer ;
+« Reçues (n) » et « Envoyées (n) » comptent les jours à venir ; « Voir les plus anciennes »
+vient directement sans jour passé, et dit « Aucune suggestion plus ancienne. » ; une
+erreur de lecture des recettes se dit dans la feuille.
+
+### v0.23.58 — technique
+
+Nouvelle collection `meal_suggestions` (`group_id`, `group_owner_id` dénormalisé et vérifié
+contre le groupe, `author_uid`, `day` en `AAAA-MM-JJ`, `recipe_id` + `recipe_titre` copié ou
+`free_title`, `note`, `created_at` du serveur). Règles : création par un membre d'un groupe
+actif (`planning_reach.group_ids` et `member_ids`), pas le propriétaire, forme fermée et
+bornée ; lecture et suppression par l'auteur ou le propriétaire ; aucune mise à jour. Tests
+dans `rules-tests/test/mealSuggestions.test.mjs`. Quatre index composites (`group_owner_id` ou
+`author_uid`, avec `day`). `syncGroupReach` supprime les suggestions d'un groupe supprimé et
+celles d'un membre sorti (`deleteGroupSuggestions`, `deleteMemberSuggestions`,
+`departedMembers`, `groupMeals.ts`), journalisées par `logError` en cas d'échec et rejouées.
+Côté client : `MealSuggestionRepository`, `meal_suggestion.dart`, la feuille
+`suggest_meal_sheet.dart`, la fenêtre `meal_suggestions_window.dart` ; `addMeal` rend
+l'identifiant du repas (pour « Annuler ») et `RecipePickerSheet` reçoit `initialQuery`.
+Aucune migration : la collection est neuve.
+
+Revue sécurité : le volume est borné par les règles. L'identifiant d'une suggestion est
+imposé, `{group_id}_{auteur}_{day}_{0..4}` (`suggestionIds`), ce qui tient le plafond de cinq
+par auteur, groupe et jour côté serveur ; `day` doit être une date réelle, de la veille à
+J+60 (`isSuggestionDay`). Les flux du client ont une borne haute et une limite de 500.
+`PlanningRepository.readableRecipeTitles` rend le titre actuel des recettes lisibles.
+`suggest()` signale aussi au rapport un brouillon invalide.
+
+### v0.23.57 — fonctionnel
+
+#### Signaler ou proposer : les tickets de la famille
+
+Le menu du compte gagne « Signaler ou proposer » et « Mes tickets ». Un membre approuvé
+signale un bug, propose une évolution ou une nouvelle fonctionnalité, ou pose une question.
+Une capture est facultative. Le ticket devient une Issue du dépôt GitHub, qui est public :
+seuls le titre, la description, le type, la version, la plateforme et l'écran (sans
+identifiant) y partent ; le nom, l'email et la capture restent dans l'application. « Mes
+tickets » suit le statut (Reçu, Analysé, Validé, En cours, Livré, Refusé, Répondu) et affiche
+la réponse de l'administrateur ; un point sur la puce du compte signale un changement. Plafond :
+5 tickets par jour et par membre, 30 pour la famille. Admin › Tickets des membres liste tous
+les tickets, leur auteur et leur capture, signale un jeton GitHub invalide et relance un envoi
+en anomalie.
+
+### v0.23.57 — technique
+
+#### Tickets : callables, webhook GitHub et reprise horaire
+
+`submitTicket`, `attachTicketScreenshot` et `retryTicketSend` (callables),
+`githubTicketWebhook` (HTTPS, signature HMAC vérifiée) et `ticketsSyncSchedule` (horaire).
+Collections `tickets` et `ticket_quotas`, documents `app_config/tickets` et
+`app_config/tickets_status`, captures sous `tickets/{uid}/{ticketId}/`. Deux secrets à créer
+avant le déploiement : `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`. Aucun appel d'IA.
+`CLAUDE.md` reçoit une section « Tickets » : analyse en commentaire, traitement des seules
+Issues `validé`, texte d'un ticket traité comme une entrée non fiable.
+
+### v0.23.56 — fonctionnel
+
+Un planning est désormais personnel, ou celui d'un groupe familial. Le propriétaire du
+groupe, éditeur ou administrateur, y planifie seul : « Nouveau planning » demande « Planifier
+pour… » dès qu'il possède un groupe, un jour libre propose « Rien de prévu pour Famille
+Dupont », et la feuille « Planifier » d'une recette porte une ligne « Planning ». Tous les
+membres du groupe lisent son planning, lecteurs compris, marqué de l'icône et du nom du
+groupe ; un invité ne le lit pas. Les suggestions de repas par les membres ne font pas partie
+de cette version. Un repas de groupe se met aux courses comme les autres, et le décompte d'un
+ajout nomme le groupe. Un lecteur ne supprime plus ses anciens repas : il les relit et les
+ajoute à ses courses. Un groupe dont le propriétaire n'est plus éditeur est mis en pause pour
+tous ses membres, sans rien effacer : son planning est masqué, ses livres ne sont plus partagés
+par lui, et ses invitations en attente sont masquées aux invités. L'écran Groupes le liste
+marqué « En pause » : son propriétaire y retire un membre, annule une invitation ou le
+supprime, un membre le quitte. Dans le planning, le propriétaire lit « Votre groupe … est en
+pause. », un membre « Le groupe … est en pause » avec le nom de son propriétaire, et un membre
+de plusieurs groupes en pause les lit tous nommés ; tout revient s'il redevient éditeur. Dans
+« Partager mon planning », un groupe en pause reste cochable, et dit que les repas seront
+visibles quand il reprendra. Un planning personnel partagé ne montre plus les repas des groupes de
+son propriétaire. La feuille « Planifier » d'une recette enregistre le repas avant de poser
+l'événement (« Ajouter au planning et à l'agenda ») et nomme le planning visé. Le titre d'une
+recette privée planifiée pour un groupe se lit sur le repas ; la recette reste fermée.
+
+Après le déploiement, un administrateur lance **Admin › Backfills › « Portée des groupes et
+des plannings »**, et le relance tant qu'il indique « incomplet ». Jusqu'à ce passage, les
+membres des groupes existants ne lisent pas le planning de leur groupe, et les plannings
+personnels partagés n'affichent aucun repas antérieur.
+
+### v0.23.56 — technique
+
+`planned_meals` reçoit `group_id` (`null` pour un repas personnel, toujours écrit par le
+client) ; seul le propriétaire du groupe écrit un repas qui le porte (`ownsMealGroup`), le
+champ est figé, et la suppression d'un repas exige `isEditor()`. `planning_reach` reçoit
+`group_ids` (groupes actifs dont le compte est membre, lus par les règles) et
+`masked_group_ids` (groupes dont le propriétaire ne planifie plus). Le partage personnel ne
+lit que `group_id == null` : la règle porte `resource.data.group_id == null`, car la forme
+`.get('group_id', null)` laissait une requête `uid ==` sans filtre ramener les repas de
+groupe. La lecture d'un repas de groupe exige aussi que son `uid` soit le propriétaire actuel
+du groupe (`get(groups/{group_id}).owner_id`) : un groupe recréé sous le même identifiant par
+un autre compte n'ouvre pas les repas de l'ancien ; le client filtre donc `group_id` et `uid`.
+Un index composite `uid` + `group_id` + `planned_at` sert le planning partagé et celui d'un
+groupe. Un groupe masqué sort aussi de `group_reach` : les livres qu'il ouvrait cessent
+d'être lisibles, sans vérification de plus dans les règles des livres. `planning_reach` reçoit
+aussi `masked_invitation_ids` (invitations vers un groupe en pause, masquées par le client),
+recalculé pour les invités ajoutés ou retirés (`invitationsToResync`) et pour ceux des groupes
+d'un compte dont le rôle change. `planning_config.group_portions` (parts par défaut de chaque
+groupe possédé) est borné à 50 entrées par `isPlanningConfig`.
+`syncPlanningReachOnRole` passe dans `triggers/plannerRole.ts` et recalcule les membres des
+groupes possédés ; `syncGroupReach` supprime les repas d'un groupe supprimé
+(`deleteGroupMeals`). `suggestMealPlanFn` accepte `groupId`, vérifie que l'appelant est
+propriétaire du groupe et l'écrit dans `planning_runs.group_id` ; aucun poste d'IA de plus.
+Nouveau backfill ponctuel `group_planning_reach` (`backfillGroupPlanningReachFn`) : il
+recalcule les deux portées de chaque membre et de chaque invité de groupe, puis pose `group_id: null` sur les
+repas antérieurs depuis un point de reprise (4 000 par passage). `showAdaptiveSheet`
+(`core/presentation/adaptive_sheet.dart`) sert la feuille « Planifier pour… » et l'éditeur
+de programmation des backfills.
+
+### v0.23.55 — fonctionnel
+
+La liste de courses devient un panier personnel, le même sur tous les appareils : « Mes
+courses », dans la barre du planning, avec le nombre d'articles à acheter. Elle n'expire plus
+d'un jour à l'autre. Chaque repas d'un planning affiché propose « Ajouter aux courses », y
+compris les repas partagés par un autre membre, et « Ajouter la période aux courses » prend
+les repas à venir de tous les plannings affichés. Un lecteur y a droit comme un éditeur : les
+produits vont toujours dans le panier de celui qui les ajoute. Quand le panier n'est pas vide,
+une boîte propose « Ajouter » (l'ancien « Enrichir ») ou « Remplacer », avec « Annuler » après
+un remplacement. La feuille « Mes courses » retire les articles cochés ou vide la liste, sur
+confirmation. Une recette sous cadenas dans une période s'annonce « Recette non partagée » ;
+ses ingrédients ne sont pas comptés. Sur la fiche recette, le bouton devient « Ajouter aux
+courses » et alimente le même panier.
+
+### v0.23.55 — technique
+
+Le panier quitte `SharedPreferences` pour `users/{uid}/shopping/current` : une carte
+d'articles (300 au plus) indexée par la clé produit, pour qu'une case cochée n'écrive que son
+champ et parte hors ligne. Ajouter et Remplacer passent par une transaction. Au premier
+lancement, une liste locale `sl_items_{uid}` est reprise si le panier est vide, puis effacée.
+`firestore.rules` : bloc `users/{uid}/shopping/{docId}`, `current` seulement, titulaire
+approuvé seul (l'administrateur n'y a pas accès), forme vérifiée par `isShoppingCart`. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`) sans écrire dans la
+recette. Tests : `rules-tests/test/shopping.test.mjs`, `shopping_cart_test.dart`,
+`shopping_cart_widgets_test.dart`.
 
 ### v0.23.54 — fonctionnel
 

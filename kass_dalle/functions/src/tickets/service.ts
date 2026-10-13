@@ -1,0 +1,407 @@
+/**
+ * Tickets : envoi vers GitHub et application des retours de statut.
+ *
+ * Partagé par les callables (`callable/ticketsCallable.ts`), le webhook
+ * (`tickets/webhook.ts`) et la tâche horaire
+ * (`scheduled/ticketsSyncSchedule.ts`). Les règles de décision vivent dans
+ * `tickets/rules.ts`, pures ; ce module lit et écrit.
+ *
+ * Envoi d'un ticket (`sendTicket`) :
+ *  1. un bail de deux minutes (`send_lease_until`) est pris en transaction :
+ *     deux envois simultanés du même ticket — la tâche horaire et un
+ *     « Relancer l'envoi » — ne publient pas deux Issues ;
+ *  2. sur une reprise, l'Issue est d'abord cherchée par la référence du
+ *     ticket : une création réussie chez GitHub dont le numéro n'a pas été
+ *     écrit ne repart pas une seconde fois ;
+ *  3. succès : `github_issue_number`, `github_url` et `status: received` sont
+ *     écrits avant que l'envoi soit tenu pour fait ;
+ *  4. échec : `send_attempts` + 1, `last_send_error`, `logError`. Un jeton
+ *     absent ou refusé n'use pas les essais — il pose
+ *     `app_config/tickets_status.token_invalid_since`, et les tickets
+ *     repartent au remplacement du jeton.
+ */
+
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+
+import {
+  COLL_APP_CONFIG,
+  COLL_TICKETS,
+  GITHUB_TICKETS_MAINTAINER_ID,
+  TICKETS_STATUS_DOC_ID,
+} from "../config";
+import { logError, logInfo, logWarn } from "../logging";
+import {
+  GITHUB_REPO_FULL_NAME,
+  GithubError,
+  createIssue,
+  findIssueByTicketReference,
+  getIssue,
+  githubToken,
+  listIssueComments,
+  openPullRequestBodiesReferencing,
+  type CreatedIssue,
+} from "./github";
+import {
+  buildIssueBody,
+  buildIssueTitle,
+  closingIssueNumbers,
+  creationLabels,
+  isFinalStatus,
+  isTicketStatus,
+  isTicketType,
+  nextTicketStatus,
+  replyFromComment,
+  statusFromIssue,
+  type TicketPlatform,
+  type TicketStatus,
+  type TicketType,
+} from "./rules";
+
+const SEND_LEASE_MS = 2 * 60 * 1000;
+
+export interface LogScope {
+  correlationId: string;
+  userId?: string;
+}
+
+function ticketRef(ticketId: string) {
+  return getFirestore().collection(COLL_TICKETS).doc(ticketId);
+}
+
+function statusRef() {
+  return getFirestore().collection(COLL_APP_CONFIG).doc(TICKETS_STATUS_DOC_ID);
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Statut lu sur un document ; une valeur inconnue se lit `sending`. */
+function readStatus(data: FirebaseFirestore.DocumentData | undefined): TicketStatus {
+  const status = data?.status;
+  return isTicketStatus(status) ? status : "sending";
+}
+
+// ── État du jeton ───────────────────────────────────────────────────────────
+
+/** Pose `token_invalid_since` s'il ne l'est pas déjà. Best-effort, journalisé. */
+export async function markTokenInvalid(scope: LogScope, reason: string): Promise<void> {
+  try {
+    const db = getFirestore();
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(statusRef());
+      if (snap.data()?.token_invalid_since instanceof Timestamp) return;
+      tx.set(statusRef(), { token_invalid_since: Timestamp.now() }, { merge: true });
+    });
+    await logError({
+      message: `Tickets : jeton GitHub invalide ou absent — ${reason}`,
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      feature: "tickets",
+    });
+  } catch (err) {
+    await logError({
+      message: "Tickets : état du jeton GitHub non enregistré",
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      feature: "tickets",
+    });
+  }
+}
+
+/** Efface `token_invalid_since` au premier succès. Best-effort, journalisé. */
+export async function clearTokenInvalid(scope: LogScope): Promise<void> {
+  try {
+    const snap = await statusRef().get();
+    if (snap.data()?.token_invalid_since == null) return;
+    await statusRef().set({ token_invalid_since: null }, { merge: true });
+    await logInfo({
+      message: "Tickets : jeton GitHub de nouveau accepté",
+      correlationId: scope.correlationId,
+      feature: "tickets",
+    });
+  } catch (err) {
+    await logError({
+      message: "Tickets : effacement de l'alerte du jeton GitHub impossible",
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      feature: "tickets",
+    });
+  }
+}
+
+// ── Envoi ───────────────────────────────────────────────────────────────────
+
+/** Résultat d'un envoi : le statut du ticket et, en échec, le genre d'erreur. */
+export interface SendOutcome {
+  status: TicketStatus;
+  failure: GithubError["kind"] | "firestore" | null;
+}
+
+/**
+ * Prend le bail d'envoi. `null` si le ticket n'a rien à envoyer (déjà parti,
+ * autre statut) ou si un autre envoi est en cours ; sinon ses données.
+ */
+async function claimSend(
+  ticketId: string,
+): Promise<{ data: FirebaseFirestore.DocumentData } | { skip: TicketStatus }> {
+  const ref = ticketRef(ticketId);
+  return getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error(`ticket ${ticketId} introuvable`);
+    const data = snap.data() ?? {};
+    const status = readStatus(data);
+    if (status !== "sending" || data.github_issue_number != null) return { skip: status };
+    const lease = data.send_lease_until;
+    if (lease instanceof Timestamp && lease.toMillis() > Date.now()) return { skip: status };
+    tx.update(ref, { send_lease_until: Timestamp.fromMillis(Date.now() + SEND_LEASE_MS) });
+    return { data };
+  });
+}
+
+async function recordSent(ticketId: string, issue: CreatedIssue): Promise<void> {
+  const now = FieldValue.serverTimestamp();
+  await ticketRef(ticketId).update({
+    status: "received",
+    github_issue_number: issue.number,
+    github_url: issue.url,
+    status_changed_at: now,
+    updated_at: now,
+    last_send_error: null,
+    send_lease_until: FieldValue.delete(),
+  });
+}
+
+async function recordFailure(
+  ticketId: string,
+  message: string,
+  countsAsAttempt: boolean,
+): Promise<void> {
+  await ticketRef(ticketId).update({
+    send_attempts: FieldValue.increment(countsAsAttempt ? 1 : 0),
+    last_send_error: message.slice(0, 300),
+    updated_at: FieldValue.serverTimestamp(),
+    send_lease_until: FieldValue.delete(),
+  });
+}
+
+/**
+ * Publie l'Issue d'un ticket « Envoi en cours ».
+ *
+ * Ne lève pas : rend le statut du ticket après l'essai. `lookupFirst` cherche
+ * d'abord une Issue déjà créée (reprise) ; le premier envoi s'en passe.
+ */
+export async function sendTicket(
+  ticketId: string,
+  scope: LogScope,
+  opts: { lookupFirst: boolean },
+): Promise<SendOutcome> {
+  let claimed: Awaited<ReturnType<typeof claimSend>>;
+  try {
+    claimed = await claimSend(ticketId);
+  } catch (err) {
+    await logError({
+      message: `Tickets : envoi du ticket ${ticketId} impossible à préparer`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+    return { status: "sending", failure: "firestore" };
+  }
+  if ("skip" in claimed) return { status: claimed.skip, failure: null };
+  const data = claimed.data;
+
+  const token = githubToken();
+  if (token === null) {
+    const message = "Jeton GitHub absent (secret GITHUB_TICKETS_TOKEN vide).";
+    await safeRecordFailure(ticketId, message, false, scope);
+    await markTokenInvalid(scope, message);
+    return { status: "sending", failure: "token" };
+  }
+
+  let issue: CreatedIssue | null = null;
+  try {
+    if (opts.lookupFirst) issue = await findIssueByTicketReference(token, ticketId);
+    if (issue !== null) {
+      await logWarn({
+        message: `Tickets : Issue #${issue.number} déjà créée pour le ticket ${ticketId}, rattachée sans nouvel envoi`,
+        correlationId: scope.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+    } else {
+      const type: TicketType = isTicketType(data.type) ? data.type : "question";
+      issue = await createIssue(token, {
+        title: buildIssueTitle(String(data.title ?? "")),
+        body: buildIssueBody({
+          ticketId,
+          type,
+          description: String(data.description ?? ""),
+          screen: String(data.screen ?? "inconnu"),
+          app_version: String(data.app_version ?? "?"),
+          platform: (data.platform ?? "web") as TicketPlatform,
+        }),
+        labels: creationLabels(type),
+      });
+    }
+  } catch (err) {
+    const kind = err instanceof GithubError ? err.kind : "other";
+    const message = describe(err);
+    await logError({
+      message: `Tickets : envoi du ticket ${ticketId} vers GitHub en échec`,
+      errorDescription: message,
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { kind, attempts_before: data.send_attempts ?? 0 },
+    });
+    await safeRecordFailure(ticketId, message, kind !== "token", scope);
+    if (kind === "token") await markTokenInvalid(scope, message);
+    return { status: "sending", failure: kind };
+  }
+
+  try {
+    await recordSent(ticketId, issue);
+  } catch (err) {
+    // L'Issue existe, le numéro n'est pas écrit : la reprise horaire la
+    // retrouvera par sa référence au lieu d'en publier une seconde.
+    await logError({
+      message: `Tickets : Issue #${issue.number} créée mais non enregistrée sur le ticket ${ticketId}`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { issue_number: issue.number },
+    });
+    return { status: "sending", failure: "firestore" };
+  }
+  await logInfo({
+    message: `Tickets : ticket ${ticketId} publié en Issue #${issue.number}`,
+    correlationId: scope.correlationId,
+    userId: scope.userId,
+    firestoreDocId: ticketId,
+    feature: "tickets",
+  });
+  await clearTokenInvalid(scope);
+  return { status: "received", failure: null };
+}
+
+async function safeRecordFailure(
+  ticketId: string,
+  message: string,
+  countsAsAttempt: boolean,
+  scope: LogScope,
+): Promise<void> {
+  try {
+    await recordFailure(ticketId, message, countsAsAttempt);
+  } catch (err) {
+    await logError({
+      message: `Tickets : échec d'envoi du ticket ${ticketId} non enregistré`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+  }
+}
+
+// ── Retours de GitHub ───────────────────────────────────────────────────────
+
+/** Ce qu'un événement GitHub propose pour un ticket. */
+export interface GithubUpdate {
+  /** Statut dérivé de l'Issue, selon le type du ticket. */
+  statusFor?: (type: TicketType) => TicketStatus;
+  /** Une PR ouverte référence l'Issue : avance à `in_progress`, jamais depuis une fin. */
+  openClosingPr?: boolean;
+  /** Réponse de l'administrateur, déjà filtrée. */
+  reply?: string;
+}
+
+/**
+ * Applique un retour de GitHub au ticket, en transaction.
+ *
+ * Écrit seulement ce qui change. `status_changed_at` avance à chaque
+ * changement de statut, et aussi quand une réponse arrive sur un ticket déjà
+ * clos : c'est ce champ qui allume le point de notification du membre.
+ * Rend `true` si le ticket a changé.
+ */
+export async function applyGithubUpdate(ticketId: string, update: GithubUpdate): Promise<boolean> {
+  const ref = ticketRef(ticketId);
+  return getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    const data = snap.data() ?? {};
+    const current = readStatus(data);
+    const type: TicketType = isTicketType(data.type) ? data.type : "question";
+
+    let next = current;
+    if (update.statusFor) next = nextTicketStatus(next, update.statusFor(type));
+    if (update.openClosingPr && !isFinalStatus(next)) next = nextTicketStatus(next, "in_progress");
+
+    const changes: Record<string, unknown> = {};
+    if (next !== current) {
+      changes.status = next;
+      changes.status_changed_at = FieldValue.serverTimestamp();
+    }
+    if (update.reply !== undefined && update.reply !== data.reply_text) {
+      changes.reply_text = update.reply;
+      if (isFinalStatus(next)) changes.status_changed_at = FieldValue.serverTimestamp();
+    }
+    if (Object.keys(changes).length === 0) return false;
+    changes.updated_at = FieldValue.serverTimestamp();
+    tx.update(ref, changes);
+    return true;
+  });
+}
+
+/** Identifiants des tickets publiés sous ce numéro d'Issue (zéro ou un). */
+export async function ticketIdsForIssue(issueNumber: number): Promise<string[]> {
+  const snap = await getFirestore()
+    .collection(COLL_TICKETS)
+    .where("github_issue_number", "==", issueNumber)
+    .limit(2)
+    .get();
+  return snap.docs.map((d) => d.id);
+}
+
+/** La dernière réponse de l'administrateur parmi des commentaires, ou `undefined`. */
+export function lastReply(
+  comments: Array<{ authorId: number | null; body: string | null }>,
+): string | undefined {
+  let reply: string | undefined;
+  for (const c of comments) {
+    const r = replyFromComment(c, GITHUB_TICKETS_MAINTAINER_ID);
+    if (r !== null) reply = r;
+  }
+  return reply;
+}
+
+/**
+ * Relit une Issue et applique son état au ticket (tâche horaire, webhook
+ * perdu). Lève une `GithubError` ; l'appelant journalise.
+ */
+export async function resyncTicket(
+  token: string,
+  ticketId: string,
+  issueNumber: number,
+): Promise<boolean> {
+  const issue = await getIssue(token, issueNumber);
+  if (issue.isPullRequest) return false;
+  let openClosingPr = false;
+  if (issue.state === "open") {
+    const bodies = await openPullRequestBodiesReferencing(token, issueNumber);
+    openClosingPr = bodies.some((b) =>
+      closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
+    );
+  }
+  const reply = lastReply(await listIssueComments(token, issueNumber));
+  return applyGithubUpdate(ticketId, {
+    statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
+    openClosingPr,
+    reply,
+  });
+}

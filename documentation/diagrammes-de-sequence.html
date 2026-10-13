@@ -179,6 +179,10 @@
       <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
       <li><a href="#invitation-connexion">Première connexion d'un invité</a></li>
       <li><a href="#invitation-retour">Retour d'un compte révoqué invité</a></li>
+      <li><a href="#planning-groupe">Planning d'un groupe : générer, lire, masquer</a></li>
+      <li><a href="#ticket-creation">Envoyer un ticket</a></li>
+      <li><a href="#ticket-statut">Retour de statut d'un ticket</a></li>
+      <li><a href="#suggestions-repas">Suggérer un plat, planifier une suggestion</a></li>
     </ol>
   </nav>
 
@@ -1982,55 +1986,79 @@ sequenceDiagram
   <section>
     <h2 id="courses"><span class="n">15</span>Liste de courses</h2>
     <p class="sec-note">
-      Construite depuis les repas <b>à venir</b> de la période lue. Elle additionne les produits
-      d'achat que le serveur a calculés à l'écriture de chaque recette (séquence 06). Aucun appel
-      de modèle : le regroupement se fait sur l'appareil.
-      <span class="path">planning_screen.dart (_showIngredientsList) → planning_widgets.dart
-      (planningAggregateProducts) → core/utils/shopping_products.dart →
-      shopping_list_sheet.dart → GoogleTasksService</span>
+      Chaque compte a <b>un panier</b>, <code>users/{uid}/shopping/current</code>, le même sur
+      tous ses appareils. On le remplit depuis un repas, depuis les repas <b>à venir</b> de la
+      période lue dans tous les plannings affichés, ou depuis une fiche recette — tous les rôles,
+      lecteur compris. Les articles vont toujours dans le panier de celui qui ajoute. Le calcul
+      additionne les produits d'achat que le serveur a posés à l'écriture de chaque recette
+      (séquence 06). Aucun appel de modèle : le regroupement se fait sur l'appareil.
+      <span class="path">planning_screen.dart (_addMealToShopping, _addPeriodToShopping) →
+      planning_widgets.dart (planningAggregateProducts) → core/utils/shopping_products.dart →
+      shopping_list_sheet.dart (addToShoppingList, showShoppingCart) →
+      ShoppingCartRepository → users/{uid}/shopping/current ; GoogleTasksService</span>
     </p>
     <figure class="fig">
       <div class="canvas">
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor U as Lecteur
+  actor U as Membre
   participant P as PlanningScreen
   participant PR as PlanningRepository
   participant FS as recipes
-  participant S as ShoppingListSheet
-  participant SP as SharedPreferences
+  participant A as addToShoppingList
+  participant R as ShoppingCartRepository
+  participant SC as users/uid/shopping/current
   participant GT as Google Tasks
 
-  U->>P: Liste de courses
-  P->>P: mealsToShop — repas à venir de la semaine lue, tous avec « Tout »
+  alt un repas
+    U->>P: Ajouter aux courses (menu ⋮ ou icône)
+  else la période
+    U->>P: Ajouter la période aux courses
+    P->>P: mealsToShop — repas à venir de la période, tous les plannings affichés
+  end
   P->>PR: getRecipesByIds — plats et accompagnements avec recette
   PR->>FS: lecture par identifiant
-  FS-->>P: recettes, brouillons et recettes des membres du groupe compris
+  FS-->>P: recettes lisibles par le compte, une recette illisible n'est pas rendue
   P->>P: planningScaleRecipeForMeal par repas, aux parts du repas
   P->>P: garnitures sans recette, quantité multipliée par les parts
-  P->>P: planningAggregateProducts — shopping_products de chaque recette,<br/>ingrédients bruts si absents, mergeShoppingProducts
-  Note over P: même produit et unités convertibles, quantités additionnées.<br/>Aucun appel de modèle
-  P->>S: produits, provenance de chaque ligne
-  S->>S: rayon de chaque ligne (IngredientCategorizer)
-  S->>SP: lit la liste du jour
-  opt une liste existe déjà pour aujourd'hui
-    S-->>U: Remplacer ou Enrichir ?
-    U-->>S: choix
+  P->>P: planningAggregateProducts puis shoppingItemsFromProducts
+  opt recette introuvable
+    P-->>U: « Recette introuvable, ingrédients non comptés : … »
   end
-  S->>SP: écrit la liste du jour
-  S-->>U: rayons dépliables, articles cochables
+  P->>A: articles, phrase, décompte par planning
+  A->>R: load
+  R->>SC: lecture
+  opt la liste n'est pas vide
+    A-->>U: « Votre liste contient déjà N articles » — Annuler, Remplacer, Ajouter
+    U-->>A: choix
+  end
+  A->>R: addItems(mode)
+  R->>SC: transaction — fusion (Ajouter) ou remplacement, 300 articles au plus
+  SC-->>R: liste précédente
+  alt Ajouter
+    A-->>U: « 9 articles ajoutés aux courses. » — Voir
+  else Remplacer
+    A-->>U: « Liste remplacée : 9 articles. » — Annuler
+    opt Annuler
+      A->>R: restore(liste précédente)
+    end
+  end
 
-  U->>S: coche ce qu'il a déjà
-  S->>SP: état coché, sur l'appareil
+  U->>A: Mes courses (chariot, pastille des articles non cochés)
+  R->>SC: écoute en temps réel
+  Note over R,SC: à la première lecture sur un appareil, l'ancienne liste locale<br/>(sl_items_uid) est reprise si le panier est vide, puis effacée
+  U->>R: coche un article
+  R->>SC: update items.clé.checked — part aussi hors ligne
+  SC-->>U: la case suit sur les autres appareils
 
   alt Envoyer vers Google Tasks
-    S->>S: écarte les articles cochés
-    S->>GT: un rayon = une tâche, un article = une sous-tâche
+    A->>A: écarte les articles cochés
+    A->>GT: un rayon = une tâche, un article = une sous-tâche
     GT-->>U: la liste apparaît dans l'application Tasks
   else Google Keep
-    S->>S: copie la liste dans le presse-papier, rayon par rayon
-    S-->>U: ouvre Keep, à coller dans une note
+    A->>A: copie la liste dans le presse-papier, rayon par rayon
+    A-->>U: ouvre Keep, à coller dans une note
   end
 </pre>
       </div>
@@ -2041,9 +2069,15 @@ sequenceDiagram
         recettes par <code>mergeShoppingProducts</code>. Les deux suivent la fixture
         <code>shopping_products.json</code>.
         <span class="expect">
-          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit dans les
-          préférences locales de l'appareil, une liste par compte et par jour, et ne modifie aucun
-          document partagé.
+          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit sous
+          <code>users/{uid}/shopping/current</code>, lue et écrite par son titulaire seul, et ne
+          modifie aucun document partagé. Ajouter le repas d'un autre membre remplit ma liste,
+          pas la sienne.
+        </span>
+        <span class="expect">
+          <b>Ajouter et remplacer passent par une transaction</b> : la fusion part de la liste à
+          jour, et exige le réseau. Cocher, retirer les cochés et vider sont des écritures simples,
+          qui partent hors ligne. Une case refusée reprend son état, avec un message.
         </span>
         <span class="expect">
           <b>Seuls les articles non cochés partent vers Tasks.</b> Une recette introuvable est
@@ -3447,7 +3481,7 @@ sequenceDiagram
       « Préférences du planning ». Le serveur en tire <code>planning_reach/{lecteur}</code>, que
       les règles Firestore relisent pour laisser lire <code>planned_meals</code>.
       <span class="path">planning_config_screen.dart → planning_config/{uid} →
-      syncPlanningReachOnConfig · syncGroupReach · syncPlanningReachOnRole → triggers/planningReach.ts →
+      syncPlanningReachOnConfig · syncGroupReach → triggers/planningReach.ts · syncPlanningReachOnRole → triggers/plannerRole.ts →
       planning_reach/{uid} → planning_providers.dart → planning_screen.dart</span>
     </p>
     <figure class="fig">
@@ -3481,8 +3515,8 @@ sequenceDiagram
   PR-->>S: uids [marie]
   S->>S: sélecteur « Plannings affichés » — lecteur : partagés cochés,<br/>éditeur : son planning seul ; l'écart au défaut vit sur l'appareil
   loop un flux par planning affiché
-    S->>PM: uid == marie, planned_at sur 90 jours
-    Note over PM: règles : isApproved() et marie dans planning_reach/{paul}
+    S->>PM: uid == marie, group_id == null, planned_at sur 90 jours
+    Note over PM: règles : isApproved(), marie dans planning_reach/{paul},<br/>et repas personnel (group_id nul) — pas les repas des groupes de Marie
     PM-->>S: repas de Marie, ou erreur isolée — bandeau « Réessayer »
   end
   S->>R: readableRecipeIds — lots de 30, repli recette par recette
@@ -3495,8 +3529,12 @@ sequenceDiagram
 </pre>
       </div>
       <figcaption>
-        <b>Aucun backfill.</b> Sans <code>shared_group_ids</code>, rien n'est partagé ; sans
-        <code>planning_reach</code>, rien ne se lit. <b>Le partage n'est pas réciproque</b> et
+        <b>Un backfill après le déploiement du planning de groupe.</b> « Portée des groupes et
+        des plannings » pose <code>group_id: null</code> sur les repas antérieurs, que la
+        requête <code>group_id == null</code> ne trouverait pas sans lui. Sans
+        <code>shared_group_ids</code>, rien n'est partagé ; sans <code>planning_reach</code>,
+        rien ne se lit. Un groupe dont le
+        propriétaire n'est plus éditeur ne transmet plus aucun partage (section 38). <b>Le partage n'est pas réciproque</b> et
         ne passe que par les membres (<code>owner_id</code>, <code>member_ids</code>), jamais par
         les invités. L'écran n'affiche sur un repas d'autrui ni sa justification ni l'origine du
         choix. Ces champs restent lisibles par l'audience dans le document : le masquage n'est
@@ -3761,6 +3799,293 @@ sequenceDiagram
         Laissée active, une invitation de retour rétablirait le compte après une nouvelle
         révocation. Une invitation envoyée après le rétablissement, ou un compte révoqué de
         nouveau entre-temps, la laisse active : elle répond à cette nouvelle révocation. Une erreur sur une invitation est journalisée et n'arrête pas les autres.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="planning-groupe"><span class="n">38</span>Planning d'un groupe : générer, lire, masquer</h2>
+    <p class="sec-note">
+      Un planning est personnel, ou celui d'un groupe familial. Le propriétaire du groupe,
+      éditeur ou administrateur, y planifie seul ; tous les membres le lisent. Aucun poste d'IA
+      de plus : la génération reste imputée à <code>planning</code>, au nom du propriétaire.
+      <span class="path">planning_screen.dart → planning_target_sheet.dart (« Planifier pour… ») →
+      batch_planning_screen.dart (?group=) → suggestMealPlanFn (groupId,
+      assertGroupPlanningOwner) → planned_meals (group_id) · triggers/planningReach.ts ·
+      triggers/plannerRole.ts → planning_reach/{uid}.group_ids</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor O as Propriétaire (Marie, éditrice)
+  actor L as Membre (Paul, lecteur)
+  participant S as PlanningScreen
+  participant B as BatchPlanningScreen
+  participant F as suggestMealPlanFn
+  participant G as groups/{gd}
+  participant PM as planned_meals
+  participant PR as planning_reach
+  participant T as syncPlanningReachOnRole
+
+  O->>S: Nouveau planning
+  S->>O: « Planifier pour… » — Mon planning, Famille Dupont<br/>(feuille du bas, ou dialogue de 480 px)
+  O->>B: Famille Dupont → /planning/batch?group=gd
+  B->>PM: group_id == gd, uid == marie, dates du cycle — ce que le planning contient déjà
+  B->>PM: uid == marie, fenêtre de variété (personnel et groupes : même cuisinier)
+  B->>F: suggestMealPlanFn(…, groupId: gd)
+  F->>G: owner_id == appelant ? sinon permission-denied
+  F->>F: historique uid == marie, notes, refus et préférences de Marie
+  F-->>B: suggestions (poste planning, coût au nom de Marie)
+  O->>B: Valider le planning
+  B->>PM: repas { uid: marie, group_id: gd, … }
+  Note over PM: règles : isEditor(), uid == auth.uid,<br/>get(groups/gd).owner_id == auth.uid, group_id figé
+
+  L->>S: ouvre le planning
+  S->>PR: watchPlanningReach — group_ids [gd]
+  S->>PM: group_id == gd, uid == marie, planned_at sur 90 jours
+  Note over PM: règles : isApproved(), gd dans planning_reach/{paul}.group_ids,<br/>et uid == groups/gd.owner_id (propriétaire actuel)
+  PM-->>S: repas du groupe, ou erreur isolée — « Le planning du groupe Famille Dupont n'a pas pu être lu. »
+  S->>L: icône du groupe, « Repas du groupe Famille Dupont », lecture seule
+
+  opt Marie est rétrogradée lectrice
+    T->>PR: group_ids sans gd, masked_group_ids [gd] — membres de ses groupes, elle comprise
+    T->>T: group_reach des mêmes membres — le groupe ne relie plus personne
+    PR-->>S: le groupe quitte le sélecteur — l'écran Groupes le marque « En pause »,<br/>ses invitations en attente sont masquées aux invités
+    S->>L: « Le planning du groupe Famille Dupont ne vous est plus accessible. »
+    Note over PM: rien n'est effacé, tout revient si Marie redevient éditrice
+  end
+  opt le groupe est supprimé
+    G-->>PM: syncGroupReach → deleteGroupMeals(gd), par lots, retry: true
+    Note over PM: et deleteGroupSuggestions(gd) — voir « Suggérer un plat »
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le groupe se vérifie deux fois.</b> Le serveur refuse la génération à qui n'est pas
+        propriétaire, et les règles refusent l'écriture d'un repas portant le <code>group_id</code>
+        d'un autre. Un invité ne lit rien : seuls les membres reçoivent le groupe dans
+        <code>group_ids</code>. Un repas de groupe n'apparaît pas dans « Mon planning » de son
+        propriétaire : les flux <code>uid ==</code> l'écartent côté client.
+        <span class="expect">
+          <b>Après le déploiement</b>, Admin › Backfills › « Portée des groupes et des plannings »
+          écrit <code>group_ids</code> et <code>masked_group_ids</code> pour les groupes existants,
+          puis <code>group_id: null</code> sur les repas antérieurs.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-creation"><span class="n">39</span>Envoyer un ticket</h2>
+    <p class="sec-note">
+      Un membre approuvé signale un bug, propose une évolution ou une fonctionnalité, ou pose
+      une question. Le ticket est enregistré dans Firestore, puis publié en Issue sur le dépôt
+      public. Aucun appel de modèle.
+      <span class="path">menu du compte (app_shell.dart) → formulaire « Signaler ou proposer » →
+      callable/ticketsCallable.ts (submitTicket, attachTicketScreenshot) → tickets/service.ts →
+      tickets/github.ts → API REST GitHub</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor M as Membre approuvé
+  participant C as Formulaire Signaler ou proposer
+  participant F as submitTicket
+  participant Q as ticket_quotas
+  participant T as tickets
+  participant G as GitHub (dépôt public)
+  participant ST as Storage tickets/{uid}/
+  participant A as attachTicketScreenshot
+
+  M->>C: type, titre, description, écran (modèle de route), capture facultative
+  C->>F: { type, title, description, screen, app_version, platform }
+  F->>F: requireAuth (approuvé, non révoqué), bornes (readTicketInput), écran hors modèle → « inconnu »
+  F->>F: plafonds lus dans app_config/tickets (absent : 5 et 30, illisible : failed-precondition)
+  F->>Q: transaction — compteurs du jour Europe/Paris, membre et famille
+  alt plafond atteint (membre non admin)
+    F-->>C: resource-exhausted { reason: member_daily_limit | global_daily_limit, limit }
+    C-->>M: « Vous avez envoyé N tickets aujourd'hui… » ou « Trop de tickets… par la famille »
+  else
+    F->>Q: count + 1 (sauf admin)
+    F->>T: création, status sending, send_attempts 0 (même transaction)
+    F->>T: bail send_lease_until (transaction)
+    F->>G: POST /issues — titre et corps sur gabarit fixe, mentions @ et renvois #N neutralisés,<br/>étiquettes source:app, type:…, statut:à-analyser. Ni nom, ni uid, ni capture
+    alt Issue créée
+      F->>T: github_issue_number, github_url, status received, status_changed_at
+      F->>F: tickets_status.token_invalid_since effacé s'il était posé
+      F-->>C: { ticketId, status: received, remaining_today }
+    else échec (réseau, limite de débit, jeton refusé)
+      F->>F: logError
+      F->>T: send_attempts + 1 (pas pour un jeton refusé), last_send_error
+      opt jeton absent ou refusé (401, 403, 404 sur le dépôt)
+        F->>F: app_config/tickets_status.token_invalid_since posé
+      end
+      F-->>C: { ticketId, status: sending, remaining_today }
+    end
+    alt sans capture
+      C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+    else capture jointe
+      C->>ST: tickets/{uid}/{ticketId}/screenshot.png|jpg (règle : soi-même, PNG/JPEG, 5 Mo)
+      C->>A: { ticketId, path }
+      A->>T: auteur du ticket ? chemin attendu ?
+      A->>ST: objet présent, type MIME et taille, puis 8 premiers octets :<br/>signature PNG ou JPEG du format annoncé
+      alt capture jointe
+        A->>T: screenshot_path
+        A-->>C: { ok: true }
+        C-->>M: « Ticket envoyé. Vous pouvez le suivre dans Mes tickets. »
+      else dépôt ou rattachement en échec (octets refusés, réseau…)
+        A-->>C: invalid-argument | internal
+        C->>C: rapport d'erreur (feature tickets)
+        C-->>M: « Ticket envoyé sans la capture. Vous pouvez le suivre dans Mes tickets. »
+      end
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le ticket est écrit avant l'Issue.</b> Un envoi en échec ne fait pas échouer l'appel :
+        le membre voit « Envoi en cours », et <code>ticketsSyncSchedule</code> reprend le ticket
+        chaque heure, jusqu'à dix essais ; au-delà, il est « en anomalie » dans Admin › Tickets,
+        d'où <code>retryTicketSend</code> le relance. Avant chaque reprise, l'Issue est cherchée
+        par la référence du ticket : une création réussie dont le numéro n'a pas été écrit n'est
+        pas publiée deux fois. La capture part après le ticket et avant le message de succès ;
+        son échec n'annule pas le ticket, le message le dit. Elle ne part jamais sur GitHub :
+        l'Issue dit qu'elle est disponible dans Admin › Tickets.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-statut"><span class="n">40</span>Retour de statut d'un ticket</h2>
+    <p class="sec-note">
+      L'administrateur traite l'Issue sur GitHub ; le statut revient dans l'application par un
+      webhook signé, doublé d'une relecture horaire.
+      <span class="path">GitHub → tickets/webhook.ts (githubTicketWebhook) → tickets/rules.ts
+      (verifyGithubSignature, statusFromIssue, nextTicketStatus, replyFromComment) →
+      tickets/service.ts (applyGithubUpdate) ; scheduled/ticketsSyncSchedule.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur (ChinaFred)
+  participant G as GitHub
+  participant W as githubTicketWebhook
+  participant T as tickets
+  participant S as ticketsSyncSchedule
+  actor M as Membre
+
+  AD->>G: étiquette statut:analysé ou validé, PR « Closes #N », fermeture,<br/>commentaire « Réponse : … »
+  G->>W: POST, X-Hub-Signature-256, X-GitHub-Event
+  alt corps de plus de 25 Mo
+    W-->>G: 413 (avant tout HMAC)
+  else en-tête X-GitHub-Event absent
+    W-->>G: 400 (avant tout HMAC)
+  end
+  W->>W: HMAC SHA-256 du corps brut, comparaison à temps constant
+  alt signature absente ou fausse
+    W-->>G: 401 (logWarn au plus une fois par minute et par instance, avec le nombre de refus)
+  else secret vide
+    W-->>G: 503 (logError échantillonné)
+  else autre dépôt, autre événement, Issue sans ticket,<br/>PR d'un auteur hors mainteneur, OWNER, MEMBER, COLLABORATOR
+    W-->>G: 200 ignoré
+  else issues · issue_comment · pull_request
+    W->>T: requête github_issue_number == N
+    W->>T: transaction — statut dérivé (étiquettes, état, PR ouverte),<br/>jamais en recul, fin suivie d'une réouverture → statut des étiquettes
+    opt commentaire du compte 16348852 (ChinaFred) commençant par « Réponse : »
+      W->>T: reply_text (préfixe retiré)
+    end
+    W->>T: status_changed_at si le statut change, ou si une réponse arrive sur un ticket clos
+    W-->>G: 200
+  end
+  loop toutes les heures
+    S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance), commentaires — tickets non finaux
+    S->>T: même transaction de mise à jour
+  end
+  M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)
+  Note over M,T: point sur la puce du compte tant que status ∈ {answered, refused, delivered}<br/>et seen_by_author_at absent ou antérieur à status_changed_at
+</pre>
+      </div>
+      <figcaption>
+        Aucun texte de GitHub n'entre dans Firestore, hormis la réponse filtrée : le statut se
+        déduit des étiquettes et de l'état de l'Issue, jamais d'un texte libre. Une panne
+        Firestore rend 500, GitHub montre la livraison en échec, et la relecture horaire
+        rattrape l'état. Les tickets clos ne sont pas relus : une réouverture dont le webhook
+        est perdu n'est pas rattrapée.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="suggestions-repas"><span class="n">41</span>Suggérer un plat, planifier une suggestion</h2>
+    <p class="sec-note">
+      Un membre d'un groupe actif, autre que son propriétaire, lecteur compris, suggère un plat
+      pour un jour du planning du groupe. Le propriétaire lit, et planifie lui-même ce qu'il
+      retient. Aucun appel d'IA, aucun poste de coût, aucune Cloud Function sur le chemin
+      d'écriture : le client écrit, les règles vérifient.
+      <span class="path">planning_screen.dart (« Suggérer un plat », repère du jour) ·
+      cooklang_preview.dart (« Suggérer pour un planning de groupe ») → suggest_meal_sheet.dart →
+      MealSuggestionRepository.suggest → meal_suggestions · meal_suggestions_window.dart →
+      _planSuggestion → planned_meals · triggers/groupReach.ts → groupMeals.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor L as Membre (Léo, lecteur)
+  actor O as Propriétaire (Marie, éditrice)
+  participant S as PlanningScreen
+  participant SS as Feuille « Suggérer un plat »
+  participant MS as meal_suggestions
+  participant W as Fenêtre des suggestions
+  participant PM as planned_meals
+  participant T as syncGroupReach
+
+  L->>S: samedi 17 octobre, Famille Dupont — « Suggérer un plat »
+  S->>SS: groupe et jour fixés
+  SS->>SS: recettes de Léo et des membres de ses groupes (sans IA) ou nom libre ≤ 60
+  Note over SS: recette privée : « Marie ne verra que son titre. »
+  SS->>MS: author_uid == léo, group_id == gd, day == 2026-10-17 — identifiants pris
+  SS->>MS: set gd_léo_2026-10-17_n, premier n libre de 0 à 4 { group_id, group_owner_id: marie, author_uid, day,<br/>recipe_id + recipe_titre ou free_title, note ≤ 200, created_at: serveur }
+  Note over MS: règles : isApproved(), gd dans planning_reach/{léo}.group_ids,<br/>léo dans groups/gd.member_ids, group_owner_id == groups/gd.owner_id ≠ léo,<br/>isMealSuggestion (champs fermés, bornes, jour de la veille à J+60), identifiant _0 à _4
+  MS-->>SS: ok — « Suggestion envoyée à Marie. »
+  S->>MS: author_uid == léo, J−90 ≤ day ≤ J+60, 500 au plus — « Votre suggestion : Lasagnes »
+
+  O->>S: ouvre le planning
+  S->>MS: group_owner_id == marie, J−90 ≤ day ≤ J+60, 500 au plus
+  MS-->>S: badge (jours à venir), repère « 1 suggestion » sur le samedi<br/>titre actuel d'une recette lisible, titre copié sinon
+  O->>W: appui sur le repère
+  W->>PM: repas du groupe ce jour-là — « Déjà prévu » / « Au planning »
+  O->>W: « Planifier ce jour-là »
+  alt recette lisible par Marie
+    W->>PM: add { uid: marie, group_id: gd, parts du groupe } — message et « Annuler » dans la fenêtre
+  else nom libre ou recette privée
+    W->>S: sélecteur pré-rempli du titre, puis le même repas
+  end
+  Note over MS: la suggestion n'est pas modifiée : « Au planning » se calcule
+
+  opt Léo quitte le groupe, ou Marie l'en retire
+    T->>MS: departedMembers → deleteMemberSuggestions(gd, léo), par lots, retry: true
+  end
+  opt le groupe est supprimé
+    T->>MS: deleteGroupSuggestions(gd)
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux lectures prouvables.</b> <code>group_owner_id</code> est copié à la création et
+        vérifié contre le groupe : le propriétaire filtre sur ce champ, l'auteur sur
+        <code>author_uid</code>, et un autre membre ne lit pas les suggestions des autres.
+        Le plafond de cinq suggestions par jour est tenu par les règles : l'identifiant
+        imposé se termine par <code>_0</code> à <code>_4</code>, et le jour est borné de la
+        veille à soixante jours. Le titre d'une recette privée suggérée est visible du propriétaire, la
+        fiche reste fermée (« Recette non partagée »).
       </figcaption>
     </figure>
   </section>

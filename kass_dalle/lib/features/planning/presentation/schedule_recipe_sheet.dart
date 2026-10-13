@@ -9,6 +9,7 @@ import '../domain/meal_recipe_location.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -25,6 +26,7 @@ Future<void> showScheduleRecipeSheet(
   required int? prepTimeMin,
   required int? cookTimeMin,
   required List<RecipeIngredient> ingredients,
+  int? portions,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -39,6 +41,7 @@ Future<void> showScheduleRecipeSheet(
       prepTimeMin: prepTimeMin,
       cookTimeMin: cookTimeMin,
       ingredients: ingredients,
+      portions: portions,
     ),
   );
 }
@@ -52,12 +55,17 @@ class _ScheduleSheet extends ConsumerStatefulWidget {
   final int? cookTimeMin;
   final List<RecipeIngredient> ingredients;
 
+  /// Parts de la recette, pour un repas de groupe : les quantités se
+  /// recalculent des parts de la recette vers celles du groupe.
+  final int? portions;
+
   const _ScheduleSheet({
     required this.titre,
     this.recipeId,
     required this.prepTimeMin,
     required this.cookTimeMin,
     required this.ingredients,
+    this.portions,
   });
 
   @override
@@ -69,6 +77,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   TimeOfDay? _selectedTime;
   late TextEditingController _reminderCtrl;
   bool _loading = false;
+
+  /// Le planning où le repas s'inscrit : « Mon planning » par défaut, ou un
+  /// groupe dont l'utilisateur est le propriétaire.
+  PlanningTarget _target = const PlanningTarget.personal();
 
   /// Préférences de planning, ou les valeurs par défaut tant qu'elles chargent.
   PlanningPreferences get _prefs =>
@@ -119,21 +131,84 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
 
   // ── Action principale ────────────────────────────────────────────────────────
 
+  /// « Ajouté à votre planning », « Ajouté au planning de Famille Dupont ».
+  String get _addedTo => _target.isGroup
+      ? 'Ajouté au planning de ${_target.groupName}'
+      : 'Ajouté à votre planning';
+
+  /// Enregistre le repas au planning choisi, puis pose l'événement dans
+  /// Google Calendar.
+  ///
+  /// Le planning d'abord : un agenda qui refuse (autorisation, réseau) ne
+  /// fait plus perdre le repas. Chaque échec a son message, qui nomme le
+  /// planning visé.
   Future<void> _addToCalendar() async {
     setState(() => _loading = true);
+    final prefs = _prefs;
+    final time = _effectiveTime;
+    final start = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      time.hour,
+      time.minute,
+    );
     try {
-      final prefs = _prefs;
-      final time = _effectiveTime;
-      final start = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        time.hour,
-        time.minute,
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final repo = ref.read(planningRepositoryProvider);
+      if (uid == null || repo == null) {
+        throw StateError('Utilisateur non connecté.');
+      }
+      // Un repas de groupe se cuisine pour le groupe : ses parts par défaut
+      // (réglées, sinon le nombre de membres), comme un jour libre du
+      // planning.
+      final group = _target.isGroup
+          ? ref
+                .read(ownedPlanningGroupsProvider)
+                .value
+                ?.where((g) => g.id == _target.groupId)
+                .firstOrNull
+          : null;
+      await repo.addMeal(
+        PlannedMeal(
+          id: '',
+          uid: uid,
+          groupId: _target.groupId,
+          recipeId: widget.recipeId,
+          recipeTitre: widget.titre,
+          plannedAt: start,
+          durationMinutes: _totalDurationMin,
+          prepMinutes: widget.prepTimeMin,
+          cookMinutes: widget.cookTimeMin,
+          basePortions: group == null ? null : widget.portions,
+          targetPortions: group == null
+              ? null
+              : groupDefaultPortions(
+                  groupPortions: prefs.groupPortions,
+                  group: group,
+                ),
+          choiceSource: MealChoiceSource.manual,
+          createdAt: DateTime.now(),
+        ),
       );
-      final reminder =
-          int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'scheduleRecipeSheet.addMeal',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'group_id': ?_target.groupId},
+      );
+      if (mounted) {
+        setState(() => _loading = false);
+        // Le détail part au rapport d'erreurs, pas à l'écran.
+        context.showErrorSnackBar('Repas non enregistré. Réessayez.');
+      }
+      return;
+    }
 
+    final reminder =
+        int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
+    try {
       // L'événement dure la durée par défaut des préférences : dans le
       // calendrier, le repas est le moment où l'on mange, pas celui où l'on
       // prépare. Les temps de la recette servent au rappel et à la durée
@@ -146,42 +221,25 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         reminderMinutes: reminder,
         calendarId: prefs.calendarId,
       );
-
-      // Sauvegarde locale dans Firestore pour l'écran Planning.
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        final repo = ref.read(planningRepositoryProvider);
-        await repo?.addMeal(
-          PlannedMeal(
-            id: '',
-            uid: uid,
-            recipeId: widget.recipeId,
-            recipeTitre: widget.titre,
-            plannedAt: start,
-            durationMinutes: _totalDurationMin,
-            prepMinutes: widget.prepTimeMin,
-            cookMinutes: widget.cookTimeMin,
-            choiceSource: MealChoiceSource.manual,
-            createdAt: DateTime.now(),
-          ),
-        );
-      }
-
       if (mounted) {
         Navigator.of(context).pop();
-        context.showSuccessSnackBar('Événement ajouté à Google Calendar ✓');
+        context.showSuccessSnackBar('$_addedTo et à l\'agenda.');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'scheduleRecipeSheet.addToCalendar',
         error: e,
         stackTrace: stackTrace,
+        context: {'group_id': ?_target.groupId},
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        // Le repas est enregistré : la feuille se ferme, et le message dit
+        // ce qui manque.
+        Navigator.of(context).pop();
+        context.showErrorSnackBar(
+          '$_addedTo. L\'agenda n\'a pas reçu l\'événement.',
+        );
       }
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -240,6 +298,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // La ligne « Planning » n'apparaît qu'à qui possède au moins un groupe :
+    // sans elle, le repas va dans « Mon planning », comme avant.
+    final ownedGroups =
+        ref.watch(ownedPlanningGroupsProvider).value ?? const [];
     return Padding(
       padding: EdgeInsets.only(
         left: 24,
@@ -271,6 +333,43 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           const SizedBox(height: 8),
           Divider(color: theme.colorScheme.outlineVariant),
           const SizedBox(height: 8),
+
+          if (ownedGroups.isNotEmpty) ...[
+            PopupMenuButton<PlanningTarget>(
+              tooltip: 'Choisir le planning',
+              initialValue: _target,
+              onSelected: (target) => setState(() => _target = target),
+              itemBuilder: (_) => [
+                for (final target in [
+                  const PlanningTarget.personal(),
+                  for (final g in ownedGroups) PlanningTarget.ofGroup(g),
+                ])
+                  PopupMenuItem(
+                    value: target,
+                    child: ListTile(
+                      leading: Icon(
+                        target.isGroup
+                            ? Icons.groups_outlined
+                            : Icons.calendar_today_outlined,
+                      ),
+                      title: Text(target.title),
+                      subtitle: target.subtitle == null
+                          ? null
+                          : Text(target.subtitle!),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+              ],
+              child: _PickerRow(
+                icon: _target.isGroup
+                    ? Icons.groups_outlined
+                    : Icons.calendar_today_outlined,
+                label: 'Planning',
+                value: _target.title,
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
 
           // Date
           _PickerRow(
@@ -351,7 +450,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(AppIcons.calendarExport),
-              label: const Text('Ajouter à Google Calendar'),
+              label: const Text('Ajouter au planning et à l\'agenda'),
             ),
           ),
         ],
@@ -366,49 +465,59 @@ class _PickerRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  final VoidCallback onTap;
+
+  /// Null quand un menu englobant reçoit l'appui (ligne « Planning »).
+  final VoidCallback? onTap;
 
   const _PickerRow({
     required this.icon,
     required this.label,
     required this.value,
-    required this.onTap,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 12),
-            Text(label, style: theme.textTheme.bodyMedium),
-            const Spacer(),
-            Text(
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 12),
+          Text(label, style: theme.textTheme.bodyMedium),
+          const SizedBox(width: 12),
+          // Un nom de groupe long se coupe au lieu de déborder.
+          Expanded(
+            child: Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.chevron_right,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: row,
     );
   }
 }

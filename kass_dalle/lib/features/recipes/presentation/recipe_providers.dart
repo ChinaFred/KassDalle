@@ -8,6 +8,7 @@ import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
 import '../data/share_intent_source.dart';
+import '../data/shopping_cart_repository.dart';
 import '../data/storage_repository.dart';
 import '../domain/original_text.dart';
 import '../domain/plating_advice.dart';
@@ -16,6 +17,7 @@ import '../domain/family_ratings.dart';
 import '../domain/recipe.dart';
 import '../domain/recipe_rating.dart';
 import '../domain/recipe_viewer.dart';
+import '../domain/shopping_cart.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 
@@ -413,3 +415,18 @@ class PendingSharedTextNotifier extends Notifier<String?> {
     return text;
   }
 }
+
+// ── Panier de courses ─────────────────────────────────────────────────────────
+
+final shoppingCartRepositoryProvider = Provider<ShoppingCartRepository>(
+  (_) => ShoppingCartRepository(),
+);
+
+/// Le panier de courses du compte connecté, en direct : le même sur tous ses
+/// appareils. À la première lecture sur un appareil, l'ancienne liste locale
+/// est reprise si le panier est vide (`migrateLocalList`).
+final myShoppingCartProvider = StreamProvider.autoDispose<ShoppingCart>((ref) {
+  final uid = ref.watch(appUserProvider.select((u) => u.value?.uid));
+  if (uid == null) return Stream.value(ShoppingCart.empty);
+  return ref.watch(shoppingCartRepositoryProvider).watchAfterMigration(uid);
+});

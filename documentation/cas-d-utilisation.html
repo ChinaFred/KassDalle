@@ -119,8 +119,9 @@
     <div class="eyebrow">Kass'Dalle · documentation · 3 / 4</div>
     <h1>Cas d'utilisation</h1>
     <p class="standfirst">
-      Trois rôles humains — plus une salle d'attente — et deux acteurs machine. Les cas sont
-      regroupés par intention — cuisiner, constituer la bibliothèque, administrer — parce que c'est
+      Trois rôles humains — plus une salle d'attente — et trois acteurs machine. Les cas sont
+      regroupés par intention — cuisiner, constituer la bibliothèque, administrer, signaler ou
+      proposer — parce que c'est
       ainsi que l'application est utilisée, pas parce que le code est rangé ainsi.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
@@ -160,9 +161,14 @@
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Choisir le thème de l'application — suivre l'appareil, clair ou sombre (Préférences › Apparence), mémorisé sur l'appareil et non dans le compte</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut ajouter aux courses mais ne supprime plus</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est en pause : son planning est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Suggérer un plat (recette ou nom libre, un mot facultatif) pour un jour à venir du planning d'un groupe actif dont on est membre sans en être le propriétaire ; retirer sa suggestion — une recette privée suggérée se lit chez le propriétaire par son seul titre</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les suggestions reçues pour un groupe actif dont on est le propriétaire, et planifier soi-même celle qu'on retient (« Planifier ce jour-là ») — un autre membre ne lit pas les suggestions des autres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -190,6 +196,8 @@
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Envoyer un ticket — bug, évolution, nouvelle fonctionnalité, question — et suivre <b>ses</b> tickets dans « Mes tickets » ; 5 par jour et par membre, 30 pour la famille, sans plafond pour l'admin</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les tickets des autres membres, leur auteur et leur capture, relancer un envoi en anomalie (Admin › Tickets des membres)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Inviter un proche par e-mail (Lecteur ou Éditeur, dans un de ses groupes), renvoyer ou annuler une invitation, lire la liste des invitations</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -244,7 +252,9 @@
       Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
       planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
       sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
-      partagés avec ses groupes.
+      partagés avec ses groupes. Les courses sont ouvertes à tous : chacun remplit sa propre
+      liste depuis un repas, la période lue ou une fiche recette, quel que soit le planning du
+      repas.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -260,7 +270,8 @@ flowchart LR
     a2(["Lire une recette en mode livre"])
     a3(["Ajuster le nombre de portions"])
     a4(["Consulter la nutrition"])
-    a5(["Ouvrir la liste de courses"])
+    a5(["Ajouter aux courses&lt;br/&gt;un repas, la période, une recette"])
+    a38(["Ouvrir « Mes courses »&lt;br/&gt;cocher, retirer les cochés, vider"])
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
     a25(["Voir les notes de la famille"])
@@ -293,6 +304,10 @@ flowchart LR
     a29(["Consulter les allergènes&lt;br/&gt;d'une recette"])
     a36(["Partager mon planning&lt;br/&gt;avec mes groupes"])
     a37(["Consulter un planning partagé&lt;br/&gt;en lecture seule"])
+    a40(["Planifier pour mon groupe&lt;br/&gt;propriétaire, éditeur"])
+    a41(["Consulter le planning&lt;br/&gt;de mon groupe"])
+    a42(["Suggérer un plat&lt;br/&gt;au propriétaire du groupe"])
+    a43(["Lire les suggestions&lt;br/&gt;des membres"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -310,6 +325,8 @@ flowchart LR
     i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
     i15(["Trouver des pages de recettes sur Google&lt;br/&gt;50 par jour, cache partagé de 7 jours"])
     i16(["Recalculer qui lit quel planning"])
+    i17(["Choisir Ajouter ou Remplacer&lt;br/&gt;si ma liste n'est pas vide"])
+    i18(["Supprimer les suggestions&lt;br/&gt;d'un membre sorti ou d'un groupe supprimé"])
   end
 
   LEC --- a1
@@ -345,6 +362,19 @@ flowchart LR
   LEC --- a25
   EDI --- a36
   LEC --- a37
+  EDI --- a40
+  LEC --- a41
+  a40 -.->|"étend : « Planifier pour… »"| a12
+  a40 -.->|"inclut, même cuisinier"| i4
+  a41 -.->|"appui sur un repas, recette lisible"| a2
+  LEC --- a42
+  EDI --- a43
+  a42 -.->|"étend : un jour à venir du groupe"| a41
+  a42 -.->|"étend : « Suggérer pour… »"| a2
+  a43 -.->|"« Planifier ce jour-là »"| a40
+  a31 -.->|"inclut"| i18
+  LEC --- a5
+  LEC --- a38
   a36 -.->|"étend"| a13
   a36 -.->|"inclut"| i16
   a30 -.->|"Accepter"| i16
@@ -354,7 +384,9 @@ flowchart LR
   a2 --- a4
   a2 --- a29
   a2 --- a5
-  a9 --- a5
+  a37 -.->|"étend : un repas à venir, la période"| a5
+  a5 -.->|"inclut"| i17
+  a5 -.->|"« Voir »"| a38
   a9 --- a14
   a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
@@ -408,7 +440,9 @@ flowchart LR
         totaux de la recette divisés par le nombre de parts choisi, calculés à l'affichage. Rien
         n'est écrit dans la recette partagée.
         <b>La liste de courses n'appelle aucun modèle</b> : l'appareil regroupe les lignes par
-        produit acheté. Le produit d'achat de chaque ingrédient est posé par le serveur à
+        produit acheté, et les écrit dans la liste personnelle du compte
+        (<code>users/{uid}/shopping/current</code>), la même sur tous ses appareils. Ajouter le
+        repas d'un autre membre remplit ma liste, jamais la sienne. Le produit d'achat de chaque ingrédient est posé par le serveur à
         l'écriture de la recette, un appel pour un ingrédient neuf seulement.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.
@@ -508,9 +542,10 @@ flowchart LR
         Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
-        préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
+        préférences, garnitures et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        décoché par défaut, avec, sur un repas à venir, « Ajouter aux courses » pour seule
+        action : il ne les supprime plus. « Mon planning » n'apparaît
         que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
         les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
@@ -527,11 +562,42 @@ flowchart LR
         rien écrire. Une recette que le membre ne peut pas lire s'affiche par son titre, avec
         « Recette non partagée », et ne s'ouvre pas. Sa note sur une recette ne pèse pas sur
         les suggestions du propriétaire.
+        <b>Planifier pour mon groupe</b> : un planning est personnel, ou celui d'un groupe.
+        Le propriétaire du groupe, éditeur ou administrateur, y planifie seul — « Nouveau
+        planning » demande « Planifier pour… » dès qu'il possède un groupe, un jour libre
+        propose « Rien de prévu pour Famille Dupont », la feuille « Planifier » d'une recette
+        porte une ligne « Planning ». Les repas du groupe portent <code>group_id</code> ; le
+        serveur vérifie à la génération que l'appelant est propriétaire du groupe, et sa
+        mémoire des refus, son historique et ses préférences servent, sans poste d'IA de plus.
+        <b>Consulter le planning de mon groupe</b> ouvre à chaque membre, lecteur compris, les
+        repas du groupe en lecture seule, marqués de l'icône et du nom du groupe. Un invité ne
+        les lit pas. Un groupe supprimé emporte ses repas. Un groupe dont le propriétaire est
+        rétrogradé est en pause pour tous ses membres : son planning est masqué, ses livres
+        ne sont plus partagés par lui, ses invitations en attente sont masquées aux invités ;
+        l'écran Groupes le liste marqué « En pause », où son propriétaire retire un membre,
+        annule une invitation ou supprime le groupe, et où un membre le quitte. Rien n'est
+        effacé ; tout revient s'il redevient éditeur (<code>syncPlanningReachOnRole</code>).
+        Le titre d'une recette privée planifiée pour le groupe se lit sur le repas ; la
+        recette reste fermée.
+        <b>Suggérer un plat au propriétaire du groupe</b> ouvre à tout membre d'un groupe
+        actif autre que son propriétaire, lecteur compris, un jour d'aujourd'hui ou à venir
+        du planning du groupe (« Suggérer un plat ») ou, depuis une fiche recette, « Suggérer
+        pour un planning de groupe » : une recette qu'il lit ou un nom libre, et un mot
+        facultatif. Aucun appel d'IA. Une recette privée se suggère par son titre : le
+        propriétaire le lit, sans ouvrir la fiche. L'auteur voit sa suggestion sous les repas
+        du groupe et la retire ; il ne voit pas celles des autres membres.
+        <b>Lire les suggestions des membres</b> : le propriétaire lit le nombre de suggestions
+        des jours à venir sur le bouton « Suggestions des membres », un repère « 2 suggestions »
+        sur le jour, et la fenêtre des suggestions. Pas de statut : il planifie lui-même ce
+        qu'il retient (« Planifier ce jour-là »), et « Au planning » se calcule à l'affichage.
+        Un groupe supprimé emporte ses suggestions ; un membre qui sort emporte les siennes
+        (<code>syncGroupReach</code>).
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls
         l'<code>editor</code> et l'<code>admin</code> créent un groupe et le gèrent
         (v0.23.54) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
         propriétaire d'un groupe plus ancien peut encore annuler une invitation, retirer un
-        membre ou supprimer le groupe, sans inviter ni renommer. Le
+        membre ou supprimer le groupe, sans inviter ni renommer, depuis l'écran Groupes ; ce
+        groupe est en pause pour ses membres tant qu'il n'est pas éditeur. Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),
         ou par son adresse e-mail complète : celle-ci part au serveur
         (<code>findMemberByEmailFn</code>), qui ne rend que le compte approuvé dont l'adresse est
@@ -938,6 +1004,89 @@ flowchart LR
           d'une version à l'autre, sans transition ni migration. Son contrat est décrit côté
           technique, pas côté fonctionnel.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Signaler ou proposer</h2>
+    <p class="sec-note">
+      Un membre envoie un bug, une évolution, une nouvelle fonctionnalité ou une question depuis
+      le menu du compte. Le ticket devient une Issue sur le dépôt GitHub public
+      <code>ChinaFred/KassDalle</code>, où l'administrateur le traite ; le statut revient dans
+      l'application. Aucun cas de ce diagramme n'appelle de modèle d'IA.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  MEM(("Lecteur, Éditeur,&lt;br/&gt;Administrateur"))
+  ADM(("Administrateur"))
+  GH(("GitHub&lt;br/&gt;dépôt public"))
+
+  subgraph app["Kass'Dalle"]
+    direction TB
+    t1(["Signaler ou proposer&lt;br/&gt;type, titre, description, écran"])
+    t2(["Joindre une capture&lt;br/&gt;PNG ou JPEG, 5 Mo au plus"])
+    t3(["Suivre mes tickets"])
+    t4(["Lire la réponse ou le motif d'un refus"])
+    t5(["Consulter les tickets des membres&lt;br/&gt;filtres statut et type"])
+    t6(["Ouvrir l'Issue sur GitHub"])
+    t7(["Relancer l'envoi&lt;br/&gt;d'un ticket en anomalie"])
+    f1(["Contrôler les bornes et le plafond du jour&lt;br/&gt;5 par membre, 30 pour la famille"])
+    f2(["Créer l'Issue&lt;br/&gt;sans nom, sans capture, mentions neutralisées"])
+    f3(["Mettre à jour le statut&lt;br/&gt;d'après l'Issue"])
+    f4(["Reprendre chaque heure&lt;br/&gt;envois en attente et Issues ouvertes"])
+    f5(["Allumer le point sur la puce du compte&lt;br/&gt;Répondu, Refusé ou Livré"])
+  end
+
+  MEM --- t1
+  MEM --- t3
+  ADM --- t5
+  ADM --- t7
+  t1 -.->|"étend : case cochée, ou galerie, ou fichier"| t2
+  t1 -.->|"inclut"| f1
+  f1 -.->|"ticket enregistré « Envoi en cours »"| f2
+  f2 --- GH
+  GH -.->|"étiquettes, PR « Closes #N », fermeture, commentaire « Réponse : »"| f3
+  f4 -.->|"inclut"| f2
+  f4 -.->|"inclut"| f3
+  f4 --- GH
+  t7 -.->|"inclut"| f2
+  t5 -.->|"détail d'un ticket"| t6
+  t6 --- GH
+  f3 -.->|"état final"| f5
+  t3 -.->|"ouvrir le ticket éteint le point"| f5
+  t3 -.->|"étend : Question répondue ou refus motivé"| t4
+</pre>
+      </div>
+      <figcaption>
+        <b>Tout membre nommé et non révoqué envoie un ticket</b> — lecteur, éditeur,
+        administrateur. Il ne lit que les siens ; l'administrateur les lit tous. Le formulaire
+        prévient avant l'envoi : le titre et la description sont publiés sur un site public. Le
+        nom du membre, son adresse, le contenu d'une recette et la capture ne partent jamais sur
+        GitHub ; l'écran y figure sous la forme de son modèle de route, sans identifiant. La
+        capture est facultative, et la case qui la joint est décochée par défaut.
+        <b>Les plafonds se comptent par jour calendaire, à l'heure de Paris</b> : cinq tickets par
+        membre, trente pour toute la famille ; l'administrateur n'en a pas. Quand il reste deux
+        envois ou moins, le formulaire le dit.
+        <b>Le statut se décide sur GitHub</b>, jamais dans l'application. Issue créée : Reçu ;
+        étiquette <code>statut:analysé</code> : Analysé ; étiquette <code>validé</code> : Validé ;
+        pull request « Closes #N » : En cours ; Issue fermée comme terminée : Livré, ou Répondu
+        pour une Question ; fermée comme non prévue : Refusé. Un statut ne recule jamais, sauf
+        à la réouverture de l'Issue. GitHub prévient l'application à chaque changement ; une
+        vérification horaire rattrape un avis perdu.
+        <b>Seul un commentaire de l'administrateur qui commence par « Réponse : » revient dans
+        l'application</b>, comme réponse à une Question ou motif d'un refus. Les autres
+        commentaires restent sur GitHub. Le membre n'a pas de lien vers l'Issue.
+        <b>Un ticket que GitHub n'a pas reçu</b> reste « Envoi en cours » pour le membre, et
+        repart à chaque vérification horaire. Après dix essais, il est « en anomalie » dans
+        Admin › Tickets des membres, avec le nombre d'essais, la dernière erreur et « Relancer
+        l'envoi ». Un jeton GitHub refusé affiche un bandeau dans le même écran jusqu'au premier
+        envoi réussi.
+        <b>L'analyse d'un ticket</b> est faite par l'administrateur avec sa session Claude Code,
+        à sa demande, hors de l'application. Elle n'entre dans aucun poste de coût de
+        l'application.
       </figcaption>
     </figure>
   </section>

@@ -43,9 +43,11 @@ const Map<String, String> kLogTreatmentLabels = {
   'book_privacy_backfill': 'Reprise de la confidentialité des livres',
   'user_profiles_backfill': 'Reprise des profils publics',
   'group_reach_backfill': 'Reprise de la portée des groupes',
+  'group_planning_reach_backfill':
+      'Reprise de la portée des groupes et des plannings de groupe',
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'portee_plannings':
-      'Portée des plannings partagés après un changement de groupes ou de rôle',
+      'Portée des plannings après un changement de groupes ou de rôle',
   'backfill_ai_pricing': 'Correction de la grille tarifaire',
   'text_extraction': 'Extraction du texte d\'une page',
   'url_import': 'Import d\'une recette depuis un lien',
@@ -124,6 +126,13 @@ const Map<String, String> kLogTreatmentLabels = {
   'consultation_journaux': 'Consultation des journaux',
   'relance_job_en_echec': 'Relance d\'un job en échec',
   'suppression_job_en_echec': 'Suppression d\'un job en échec',
+
+  // ── Tickets ────────────────────────────────────────────────────────────
+  'ticket': 'Envoi d\'un ticket',
+  'ticket_capture': 'Capture jointe à un ticket',
+  'ticket_relance': 'Relance de l\'envoi d\'un ticket',
+  'ticket_webhook': 'Retour de GitHub sur un ticket',
+  'tickets_sync': 'Synchronisation horaire des tickets',
 
   // ── Ce qui n'a jamais eu de nom ────────────────────────────────────────
   // Le défaut historique de toutes les fonctions appelables. Il ne devrait
