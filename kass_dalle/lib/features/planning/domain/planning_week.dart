@@ -120,6 +120,36 @@ List<PlannedMeal> mealsToShop(
   ];
 }
 
+/// D'où viennent les repas ajoutés aux courses : « 5 de Mon planning, 7 du
+/// planning de Marie ». Null quand ils viennent d'un seul planning.
+///
+/// Mon planning d'abord, puis les autres par prénom ([nameOf]). Les repas se
+/// comptent par propriétaire (`uid`).
+String? planningShoppingBreakdown(
+  Iterable<PlannedMeal> meals, {
+  required String? myUid,
+  required String Function(String uid) nameOf,
+}) {
+  final byOwner = <String, int>{};
+  for (final m in meals) {
+    byOwner[m.uid] = (byOwner[m.uid] ?? 0) + 1;
+  }
+  if (byOwner.length < 2) return null;
+  final owners = byOwner.keys.toList()
+    ..sort((a, b) {
+      if (a == myUid) return -1;
+      if (b == myUid) return 1;
+      final byName = nameOf(a).toLowerCase().compareTo(nameOf(b).toLowerCase());
+      return byName != 0 ? byName : a.compareTo(b);
+    });
+  return [
+    for (final uid in owners)
+      uid == myUid
+          ? '${byOwner[uid]} de Mon planning'
+          : '${byOwner[uid]} du planning de ${nameOf(uid)}',
+  ].join(', ');
+}
+
 /// Les semaines qui couvrent [month], dans l'ordre : une ligne du calendrier
 /// chacune.
 ///

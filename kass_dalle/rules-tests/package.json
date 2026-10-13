@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "firebase --config ../firebase.json emulators:exec --only firestore,storage --project demo-kassdalle \"node --test --test-concurrency=1 test/*.test.mjs\"",
-    "check": "node --check test/helpers.mjs && node --check test/firestore.test.mjs && node --check test/storage.test.mjs"
+    "check": "node --check test/helpers.mjs && node --check test/firestore.test.mjs && node --check test/storage.test.mjs && node --check test/shopping.test.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

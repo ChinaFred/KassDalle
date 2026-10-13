@@ -557,6 +557,7 @@ stateDiagram-v2
           <tr><td><code>users/{uid}/preferences/planning_refusals</code></td><td>Mémoire des refus du planning : une carte <code>entries</code> (<code>recipeId</code> → <code>refused_at</code>, <code>count</code>), 300 entrées au plus. Lue par <code>suggestMealPlanFn</code> pour l'appelant seul : une recette refusée dans les 21 jours pèse moins dans la présélection, jamais exclue</td><td>Client (titulaire)</td></tr>
           <tr><td><code>users/{uid}/planning_runs</code></td><td>Générations de planning : propositions, statut du modèle, compteur des conceptions rattachées et coût cumulé, pour le plafond par génération. Conservées 180 jours (TTL sur <code>expires_at</code>). Lues par un admin seulement</td><td>Cloud Functions (serveur seul)</td></tr>
           <tr><td><code>users/{uid}/preferences/meal_staples</code></td><td>Retouches de l'utilisateur sur les garnitures simples, et ses garnitures propres : une carte <code>entries</code> indexée par identifiant</td><td>Client</td></tr>
+          <tr><td><code>users/{uid}/shopping/current</code></td><td>Panier de courses personnel, le même sur tous les appareils du compte : une carte <code>items</code> indexée par produit (nom, quantités par famille d'unité, rayon, provenance, case cochée, rang), 300 articles au plus. Rempli depuis un repas, la période lue ou une fiche recette — toujours dans le panier de celui qui ajoute. Lu et écrit par le titulaire seul ; un administrateur n'y a pas accès</td><td>Client (titulaire)</td></tr>
         </tbody>
       </table>
     </div>
