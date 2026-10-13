@@ -282,9 +282,11 @@ describe("auteur de la programmation", () => {
 });
 
 describe("verrou commun", () => {
-  test("enrichissement et réparation du sel se bloquent l'un l'autre", () => {
+  test("deux paires se bloquent : sel et enrichissement, portée et déplacement de repas", () => {
     assert.deepEqual(lockSiblings("enrich_referentials"), ["refresh_sodium"]);
     assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials"]);
+    assert.deepEqual(lockSiblings("group_planning_reach"), ["move_meals_to_group"]);
+    assert.deepEqual(lockSiblings("move_meals_to_group"), ["group_planning_reach"]);
     assert.deepEqual(lockSiblings("recipe_roles"), []);
   });
 });

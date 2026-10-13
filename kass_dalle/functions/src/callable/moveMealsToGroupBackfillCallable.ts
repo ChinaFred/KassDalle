@@ -31,10 +31,18 @@
  * trouverait pas. Un repas déjà dans un groupe est compté « ignoré ».
  *
  * Réentrant : un repas déplacé porte un `group_id`, il n'est plus
- * sélectionné. Chaque écriture porte la précondition `lastUpdateTime` de la
- * lecture : un repas modifié ou supprimé entre-temps n'est pas déplacé, il
- * part dans la liste à revoir. Borné par le délai, par un nombre de repas
- * déplacés et lus par appel, et par trois échecs de suite.
+ * sélectionné. Chaque repas s'écrit dans une transaction qui relit le groupe
+ * (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant,
+ * toujours personnel). Un groupe supprimé ou cédé pendant le passage l'arrête
+ * (`groupeIndisponible`) : aucun repas n'est rattaché à un groupe disparu,
+ * que `deleteGroupMeals` aurait déjà vidé. Un repas qui a changé entre-temps
+ * est compté « ignoré ». Une écriture en échec part dans la liste à revoir.
+ * Borné par le délai, par un nombre de repas déplacés et lus par appel, et
+ * par trois échecs de suite.
+ *
+ * Le compte rendu est recopié dans `app_config/backfill_run_<clé>`, que tout
+ * administrateur lit : il porte l'identifiant du groupe et des repas, et
+ * leurs jours, jamais le nom du groupe ni le titre d'une recette.
  *
  * Classé `ponctuel`, mais jamais marqué terminé tout seul : chaque passage
  * vaut pour une période et un groupe, et le reste des autres périodes n'est
@@ -156,12 +164,29 @@ export function isPersonalMeal(data: Record<string, unknown> | undefined): boole
   return !Object.prototype.hasOwnProperty.call(data, "group_id") || data.group_id === null;
 }
 
-/** Un repas lu : son identifiant, ses données, et ce qu'il faut pour l'écrire. */
+/** Un repas lu : son identifiant et ses données. */
 export interface MealRow {
   id: string;
   data: Record<string, unknown>;
-  /** Jeton opaque de la lecture (heure de mise à jour), pour la précondition. */
-  version?: unknown;
+}
+
+/**
+ * Issue du déplacement d'un repas, décidée dans la transaction qui l'écrit :
+ *
+ *  - `moved` : `group_id` posé ;
+ *  - `group_gone` : le groupe n'existe plus, ou n'appartient plus à
+ *    l'appelant — le passage s'arrête, rien de plus n'est écrit ;
+ *  - `not_personal` : le repas a disparu, changé de cuisinier ou rejoint un
+ *    groupe depuis la lecture — laissé tel quel, compté « ignoré ».
+ */
+export type MoveOutcome = "moved" | "group_gone" | "not_personal";
+
+/**
+ * Le repas lu dans la transaction peut-il encore être déplacé par [uid] ?
+ * Présent, du cuisinier [uid], et personnel. Pure, testée.
+ */
+export function movableMeal(data: Record<string, unknown> | undefined, uid: string): boolean {
+  return !!data && data.uid === uid && isPersonalMeal(data);
 }
 
 /** Les accès Firestore du passage, remplacés par un faux dans les tests. */
@@ -169,13 +194,21 @@ export interface MoveMealsStore {
   readGroup(groupId: string): Promise<GroupData>;
   /** Repas `uid == [uid]` dont `planned_at` est dans `[startAt, endAt[`, triés par date. */
   listMeals(uid: string, startAt: number, endAt: number, limit: number): Promise<MealRow[]>;
-  /** Pose `group_id` ; échoue si le repas a changé depuis la lecture. */
-  moveMeal(row: MealRow, groupId: string): Promise<void>;
+  /**
+   * Pose `group_id` dans une transaction qui relit le groupe (présent,
+   * `owner_id == ownerUid`) et le repas (`movableMeal`).
+   */
+  moveMeal(mealId: string, groupId: string, ownerUid: string): Promise<MoveOutcome>;
 }
 
+/**
+ * Compte rendu d'un passage. Recopié dans `app_config/backfill_run_<clé>`,
+ * que tout administrateur lit : ni nom de groupe, ni titre de recette, des
+ * identifiants et des dates seulement.
+ */
 export interface BackfillMoveMealsToGroupResponse {
-  /** Nom du groupe cible, lu dans son document. */
-  groupe: string;
+  /** Identifiant du groupe cible. */
+  groupId: string;
   du: string;
   au: string;
   /** Repas de l'appelant lus dans la période (personnels et de groupe). */
@@ -188,6 +221,11 @@ export interface BackfillMoveMealsToGroupResponse {
   restants: number;
   /** Plus de `MAX_MEAL_READS` repas dans la période : la lecture est tronquée. */
   lectureTronquee: boolean;
+  /**
+   * Le groupe a été supprimé, ou a changé de propriétaire, pendant le
+   * passage : arrêt immédiat, plus aucune écriture.
+   */
+  groupeIndisponible: boolean;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
@@ -264,23 +302,31 @@ function firestoreStore(): MoveMealsStore {
         .get();
       return snap.docs.map((doc) => ({ id: doc.id, data: doc.data(), version: doc.updateTime }));
     },
-    async moveMeal(row, groupId) {
-      const ref = db.collection(COLL_PLANNED_MEALS).doc(row.id);
-      if (row.version instanceof Timestamp) {
-        await ref.update({ group_id: groupId }, { lastUpdateTime: row.version });
-      } else {
-        await ref.update({ group_id: groupId });
-      }
+    async moveMeal(mealId, groupId, ownerUid) {
+      const groupRef = db.collection(COLL_GROUPS).doc(groupId);
+      const mealRef = db.collection(COLL_PLANNED_MEALS).doc(mealId);
+      // Le groupe est relu dans la même transaction que le repas : une
+      // suppression du groupe (qui emporte ses repas, `deleteGroupMeals`)
+      // ne laisse pas un repas rattaché à un groupe disparu.
+      return db.runTransaction(async (tx) => {
+        const [group, meal] = await Promise.all([tx.get(groupRef), tx.get(mealRef)]);
+        if (!group.exists || ownerOf(group.data()) !== ownerUid) return "group_gone";
+        if (!movableMeal(meal.data(), ownerUid)) return "not_personal";
+        tx.update(mealRef, { group_id: groupId });
+        return "moved";
+      });
     },
   };
 }
 
-/** « Blanquette — 2026-01-02 », pour la liste à revoir (Firestore seul, jamais les journaux). */
-function mealLabel(row: MealRow): string {
-  const title = typeof row.data.recipe_titre === "string" ? row.data.recipe_titre.trim() : "";
+/**
+ * « Repas abc123 — 2030-03-01 » : l'identifiant et le jour (UTC), sans le
+ * titre de la recette. La liste à revoir est lue par tout administrateur.
+ */
+export function mealReviewLabel(row: MealRow): string {
   const at = row.data.planned_at;
   const day = at instanceof Timestamp ? at.toDate().toISOString().slice(0, 10) : "";
-  return [title || `Repas ${row.id}`, day].filter(Boolean).join(" — ");
+  return [`Repas ${row.id}`, day].filter(Boolean).join(" — ");
 }
 
 /**
@@ -314,13 +360,12 @@ export async function runMoveMealsToGroupPass(
       "Vous n'êtes pas propriétaire de ce groupe : ses repas ne peuvent pas recevoir les vôtres.",
     );
   }
-  const groupName = typeof group.name === "string" ? group.name.trim() : "";
 
   const rows = await store.listMeals(ctx.userId, request.startAt, request.endAt, maxReads);
   const personal = rows.filter((r) => isPersonalMeal(r.data));
 
   const response: BackfillMoveMealsToGroupResponse = {
-    groupe: groupName,
+    groupId: request.groupId,
     du: request.fromDay,
     au: request.toDay,
     examines: rows.length,
@@ -329,6 +374,7 @@ export async function runMoveMealsToGroupPass(
     echoues: 0,
     restants: 0,
     lectureTronquee: rows.length >= maxReads,
+    groupeIndisponible: false,
     stoppedByDeadline: false,
     stoppedByBudget: false,
     stoppedByErrors: false,
@@ -353,8 +399,25 @@ export async function runMoveMealsToGroupPass(
     }
     handled += 1;
     try {
-      await store.moveMeal(row, request.groupId);
-      response.deplaces += 1;
+      const outcome = await store.moveMeal(row.id, request.groupId, ctx.userId);
+      if (outcome === "group_gone") {
+        // Rien d'écrit pour ce repas : il reste à faire, le passage s'arrête.
+        handled -= 1;
+        response.groupeIndisponible = true;
+        await logger.error({
+          message:
+            "Déplacer mes repas vers un groupe — groupe supprimé ou changé de propriétaire pendant le passage, arrêt",
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          moduleType: "DESIGN",
+          feature: FEATURE,
+          errorDescription: "group_gone",
+          extra: { mealId: row.id, groupId: request.groupId, deplaces: response.deplaces },
+        });
+        break;
+      }
+      if (outcome === "moved") response.deplaces += 1;
+      else response.ignores += 1;
       consecutiveFailures = 0;
     } catch (e) {
       response.echoues += 1;
@@ -362,8 +425,8 @@ export async function runMoveMealsToGroupPass(
       review.add({
         kind: "meal",
         id: row.id,
-        label: mealLabel(row),
-        reason: `Repas non déplacé (modifié ou supprimé pendant le passage ?) : ${shortErrorMessage(e)}`,
+        label: mealReviewLabel(row),
+        reason: `Repas non déplacé : ${shortErrorMessage(e)}`,
       });
       await logger.error({
         message: "Déplacer mes repas vers un groupe — échec sur un repas",
@@ -378,19 +441,19 @@ export async function runMoveMealsToGroupPass(
   }
   response.restants = personal.length - handled;
   response.completed =
-    response.restants === 0 && response.echoues === 0 && !response.lectureTronquee;
+    response.restants === 0 &&
+    response.echoues === 0 &&
+    !response.lectureTronquee &&
+    !response.groupeIndisponible;
   response.aRevoir = review.toJSON();
 
-  // Le nom du groupe reste dans le compte rendu (Firestore) : les journaux
-  // reçoivent son identifiant.
-  const { groupe: _groupe, ...forLog } = response;
   await logger.info({
     message: "Déplacer mes repas vers un groupe — passage",
     correlationId: ctx.correlationId,
     userId: ctx.userId,
     moduleType: "DESIGN",
     feature: FEATURE,
-    extra: { ...withoutReviewList(forLog), groupId: request.groupId },
+    extra: { ...withoutReviewList(response) },
   });
   return response;
 }

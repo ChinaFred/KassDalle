@@ -287,6 +287,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'ignorés (déjà dans un groupe)=${r['ignores']}, '
           'en erreur=${r['echoues']}, restants=${r['restants']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'groupeIndisponible', ' (groupe supprimé ou cédé pendant le passage : arrêté, rien de plus n\'a été déplacé)')}'
           '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
@@ -558,9 +559,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       onSchedule: def.isRecurrent
           ? () => _editSchedule(def, schedules.scheduleFor(def.key))
           : null,
-      onSetDone: def.isRecurrent
-          ? null
-          : (done) => _setDone(def, states[def.key], done),
+      onSetDone: backfillOffersDoneMenu(def, states[def.key])
+          ? (done) => _setDone(def, states[def.key], done)
+          : null,
       onShowFailures: (failures) => showBackfillFailuresSheet(
         context,
         title: def.title,

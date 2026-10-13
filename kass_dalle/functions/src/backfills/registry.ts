@@ -143,10 +143,13 @@ export function recurrentKeys(): BackfillKey[] {
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
  * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
- * refusé pendant que l'autre tient son verrou.
+ * refusé pendant que l'autre tient son verrou. De même, la portée des
+ * groupes et le déplacement de repas vers un groupe écrivent tous deux
+ * `planned_meals.group_id`.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
+  ["group_planning_reach", "move_meals_to_group"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key]. */

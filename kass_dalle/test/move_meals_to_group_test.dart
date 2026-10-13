@@ -116,9 +116,41 @@ void main() {
         'du': '2030-03-01',
         'au': '2030-03-07',
       }),
-      '12 repas déplacés (2030-03-01 → 2030-03-07), 0 échec',
+      '12 repas déplacés du ven. 1er au jeu. 7 mars, 0 échec',
+    );
+    expect(
+      backfillReportSummary(BackfillKeys.moveMealsToGroup, {
+        'deplaces': 1,
+        'echoues': 0,
+        'du': 'x',
+        'groupeIndisponible': true,
+      }),
+      '1 repas déplacé, 0 échec, arrêté : groupe supprimé ou cédé',
     );
   });
+
+  test(
+    'menu ⋮ : pas de « Marquer comme terminé » pour un outil réutilisable',
+    () {
+      final move = backfillDefinition(BackfillKeys.moveMealsToGroup)!;
+      final sodium = backfillDefinition(BackfillKeys.refreshSodium)!;
+      final nutrition = backfillDefinition(BackfillKeys.nutrition)!;
+      expect(move.reusable, isTrue);
+      expect(backfillOffersDoneMenu(move, null), isFalse);
+      expect(
+        backfillOffersDoneMenu(
+          move,
+          BackfillRunState.fromMap(move.key, {
+            'termine_le': DateTime.utc(2030, 1, 1),
+          }),
+        ),
+        isTrue,
+        reason: 'marqué terminé par erreur : il se remet à lancer',
+      );
+      expect(backfillOffersDoneMenu(sodium, null), isTrue);
+      expect(backfillOffersDoneMenu(nutrition, null), isFalse);
+    },
+  );
 
   group('boîte de paramètres', () {
     /// Ouvre la boîte ; ce qu'elle rend à sa fermeture s'ajoute à [results].
@@ -182,6 +214,12 @@ void main() {
         groups: [_group('x', 'Groupe d\'un autre', 'someone')],
       );
       expect(find.text('Aucun groupe à vous'), findsOneWidget);
+      expect(
+        find.text(
+          'Créez un groupe familial depuis l\'écran Groupes, puis revenez ici.',
+        ),
+        findsOneWidget,
+      );
       expect(continueButton(tester).onPressed, isNull);
     });
 
@@ -193,6 +231,7 @@ void main() {
         tester,
         groups: [
           _group('g1', 'Groupe A', 'me'),
+          _group('g4', 'Groupe B', 'me'),
           _group('g2', 'Groupe en pause', 'me'),
           _group('g3', 'Groupe d\'un autre', 'someone'),
         ],
@@ -227,6 +266,28 @@ void main() {
       );
     });
 
+    testWidgets('un seul groupe actif à soi : présélectionné', (tester) async {
+      final results = <MoveMealsRequest?>[];
+      await pump(
+        tester,
+        groups: [
+          _group('g1', 'Groupe A', 'me'),
+          _group('g2', 'Groupe en pause', 'me'),
+        ],
+        paused: {'g2'},
+        results: results,
+        range: DateTimeRange(
+          start: DateTime(2030, 3, 1),
+          end: DateTime(2030, 3, 7),
+        ),
+      );
+      expect(find.text('Période'), findsOneWidget);
+      expect(continueButton(tester).onPressed, isNotNull);
+      await tester.tap(find.text('Continuer'));
+      await tester.pumpAndSettle();
+      expect(results.single!.groupId, 'g1');
+    });
+
     testWidgets('période trop longue : message, Continuer désactivé', (
       tester,
     ) async {
@@ -242,7 +303,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Groupe A').last);
       await tester.pumpAndSettle();
-      expect(find.text('62 jours au plus.'), findsOneWidget);
+      expect(
+        find.text('Choisissez une période de 62 jours au plus.'),
+        findsOneWidget,
+      );
       expect(continueButton(tester).onPressed, isNull);
     });
   });

@@ -961,8 +961,10 @@ flowchart LR
         Les repas de « Mon planning » de la période passent dans le planning du groupe et
         quittent le planning personnel ; la recette, la date, les parts et les événements
         d'agenda déjà exportés ne changent pas. Un repas déjà dans un groupe est laissé tel
-        quel : relancer ne refait rien. Elle reste parmi les ponctuels à lancer : chaque passage
-        vaut pour une période, elle n'est jamais marquée terminée toute seule. Aucun appel d'IA.
+        quel : relancer ne refait rien. Si le groupe est supprimé pendant le passage, celui-ci
+        s'arrête. Elle reste parmi les ponctuels à lancer : chaque passage vaut pour une
+        période, elle n'est jamais marquée terminée, ni toute seule ni par le menu ⋮. Aucun
+        appel d'IA.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
         un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
         « Voir les N à revoir ». Il ouvre une liste — un ingrédient, une unité, une recette ou un compte par ligne, avec

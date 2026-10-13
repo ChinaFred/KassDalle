@@ -51,6 +51,11 @@ class BackfillDefinition {
   /// `functions/src/backfills/registry.ts` (fixture `backfill_schedule.json`).
   final BackfillDefaultSchedule? defaultSchedule;
 
+  /// Ponctuel paramétré, réutilisable avec d'autres paramètres : le serveur
+  /// ne le marque jamais terminé, et le menu ⋮ ne propose pas de le faire.
+  /// Propre au client : le serveur l'obtient en rendant un reste inconnu.
+  final bool reusable;
+
   const BackfillDefinition({
     required this.key,
     required this.kind,
@@ -59,6 +64,7 @@ class BackfillDefinition {
     required this.usesAi,
     required this.passLimit,
     this.defaultSchedule,
+    this.reusable = false,
   });
 
   bool get isRecurrent => kind == BackfillKind.recurrent;
@@ -177,6 +183,7 @@ const List<BackfillDefinition> kBackfillRegistry = [
     usesAi: false,
     passLimit:
         'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
+    reusable: true,
   ),
 ];
 

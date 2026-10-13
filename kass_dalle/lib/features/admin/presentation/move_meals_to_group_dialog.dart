@@ -78,19 +78,22 @@ class _MoveMealsToGroupDialogState
       if (_groupId != null && !groups.any((g) => g.id == _groupId)) {
         _groupId = null;
       }
+      // Un seul groupe possible : il est choisi d'office.
+      if (_groupId == null && groups.length == 1) _groupId = groups.single.id;
       body = groups.isEmpty
           ? const AppEmptyState(
               icon: Icons.groups_outlined,
               title: 'Aucun groupe à vous',
               message:
-                  'Créez un groupe familial, ou retrouvez le rôle d\'éditeur, '
-                  'pour y déplacer vos repas.',
+                  'Créez un groupe familial depuis l\'écran Groupes, puis '
+                  'revenez ici.',
             )
           : _form(context, groups);
     }
 
     final request = _request(groups);
     return AlertDialog(
+      scrollable: true,
       title: const Text('Déplacer mes repas vers un groupe'),
       content: SizedBox(width: 420, child: body),
       actions: [
@@ -155,6 +158,8 @@ class _MoveMealsToGroupDialogState
           onChanged: (id) => setState(() => _groupId = id),
         ),
         const SizedBox(height: 16),
+        Text('Période', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: _pickRange,
           icon: const Icon(Icons.date_range_outlined),
@@ -167,7 +172,8 @@ class _MoveMealsToGroupDialogState
         if (tooLong) ...[
           const SizedBox(height: 8),
           Text(
-            '${MoveMealsRequest.maxDays} jours au plus.',
+            'Choisissez une période de ${MoveMealsRequest.maxDays} jours au '
+            'plus.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.error,
             ),

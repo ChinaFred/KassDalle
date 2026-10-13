@@ -11,13 +11,18 @@ import {
   MAX_PERIOD_DAYS,
   isPersonalMeal,
   isoDayToUtcMs,
+  mealReviewLabel,
+  movableMeal,
   parseMoveMealsRequest,
   runMoveMealsToGroupPass,
   summarizeMoveMealsToGroup,
   type MealRow,
+  type MoveOutcome,
   type MoveMealsRequest,
   type MoveMealsStore,
 } from "../callable/moveMealsToGroupBackfillCallable";
+import { Timestamp } from "firebase-admin/firestore";
+
 import { shouldAutoMarkDone } from "../backfills/schedule";
 
 const H = 3_600_000;
@@ -173,10 +178,22 @@ class FakeStore implements MoveMealsStore {
       });
   }
 
-  async moveMeal(row: MealRow, groupId: string) {
-    if (this.failing.has(row.id)) throw new Error("FAILED_PRECONDITION");
-    this.meals[row.id].group_id = groupId;
-    this.writes.push({ id: row.id, groupId });
+  /** Rappelé après chaque écriture, pour simuler un changement concurrent. */
+  afterMove: ((id: string) => void) | null = null;
+
+  /** Rejoue la transaction : relit le groupe et le repas, puis écrit. */
+  async moveMeal(id: string, groupId: string, ownerUid: string): Promise<MoveOutcome> {
+    if (this.failing.has(id)) throw new Error("ABORTED");
+    const group = await this.readGroup(groupId);
+    if (!group || group.owner_id !== ownerUid) return "group_gone";
+    const meal = this.meals[id];
+    if (!movableMeal(meal as unknown as Record<string, unknown> | undefined, ownerUid)) {
+      return "not_personal";
+    }
+    meal.group_id = groupId;
+    this.writes.push({ id, groupId });
+    this.afterMove?.(id);
+    return "moved";
   }
 }
 
@@ -224,7 +241,13 @@ describe("passage", () => {
     assert.equal(s.meals.after.group_id, null);
     assert.equal(s.meals.other.group_id, null);
     assert.equal(s.meals.g1.group_id, "grpOther");
-    assert.equal(r.groupe, "Groupe A");
+    assert.equal(r.groupId, "grpA");
+    assert.equal(r.groupeIndisponible, false);
+    assert.equal(
+      JSON.stringify(r).includes("Groupe A"),
+      false,
+      "le nom du groupe ne part pas dans le compte rendu",
+    );
     assert.equal(r.examines, 3);
     assert.equal(r.deplaces, 2);
     assert.equal(r.ignores, 1);
@@ -290,6 +313,8 @@ describe("passage", () => {
     assert.equal(r.aRevoir.total, 1);
     assert.equal(r.aRevoir.items[0].id, "p1");
     assert.equal(r.aRevoir.items[0].kind, "meal");
+    assert.equal(r.aRevoir.items[0].label, "Repas p1");
+    assert.equal(JSON.stringify(r).includes("Soupe"), false, "pas de titre de recette");
     assert.equal(errors.length, 1);
   });
 
@@ -325,5 +350,77 @@ describe("passage", () => {
     assert.equal(summary.complete, true);
     assert.equal(summary.remaining, null);
     assert.equal(shouldAutoMarkDone("ponctuel", summary), false);
+  });
+
+  test("groupe supprimé après le premier déplacement : arrêt, plus aucune écriture", async () => {
+    const s = store();
+    s.afterMove = () => {
+      delete s.groups.grpA;
+    };
+    const errors: unknown[] = [];
+    const r = await runMoveMealsToGroupPass(ctx, parsed(), s, {
+      deadlineMs: Number.MAX_SAFE_INTEGER,
+      logger: {
+        error: async (e) => {
+          errors.push(e);
+        },
+        info: async () => undefined,
+      },
+    });
+    assert.deepEqual(
+      s.writes.map((w) => w.id),
+      ["p1"],
+    );
+    assert.equal(s.meals.p2.group_id, undefined, "p2 reste personnel");
+    assert.equal(r.groupeIndisponible, true);
+    assert.equal(r.deplaces, 1);
+    assert.equal(r.restants, 1);
+    assert.equal(r.completed, false);
+    assert.equal(errors.length, 1);
+  });
+
+  test("groupe cédé à un autre propriétaire pendant le passage : arrêt", async () => {
+    const s = store();
+    s.afterMove = () => {
+      s.groups.grpA.owner_id = "someoneElse";
+    };
+    const r = await runMoveMealsToGroupPass(ctx, parsed(), s, {
+      deadlineMs: Number.MAX_SAFE_INTEGER,
+      logger: silent,
+    });
+    assert.equal(r.deplaces, 1);
+    assert.equal(r.groupeIndisponible, true);
+  });
+
+  test("repas passé dans un groupe entre la lecture et l'écriture : ignoré", async () => {
+    const s = store();
+    s.afterMove = (id) => {
+      if (id === "p1") s.meals.p2.group_id = "grpOther";
+    };
+    const r = await runMoveMealsToGroupPass(ctx, parsed(), s, {
+      deadlineMs: Number.MAX_SAFE_INTEGER,
+      logger: silent,
+    });
+    assert.equal(r.deplaces, 1);
+    assert.equal(r.ignores, 2);
+    assert.equal(s.meals.p2.group_id, "grpOther");
+    assert.equal(r.completed, true);
+  });
+});
+
+describe("transaction et liste à revoir", () => {
+  test("repas déplaçable : présent, du cuisinier, personnel", () => {
+    assert.equal(movableMeal({ uid: "u", group_id: null }, "u"), true);
+    assert.equal(movableMeal({ uid: "u" }, "u"), true);
+    assert.equal(movableMeal({ uid: "v", group_id: null }, "u"), false);
+    assert.equal(movableMeal({ uid: "u", group_id: "g" }, "u"), false);
+    assert.equal(movableMeal(undefined, "u"), false);
+  });
+  test("libellé : identifiant et jour, jamais le titre", () => {
+    const label = mealReviewLabel({
+      id: "m1",
+      data: { recipe_titre: "Soupe", planned_at: Timestamp.fromMillis(Date.UTC(2030, 2, 1, 12)) },
+    });
+    assert.equal(label, "Repas m1 — 2030-03-01");
   });
 });
