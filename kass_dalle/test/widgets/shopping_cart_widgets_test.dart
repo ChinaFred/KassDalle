@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +16,20 @@ import 'package:kass_dalle/features/recipes/presentation/recipe_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _uid = 'u1';
+
+/// Un panier dont la lecture attend [gate] : un ajout reste en cours tant
+/// qu'on ne l'ouvre pas.
+class _SlowRepo extends ShoppingCartRepository {
+  _SlowRepo({required super.firestore, required super.errorReportService});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<ShoppingCart> load(String uid) async {
+    await gate.future;
+    return super.load(uid);
+  }
+}
 
 AppUser _user() => AppUser(
   uid: _uid,
@@ -118,6 +134,11 @@ void main() {
         ),
       );
       expect(find.byTooltip('Ajouter aux courses'), findsOneWidget);
+      // L'icône suffit : le menu ⋮ ne la répète pas.
+      await tester.tap(find.byType(PopupMenuButton<PlanningMealAction>));
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimer'), findsOneWidget);
+      expect(find.text('Ajouter aux courses'), findsNothing);
     });
   });
 
@@ -212,6 +233,25 @@ void main() {
       await tester.tap(find.widgetWithText(SnackBarAction, 'Annuler'));
       await tester.pumpAndSettle();
       expect(await names(), ['Ail']);
+      expect(find.text('Liste précédente rendue.'), findsOneWidget);
+    });
+
+    testWidgets('deux appuis rapides : un seul ajout', (tester) async {
+      final slow = _SlowRepo(
+        firestore: firestore,
+        errorReportService: ErrorReportService(firestore: firestore),
+      );
+      repo = slow;
+      await pumpHost(tester, [_item('Riz')]);
+      await tester.tap(find.text('ajouter'));
+      await tester.pump();
+      await tester.tap(find.text('ajouter'));
+      await tester.pump();
+      slow.gate.complete();
+      await tester.pumpAndSettle();
+      final cart = await repo.load(_uid);
+      expect(cart.items.single.quantities.single.qty, '1');
+      expect(find.byType(AlertDialog), findsNothing);
     });
 
     testWidgets('« Annuler » de la boîte n\'écrit rien', (tester) async {
@@ -231,7 +271,7 @@ void main() {
       await pumpHost(tester, const []);
       // Un article reste à acheter.
       expect(find.text('1'), findsOneWidget);
-      await tester.tap(find.byTooltip('Mes courses'));
+      await tester.tap(find.byTooltip('Mes courses, 1 à acheter'));
       await tester.pumpAndSettle();
       expect(find.text('Mes courses'), findsOneWidget);
       expect(find.text('2 articles · 1 coché'), findsOneWidget);
@@ -253,7 +293,7 @@ void main() {
     testWidgets('Vider la liste demande confirmation', (tester) async {
       await repo.restore(_uid, [_item('Ail'), _item('Riz')]);
       await pumpHost(tester, const []);
-      await tester.tap(find.byTooltip('Mes courses'));
+      await tester.tap(find.byTooltip('Mes courses, 2 à acheter'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Actions de la liste'));
       await tester.pumpAndSettle();
@@ -267,6 +307,22 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Vider'));
       await tester.pumpAndSettle();
       expect((await repo.load(_uid)).isEmpty, isTrue);
+    });
+
+    testWidgets('Retirer les articles cochés, puis Annuler', (tester) async {
+      await repo.restore(_uid, [_item('Ail', checked: true), _item('Riz')]);
+      await pumpHost(tester, const []);
+      await tester.tap(find.byTooltip('Mes courses, 1 à acheter'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Actions de la liste'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retirer les articles cochés'));
+      await tester.pumpAndSettle();
+      expect((await repo.load(_uid)).items.map((i) => i.name), ['Riz']);
+      expect(find.text('1 article retiré.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Annuler'));
+      await tester.pumpAndSettle();
+      expect((await repo.load(_uid)).items.map((i) => i.name), ['Ail', 'Riz']);
     });
   });
 }

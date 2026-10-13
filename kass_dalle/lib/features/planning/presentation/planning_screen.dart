@@ -565,13 +565,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// parts. Rien n'est écrit dans une recette.
   ///
   /// Null quand la lecture des recettes échoue : l'écran l'a déjà dit.
-  Future<({List<ShoppingItem> items, List<String> missing})?> _shoppingItemsFor(
-    List<PlannedMeal> meals,
-  ) async {
+  ///
+  /// Une recette non rendue se range dans `notShared` quand l'écran la sait
+  /// illisible pour le compte (cadenas), dans `missing` sinon.
+  Future<
+    ({List<ShoppingItem> items, List<String> missing, List<String> notShared})?
+  >
+  _shoppingItemsFor(List<PlannedMeal> meals) async {
     // Résoudre par identifiant : un repas peut pointer sur un brouillon ou une
     // recette de la famille, absente des recettes validées de l'utilisateur.
     // Une recette que le compte ne peut pas lire n'est pas rendue : elle
-    // compte comme introuvable.
+    // est dite non partagée (cadenas connu) ou introuvable.
     final repo = ref.read(planningRepositoryProvider);
     // Les plats, et les recettes d'accompagnement des repas : une garniture
     // avec recette se compte comme le plat qu'elle accompagne.
@@ -599,6 +603,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
     final recipesById = {for (final r in resolved) r.id: r};
     final missing = <String>[];
+    final notShared = <String>[];
+    void absent(String id, String label) =>
+        (_readableRecipes[id] == false ? notShared : missing).add(label);
     final planningRecipes = <Recipe>[];
     // Les garnitures, multipliées par les parts du repas ; elles se fondent
     // dans les lignes des recettes — le riz d'une garniture et le riz d'une
@@ -624,7 +631,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         } else if (c.isRecipe) {
           final side = recipesById[c.recipeId!];
           if (side == null) {
-            missing.add(c.label);
+            absent(c.recipeId!, c.label);
             continue;
           }
           planningRecipes.add(
@@ -640,7 +647,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       if (recipeId == null) continue;
       final recipe = recipesById[recipeId];
       if (recipe == null) {
-        missing.add(meal.recipeTitre);
+        absent(recipeId, meal.recipeTitre);
         continue;
       }
       planningRecipes.add(
@@ -659,26 +666,53 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       aggregated.products,
       (p) => aggregated.sources[p.name] ?? 'Planning',
     );
-    return (items: items, missing: missing);
+    return (items: items, missing: missing, notShared: notShared);
   }
 
-  /// Une recette introuvable ne disparaît pas sans un mot : sinon la liste
-  /// paraît complète alors qu'il y manque un repas entier.
-  void _sayMissing(List<String> missing) {
-    if (missing.isEmpty || !mounted) return;
-    context.showSnackBar(
-      'Recette introuvable, ingrédients non comptés : ${missing.join(', ')}',
-    );
+  /// Une recette non comptée ne disparaît pas sans un mot : sinon la liste
+  /// paraît complète alors qu'il y manque un repas entier. Une recette au
+  /// cadenas se dit « non partagée », les autres « introuvables ».
+  void _sayMissing(List<String> missing, List<String> notShared) {
+    if (!mounted) return;
+    if (notShared.isNotEmpty) {
+      context.showSnackBar(
+        'Recette non partagée, ingrédients non comptés : '
+        '${notShared.join(', ')}',
+      );
+    }
+    if (missing.isNotEmpty) {
+      context.showSnackBar(
+        'Recette introuvable, ingrédients non comptés : ${missing.join(', ')}',
+      );
+    }
   }
+
+  /// Repas dont l'ajout aux courses est en cours : leur tuile montre un
+  /// indicateur, et un second appui est ignoré.
+  final Set<String> _shoppingMealIds = {};
+
+  /// « Ajouter la période aux courses » en cours : l'icône devient un
+  /// indicateur, et un second appui est ignoré.
+  bool _periodShopping = false;
 
   /// « Ajouter aux courses » sur un repas, d'où qu'il vienne : les articles
   /// vont dans le panier du compte connecté.
   Future<void> _addMealToShopping(PlannedMeal meal) async {
+    if (_shoppingMealIds.contains(meal.id) || _periodShopping) return;
+    setState(() => _shoppingMealIds.add(meal.id));
+    try {
+      await _addMealToShoppingNow(meal);
+    } finally {
+      if (mounted) setState(() => _shoppingMealIds.remove(meal.id));
+    }
+  }
+
+  Future<void> _addMealToShoppingNow(PlannedMeal meal) async {
     final collected = await _shoppingItemsFor([meal]);
     if (collected == null || !mounted) return;
-    _sayMissing(collected.missing);
+    _sayMissing(collected.missing, collected.notShared);
     if (collected.items.isEmpty) {
-      if (collected.missing.isEmpty) {
+      if (collected.missing.isEmpty && collected.notShared.isEmpty) {
         context.showSnackBar('Aucun ingrédient à ajouter');
       }
       return;
@@ -699,6 +733,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     List<PlannedMeal> shown,
     _PlanningView view,
   ) async {
+    if (_periodShopping || _shoppingMealIds.isNotEmpty) return;
+    setState(() => _periodShopping = true);
+    try {
+      await _addPeriodToShoppingNow(shown, view);
+    } finally {
+      if (mounted) setState(() => _periodShopping = false);
+    }
+  }
+
+  Future<void> _addPeriodToShoppingNow(
+    List<PlannedMeal> shown,
+    _PlanningView view,
+  ) async {
     final meals = _periodMealsToShop(shown);
     if (meals.isEmpty) {
       context.showSnackBar('Aucun repas à venir sur cette période.');
@@ -706,9 +753,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
     final collected = await _shoppingItemsFor(meals);
     if (collected == null || !mounted) return;
-    _sayMissing(collected.missing);
+    _sayMissing(collected.missing, collected.notShared);
     if (collected.items.isEmpty) {
-      if (collected.missing.isEmpty) {
+      if (collected.missing.isEmpty && collected.notShared.isEmpty) {
         context.showSnackBar(
           'Aucune recette avec ingrédients dans le planning.',
         );
@@ -1172,9 +1219,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             ),
             if (canShopPeriod)
               IconButton(
-                icon: const Icon(Icons.add_shopping_cart),
-                tooltip: 'Ajouter la période aux courses',
-                onPressed: () => _addPeriodToShopping(shownMeals, view),
+                icon: _periodShopping
+                    ? const SizedBox(
+                        width: AppIconSize.small,
+                        height: AppIconSize.small,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add_shopping_cart),
+                tooltip: _periodShopping
+                    ? 'Préparation des courses…'
+                    : 'Ajouter la période aux courses',
+                onPressed: _periodShopping
+                    ? null
+                    : () => _addPeriodToShopping(shownMeals, view),
               ),
             const ShoppingCartButton(),
             if (canExport) ...[
@@ -1265,8 +1322,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!isWide && showSelector) const PlanningOwnersChipRow(),
-          // Mes repas sont là ; les plannings partagés arrivent encore.
-          if (sharedLoading && myMealsAsync.hasValue)
+          // Mes repas sont là ; les plannings partagés arrivent encore. Ou
+          // la période part aux courses : sur téléphone, le menu ⋮ s'est
+          // refermé, la barre dit que le geste est pris.
+          if ((sharedLoading && myMealsAsync.hasValue) ||
+              (_periodShopping && !isWide))
             const LinearProgressIndicator(),
           if (reachAsync.hasError && !reachAsync.hasValue)
             _PlanningReadFailure(
@@ -1832,7 +1892,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         PlanningMealTile(
           meal: meal,
           isPast: isPast,
-          aiLoading: false,
+          aiLoading: _shoppingMealIds.contains(meal.id),
           isWide: isWide,
           readOnly: true,
           onAddToShopping: _shopActionFor(meal, isPast: isPast, locked: locked),
@@ -1862,7 +1922,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       return PlanningMealTile(
         meal: meal,
         isPast: isPast,
-        aiLoading: false,
+        aiLoading: _shoppingMealIds.contains(meal.id),
         isWide: isWide,
         ownerName: view.labelsOwners ? view.nameOf(meal.uid) : null,
         onDelete: () => _deleteMeal(meal),
@@ -1876,7 +1936,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       isPast: isPast,
       aiLoading:
           _aiLoadingIds.contains(meal.id) ||
-          _storageLoadingIds.contains(meal.id),
+          _storageLoadingIds.contains(meal.id) ||
+          _shoppingMealIds.contains(meal.id),
       isWide: isWide,
       ownerName: view.labelsOwners ? view.nameOf(meal.uid) : null,
       onDelete: () => _deleteMeal(meal),

@@ -695,8 +695,9 @@ class PlanningMealTile extends StatelessWidget {
   /// Le menu ⋮ : seules les actions fournies y figurent, et aucun menu
   /// quand il n'y en a pas.
   ///
-  /// « Ajouter aux courses » rejoint un menu qui existe déjà ; il n'en crée
-  /// pas un à lui seul : un repas en lecture seule le porte en icône.
+  /// « Ajouter aux courses » rejoint, sur téléphone, un menu qui existe
+  /// déjà ; il n'en crée pas un à lui seul : un repas en lecture seule le
+  /// porte en icône, et sur grand écran l'icône est sur toutes les tuiles.
   Widget? _buildMenu() {
     final onDeleteAction = _action(onDelete);
     final actions = <PlanningMealAction, VoidCallback>{
@@ -711,8 +712,11 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.exportToCalendar: ?_action(onExportToCalendar),
     };
     if (actions.isEmpty && onDeleteAction == null) return null;
+    // Sur grand écran, l'icône de la tuile suffit.
     final onShop = onAddToShopping;
-    if (onShop != null) actions[PlanningMealAction.addToShopping] = onShop;
+    if (onShop != null && !isWide) {
+      actions[PlanningMealAction.addToShopping] = onShop;
+    }
     if (onDeleteAction != null) {
       actions[PlanningMealAction.delete] = onDeleteAction;
     }

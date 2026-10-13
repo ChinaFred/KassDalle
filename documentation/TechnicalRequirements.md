@@ -3961,7 +3961,7 @@ sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` e
 l'écriture (§4). Côté client, `canEditProvider` masque « Planifier » sur la fiche recette,
 « Nouveau planning », « Préférences du planning », l'export du
 planning, « Choisir une recette » d'un jour libre, l'heure et le menu d'un repas (sauf
-« Supprimer » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
+« Supprimer » et « Ajouter aux courses » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
 l'écran Préférences ; `canWriteRecipeAdviceProvider` rend faux pour un lecteur, et la fiche lui
 montre le conseil de conservation déjà stocké, ou rien. Les courses restent ouvertes au
 lecteur — « Ajouter aux courses » sur un repas (le sien, ou celui d'un planning partagé),

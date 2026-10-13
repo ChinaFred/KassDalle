@@ -158,7 +158,8 @@
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut supprimer ou ajouter aux courses</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -515,9 +516,10 @@ flowchart LR
         Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
-        préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
+        préférences, garnitures et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        décoché par défaut, avec « Supprimer » et, sur un repas à venir, « Ajouter aux
+        courses ». « Mon planning » n'apparaît
         que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
         les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,

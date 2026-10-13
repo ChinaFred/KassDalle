@@ -58,7 +58,35 @@ Future<void> addRecipeToShoppingList(
 ///
 /// Les articles vont toujours dans le panier de celui qui ajoute, quel que
 /// soit le planning dont vient le repas.
+///
+/// Un second appui pendant qu'un ajout est en cours est ignoré : sans cela,
+/// deux appuis rapides ajoutaient deux fois les mêmes quantités.
 Future<void> addToShoppingList(
+  BuildContext context,
+  WidgetRef ref, {
+  required List<ShoppingItem> incoming,
+  required String summary,
+  String? breakdown,
+}) async {
+  if (_addInProgress) return;
+  _addInProgress = true;
+  try {
+    await _addToShoppingList(
+      context,
+      ref,
+      incoming: incoming,
+      summary: summary,
+      breakdown: breakdown,
+    );
+  } finally {
+    _addInProgress = false;
+  }
+}
+
+/// Vrai pendant un ajout aux courses, boîte comprise.
+bool _addInProgress = false;
+
+Future<void> _addToShoppingList(
   BuildContext context,
   WidgetRef ref, {
   required List<ShoppingItem> incoming,
@@ -152,6 +180,9 @@ Future<void> _undoReplace(
 ) async {
   try {
     await repo.restore(uid, previous);
+    if (context.mounted) {
+      context.showSuccessSnackBar('Liste précédente rendue.');
+    }
   } catch (e) {
     // Déjà remontée par le repository (`shopping.restore`).
     if (context.mounted) {
@@ -214,13 +245,18 @@ class ShoppingCartButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final remaining = ref.watch(myShoppingCartProvider).value?.uncheckedCount;
+    final remaining =
+        ref.watch(myShoppingCartProvider).value?.uncheckedCount ?? 0;
+    // L'infobulle dit aussi le nombre : la pastille seule ne s'annonce pas au
+    // lecteur d'écran.
     return IconButton(
-      tooltip: 'Mes courses',
+      tooltip: remaining > 0
+          ? 'Mes courses, $remaining à acheter'
+          : 'Mes courses',
       onPressed: () => showShoppingCart(context),
       icon: Badge.count(
-        count: remaining ?? 0,
-        isLabelVisible: (remaining ?? 0) > 0,
+        count: remaining,
+        isLabelVisible: remaining > 0,
         child: const Icon(Icons.shopping_cart_outlined),
       ),
     );
@@ -236,12 +272,13 @@ Future<void> showShoppingCart(BuildContext context) {
     return showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
+        clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 560,
-            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SizedBox(
+            height: (MediaQuery.sizeOf(ctx).height * 0.85).clamp(0, 720),
+            child: const _ShoppingCartPanel(inDialog: true),
           ),
-          child: const _ShoppingCartPanel(inDialog: true),
         ),
       ),
     );
@@ -312,6 +349,14 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
   bool _opening = false;
   bool _sendingTasks = false;
 
+  /// Le panneau a sa propre file de messages : un message posé sur
+  /// l'écran du dessous passerait sous la feuille ou la fenêtre, et son
+  /// « Annuler » ne se toucherait pas.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// Le contexte d'où partent les messages du panneau.
+  BuildContext get _msg => _scaffoldKey.currentContext ?? context;
+
   String? get _uid => ref.read(appUserProvider).value?.uid;
 
   List<ShoppingItem> _shown(ShoppingCart cart) => [
@@ -332,7 +377,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       // Déjà remontée par le repository (`shopping.setChecked`) : la case
       // reprend son état, l'écran le dit.
       if (mounted) {
-        context.showErrorSnackBar('La case n\'a pas pu être enregistrée.');
+        _msg.showErrorSnackBar('La case n\'a pas pu être enregistrée.');
       }
     } finally {
       if (mounted) setState(() => _pending.remove(item.key));
@@ -345,15 +390,26 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
     final repo = ref.read(shoppingCartRepositoryProvider);
     switch (action) {
       case _CartMenu.removeChecked:
+        // La liste d'avant, pour « Annuler ».
+        final previous = List<ShoppingItem>.of(items);
+        final keys = [
+          for (final i in items)
+            if (i.checked) i.key,
+        ];
         try {
-          await repo.removeItems(uid, [
-            for (final i in items)
-              if (i.checked) i.key,
-          ]);
+          await repo.removeItems(uid, keys);
+          if (!mounted) return;
+          _msg.showSuccessSnackBar(
+            '${shoppingArticles(keys.length)} retiré${keys.length > 1 ? 's' : ''}.',
+            action: SnackBarAction(
+              label: 'Annuler',
+              onPressed: () => _undoRemove(repo, uid, previous),
+            ),
+          );
         } catch (e) {
           // Déjà remontée par le repository (`shopping.removeItems`).
           if (mounted) {
-            context.showErrorSnackBar(
+            _msg.showErrorSnackBar(
               'Les articles cochés n\'ont pas pu être retirés.',
             );
           }
@@ -373,6 +429,10 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
                 child: const Text('Annuler'),
               ),
               FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                  foregroundColor: Theme.of(ctx).colorScheme.onError,
+                ),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Vider'),
               ),
@@ -385,9 +445,25 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         } catch (e) {
           // Déjà remontée par le repository (`shopping.clear`).
           if (mounted) {
-            context.showErrorSnackBar('La liste n\'a pas pu être vidée.');
+            _msg.showErrorSnackBar('La liste n\'a pas pu être vidée.');
           }
         }
+    }
+  }
+
+  /// « Annuler » après « Retirer les articles cochés ».
+  Future<void> _undoRemove(
+    ShoppingCartRepository repo,
+    String uid,
+    List<ShoppingItem> previous,
+  ) async {
+    try {
+      await repo.restore(uid, previous);
+    } catch (e) {
+      // Déjà remontée par le repository (`shopping.restore`).
+      if (mounted) {
+        _msg.showErrorSnackBar('Les articles n\'ont pas pu être rendus.');
+      }
     }
   }
 
@@ -424,7 +500,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       (grouped[item.category] ??= []).add(item);
     }
     if (grouped.isEmpty) {
-      context.showSnackBar('Tout est déjà coché : rien à envoyer.');
+      _msg.showSnackBar('Tout est déjà coché : rien à envoyer.');
       return;
     }
     final groups = <({String category, List<String> items})>[
@@ -448,7 +524,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       // réseau, le lien n'est plus considéré comme déclenché par vous.
       await _openTasks();
       if (!mounted) return;
-      context.showSuccessSnackBar(
+      _msg.showSuccessSnackBar(
         '$count article${count > 1 ? 's' : ''} envoyé'
         '${count > 1 ? 's' : ''} dans Google Tasks.',
         action: SnackBarAction(label: 'Ouvrir', onPressed: _openTasks),
@@ -460,7 +536,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Envoi impossible : $error');
+      _msg.showErrorSnackBar('L\'envoi vers Google Tasks a échoué.');
     } finally {
       if (mounted) setState(() => _sendingTasks = false);
     }
@@ -491,7 +567,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
       if (mounted) {
-        context.showSuccessSnackBar(
+        _msg.showSuccessSnackBar(
           'Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).',
         );
       }
@@ -501,7 +577,9 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showErrorSnackBar('Copie impossible : $error');
+      if (mounted) {
+        _msg.showErrorSnackBar('La liste n\'a pas pu être copiée.');
+      }
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -536,8 +614,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       body = _buildList(theme, items);
     }
 
-    return Column(
-      mainAxisSize: widget.inDialog ? MainAxisSize.min : MainAxisSize.max,
+    final column = Column(
       children: [
         if (!widget.inDialog) ...[
           const SizedBox(height: 12),
@@ -554,9 +631,16 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         _buildHeader(theme, items, checked),
         const SizedBox(height: 8),
         const Divider(),
-        if (widget.inDialog) Flexible(child: body) else Expanded(child: body),
+        Expanded(child: body),
         if (items.isNotEmpty) _buildActions(theme, items),
       ],
+    );
+    return ScaffoldMessenger(
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: Colors.transparent,
+        body: column,
+      ),
     );
   }
 
@@ -644,7 +728,6 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
     }
     return ListView(
       controller: widget.scrollController,
-      shrinkWrap: widget.inDialog,
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
       children: [
         for (final cat in _orderedCategories(grouped.keys)) ...[
@@ -747,7 +830,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
                   : const Icon(Icons.open_in_new, size: AppIconSize.small),
               label: const Text('Copier pour Google Keep'),
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 44),
+                minimumSize: const Size(double.infinity, 48),
               ),
             ),
             const SizedBox(height: 6),
