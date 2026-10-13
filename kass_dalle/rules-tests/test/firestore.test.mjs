@@ -3195,6 +3195,36 @@ describe("groupes — rôle éditeur requis", () => {
     await assertFails(db("reader").doc("groups/g-reader").update({ invited_ids: [OTHER] }));
   });
 
+  it("un lecteur propriétaire ne fait entrer personne en réduisant", async () => {
+    await seedDocs(env, {
+      "groups/g-reader": {
+        name: "Ancien",
+        owner_id: READER,
+        member_ids: [READER],
+        invited_ids: [STRANGER],
+      },
+    });
+    const ref = db("reader").doc("groups/g-reader");
+    await assertFails(ref.update({ member_ids: [READER, OTHER] }));
+    await assertFails(ref.update({ member_ids: [READER, STRANGER], invited_ids: [] }));
+    await assertFails(ref.update({ invited_ids: [], x: 1 }));
+    await assertFails(ref.update({ member_ids: deleteField() }));
+  });
+
+  it("un lecteur propriétaire ne répète pas une invitation ni un membre", async () => {
+    await seedDocs(env, {
+      "groups/g-reader": {
+        name: "Ancien",
+        owner_id: READER,
+        member_ids: [READER],
+        invited_ids: [STRANGER],
+      },
+    });
+    const ref = db("reader").doc("groups/g-reader");
+    await assertFails(ref.update({ invited_ids: [STRANGER, STRANGER] }));
+    await assertFails(ref.update({ member_ids: [READER, READER] }));
+  });
+
   it("un lecteur propriétaire retire encore un membre", async () => {
     await assertSucceeds(
       db("otherReader")

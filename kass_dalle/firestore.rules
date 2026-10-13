@@ -695,9 +695,14 @@ service cloud.firestore {
       /// groupe : `invited_ids` et `member_ids` ne perdent que des comptes, il
       /// reste membre, le nom ne change pas. Laisse au lecteur propriétaire
       /// d'un groupe antérieur à v0.23.53 de quoi en faire sortir quelqu'un.
+      /// Sans doublon : `hasAll` compare des ensembles, et une liste répétée
+      /// faisait grossir le document que chaque membre relit.
       function isShrinking() {
         return isOwner(resource.data.owner_id)
           && onlyTouches(['member_ids', 'invited_ids'])
+          && boundedGroup(request.resource.data)
+          && newMembers().size() == request.resource.data.member_ids.size()
+          && newInvited().size() == request.resource.data.get('invited_ids', []).size()
           && oldMembers().hasAll(newMembers())
           && newMembers().hasAll([resource.data.owner_id])
           && oldInvited().hasAll(newInvited());
