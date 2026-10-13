@@ -47,7 +47,33 @@ class GroupRepository {
   /// les deux connues, pour qu'un groupe masqué n'apparaisse pas un instant.
   /// Une portée illisible est signalée au rapport et ne masque rien : mieux
   /// vaut un groupe masqué visible qu'aucun groupe du tout.
-  Stream<List<FamilyGroup>> watchMyGroups(String uid) {
+  Stream<List<FamilyGroup>> watchMyGroups(String uid) => _watchGroupsMasked(
+    uid,
+    (groups, masked) => [
+      for (final group in groups)
+        if (!masked.contains(group.id)) group,
+    ],
+  );
+
+  /// Les groupes dont [uid] est le propriétaire et que le serveur masque :
+  /// il n'est plus éditeur. Ils sont « en pause » : les écrans le lui disent
+  /// au lieu de prétendre qu'il n'a aucun groupe, et ils reviennent quand il
+  /// redevient éditeur.
+  Stream<List<FamilyGroup>> watchMyPausedGroups(String uid) =>
+      _watchGroupsMasked(
+        uid,
+        (groups, masked) => [
+          for (final group in groups)
+            if (group.ownerId == uid && masked.contains(group.id)) group,
+        ],
+      );
+
+  /// Les groupes de [uid] et ses groupes masqués, réunis par [select].
+  Stream<List<FamilyGroup>> _watchGroupsMasked(
+    String uid,
+    List<FamilyGroup> Function(List<FamilyGroup> groups, Set<String> masked)
+    select,
+  ) {
     final groups = _col.where('member_ids', arrayContains: uid).snapshots().map(
       (snap) {
         final list = snap.docs
@@ -65,10 +91,7 @@ class GroupRepository {
     void emit() {
       final g = lastGroups, m = lastMasked;
       if (g == null || m == null) return;
-      controller.add([
-        for (final group in g)
-          if (!m.contains(group.id)) group,
-      ]);
+      controller.add(select(g, m));
     }
 
     controller = StreamController<List<FamilyGroup>>(

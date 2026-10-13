@@ -1375,6 +1375,18 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         'Cochez « Mon planning » pour revoir vos anciens repas.';
     final groups = ref.watch(myGroupsProvider);
     if (!groups.hasValue && !groups.hasError) return const AppLoadingState();
+    // Propriétaire rétrogradé : ses groupes sont en pause, pas absents.
+    final paused = ref.watch(myPausedGroupsProvider).value ?? const [];
+    final pausedTitle = pausedGroupsTitle(paused);
+    if (pausedTitle != null && (groups.value ?? const []).isEmpty) {
+      return AppEmptyState(
+        icon: Icons.pause_circle_outline,
+        title: pausedTitle,
+        message: hasOwnMeals
+            ? '${pausedGroupsMessage(paused.length)} $ownMealsHint'
+            : pausedGroupsMessage(paused.length),
+      );
+    }
     if (groups.hasError && !groups.hasValue) {
       return AppErrorState(
         error: groups.error,

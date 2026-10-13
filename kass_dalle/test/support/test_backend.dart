@@ -56,6 +56,9 @@ class TestBackend {
   /// Mes groupes familiaux, rendus par `myGroupsProvider`.
   final List<FamilyGroup> groups;
 
+  /// Mes groupes en pause (propriétaire rétrogradé), `myPausedGroupsProvider`.
+  final List<FamilyGroup> pausedGroups;
+
   late final overrides = [
     // `appUserProvider` est remplacé directement plutôt que reconstruit depuis
     // un faux FirebaseAuth : c'est la frontière que les écrans lisent, et la
@@ -88,6 +91,7 @@ class TestBackend {
       InMemoryPlanningVisibilityStore(),
     ),
     myGroupsProvider.overrideWith((ref) => Stream.value(groups)),
+    myPausedGroupsProvider.overrideWith((ref) => Stream.value(pausedGroups)),
     processingJobsProvider.overrideWith(
       (ref) => Stream.value(const <ProcessingJob>[]),
     ),
@@ -98,6 +102,7 @@ class TestBackend {
     this.user, {
     this.plannedMeals = const [],
     this.groups = const [],
+    this.pausedGroups = const [],
   }) : recipes = RecipeRepository(firestore: firestore),
        books = BookRepository(firestore: firestore),
        annotations = AnnotationRepository(firestore: firestore),
@@ -109,11 +114,13 @@ class TestBackend {
     AppUser? user,
     List<PlannedMeal> plannedMeals = const [],
     List<FamilyGroup> groups = const [],
+    List<FamilyGroup> pausedGroups = const [],
   }) => TestBackend._(
     FakeFirebaseFirestore(),
     user ?? testUser(),
     plannedMeals: plannedMeals,
     groups: groups,
+    pausedGroups: pausedGroups,
   );
 
   // ── Semis ──────────────────────────────────────────────────────────────────

@@ -78,6 +78,9 @@ void main() {
 
       final groups = await repo.watchMyGroups('owner').first;
       expect(groups.map((g) => g.id), ['g1']);
+      // Le propriétaire le retrouve parmi ses groupes en pause.
+      final paused = await repo.watchMyPausedGroups('owner').first;
+      expect(paused.map((g) => g.id), ['g2']);
     });
 
     test('sans portée, ou portée antérieure : rien de masqué', () async {

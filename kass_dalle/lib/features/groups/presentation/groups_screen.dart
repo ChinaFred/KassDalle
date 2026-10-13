@@ -16,6 +16,10 @@ class GroupsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(myGroupsProvider);
     final invitationsAsync = ref.watch(myInvitationsProvider);
+    // Les groupes que je possède et que le serveur masque (je ne suis plus
+    // éditeur) : l'écran le dit, au lieu de prétendre que je n'en ai aucun.
+    final paused = ref.watch(myPausedGroupsProvider).value ?? const [];
+    final pausedTitle = pausedGroupsTitle(paused);
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
 
     return Scaffold(
@@ -30,6 +34,16 @@ class GroupsScreen extends ConsumerWidget {
           // Les invitations ont leur propre flux : en chargement, la section
           // n'apparaît pas ; en erreur, un encart, et le reste de l'écran sert.
           final invitations = invitationsAsync.value ?? const <FamilyGroup>[];
+          if (groups.isEmpty &&
+              invitations.isEmpty &&
+              !invitationsAsync.hasError &&
+              pausedTitle != null) {
+            return AppEmptyState(
+              icon: Icons.pause_circle_outline,
+              title: pausedTitle,
+              message: pausedGroupsMessage(paused.length),
+            );
+          }
           if (groups.isEmpty &&
               invitations.isEmpty &&
               !invitationsAsync.hasError) {
@@ -56,6 +70,12 @@ class GroupsScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.only(top: 8, bottom: 88),
             children: [
+              if (pausedTitle != null)
+                ListTile(
+                  leading: const Icon(Icons.pause_circle_outline),
+                  title: Text(pausedTitle),
+                  subtitle: Text(pausedGroupsMessage(paused.length)),
+                ),
               if (invitationsAsync.hasError)
                 AppErrorState(
                   compact: true,

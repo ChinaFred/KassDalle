@@ -2296,17 +2296,24 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         );
       }
       if (!owned.hasValue) {
-        return const Scaffold(body: AppLoadingState());
+        return const Scaffold(
+          appBar: _NewPlanningAppBar(),
+          body: AppLoadingState(),
+        );
       }
       final group = owned.value!.where((g) => g.id == groupId).firstOrNull;
       if (group == null) {
         return Scaffold(
           appBar: AppBar(title: const Text('Nouveau planning')),
-          body: const AppEmptyState(
+          body: AppEmptyState(
             icon: Icons.groups_outlined,
             title: 'Le planning de ce groupe ne vous est pas accessible.',
             message:
                 'Seul le propriétaire du groupe, éditeur, planifie pour lui.',
+            action: FilledButton(
+              onPressed: () => context.go(AppRoutes.planning),
+              child: const Text('Retour au planning'),
+            ),
           ),
         );
       }
@@ -2316,7 +2323,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
     return prefsAsync.when(
       loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+          const Scaffold(appBar: _NewPlanningAppBar(), body: AppLoadingState()),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: Text(_title)),
         body: AppErrorState(
@@ -2906,4 +2913,18 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       ),
     ),
   ];
+}
+
+/// La barre de « Nouveau planning » pendant un chargement : le titre est là
+/// avant le contenu, et le retour reste possible.
+class _NewPlanningAppBar extends StatelessWidget
+    implements PreferredSizeWidget {
+  const _NewPlanningAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) =>
+      AppBar(title: const Text('Nouveau planning'));
 }

@@ -15,6 +15,29 @@ final myGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
+/// Groupes dont l'utilisateur connecté est le propriétaire et que le serveur
+/// masque parce qu'il n'est plus éditeur : ses groupes « en pause ».
+final myPausedGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(groupRepositoryProvider).watchMyPausedGroups(uid);
+});
+
+/// « Votre groupe Famille Dupont est en pause. », ou « Vos groupes A et B
+/// sont en pause. » ; `null` sans groupe en pause.
+String? pausedGroupsTitle(List<FamilyGroup> paused) {
+  if (paused.isEmpty) return null;
+  final names = paused.map((g) => g.name).toList()..sort();
+  if (names.length == 1) return 'Votre groupe ${names.single} est en pause.';
+  final head = names.sublist(0, names.length - 1).join(', ');
+  return 'Vos groupes $head et ${names.last} sont en pause.';
+}
+
+/// Ce qui suit le titre d'un groupe en pause.
+String pausedGroupsMessage(int count) => count > 1
+    ? 'Ils reviendront quand vous serez de nouveau éditeur.'
+    : 'Il reviendra quand vous serez de nouveau éditeur.';
+
 /// Groupes qui invitent l'utilisateur connecté et attendent sa réponse.
 final myInvitationsProvider = StreamProvider<List<FamilyGroup>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;

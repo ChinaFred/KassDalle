@@ -54,12 +54,14 @@ void main() {
     Set<String> failingGroups = const {},
     List<PlannedMeal> mine = const [],
     List<FamilyGroup> groups = const [],
+    List<FamilyGroup> pausedGroups = const [],
     Size size = const Size(360, 800),
   }) async {
     final backend = TestBackend(
       user: testUser(role: role),
       plannedMeals: mine,
       groups: groups,
+      pausedGroups: pausedGroups,
     );
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -409,6 +411,29 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Réessayer'), findsWidgets);
+  });
+
+  testWidgets('le propriétaire rétrogradé lit que son groupe est en pause', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.reader,
+      pausedGroups: [dupont(owner: 'uid-test')],
+    );
+
+    expect(
+      find.text('Votre groupe Famille Dupont est en pause.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Il reviendra quand vous serez de nouveau éditeur.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Vous ne faites partie d\'aucun groupe familial.'),
+      findsNothing,
+    );
   });
 
   testWidgets('« Nouveau planning » demande pour qui au propriétaire', (
