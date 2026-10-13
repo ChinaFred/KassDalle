@@ -853,11 +853,19 @@ class PlanningEmptyDayRow extends StatelessWidget {
   /// l'utilisateur.
   final String label;
 
+  /// Le geste proposé : « Choisir une recette » dans un planning où l'on
+  /// planifie, « Suggérer un plat » dans le planning d'un groupe dont on est
+  /// membre.
+  final String actionLabel;
+  final IconData actionIcon;
+
   const PlanningEmptyDayRow({
     super.key,
     required this.isPast,
     this.onPick,
     this.label = 'Rien de prévu',
+    this.actionLabel = 'Choisir une recette',
+    this.actionIcon = Icons.add,
   });
 
   @override
@@ -882,8 +890,8 @@ class PlanningEmptyDayRow extends StatelessWidget {
           if (!isPast && onPick != null) ...[
             TextButton.icon(
               onPressed: onPick,
-              icon: const Icon(Icons.add),
-              label: const Text('Choisir une recette'),
+              icon: Icon(actionIcon),
+              label: Text(actionLabel),
             ),
           ],
         ],

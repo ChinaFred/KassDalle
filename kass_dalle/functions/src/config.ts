@@ -303,6 +303,13 @@ export const COLL_RECIPE_RATINGS = "recipe_ratings";
 /** Repas planifiés — `planned_meals/{mealId}`, champ `uid`. */
 export const COLL_PLANNED_MEALS = "planned_meals";
 
+/**
+ * Suggestions de repas des membres d'un groupe au propriétaire —
+ * `meal_suggestions/{id}`, champs `group_id`, `author_uid`. Supprimées avec
+ * leur groupe, et avec le départ de leur auteur (`syncGroupReach`).
+ */
+export const COLL_MEAL_SUGGESTIONS = "meal_suggestions";
+
 // ── Tickets (bugs, idées, questions des membres → Issues GitHub) ────────────
 
 /**

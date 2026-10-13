@@ -182,6 +182,7 @@
       <li><a href="#planning-groupe">Planning d'un groupe : générer, lire, masquer</a></li>
       <li><a href="#ticket-creation">Envoyer un ticket</a></li>
       <li><a href="#ticket-statut">Retour de statut d'un ticket</a></li>
+      <li><a href="#suggestions-repas">Suggérer un plat, planifier une suggestion</a></li>
     </ol>
   </nav>
 
@@ -3843,6 +3844,7 @@ sequenceDiagram
   end
   opt le groupe est supprimé
     G-->>PM: syncGroupReach → deleteGroupMeals(gd), par lots, retry: true
+    Note over PM: et deleteGroupSuggestions(gd) — voir « Suggérer un plat »
   end
 </pre>
       </div>
@@ -4001,6 +4003,75 @@ sequenceDiagram
         Firestore rend 500, GitHub montre la livraison en échec, et la relecture horaire
         rattrape l'état. Les tickets clos ne sont pas relus : une réouverture dont le webhook
         est perdu n'est pas rattrapée.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="suggestions-repas"><span class="n">41</span>Suggérer un plat, planifier une suggestion</h2>
+    <p class="sec-note">
+      Un membre d'un groupe actif, autre que son propriétaire, lecteur compris, suggère un plat
+      pour un jour du planning du groupe. Le propriétaire lit, et planifie lui-même ce qu'il
+      retient. Aucun appel d'IA, aucun poste de coût, aucune Cloud Function sur le chemin
+      d'écriture : le client écrit, les règles vérifient.
+      <span class="path">planning_screen.dart (« Suggérer un plat », repère du jour) ·
+      cooklang_preview.dart (« Suggérer pour un planning de groupe ») → suggest_meal_sheet.dart →
+      MealSuggestionRepository.suggest → meal_suggestions · meal_suggestions_window.dart →
+      _planSuggestion → planned_meals · triggers/groupReach.ts → groupMeals.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor L as Membre (Léo, lecteur)
+  actor O as Propriétaire (Marie, éditrice)
+  participant S as PlanningScreen
+  participant SS as Feuille « Suggérer un plat »
+  participant MS as meal_suggestions
+  participant W as Fenêtre des suggestions
+  participant PM as planned_meals
+  participant T as syncGroupReach
+
+  L->>S: samedi 17 octobre, Famille Dupont — « Suggérer un plat »
+  S->>SS: groupe et jour fixés
+  SS->>SS: recettes de Léo et des membres de ses groupes (sans IA) ou nom libre ≤ 60
+  Note over SS: recette privée : « Marie ne verra que son titre. »
+  SS->>MS: author_uid == léo, group_id == gd, day == 2026-10-17 — identifiants pris
+  SS->>MS: set gd_léo_2026-10-17_n, premier n libre de 0 à 4 { group_id, group_owner_id: marie, author_uid, day,<br/>recipe_id + recipe_titre ou free_title, note ≤ 200, created_at: serveur }
+  Note over MS: règles : isApproved(), gd dans planning_reach/{léo}.group_ids,<br/>léo dans groups/gd.member_ids, group_owner_id == groups/gd.owner_id ≠ léo,<br/>isMealSuggestion (champs fermés, bornes, jour de la veille à J+60), identifiant _0 à _4
+  MS-->>SS: ok — « Suggestion envoyée à Marie. »
+  S->>MS: author_uid == léo, J−90 ≤ day ≤ J+60, 500 au plus — « Votre suggestion : Lasagnes »
+
+  O->>S: ouvre le planning
+  S->>MS: group_owner_id == marie, J−90 ≤ day ≤ J+60, 500 au plus
+  MS-->>S: badge (jours à venir), repère « 1 suggestion » sur le samedi<br/>titre actuel d'une recette lisible, titre copié sinon
+  O->>W: appui sur le repère
+  W->>PM: repas du groupe ce jour-là — « Déjà prévu » / « Au planning »
+  O->>W: « Planifier ce jour-là »
+  alt recette lisible par Marie
+    W->>PM: add { uid: marie, group_id: gd, parts du groupe } — message et « Annuler » dans la fenêtre
+  else nom libre ou recette privée
+    W->>S: sélecteur pré-rempli du titre, puis le même repas
+  end
+  Note over MS: la suggestion n'est pas modifiée : « Au planning » se calcule
+
+  opt Léo quitte le groupe, ou Marie l'en retire
+    T->>MS: departedMembers → deleteMemberSuggestions(gd, léo), par lots, retry: true
+  end
+  opt le groupe est supprimé
+    T->>MS: deleteGroupSuggestions(gd)
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux lectures prouvables.</b> <code>group_owner_id</code> est copié à la création et
+        vérifié contre le groupe : le propriétaire filtre sur ce champ, l'auteur sur
+        <code>author_uid</code>, et un autre membre ne lit pas les suggestions des autres.
+        Le plafond de cinq suggestions par jour est tenu par les règles : l'identifiant
+        imposé se termine par <code>_0</code> à <code>_4</code>, et le jour est borné de la
+        veille à soixante jours. Le titre d'une recette privée suggérée est visible du propriétaire, la
+        fiche reste fermée (« Recette non partagée »).
       </figcaption>
     </figure>
   </section>

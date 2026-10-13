@@ -20,6 +20,54 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.58 — fonctionnel
+
+Les membres d'un groupe suggèrent des plats au propriétaire. Tout membre d'un groupe actif
+autre que son propriétaire, lecteur compris, ouvre « Suggérer un plat » sur un jour
+d'aujourd'hui ou à venir du planning du groupe, ou « Suggérer pour un planning de groupe »
+depuis une fiche recette : une recette qu'il lit ou un nom libre, et un mot facultatif. Une
+recette privée se suggère par son titre : le propriétaire le lit, sans ouvrir la fiche. Cinq
+suggestions au plus par membre, par groupe et par jour. L'auteur voit sa suggestion sous les
+repas du groupe et la retire ; il ne voit pas celles des autres. Le propriétaire lit le nombre
+de suggestions des jours à venir sur le bouton « Suggestions des membres », un repère
+« 2 suggestions » sur le jour, et une fenêtre qui les range par jour, avec « Planifier ce
+jour-là ». Pas de statut : le propriétaire planifie lui-même ce qu'il retient, et « Au
+planning » s'affiche quand le planning du groupe reprend déjà le plat. Rien n'est purgé ; un
+groupe supprimé emporte ses suggestions, un membre qui sort emporte les siennes. Pas de
+notification, aucun appel d'IA.
+
+Après relecture : on suggère d'aujourd'hui à 59 jours après ; une recette que le
+propriétaire lit s'affiche sous son titre actuel ; les messages de la fenêtre des
+suggestions (« Repas planifié… », « Suggestion retirée. », avec « Annuler ») s'affichent
+dans la fenêtre ; un repère sur un jour passé ouvre la fenêtre sur ce jour, jours passés
+dépliés ; un membre sans repas sur la période garde la liste des jours pour suggérer ;
+« Reçues (n) » et « Envoyées (n) » comptent les jours à venir ; « Voir les plus anciennes »
+vient directement sans jour passé, et dit « Aucune suggestion plus ancienne. » ; une
+erreur de lecture des recettes se dit dans la feuille.
+
+### v0.23.58 — technique
+
+Nouvelle collection `meal_suggestions` (`group_id`, `group_owner_id` dénormalisé et vérifié
+contre le groupe, `author_uid`, `day` en `AAAA-MM-JJ`, `recipe_id` + `recipe_titre` copié ou
+`free_title`, `note`, `created_at` du serveur). Règles : création par un membre d'un groupe
+actif (`planning_reach.group_ids` et `member_ids`), pas le propriétaire, forme fermée et
+bornée ; lecture et suppression par l'auteur ou le propriétaire ; aucune mise à jour. Tests
+dans `rules-tests/test/mealSuggestions.test.mjs`. Quatre index composites (`group_owner_id` ou
+`author_uid`, avec `day`). `syncGroupReach` supprime les suggestions d'un groupe supprimé et
+celles d'un membre sorti (`deleteGroupSuggestions`, `deleteMemberSuggestions`,
+`departedMembers`, `groupMeals.ts`), journalisées par `logError` en cas d'échec et rejouées.
+Côté client : `MealSuggestionRepository`, `meal_suggestion.dart`, la feuille
+`suggest_meal_sheet.dart`, la fenêtre `meal_suggestions_window.dart` ; `addMeal` rend
+l'identifiant du repas (pour « Annuler ») et `RecipePickerSheet` reçoit `initialQuery`.
+Aucune migration : la collection est neuve.
+
+Revue sécurité : le volume est borné par les règles. L'identifiant d'une suggestion est
+imposé, `{group_id}_{auteur}_{day}_{0..4}` (`suggestionIds`), ce qui tient le plafond de cinq
+par auteur, groupe et jour côté serveur ; `day` doit être une date réelle, de la veille à
+J+60 (`isSuggestionDay`). Les flux du client ont une borne haute et une limite de 500.
+`PlanningRepository.readableRecipeTitles` rend le titre actuel des recettes lisibles.
+`suggest()` signale aussi au rapport un brouillon invalide.
+
 ### v0.23.57 — fonctionnel
 
 #### Signaler ou proposer : les tickets de la famille
@@ -46,6 +94,9 @@ Collections `tickets` et `ticket_quotas`, documents `app_config/tickets` et
 avant le déploiement : `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`. Aucun appel d'IA.
 `CLAUDE.md` reçoit une section « Tickets » : analyse en commentaire, traitement des seules
 Issues `validé`, texte d'un ticket traité comme une entrée non fiable.
+
+### v0.23.56 — fonctionnel
+
 Un planning est désormais personnel, ou celui d'un groupe familial. Le propriétaire du
 groupe, éditeur ou administrateur, y planifie seul : « Nouveau planning » demande « Planifier
 pour… » dès qu'il possède un groupe, un jour libre propose « Rien de prévu pour Famille

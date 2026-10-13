@@ -1146,6 +1146,105 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Suggestions de repas (v0.23.58)
+    //
+    // Un membre d'un groupe actif, autre que son propriétaire, lecteur
+    // compris, suggère au propriétaire un plat pour un jour du planning du
+    // groupe : une recette (`recipe_id` + son titre copié `recipe_titre`) ou
+    // un nom libre (`free_title`), et un mot facultatif (`note`). Pas de
+    // statut : le propriétaire lit, et planifie lui-même s'il retient l'idée.
+    //
+    // `group_owner_id` est dénormalisé et vérifié à la création contre
+    // `groups/{group_id}.owner_id` (figé) : les deux requêtes du client
+    // restent prouvables — `group_owner_id == moi` pour le propriétaire,
+    // `author_uid == moi` pour l'auteur. Un autre membre ne lit pas les
+    // suggestions des autres.
+    //
+    // Le titre d'une recette privée suggérée est copié dans la suggestion :
+    // le propriétaire le lit, sans pouvoir ouvrir la fiche.
+    //
+    // Volume borné par la règle (revue sécurité v0.23.58) : l'identifiant est
+    // imposé, `{group_id}_{auteur}_{day}_{n}` avec n de 0 à 4 — cinq
+    // suggestions au plus par auteur, groupe et jour, une sixième tomberait
+    // sur un identifiant existant, donc sur une mise à jour refusée. Le jour
+    // (`AAAA-MM-JJ`) est une date réelle, dont la fin tombe au plus tôt un
+    // jour avant l'heure du serveur (la veille UTC passe : elle couvre le
+    // décalage entre le jour local de l'auteur et l'heure UTC), et dont le
+    // début tombe au plus tard soixante jours après.
+    //
+    // Aucune mise à jour. L'auteur retire sa suggestion ; le propriétaire
+    // peut aussi la supprimer. Le serveur supprime les suggestions d'un
+    // groupe supprimé et celles d'un membre qui en sort (`syncGroupReach`).
+    /// Le jour `AAAA-MM-JJ` de [day], à minuit UTC, après vérification de la
+    /// forme. Une date impossible (mois 13, 30 février) fait échouer la
+    /// comparaison de `isSuggestionDay`.
+    function suggestionDate(day) {
+      return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10]));
+    }
+
+    function isSuggestionDay(day) {
+      return day is string && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && int(day[5:7]) >= 1 && int(day[5:7]) <= 12
+        && int(day[8:10]) >= 1 && int(day[8:10]) <= 31
+        && suggestionDate(day).month() == int(day[5:7])
+        && suggestionDate(day).day() == int(day[8:10])
+        && suggestionDate(day) + duration.value(1, 'd') >= request.time - duration.value(1, 'd')
+        && suggestionDate(day) <= request.time + duration.value(60, 'd');
+    }
+
+    /// Les cinq identifiants admis pour une suggestion de l'appelant :
+    /// `{group_id}_{uid}_{day}_0` à `_4`.
+    function suggestionIds(data) {
+      let prefix = data.group_id + '_' + request.auth.uid + '_' + data.day + '_';
+      return [prefix + '0', prefix + '1', prefix + '2', prefix + '3', prefix + '4'];
+    }
+
+    function isMealSuggestion(data) {
+      return data.keys().hasOnly(['group_id', 'group_owner_id', 'author_uid', 'day',
+                                  'recipe_id', 'recipe_titre', 'free_title',
+                                  'note', 'created_at'])
+        && data.keys().hasAll(['group_id', 'group_owner_id', 'author_uid', 'day',
+                               'created_at'])
+        && data.group_id is string && data.group_id.size() > 0
+        && data.group_id.size() <= 128
+        && data.group_owner_id is string
+        && isSuggestionDay(data.day)
+        && data.created_at == request.time
+        && optText(data, 'note', 200)
+        && ((('recipe_id' in data) && !('free_title' in data)
+              && data.recipe_id is string && data.recipe_id.size() > 0
+              && data.recipe_id.size() <= 128
+              && data.recipe_titre is string && data.recipe_titre.size() > 0
+              && data.recipe_titre.size() <= 200)
+          || (('free_title' in data) && !('recipe_id' in data)
+              && !('recipe_titre' in data)
+              && data.free_title is string && data.free_title.size() > 0
+              && data.free_title.size() <= 60));
+    }
+
+    match /meal_suggestions/{suggestionId} {
+      // Groupe actif dont l'auteur est membre (`planning_reach.group_ids`,
+      // propriétaire compris), membre présent dans le groupe lui-même — la
+      // portée suit d'une seconde un départ —, et pas le propriétaire.
+      allow create: if isApproved()
+        && isMealSuggestion(request.resource.data)
+        && suggestionId in suggestionIds(request.resource.data)
+        && request.resource.data.author_uid == request.auth.uid
+        && canReadGroupPlanning(request.resource.data.group_id)
+        && request.resource.data.group_owner_id
+             == get(/databases/$(database)/documents/groups/$(request.resource.data.group_id)).data.owner_id
+        && request.resource.data.group_owner_id != request.auth.uid
+        && request.auth.uid
+             in get(/databases/$(database)/documents/groups/$(request.resource.data.group_id)).data.get('member_ids', []);
+      allow read: if isApproved()
+        && (resource.data.author_uid == request.auth.uid
+            || resource.data.group_owner_id == request.auth.uid);
+      allow update: if false;
+      allow delete: if isApproved()
+        && (resource.data.author_uid == request.auth.uid
+            || resource.data.group_owner_id == request.auth.uid);
+    }
+
     // Rapports d'erreur
     //
     // Un compte en attente en écrit : c'est à la première connexion, avant
