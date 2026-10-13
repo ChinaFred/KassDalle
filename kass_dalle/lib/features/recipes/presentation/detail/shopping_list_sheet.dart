@@ -29,7 +29,7 @@ const _kChoiceSentence =
 /// [products] : produits d'achat calculés par le serveur à l'écriture de la
 /// recette, déjà mis à l'échelle en mémoire ; vides, [fallbackIngredients]
 /// les remplacent. Rien n'est écrit dans la recette.
-Future<void> addRecipeToShoppingList(
+Future<bool> addRecipeToShoppingList(
   BuildContext context,
   WidgetRef ref, {
   required List<RecipeShoppingProduct> products,
@@ -61,7 +61,10 @@ Future<void> addRecipeToShoppingList(
 ///
 /// Un second appui pendant qu'un ajout est en cours est ignoré : sans cela,
 /// deux appuis rapides ajoutaient deux fois les mêmes quantités.
-Future<void> addToShoppingList(
+///
+/// Rend vrai si des articles sont partis dans le panier ; faux après
+/// « Annuler », une erreur ou un appui ignoré.
+Future<bool> addToShoppingList(
   BuildContext context,
   WidgetRef ref, {
   required List<ShoppingItem> incoming,
@@ -72,11 +75,11 @@ Future<void> addToShoppingList(
     // Hors connexion, la transaction retente avant d'échouer : sans ce
     // message, le second appui paraissait sans effet.
     context.showSnackBar('Ajout aux courses en cours…');
-    return;
+    return false;
   }
   _addInProgress = true;
   try {
-    await _addToShoppingList(
+    return await _addToShoppingList(
       context,
       ref,
       incoming: incoming,
@@ -88,10 +91,15 @@ Future<void> addToShoppingList(
   }
 }
 
+/// Hauteur de feuille sous laquelle les aides de Tasks et Keep sont masquées :
+/// deux boutons de 48 px, leurs aides et l'en-tête n'y tiennent plus sans
+/// déborder.
+const double _kCompactActionsHeight = 520;
+
 /// Vrai pendant un ajout aux courses, boîte comprise.
 bool _addInProgress = false;
 
-Future<void> _addToShoppingList(
+Future<bool> _addToShoppingList(
   BuildContext context,
   WidgetRef ref, {
   required List<ShoppingItem> incoming,
@@ -99,10 +107,10 @@ Future<void> _addToShoppingList(
   String? breakdown,
 }) async {
   final uid = ref.read(appUserProvider).value?.uid;
-  if (uid == null) return;
+  if (uid == null) return false;
   if (incoming.isEmpty) {
     context.showSnackBar('Aucun ingrédient à ajouter');
-    return;
+    return false;
   }
   final repo = ref.read(shoppingCartRepositoryProvider);
 
@@ -114,9 +122,9 @@ Future<void> _addToShoppingList(
     if (context.mounted) {
       context.showErrorSnackBar('Votre liste de courses n\'a pas pu être lue.');
     }
-    return;
+    return false;
   }
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
 
   var mode = ShoppingAddMode.add;
   if (!current.isEmpty) {
@@ -128,7 +136,7 @@ Future<void> _addToShoppingList(
         breakdown: breakdown,
       ),
     );
-    if (choice == null || !context.mounted) return;
+    if (choice == null || !context.mounted) return false;
     mode = choice;
   }
 
@@ -142,7 +150,7 @@ Future<void> _addToShoppingList(
         'les articles cochés ou remplacez la liste.',
       );
     }
-    return;
+    return false;
   } catch (e) {
     // Déjà remontée par le repository (`shopping.addItems`).
     if (context.mounted) {
@@ -150,9 +158,9 @@ Future<void> _addToShoppingList(
         'Les articles n\'ont pas pu être ajoutés aux courses.',
       );
     }
-    return;
+    return false;
   }
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
 
   if (mode == ShoppingAddMode.replace) {
     context.showSuccessSnackBar(
@@ -174,6 +182,7 @@ Future<void> _addToShoppingList(
       ),
     );
   }
+  return true;
 }
 
 /// « Annuler » après un remplacement : la liste d'avant revient telle quelle.
@@ -648,7 +657,8 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         body: LayoutBuilder(
           builder: (context, constraints) => column(
             constraints.maxHeight <
-                520 * MediaQuery.textScalerOf(context).scale(1),
+                _kCompactActionsHeight *
+                    MediaQuery.textScalerOf(context).scale(1),
           ),
         ),
       ),

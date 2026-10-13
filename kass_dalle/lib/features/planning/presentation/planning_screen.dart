@@ -721,7 +721,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       }
       return;
     }
-    await addToShoppingList(
+    final added = await addToShoppingList(
       context,
       ref,
       incoming: collected.items,
@@ -730,8 +730,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           '${shoppingArticles(collected.items.length)}.',
     );
     // Après l'ajout : annoncées avant, ces lignes passaient sous la boîte et
-    // retardaient le message qui porte « Annuler ».
-    _sayMissing(collected.missing, collected.notShared);
+    // retardaient le message qui porte « Annuler ». Rien d'ajouté, rien à dire.
+    if (added) _sayMissing(collected.missing, collected.notShared);
   }
 
   /// « Ajouter la période aux courses » : les repas à venir de la période
@@ -770,7 +770,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       return;
     }
     final n = meals.length;
-    await addToShoppingList(
+    final added = await addToShoppingList(
       context,
       ref,
       incoming: collected.items,
@@ -783,7 +783,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         nameOf: view.nameOf,
       ),
     );
-    _sayMissing(collected.missing, collected.notShared);
+    if (added) _sayMissing(collected.missing, collected.notShared);
   }
 
   Future<void> _clearRecipe(PlannedMeal meal) async {
