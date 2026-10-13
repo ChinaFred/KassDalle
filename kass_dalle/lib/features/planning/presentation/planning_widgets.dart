@@ -300,8 +300,13 @@ class PlanningMealTile extends StatelessWidget {
   final bool readOnly;
 
   /// Prénom du propriétaire, en première ligne du sous-titre — « Vous » pour
-  /// ses propres repas. Null quand seul « Mon planning » est affiché.
+  /// ses propres repas. Null quand seul « Mon planning » est affiché. Pour un
+  /// repas de groupe ([ownerIsGroup]) : le nom du groupe.
   final String? ownerName;
+
+  /// [ownerName] est le nom d'un groupe : l'étiquette porte l'icône du
+  /// groupe et se lit « Repas du groupe Famille Dupont ».
+  final bool ownerIsGroup;
 
   /// Recettes que l'utilisateur ne peut pas lire — privées, brouillons,
   /// livre non partagé, supprimées. Le plat ou le composant garde son titre,
@@ -333,6 +338,7 @@ class PlanningMealTile extends StatelessWidget {
     this.onComponentTap,
     this.readOnly = false,
     this.ownerName,
+    this.ownerIsGroup = false,
     this.lockedRecipeIds = const {},
     this.openableRecipeIds,
   });
@@ -465,17 +471,22 @@ class PlanningMealTile extends StatelessWidget {
     );
   }
 
-  /// « Marie », précédé de la silhouette : à qui est ce repas.
+  /// « Marie », précédé de la silhouette : à qui est ce repas. « Famille
+  /// Dupont », précédé de l'icône du groupe, pour un repas de groupe.
   Widget? _buildOwner(ThemeData theme) {
     final name = ownerName;
     if (name == null) return null;
     return Semantics(
-      label: name == 'Vous' ? 'Votre repas' : 'Repas de $name',
+      label: ownerIsGroup
+          ? 'Repas du groupe $name'
+          : name == 'Vous'
+          ? 'Votre repas'
+          : 'Repas de $name',
       excludeSemantics: true,
       child: Row(
         children: [
           Icon(
-            Icons.person_outline,
+            ownerIsGroup ? Icons.groups_outlined : Icons.person_outline,
             size: AppIconSize.badge,
             color: theme.colorScheme.onSurfaceVariant,
           ),

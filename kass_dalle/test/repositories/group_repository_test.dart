@@ -62,6 +62,37 @@ void main() {
     expect(groups, isEmpty);
   });
 
+  group('groupes masqués', () {
+    test('un groupe masqué par le serveur n\'est plus listé', () async {
+      await firestore.collection('groups').doc('g2').set({
+        'name': 'Cousins',
+        'owner_id': 'owner',
+        'member_ids': ['owner'],
+        'created_at': DateTime.utc(2026, 10, 2),
+      });
+      await firestore.collection('planning_reach').doc('owner').set({
+        'uids': <String>[],
+        'group_ids': ['g1'],
+        'masked_group_ids': ['g2'],
+      });
+
+      final groups = await repo.watchMyGroups('owner').first;
+      expect(groups.map((g) => g.id), ['g1']);
+    });
+
+    test('sans portée, ou portée antérieure : rien de masqué', () async {
+      expect((await repo.watchMyGroups('owner').first).map((g) => g.id), [
+        'g1',
+      ]);
+      await firestore.collection('planning_reach').doc('owner').set({
+        'uids': <String>[],
+      });
+      expect((await repo.watchMyGroups('owner').first).map((g) => g.id), [
+        'g1',
+      ]);
+    });
+  });
+
   group('watchReach', () {
     test('sans document de portée : vide', () async {
       expect(await repo.watchReach('owner').first, isEmpty);

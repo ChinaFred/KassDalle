@@ -49,9 +49,9 @@ void main() {
   testWidgets('téléphone : trois sections, nutrition programmée par défaut', (
     tester,
   ) async {
-    await _pump(tester, size: const Size(400, 3000), runs: runs);
+    await _pump(tester, size: const Size(400, 3600), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (4)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (5)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),

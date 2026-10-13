@@ -10,6 +10,7 @@ import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/planning/domain/meal_component.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
+import 'package:kass_dalle/features/planning/domain/planning_reach.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_screen.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_widgets.dart';
@@ -21,11 +22,18 @@ import '../support/test_backend.dart';
 void main() {
   setUpAll(() => initializeDateFormatting('fr', null));
 
-  PlannedMeal meal(String id, String uid, String titre, {int hour = 19}) {
+  PlannedMeal meal(
+    String id,
+    String uid,
+    String titre, {
+    int hour = 19,
+    String? groupId,
+  }) {
     final now = DateTime.now();
     return PlannedMeal(
       id: id,
       uid: uid,
+      groupId: groupId,
       recipeId: 'r-$id',
       recipeTitre: titre,
       plannedAt: DateTime(now.year, now.month, now.day, hour),
@@ -39,8 +47,11 @@ void main() {
     WidgetTester tester, {
     required UserRole role,
     Set<String> reach = const {},
+    Set<String> groupReach = const {},
     Object? reachError,
     Map<String, List<PlannedMeal>> shared = const {},
+    Map<String, List<PlannedMeal>> groupMeals = const {},
+    Set<String> failingGroups = const {},
     List<PlannedMeal> mine = const [],
     List<FamilyGroup> groups = const [],
     Size size = const Size(360, 800),
@@ -64,11 +75,22 @@ void main() {
           ...backend.overrides,
           planningReachProvider.overrideWith(
             (ref) => reachError == null
-                ? Stream.value(reach)
+                ? Stream.value(
+                    PlanningReach(
+                      uids: reach,
+                      groupIds: groupReach,
+                      maskedGroupIds: const {},
+                    ),
+                  )
                 : Stream.error(reachError),
           ),
           sharedPlannedMealsProvider.overrideWith(
             (ref, uid) => Stream.value(shared[uid] ?? const []),
+          ),
+          groupPlannedMealsProvider.overrideWith(
+            (ref, groupId) => failingGroups.contains(groupId)
+                ? Stream.error(StateError('planning du groupe illisible'))
+                : Stream.value(groupMeals[groupId] ?? const []),
           ),
           memberNameProvider.overrideWith(
             (ref, uid) => uid == 'marie' ? 'Marie' : 'Paul',
@@ -142,7 +164,7 @@ void main() {
     expect(find.text('Voir les groupes familiaux'), findsNothing);
   });
 
-  testWidgets('les anciens repas du lecteur : décochés, seul « Supprimer »', (
+  testWidgets('les anciens repas du lecteur : décochés, en lecture seule', (
     tester,
   ) async {
     await pump(
@@ -164,10 +186,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Gratin'), findsOneWidget);
-    await tester.tap(find.byType(PopupMenuButton<PlanningMealAction>));
-    await tester.pumpAndSettle();
-    expect(find.text('Supprimer'), findsOneWidget);
-    expect(find.text('Changer la recette'), findsNothing);
+    // Les règles refusent au lecteur toute écriture, suppression comprise :
+    // aucun menu d'action sur ses anciens repas.
+    expect(find.byType(PopupMenuButton<PlanningMealAction>), findsNothing);
   });
 
   testWidgets('l\'éditeur sans partage reçu : pas de sélecteur', (
@@ -275,5 +296,137 @@ void main() {
       find.text('Vous ne faites partie d\'aucun groupe familial.'),
       findsNothing,
     );
+  });
+
+  // ── Plannings de groupe ────────────────────────────────────────────────
+
+  FamilyGroup dupont({String owner = 'marie'}) => FamilyGroup(
+    id: 'gd',
+    name: 'Famille Dupont',
+    ownerId: owner,
+    memberIds: {owner, 'uid-test', 'paul', 'zoe'}.toList(),
+    createdAt: DateTime.utc(2026),
+  );
+
+  testWidgets('le membre lecteur lit le planning du groupe, sans action', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await pump(
+      tester,
+      role: UserRole.reader,
+      groups: [dupont()],
+      groupReach: {'gd'},
+      groupMeals: {
+        'gd': [meal('g1', 'marie', 'Hachis parmentier', groupId: 'gd')],
+      },
+    );
+
+    expect(tester.takeException(), isNull);
+    // Le planning du groupe est coché par défaut : pas d'état « aucun
+    // planning partagé ».
+    expect(find.text('Aucun planning n\'est partagé avec vous.'), findsNothing);
+    expect(find.text('Hachis parmentier'), findsOneWidget);
+    expect(find.text('Plannings : Famille Dupont'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('Repas du groupe Famille Dupont')),
+      findsOneWidget,
+    );
+    expect(find.byType(PopupMenuButton<PlanningMealAction>), findsNothing);
+    expect(find.text('Choisir une recette'), findsNothing);
+    semantics.dispose();
+  });
+
+  testWidgets('le sélecteur nomme le groupe et son organisateur', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.reader,
+      groups: [dupont()],
+      groupReach: {'gd'},
+    );
+
+    await tester.tap(find.text('Plannings : Famille Dupont'));
+    await tester.pumpAndSettle();
+    expect(find.text('Famille Dupont'), findsOneWidget);
+    expect(
+      find.text('Planning du groupe · organisé par Marie'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('le propriétaire : une ligne vide par planning où il planifie', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.editor,
+      groups: [dupont(owner: 'uid-test')],
+      groupReach: {'gd'},
+      mine: [meal('own', 'uid-test', 'Gratin')],
+    );
+
+    // Aujourd'hui : mon repas est là, le groupe n'a rien.
+    expect(find.text('Gratin'), findsOneWidget);
+    expect(find.text('Rien de prévu pour Famille Dupont'), findsWidgets);
+    // Les autres jours : les deux plannings sont vides.
+    expect(find.text('Rien de prévu pour vous'), findsWidgets);
+  });
+
+  testWidgets('le propriétaire a toutes les actions sur un repas du groupe', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.editor,
+      groups: [dupont(owner: 'uid-test')],
+      groupReach: {'gd'},
+      groupMeals: {
+        'gd': [meal('g1', 'uid-test', 'Hachis parmentier', groupId: 'gd')],
+      },
+    );
+
+    expect(find.text('Hachis parmentier'), findsOneWidget);
+    expect(find.byType(PopupMenuButton<PlanningMealAction>), findsOneWidget);
+    // Le repas du groupe ne remplit pas « Mon planning ».
+    expect(find.text('Rien de prévu pour vous'), findsWidgets);
+  });
+
+  testWidgets('un planning de groupe illisible est dit sous son nom', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.reader,
+      groups: [dupont()],
+      groupReach: {'gd'},
+      failingGroups: {'gd'},
+    );
+
+    expect(
+      find.text('Le planning du groupe Famille Dupont n\'a pas pu être lu.'),
+      findsOneWidget,
+    );
+    expect(find.text('Réessayer'), findsWidgets);
+  });
+
+  testWidgets('« Nouveau planning » demande pour qui au propriétaire', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      role: UserRole.editor,
+      groups: [dupont(owner: 'uid-test')],
+      groupReach: {'gd'},
+      mine: [meal('own', 'uid-test', 'Gratin')],
+    );
+
+    await tester.tap(find.text('Nouveau planning'));
+    await tester.pumpAndSettle();
+    expect(find.text('Planifier pour…'), findsOneWidget);
+    expect(find.text('Mon planning'), findsOneWidget);
+    expect(find.text('Famille Dupont'), findsWidgets);
+    expect(find.text('Planning du groupe · 3 membres'), findsOneWidget);
   });
 }

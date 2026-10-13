@@ -196,6 +196,11 @@ class PlanningPreferences {
   /// groupes restent ici, prêts pour le jour où il le redevient.
   final List<String> sharedGroupIds;
 
+  /// Parts par défaut des repas de chaque groupe dont le compte est
+  /// propriétaire (`group_portions`, identifiant du groupe → parts). Un
+  /// groupe absent prend son nombre de membres (`groupDefaultPortions`).
+  final Map<String, int> groupPortions;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
@@ -209,6 +214,7 @@ class PlanningPreferences {
     this.calendarName = 'Principal',
     this.varietyWindowWeeks = kVarietyWindowDefaultWeeks,
     this.sharedGroupIds = const [],
+    this.groupPortions = const {},
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -239,7 +245,22 @@ class PlanningPreferences {
         data['variety_window_weeks'] as int? ?? kVarietyWindowDefaultWeeks,
       ),
       sharedGroupIds: sharedGroupIdsFrom(data['shared_group_ids']),
+      groupPortions: groupPortionsFrom(data['group_portions']),
     );
+  }
+
+  /// Lit `group_portions` : les entrées dont la valeur est un entier
+  /// strictement positif. Une valeur mal formée est ignorée.
+  static Map<String, int> groupPortionsFrom(Object? raw) {
+    if (raw is! Map) return const {};
+    return {
+      for (final e in raw.entries)
+        if (e.key is String &&
+            (e.key as String).isNotEmpty &&
+            e.value is int &&
+            (e.value as int) > 0)
+          e.key as String: e.value as int,
+    };
   }
 
   /// Plafond de `shared_group_ids`, le même que celui des règles Firestore.
@@ -274,6 +295,9 @@ class PlanningPreferences {
     'calendar_name': calendarName,
     'variety_window_weeks': varietyWindowWeeks,
     'shared_group_ids': sharedGroupIds,
+    // Écrit seulement s'il porte quelque chose : l'enregistrement fusionne
+    // (`SetOptions(merge: true)`), une table absente garde celle en base.
+    if (groupPortions.isNotEmpty) 'group_portions': groupPortions,
   };
 
   PlanningPreferences copyWith({
@@ -290,6 +314,7 @@ class PlanningPreferences {
     String? calendarName,
     int? varietyWindowWeeks,
     List<String>? sharedGroupIds,
+    Map<String, int>? groupPortions,
   }) => PlanningPreferences(
     mealsPerCycle: mealsPerCycle ?? this.mealsPerCycle,
     cycleStartDay: cycleStartDay ?? this.cycleStartDay,
@@ -308,6 +333,7 @@ class PlanningPreferences {
       varietyWindowWeeks ?? this.varietyWindowWeeks,
     ),
     sharedGroupIds: sharedGroupIds ?? this.sharedGroupIds,
+    groupPortions: groupPortions ?? this.groupPortions,
   );
 
   /// Heure retenue pour un jour de la semaine : la sienne s'il en a une, celle

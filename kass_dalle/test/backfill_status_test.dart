@@ -295,13 +295,14 @@ void main() {
         'refresh_sodium',
         'planning_defaults',
         'system_books',
+        'group_planning_reach',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['estimated_times']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(5));
+      expect(sections.ponctuelsALancer, hasLength(6));
       expect(sections.ponctuelsTermines, isEmpty);
     });
   });

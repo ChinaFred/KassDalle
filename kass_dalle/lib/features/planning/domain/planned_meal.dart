@@ -6,7 +6,16 @@ import 'meal_component.dart';
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
 class PlannedMeal {
   final String id;
+
+  /// Le cuisinier : le titulaire du planning personnel, ou le propriétaire du
+  /// groupe pour un repas de groupe. Figé à la création.
   final String uid;
+
+  /// Le groupe familial dont ce repas fait partie du planning, ou `null` pour
+  /// un repas du planning personnel de [uid] (`group_id`). Absent sur les
+  /// repas antérieurs au planning de groupe : ils sont personnels. Figé à la
+  /// création, comme [uid] : un repas ne change pas de planning.
+  final String? groupId;
   final String? recipeId;
   final String recipeTitre;
   final DateTime plannedAt;
@@ -70,6 +79,7 @@ class PlannedMeal {
   const PlannedMeal({
     required this.id,
     required this.uid,
+    this.groupId,
     this.recipeId,
     required this.recipeTitre,
     required this.plannedAt,
@@ -86,6 +96,9 @@ class PlannedMeal {
     required this.createdAt,
   });
 
+  /// Un repas du planning d'un groupe, et non du planning personnel.
+  bool get isGroupMeal => groupId != null;
+
   /// Nombre de parts qui compte pour les garnitures : celles visées, sinon
   /// celles de la recette.
   int? get portionsForComponents =>
@@ -95,6 +108,7 @@ class PlannedMeal {
     return PlannedMeal(
       id: id,
       uid: data['uid'] as String,
+      groupId: groupIdFrom(data['group_id']),
       recipeId: data['recipe_id'] as String?,
       recipeTitre: data['recipe_titre'] as String? ?? '',
       plannedAt: (data['planned_at'] as Timestamp).toDate(),
@@ -114,8 +128,16 @@ class PlannedMeal {
     );
   }
 
+  /// Lit `group_id` : une chaîne non vide, sinon `null` (repas personnel).
+  static String? groupIdFrom(Object? raw) =>
+      raw is String && raw.isNotEmpty ? raw : null;
+
+  /// Le champ `group_id` n'est écrit que pour un repas de groupe : un repas
+  /// personnel garde la forme qu'il a toujours eue. Réécrire un repas de
+  /// groupe le repose à l'identique, ce que les règles exigent.
   Map<String, dynamic> toFirestore() => {
     'uid': uid,
+    if (groupId != null) 'group_id': groupId,
     'recipe_id': recipeId,
     'recipe_titre': recipeTitre,
     'planned_at': Timestamp.fromDate(plannedAt),

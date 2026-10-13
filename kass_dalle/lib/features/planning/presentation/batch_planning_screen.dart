@@ -18,6 +18,8 @@ import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
+import '../domain/planning_target.dart';
+import '../../groups/domain/family_group.dart';
 import '../domain/ranked_candidates.dart';
 import '../domain/registered_meals.dart';
 import '../domain/week_replay.dart';
@@ -64,8 +66,16 @@ enum _ConceptOutcome { done, failed, denied }
 ///
 /// Permet de planifier plusieurs repas d'un coup sur un cycle entier,
 /// avec suggestion IA ou assignation manuelle.
+///
+/// [groupId] : le planning visé est celui de ce groupe, dont l'utilisateur
+/// est le propriétaire ; absent, c'est « Mon planning ». La reprise de ce que
+/// le planning contient déjà, la validation et « Reprendre une semaine
+/// passée » lisent le planning visé ; la fenêtre de variété lit tout ce que
+/// l'utilisateur cuisine.
 class BatchPlanningScreen extends ConsumerStatefulWidget {
-  const BatchPlanningScreen({super.key});
+  final String? groupId;
+
+  const BatchPlanningScreen({super.key, this.groupId});
 
   @override
   ConsumerState<BatchPlanningScreen> createState() =>
@@ -288,9 +298,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     _slotTimes = {
       for (int i = 0; i < dates.length; i++) i: _timeForDate(prefs, dates[i]),
     };
+    // Le planning d'un groupe se cuisine pour le groupe : ses parts par
+    // défaut (réglées, sinon le nombre de membres) remplacent celles du jour.
+    final group = _group;
+    final groupPortions = group == null
+        ? null
+        : groupDefaultPortions(
+            groupPortions: prefs.groupPortions,
+            group: group,
+          );
     _slotConstraints = {
       for (int i = 0; i < dates.length; i++)
-        i: prefs.dailyConstraints[dates[i].weekday] ?? const DayConstraint(),
+        i: groupPortions == null
+            ? prefs.dailyConstraints[dates[i].weekday] ?? const DayConstraint()
+            : (prefs.dailyConstraints[dates[i].weekday] ??
+                      const DayConstraint())
+                  .copyWith(targetPortions: groupPortions),
     };
     _globalConstraintsCtrl.text = prefs.globalConstraints;
     // Les préférences arrivent parfois après les recettes : c'est alors ici que
@@ -322,6 +345,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       meals = await repo.getMealsBetween(
         from: _slotDates.first,
         to: _slotDates.last,
+        groupId: widget.groupId,
       );
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -736,6 +760,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             slotDismissed: [
               for (int i = 0; i < _slotDates.length; i++) _slotDismissed[i],
             ],
+            groupId: widget.groupId,
           );
       if (!mounted) return;
       setState(() {
@@ -919,17 +944,24 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// mis à jour parce que déjà enregistré depuis un créneau, ce qui est déjà
   /// au planning et reste tel quel, et ce que le planning contient déjà
   /// d'autre sur la période.
+  ///
+  /// [groupName] : le planning validé est celui de ce groupe.
   static String _validateDialogText({
     required int newCount,
     required int updatedCount,
     required int keptCount,
     required int existingCount,
+    String? groupName,
   }) {
+    final target = groupName == null
+        ? 'votre planning'
+        : 'au planning de $groupName';
+    final into = groupName == null ? 'à $target' : target;
     final ready = switch ((newCount, updatedCount)) {
-      (_, 0) => '$newCount repas seront ajoutés à votre planning',
+      (_, 0) => '$newCount repas seront ajoutés $into',
       (0, _) => 'Les $updatedCount repas déjà enregistrés seront mis à jour',
       _ =>
-        '$newCount repas seront ajoutés à votre planning, et $updatedCount '
+        '$newCount repas seront ajoutés $into, et $updatedCount '
             'déjà enregistrés seront mis à jour',
     };
     final kept = switch (keptCount) {
@@ -939,7 +971,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     };
     if (existingCount == 0) return '$ready.$kept';
     final others = updatedCount > 0 || keptCount > 0 ? 'autres repas' : 'repas';
-    return '$ready.$kept Votre planning contient déjà $existingCount $others '
+    final holder = groupName == null
+        ? 'Votre planning'
+        : 'Le planning de $groupName';
+    return '$ready.$kept $holder contient déjà $existingCount $others '
         'sur cette période : voulez-vous les remplacer, ou ajouter les '
         'nouveaux à côté ?';
   }
@@ -970,6 +1005,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     return PlannedMeal(
       id: _slotSavedMealIds[i] ?? '',
       uid: uid,
+      groupId: widget.groupId,
       recipeId: recipe.id.isEmpty ? null : recipe.id,
       recipeTitre: recipe.titre,
       plannedAt: plannedAt,
@@ -1033,6 +1069,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final between = await repo.getMealsBetween(
         from: _slotDates.first,
         to: _slotDates.last,
+        groupId: widget.groupId,
       );
       existing = [
         for (final meal in between)
@@ -1059,6 +1096,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             updatedCount: ownIds.length,
             keptCount: plan.keptIds.length,
             existingCount: existing.length,
+            groupName: _group?.name,
           ),
         ),
         actions: [
@@ -1511,6 +1549,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               ],
               recentlyServed: await _loadRecentlyServed(),
               withoutModel: true,
+              groupId: widget.groupId,
             );
         if (!mounted) return;
         final fresh = result.rankings[0];
@@ -1827,7 +1866,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (prefs.varietyWindowWeeks == 0) return const [];
     final cycleStart = _slotDates.first;
     try {
-      final meals = await repo.getMealsBetween(
+      // La variété regarde tout ce que le cuisinier a servi, planning
+      // personnel et plannings de ses groupes : le même plat ne revient pas
+      // d'un planning à l'autre.
+      final meals = await repo.getCookedMealsBetween(
         from: varietyWindowStart(
           cycleStart: cycleStart,
           windowWeeks: prefs.varietyWindowWeeks,
@@ -1874,6 +1916,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final meals = await repo.getMealsBetween(
         from: today.subtract(PlanningRepository.historyWindow),
         to: _slotDates.last,
+        groupId: widget.groupId,
       );
       weeks = replayableWeeks(
         meals,
@@ -2227,15 +2270,55 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   }
 
+  /// Le groupe visé, une fois ses groupes lus ; null pour « Mon planning ».
+  FamilyGroup? _group;
+
+  /// « Nouveau planning », ou « Nouveau planning — Famille Dupont ».
+  String get _title => _group == null
+      ? 'Nouveau planning'
+      : 'Nouveau planning — ${_group!.name}';
+
   @override
   Widget build(BuildContext context) {
+    final groupId = widget.groupId;
+    if (groupId != null) {
+      // Le planning d'un groupe ne s'ouvre qu'à son propriétaire : la cible
+      // est résolue avant tout, et l'écran ne planifie pas « à côté ».
+      final owned = ref.watch(ownedPlanningGroupsProvider);
+      if (owned.hasError && !owned.hasValue) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Nouveau planning')),
+          body: AppErrorState(
+            error: owned.error,
+            title: 'Vos groupes n\'ont pas pu être lus',
+            onRetry: () => ref.invalidate(myGroupsProvider),
+          ),
+        );
+      }
+      if (!owned.hasValue) {
+        return const Scaffold(body: AppLoadingState());
+      }
+      final group = owned.value!.where((g) => g.id == groupId).firstOrNull;
+      if (group == null) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Nouveau planning')),
+          body: const AppEmptyState(
+            icon: Icons.groups_outlined,
+            title: 'Le planning de ce groupe ne vous est pas accessible.',
+            message:
+                'Seul le propriétaire du groupe, éditeur, planifie pour lui.',
+          ),
+        );
+      }
+      _group = group;
+    }
     final prefsAsync = ref.watch(planningPreferencesOnceProvider);
 
     return prefsAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Nouveau planning')),
+        appBar: AppBar(title: Text(_title)),
         body: AppErrorState(
           error: e,
           onRetry: () => ref.invalidate(planningPreferencesOnceProvider),
@@ -2264,7 +2347,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
     final scaffold = Scaffold(
       appBar: AppBar(
-        title: const Text('Nouveau planning'),
+        title: Text(_title),
         centerTitle: false,
         actions: [
           if (_constraintsLocked)
@@ -2435,9 +2518,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final sameMonth = first.year == last.year && first.month == last.month;
       final from = DateFormat(sameMonth ? 'd' : 'd MMM', 'fr').format(first);
       final to = DateFormat('d MMM', 'fr').format(last);
-      label = '$from → $to · $assignedCount/$totalSlots repas';
+      // Le planning d'un groupe se nomme en tête : « Famille Dupont · 16 →
+      // 22 oct. · 7/7 repas ».
+      final group = _group == null ? '' : '${_group!.name} · ';
+      label = '$group$from → $to · $assignedCount/$totalSlots repas';
       spoken =
-          'Du ${DateFormat('d MMMM', 'fr').format(first)} au '
+          '${_group == null ? '' : 'Planning du groupe ${_group!.name}, '}'
+          'du ${DateFormat('d MMMM', 'fr').format(first)} au '
           '${DateFormat('d MMMM', 'fr').format(last)}, '
           '$assignedCount repas sur $totalSlots';
     }

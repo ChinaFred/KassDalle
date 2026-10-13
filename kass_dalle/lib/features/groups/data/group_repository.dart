@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -33,14 +35,85 @@ class GroupRepository {
 
   // ── Lecture ─────────────────────────────────────────────────────────────────
 
-  /// Groupes dont [uid] est membre.
+  /// Groupes dont [uid] est membre, hors ceux que le serveur masque.
+  ///
+  /// Un groupe dont le propriétaire n'est plus éditeur est masqué pour tous
+  /// ses membres, propriétaire compris : le serveur le pose dans
+  /// `planning_reach/{uid}.masked_group_ids` (voir [watchMaskedGroupIds]), et
+  /// les écrans des groupes ne le listent plus. Rien n'est effacé : il revient
+  /// si son propriétaire redevient éditeur.
+  ///
+  /// Les deux lectures sont réunies ici : la liste n'est rendue qu'une fois
+  /// les deux connues, pour qu'un groupe masqué n'apparaisse pas un instant.
+  /// Une portée illisible est signalée au rapport et ne masque rien : mieux
+  /// vaut un groupe masqué visible qu'aucun groupe du tout.
   Stream<List<FamilyGroup>> watchMyGroups(String uid) {
-    return _col.where('member_ids', arrayContains: uid).snapshots().map((snap) {
-      final list = snap.docs
-          .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
-          .toList();
-      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      return list;
+    final groups = _col.where('member_ids', arrayContains: uid).snapshots().map(
+      (snap) {
+        final list = snap.docs
+            .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
+            .toList();
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        return list;
+      },
+    );
+    late final StreamController<List<FamilyGroup>> controller;
+    StreamSubscription<List<FamilyGroup>>? groupsSub;
+    StreamSubscription<Set<String>>? maskedSub;
+    List<FamilyGroup>? lastGroups;
+    Set<String>? lastMasked;
+    void emit() {
+      final g = lastGroups, m = lastMasked;
+      if (g == null || m == null) return;
+      controller.add([
+        for (final group in g)
+          if (!m.contains(group.id)) group,
+      ]);
+    }
+
+    controller = StreamController<List<FamilyGroup>>(
+      onListen: () {
+        groupsSub = groups.listen((g) {
+          lastGroups = g;
+          emit();
+        }, onError: controller.addError);
+        maskedSub = watchMaskedGroupIds(uid).listen(
+          (m) {
+            lastMasked = m;
+            emit();
+          },
+          onError: (Object e, StackTrace st) {
+            unawaited(
+              _errorReportService.reportError(
+                feature: 'group_masked_ids',
+                error: e,
+                stackTrace: st,
+                context: {'uid': uid},
+              ),
+            );
+            lastMasked = const {};
+            emit();
+          },
+        );
+      },
+      onCancel: () async {
+        await groupsSub?.cancel();
+        await maskedSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Les groupes de [uid] masqués par le serveur parce que leur propriétaire
+  /// n'est plus éditeur : `planning_reach/{uid}.masked_group_ids`. Document
+  /// ou champ absent (portée antérieure au planning de groupe) : aucun.
+  Stream<Set<String>> watchMaskedGroupIds(String uid) {
+    return _firestore.collection('planning_reach').doc(uid).snapshots().map((
+      doc,
+    ) {
+      final raw = doc.data()?['masked_group_ids'];
+      if (raw is! List) return <String>{};
+      return raw.whereType<String>().toSet();
     });
   }
 

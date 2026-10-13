@@ -25,6 +25,7 @@ abstract final class BackfillKeys {
   static const refreshSodium = 'refresh_sodium';
   static const planningDefaults = 'planning_defaults';
   static const systemBooks = 'system_books';
+  static const groupPlanningReach = 'group_planning_reach';
 }
 
 class BackfillDefinition {
@@ -175,6 +176,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'ou administrateur.',
     usesAi: false,
     passLimit: 'Chaque passage complète au plus 500 comptes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.groupPlanningReach,
+    kind: BackfillKind.ponctuel,
+    title: 'Portée des groupes et des plannings',
+    description:
+        'Ouvre aux membres de chaque groupe le planning du groupe, et masque '
+        'les groupes dont le propriétaire n\'est plus éditeur.',
+    usesAi: false,
+    passLimit: 'Chaque passage réécrit au plus 500 comptes.',
   ),
 ];
 

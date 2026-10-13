@@ -9,6 +9,7 @@ import '../domain/meal_recipe_location.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -69,6 +70,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   TimeOfDay? _selectedTime;
   late TextEditingController _reminderCtrl;
   bool _loading = false;
+
+  /// Le planning où le repas s'inscrit : « Mon planning » par défaut, ou un
+  /// groupe dont l'utilisateur est le propriétaire.
+  PlanningTarget _target = const PlanningTarget.personal();
 
   /// Préférences de planning, ou les valeurs par défaut tant qu'elles chargent.
   PlanningPreferences get _prefs =>
@@ -155,6 +160,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           PlannedMeal(
             id: '',
             uid: uid,
+            groupId: _target.groupId,
             recipeId: widget.recipeId,
             recipeTitre: widget.titre,
             plannedAt: start,
@@ -176,6 +182,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         feature: 'scheduleRecipeSheet.addToCalendar',
         error: e,
         stackTrace: stackTrace,
+        context: {'group_id': ?_target.groupId},
       );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
@@ -240,6 +247,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // La ligne « Planning » n'apparaît qu'à qui possède au moins un groupe :
+    // sans elle, le repas va dans « Mon planning », comme avant.
+    final ownedGroups =
+        ref.watch(ownedPlanningGroupsProvider).value ?? const [];
     return Padding(
       padding: EdgeInsets.only(
         left: 24,
@@ -271,6 +282,40 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           const SizedBox(height: 8),
           Divider(color: theme.colorScheme.outlineVariant),
           const SizedBox(height: 8),
+
+          if (ownedGroups.isNotEmpty) ...[
+            PopupMenuButton<PlanningTarget>(
+              tooltip: 'Choisir le planning',
+              onSelected: (target) => setState(() => _target = target),
+              itemBuilder: (_) => [
+                for (final target in [
+                  const PlanningTarget.personal(),
+                  for (final g in ownedGroups) PlanningTarget.ofGroup(g),
+                ])
+                  PopupMenuItem(
+                    value: target,
+                    child: ListTile(
+                      leading: Icon(
+                        target.isGroup
+                            ? Icons.groups_outlined
+                            : Icons.calendar_today_outlined,
+                      ),
+                      title: Text(target.title),
+                      subtitle: target.subtitle == null
+                          ? null
+                          : Text(target.subtitle!),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+              ],
+              child: _PickerRow(
+                icon: Icons.groups_outlined,
+                label: 'Planning',
+                value: _target.title,
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
 
           // Date
           _PickerRow(
@@ -366,49 +411,53 @@ class _PickerRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  final VoidCallback onTap;
+
+  /// Null quand un menu englobant reçoit l'appui (ligne « Planning »).
+  final VoidCallback? onTap;
 
   const _PickerRow({
     required this.icon,
     required this.label,
     required this.value,
-    required this.onTap,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 12),
+          Text(label, style: theme.textTheme.bodyMedium),
+          const Spacer(),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return row;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 12),
-            Text(label, style: theme.textTheme.bodyMedium),
-            const Spacer(),
-            Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.chevron_right,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
+      child: row,
     );
   }
 }
