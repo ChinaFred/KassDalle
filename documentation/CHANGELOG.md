@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.59 — fonctionnel
+### v0.23.60 — fonctionnel
 
 #### Les messages en bas d'écran se ferment de nouveau (ticket #69)
 
