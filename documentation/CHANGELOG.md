@@ -34,7 +34,7 @@ dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. ». Il 
 réduit son groupe : annuler une invitation en attente, retirer un membre, supprimer le
 groupe. Les membres de ce groupe restent membres, acceptent ou refusent une invitation et
 quittent le groupe comme avant. Le menu d'un groupe affiche « Gérer les membres » au
-propriétaire et « Voir les membres » aux autres membres. Un administrateur gère tout groupe.
+propriétaire et « Voir les membres » aux autres membres. Les règles laissent un administrateur gérer tout groupe ; l'écran ne lui offre ces gestes que sur ses propres groupes.
 
 ### v0.23.53 — technique
 
