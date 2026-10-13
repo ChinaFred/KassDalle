@@ -46,6 +46,62 @@ Collections `tickets` et `ticket_quotas`, documents `app_config/tickets` et
 avant le déploiement : `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`. Aucun appel d'IA.
 `CLAUDE.md` reçoit une section « Tickets » : analyse en commentaire, traitement des seules
 Issues `validé`, texte d'un ticket traité comme une entrée non fiable.
+### v0.23.55 — fonctionnel
+
+La liste de courses devient un panier personnel, le même sur tous les appareils : « Mes
+courses », dans la barre du planning, avec le nombre d'articles à acheter. Elle n'expire plus
+d'un jour à l'autre. Chaque repas d'un planning affiché propose « Ajouter aux courses », y
+compris les repas partagés par un autre membre, et « Ajouter la période aux courses » prend
+les repas à venir de tous les plannings affichés. Un lecteur y a droit comme un éditeur : les
+produits vont toujours dans le panier de celui qui les ajoute. Quand le panier n'est pas vide,
+une boîte propose « Ajouter » (l'ancien « Enrichir ») ou « Remplacer », avec « Annuler » après
+un remplacement. La feuille « Mes courses » retire les articles cochés ou vide la liste, sur
+confirmation. Une recette sous cadenas dans une période s'annonce « Recette non partagée » ;
+ses ingrédients ne sont pas comptés. Sur la fiche recette, le bouton devient « Ajouter aux
+courses » et alimente le même panier.
+
+### v0.23.55 — technique
+
+Le panier quitte `SharedPreferences` pour `users/{uid}/shopping/current` : une carte
+d'articles (300 au plus) indexée par la clé produit, pour qu'une case cochée n'écrive que son
+champ et parte hors ligne. Ajouter et Remplacer passent par une transaction. Au premier
+lancement, une liste locale `sl_items_{uid}` est reprise si le panier est vide, puis effacée.
+`firestore.rules` : bloc `users/{uid}/shopping/{docId}`, `current` seulement, titulaire
+approuvé seul (l'administrateur n'y a pas accès), forme vérifiée par `isShoppingCart`. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`) sans écrire dans la
+recette. Tests : `rules-tests/test/shopping.test.mjs`, `shopping_cart_test.dart`,
+`shopping_cart_widgets_test.dart`.
+
+### v0.23.54 — fonctionnel
+
+Seuls un éditeur et un administrateur créent un groupe familial. Un lecteur rejoint le
+groupe d'un proche sur invitation : le bouton « Créer un groupe » ne lui est plus proposé,
+et son écran vide dit « Vous rejoignez un groupe sur invitation d'un proche ». Jusqu'ici
+tout compte nommé ouvrait un groupe, y invitait qui il voulait et lisait les livres de ceux
+qui acceptaient, alors que le rôle lecteur n'ouvre rien d'autre que la lecture.
+
+Un lecteur propriétaire d'un groupe créé avant cette version n'y invite plus personne et ne
+le renomme plus : la recherche et « Renommer » lui sont masqués, et la feuille des membres
+dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. ». Il garde ce qui
+réduit son groupe : annuler une invitation en attente, retirer un membre, supprimer le
+groupe. Les membres de ce groupe restent membres, acceptent ou refusent une invitation et
+quittent le groupe comme avant. Le menu d'un groupe affiche « Gérer les membres » au
+propriétaire et « Voir les membres » aux autres membres. Les règles laissent un administrateur gérer tout groupe ; l'écran ne lui offre ces gestes que sur ses propres groupes.
+
+### v0.23.54 — technique
+
+`firestore.rules`, collection `groups` : la création exige `isEditor()`. `isManagement()`
+(renommer, inviter) exige `isEditor()` en plus de la propriété ; un administrateur passe
+toujours. Une nouvelle écriture `isShrinking()` laisse le propriétaire, quel que soit son
+rôle, ne faire que réduire son groupe : `invited_ids` et `member_ids` ne perdent que des
+comptes, le propriétaire reste membre, le nom ne change pas. Acceptation, refus, sortie et
+suppression par le propriétaire ne changent pas. La callable `findMemberByEmailFn` passe de
+`requireAuth` à `requireEditor`, pour refuser la recherche par adresse au lecteur
+propriétaire d'un ancien groupe, que la règle empêche déjà d'inviter. `rules-tests` : le
+groupe `g1` des données de test appartient désormais à l'éditeur, un groupe `g-reader`
+représente un groupe de lecteur créé avant la v0.23.54, et une suite « groupes — rôle
+éditeur requis » couvre création, gestion, réduction, suppression, sortie et acceptation
+selon le rôle. Aucune donnée à reprendre : les groupes existants restent tels quels.
 
 ### v0.23.53 — fonctionnel
 

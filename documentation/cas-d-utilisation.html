@@ -153,14 +153,16 @@
         <tbody>
           <tr><td>Lire ses livres et recettes, et ceux, non privés, des comptes qui partagent au moins un groupe avec soi — annotations, notes et texte d'origine compris. Un compte hors de ses groupes ne lit rien de soi, et réciproquement</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui, tout</td></tr>
           <tr><td>Lire le livre ou la recette <b>privé</b> d'autrui, ses annotations et ses notes</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Créer un groupe, inviter une personne dans son groupe, annuler l'invitation, retirer un membre — le propriétaire seul, qui reste membre</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer un groupe, le renommer, inviter une personne dans son groupe — le propriétaire, qui reste membre ; tout groupe pour l'admin par les règles, ses propres groupes seulement à l'écran (v0.23.54 : plus le lecteur)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Annuler une invitation, retirer un membre, supprimer un groupe dont on est propriétaire — le lecteur propriétaire d'un groupe créé avant la v0.23.54 le peut encore</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Accepter ou refuser une invitation reçue, quitter un groupe dont on n'est pas propriétaire</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Ajouter directement un membre à un groupe, sans son acceptation</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Choisir le thème de l'application — suivre l'appareil, clair ou sombre (Préférences › Apparence), mémorisé sur l'appareil et non dans le compte</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut supprimer ou ajouter aux courses</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -207,7 +209,9 @@
       supprime. Ses anciens repas aussi : il les lit et les supprime. Ce que le rôle
       <code>editor</code> ouvre en plus, c'est le planning et son partage, la création de
       recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
-      création de livres et la relecture des brouillons partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
+      création de livres, la relecture des brouillons partagés, et depuis la v0.23.54 la
+      création et la gestion d'un groupe familial : le <code>reader</code> rejoint un groupe
+      sur invitation d'un proche. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
       d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
       et l'<code>admin</code>.
@@ -244,7 +248,9 @@
       Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
       planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
       sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
-      partagés avec ses groupes.
+      partagés avec ses groupes. Les courses sont ouvertes à tous : chacun remplit sa propre
+      liste depuis un repas, la période lue ou une fiche recette, quel que soit le planning du
+      repas.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -260,7 +266,8 @@ flowchart LR
     a2(["Lire une recette en mode livre"])
     a3(["Ajuster le nombre de portions"])
     a4(["Consulter la nutrition"])
-    a5(["Ouvrir la liste de courses"])
+    a5(["Ajouter aux courses&lt;br/&gt;un repas, la période, une recette"])
+    a38(["Ouvrir « Mes courses »&lt;br/&gt;cocher, retirer les cochés, vider"])
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
     a25(["Voir les notes de la famille"])
@@ -310,6 +317,7 @@ flowchart LR
     i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
     i15(["Trouver des pages de recettes sur Google&lt;br/&gt;50 par jour, cache partagé de 7 jours"])
     i16(["Recalculer qui lit quel planning"])
+    i17(["Choisir Ajouter ou Remplacer&lt;br/&gt;si ma liste n'est pas vide"])
   end
 
   LEC --- a1
@@ -333,7 +341,7 @@ flowchart LR
   LEC --- a11
   EDI --- a12
   EDI --- a13
-  LEC --- a15
+  EDI --- a15
   LEC --- a30
   LEC --- a31
   LEC --- a16
@@ -345,6 +353,8 @@ flowchart LR
   LEC --- a25
   EDI --- a36
   LEC --- a37
+  LEC --- a5
+  LEC --- a38
   a36 -.->|"étend"| a13
   a36 -.->|"inclut"| i16
   a30 -.->|"Accepter"| i16
@@ -354,7 +364,9 @@ flowchart LR
   a2 --- a4
   a2 --- a29
   a2 --- a5
-  a9 --- a5
+  a37 -.->|"étend : un repas à venir, la période"| a5
+  a5 -.->|"inclut"| i17
+  a5 -.->|"« Voir »"| a38
   a9 --- a14
   a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
@@ -408,7 +420,9 @@ flowchart LR
         totaux de la recette divisés par le nombre de parts choisi, calculés à l'affichage. Rien
         n'est écrit dans la recette partagée.
         <b>La liste de courses n'appelle aucun modèle</b> : l'appareil regroupe les lignes par
-        produit acheté. Le produit d'achat de chaque ingrédient est posé par le serveur à
+        produit acheté, et les écrit dans la liste personnelle du compte
+        (<code>users/{uid}/shopping/current</code>), la même sur tous ses appareils. Ajouter le
+        repas d'un autre membre remplit ma liste, jamais la sienne. Le produit d'achat de chaque ingrédient est posé par le serveur à
         l'écriture de la recette, un appel pour un ingrédient neuf seulement.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.
@@ -508,9 +522,10 @@ flowchart LR
         Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
-        préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
+        préférences, garnitures et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, avec « Supprimer » pour seule action. « Mon planning » n'apparaît
+        décoché par défaut, avec « Supprimer » et, sur un repas à venir, « Ajouter aux
+        courses ». « Mon planning » n'apparaît
         que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
         les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
@@ -527,7 +542,11 @@ flowchart LR
         rien écrire. Une recette que le membre ne peut pas lire s'affiche par son titre, avec
         « Recette non partagée », et ne s'ouvre pas. Sa note sur une recette ne pèse pas sur
         les suggestions du propriétaire.
-        <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
+        <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls
+        l'<code>editor</code> et l'<code>admin</code> créent un groupe et le gèrent
+        (v0.23.54) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
+        propriétaire d'un groupe plus ancien peut encore annuler une invitation, retirer un
+        membre ou supprimer le groupe, sans inviter ni renommer. Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),
         ou par son adresse e-mail complète : celle-ci part au serveur
         (<code>findMemberByEmailFn</code>), qui ne rend que le compte approuvé dont l'adresse est
