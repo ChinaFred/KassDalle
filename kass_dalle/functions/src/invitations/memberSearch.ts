@@ -84,7 +84,8 @@ export interface SearchDenial {
 /**
  * Seul le propriétaire du groupe cherche un membre à inviter : c'est lui seul
  * qui invite (`isManagement` dans `firestore.rules`, bouton réservé au
- * propriétaire dans `groups_screen.dart`). Un administrateur qui n'est pas
+ * propriétaire éditeur dans `groups_screen.dart`). Le rôle éditeur est vérifié
+ * avant, par `requireEditor` dans la callable. Un administrateur qui n'est pas
  * propriétaire n'en a pas besoin : il lit `users` directement.
  *
  * `group` vaut `null` quand le document n'existe pas. Retourne `null` quand

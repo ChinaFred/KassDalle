@@ -7,8 +7,9 @@
  * ne repart jamais.
  *
  * Ce que le serveur vérifie :
- *  - un compte connecté, approuvé, non révoqué, attestation App Check
- *    (`requireAuth`) ;
+ *  - un compte connecté, éditeur ou administrateur, non révoqué, attestation
+ *    App Check (`requireEditor`) : un lecteur n'invite pas, même propriétaire
+ *    d'un groupe créé avant v0.23.54 (`isManagement` de `firestore.rules`) ;
  *  - l'appelant est **propriétaire** du groupe (`searcherDenial`) ;
  *  - l'adresse a une forme valide (`cleanEmail`), sinon `invalid-argument` ;
  *  - dix recherches par compte et par jour UTC (`member_email_search_daily`),
@@ -36,7 +37,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { requireAuth } from "./_auth";
+import { requireEditor } from "./_auth";
 import { spendDay } from "../ai/budget";
 import { logError, logInfo, logWarn } from "../logging";
 import { cleanEmail } from "../invitations/rules";
@@ -71,7 +72,7 @@ function readCounter(data: FirebaseFirestore.DocumentData | undefined, field: st
 }
 
 export const findMemberByEmailFn = onCall(opts, async (req): Promise<MemberEmailSearchResult> => {
-  const ctx = await requireAuth(req, "recherche_membre_adresse");
+  const ctx = await requireEditor(req, "recherche_membre_adresse");
   const data = (req.data ?? {}) as Record<string, unknown>;
 
   const groupId = readGroupId(data.groupId);
