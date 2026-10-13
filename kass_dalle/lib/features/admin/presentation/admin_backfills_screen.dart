@@ -167,8 +167,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         return 'Recalcule, pour chaque membre d\'un groupe familial, ce qu\'il '
             'peut lire : le planning des groupes dont il est membre, et les '
             'livres que ses groupes lui ouvrent. Un groupe dont le propriétaire '
-            'n\'est plus éditeur est masqué, sans rien effacer. Un compte déjà '
-            'à jour n\'est pas réécrit ; on peut relancer.\n\n'
+            'n\'est plus éditeur est masqué, sans rien effacer. Puis marque '
+            'chaque repas planifié antérieur comme personnel, pour que les '
+            'plannings partagés le retrouvent. Ce qui est déjà à jour n\'est '
+            'pas réécrit ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
       default:
         return '';
@@ -323,7 +325,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           r,
           'Groupes lus=${r['groupes']} | Comptes : examinés=${r['examines']}, '
           'réécrits=${r['ecrits']}, déjà à jour=${r['dejaAJour']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']}'
+          'échecs=${r['echoues']}, restants=${r['restants']} | '
+          'Repas : examinés=${r['repasExamines']}, '
+          'marqués personnels=${r['repasMarques']}, '
+          'échecs=${r['repasEchoues']}, restants=${r['repasRestants'] ?? '?'}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
       default:

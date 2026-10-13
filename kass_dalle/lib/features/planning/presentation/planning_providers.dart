@@ -71,28 +71,30 @@ class PlanningRepository {
   ///
   /// La requête `uid == moi` rend aussi les repas des groupes dont il est le
   /// propriétaire (il en est le cuisinier) : ils sont écartés ici, ils
-  /// appartiennent au planning du groupe ([watchGroupMeals]). Un filtre
-  /// `group_id == null` côté serveur écarterait les repas antérieurs au
-  /// champ, qui ne le portent pas.
+  /// appartiennent au planning du groupe ([watchGroupMeals]). Le titulaire
+  /// garde la requête `uid == moi`, sans filtre sur `group_id` : un repas
+  /// antérieur que le backfill n'aurait pas encore marqué `group_id: null`
+  /// lui reste visible.
   Stream<List<PlannedMeal>> watchMeals() => _watchPersonalMealsOf(_uid);
 
   /// Stream des repas d'un autre compte qui partage son planning avec
   /// l'utilisateur, en lecture seule.
   ///
-  /// Un flux par planning, filtré sur `uid == ownerUid` : les règles
-  /// Firestore vérifient cette égalité contre `planning_reach/{moi}`. Une
-  /// requête `in` sur plusieurs comptes serait refusée en entier dès qu'un
-  /// seul cesse de partager ; ici, seul son flux tombe en erreur. Les repas
-  /// de ses groupes en sont écartés : ils se lisent, s'il en est membre, dans
-  /// le planning du groupe.
+  /// Un flux par planning, filtré sur `uid == ownerUid` et `group_id ==
+  /// null` : les règles Firestore vérifient la première égalité contre
+  /// `planning_reach/{moi}`, et n'ouvrent par le partage personnel que les
+  /// repas personnels. Sans le second filtre, la requête serait refusée en
+  /// entier ; les repas des groupes du propriétaire ne se lisent que par
+  /// les membres de ces groupes, dans le planning du groupe. Une requête `in`
+  /// sur plusieurs comptes serait refusée en entier dès qu'un seul cesse de
+  /// partager ; ici, seul son flux tombe en erreur.
   ///
   /// L'erreur est remontée au rapport puis transmise : l'écran l'affiche
   /// sous le nom du planning, sans masquer les autres.
   Stream<List<PlannedMeal>> watchSharedMeals(String ownerUid) {
-    return _watchPersonalMealsOf(ownerUid).handleError((
-      Object e,
-      StackTrace st,
-    ) {
+    return _mealsOf(
+      _col.where('uid', isEqualTo: ownerUid).where('group_id', isEqualTo: null),
+    ).handleError((Object e, StackTrace st) {
       unawaited(
         _errorReportService.reportError(
           feature: 'planning_shared_meals',

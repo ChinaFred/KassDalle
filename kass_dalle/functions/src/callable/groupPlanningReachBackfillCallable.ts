@@ -18,19 +18,31 @@
  * `syncPlanningReachFor`, les fonctions des déclencheurs. Un document déjà
  * juste n'est pas réécrit.
  *
+ * Deuxième phase, les repas : un repas personnel porte désormais
+ * `group_id: null` explicite. Les plannings personnels partagés se lisent par
+ * `uid == propriétaire` ET `group_id == null` — la règle ne laisse plus lire
+ * par le partage personnel les repas des groupes du propriétaire —, et une
+ * égalité à `null` ne trouve pas un document sans le champ. Le passage
+ * parcourt `planned_meals` par identifiant, depuis un point de reprise, et
+ * pose `group_id: null` sur chaque repas qui n'a pas le champ. Une seule
+ * opération à lancer après le déploiement, plutôt que deux : les deux phases
+ * préparent le même changement de lecture.
+ *
  * Réentrant : relancer ne réécrit rien. Borné par le délai, par un nombre de
- * comptes réécrits par appel et par trois échecs de suite.
+ * comptes réécrits et de repas marqués par appel, et par trois échecs de
+ * suite dans chaque phase.
  */
 
 import { onCall } from "firebase-functions/v2/https";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldPath, getFirestore } from "firebase-admin/firestore";
 
-import { COLL_GROUPS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
+import { COLL_GROUPS, COLL_PLANNED_MEALS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { membersOf, type GroupData } from "../triggers/groupMembers";
 import { syncReachFor } from "../triggers/groupReach";
 import { syncPlanningReachFor } from "../triggers/planningReach";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { getBackfillCursor, setBackfillCursor } from "./_backfillCursor";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
 import { BackfillReview, shortErrorMessage, withoutReviewList } from "./_backfillReview";
@@ -49,6 +61,21 @@ const MAX_DOCS = 500;
 const DEADLINE_MARGIN_MS = 45_000;
 /** Trois échecs de suite : une panne, pas trois comptes difficiles. */
 const MAX_CONSECUTIVE_FAILURES = 3;
+/** Repas lus par page, et marqués par lot d'écriture (sous la limite de 500). */
+const MEAL_PAGE_SIZE = 400;
+/** Repas marqués `group_id: null` par appel, au plus. */
+const MAX_MEAL_WRITES = 4000;
+/** Point de reprise du parcours des repas, dans `app_config`. */
+export const GROUP_PLANNING_REACH_CHECKPOINT_DOC_ID = "group_planning_reach_backfill_checkpoint";
+
+/**
+ * Le repas lu (projection `group_id`) doit-il recevoir `group_id: null` ?
+ * Oui s'il n'a pas le champ ; un `group_id` présent, nul ou non, est gardé.
+ * Pure, testée.
+ */
+export function needsGroupIdField(data: Record<string, unknown> | undefined): boolean {
+  return !data || !Object.prototype.hasOwnProperty.call(data, "group_id");
+}
 
 /**
  * Les comptes à recalculer : les membres de tous les groupes, triés, sans
@@ -71,11 +98,18 @@ export interface BackfillGroupPlanningReachResponse {
   echoues: number;
   /** Comptes pas encore examinés à l'arrêt du passage. */
   restants: number;
+  /** Repas lus dans ce passage. */
+  repasExamines: number;
+  /** Repas qui ont reçu `group_id: null`. */
+  repasMarques: number;
+  repasEchoues: number;
+  /** Repas après le point de reprise ; `null` si le décompte a échoué. */
+  repasRestants: number | null;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
   stoppedByErrors: boolean;
   completed: boolean;
-  /** Comptes en échec, nommés, avec la raison. */
+  /** Comptes et repas en échec, nommés, avec la raison. */
   aRevoir: BackfillReviewList;
 }
 
@@ -107,7 +141,7 @@ export const backfillGroupPlanningReachFn = onCall<BackfillGroupPlanningReachReq
 export function summarizeGroupPlanningReach(r: BackfillGroupPlanningReachResponse): PassSummary {
   return {
     complete: r.completed,
-    remaining: r.restants,
+    remaining: r.repasRestants == null ? null : r.restants + r.repasRestants,
     toReview: r.aRevoir.total,
     spendCapHit: false,
   };
@@ -131,6 +165,10 @@ async function runGroupPlanningReachPass(
     dejaAJour: 0,
     echoues: 0,
     restants: 0,
+    repasExamines: 0,
+    repasMarques: 0,
+    repasEchoues: 0,
+    repasRestants: null,
     stoppedByDeadline: false,
     stoppedByBudget: false,
     stoppedByErrors: false,
@@ -185,7 +223,17 @@ async function runGroupPlanningReachPass(
     }
   }
   response.restants = accounts.length - response.examines;
-  response.completed = response.restants === 0 && response.echoues === 0;
+
+  // Phase 2 : les repas, seulement si la première n'a pas été arrêtée.
+  if (!response.stoppedByDeadline && !response.stoppedByErrors && !response.stoppedByBudget) {
+    await markPersonalMeals(ctx, deadline, response, review);
+  }
+
+  response.completed =
+    response.restants === 0 &&
+    response.echoues === 0 &&
+    response.repasRestants === 0 &&
+    response.repasEchoues === 0;
   response.aRevoir = review.toJSON();
 
   await logInfo({
@@ -198,4 +246,132 @@ async function runGroupPlanningReachPass(
   });
 
   return response;
+}
+
+/**
+ * Pose `group_id: null` sur les repas qui n'ont pas le champ, page par page
+ * depuis le point de reprise. Un lot en échec est repris repas par repas :
+ * un repas supprimé entre la lecture et l'écriture ne fait pas tomber les
+ * autres. Chaque échec est journalisé et nommé dans la liste à revoir.
+ */
+async function markPersonalMeals(
+  ctx: AuthContext,
+  deadline: number,
+  response: BackfillGroupPlanningReachResponse,
+  review: BackfillReview,
+): Promise<void> {
+  const db = getFirestore();
+  const meals = db.collection(COLL_PLANNED_MEALS);
+  let cursor = await getBackfillCursor({
+    db,
+    docId: GROUP_PLANNING_REACH_CHECKPOINT_DOC_ID,
+    resumeFromCheckpoint: true,
+    resetCheckpoint: false,
+  });
+  let finished = false;
+  let consecutiveFailures = 0;
+
+  pages: for (;;) {
+    if (Date.now() > deadline) {
+      response.stoppedByDeadline = true;
+      break;
+    }
+    if (response.repasMarques >= MAX_MEAL_WRITES) {
+      response.stoppedByBudget = true;
+      break;
+    }
+    let query = meals.orderBy(FieldPath.documentId()).select("group_id").limit(MEAL_PAGE_SIZE);
+    if (cursor) query = query.startAfter(cursor);
+    const page = await query.get();
+    if (page.empty) {
+      finished = true;
+      break;
+    }
+    response.repasExamines += page.size;
+    const toMark = page.docs.filter((d) => needsGroupIdField(d.data()));
+    if (toMark.length > 0) {
+      try {
+        const batch = db.batch();
+        for (const doc of toMark) batch.update(doc.ref, { group_id: null });
+        await batch.commit();
+        response.repasMarques += toMark.length;
+        consecutiveFailures = 0;
+      } catch (batchError) {
+        await logError({
+          message: "Portée des groupes et des plannings — lot de repas en échec, reprise un par un",
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          moduleType: "DESIGN",
+          feature: FEATURE,
+          errorDescription: batchError instanceof Error ? batchError.message : String(batchError),
+          extra: { firstMealId: toMark[0]?.id ?? null, size: toMark.length },
+        });
+        for (const doc of toMark) {
+          try {
+            await doc.ref.update({ group_id: null });
+            response.repasMarques += 1;
+            consecutiveFailures = 0;
+          } catch (e) {
+            response.repasEchoues += 1;
+            consecutiveFailures += 1;
+            review.add({
+              kind: "meal",
+              id: doc.id,
+              label: `Repas ${doc.id}`,
+              reason: `group_id non posé : ${shortErrorMessage(e)}`,
+            });
+            await logError({
+              message: "Portée des groupes et des plannings — échec sur un repas",
+              correlationId: ctx.correlationId,
+              userId: ctx.userId,
+              moduleType: "DESIGN",
+              feature: FEATURE,
+              errorDescription: e instanceof Error ? e.message : String(e),
+              extra: { mealId: doc.id, consecutiveFailures },
+            });
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              response.stoppedByErrors = true;
+              break pages;
+            }
+          }
+        }
+      }
+    }
+    cursor = page.docs[page.docs.length - 1].id;
+    if (page.size < MEAL_PAGE_SIZE) {
+      finished = true;
+      break;
+    }
+  }
+
+  // Le curseur revient au début quand la collection est parcourue en entier :
+  // une relance repasse tout, et ne réécrit que ce qui manque encore.
+  await setBackfillCursor({
+    db,
+    docId: GROUP_PLANNING_REACH_CHECKPOINT_DOC_ID,
+    lastDocId: finished ? null : cursor,
+    operation: FEATURE,
+    adminUid: ctx.userId,
+  });
+
+  if (finished) {
+    response.repasRestants = 0;
+    return;
+  }
+  try {
+    let rest = meals.orderBy(FieldPath.documentId());
+    if (cursor) rest = rest.startAfter(cursor);
+    response.repasRestants = (await rest.count().get()).data().count;
+  } catch (e) {
+    // Le passage a eu lieu ; seul le décompte manque, et il s'affiche « ? ».
+    await logError({
+      message: "Portée des groupes et des plannings — décompte des repas restants impossible",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      feature: FEATURE,
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { cursor },
+    });
+  }
 }

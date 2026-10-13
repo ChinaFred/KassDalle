@@ -45,7 +45,7 @@ void main() {
       expect(read.isGroupMeal, isTrue);
     });
 
-    test('un repas personnel n\'écrit pas group_id', () {
+    test('un repas personnel écrit group_id: null', () {
       final meal = PlannedMeal(
         id: '',
         uid: 'moi',
@@ -54,7 +54,9 @@ void main() {
         durationMinutes: 30,
         createdAt: at,
       );
-      expect(meal.toFirestore().containsKey('group_id'), isFalse);
+      final data = meal.toFirestore();
+      expect(data.containsKey('group_id'), isTrue);
+      expect(data['group_id'], isNull);
     });
 
     test('un repas antérieur au champ est personnel', () {

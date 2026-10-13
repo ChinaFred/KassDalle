@@ -410,7 +410,8 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
           '${_count(n('restants'), 'compte restant', 'comptes restants')}';
     case BackfillKeys.groupPlanningReach:
       return '${_count(n('ecrits'), 'compte réécrit', 'comptes réécrits')}, '
-          '${_count(n('restants'), 'compte restant', 'comptes restants')}';
+          '${_count(n('repasMarques'), 'repas marqué', 'repas marqués')}, '
+          '${_count(n('restants') + n('repasRestants'), 'restant', 'restants')}';
     default:
       return '';
   }

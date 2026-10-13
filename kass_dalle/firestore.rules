@@ -1027,9 +1027,20 @@ service cloud.firestore {
     // change pas de planning. Les repas d'un planning partagé ou d'un groupe
     // se lisent ; seul leur propriétaire les écrit.
     match /planned_meals/{mealId} {
+      // Le partage d'un planning personnel n'ouvre que ses repas personnels
+      // (`group_id` nul) : les repas des groupes du propriétaire ne se lisent
+      // que par les membres de ces groupes. La requête d'un planning partagé
+      // filtre donc `uid == propriétaire` ET `group_id == null` ; un repas
+      // personnel porte `group_id: null` explicite (le backfill « Portée des
+      // groupes et des plannings » le pose sur les repas antérieurs).
+      // `resource.data.group_id`, et non `.get('group_id', null)` : sur une
+      // requête qui ne contraint pas `group_id`, la valeur par défaut rendrait
+      // la condition vraie, et `uid == propriétaire` seul ramènerait ses
+      // repas de groupe. Un champ absent fait échouer la condition.
       allow read: if isAuthenticated()
         && (resource.data.uid == request.auth.uid
-            || canReadPlanningOf(resource.data.uid)
+            || (canReadPlanningOf(resource.data.uid)
+                && resource.data.group_id == null)
             || canReadGroupPlanning(resource.data.get('group_id', null)));
       allow delete: if isEditor() && resource.data.uid == request.auth.uid;
       allow create: if isEditor() && request.resource.data.uid == request.auth.uid

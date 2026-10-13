@@ -242,8 +242,8 @@ beforeEach(async () => {
       type: "recipeUrlImport",
       error_code: "page_blocked",
     },
-    "planned_meals/m1": { uid: READER, date: "2026-10-09" },
-    "planned_meals/m-editor": { uid: EDITOR, date: "2026-10-12" },
+    "planned_meals/m1": { uid: READER, group_id: null, date: "2026-10-09" },
+    "planned_meals/m-editor": { uid: EDITOR, group_id: null, date: "2026-10-12" },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
@@ -1993,10 +1993,57 @@ describe("plannings partagés — lecture", () => {
     await assertFails(db("pending").doc("planned_meals/m-editor").get());
   });
 
-  it("requête uid == propriétaire partagé : acceptée", async () => {
+  it("requête uid == propriétaire partagé et group_id == null : acceptée", async () => {
     await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Le partage personnel n'ouvre pas les repas des groupes du propriétaire :
+  // le lecteur n'est pas membre de `g2`.
+  it("un repas de groupe ne se lit pas par le partage personnel", async () => {
+    await seedDocs(env, {
+      "planning_reach/reader": { uids: [EDITOR], group_ids: [] },
+      "planned_meals/gm2": { uid: EDITOR, group_id: "g2", date: "2026-10-12" },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm2").get());
+    await assertFails(
       db("reader").collection("planned_meals").where("uid", "==", EDITOR).get(),
     );
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+  });
+
+  // Un repas antérieur sans le champ ne se lit plus par le partage — ni un
+  // par un, ni par la requête `group_id == null` — tant que le backfill
+  // « Portée des groupes et des plannings » n'y a pas posé `group_id: null`.
+  // Son propriétaire le relit toujours.
+  it("un repas antérieur sans group_id attend le backfill pour être partagé", async () => {
+    await seedDocs(env, {
+      "planned_meals/m-old": { uid: EDITOR, date: "2026-10-01" },
+    });
+    await assertFails(db("reader").doc("planned_meals/m-old").get());
+    await assertSucceeds(db("editor").doc("planned_meals/m-old").get());
+    const snap = await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("uid", "==", EDITOR)
+        .where("group_id", "==", null)
+        .get(),
+    );
+    const ids = snap.docs.map((d) => d.id);
+    if (!ids.includes("m-editor") || ids.includes("m-old")) {
+      throw new Error(`requête partagée inattendue : ${ids.join(", ")}`);
+    }
   });
 
   it("requête uid == propriétaire non partagé : refusée", async () => {

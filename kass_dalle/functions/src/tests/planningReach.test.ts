@@ -21,7 +21,11 @@ import {
   type OwnerState,
 } from "../triggers/planningReach";
 import { membersOfOwnedGroups } from "../triggers/plannerRole";
-import { groupAccounts } from "../callable/groupPlanningReachBackfillCallable";
+import {
+  groupAccounts,
+  needsGroupIdField,
+  summarizeGroupPlanningReach,
+} from "../callable/groupPlanningReachBackfillCallable";
 import { readPlanningGroupId } from "../callable/_aiInputReaders";
 
 const editor = { role: "editor", is_revoked: false };
@@ -259,6 +263,49 @@ describe("groupAccounts (backfill)", () => {
       "paul",
       "zoe",
     ]);
+  });
+});
+
+describe("needsGroupIdField (backfill, repas)", () => {
+  test("repas sans le champ : à marquer", () => {
+    assert.equal(needsGroupIdField({}), true);
+    assert.equal(needsGroupIdField(undefined), true);
+  });
+
+  test("champ présent, nul ou non : gardé", () => {
+    assert.equal(needsGroupIdField({ group_id: null }), false);
+    assert.equal(needsGroupIdField({ group_id: "gd" }), false);
+  });
+});
+
+describe("summarizeGroupPlanningReach", () => {
+  const base = {
+    groupes: 1,
+    examines: 2,
+    ecrits: 1,
+    dejaAJour: 1,
+    echoues: 0,
+    restants: 0,
+    repasExamines: 10,
+    repasMarques: 4,
+    repasEchoues: 0,
+    repasRestants: 0,
+    stoppedByDeadline: false,
+    stoppedByBudget: false,
+    stoppedByErrors: false,
+    completed: true,
+    aRevoir: { items: [], total: 0 },
+  };
+
+  test("comptes et repas restants additionnés", () => {
+    assert.equal(
+      summarizeGroupPlanningReach({ ...base, restants: 2, repasRestants: 5 }).remaining,
+      7,
+    );
+  });
+
+  test("décompte des repas inconnu : reste inconnu", () => {
+    assert.equal(summarizeGroupPlanningReach({ ...base, repasRestants: null }).remaining, null);
   });
 });
 

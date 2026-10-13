@@ -182,10 +182,13 @@ const List<BackfillDefinition> kBackfillRegistry = [
     kind: BackfillKind.ponctuel,
     title: 'Portée des groupes et des plannings',
     description:
-        'Ouvre aux membres de chaque groupe le planning du groupe, et masque '
-        'les groupes dont le propriétaire n\'est plus éditeur.',
+        'Ouvre aux membres de chaque groupe le planning du groupe, masque '
+        'les groupes dont le propriétaire n\'est plus éditeur, et marque les '
+        'repas antérieurs comme personnels.',
     usesAi: false,
-    passLimit: 'Chaque passage réécrit au plus 500 comptes.',
+    passLimit:
+        'Chaque passage réécrit au plus 500 comptes et marque au plus 4 000 '
+        'repas.',
   ),
 ];
 

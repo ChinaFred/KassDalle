@@ -3557,8 +3557,8 @@ sequenceDiagram
   PR-->>S: uids [marie]
   S->>S: sélecteur « Plannings affichés » — lecteur : partagés cochés,<br/>éditeur : son planning seul ; l'écart au défaut vit sur l'appareil
   loop un flux par planning affiché
-    S->>PM: uid == marie, planned_at sur 90 jours
-    Note over PM: règles : isApproved() et marie dans planning_reach/{paul}
+    S->>PM: uid == marie, group_id == null, planned_at sur 90 jours
+    Note over PM: règles : isApproved(), marie dans planning_reach/{paul},<br/>et repas personnel (group_id nul) — pas les repas des groupes de Marie
     PM-->>S: repas de Marie, ou erreur isolée — bandeau « Réessayer »
   end
   S->>R: readableRecipeIds — lots de 30, repli recette par recette
@@ -3908,7 +3908,8 @@ sequenceDiagram
         propriétaire : les flux <code>uid ==</code> l'écartent côté client.
         <span class="expect">
           <b>Après le déploiement</b>, Admin › Backfills › « Portée des groupes et des plannings »
-          écrit <code>group_ids</code> et <code>masked_group_ids</code> pour les groupes existants.
+          écrit <code>group_ids</code> et <code>masked_group_ids</code> pour les groupes existants,
+          puis <code>group_id: null</code> sur les repas antérieurs.
         </span>
       </figcaption>
     </figure>

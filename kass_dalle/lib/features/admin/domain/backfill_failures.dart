@@ -12,6 +12,9 @@ abstract final class BackfillFailureKind {
   static const unit = 'unit';
   static const recipe = 'recipe';
   static const account = 'account';
+
+  /// Un repas planifié (`planned_meals`) : affiché sans lien.
+  static const meal = 'meal';
 }
 
 /// Un élément à revoir : un ingrédient, une unité, une recette, un compte.

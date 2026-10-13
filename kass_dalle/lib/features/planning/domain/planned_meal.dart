@@ -132,12 +132,14 @@ class PlannedMeal {
   static String? groupIdFrom(Object? raw) =>
       raw is String && raw.isNotEmpty ? raw : null;
 
-  /// Le champ `group_id` n'est écrit que pour un repas de groupe : un repas
-  /// personnel garde la forme qu'il a toujours eue. Réécrire un repas de
-  /// groupe le repose à l'identique, ce que les règles exigent.
+  /// `group_id` est toujours écrit, `null` pour un repas personnel : un
+  /// planning personnel partagé se lit par `uid == propriétaire` et
+  /// `group_id == null`, et une égalité à `null` ne trouve pas un document
+  /// sans le champ. Réécrire un repas le repose à l'identique, ce que les
+  /// règles exigent (`group_id` figé).
   Map<String, dynamic> toFirestore() => {
     'uid': uid,
-    if (groupId != null) 'group_id': groupId,
+    'group_id': groupId,
     'recipe_id': recipeId,
     'recipe_titre': recipeTitre,
     'planned_at': Timestamp.fromDate(plannedAt),
