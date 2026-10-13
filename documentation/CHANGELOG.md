@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.53 — fonctionnel
+
+Préférences reçoit une section « Apparence » : le thème se choisit entre « Appareil », « Clair »
+et « Sombre ». « Appareil » reste le défaut et suit le mode du téléphone, de l'ordinateur ou du
+navigateur, comme avant. Le choix s'applique tout de suite et se mémorise sur l'appareil
+(`SharedPreferences`, clé `theme_mode`), pas dans le compte : chaque appareil garde le sien. La
+section reste utilisable quand les préférences du compte ne se chargent pas.
+
 ### v0.23.52 — technique
 
 Trois backfills ponctuels sortent du code. Ils ont été menés au bout et marqués terminés en
