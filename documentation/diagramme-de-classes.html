@@ -946,10 +946,9 @@ classDiagram
   }
 
   class PlanningReach {
-    +List~String~ uids
-    +List~String~? groupIds
-    +List~String~? maskedGroupIds
-    +DateTime updatedAt
+    +Set~String~ uids
+    +Set~String~? groupIds
+    +Set~String~? maskedGroupIds
   }
 
   class PlanningOwnerOption {
