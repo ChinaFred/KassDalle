@@ -26,7 +26,7 @@ Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurren
 
 « Reprendre la nutrition » n'affiche plus « Terminé » quand des recettes reprises restent
 incomplètes. Le résumé donne les recettes encore incomplètes, et non plus « 0 restante ». Il
-ajoute, s'il y en a, les recettes laissées faute de temps, non reprenables, et
+ajoute, s'il y en a, les recettes laissées faute de temps, sans reprise possible, et
 abandonnées après cinq reprises.
 
 La liste « à revoir » de la nutrition donne la cause. Elle sépare les lignes impossibles à
@@ -34,7 +34,7 @@ peser (quantité illisible, pas de poids à la pièce, unité sans poids) des in
 valeurs pour 100 g. Un calcul en échec cite sa raison. Les recettes abandonnées et celles
 qu'aucun appel ne peut compléter y figurent aussi.
 
-Le passage programmé ne reprend plus une recette non reprenable : il ne lui manque que des
+Le passage programmé ne reprend plus une recette sans reprise possible : il ne lui manque que des
 lignes impossibles à peser, ou des ingrédients que l'IA a manqués trois fois. Après la
 correction d'un poids dans un référentiel, le passage manuel la reprend.
 
@@ -65,7 +65,7 @@ L'instantané `nutrition` gagne `missing_weight` (`{name, cause}`) et `missing_p
 `needsNutritionCatchUp`, supprimée, et rend `reprendre`, `ignorer`, `abandonnee` ou
 `non_reprenable`. L'instantané porte aussi `missing_profile_excluded` : les ingrédients sans
 valeurs dont le référentiel porte `enrichment_failure_count` ≥ 3. Une recette qui n'attend
-plus que des lignes impossibles à peser et de tels ingrédients est non reprenable
+plus que des lignes impossibles à peser et de tels ingrédients est sans reprise possible
 (`nothingLeftToAsk`).
 
 `ENRICHMENT_RETRY_AFTER_MS` passe de 24 h à 20 h, la valeur de `MIN_SNAPSHOT_AGE_MS`. Avec

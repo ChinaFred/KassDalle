@@ -404,7 +404,7 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
           '${_count(n('completees'), 'complétée', 'complétées')}, '
           '${_count(n('echouees'), 'encore incomplète', 'encore incomplètes')}'
           '${siPositif('laissees', 'laissée faute de temps', 'laissées faute de temps')}'
-          '${siPositif('nonReprenables', 'non reprenable', 'non reprenables')}'
+          '${siPositif('nonReprenables', 'sans reprise possible', 'sans reprise possible')}'
           '${siPositif('abandonnees', 'abandonnée', 'abandonnées')}';
     case BackfillKeys.enrichReferentials:
       return '${_count(n('enrichedUnits'), 'unité enrichie', 'unités enrichies')}, '

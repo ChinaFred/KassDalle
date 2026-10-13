@@ -324,20 +324,23 @@ void main() {
       );
     });
 
-    test('nutrition : laissées, non reprenables, abandonnées si présentes', () {
-      expect(
-        backfillReportSummary(BackfillKeys.nutrition, {
-          'reprises': 20,
-          'completees': 18,
-          'echouees': 2,
-          'laissees': 7,
-          'nonReprenables': 4,
-          'abandonnees': 1,
-        }),
-        '20 reprises, 18 complétées, 2 encore incomplètes, '
-        '7 laissées faute de temps, 4 non reprenables, 1 abandonnée',
-      );
-    });
+    test(
+      'nutrition : laissées, sans reprise possible, abandonnées si présentes',
+      () {
+        expect(
+          backfillReportSummary(BackfillKeys.nutrition, {
+            'reprises': 20,
+            'completees': 18,
+            'echouees': 2,
+            'laissees': 7,
+            'nonReprenables': 4,
+            'abandonnees': 1,
+          }),
+          '20 reprises, 18 complétées, 2 encore incomplètes, '
+          '7 laissées faute de temps, 4 sans reprise possible, 1 abandonnée',
+        );
+      },
+    );
 
     test('exclus après trois échecs, cités seulement quand il y en a', () {
       expect(
