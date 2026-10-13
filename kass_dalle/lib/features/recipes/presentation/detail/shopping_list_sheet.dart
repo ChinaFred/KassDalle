@@ -68,7 +68,12 @@ Future<void> addToShoppingList(
   required String summary,
   String? breakdown,
 }) async {
-  if (_addInProgress) return;
+  if (_addInProgress) {
+    // Hors connexion, la transaction retente avant d'échouer : sans ce
+    // message, le second appui paraissait sans effet.
+    context.showSnackBar('Ajout aux courses en cours…');
+    return;
+  }
   _addInProgress = true;
   try {
     await _addToShoppingList(
@@ -459,6 +464,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
   ) async {
     try {
       await repo.restore(uid, previous);
+      if (mounted) _msg.showSuccessSnackBar('Articles rendus.');
     } catch (e) {
       // Déjà remontée par le repository (`shopping.restore`).
       if (mounted) {
@@ -614,7 +620,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       body = _buildList(theme, items);
     }
 
-    final column = Column(
+    Widget column(bool compact) => Column(
       children: [
         if (!widget.inDialog) ...[
           const SizedBox(height: 12),
@@ -632,14 +638,19 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
         const SizedBox(height: 8),
         const Divider(),
         Expanded(child: body),
-        if (items.isNotEmpty) _buildActions(theme, items),
+        if (items.isNotEmpty) _buildActions(theme, items, compact: compact),
       ],
     );
     return ScaffoldMessenger(
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: Colors.transparent,
-        body: column,
+        body: LayoutBuilder(
+          builder: (context, constraints) => column(
+            constraints.maxHeight <
+                520 * MediaQuery.textScalerOf(context).scale(1),
+          ),
+        ),
       ),
     );
   }
@@ -776,7 +787,14 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
     );
   }
 
-  Widget _buildActions(ThemeData theme, List<ShoppingItem> items) {
+  /// [compact] retire les deux lignes d'aide : sur une feuille basse (tirée
+  /// vers le bas, téléphone en paysage, texte agrandi), elles faisaient
+  /// déborder la colonne, qui ne défile pas.
+  Widget _buildActions(
+    ThemeData theme,
+    List<ShoppingItem> items, {
+    bool compact = false,
+  }) {
     final scheme = theme.colorScheme;
     return SafeArea(
       child: Padding(
@@ -806,15 +824,16 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
                 minimumSize: const Size(double.infinity, 48),
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Une liste cochable, un rayon par tâche et un article '
-              'par sous-tâche. Rien à convertir à la main.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+            if (!compact) const SizedBox(height: 6),
+            if (!compact)
+              Text(
+                'Une liste cochable, un rayon par tâche et un article '
+                'par sous-tâche. Rien à convertir à la main.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-            ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _opening ? null : () => _openKeep(items),
@@ -833,16 +852,17 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
                 minimumSize: const Size(double.infinity, 48),
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Keep n\'a pas d\'API : la liste est copiée, à vous de '
-              'créer la note, de la convertir en cases à cocher et de refaire '
-              'les rayons.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+            if (!compact) const SizedBox(height: 6),
+            if (!compact)
+              Text(
+                'Keep n\'a pas d\'API : la liste est copiée, à vous de '
+                'créer la note, de la convertir en cases à cocher et de refaire '
+                'les rayons.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-            ),
           ],
         ),
       ),

@@ -183,7 +183,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de charger les recettes : $e');
+        context.showErrorSnackBar(
+          'Les recettes n\'ont pas pu être lues. Réessayez.',
+        );
       }
     }
   }
@@ -597,7 +599,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         context: {'meal_count': meals.length, 'recipe_count': ids.length},
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de charger les recettes : $e');
+        context.showErrorSnackBar(
+          'Les recettes n\'ont pas pu être lues. Réessayez.',
+        );
       }
       return null;
     }
@@ -710,8 +714,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _addMealToShoppingNow(PlannedMeal meal) async {
     final collected = await _shoppingItemsFor([meal]);
     if (collected == null || !mounted) return;
-    _sayMissing(collected.missing, collected.notShared);
     if (collected.items.isEmpty) {
+      _sayMissing(collected.missing, collected.notShared);
       if (collected.missing.isEmpty && collected.notShared.isEmpty) {
         context.showSnackBar('Aucun ingrédient à ajouter');
       }
@@ -725,6 +729,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           '« ${meal.recipeTitre} » apporte '
           '${shoppingArticles(collected.items.length)}.',
     );
+    // Après l'ajout : annoncées avant, ces lignes passaient sous la boîte et
+    // retardaient le message qui porte « Annuler ».
+    _sayMissing(collected.missing, collected.notShared);
   }
 
   /// « Ajouter la période aux courses » : les repas à venir de la période
@@ -753,8 +760,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
     final collected = await _shoppingItemsFor(meals);
     if (collected == null || !mounted) return;
-    _sayMissing(collected.missing, collected.notShared);
     if (collected.items.isEmpty) {
+      _sayMissing(collected.missing, collected.notShared);
       if (collected.missing.isEmpty && collected.notShared.isEmpty) {
         context.showSnackBar(
           'Aucune recette avec ingrédients dans le planning.',
@@ -776,6 +783,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         nameOf: view.nameOf,
       ),
     );
+    _sayMissing(collected.missing, collected.notShared);
   }
 
   Future<void> _clearRecipe(PlannedMeal meal) async {

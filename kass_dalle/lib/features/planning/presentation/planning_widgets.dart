@@ -667,7 +667,6 @@ class PlanningMealTile extends StatelessWidget {
                           size: AppIconSize.small,
                         ),
                         onPressed: onShop,
-                        visualDensity: VisualDensity.compact,
                       ),
                     if (isWide && onExport != null)
                       IconButton(
