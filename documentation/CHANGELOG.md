@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.60 — fonctionnel
+### v0.23.61 — fonctionnel
 
 Admin › Backfills propose « Déplacer mes repas vers un groupe ». La tuile demande d'abord le
 groupe, parmi les groupes actifs dont l'administrateur est propriétaire, et une période de
@@ -31,7 +31,7 @@ changent pas. Un repas déjà dans un groupe est laissé tel quel, et relancer n
 La reprise sert pour d'autres périodes : elle reste parmi les ponctuels à lancer, sans
 « Marquer comme terminé » dans son menu. Avec un seul groupe possible, il est déjà choisi.
 
-### v0.23.60 — technique
+### v0.23.61 — technique
 
 Nouveau callable `backfillMoveMealsToGroupFn` (`requireAdmin`, `runBackfillFromCallable`),
 backfill ponctuel `move_meals_to_group` inscrit aux deux registres et à la fixture
@@ -50,6 +50,19 @@ un outil réutilisable n'est jamais marqué terminé tout seul, et le menu ⋮ d
 propose pas (`reusable`). `group_planning_reach` et `move_meals_to_group` partagent leur
 verrou (`LOCK_GROUPS`) : tous deux écrivent `planned_meals.group_id`. Aucune
 règle Firestore ne change : `group_id` reste figé côté client, l'Admin SDK passe outre.
+
+### v0.23.60 — fonctionnel
+
+#### Les messages en bas d'écran se ferment de nouveau (ticket #69)
+
+Depuis Flutter 3.29, un message en bas d'écran qui porte un bouton (« Voir », « Annuler »,
+« Réessayer », « Ouvrir »…) restait affiché tant qu'on n'agissait pas : sa durée était ignorée
+et rien ne permettait de le fermer. Un tel message reste maintenant 8 secondes, le temps de
+lire puis d'atteindre le bouton, et une croix le ferme plus tôt. Avec un lecteur d'écran
+actif (TalkBack, VoiceOver), il reste jusqu'à ce qu'on agisse ou qu'on le ferme. Le libellé
+du bouton prend la couleur du texte, plus lisible sur les fonds de succès et d'erreur. Seize
+messages sont concernés : ticket envoyé, planning, liste de courses, fiche recette,
+brouillons, import par URL, recette générée.
 
 ### v0.23.59 — fonctionnel
 
