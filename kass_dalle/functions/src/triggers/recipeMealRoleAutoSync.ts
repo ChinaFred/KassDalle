@@ -15,9 +15,12 @@
  * que pour une recette classée — un trou ici est un trou silencieux là-bas.
  */
 
+import { isDeepStrictEqual } from "node:util";
+
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { recipeBudgetUserId } from "../ai/budget";
+import { BACKFILL_FAILURE_LIMIT, readFailureCount } from "../backfills/failureMemory";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
 import { mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
@@ -31,6 +34,53 @@ function asString(value: unknown): string {
 
 function asStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((s): s is string => typeof s === "string") : [];
+}
+
+/** Champs que le backfill « Rôle des recettes » écrit pour compter ses échecs. */
+const MEAL_ROLE_MEMORY_FIELDS: ReadonlySet<string> = new Set([
+  "meal_role_failure_count",
+  "meal_role_attempt_at",
+]);
+
+/**
+ * Le déclencheur peut-il demander le rôle au modèle ? Fonction pure.
+ *
+ *  - non si la recette a déjà un rôle ;
+ *  - non si le backfill l'a exclue (`meal_role_failure_count` ≥
+ *    `BACKFILL_FAILURE_LIMIT`) : seul un administrateur la redemande, par
+ *    « Réessayer aussi les éléments exclus après 3 échecs » ;
+ *  - non si l'écriture ne change que la mémoire des échecs : c'est le
+ *    backfill qui vient de compter un échec. Sans cette garde, chaque échec
+ *    du backfill coûtait un second appel, ici, dans la seconde.
+ */
+export function mealRoleCallAllowed(
+  data: Record<string, unknown>,
+  beforeData: Record<string, unknown> | undefined,
+): boolean {
+  const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
+    string,
+    unknown
+  >;
+  if (asString(tags.meal_role).length > 0) return false;
+  if (readFailureCount(data.meal_role_failure_count) >= BACKFILL_FAILURE_LIMIT) return false;
+  if (beforeData && onlyFieldsChanged(beforeData, data, MEAL_ROLE_MEMORY_FIELDS)) return false;
+  return true;
+}
+
+/** Vrai quand au moins un champ a changé, et seulement parmi [fields]. */
+function onlyFieldsChanged(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  fields: ReadonlySet<string>,
+): boolean {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  let changed = false;
+  for (const key of keys) {
+    if (isDeepStrictEqual(before[key], after[key])) continue;
+    if (!fields.has(key)) return false;
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -48,20 +98,26 @@ function asStrings(value: unknown): string[] {
  * l'enrichissement nutritionnel, et reproduire sa marque « tentative
  * récente » reproduirait aussi son défaut — une coupure de budget comptée
  * comme un échec réel, qui bloque toute reprise automatique pendant 24 h.
+ *
+ * Il lit en revanche le compteur du backfill (`meal_role_failure_count`) :
+ * une recette que le backfill n'a plus le droit de soumettre au modèle ne lui
+ * est pas soumise non plus ici (`mealRoleCallAllowed`).
  */
 export async function syncRecipeMealRole(args: {
   recipeId: string;
   data: Record<string, unknown>;
+  /** Le document avant l'écriture, absent à la création. */
+  beforeData?: Record<string, unknown>;
   correlationId: string;
   scanId?: string;
 }): Promise<void> {
   const { recipeId, data, correlationId, scanId } = args;
 
+  if (!mealRoleCallAllowed(data, args.beforeData)) return;
   const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
     string,
     unknown
   >;
-  if (asString(tags.meal_role).length > 0) return;
 
   // Jamais vide : une recette sans propriétaire s'impute au compte des
   // recettes orphelines, plafonné comme un autre (`ai/budget.ts`). Un uid vide

@@ -204,7 +204,7 @@ describe("statut rendu par chaque backfill récurrent", () => {
       echouees: 9,
       laissees: 0,
       abandonnees: 2,
-      impesables: 4,
+      nonReprenables: 4,
       collectionParcourue: true,
       stoppedByDeadline: false,
       stoppedByBudget: false,
@@ -224,7 +224,7 @@ describe("statut rendu par chaque backfill récurrent", () => {
       echouees: 0,
       laissees: 7,
       abandonnees: 0,
-      impesables: 0,
+      nonReprenables: 0,
       collectionParcourue: true,
       stoppedByDeadline: false,
       stoppedByBudget: false,
@@ -235,7 +235,7 @@ describe("statut rendu par chaque backfill récurrent", () => {
     assert.equal(repriseDueAfter("programme", summary, false), true);
   });
 
-  test("nutrition : abandonnées et impesables seules, terminé et listées", () => {
+  test("nutrition : abandonnées et non reprenables seules, terminé et listées", () => {
     // Aucun passage automatique ne les reprendra : elles ne rendent pas le
     // passage incomplet, mais la liste « à revoir » les nomme.
     const summary = summarizeNutrition({
@@ -245,7 +245,7 @@ describe("statut rendu par chaque backfill récurrent", () => {
       echouees: 0,
       laissees: 0,
       abandonnees: 3,
-      impesables: 5,
+      nonReprenables: 5,
       collectionParcourue: true,
       stoppedByDeadline: false,
       stoppedByBudget: false,

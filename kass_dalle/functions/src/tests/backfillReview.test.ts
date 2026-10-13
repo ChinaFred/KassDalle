@@ -268,6 +268,15 @@ describe("nutrition — recettes à revoir", () => {
       missingCausesText({ missing_weight: [], missing_profile: ["sumac"] }),
       "Sans valeurs pour 100 g : sumac",
     );
+    assert.equal(
+      missingCausesText({
+        missing_weight: [],
+        missing_profile: ["sumac", "verjus"],
+        missing_profile_excluded: ["verjus"],
+      }),
+      "Sans valeurs pour 100 g : sumac · " +
+        "Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : verjus",
+    );
   });
 
   test("abandonnée : la cause, précédée de l'abandon", () => {
@@ -279,7 +288,7 @@ describe("nutrition — recettes à revoir", () => {
     };
     assert.equal(
       nutritionReviewItem({ id: "r1", data, nutrition, error: null, status: "abandonnee" }).reason,
-      `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — Sans valeurs pour 100 g : sumac`,
+      `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — sans valeurs pour 100 g : sumac`,
     );
   });
 
@@ -326,7 +335,7 @@ describe("allergènes — ingrédient exclu après trois échecs", () => {
   test("la raison dit l'exclusion", () => {
     assert.equal(
       allergenIssueReviewItem({ id: "x", name: "x", problem: "unanswered" }, true).reason,
-      "Pas de réponse de l'IA — exclu après 3 échecs",
+      "Pas de réponse de l'IA — plus redemandé à l'IA après 3 échecs",
     );
     assert.equal(
       allergenIssueReviewItem({ id: "x", name: "x", problem: "unanswered" }).reason,

@@ -26,7 +26,7 @@ Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurren
 
 « Reprendre la nutrition » n'affiche plus « Terminé » quand des recettes reprises restent
 incomplètes. Le résumé donne les recettes encore incomplètes, et non plus « 0 restante ». Il
-ajoute, s'il y en a, les recettes laissées faute de temps, impossibles à peser, et
+ajoute, s'il y en a, les recettes laissées faute de temps, non reprenables, et
 abandonnées après cinq reprises.
 
 La liste « à revoir » de la nutrition donne la cause. Elle sépare les lignes impossibles à
@@ -34,16 +34,20 @@ peser (quantité illisible, pas de poids à la pièce, unité sans poids) des in
 valeurs pour 100 g. Un calcul en échec cite sa raison. Les recettes abandonnées et celles
 qu'aucun appel ne peut compléter y figurent aussi.
 
-Le passage programmé ne reprend plus une recette dont il ne manque que des lignes
-impossibles à peser. Après la correction d'un poids dans un référentiel, le passage manuel
-la reprend.
+Le passage programmé ne reprend plus une recette non reprenable : il ne lui manque que des
+lignes impossibles à peser, ou des ingrédients que l'IA a manqués trois fois. Après la
+correction d'un poids dans un référentiel, le passage manuel la reprend.
 
 « Enrichir unités et ingrédients », « Allergènes » et « Rôle des recettes » ne redemandent
-plus à l'IA un élément qui a échoué trois fois. Il apparaît « Exclu après 3 échecs » dans la
-liste « à revoir ». La confirmation propose « Réessayer aussi les éléments en échec ».
+plus à l'IA un élément qui a échoué trois fois. Il apparaît « Plus redemandé à l'IA après 3 échecs » dans la
+liste « à revoir ». La confirmation propose une case « Réessayer aussi les éléments exclus
+après 3 échecs ». L'enrichissement à l'écriture d'une recette et le rattrapage de la nutrition
+ne redemandent plus non plus un ingrédient ou une unité exclus, et le classement du rôle à
+l'écriture ne redemande plus une recette exclue.
 
 Un passage qui a tout parcouru mais laisse des échecs s'affiche « Incomplet », avec « N
-éléments en échec, nouvel essai au prochain passage ». Il ne repart pas l'heure suivante.
+éléments en échec, nouvel essai demain à 05:00 » quand une programmation est active, et « N
+éléments en échec. Relancez pour réessayer. » sinon. Il ne repart pas l'heure suivante.
 
 « Recalculer les produits d'achat », « Allergènes » et « Rôle des recettes » lisent le type
 de page dans le CookLang quand le champ manque. Une page non-recette n'est plus listée à
@@ -59,7 +63,10 @@ dans `app_config/backfill_run_<clé>`.
 L'instantané `nutrition` gagne `missing_weight` (`{name, cause}`) et `missing_profile`.
 `missing_ingredients` reste l'union des deux. `catchUpDecision` remplace
 `needsNutritionCatchUp`, supprimée, et rend `reprendre`, `ignorer`, `abandonnee` ou
-`impesable`.
+`non_reprenable`. L'instantané porte aussi `missing_profile_excluded` : les ingrédients sans
+valeurs dont le référentiel porte `enrichment_failure_count` ≥ 3. Une recette qui n'attend
+plus que des lignes impossibles à peser et de tels ingrédients est non reprenable
+(`nothingLeftToAsk`).
 
 `ENRICHMENT_RETRY_AFTER_MS` passe de 24 h à 20 h, la valeur de `MIN_SNAPSHOT_AGE_MS`. Avec
 24 h, le passage quotidien de 5 h trouvait la marque d'essai de la veille encore fraîche un
@@ -69,8 +76,18 @@ aussi à l'écriture d'une recette : une question sans réponse y est reposée a
 Mémoire des échecs (`backfills/failureMemory.ts`) : `ai_weight_failure_count`,
 `enrichment_failure_count`, `allergens_failure_count` et `allergens_attempt_at`,
 `meal_role_failure_count` et `meal_role_attempt_at`. Exclusion à 3, levée par `retryExcluded`.
-Les déclencheurs ne lisent pas ces compteurs. Aucune règle Firestore ne change, aucun poste
-d'IA nouveau. Les champs se créent au premier échec : aucun backfill à lancer.
+`enrichUnknownIngredientsWithAI` et `enrichUnknownUnitsWithAI` respectent l'exclusion
+(`ingredientEnrichmentAllowed`, `unitWeightRequestAllowed`) ; seule la phase 1 du backfill
+passe `retryExcluded`. `syncRecipeMealRole` ne demande plus le rôle d'une recette exclue, ni
+pour une écriture qui ne change que `meal_role_failure_count` et `meal_role_attempt_at`
+(`mealRoleCallAllowed`) : chaque échec du backfill coûtait un second appel au déclencheur.
+L'examen des allergènes à l'écriture ne lit pas `allergens_failure_count`.
+
+Règles Firestore : `nutrition_catch_up_attempts`, `meal_role_failure_count` et
+`meal_role_attempt_at` deviennent serveur seul sur `recipes` (`serverOnlyRetryFields`), à la
+création comme à la mise à jour, administrateur compris. Aucune écriture du client ne les
+recopie. Tests bloquants dans `rules-tests`. Aucun poste d'IA nouveau. Les champs se créent au
+premier échec : aucun backfill à lancer.
 
 `shoppingBackfillCallable`, `recipeRolesBackfillCallable` et `allergensBackfillCallable`
 lisent le type de page par `resolvePageType`.

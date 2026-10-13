@@ -167,7 +167,7 @@ interface BackfillEnrichReferentialsRequest {
   refreshSodium?: boolean;
   /**
    * Redemande aussi les unités et les ingrédients exclus après trois échecs
-   * (« Réessayer aussi les éléments en échec » dans la confirmation).
+   * (« Réessayer aussi les éléments exclus après 3 échecs » dans la confirmation).
    */
   retryExcluded?: boolean;
   /** Version de l'application qui lance, pour l'état du backfill. */
@@ -206,7 +206,7 @@ export interface BackfillEnrichReferentialsResponse {
   stoppedByDeadline: boolean;
   /** Profils repris parce qu'ils portaient du sodium — mode `refreshSodium`. */
   refreshedIngredients: number;
-  /** Unités sautées : trois échecs ou plus, sans « Réessayer aussi les éléments en échec ». */
+  /** Unités sautées : trois échecs ou plus, sans « Réessayer aussi les éléments exclus après 3 échecs ». */
   excludedUnits: number;
   /** Ingrédients sautés pour la même raison. */
   excludedIngredients: number;
@@ -1123,6 +1123,9 @@ export async function runEnrichReferentialsPass(
           unitCanonicals: batch.map((u) => u.id),
           userId: ctx.userId,
           unitIngredientNames,
+          // Les unités exclues n'arrivent ici qu'avec la case cochée : la
+          // sélection ci-dessus les a déjà écartées sinon.
+          retryExcluded,
         });
         // Vérifie combien de docs du lot ont effectivement reçu un poids.
         const refs = batch.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u.id));

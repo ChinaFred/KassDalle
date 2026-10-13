@@ -784,7 +784,7 @@ sequenceDiagram
           NS->>NI: shopping_product
         end
       end
-      opt ingrédients sans per100g, hors échec de moins de 24 h
+      opt ingrédients sans per100g, hors échec de moins de 20 h et hors exclus après 3 échecs
         NS->>M: estimatePer100gForTargets, lots de 20 (inline_ingredient_per100g_enrichment)
         NS->>NI: per100g, ou quality_status estimation_failed
       end
@@ -855,7 +855,8 @@ sequenceDiagram
     <span class="expect">
       <b>Un lot couvre vingt ingrédients par appel</b>, sans plafond par recette. Un ingrédient
       resté sans valeur est marqué <code>estimation_failed</code> et n'est pas redemandé avant
-      24 h. Un échec global écrit un instantané d'échec sur la recette
+      20 h ; un ingrédient que le backfill « Enrichir unités et ingrédients » a manqué trois
+      fois (<code>enrichment_failure_count</code>) n'est plus redemandé ici. Un échec global écrit un instantané d'échec sur la recette
       (<code>persistFailedNutritionSnapshot</code>) : l'écran affiche l'échec au lieu d'une
       nutrition absente.
     </span>
@@ -2787,8 +2788,8 @@ sequenceDiagram
     RUN->>FS: lit la page
     loop chaque recette
       RUN->>RUN: catchUpDecision
-      Note over RUN: reprise si nutrition absente, en échec,<br/>ou avec des ingrédients manquants.<br/>Écartée si écrite il y a moins de 30 min.<br/>Hors forced, écartée aussi si calculée il y a moins de 20 h,<br/>abandonnée après 5 tentatives, impesable si seules<br/>des lignes impossibles à peser manquent
-      opt abandonnée ou impesable (hors forced)
+      Note over RUN: reprise si nutrition absente, en échec,<br/>ou avec des ingrédients manquants.<br/>Écartée si écrite il y a moins de 30 min.<br/>Hors forced, écartée aussi si calculée il y a moins de 20 h,<br/>abandonnée après 5 tentatives, non reprenable si seules<br/>des lignes impossibles à peser ou des ingrédients<br/>exclus après 3 échecs manquent
+      opt abandonnée ou non reprenable (hors forced)
         RUN->>RUN: comptée et nommée dans aRevoir avec la cause,<br/>sans appel
       end
       opt à reprendre, sous le plafond de recettes et l'échéance
@@ -2807,7 +2808,7 @@ sequenceDiagram
 
   FS-->>TR: onWrite pour chaque recette reprise
   TR-->>FS: entrées inchangées, sortie à la garde
-  RUN-->>CU: complétées, encore incomplètes, laissées, impesables, abandonnées<br/>laissées : reprise à l'heure suivante ; encore incomplètes seules :<br/>« incomplet » sans reprise horaire (echecs_restants)<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
+  RUN-->>CU: complétées, encore incomplètes, laissées, non reprenables, abandonnées<br/>laissées : reprise à l'heure suivante ; encore incomplètes seules :<br/>« incomplet » sans reprise horaire (echecs_restants)<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
   RUN-->>BF: même compte rendu, curseur du passage suivant
   Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 32)
 </pre>
@@ -2817,7 +2818,7 @@ sequenceDiagram
         au délai de relance de l'enrichissement), le plafond de tentatives
         (<code>MAX_CATCH_UP_ATTEMPTS</code>, 5) et l'exclusion d'une recette dont il ne manque que
         des lignes impossibles à peser ne s'appliquent qu'au passage programmé. Une recette
-        abandonnée ou impesable n'est pas reprise, mais elle est nommée dans la liste « à revoir »
+        abandonnée ou non reprenable n'est pas reprise, mais elle est nommée dans la liste « à revoir »
         avec sa cause. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
         second calcul pendant que le déclencheur travaille encore.
         <span class="expect">

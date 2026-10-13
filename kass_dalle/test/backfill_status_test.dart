@@ -205,8 +205,23 @@ void main() {
           now: _now,
         ),
         'Incomplet — dim. 11/10 à 05:02 · 9 reprises, 0 complétée, '
-        '9 encore incomplètes · 9 éléments en échec, nouvel essai au '
-        'prochain passage',
+        '9 encore incomplètes · 9 éléments en échec, nouvel essai '
+        'demain à 05:00',
+      );
+      // Sans programmation active, rien ne reviendra tout seul.
+      expect(
+        backfillStatusLine(
+          def: nutrition,
+          state: state,
+          schedule: BackfillSchedule.fromMap({
+            'enabled': false,
+            'days': [1],
+            'hour': 5,
+          }),
+          now: _now,
+        ),
+        'Incomplet — dim. 11/10 à 05:02 · 9 reprises, 0 complétée, '
+        '9 encore incomplètes · 9 éléments en échec. Relancez pour réessayer.',
       );
     });
 
@@ -309,23 +324,20 @@ void main() {
       );
     });
 
-    test(
-      'nutrition : laissées, impossibles à peser, abandonnées si présentes',
-      () {
-        expect(
-          backfillReportSummary(BackfillKeys.nutrition, {
-            'reprises': 20,
-            'completees': 18,
-            'echouees': 2,
-            'laissees': 7,
-            'impesables': 4,
-            'abandonnees': 1,
-          }),
-          '20 reprises, 18 complétées, 2 encore incomplètes, '
-          '7 laissées faute de temps, 4 impossibles à peser, 1 abandonnée',
-        );
-      },
-    );
+    test('nutrition : laissées, non reprenables, abandonnées si présentes', () {
+      expect(
+        backfillReportSummary(BackfillKeys.nutrition, {
+          'reprises': 20,
+          'completees': 18,
+          'echouees': 2,
+          'laissees': 7,
+          'nonReprenables': 4,
+          'abandonnees': 1,
+        }),
+        '20 reprises, 18 complétées, 2 encore incomplètes, '
+        '7 laissées faute de temps, 4 non reprenables, 1 abandonnée',
+      );
+    });
 
     test('exclus après trois échecs, cités seulement quand il y en a', () {
       expect(

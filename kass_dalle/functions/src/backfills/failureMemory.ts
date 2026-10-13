@@ -8,7 +8,7 @@
  * compteur d'échecs propre au traitement qui l'a demandé, et la date du
  * dernier essai. À `BACKFILL_FAILURE_LIMIT` échecs, il n'est plus soumis au
  * modèle par un passage programmé ni par un passage manuel ordinaire ; seul un
- * passage lancé avec « Réessayer aussi les éléments en échec » le reprend.
+ * passage lancé avec « Réessayer aussi les éléments exclus après 3 échecs » le reprend.
  * Un succès remet le compteur à zéro.
  *
  * Les champs, par traitement (voir `TechnicalRequirements.md`, §3) :
@@ -28,7 +28,7 @@
 export const BACKFILL_FAILURE_LIMIT = 3;
 
 /** Raison « à revoir » d'un élément sauté parce qu'il a atteint la limite. */
-export const EXCLUDED_AFTER_FAILURES_REASON = `Exclu après ${BACKFILL_FAILURE_LIMIT} échecs`;
+export const EXCLUDED_AFTER_FAILURES_REASON = `Plus redemandé à l'IA après ${BACKFILL_FAILURE_LIMIT} échecs`;
 
 /**
  * Compteur stocké, lu prudemment : un entier positif, sinon zéro. Une valeur
@@ -64,5 +64,8 @@ export function nextFailure(storedCount: unknown): FailureOutcome {
  * l'exclusion quand cet échec l'a déclenchée.
  */
 export function failureReason(cause: string, outcome: FailureOutcome): string {
-  return outcome.excluded ? `${cause} — ${EXCLUDED_AFTER_FAILURES_REASON.toLowerCase()}` : cause;
+  if (!outcome.excluded) return cause;
+  // Minuscule à la première lettre seule : « IA » garde ses majuscules.
+  const tail = EXCLUDED_AFTER_FAILURES_REASON;
+  return `${cause} — ${tail[0].toLocaleLowerCase("fr")}${tail.slice(1)}`;
 }

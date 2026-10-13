@@ -23,7 +23,7 @@ import {
   RECENT_WRITE_GRACE_MS,
   catchUpDecision,
   nutritionIsIncomplete,
-  onlyUnweighableMissing,
+  nothingLeftToAsk,
   type CatchUpCandidate,
 } from "../scheduled/nutritionCatchUpSchedule";
 import { ENRICHMENT_RETRY_AFTER_MS, enrichmentAttemptIsRecent } from "../nutrition/aiEnrichment";
@@ -207,7 +207,7 @@ describe("ce qui n'est pas repris, et pourquoi", () => {
     assert.equal(catchUpDecision(c, MAINTENANT, true), "reprendre");
   });
 
-  test("seules des lignes impossibles à peser manquent : impesable", () => {
+  test("seules des lignes impossibles à peser manquent : non reprenable", () => {
     for (const cause of ["quantite_illisible", "comptage_sans_poids", "unite_sans_poids"]) {
       const c = avec({
         coverage_state: "partial",
@@ -215,7 +215,7 @@ describe("ce qui n'est pas repris, et pourquoi", () => {
         missing_weight: [{ name: "œufs", cause }],
         missing_profile: [],
       });
-      assert.equal(catchUpDecision(c, MAINTENANT), "impesable", cause);
+      assert.equal(catchUpDecision(c, MAINTENANT), "non_reprenable", cause);
       // Un administrateur qui vient de corriger un poids redemande.
       assert.equal(catchUpDecision(c, MAINTENANT, true), "reprendre", cause);
     }
@@ -241,13 +241,36 @@ describe("ce qui n'est pas repris, et pourquoi", () => {
     assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
   });
 
+  test("ingrédients sans valeurs plus redemandés à l'IA : non reprenable", () => {
+    // L'enrichissement de la reprise ne les soumet plus au modèle : la
+    // reprendre consommerait une tentative pour rien.
+    const seulsExclus = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["œufs", "verjus"],
+      missing_weight: [{ name: "œufs", cause: "comptage_sans_poids" }],
+      missing_profile: ["verjus"],
+      missing_profile_excluded: ["verjus"],
+    });
+    assert.equal(catchUpDecision(seulsExclus, MAINTENANT), "non_reprenable");
+    assert.equal(catchUpDecision(seulsExclus, MAINTENANT, true), "reprendre");
+
+    const unSeulExclu = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["sumac", "verjus"],
+      missing_weight: [],
+      missing_profile: ["sumac", "verjus"],
+      missing_profile_excluded: ["verjus"],
+    });
+    assert.equal(catchUpDecision(unSeulExclu, MAINTENANT), "reprendre");
+  });
+
   test("un instantané sans les deux listes ne permet pas de conclure : reprenable", () => {
     const c = avec({ coverage_state: "partial", missing_ingredients: ["œufs"] });
-    assert.equal(onlyUnweighableMissing(c.nutrition), false);
+    assert.equal(nothingLeftToAsk(c.nutrition), false);
     assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
   });
 
-  test("un calcul en échec n'est jamais impesable", () => {
+  test("un calcul en échec n'est jamais non reprenable", () => {
     const c = avec({
       coverage_state: "failed",
       missing_ingredients: [],

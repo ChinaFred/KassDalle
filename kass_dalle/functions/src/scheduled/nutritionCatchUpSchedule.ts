@@ -153,21 +153,37 @@ export function readMissingProfile(nutrition: unknown): string[] | null {
 }
 
 /**
- * Vrai quand tous les manques de l'instantané sont des lignes qu'une reprise
- * ne peut pas peser : aucun ingrédient sans valeurs, aucun calcul en échec,
- * et chaque ligne sans poids d'une cause de `UNFIXABLE_BY_CATCH_UP`.
+ * Parmi les ingrédients sans valeurs, ceux que plus rien ne redemande au
+ * modèle (`missing_profile_excluded` : trois échecs au backfill « Enrichir
+ * unités et ingrédients »). Vide sur un instantané antérieur au champ.
+ */
+export function readMissingProfileExcluded(nutrition: unknown): string[] {
+  if (!nutrition || typeof nutrition !== "object") return [];
+  const raw = (nutrition as Record<string, unknown>).missing_profile_excluded;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((n): n is string => typeof n === "string");
+}
+
+/**
+ * Vrai quand aucun manque de l'instantané ne peut être comblé par une
+ * reprise : aucun calcul en échec, chaque ligne sans poids d'une cause de
+ * `UNFIXABLE_BY_CATCH_UP`, et chaque ingrédient sans valeurs exclu après
+ * trois échecs (`missing_profile_excluded`) — l'enrichissement de la reprise
+ * ne le redemande plus.
  *
  * Un instantané antérieur à `missing_weight` / `missing_profile` ne permet
  * pas de le dire : il reste reprenable, et la reprise l'écrit au format
  * actuel.
  */
-export function onlyUnweighableMissing(nutrition: unknown): boolean {
+export function nothingLeftToAsk(nutrition: unknown): boolean {
   if (!nutrition || typeof nutrition !== "object") return false;
   if ((nutrition as Record<string, unknown>).coverage_state === "failed") return false;
   const profile = readMissingProfile(nutrition);
-  if (profile == null || profile.length > 0) return false;
+  if (profile == null) return false;
+  const excluded = new Set(readMissingProfileExcluded(nutrition));
+  if (!profile.every((name) => excluded.has(name))) return false;
   const weight = readMissingWeight(nutrition);
-  if (weight.length === 0) return false;
+  if (weight.length === 0 && profile.length === 0) return false;
   return weight.every((w) => UNFIXABLE_BY_CATCH_UP.has(w.cause));
 }
 
@@ -180,17 +196,18 @@ export function onlyUnweighableMissing(nutrition: unknown): boolean {
  *    heures ;
  *  - `abandonnee` : incomplète, mais ses `MAX_CATCH_UP_ATTEMPTS` tentatives
  *    sont consommées. Elle n'est plus reprise, et le compte rendu la nomme ;
- *  - `impesable` : incomplète, mais seulement par des lignes qu'une reprise ne
- *    peut pas peser (`onlyUnweighableMissing`). Un appel n'y changerait rien :
+ *  - `non_reprenable` : incomplète, mais rien de ce qui manque ne peut venir
+ *    d'une reprise — lignes impossibles à peser, ingrédients que le modèle a
+ *    manqués trois fois (`nothingLeftToAsk`). Un appel n'y changerait rien :
  *    elle n'est pas reprise, et le compte rendu la nomme avec la cause.
  */
-export type CatchUpDecision = "reprendre" | "ignorer" | "abandonnee" | "impesable";
+export type CatchUpDecision = "reprendre" | "ignorer" | "abandonnee" | "non_reprenable";
 
 /**
  * Décision du rattrapage pour une recette. Fonction pure, testée seule.
  *
  * `forced` lève les bornes de PATIENCE — l'âge de l'instantané, le nombre de
- * tentatives et l'exclusion de l'impesable. Elles n'ont de sens que pour un
+ * tentatives et l'exclusion du non-reprenable. Elles n'ont de sens que pour un
  * passage automatique que personne n'a demandé. Un administrateur qui vient de
  * corriger un référentiel — un poids à la pièce, le poids d'une unité — sait,
  * lui, pourquoi il redemande. La borne de PRUDENCE, elle, reste : on ne double
@@ -223,7 +240,7 @@ export function catchUpDecision(
   const computedAtMs = readTimestampMillis(nutrition.computed_at);
   if (computedAtMs != null && nowMs - computedAtMs < MIN_SNAPSHOT_AGE_MS) return "ignorer";
 
-  if (onlyUnweighableMissing(nutrition)) return "impesable";
+  if (nothingLeftToAsk(nutrition)) return "non_reprenable";
   return "reprendre";
 }
 
@@ -255,10 +272,10 @@ export interface StillIncompleteRecipe {
   error: string | null;
   /**
    * Pourquoi elle est listée : `reprise` (reprise, toujours incomplète),
-   * `abandonnee` (tentatives consommées, non reprise), `impesable` (non
-   * reprise : rien qu'un appel puisse peser).
+   * `abandonnee` (tentatives consommées, non reprise), `non_reprenable` (non
+   * reprise : rien de ce qui manque ne peut venir d'une reprise).
    */
-  status: "reprise" | "abandonnee" | "impesable";
+  status: "reprise" | "abandonnee" | "non_reprenable";
 }
 
 /** Ce qu'un passage a fait, et pourquoi il s'est arrêté. */
@@ -272,7 +289,7 @@ export interface NutritionCatchUpReport {
   /** Incomplètes, non reprises : leurs tentatives sont consommées. */
   abandonnees: number;
   /** Incomplètes, non reprises : seules des lignes impossibles à peser manquent. */
-  impesables: number;
+  nonReprenables: number;
   /** Dernière recette REPRISE — le curseur du prochain passage. */
   lastProcessedId: string | null;
   /** Vrai quand le parcours a atteint la fin de la collection. */
@@ -305,7 +322,7 @@ export async function runNutritionCatchUp(
     echouees: 0,
     laissees: 0,
     abandonnees: 0,
-    impesables: 0,
+    nonReprenables: 0,
     lastProcessedId: null,
     collectionParcourue: false,
     stoppedByDeadline: false,
@@ -335,11 +352,11 @@ export async function runNutritionCatchUp(
         updatedAtMs: readTimestampMillis(data.updated_at),
       };
       const decision = catchUpDecision(candidate, nowMs, forced);
-      if (decision === "abandonnee" || decision === "impesable") {
+      if (decision === "abandonnee" || decision === "non_reprenable") {
         // Non reprise, mais nommée : une recette qui disparaît du compte
         // rendu se lit comme une recette complète.
         if (decision === "abandonnee") report.abandonnees += 1;
-        else report.impesables += 1;
+        else report.nonReprenables += 1;
         options.onStillIncomplete?.({
           id: doc.id,
           data,
@@ -403,7 +420,7 @@ export async function runNutritionCatchUp(
 
       // Relecture : la reprise a-t-elle abouti ? C'est elle qui décide si le
       // compteur repart de zéro ou monte d'un cran. On juge la complétude
-      // seule : une recette devenue impesable reste incomplète, et son
+      // seule : une recette devenue non reprenable reste incomplète, et son
       // compteur monte.
       const apres = await doc.ref.get();
       const nutrition = (apres.data()?.nutrition ?? null) as Record<string, unknown> | null;

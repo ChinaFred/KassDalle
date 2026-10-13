@@ -166,7 +166,7 @@ void main() {
   });
 
   testWidgets(
-    'confirmation : « Réessayer aussi les éléments en échec » pour les '
+    'confirmation : « Réessayer aussi les éléments exclus après 3 échecs » pour les '
     'backfills qui excluent après trois échecs, décochée par défaut',
     (tester) async {
       await _pump(tester, size: const Size(400, 3000), runs: runs);
@@ -177,7 +177,7 @@ void main() {
       await tester.pumpAndSettle();
       final box = find.widgetWithText(
         CheckboxListTile,
-        'Réessayer aussi les éléments en échec',
+        'Réessayer aussi les éléments exclus après 3 échecs',
       );
       expect(box, findsOneWidget);
       expect(tester.widget<CheckboxListTile>(box).value, isFalse);
@@ -190,7 +190,10 @@ void main() {
       // La nutrition n'a pas de mémoire des échecs : pas de case.
       await tester.tap(launches.at(0));
       await tester.pumpAndSettle();
-      expect(find.text('Réessayer aussi les éléments en échec'), findsNothing);
+      expect(
+        find.text('Réessayer aussi les éléments exclus après 3 échecs'),
+        findsNothing,
+      );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

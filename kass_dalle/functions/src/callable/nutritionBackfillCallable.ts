@@ -29,6 +29,7 @@ import { logError, logInfo } from "../logging";
 import {
   MAX_CATCH_UP_ATTEMPTS,
   readMissingProfile,
+  readMissingProfileExcluded,
   readMissingWeight,
   runNutritionCatchUp,
   type StillIncompleteRecipe,
@@ -82,8 +83,8 @@ export interface BackfillNutritionResponse {
   laissees: number;
   /** Non reprises : leurs cinq tentatives sont consommées. */
   abandonnees: number;
-  /** Non reprises : seules des lignes impossibles à peser manquent. */
-  impesables: number;
+  /** Non reprises : rien de ce qui manque ne peut venir d'une reprise. */
+  nonReprenables: number;
   collectionParcourue: boolean;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
@@ -130,7 +131,8 @@ export function failedSnapshotReason(nutrition: Record<string, unknown>): string
 
 /**
  * Ce qui manque à un instantané, cause par cause : les lignes impossibles à
- * peser, avec la leur, puis les ingrédients sans valeurs pour 100 g. Un
+ * peser, avec la leur, puis les ingrédients sans valeurs pour 100 g — ceux que
+ * l'IA a manqués trois fois à part, puisqu'aucune reprise ne les redemande. Un
  * instantané antérieur à ces deux champs ne sépare pas les causes : il cite
  * `missing_ingredients` tel quel.
  */
@@ -151,16 +153,29 @@ export function missingCausesText(nutrition: Record<string, unknown>): string {
     parts.push(`Impossible à peser : ${namesList(lines)}`);
   }
   if (profile != null && profile.length > 0) {
-    parts.push(`Sans valeurs pour 100 g : ${namesList(profile)}`);
+    const excluded = new Set(readMissingProfileExcluded(nutrition));
+    const asked = profile.filter((name) => !excluded.has(name));
+    const given = profile.filter((name) => excluded.has(name));
+    if (asked.length > 0) parts.push(`Sans valeurs pour 100 g : ${namesList(asked)}`);
+    if (given.length > 0) {
+      parts.push(
+        `Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : ${namesList(given)}`,
+      );
+    }
   }
   return parts.length > 0 ? parts.join(" · ") : "Ingrédients non comptés";
+}
+
+/** « Impossible à peser : … » devient « impossible à peser : … ». */
+function lowerFirst(text: string): string {
+  return text.length > 0 ? text[0].toLocaleLowerCase("fr") + text.slice(1) : text;
 }
 
 /**
  * Ligne « à revoir » d'une recette dont la nutrition reste incomplète : après
  * une reprise (l'erreur levée, un calcul en échec et sa raison, ou ce qui
- * manque, cause par cause), abandonnée après ses tentatives, ou impossible à
- * peser.
+ * manque, cause par cause), abandonnée après ses tentatives, ou non
+ * reprenable. Après « Abandonnée … — », la cause garde sa minuscule.
  */
 export function nutritionReviewItem(recipe: StillIncompleteRecipe): BackfillReviewItem {
   const label = recipeReviewLabel(recipe.id, recipe.data);
@@ -170,7 +185,7 @@ export function nutritionReviewItem(recipe: StillIncompleteRecipe): BackfillRevi
     label,
     reason:
       recipe.status === "abandonnee"
-        ? `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — ${reason}`
+        ? `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — ${lowerFirst(reason)}`
         : reason,
   });
   if (recipe.error != null) {
@@ -256,7 +271,7 @@ export function summarizeNutrition(r: BackfillNutritionResponse): PassSummary {
     spendCapHit: r.stoppedByBudget,
     // Reprises sans succès : le passage est « incomplet », sans reprise à
     // l'heure suivante. Elles reviennent au passage du lendemain, dans la
-    // limite de leurs cinq tentatives. Abandonnées et impesables ne comptent
+    // limite de leurs cinq tentatives. Abandonnées et non reprenables ne comptent
     // pas : aucun passage automatique ne les reprendra.
     unresolved: r.echouees,
   };
@@ -331,8 +346,8 @@ export async function runNutritionBackfillPass(
         " laissée(s), " +
         report.abandonnees +
         " abandonnée(s), " +
-        report.impesables +
-        " impossible(s) à peser",
+        report.nonReprenables +
+        " non reprenable(s)",
       moduleType: "DESIGN",
       correlationId,
       extra: {
@@ -351,7 +366,7 @@ export async function runNutritionBackfillPass(
       echouees: report.echouees,
       laissees: report.laissees,
       abandonnees: report.abandonnees,
-      impesables: report.impesables,
+      nonReprenables: report.nonReprenables,
       collectionParcourue: report.collectionParcourue,
       stoppedByDeadline: report.stoppedByDeadline,
       stoppedByBudget: report.stoppedByBudget,

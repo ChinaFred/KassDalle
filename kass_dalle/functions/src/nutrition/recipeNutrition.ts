@@ -38,6 +38,7 @@ import {
   type ReferentialUnitOverride,
 } from "./quantityConversion";
 import { asPositiveNumber, roundValue } from "./unitDisplay";
+import { isExcludedAfterFailures } from "../backfills/failureMemory";
 
 interface IngredientInput {
   name?: unknown;
@@ -162,6 +163,7 @@ function degradedNutritionSnapshot(args: {
     missing_ingredients: [],
     missing_weight: [],
     missing_profile: [],
+    missing_profile_excluded: [],
     not_consumed_ingredients: [],
     duplicate_ingredients: [],
     duplicate_indices: [],
@@ -311,6 +313,14 @@ export async function computeAndPersistRecipeNutrition(args: {
   const missingIngredients: string[] = [];
   const missingWeight: MissingWeight[] = [];
   const missingProfile: string[] = [];
+  /**
+   * Parmi `missingProfile`, ceux que plus rien ne redemande au modèle : trois
+   * échecs au backfill « Enrichir unités et ingrédients »
+   * (`enrichment_failure_count`). Le rattrapage ne reprend pas une recette
+   * qui n'attend plus qu'eux.
+   */
+  const missingProfileExcluded: string[] = [];
+  const excludedProfileIds = new Set<string>();
   let totalWeightGrams = 0;
   let convertibleCount = 0;
   let mappedCount = 0;
@@ -593,7 +603,10 @@ export async function computeAndPersistRecipeNutrition(args: {
     const snaps = await db.getAll(...chunk);
     for (const snap of snaps) {
       if (!snap.exists) continue;
-      const profile = snap.data() as IngredientProfile;
+      const profile = snap.data() as IngredientProfile & { enrichment_failure_count?: unknown };
+      if (isExcludedAfterFailures(profile.enrichment_failure_count, false)) {
+        excludedProfileIds.add(snap.id);
+      }
       const normalized = normalizeNutrients(profile.per100g ?? {});
       if (Object.keys(normalized).length === 0) continue;
       normalizedProfilesById.set(snap.id, normalized);
@@ -612,6 +625,9 @@ export async function computeAndPersistRecipeNutrition(args: {
     if (!normalizedProfile) {
       missingIngredients.push(resolution.name);
       missingProfile.push(resolution.name);
+      if (resolution.lookupIds.some((id) => excludedProfileIds.has(id))) {
+        missingProfileExcluded.push(resolution.name);
+      }
       continue;
     }
 
@@ -827,6 +843,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     missing_ingredients: missingIngredients,
     missing_weight: missingWeight,
     missing_profile: missingProfile,
+    missing_profile_excluded: missingProfileExcluded,
     not_consumed_ingredients: notConsumedIngredients,
     duplicate_ingredients: duplicateIngredients,
     // Verdict hérité : plus personne ne le produit, on le reconduit tel quel

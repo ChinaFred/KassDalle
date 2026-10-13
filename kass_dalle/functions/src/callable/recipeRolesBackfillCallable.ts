@@ -95,7 +95,7 @@ export interface BackfillRolesResponse {
   echouees: number;
   /**
    * Recettes sautées : trois échecs ou plus (`meal_role_failure_count`), sans
-   * « Réessayer aussi les éléments en échec ».
+   * « Réessayer aussi les éléments exclus après 3 échecs ».
    */
   exclues: number;
   /**

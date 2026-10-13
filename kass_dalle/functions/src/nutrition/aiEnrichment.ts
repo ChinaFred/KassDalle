@@ -33,6 +33,7 @@ import {
   type Per100gEnrichmentTarget,
 } from "./per100gEnrichment";
 import { getKnownUnitMetadata, normalizeObservedUnit } from "./quantityConversion";
+import { isExcludedAfterFailures } from "../backfills/failureMemory";
 
 // ── Redemander, mais pas tout le temps ───────────────────────────────────────
 
@@ -94,6 +95,46 @@ export function readTimestampMillis(value: unknown): number | null {
 export function enrichmentAttemptIsRecent(lastAttempt: unknown, nowMs: number): boolean {
   const ms = readTimestampMillis(lastAttempt);
   return ms != null && nowMs - ms < ENRICHMENT_RETRY_AFTER_MS;
+}
+
+/**
+ * Faut-il demander au modèle le poids de cette unité ? Fonction pure, appelée
+ * pour une unité qui accepte un poids propre (`unitAcceptsOwnWeight`).
+ *
+ * Non si elle en a déjà un ; non si elle a été demandée il y a moins de vingt
+ * heures sans réponse — c'est ce qui transformait une unité impossible à
+ * peser en dépense permanente ; non après trois échecs au backfill
+ * « Enrichir unités et ingrédients » (`ai_weight_failure_count`), sauf
+ * [retryExcluded] — la case de ce backfill, que ni le déclencheur ni le
+ * rattrapage de la nutrition ne passent.
+ */
+export function unitWeightRequestAllowed(
+  data: Record<string, unknown>,
+  nowMs: number,
+  retryExcluded: boolean,
+): boolean {
+  const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
+  if (hasGrams) return false;
+  if (enrichmentAttemptIsRecent(data.ai_weight_attempt_at, nowMs)) return false;
+  return !isExcludedAfterFailures(data.ai_weight_failure_count, retryExcluded);
+}
+
+/**
+ * Faut-il demander au modèle les valeurs pour 100 g de cet ingrédient, à
+ * l'écriture d'une recette ou par le rattrapage ? Fonction pure.
+ *
+ * Non s'il en a déjà ; non s'il a été demandé il y a moins de vingt heures
+ * sans réponse exploitable — `last_enrichment_attempt_at` était écrit depuis
+ * longtemps, mais le filtre ne regardait que la présence des valeurs ; non
+ * après trois échecs au backfill « Enrichir unités et ingrédients »
+ * (`enrichment_failure_count`). Seul ce backfill, lancé avec « Réessayer
+ * aussi les éléments exclus après 3 échecs », le resoumet — par
+ * `estimatePer100gForTargets`, sans passer ici.
+ */
+export function ingredientEnrichmentAllowed(data: Record<string, unknown>, nowMs: number): boolean {
+  if (hasPer100gValues(data.per100g)) return false;
+  if (enrichmentAttemptIsRecent(data.last_enrichment_attempt_at, nowMs)) return false;
+  return !isExcludedAfterFailures(data.enrichment_failure_count, false);
 }
 
 // ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
@@ -348,6 +389,14 @@ export async function enrichUnknownUnitsWithAI(args: {
   scanId?: string;
   /** Contexte : noms d'ingrédients associés à chaque unité canonique (améliore l'estimation). */
   unitIngredientNames?: Map<string, string[]>;
+  /**
+   * Redemande aussi une unité exclue après trois échecs du backfill
+   * (`ai_weight_failure_count`). Vrai seulement pour un passage « Enrichir
+   * unités et ingrédients » lancé avec « Réessayer aussi les éléments exclus
+   * après 3 échecs ». Le déclencheur et le rattrapage de la nutrition ne la
+   * passent jamais.
+   */
+  retryExcluded?: boolean;
 }): Promise<void> {
   if (args.unitCanonicals.length === 0) return;
 
@@ -363,12 +412,7 @@ export async function enrichUnknownUnitsWithAI(args: {
     // réponse ne serait lue par aucun calcul.
     if (!unitAcceptsOwnWeight(snap.id)) continue;
     const data = snap.data() as Record<string, unknown>;
-    const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
-    if (!hasGrams) {
-      // Déjà demandée il y a moins de vingt heures, sans réponse : on ne repose pas
-      // la question. C'est ce qui transformait une unité impossible à peser en
-      // dépense permanente.
-      if (enrichmentAttemptIsRecent(data.ai_weight_attempt_at, nowMs)) continue;
+    if (unitWeightRequestAllowed(data, nowMs, args.retryExcluded === true)) {
       const label =
         typeof data.label === "string" && data.label.trim().length > 0
           ? data.label.trim()
@@ -529,12 +573,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
   for (const snap of snaps) {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
-    if (hasPer100gValues(data.per100g)) continue; // déjà enrichi
-    // Demandé il y a moins de vingt heures, sans réponse exploitable : on attend.
-    // La marque `last_enrichment_attempt_at` était écrite depuis longtemps,
-    // mais ce filtre ne regardait que la présence des valeurs — un ingrédient
-    // que le modèle ne sait pas estimer repartait donc à chaque passage.
-    if (enrichmentAttemptIsRecent(data.last_enrichment_attempt_at, nowMs)) continue;
+    if (!ingredientEnrichmentAllowed(data, nowMs)) continue;
     const canonicalName =
       typeof data.canonical_name === "string" && data.canonical_name.trim()
         ? data.canonical_name.trim()

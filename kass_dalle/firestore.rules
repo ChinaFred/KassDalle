@@ -535,6 +535,15 @@ service cloud.firestore {
         return ['source_nutrition', 'source_nutrition_check'];
       }
 
+      // Compteurs de tentatives des reprises automatiques : le rattrapage de
+      // la nutrition (`nutrition_catch_up_attempts`) et la mémoire des échecs
+      // du backfill « Rôle des recettes » (`meal_role_failure_count`,
+      // `meal_role_attempt_at`). Écrits par le serveur seul : un créateur qui
+      // les remettrait à zéro relancerait des appels de modèle facturés.
+      function serverOnlyRetryFields() {
+        return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
+      }
+
       allow read: if canReadRecipe(resource.data);
 
       // Création : éditeur et administrateur, toujours à leur propre nom. Le
@@ -552,12 +561,14 @@ service cloud.firestore {
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
+        && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
         && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));

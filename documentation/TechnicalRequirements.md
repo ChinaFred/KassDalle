@@ -506,9 +506,9 @@ Document principal d'une recette.
 | `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes` ; le backfill « Durées estimées », qui a repris les recettes antérieures, est retiré en v0.23.52) ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent tant que la recette n'a jamais manqué d'une durée. Quand les deux durées sont lues, le champ est **vidé** (`prep` et `cook` à `null`) et garde l'empreinte, pas supprimé. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
-| `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie. À 5, la recette n'est plus reprise par le passage programmé ; elle est comptée « abandonnée » et nommée dans la liste « à revoir » |
-| `meal_role_failure_count` | `int?` | Échecs du backfill « Rôle des recettes dans un repas » sur cette recette : le modèle n'a pas su la classer, ou l'appel a échoué. Écrit par le serveur seul (`runRecipeRolesPass`, par `update` : une recette supprimée ne renaît pas). À 3, la recette n'est plus soumise au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments en échec » ou `force` ; elle est listée « Exclu après 3 échecs ». Remis à 0 par un classement réussi. Le déclencheur `onRecipeWritten` ne le lit pas. Comme `nutrition_catch_up_attempts`, les règles ne le protègent pas : un créateur qui le remet à zéro obtient au plus trois appels de plus sur sa propre recette |
-| `meal_role_attempt_at` | `Timestamp?` | Date du dernier échec compté dans `meal_role_failure_count` |
+| `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie. À 5, la recette n'est plus reprise par le passage programmé ; elle est comptée « abandonnée » et nommée dans la liste « à revoir ». **Serveur seul** depuis la v0.23.54 : les règles refusent au client de le poser, de le changer ou de l'effacer (`serverOnlyRetryFields`, §4) |
+| `meal_role_failure_count` | `int?` | Échecs du backfill « Rôle des recettes dans un repas » sur cette recette : le modèle n'a pas su la classer, ou l'appel a échoué. Écrit par le serveur seul (`runRecipeRolesPass`, par `update` : une recette supprimée ne renaît pas). À 3, la recette n'est plus soumise au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ou `force` ; elle est listée « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par un classement réussi. Le déclencheur `onRecipeWritten` le lit (`mealRoleCallAllowed`) : à 3, il ne demande plus le rôle non plus, et une écriture qui ne change que ce champ et `meal_role_attempt_at` ne lui coûte aucun appel. **Serveur seul** : les règles refusent au client de le poser à la création, de le changer ou de l'effacer, administrateur compris (`serverOnlyRetryFields`, §4) |
+| `meal_role_attempt_at` | `Timestamp?` | Date du dernier échec compté dans `meal_role_failure_count`. Serveur seul, même règle |
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
@@ -542,6 +542,7 @@ la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_por
 | `missing_ingredients` | `List<String>` | Ce que le référentiel ne sait pas peser ni chiffrer : l'union de `missing_weight` et `missing_profile`, que l'écran lit |
 | `missing_weight` | `List<Map>` | Lignes impossibles à peser, `{name, cause}`. `cause` : `quantite_illisible` (un nombre manque ou ne se lit pas devant une unité), `quantite_absente` (ni nombre ni unité, pas encore de portion usuelle), `comptage_sans_poids` (compté à la pièce sans poids à la pièce connu), `unite_sans_poids` (unité que ni le référentiel ni la table ne savent peser). `missingWeightCause`, `nutrition/recipeNutrition.ts`. Absent des instantanés antérieurs à la v0.23.54 |
 | `missing_profile` | `List<String>` | Ingrédients pesés dont le référentiel n'a pas de valeurs pour 100 g. Absent des instantanés antérieurs à la v0.23.54 : le rattrapage ne sait alors pas séparer les causes, et reprend la recette |
+| `missing_profile_excluded` | `List<String>` | Parmi `missing_profile`, les ingrédients dont un document du référentiel porte `enrichment_failure_count` ≥ 3 : plus rien ne les redemande au modèle. Le rattrapage ne reprend pas une recette qui n'attend plus qu'eux et des lignes impossibles à peser |
 | `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
 | `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
 
@@ -1629,7 +1630,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `allergens` | `String[]?` | Allergènes majeurs de l'ingrédient, clés de la liste de l'annexe II INCO (fixture `allergens.json`). **Absent** : jamais examiné. **Vide** : examiné, aucun. Posé par le modèle (`allergenExamination.ts`, lots de quarante, schéma JSON fermé) pour un ingrédient de la recette pas encore examiné, juste après sa création par `syncRecipeNutrition` (poste `allergens_auto`), ou par le backfill « Allergènes des ingrédients et des recettes » (poste `backfill_allergens`). **Jamais redemandé** une fois posé, et **jamais écrasé** par le modèle : l'écriture est conditionnelle, dans une transaction. L'examen ne **crée** jamais de document : un document créé avec ce seul champ ferait échouer le `create` de la nutrition, qui ne poserait plus ni `canonical_name`, ni `per100g`, ni le produit acheté. Corrigé à la main depuis *Admin › Référentiels › Ingrédients* ; les recettes ne le reprennent qu'au backfill ou à la prochaine modification de leurs ingrédients |
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
 | `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.54, par le backfill « Enrichir unités et ingrédients » sur un échec |
-| `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments en échec » ; il est listé « Exclu après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. Serveur seul |
+| `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ; il est listé « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. L'enrichissement à l'écriture d'une recette et celui du rattrapage de la nutrition ne redemandent plus un ingrédient qui en porte 3 (`ingredientEnrichmentAllowed`). Serveur seul |
 | `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) ne le lit pas. Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
@@ -1643,8 +1644,8 @@ porte `ai_weight_attempt_at` (`Timestamp`, la question n'est pas reposée avant 
 et `ai_weight_status: "estimation_failed"`. Depuis la v0.23.54, `ai_weight_failure_count`
 (`int?`) compte les échecs du backfill « Enrichir unités et ingrédients » sur cette unité :
 à 3, elle n'est plus soumise au modèle par ce backfill, sauf case « Réessayer aussi les
-éléments en échec » ; remis à 0 par une estimation réussie. L'enrichissement à l'écriture
-d'une recette (`enrichUnknownUnitsWithAI`) ne le lit pas.
+éléments exclus après 3 échecs » ; remis à 0 par une estimation réussie. L'enrichissement à l'écriture
+d'une recette (`enrichUnknownUnitsWithAI`) et celui du rattrapage de la nutrition ne la redemandent plus non plus (`unitWeightRequestAllowed`) ; seule la case la lève.
 
 > Le référentiel dépasse le millier de documents : toute lecture plafonnée coupe la fin de
 > l'alphabet, et ressemble alors à un défaut d'enrichissement.
@@ -1804,7 +1805,7 @@ L'écran les lit par la requête `doc_type == "backfill_run"`.
 | `doc_type` | `String` | toujours `backfill_run` |
 | `key` | `String` | clé du registre |
 | `dernier_passage_statut` | `String` | `en_cours` (verrou posé) \| `termine` \| `incomplet` \| `erreur`. `termine` demande un parcours fini **et** aucun échec non exclu (`passStatus`) |
-| `echecs_restants` | `int` | éléments traités par le dernier passage et restés en échec, sans être exclus (`PassSummary.unresolved`) : recettes reprises toujours incomplètes pour la nutrition, unités, ingrédients ou recettes sans réponse du modèle et sous trois échecs pour les autres récurrents. Positif, le passage est `incomplet` sans `reprise_due` : l'écran affiche « N éléments en échec, nouvel essai au prochain passage ». 0 sur une erreur ou un arrêt par plafond |
+| `echecs_restants` | `int` | éléments traités par le dernier passage et restés en échec, sans être exclus (`PassSummary.unresolved`) : recettes reprises toujours incomplètes pour la nutrition, unités, ingrédients ou recettes sans réponse du modèle et sous trois échecs pour les autres récurrents. Positif, le passage est `incomplet` sans `reprise_due` : l'écran affiche « N éléments en échec, nouvel essai <prochain créneau> » si la programmation est active (`nextScheduledRun`), sinon « N éléments en échec. Relancez pour réessayer. ». 0 sur une erreur ou un arrêt par plafond |
 | `en_cours_depuis` | `Timestamp?` | pose du verrou |
 | `en_cours_expire_le` | `Timestamp?` | échéance du verrou, `en_cours_depuis` + dix minutes (`BACKFILL_LOCK_TTL_MS`). Passée, le verrou est celui d'un passage interrompu : il se reprend, et l'écran affiche « En erreur — passage interrompu ». Le client compare l'heure à cette échéance et ne connaît pas la durée |
 | `en_cours_id`, `en_cours_origine`, `en_cours_par_uid` | `String?` | identifiant du passage qui tient le verrou, son origine, son auteur ; remis à `null` à la fin |
@@ -2336,6 +2337,11 @@ service cloud.firestore {
       function serverOnlySourceFields() {
         return ['source_nutrition', 'source_nutrition_check'];
       }
+      // Compteurs des reprises automatiques (v0.23.54) : serveur seul. Un
+      // créateur qui les remettrait à zéro relancerait des appels facturés.
+      function serverOnlyRetryFields() {
+        return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
+      }
 
       allow read: if canReadRecipe(resource.data);
       // Création : éditeur et administrateur seulement. Le lecteur ne crée aucune
@@ -2345,10 +2351,12 @@ service cloud.firestore {
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
+        && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
         && !changes('estimated_times')
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
@@ -2756,6 +2764,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   (une recette privée d'un autre est refusée), et ne se modifient ni ne s'effacent,
   administrateur compris ; `source_nutrition` et `source_nutrition_check` ne se posent pas à la
   création, même sur une copie, et ne se modifient ni ne s'effacent ;
+  `nutrition_catch_up_attempts`, `meal_role_failure_count` et `meal_role_attempt_at`
+  (`serverOnlyRetryFields`, v0.23.54) ne se posent pas à la création et ne se modifient ni ne
+  s'effacent, éditeur créateur compris, alors que le même éditeur change le titre seul
+  (« recipes — compteurs des reprises automatiques ») ; aucune écriture du client ne les
+  recopie (`Recipe.toFirestore` ne les connaît pas, les modifications passent par `update`) ;
   un éditeur ne crée pas de job `recipeUrlImport` et ne change pas la source d'un job en le
   relançant ; un import terminé ne se remet pas en file ni ne s'annule, un délai dépassé se
   relance avec `url_retry_count` + 1, pas au-delà de deux, pas sans compteur, et un import
@@ -4534,7 +4547,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
-| `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients, exclusion de l'impesable) ; le passage programmé les garde. Compte rendu : examinées, reprises, complétées, encore incomplètes (`echouees`), laissées faute de temps ou de plafond (`laissees`), impossibles à peser (`impesables`), abandonnées (`abandonnees`) |
+| `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients, exclusion du non-reprenable) ; le passage programmé les garde. Ne lève pas l'exclusion des ingrédients et unités que l'IA a manqués trois fois : l'enrichissement de la reprise ne les redemande jamais. Compte rendu : examinées, reprises, complétées, encore incomplètes (`echouees`), laissées faute de temps ou de plafond (`laissees`), non reprenables (`nonReprenables`), abandonnées (`abandonnees`) |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`). Mémoire des échecs hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
@@ -4606,11 +4619,14 @@ phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parc
 - calculée il y a moins de vingt heures (`MIN_SNAPSHOT_AGE_MS`) ;
 - cinq tentatives consommées (`nutrition_catch_up_attempts`) : comptée `abandonnees`, nommée
   « Abandonnée après 5 reprises — <cause> » ;
-- **impossible à peser** : aucun ingrédient sans valeurs (`missing_profile` vide), et chaque
-  ligne de `missing_weight` d'une cause qu'une reprise ne comble pas — `quantite_illisible`,
-  `comptage_sans_poids`, `unite_sans_poids`. Comptée `impesables`, nommée avec la cause. Une
-  ligne `quantite_absente` reste reprenable : la reprise demande sa portion usuelle. Un
-  instantané antérieur aux deux listes reste reprenable.
+- **non reprenable** (`nothingLeftToAsk`) : rien de ce qui manque ne peut venir d'une
+  reprise. Chaque ligne de `missing_weight` a une cause qu'une reprise ne comble pas —
+  `quantite_illisible`, `comptage_sans_poids`, `unite_sans_poids` —, et chaque ingrédient de
+  `missing_profile` figure dans `missing_profile_excluded` (trois échecs au backfill
+  « Enrichir unités et ingrédients » : l'enrichissement de la reprise ne le redemande plus).
+  Comptée `nonReprenables`, nommée avec la cause. Une ligne `quantite_absente` reste
+  reprenable : la reprise demande sa portion usuelle. Un instantané antérieur aux deux listes
+  reste reprenable.
 
 Le passage manuel lève les trois dernières bornes : c'est lui qu'on lance après avoir corrigé
 un poids à la pièce ou le poids d'une unité, puisque le passage programmé ne reprend plus ces
@@ -4631,11 +4647,18 @@ unités (`ai_weight_failure_count`) et valeurs pour 100 g (`enrichment_failure_c
 « Enrichir unités et ingrédients », allergènes des ingrédients (`allergens_failure_count`),
 rôle des recettes (`meal_role_failure_count`), chacun avec la date du dernier échec (§3). À
 trois échecs (`BACKFILL_FAILURE_LIMIT`), l'élément n'est plus soumis au modèle par un passage
-programmé ni par un passage manuel ordinaire ; il est listé « Exclu après 3 échecs ». Le
-passage manuel lancé avec la case « Réessayer aussi les éléments en échec » (`retryExcluded`)
-le reprend ; un succès remet le compteur à zéro. Les déclencheurs d'écriture d'une recette ne
-lisent pas ces compteurs : ils gardent leur propre garde de vingt heures. L'écriture de la
-mémoire est best-effort (`writeFailureMemory`, `logError` en cas d'échec).
+programmé ni par un passage manuel ordinaire ; il est listé « Plus redemandé à l'IA après 3 échecs ». Le
+passage manuel lancé avec la case « Réessayer aussi les éléments exclus après 3 échecs » (`retryExcluded`)
+le reprend ; un succès remet le compteur à zéro. Les autres chemins respectent aussi
+l'exclusion, sans jamais la lever : l'enrichissement à l'écriture d'une recette et celui du
+rattrapage de la nutrition (`ingredientEnrichmentAllowed`, `unitWeightRequestAllowed`,
+`aiEnrichment.ts`) ne redemandent pas un ingrédient ou une unité exclus, et le classement du
+rôle à l'écriture (`mealRoleCallAllowed`, `recipeMealRoleAutoSync.ts`) ne redemande pas une
+recette exclue. Ce dernier ne réagit pas non plus à l'écriture par laquelle le backfill compte
+un échec (seuls `meal_role_failure_count` et `meal_role_attempt_at` changent) : sans cette
+garde, chaque échec coûtait un second appel. L'examen des allergènes à l'écriture
+(`allergens_auto`) ne lit pas `allergens_failure_count`. L'écriture de la mémoire est
+best-effort (`writeFailureMemory`, `logError` en cas d'échec).
 
 **Auteur de la programmation.** Avant chaque passage programmé, le rôle de
 `programme_par_uid` est relu sur son document (`isAdminAccount`) : un compte qui n'est plus
@@ -4677,11 +4700,11 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 
 | Reprise | Ce que la liste nomme |
 |---|---|
-| `backfillEnrichReferentialsFn` (et « Reprendre le sel ») | unités dont le poids n'a pas été estimé ou d'un lot en échec ; unités demandées il y a moins de vingt heures (« Poids non estimé, nouvel essai après vingt heures ») ; ingrédients sans valeurs nutritionnelles estimées (« Valeurs nutritionnelles introuvables ») ou d'un lot en échec. Le troisième échec ajoute « — exclu après 3 échecs » ; un élément sauté pour cette raison est listé « Exclu après 3 échecs » |
-| `backfillNutritionFn` | recettes encore incomplètes, cause par cause : erreur de la reprise ; calcul en échec, avec la raison écrite dans `nutrition.quality.warnings` ; « Impossible à peser : œufs (pas de poids à la pièce), farine (quantité illisible) » d'après `missing_weight` ; « Sans valeurs pour 100 g : beurre » d'après `missing_profile` ; « Ingrédients non comptés : … » pour un instantané antérieur aux deux listes. Cinq noms au plus par cause. Les recettes reprises, les impossibles à peser et les abandonnées (« Abandonnée après 5 reprises — … ») |
-| `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — exclu après 3 échecs » au troisième, « Exclu après 3 échecs » pour une recette sautée |
+| `backfillEnrichReferentialsFn` (et « Reprendre le sel ») | unités dont le poids n'a pas été estimé ou d'un lot en échec ; unités demandées il y a moins de vingt heures (« Poids non estimé, nouvel essai après vingt heures ») ; ingrédients sans valeurs nutritionnelles estimées (« Valeurs nutritionnelles introuvables ») ou d'un lot en échec. Le troisième échec ajoute « — plus redemandé à l'IA après 3 échecs » ; un élément sauté pour cette raison est listé « Plus redemandé à l'IA après 3 échecs » |
+| `backfillNutritionFn` | recettes encore incomplètes, cause par cause : erreur de la reprise ; calcul en échec, avec la raison écrite dans `nutrition.quality.warnings` ; « Impossible à peser : œufs (pas de poids à la pièce), farine (quantité illisible) » d'après `missing_weight` ; « Sans valeurs pour 100 g : beurre » d'après `missing_profile`, et « Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : verjus » d'après `missing_profile_excluded` ; « Ingrédients non comptés : … » pour un instantané antérieur aux deux listes. Cinq noms au plus par cause. Les recettes reprises, les non reprenables et les abandonnées (« Abandonnée après 5 reprises — impossible à peser : … », cause en minuscule) |
+| `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième, « Plus redemandé à l'IA après 3 échecs » pour une recette sautée |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
-| `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — exclu après 3 échecs » au troisième échec d'un ingrédient, « Exclu après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
+| `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;

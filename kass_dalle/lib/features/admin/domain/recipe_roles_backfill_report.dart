@@ -19,7 +19,7 @@ class RecipeRolesBackfillReport {
   final int echouees;
 
   /// Recettes sautées : trois échecs ou plus, sans « Réessayer aussi les
-  /// éléments en échec ».
+  /// éléments exclus après 3 échecs ».
   final int exclues;
 
   /// Recettes sans rôle ou en échec dans ce passage, pas encore exclues : le

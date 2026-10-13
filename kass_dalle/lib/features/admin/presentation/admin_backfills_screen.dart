@@ -154,7 +154,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   }
 
   /// Backfills dont la confirmation propose « Réessayer aussi les éléments
-  /// en échec » : ceux qui tiennent une mémoire des échecs.
+  /// exclus après 3 échecs » : ceux qui tiennent une mémoire des échecs.
   static const _retryableKeys = {
     BackfillKeys.enrichReferentials,
     BackfillKeys.allergens,
@@ -180,7 +180,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   );
 
   /// Lance le passage de [def] et met en forme son compte rendu.
-  /// [retryExcluded] : la case « Réessayer aussi les éléments en échec ».
+  /// [retryExcluded] : la case « Réessayer aussi les éléments exclus après 3 échecs ».
   Future<_PassOutcome> _runPass(
     BackfillDefinition def, {
     bool retryExcluded = false,
@@ -193,7 +193,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'Recettes : examinées=${r['examinees']}, reprises=${r['reprises']}, '
           'complétées=${r['completees']}, encore incomplètes=${r['echouees']}, '
           'laissées faute de temps=${r['laissees']}, '
-          'impossibles à peser=${r['impesables']}, '
+          'non reprenables=${r['nonReprenables']}, '
           'abandonnées=${r['abandonnees']}'
           '${(r['completed'] ?? 0) == 1 && (r['echouees'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
           '${_flag(r, 'stoppedByBudget', ' (plafond de dépense atteint)')}'
@@ -303,7 +303,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   }
 
   /// Confirmation d'un backfill qui tient une mémoire des échecs : le texte
-  /// habituel, et la case « Réessayer aussi les éléments en échec », décochée.
+  /// habituel, et la case « Réessayer aussi les éléments exclus après 3 échecs », décochée.
   Future<({bool ok, bool retryExcluded})> _confirmWithRetry(
     BackfillDefinition def,
   ) async {
@@ -323,7 +323,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               CheckboxListTile(
                 value: retry,
                 onChanged: (v) => setDialogState(() => retry = v ?? false),
-                title: const Text('Réessayer aussi les éléments en échec'),
+                title: const Text(
+                  'Réessayer aussi les éléments exclus après 3 échecs',
+                ),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),

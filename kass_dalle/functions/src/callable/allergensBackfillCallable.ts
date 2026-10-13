@@ -115,7 +115,7 @@ export interface BackfillAllergensResponse {
   ingredientsEnErreur: number;
   /**
    * Ingrédients sautés : trois échecs ou plus, sans « Réessayer aussi les
-   * éléments en échec ».
+   * éléments exclus après 3 échecs ».
    */
   ingredientsExclus: number;
   /**

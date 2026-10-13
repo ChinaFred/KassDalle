@@ -404,7 +404,7 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
           '${_count(n('completees'), 'complétée', 'complétées')}, '
           '${_count(n('echouees'), 'encore incomplète', 'encore incomplètes')}'
           '${siPositif('laissees', 'laissée faute de temps', 'laissées faute de temps')}'
-          '${siPositif('impesables', 'impossible à peser', 'impossibles à peser')}'
+          '${siPositif('nonReprenables', 'non reprenable', 'non reprenables')}'
           '${siPositif('abandonnees', 'abandonnée', 'abandonnées')}';
     case BackfillKeys.enrichReferentials:
       return '${_count(n('enrichedUnits'), 'unité enrichie', 'unités enrichies')}, '
@@ -490,11 +490,19 @@ String backfillStatusLine({
             '${formatParisTime(nextHour)}';
       }
       // Parcours fini, mais des éléments en échec : pas de reprise à l'heure
-      // suivante, ils reviennent au prochain passage.
+      // suivante. Ils reviennent au prochain passage programmé, s'il y en a
+      // un ; sinon, seul un passage manuel les reprend.
       if (state.echecsRestants > 0) {
-        return 'Incomplet$when$withSummary · '
-            '${_count(state.echecsRestants, 'élément en échec', 'éléments en échec')}, '
-            'nouvel essai au prochain passage';
+        final echecs = _count(
+          state.echecsRestants,
+          'élément en échec',
+          'éléments en échec',
+        );
+        final next = def.isRecurrent ? nextScheduledRun(schedule, now) : null;
+        return next == null
+            ? 'Incomplet$when$withSummary · $echecs. Relancez pour réessayer.'
+            : 'Incomplet$when$withSummary · $echecs, nouvel essai '
+                  '${formatNextRunShort(next, now)}';
       }
       return 'Incomplet$when$withSummary. Relancez pour continuer.';
   }

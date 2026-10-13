@@ -309,7 +309,7 @@ class GcpBillingRepository {
   /// fois — une dépense volontaire, jamais le mode par défaut.
   ///
   /// [retryExcluded] redemande aussi les unités et les ingrédients exclus
-  /// après trois échecs (« Réessayer aussi les éléments en échec »).
+  /// après trois échecs (« Réessayer aussi les éléments exclus après 3 échecs »).
   Future<BackfillCounts> backfillEnrichReferentials({
     double maxMinutes = 4,
     bool resumeFromCheckpoint = true,
@@ -398,7 +398,7 @@ class GcpBillingRepository {
       'echouees': (data['echouees'] as num?)?.toInt() ?? 0,
       'laissees': (data['laissees'] as num?)?.toInt() ?? 0,
       'abandonnees': (data['abandonnees'] as num?)?.toInt() ?? 0,
-      'impesables': (data['impesables'] as num?)?.toInt() ?? 0,
+      'nonReprenables': (data['nonReprenables'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
       'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
