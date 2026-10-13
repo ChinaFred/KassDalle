@@ -303,7 +303,7 @@ function firestoreStore(): MoveMealsStore {
         .orderBy("planned_at")
         .limit(limit)
         .get();
-      return snap.docs.map((doc) => ({ id: doc.id, data: doc.data(), version: doc.updateTime }));
+      return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() }));
     },
     async moveMeal(mealId, groupId, ownerUid) {
       const groupRef = db.collection(COLL_GROUPS).doc(groupId);
