@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.56 — fonctionnel
+### v0.23.57 — fonctionnel
 
 #### Signaler ou proposer : les tickets de la famille
 
@@ -35,7 +35,7 @@ la réponse de l'administrateur ; un point sur la puce du compte signale un chan
 les tickets, leur auteur et leur capture, signale un jeton GitHub invalide et relance un envoi
 en anomalie.
 
-### v0.23.56 — technique
+### v0.23.57 — technique
 
 #### Tickets : callables, webhook GitHub et reprise horaire
 
