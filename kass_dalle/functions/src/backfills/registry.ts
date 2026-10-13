@@ -31,6 +31,7 @@ export const BACKFILL_KEYS = [
   "refresh_sodium",
   "system_books",
   "group_planning_reach",
+  "move_meals_to_group",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -113,6 +114,15 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "group_planning_reach",
     kind: "ponctuel",
     title: "Portée des groupes et des plannings",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  // Paramétré (groupe, période) et réutilisable : jamais marqué terminé
+  // tout seul (`summarizeMoveMealsToGroup` rend un reste inconnu).
+  {
+    key: "move_meals_to_group",
+    kind: "ponctuel",
+    title: "Déplacer mes repas vers un groupe",
     usesAi: false,
     defaultSchedule: null,
   },

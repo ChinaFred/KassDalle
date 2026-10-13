@@ -28,6 +28,7 @@ abstract final class BackfillKeys {
   static const refreshSodium = 'refresh_sodium';
   static const systemBooks = 'system_books';
   static const groupPlanningReach = 'group_planning_reach';
+  static const moveMealsToGroup = 'move_meals_to_group';
 }
 
 class BackfillDefinition {
@@ -163,6 +164,19 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage réécrit au plus 500 comptes et marque au plus 4 000 '
         'repas.',
+  ),
+  // Paramétré (groupe, période) et réutilisable : le serveur ne le marque
+  // jamais terminé tout seul, son reste n'est pas compté.
+  BackfillDefinition(
+    key: BackfillKeys.moveMealsToGroup,
+    kind: BackfillKind.ponctuel,
+    title: 'Déplacer mes repas vers un groupe',
+    description:
+        'Fait passer vos repas de « Mon planning », sur une période, dans le '
+        'planning d\'un groupe dont vous êtes propriétaire.',
+    usesAi: false,
+    passLimit:
+        'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
   ),
 ];
 

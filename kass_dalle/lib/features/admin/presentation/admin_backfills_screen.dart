@@ -8,10 +8,12 @@ import 'admin_providers.dart';
 import 'backfill_failures_sheet.dart';
 import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
+import 'move_meals_to_group_dialog.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_failures.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
+import '../domain/move_meals_request.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
@@ -152,6 +154,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'plannings partagés le retrouvent. Ce qui est déjà à jour n\'est '
             'pas réécrit ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.moveMealsToGroup:
+        return 'Vos repas de « Mon planning » sur cette période passent dans '
+            'le planning du groupe : ses membres les voient, et ils quittent '
+            'votre planning personnel. La recette, la date, les parts et les '
+            'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
+            'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
+            'Aucun appel d\'IA.';
       default:
         return '';
     }
@@ -171,8 +180,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     termineAuto: (r['termineAuto'] ?? 0) == 1,
   );
 
-  /// Lance le passage de [def] et met en forme son compte rendu.
-  Future<_PassOutcome> _runPass(BackfillDefinition def) async {
+  /// Lance le passage de [def] et met en forme son compte rendu. [move] porte
+  /// les paramètres de « Déplacer mes repas vers un groupe ».
+  Future<_PassOutcome> _runPass(
+    BackfillDefinition def, {
+    MoveMealsRequest? move,
+  }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
         final r = await _repo.backfillNutrition();
@@ -265,6 +278,20 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'échecs=${r['repasEchoues']}, restants=${r['repasRestants'] ?? '?'}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
+      case BackfillKeys.moveMealsToGroup:
+        if (move == null) throw StateError('Paramètres manquants : ${def.key}');
+        final r = await _repo.backfillMoveMealsToGroup(move);
+        return _fromCounts(
+          r,
+          'Repas : examinés=${r['examines']}, déplacés=${r['deplaces']}, '
+          'ignorés (déjà dans un groupe)=${r['ignores']}, '
+          'en erreur=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
     }
@@ -297,9 +324,21 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
     if (_launching.contains(def.key)) return;
+    MoveMealsRequest? move;
+    if (def.key == BackfillKeys.moveMealsToGroup) {
+      // Paramétré : le groupe et la période d'abord, puis le récapitulatif.
+      move = await showMoveMealsToGroupDialog(context);
+      if (move == null || !mounted) return;
+    }
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
-    final ok = done
+    final ok = move != null
+        ? await _confirm(
+            title: move.confirmQuestion,
+            content: _confirmText(def),
+            confirmLabel: 'Déplacer',
+          )
+        : done
         ? await _confirm(
             title: 'Relancer « ${def.title} » ?',
             content:
@@ -318,7 +357,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(def);
+      final outcome = await _runPass(def, move: move);
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {
@@ -851,6 +890,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.systemBooks: Icons.library_books_outlined,
     BackfillKeys.groupPlanningReach: Icons.groups_outlined,
+    BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

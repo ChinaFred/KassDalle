@@ -404,6 +404,12 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
           '${_count(n('repasMarques'), 'repas marqué', 'repas marqués')}, '
           // Repas restants inconnus (décompte en échec) : le total aussi.
           '${report['repasRestants'] is num ? _count(n('restants') + n('repasRestants'), 'restant', 'restants') : 'reste inconnu'}';
+    case BackfillKeys.moveMealsToGroup:
+      final du = report['du'];
+      final au = report['au'];
+      final period = du is String && au is String ? ' ($du → $au)' : '';
+      return '${_count(n('deplaces'), 'repas déplacé', 'repas déplacés')}$period, '
+          '${_count(n('echoues'), 'échec', 'échecs')}';
     default:
       return '';
   }

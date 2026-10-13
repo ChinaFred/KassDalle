@@ -288,13 +288,14 @@ void main() {
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'refresh_sodium',
         'group_planning_reach',
+        'move_meals_to_group',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(3));
+      expect(sections.ponctuelsALancer, hasLength(4));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 

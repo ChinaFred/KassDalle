@@ -10,6 +10,7 @@ import '../../../core/app_version.dart';
 import '../domain/data_quality_report.dart';
 import '../domain/nutrition_policy.dart';
 import '../domain/backfill_failures.dart';
+import '../domain/move_meals_request.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 
 const String _functionsRegion = 'europe-west1';
@@ -456,6 +457,21 @@ class GcpBillingRepository {
     final dynamic raw = await _callViaSdk(
       'backfillGroupPlanningReachFn',
       <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Déplace les repas du planning personnel de l'appelant, sur la période de
+  /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
+  /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.
+  Future<BackfillCounts> backfillMoveMealsToGroup(
+    MoveMealsRequest request,
+  ) async {
+    final dynamic raw = await _callViaSdk(
+      'backfillMoveMealsToGroupFn',
+      <String, dynamic>{...request.toPayload(), 'appVersion': kAppVersion},
       timeout: const Duration(minutes: 9),
     );
 
