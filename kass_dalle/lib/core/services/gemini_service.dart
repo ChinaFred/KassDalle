@@ -636,6 +636,36 @@ class GeminiService {
     return UrlImportQuota.fromMap(Map<String, dynamic>.from(data as Map));
   }
 
+  // ── Tickets ─────────────────────────────────────────────────────────────────
+  //
+  // Aucun appel d'IA : ces callables passent ici pour le contournement web du
+  // SDK `cloud_functions_web` (voir [_call]). Le repository des tickets lit
+  // les réponses et traduit les refus.
+
+  /// Crée un ticket. Entrée `{type, title, description, screen, app_version,
+  /// platform}` ; sortie `{ticketId, status, remaining_today}`.
+  Future<Map<String, dynamic>> submitTicket(
+    Map<String, dynamic> payload,
+  ) async {
+    final data = await _call('submitTicket', payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Rattache la capture envoyée sur [path] au ticket [ticketId].
+  Future<void> attachTicketScreenshot({
+    required String ticketId,
+    required String path,
+  }) async {
+    await _call('attachTicketScreenshot', {'ticketId': ticketId, 'path': path});
+  }
+
+  /// Relance l'envoi à GitHub d'un ticket en anomalie (administrateur).
+  /// Rend le statut du ticket après l'essai.
+  Future<String> retryTicketSend(String ticketId) async {
+    final data = await _call('retryTicketSend', {'ticketId': ticketId});
+    return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
+  }
+
   /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par
   /// Google pour [query], tous rôles.
   ///

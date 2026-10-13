@@ -173,12 +173,15 @@ flowchart TB
   WRK["recipeProcessor&lt;br/&gt;worker 540s · 2 GiB"]
   TRG["onRecipeWritten&lt;br/&gt;confidentialité · rôle · durées estimées · nutrition · courses"]
   DLQ[("dead_letters")]
-  SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY · ANTHROPIC_API_KEY&lt;br/&gt;GMAIL_SENDER · GMAIL_APP_PASSWORD"]
+  SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY · ANTHROPIC_API_KEY&lt;br/&gt;GMAIL_SENDER · GMAIL_APP_PASSWORD&lt;br/&gt;GITHUB_TICKETS_TOKEN · GITHUB_WEBHOOK_SECRET"]
   INVF["manageInvitationFn&lt;br/&gt;invitation par e-mail"]
   SMTP["SMTP Gmail&lt;br/&gt;nodemailer"]
   INVT["applyEmailInvitation&lt;br/&gt;création d'un compte"]
   INVR["applyRevokedInvitation&lt;br/&gt;reconnexion d'un compte révoqué"]
   MSF["findMemberByEmailFn&lt;br/&gt;membre à inviter, par adresse exacte"]
+  TKF["submitTicket · retryTicketSend&lt;br/&gt;ticketsSyncSchedule"]
+  TKW["githubTicketWebhook&lt;br/&gt;signature HMAC vérifiée"]
+  GH["GitHub&lt;br/&gt;Issues de ChinaFred/KassDalle (public)"]
   ROUTER["ai/router&lt;br/&gt;politique par poste · repli"]
   GEM["Google Gemini&lt;br/&gt;gemini-2.5-flash"]
   CLA["Anthropic Claude&lt;br/&gt;claude-sonnet-5"]
@@ -220,6 +223,13 @@ flowchart TB
   INVR -->|"accès rétabli, rôle, invitation de groupe,&lt;br/&gt;invitation acceptée"| FS
   APP -->|"httpsCallable (propriétaire du groupe)"| MSF
   MSF -->|"users lu, compteur du jour"| FS
+  APP -->|"httpsCallable (membre approuvé)"| TKF
+  APP -->|"capture dans tickets/{uid}/"| ST
+  TKF -->|"tickets, ticket_quotas"| FS
+  TKF -->|"REST fetch : Issue sans nom ni capture,&lt;br/&gt;relecture horaire"| GH
+  GH -->|"webhook issues · issue_comment · pull_request"| TKW
+  TKW -->|"statut, reply_text filtré"| FS
+  SM -.->|"GITHUB_* montés sur les fonctions des tickets"| TKF
 
   classDef ai stroke-width:2px;
   class GEM,CLA,VIS,SM,ROUTER ai;
@@ -479,6 +489,11 @@ stateDiagram-v2
           <tr><td><code>applyRevokedInvitation</code></td><td>Trigger onUpdate</td><td>Sur <code>users/</code>. Ne réagit qu'à la connexion d'un compte révoqué (révoqué avant et après, <code>last_seen_at</code> changé), et seulement si une invitation de retour active le vise (requête <code>target_uid</code>, avant tout appel Auth). Adresse <b>Auth</b> vérifiée et invitation active qui vise ce compte (<code>target: "revoked"</code>, <code>target_uid</code>) : en une transaction, <code>is_revoked: false</code> et rôle de l'invitation, uid ajouté à <code>invited_ids</code> du groupe (jamais à <code>member_ids</code> ; rien si déjà membre ou invité, ou 50 invitations en attente), invitation <code>accepted</code> avec <code>group_invite</code>. Groupe disparu : rôle seul, <code>group_missing: true</code> ; invitant sorti du groupe (relu dans la transaction) : rôle seul, <code>group_invite: "missing"</code>. Mêmes gardes que <code>applyEmailInvitation</code> (fondateur exclu, invitant encore admin non révoqué)</td><td>—</td></tr>
           <tr><td><code>getAiBudgetFn</code> · <code>setAiBudgetFn</code></td><td>Callable</td><td>Plafonds de dépense (<code>app_config/ai_budget_policy</code>, en euros), dépense d’un jour par compte (<code>ai_daily_spend</code>, jour choisi par le paramètre <code>day</code>, aujourd’hui par défaut) et dépense par compte <b>et par poste</b> sur la période demandée (<code>ai_usage_monthly.by_user</code>)</td><td>admin</td></tr>
           <tr><td><code>scheduledAiBudgetAlert</code></td><td>Cloud Scheduler</td><td>Chaque jour à 7 h : compare le cumul du mois au seuil d'alerte, et n'alerte qu'une fois par mois</td><td>—</td></tr>
+          <tr><td><code>submitTicket</code></td><td>Callable</td><td>Crée un ticket (bug, évolution, nouvelle fonctionnalité, question) : bornes, plafonds du jour Europe/Paris (<code>app_config/tickets</code>, 5 par membre et 30 pour la famille, admin exempté) dans la transaction qui écrit <code>tickets/{id}</code> en <code>sending</code>, puis publication de l'Issue sur le dépôt public par REST (<code>fetch</code>, aucun SDK). Rien de privé ne part : ni nom, ni uid, ni capture ; mentions <code>@</code> neutralisées. Un envoi en échec laisse le ticket « Envoi en cours » sans faire échouer l'appel. Aucun appel d'IA</td><td>auth (approuvé, non révoqué)</td></tr>
+          <tr><td><code>attachTicketScreenshot</code></td><td>Callable</td><td>Rattache la capture déposée sous <code>tickets/{uid}/{ticketId}/screenshot.png|jpg</code> : vérifie l'auteur, le chemin, l'objet, son type et sa taille (5 Mo), puis écrit <code>screenshot_path</code></td><td>auth ; auteur du ticket</td></tr>
+          <tr><td><code>retryTicketSend</code></td><td>Callable</td><td>Relance l'envoi d'un ticket en anomalie (dix essais sans Issue) : compteur remis à zéro, recherche d'une Issue déjà créée, puis un essai</td><td>admin</td></tr>
+          <tr><td><code>githubTicketWebhook</code></td><td>HTTPS (public)</td><td>Reçoit les événements GitHub <code>issues</code>, <code>issue_comment</code>, <code>pull_request</code>, <code>ping</code>. Signature <code>X-Hub-Signature-256</code> (HMAC SHA-256 du corps brut, secret <code>GITHUB_WEBHOOK_SECRET</code>) vérifiée à temps constant, sinon 401. Statut dérivé des étiquettes et de l'état, sans recul ; seul un commentaire de <code>ChinaFred</code> qui commence par « Réponse : » devient <code>reply_text</code></td><td>signature GitHub</td></tr>
+          <tr><td><code>ticketsSyncSchedule</code></td><td>Cloud Scheduler</td><td>Toutes les heures : renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu). Un jeton refusé pose <code>app_config/tickets_status.token_invalid_since</code> et arrête la passe</td><td>—</td></tr>
           <tr><td><code>sandboxFn</code></td><td>Callable</td><td>Bac à sable, hors release. Point d'entrée unique des expériences, aiguillé sur le champ <code>experiment</code> ; rien n'y est enregistré. Décrit au §13.3 de <span class="path">TechnicalRequirements.md</span></td><td>admin</td></tr>
           <tr><td><code>getAppCheckPolicyFn</code> · <code>setAppCheckPolicyFn</code></td><td>Callable</td><td>Mode d'attestation App Check — <code>off</code>, <code>monitor</code>, <code>enforce</code> — lu et écrit dans <code>app_config/app_check_policy</code>. La lecture rapporte si l'appel était lui-même attesté ; l'écriture refuse <code>enforce</code> demandé depuis un client non attesté</td><td>admin</td></tr>
         </tbody>
@@ -549,7 +564,9 @@ stateDiagram-v2
           <tr><td><code>scan_spend</code></td><td>Dépense d'IA par scan (<code>{scanId}</code>) et plafond d'un import de livre — relu avant le premier appel de chaque tranche, relevé par une relance</td><td>Cloud Functions</td></tr>
           <tr><td><code>ai_reconciliation_monthly</code></td><td>Rapprochement mensuel coûts estimés / facturés</td><td>Fonction admin</td></tr>
           <tr><td><code>error_reports</code></td><td>Erreurs remontées par le client</td><td>Client</td></tr>
-          <tr><td><code>app_config</code></td><td>Réglages globaux, un document par décision : routage <code>ai_routing_policy</code>, grille <code>ai_pricing</code>, plafonds <code>ai_budget_policy</code>, attestation <code>app_check_policy</code>, modération <code>image_moderation</code>, présélection du planning <code>planning_policy</code>, sources nutrition, programmation des backfills <code>backfill_schedules</code>. Aucun de ces réglages ne demande de déploiement. S'y ajoutent les points de reprise des backfills et leur état, <code>backfill_run_&lt;clé&gt;</code> (dernier passage, verrou, compte rendu, « terminé »), écrits par le serveur seul</td><td>Admin</td></tr>
+          <tr><td><code>tickets</code></td><td>Tickets des membres : type, titre, description, écran (modèle de route), version, plateforme, capture privée, auteur, statut (<code>sending</code> → <code>received</code> → <code>analyzed</code> → <code>validated</code> → <code>in_progress</code> → <code>delivered</code>, ou <code>refused</code>, <code>answered</code>), numéro et adresse de l'Issue, essais d'envoi, réponse de l'administrateur. Lus par l'auteur et l'admin</td><td>Cloud Functions ; l'auteur pose <code>seen_by_author_at</code> seul</td></tr>
+          <tr><td><code>ticket_quotas</code></td><td>Tickets du jour, par compte (<code>{uid}_{AAAAMMJJ}</code>) et pour la famille (<code>_global_{AAAAMMJJ}</code>), jour Europe/Paris : les compteurs du plafond de <code>submitTicket</code>. Aucun accès client, TTL sur <code>expires_at</code></td><td>Cloud Functions</td></tr>
+          <tr><td><code>app_config</code></td><td>Réglages globaux, un document par décision : routage <code>ai_routing_policy</code>, grille <code>ai_pricing</code>, plafonds <code>ai_budget_policy</code>, attestation <code>app_check_policy</code>, modération <code>image_moderation</code>, présélection du planning <code>planning_policy</code>, sources nutrition, programmation des backfills <code>backfill_schedules</code>, plafonds des tickets <code>tickets</code>. Aucun de ces réglages ne demande de déploiement. S'y ajoutent les points de reprise des backfills et leur état, <code>backfill_run_&lt;clé&gt;</code> (dernier passage, verrou, compte rendu, « terminé »), et l'état du jeton GitHub des tickets, <code>tickets_status</code>, écrits par le serveur seul</td><td>Admin</td></tr>
           <tr><td><code>users/{uid}/nutrition_portion_overrides</code></td><td>Nombre de portions choisi par recette</td><td>Client</td></tr>
           <tr><td><code>users/{uid}/preferences/book_order</code></td><td>Rangement de la bibliothèque au glisser-déposer</td><td>Client</td></tr>
           <tr><td><code>users/{uid}/preferences/recipe_search_scope</code></td><td>Périmètre choisi dans « Où chercher des recettes ? » du planning</td><td>Client</td></tr>

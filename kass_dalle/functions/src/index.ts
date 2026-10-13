@@ -125,6 +125,14 @@ export { manageInvitationFn } from "./callable/invitationsCallable";
 // réservée au propriétaire du groupe, dix recherches par jour.
 export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
+// ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
+// Création par un membre approuvé, capture jointe par l'auteur, relance par
+// l'administrateur. Seules fonctions qui montent GITHUB_TICKETS_TOKEN (avec la
+// tâche horaire) ; le webhook seul monte GITHUB_WEBHOOK_SECRET. Aucun appel d'IA.
+export { submitTicket, attachTicketScreenshot, retryTicketSend } from "./callable/ticketsCallable";
+export { githubTicketWebhook } from "./tickets/webhook";
+export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";
+
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";

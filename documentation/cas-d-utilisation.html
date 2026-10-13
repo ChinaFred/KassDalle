@@ -119,8 +119,9 @@
     <div class="eyebrow">Kass'Dalle · documentation · 3 / 4</div>
     <h1>Cas d'utilisation</h1>
     <p class="standfirst">
-      Trois rôles humains — plus une salle d'attente — et deux acteurs machine. Les cas sont
-      regroupés par intention — cuisiner, constituer la bibliothèque, administrer — parce que c'est
+      Trois rôles humains — plus une salle d'attente — et trois acteurs machine. Les cas sont
+      regroupés par intention — cuisiner, constituer la bibliothèque, administrer, signaler ou
+      proposer — parce que c'est
       ainsi que l'application est utilisée, pas parce que le code est rangé ainsi.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
@@ -188,6 +189,8 @@
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Envoyer un ticket — bug, évolution, nouvelle fonctionnalité, question — et suivre <b>ses</b> tickets dans « Mes tickets » ; 5 par jour et par membre, 30 pour la famille, sans plafond pour l'admin</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les tickets des autres membres, leur auteur et leur capture, relancer un envoi en anomalie (Admin › Tickets des membres)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Inviter un proche par e-mail (Lecteur ou Éditeur, dans un de ses groupes), renvoyer ou annuler une invitation, lire la liste des invitations</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -924,6 +927,89 @@ flowchart LR
           d'une version à l'autre, sans transition ni migration. Son contrat est décrit côté
           technique, pas côté fonctionnel.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Signaler ou proposer</h2>
+    <p class="sec-note">
+      Un membre envoie un bug, une évolution, une nouvelle fonctionnalité ou une question depuis
+      le menu du compte. Le ticket devient une Issue sur le dépôt GitHub public
+      <code>ChinaFred/KassDalle</code>, où l'administrateur le traite ; le statut revient dans
+      l'application. Aucun cas de ce diagramme n'appelle de modèle d'IA.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  MEM(("Lecteur, Éditeur,&lt;br/&gt;Administrateur"))
+  ADM(("Administrateur"))
+  GH(("GitHub&lt;br/&gt;dépôt public"))
+
+  subgraph app["Kass'Dalle"]
+    direction TB
+    t1(["Signaler ou proposer&lt;br/&gt;type, titre, description, écran"])
+    t2(["Joindre une capture&lt;br/&gt;PNG ou JPEG, 5 Mo au plus"])
+    t3(["Suivre mes tickets"])
+    t4(["Lire la réponse ou le motif d'un refus"])
+    t5(["Consulter les tickets des membres&lt;br/&gt;filtres statut et type"])
+    t6(["Ouvrir l'Issue sur GitHub"])
+    t7(["Relancer l'envoi&lt;br/&gt;d'un ticket en anomalie"])
+    f1(["Contrôler les bornes et le plafond du jour&lt;br/&gt;5 par membre, 30 pour la famille"])
+    f2(["Créer l'Issue&lt;br/&gt;sans nom, sans capture, mentions neutralisées"])
+    f3(["Mettre à jour le statut&lt;br/&gt;d'après l'Issue"])
+    f4(["Reprendre chaque heure&lt;br/&gt;envois en attente et Issues ouvertes"])
+    f5(["Allumer le point sur la puce du compte&lt;br/&gt;Répondu, Refusé ou Livré"])
+  end
+
+  MEM --- t1
+  MEM --- t3
+  ADM --- t5
+  ADM --- t7
+  t1 -.->|"étend : case cochée, ou galerie, ou fichier"| t2
+  t1 -.->|"inclut"| f1
+  f1 -.->|"ticket enregistré « Envoi en cours »"| f2
+  f2 --- GH
+  GH -.->|"étiquettes, PR « Closes #N », fermeture, commentaire « Réponse : »"| f3
+  f4 -.->|"inclut"| f2
+  f4 -.->|"inclut"| f3
+  f4 --- GH
+  t7 -.->|"inclut"| f2
+  t5 -.->|"détail d'un ticket"| t6
+  t6 --- GH
+  f3 -.->|"état final"| f5
+  t3 -.->|"ouvrir le ticket éteint le point"| f5
+  t3 -.->|"étend : Question répondue ou refus motivé"| t4
+</pre>
+      </div>
+      <figcaption>
+        <b>Tout membre nommé et non révoqué envoie un ticket</b> — lecteur, éditeur,
+        administrateur. Il ne lit que les siens ; l'administrateur les lit tous. Le formulaire
+        prévient avant l'envoi : le titre et la description sont publiés sur un site public. Le
+        nom du membre, son adresse, le contenu d'une recette et la capture ne partent jamais sur
+        GitHub ; l'écran y figure sous la forme de son modèle de route, sans identifiant. La
+        capture est facultative, et la case qui la joint est décochée par défaut.
+        <b>Les plafonds se comptent par jour calendaire, à l'heure de Paris</b> : cinq tickets par
+        membre, trente pour toute la famille ; l'administrateur n'en a pas. Quand il reste deux
+        envois ou moins, le formulaire le dit.
+        <b>Le statut se décide sur GitHub</b>, jamais dans l'application. Issue créée : Reçu ;
+        étiquette <code>statut:analysé</code> : Analysé ; étiquette <code>validé</code> : Validé ;
+        pull request « Closes #N » : En cours ; Issue fermée comme terminée : Livré, ou Répondu
+        pour une Question ; fermée comme non prévue : Refusé. Un statut ne recule jamais, sauf
+        à la réouverture de l'Issue. GitHub prévient l'application à chaque changement ; une
+        vérification horaire rattrape un avis perdu.
+        <b>Seul un commentaire de l'administrateur qui commence par « Réponse : » revient dans
+        l'application</b>, comme réponse à une Question ou motif d'un refus. Les autres
+        commentaires restent sur GitHub. Le membre n'a pas de lien vers l'Issue.
+        <b>Un ticket que GitHub n'a pas reçu</b> reste « Envoi en cours » pour le membre, et
+        repart à chaque vérification horaire. Après dix essais, il est « en anomalie » dans
+        Admin › Tickets des membres, avec le nombre d'essais, la dernière erreur et « Relancer
+        l'envoi ». Un jeton GitHub refusé affiche un bandeau dans le même écran jusqu'au premier
+        envoi réussi.
+        <b>L'analyse d'un ticket</b> est faite par l'administrateur avec sa session Claude Code,
+        à sa demande, hors de l'application. Elle n'entre dans aucun poste de coût de
+        l'application.
       </figcaption>
     </figure>
   </section>

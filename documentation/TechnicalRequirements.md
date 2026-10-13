@@ -221,6 +221,8 @@ firestore/
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
+├── tickets/{ticketId}/                            ← tickets des membres, écrits par le serveur (sauf seen_by_author_at)
+├── ticket_quotas/{uid}_{AAAAMMJJ}, _global_{AAAAMMJJ} ← compteurs du plafond quotidien des tickets, serveur seul
 └── app_config/{decision}/                         ← routage, tarifs, plafonds, attestation…
 ```
 
@@ -1727,6 +1729,69 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 
 ---
 
+### 3.12 bis Collection `tickets` — bugs, idées et questions des membres
+
+Un ticket créé par un membre approuvé depuis le menu du compte (« Signaler ou proposer »),
+publié en Issue sur le dépôt **public** `ChinaFred/KassDalle`, et suivi dans « Mes tickets »
+et Admin › Tickets (§5, « Tickets »). Écrit par les Functions seules (`submitTicket`,
+`attachTicketScreenshot`, `retryTicketSend`, `githubTicketWebhook`, `ticketsSyncSchedule`),
+à une exception : l'auteur pose `seen_by_author_at`. Lu par l'auteur (approuvé, non révoqué)
+et par l'administrateur. Le document est **privé** : le nom de l'auteur, son uid et la capture
+ne partent jamais sur GitHub.
+
+| Champ | Type | Description |
+|---|---|---|
+| `type` | `String` | `bug` \| `evolution` \| `feature` \| `question` |
+| `title` | `String` | 5 à 100 caractères, une ligne (espaces et retours à la ligne ramenés à une espace) |
+| `description` | `String` | 1 à 2 000 caractères, caractères de contrôle retirés sauf retour à la ligne et tabulation |
+| `screen` | `String` | Modèle de route go_router (`/recipes/:recipeId`), `autre` ou `inconnu`. Jamais d'identifiant ni de requête : un écran reçu sans la forme d'un modèle (segment autre qu'un littéral en minuscules ou un `:param`) est remplacé par `inconnu` (`routeTemplateOrNull`) |
+| `app_version` | `String` | Version de l'application qui a envoyé (`0.23.53+400`), 40 caractères au plus |
+| `platform` | `String` | `android` \| `ios` \| `web` \| `windows` |
+| `screenshot_path` | `String?` | `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg`, écrit par `attachTicketScreenshot` ; `null` sans capture |
+| `author_uid` | `String` | Compte auteur |
+| `created_at` | `Timestamp` | Heure serveur de création |
+| `updated_at` | `Timestamp` | Heure serveur de la dernière écriture serveur |
+| `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
+| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume le point de notification du compte quand `status` ∈ {`answered`, `refused`, `delivered`} et que `seen_by_author_at` est absent ou antérieur |
+| `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
+| `github_issue_number` | `int?` | Numéro de l'Issue, `null` tant que l'envoi n'a pas abouti |
+| `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
+| `send_attempts` | `int` | Essais d'envoi en échec. À 10 (`TICKET_MAX_SEND_ATTEMPTS`) sans numéro d'Issue, le ticket est « en anomalie » et la tâche horaire ne le reprend plus. Un jeton GitHub absent ou refusé n'use pas les essais |
+| `last_send_error` | `String?` | Dernière erreur d'envoi (300 caractères au plus, jamais le jeton), `null` après un envoi réussi |
+| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire de `ChinaFred` qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
+| `send_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé pendant un envoi, pour qu'un « Relancer l'envoi » et la tâche horaire ne publient pas deux Issues. Retiré à la fin de l'envoi |
+
+**Correspondance GitHub → statut** (`statusFromIssue`, `nextTicketStatus`,
+`functions/src/tickets/rules.ts`, logique serveur seule) :
+
+| État de l'Issue | Statut |
+|---|---|
+| créée (étiquettes `source:app`, `type:<type>`, `statut:à-analyser`) | `received` |
+| étiquette `statut:analysé` | `analyzed` |
+| étiquette `validé` | `validated` |
+| PR ouverte dont le corps porte un mot-clé de fermeture (« Closes #N », « Fixes #N », « Resolves #N ») | `in_progress` |
+| fermée `completed` | `delivered`, ou `answered` pour une Question |
+| fermée `not_planned` (ou `duplicate`) | `refused` |
+
+Un statut ne recule jamais : une étiquette retirée ou une PR refermée ne le font pas
+redescendre. Une fin suit l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes.
+
+**Plafonds.** `ticket_quotas/{uid}_{AAAAMMJJ}` (`uid` `String`, `day` `String`, `count` `int`,
+`expires_at` `Timestamp`) et `ticket_quotas/_global_{AAAAMMJJ}` (mêmes champs sans `uid`),
+jour calendaire Europe/Paris (`parisDay`). Lus et incrémentés dans la transaction de
+`submitTicket` qui crée le ticket. `expires_at` vaut la création + 7 jours ; une politique TTL
+(`firestore.indexes.json` › `fieldOverrides`) supprime les compteurs. L'administrateur n'a pas
+de plafond et n'incrémente pas le compteur de la famille. Aucun accès client.
+
+**Index.** Aucun index composite : « Mes tickets » filtre sur `author_uid` et trie côté
+client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (`status ==`,
+`status in`, `github_issue_number ==`) se servent des index simples.
+
+**Migration :** aucune. Les deux collections naissent vides ; `app_config/tickets` n'a pas
+besoin d'être semé (§3.13).
+
+---
+
 ### 3.13 Collection `app_config` — les décisions
 
 Un document par décision. Aucune ne demande de déploiement pour changer.
@@ -1740,6 +1805,8 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
 | `planning_policy` | Présélection du planning : `plats_per_slot` (5, de 3 à 10), `starters_per_slot` et `desserts_per_slot` (3, de 1 à 10), `ranked_depth` (15, de `plats_per_slot` à 30 — profondeur de la liste gardée pour « Autre suggestion »), `concepts_per_generation` (2, de 0 à 7), `cost_cap_eur_per_generation` (0,50, de 0,05 à 5). Lu par `getPlanningPolicy` (cache 60 s), borné par `readPlanningPolicy` ; absent ou illisible : valeurs par défaut du code — ce sont des réglages, pas des prix. Aucun écran ne l'édite encore : il s'écrit depuis la console par un admin |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
+| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Aucun semis : l'absence est un état lu et documenté |
+| `tickets_status` | État du jeton GitHub des tickets : `token_invalid_since` (`Timestamp?`), posé au premier refus du jeton (401, 403 hors limite de débit, 404 sur le dépôt) ou quand le secret est vide, effacé au premier appel GitHub réussi. Lu par l'administrateur seul (bandeau d'Admin › Tickets), écrit par le serveur seul — les règles refusent l'écriture client, administrateur compris |
 
 `ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
 jour où la politique en vigueur a été recopiée dans une première configuration.
@@ -1959,7 +2026,8 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
 
 ```
 gs://{bucket}/
-├── quarantine/{uid}/…      ← SEULE porte d'entrée : le client n'écrit que là
+├── quarantine/{uid}/…      ← SEULE porte d'entrée des images publiées
+├── tickets/{uid}/{ticketId}/screenshot.(png|jpg) ← capture privée d'un ticket, écrite par l'auteur, lue par lui et l'admin
 ├── covers/{bookId}/…       ← écriture serveur uniquement
 ├── scans/{uid}/…           ← écriture serveur uniquement
 ├── illustrations/{uid}/…   ← écriture serveur uniquement
@@ -1976,6 +2044,12 @@ L'import par lien écrit deux fichiers avec l'Admin SDK : le texte de la page so
 Le fichier atterrit en quarantaine, le serveur l'inspecte (extension, type MIME, signature
 binaire, taille), la modération le juge, et lui seul le promeut dans un dossier publié. Les
 URL de téléchargement des images promues sont stockées dans `recipes.image_urls`.
+
+La capture d'un ticket est la seule autre écriture client : PNG ou JPEG de 5 Mo au plus,
+déposée par l'auteur sous son uid après `submitTicket`, puis rattachée au ticket par
+`attachTicketScreenshot`, qui vérifie l'auteur, le chemin et l'objet. Elle n'est jamais
+publiée — ni dans l'application, ni sur GitHub — et ne passe donc pas par la modération.
+Aucune purge en V1.
 
 Les images refusées sont **conservées** sous `rejected/` : sans l'image, personne ne peut
 dire si le refus était fondé, et une modération qu'on ne peut pas évaluer ne se corrige
@@ -2391,7 +2465,7 @@ service cloud.firestore {
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*` et `tickets_status` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -2405,6 +2479,8 @@ service cloud.firestore {
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
+| `tickets` | admin, ou l'auteur (`author_uid`) approuvé et non révoqué — un compte en attente ou révoqué ne relit pas ses tickets ; un ticket absent se lit comme absent par un compte approuvé (`resource == null`), pour que le détail affiche « Ce ticket n'existe plus » au lieu d'un refus | **serveur seul**, sauf une mise à jour de l'auteur approuvé et non révoqué qui ne touche que `seen_by_author_at` (`affectedKeys().hasOnly`) et le pose à `request.time`. Création et suppression refusées à tous, administrateur compris : un ticket créé par le client échapperait aux plafonds, et un statut écrit par le client ne dirait plus l'état de l'Issue |
+| `ticket_quotas` | **personne** | **serveur seul** (`allow read, write: if false`) — `submitTicket`. Un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
 
@@ -2681,12 +2757,25 @@ service firebase.storage {
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
+
+    // Capture d'un ticket — privée, jamais publiée. Pas de lecture Firestore :
+    // `attachTicketScreenshot` vérifie ensuite que le ticket est à l'appelant.
+    match /tickets/{uid}/{ticketId}/{fileName} {
+      allow read: if (isActive() && isOwner(uid)) || isAdmin();
+      allow create, update: if isOwner(uid) && isApprovedToken()
+        && fileName.matches('screenshot[.](png|jpg)')
+        && request.resource.size <= 5 * 1024 * 1024
+        && baseContentType() in ['image/png', 'image/jpeg'];
+    }
   }
 }
 ```
 
 > Les six dossiers publiés (`covers/`, `scans/`, `rejected/`, `illustrations/`, `recipes/`,
 > `users/`) sont fermés en écriture : seul le serveur y dépose, par l'Admin SDK.
+> `tickets/` est le seul dossier écrit par le client hors de la quarantaine : par le compte
+> lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
+> suppression est refusée à tous (aucune purge en V1).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
@@ -2825,6 +2914,23 @@ groupe — lisent désormais le profil public `user_profiles/{uid}` (§3.1 bis),
 membres d'un groupe (`GroupRepository.searchUsers`) interroge `user_profiles`, par nom. La
 recherche par adresse exacte passe par la callable `findMemberByEmailFn` (§5, « Recherche d'un
 membre par adresse ») : le client ne lit toujours aucune adresse.
+
+Les tickets ajoutent 36 tests. Firestore (28) : `tickets` — l'auteur lit et liste les siens, un
+ticket absent se lit comme absent par un compte approuvé et non par un compte en attente, un
+autre membre et un éditeur ne les lisent pas, un membre ne liste pas toute la collection,
+l'administrateur lit tout ; un compte révoqué (jeton à jour ou périmé) et un compte en attente ne
+relisent pas leur ticket ; l'auteur pose `seen_by_author_at` à l'heure du serveur, pas à une
+date de son choix, et ne modifie aucun autre champ ; un autre membre, un compte révoqué ou en
+attente ne le posent pas ; personne ne crée ni ne supprime un ticket, administrateur compris, et
+l'administrateur ne modifie pas le ticket d'un membre ; `ticket_quotas` ne se lit ni ne s'écrit
+par aucun rôle ; `app_config/tickets` se lit par un compte approuvé, pas par un compte en
+attente ou révoqué, et ne s'écrit pas par un membre ; `app_config/tickets_status` se lit par
+l'administrateur seul et ne s'écrit par aucun client. Storage (8) : `tickets/` — l'auteur dépose
+une capture PNG ou JPEG sous son uid, nommée `screenshot`, de 5 Mo au plus ; personne ne dépose
+chez un autre, administrateur compris ; un compte en attente, révoqué ou anonyme ne dépose
+rien ; l'auteur et l'administrateur lisent la capture, un autre membre non ; un compte révoqué
+ne relit pas la sienne ; l'auteur ne la supprime pas. Compte relevé le 2026-10-13 : 558 tests
+(Firestore et Storage), aucun `todo`.
 
 ---
 
@@ -3124,6 +3230,113 @@ coupe pas celui de l'autre. Une réponse arrivée après une modification de la 
 disparaît, la validation est ignorée, et le message s'affiche en ligne, en
 `colorScheme.error`, à la place de l'aide ; un échec réseau s'affiche de même, pour la saisie
 qui l'a provoqué.
+
+
+### Tickets — bugs, idées et questions envoyés sur GitHub
+
+Un membre approuvé (`reader`, `editor`, `admin`) envoie un ticket depuis le menu du compte. Le
+serveur l'enregistre dans `tickets` (§3.12 bis), le publie en Issue sur le dépôt **public**
+`ChinaFred/KassDalle`, et en suit le statut par un webhook GitHub, doublé d'une relecture
+horaire. Aucun appel de modèle : pas de poste d'IA, rien au reporting de coûts. L'analyse des
+tickets est faite par une session Claude Code, sur demande de l'administrateur.
+
+Code serveur : `functions/src/tickets/` — `rules.ts` (règles pures, testées par
+`tests/tickets.test.ts`), `github.ts` (client REST par `fetch`, aucun SDK), `service.ts`
+(envoi et application des retours), `webhook.ts` ; `callable/ticketsCallable.ts` ;
+`scheduled/ticketsSyncSchedule.ts`.
+
+| Fonction | Type | Garde | Contrat |
+|---|---|---|---|
+| `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field`), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
+| `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus |
+| `retryTicketSend` | Callable | `requireAdmin` | `{ ticketId }` → `{ status }`. Remet `send_attempts` à zéro et tente l'envoi une fois ; sans effet sur un ticket déjà publié |
+| `githubTicketWebhook` | HTTPS (`onRequest`, `invoker: "public"`) | signature `X-Hub-Signature-256` | voir ci-dessous |
+| `ticketsSyncSchedule` | Cloud Scheduler, toutes les heures | — | reprise des envois, resynchronisation |
+
+**Envoi.** `submitTicket` valide les entrées (`readTicketInput` : titre 5 à 100 caractères,
+description 1 à 2 000, écran réduit à un modèle de route, version, plateforme), après une garde
+de taille brute (`requireBoundedText`, `_inputBounds.ts`). Les plafonds (`app_config/tickets`,
+5 par membre et 30 pour la famille par jour Europe/Paris, l'admin exempté) sont lus et
+incrémentés dans la transaction qui crée le ticket en `sending`. Puis `sendTicket` publie
+l'Issue : titre du ticket, corps sur un gabarit fixe (`buildIssueBody` : type, écran, version,
+plateforme, référence opaque = identifiant du document, description), étiquettes `source:app`,
+`type:<type>`, `statut:à-analyser`. Ne partent **jamais** : nom, adresse, uid, capture, contenu
+de recette. Les mentions `@nom` du titre et de la description reçoivent une espace sans chasse
+(`neutralizeMentions`) : GitHub ne notifie personne. Le numéro et l'adresse de l'Issue sont
+écrits avec `status: received` avant que l'envoi soit tenu pour fait. En échec :
+`send_attempts` + 1, `last_send_error`, `logError`, et la callable réussit quand même avec
+`status: "sending"`.
+
+**Pas de double publication.** Un bail de deux minutes (`send_lease_until`, posé en
+transaction) empêche deux envois simultanés du même ticket. Une reprise (`retryTicketSend`,
+tâche horaire) cherche d'abord l'Issue par la référence du ticket (`GET /search/issues`) : une
+création réussie chez GitHub dont le numéro n'a pas été écrit est rattachée, pas republiée.
+
+**Jeton refusé.** Un secret `GITHUB_TICKETS_TOKEN` vide, une réponse 401, 403 (hors limite de
+débit) ou 404 sur le dépôt posent `app_config/tickets_status.token_invalid_since` ; le premier
+appel réussi l'efface. Ces échecs n'usent pas `send_attempts` : les tickets repartent quand le
+jeton est remplacé, comme l'annonce le bandeau d'Admin › Tickets. La tâche horaire s'arrête au
+premier jeton refusé.
+
+**Webhook.** `githubTicketWebhook` n'accepte que `POST`, et calcule le HMAC SHA-256 du corps
+**brut** (`req.rawBody`) sous `GITHUB_WEBHOOK_SECRET`, comparé à temps constant
+(`verifyGithubSignature`, `timingSafeEqual`). Secret vide : 503 ; signature absente ou fausse :
+401 ; corps illisible : 400. Événements traités (`updatesFromEvent`) :
+
+- `issues` (`opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`) : statut dérivé
+  des étiquettes et de l'état (§3.12 bis) ;
+- `issue_comment` (`created`, `edited`, hors commentaires de PR) : seul un commentaire de
+  `ChinaFred` (`GITHUB_TICKETS_MAINTAINER`) qui commence par « Réponse : » devient
+  `reply_text`, préfixe retiré ;
+- `pull_request` (`opened`, `reopened`, `edited`, `ready_for_review`, PR ouverte) : chaque
+  Issue citée par un mot-clé de fermeture passe à `in_progress`, jamais depuis une fin ;
+- `ping` : 200.
+
+Tout autre événement, un autre dépôt, ou une Issue sans ticket (elle ne vient pas de
+l'application) : 200, ignoré. Aucun texte de GitHub n'est écrit hormis `reply_text` filtré.
+Une panne Firestore rend 500 : GitHub affiche la livraison en échec, et la tâche horaire
+rattrape l'état. Un commentaire supprimé ne retire pas `reply_text`.
+
+**Resynchronisation.** Chaque heure, `ticketsSyncSchedule` relit l'Issue de chaque ticket
+`received`, `analyzed`, `validated` ou `in_progress` (200 au plus) : état et étiquettes
+(`GET /issues/{n}`), PR ouvertes qui la ferment (chronologie, événements `cross-referenced`,
+« Closes #N » dans leur corps), dernière réponse de `ChinaFred` (commentaires). Les tickets
+clos ne sont pas relus : une réouverture dont le webhook est perdu n'est pas rattrapée.
+
+**Secrets.** `GITHUB_TICKETS_TOKEN` : jeton « fine-grained » limité au dépôt
+`ChinaFred/KassDalle`, permissions Issues lecture-écriture, Metadata lecture, Pull requests
+lecture ; attaché à `submitTicket`, `retryTicketSend` et `ticketsSyncSchedule`.
+`GITHUB_WEBHOOK_SECRET` : secret partagé du webhook, attaché à `githubTicketWebhook` seule. Les
+deux sont lus par `process.env`, comme `ANTHROPIC_API_KEY` : une valeur vide n'arrête aucune
+fonction, elle laisse les tickets en « Envoi en cours » (jeton) ou refuse les livraisons du
+webhook (secret). Comme `GMAIL_SENDER`, un secret déclaré mais **absent** de Secret Manager fait
+échouer tout le déploiement des Functions : les deux doivent exister avant de fusionner (une
+valeur vide suffit pour débloquer le déploiement) :
+
+1. `firebase functions:secrets:set GITHUB_TICKETS_TOKEN --project kassdale-6d948`, coller le
+   jeton (GitHub › Settings › Developer settings › Fine-grained tokens, dépôt
+   `ChinaFred/KassDalle` seul) ;
+2. `firebase functions:secrets:set GITHUB_WEBHOOK_SECRET --project kassdale-6d948`, coller une
+   chaîne aléatoire longue (par exemple `openssl rand -hex 32`).
+
+Remplacer un jeton demande un `functions:secrets:set` puis un redéploiement des trois fonctions
+qui le montent (une version de secret est figée au déploiement).
+
+**Mise en place du webhook GitHub** (dépôt `ChinaFred/KassDalle` › Settings › Webhooks › Add
+webhook), après le premier déploiement :
+
+- *Payload URL* : `https://europe-west1-kassdale-6d948.cloudfunctions.net/githubTicketWebhook`
+  (l'adresse exacte est affichée par `firebase deploy` et dans la console Cloud Run) ;
+- *Content type* : `application/json` — le format `x-www-form-urlencoded` n'est pas lu ;
+- *Secret* : la valeur de `GITHUB_WEBHOOK_SECRET` ;
+- *SSL verification* : activée ;
+- *Which events* : « Let me select individual events » › **Issues**, **Issue comments**,
+  **Pull requests** ;
+- *Active* : coché. GitHub envoie un `ping` à l'enregistrement : il doit revenir en 200.
+
+Les étiquettes `source:app`, `type:bug`, `type:evolution`, `type:feature`, `type:question`,
+`statut:à-analyser`, `statut:analysé` et `validé` sont créées par GitHub à la première Issue qui
+les porte, si elles n'existent pas.
 
 ---
 
@@ -4508,7 +4721,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
+Quatre tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -4517,6 +4730,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
+| `ticketsSyncSchedule` | `every 60 minutes` | renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu) ; s'arrête au premier jeton refusé (§5, « Tickets ») |
 
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
@@ -5147,7 +5361,7 @@ GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`.
 - `Service Account User`, sur le compte d'exécution des fonctions ;
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
-  `GMAIL_SENDER` et `GMAIL_APP_PASSWORD`, et la CLI accorde au compte d'exécution l'accès à ces
+  `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`, et la CLI accorde au compte d'exécution l'accès à ces
   secrets. Le workflow ne transporte aucune valeur de secret : il n'a rien à connaître de plus
   pour un secret ajouté, mais le secret doit exister dans Secret Manager avant le déploiement
   qui le déclare (§5, « Invitations par e-mail ») ;
@@ -5576,7 +5790,7 @@ functions/src/
 
 ---
 
-### 13.1 Carte de navigation — les 45 routes
+### 13.1 Carte de navigation — les 50 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -5625,6 +5839,9 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/groups` | `GroupsScreen` | `reader` |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
+| `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |
+| `/tickets/new` | `TicketFormScreen` — « Signaler ou proposer » | `reader` — paramètre `?ecran=` : le modèle de route de l'écran d'où vient le membre, jamais l'adresse réelle ; envoi par `submitTicket` (§5, « Tickets ») |
+| `/tickets/:ticketId` | `MyTicketsScreen`, ticket sélectionné | `reader` — l'auteur seul ; ouvrir le détail pose `seen_by_author_at` |
 | `/logs` | `LogsScreen` | *voir l'avertissement ci-dessous* |
 | `/error-reports` | `ErrorReportsScreen` | *idem* |
 | `/dead-letters` | `DeadLettersScreen` | *idem* |
@@ -5649,6 +5866,8 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
+| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, et le bandeau « Jeton GitHub invalide » (`app_config/tickets_status`) |
+| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
 
