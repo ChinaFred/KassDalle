@@ -99,14 +99,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       case BackfillKeys.nutrition:
         return 'Reprend le calcul des recettes dont la nutrition manque, a '
             'échoué ou reste incomplète, quarante au plus.\n\n'
-            'Le passage programmé attend vingt heures entre deux tentatives '
-            'et renonce après cinq essais. Ce passage-ci lève les deux : '
-            'utile juste après une correction de référentiel.\n\n'
+            'Le passage programmé attend vingt heures entre deux tentatives, '
+            'renonce après cinq essais et ne reprend pas une recette dont il '
+            'ne manque que des lignes impossibles à peser. Ce passage-ci lève '
+            'ces trois limites : utile juste après une correction de '
+            'référentiel.\n\n'
             'Appels d\'IA facturés. Relancez tant que le résultat indique '
             '« incomplet ».';
       case BackfillKeys.enrichReferentials:
         return 'Estime par l\'IA le poids des unités sans conversion et les '
             'valeurs nutritionnelles des ingrédients qui en manquent.\n\n'
+            '$_exclusionText\n\n'
             'Appels d\'IA facturés, huit minutes de travail au plus. Reprend '
             'où il s\'était arrêté.';
       case BackfillKeys.allergens:
@@ -114,6 +117,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'pas, quarante par appel et quatre cents au plus. Une fois tout '
             'le référentiel parcouru, recalcule ceux des recettes, sans '
             'appel d\'IA.\n\n'
+            '$_exclusionText\n\n'
             'Appels d\'IA facturés. Relancez tant que le résultat indique '
             '« incomplet ».';
       case BackfillKeys.recipeRoles:
@@ -122,6 +126,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         return 'Demande à l\'IA le rôle dans un repas de chaque recette non '
             'classée, et ce qu\'elle apporte déjà. Un appel par recette, '
             'quarante au plus.\n\n'
+            '$_exclusionText\n\n'
             'Appels d\'IA facturés.$reste';
       case BackfillKeys.shoppingProducts:
         return 'Recalcule la liste de courses de toutes les recettes avec la '
@@ -148,6 +153,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     }
   }
 
+  /// Backfills dont la confirmation propose « Réessayer aussi les éléments
+  /// en échec » : ceux qui tiennent une mémoire des échecs.
+  static const _retryableKeys = {
+    BackfillKeys.enrichReferentials,
+    BackfillKeys.allergens,
+    BackfillKeys.recipeRoles,
+  };
+
+  static const _exclusionText =
+      'Un élément qui échoue trois fois n\'est plus redemandé à l\'IA. '
+      'Cochez la case ci-dessous pour le réessayer quand même.';
+
   RecipeRolesBackfillReport? _rolesReport() {
     final raw = ref
         .read(backfillRunsProvider)
@@ -163,7 +180,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   );
 
   /// Lance le passage de [def] et met en forme son compte rendu.
-  Future<_PassOutcome> _runPass(BackfillDefinition def) async {
+  /// [retryExcluded] : la case « Réessayer aussi les éléments en échec ».
+  Future<_PassOutcome> _runPass(
+    BackfillDefinition def, {
+    bool retryExcluded = false,
+  }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
         final r = await _repo.backfillNutrition();
@@ -171,20 +192,26 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           r,
           'Recettes : examinées=${r['examinees']}, reprises=${r['reprises']}, '
           'complétées=${r['completees']}, encore incomplètes=${r['echouees']}, '
-          'laissées=${r['laissees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          'laissées faute de temps=${r['laissees']}, '
+          'impossibles à peser=${r['impesables']}, '
+          'abandonnées=${r['abandonnees']}'
+          '${(r['completed'] ?? 0) == 1 && (r['echouees'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
           '${_flag(r, 'stoppedByBudget', ' (plafond de dépense atteint)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       case BackfillKeys.enrichReferentials:
-        final r = await _repo.backfillEnrichReferentials();
+        final r = await _repo.backfillEnrichReferentials(
+          retryExcluded: retryExcluded,
+        );
         return _fromCounts(
           r,
           'Unités : scannées=${r['scannedUnits']}, enrichies=${r['enrichedUnits']}, '
-          'restantes=${r['remainingUnitsWithoutWeight']} | '
+          'restantes=${r['remainingUnitsWithoutWeight']}, '
+          'exclues après 3 échecs=${r['excludedUnits']} | '
           'Ingrédients : scannés=${r['scannedIngredients']}, '
-          'enrichis=${r['enrichedIngredients']}, échecs=${r['failedIngredients']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          'enrichis=${r['enrichedIngredients']}, échecs=${r['failedIngredients']}, '
+          'exclus après 3 échecs=${r['excludedIngredients']}'
+          '${(r['completed'] ?? 0) == 1 && (r['unresolvedFailures'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       case BackfillKeys.refreshSodium:
@@ -197,25 +224,26 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       case BackfillKeys.allergens:
-        final r = await _repo.backfillAllergens();
+        final r = await _repo.backfillAllergens(retryExcluded: retryExcluded);
         return _fromCounts(
           r,
           'Ingrédients : examinés=${r['ingredientsExamines']}, '
           'ignorés (déjà examinés)=${r['ingredientsIgnores']}, '
-          'en erreur=${r['ingredientsEnErreur']}'
+          'en erreur=${r['ingredientsEnErreur']}, '
+          'exclus après 3 échecs=${r['ingredientsExclus'] ?? 0}'
           '${(r['referentielParcouru'] ?? 0) == 1 ? '' : ' — référentiel pas encore parcouru en entier, recettes non recalculées'}\n'
           'Recettes : calculées=${r['recettesCalculees']}, '
           'identiques=${r['recettesIdentiques']}, '
           'encore incomplètes=${r['recettesIncompletes']}, '
           'hors recette=${r['recettesHorsRecette']}, '
           'échecs=${r['recettesEchouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${(r['completed'] ?? 0) == 1 && (r['echecsNonExclus'] ?? 0) == 0 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif)')}',
         );
       case BackfillKeys.recipeRoles:
-        final r = await _repo.backfillRecipeRoles();
+        final r = await _repo.backfillRecipeRoles(retryExcluded: retryExcluded);
         return _PassOutcome(
           message: '${r.restantesSentence}\nCe passage : ${r.passSummary}',
           failures: r.failures,
@@ -274,30 +302,81 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     return confirmed == true && mounted;
   }
 
+  /// Confirmation d'un backfill qui tient une mémoire des échecs : le texte
+  /// habituel, et la case « Réessayer aussi les éléments en échec », décochée.
+  Future<({bool ok, bool retryExcluded})> _confirmWithRetry(
+    BackfillDefinition def,
+  ) async {
+    var retry = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(def.title),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_confirmText(def)),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                value: retry,
+                onChanged: (v) => setDialogState(() => retry = v ?? false),
+                title: const Text('Réessayer aussi les éléments en échec'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Lancer'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return (ok: confirmed == true && mounted, retryExcluded: retry);
+  }
+
   Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
     if (_launching.contains(def.key)) return;
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
-    final ok = done
-        ? await _confirm(
-            title: 'Relancer « ${def.title} » ?',
-            content:
-                'Ce backfill est terminé'
-                '${doneAt == null ? '' : ' depuis le ${formatParisDate(doneAt)}'}. '
-                'Un nouveau passage ne traitera que ce qui aurait été ajouté '
-                'depuis.',
-            confirmLabel: 'Relancer',
-          )
-        : await _confirm(
-            title: def.title,
-            content: _confirmText(def),
-            confirmLabel: 'Lancer',
-          );
+    var retryExcluded = false;
+    final bool ok;
+    if (done) {
+      ok = await _confirm(
+        title: 'Relancer « ${def.title} » ?',
+        content:
+            'Ce backfill est terminé'
+            '${doneAt == null ? '' : ' depuis le ${formatParisDate(doneAt)}'}. '
+            'Un nouveau passage ne traitera que ce qui aurait été ajouté '
+            'depuis.',
+        confirmLabel: 'Relancer',
+      );
+    } else if (_retryableKeys.contains(def.key)) {
+      final answer = await _confirmWithRetry(def);
+      ok = answer.ok;
+      retryExcluded = answer.retryExcluded;
+    } else {
+      ok = await _confirm(
+        title: def.title,
+        content: _confirmText(def),
+        confirmLabel: 'Lancer',
+      );
+    }
     if (!ok) return;
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(def);
+      final outcome = await _runPass(def, retryExcluded: retryExcluded);
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {

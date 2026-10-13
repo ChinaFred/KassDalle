@@ -872,7 +872,11 @@ flowchart LR
         plafond de dépense de l'administrateur qui l'a programmé ; « Reprendre la nutrition »
         passe tous les jours à 5 h sans réglage. Un ponctuel passé sans reste est marqué terminé
         et descend en bas ; l'administrateur peut aussi le marquer, ou le remettre à lancer, par
-        le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble.
+        le menu ⋮. Deux passages du même backfill ne tournent jamais ensemble. Un passage qui a
+        tout parcouru mais laisse des éléments en échec est « incomplet » sans repartir l'heure
+        suivante : ils reviennent au prochain passage. « Enrichir unités et ingrédients »,
+        « Allergènes » et « Rôle des recettes » n'envoient plus à l'IA un élément qui a échoué
+        trois fois ; la confirmation propose « Réessayer aussi les éléments en échec ».
         <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
         chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
         manquent. Un compte approuvé depuis la v0.23.50 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le

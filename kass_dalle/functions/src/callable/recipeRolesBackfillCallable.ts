@@ -31,6 +31,14 @@ import {
 import { mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
+import { resolvePageType } from "../triggers/recipeWritten";
+import {
+  EXCLUDED_AFTER_FAILURES_REASON,
+  failureReason,
+  isExcludedAfterFailures,
+  nextFailure,
+  readFailureCount,
+} from "../backfills/failureMemory";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
@@ -67,6 +75,12 @@ interface BackfillRolesRequest {
   resetCheckpoint?: boolean;
   /** Reclasser aussi les recettes qui portent déjà un rôle. */
   force?: boolean;
+  /**
+   * Redemande aussi les recettes exclues après trois échecs (« Réessayer
+   * aussi les éléments en échec » dans la confirmation). `force` les
+   * redemande aussi.
+   */
+  retryExcluded?: boolean;
   /** Version de l'application qui lance, pour l'état du backfill. */
   appVersion?: string;
 }
@@ -79,6 +93,16 @@ export interface BackfillRolesResponse {
   /** Le modèle n'a pas su : la recette reste sans rôle, reprise au prochain appel. */
   sansRole: number;
   echouees: number;
+  /**
+   * Recettes sautées : trois échecs ou plus (`meal_role_failure_count`), sans
+   * « Réessayer aussi les éléments en échec ».
+   */
+  exclues: number;
+  /**
+   * Recettes sans rôle ou en échec pendant ce passage, pas encore exclues :
+   * le passage est « incomplet », sans reprise à l'heure suivante.
+   */
+  echecsNonExclus: number;
   /**
    * Recettes encore sans rôle après ce passage, sur toute la collection —
    * le chiffre que l'on cherche quand on relance pour la troisième fois.
@@ -164,6 +188,7 @@ export const backfillRecipeRolesFn = onCall<BackfillRolesRequest>(
       deadlineMs: Date.now() + maxMinutes * 60_000,
       maxRecipes,
       force: parseBoolean(req.data?.force, false),
+      retryExcluded: parseBoolean(req.data?.retryExcluded, false),
       resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
       resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
     };
@@ -184,6 +209,8 @@ export interface RecipeRolesPassOptions {
   deadlineMs: number;
   maxRecipes: number;
   force: boolean;
+  /** Redemander aussi les recettes exclues après trois échecs. Faux en programmé. */
+  retryExcluded?: boolean;
   resumeFromCheckpoint: boolean;
   resetCheckpoint: boolean;
 }
@@ -195,7 +222,39 @@ export function summarizeRecipeRoles(r: BackfillRolesResponse): PassSummary {
     remaining: r.restantes,
     toReview: r.aRevoir.total,
     spendCapHit: false,
+    unresolved: r.echecsNonExclus,
   };
+}
+
+/**
+ * Compte un échec de plus sur la recette (`meal_role_failure_count`,
+ * `meal_role_attempt_at`) et rend ce qu'il en résulte. `update` et non
+ * `set` : une recette supprimée entre-temps ne renaît pas sous la forme d'un
+ * document à deux champs. Best-effort : une écriture refusée est journalisée,
+ * et la recette sera simplement redemandée au passage suivant.
+ */
+async function recordRoleFailure(
+  doc: FirebaseFirestore.QueryDocumentSnapshot,
+  storedFailures: number,
+  ctx: AuthContext,
+): Promise<ReturnType<typeof nextFailure>> {
+  const outcome = nextFailure(storedFailures);
+  try {
+    await doc.ref.update({
+      meal_role_failure_count: outcome.count,
+      meal_role_attempt_at: FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    await logError("Rôle des recettes — mémoire des échecs non écrite", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      feature: FEATURE,
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { recipeId: doc.id, failures: outcome.count },
+    });
+  }
+  return outcome;
 }
 
 /**
@@ -209,6 +268,7 @@ export async function runRecipeRolesPass(
 ): Promise<BackfillRolesResponse> {
   const db = getFirestore();
   const { maxRecipes, force, resumeFromCheckpoint, resetCheckpoint } = options;
+  const retryExcluded = force || options.retryExcluded === true;
   const deadline = options.deadlineMs - DEADLINE_MARGIN_MS;
 
   let cursor = await getBackfillCursor({
@@ -225,6 +285,8 @@ export async function runRecipeRolesPass(
     horsRecette: 0,
     sansRole: 0,
     echouees: 0,
+    exclues: 0,
+    echecsNonExclus: 0,
   };
   let collectionParcourue = false;
   let stoppedByDeadline = false;
@@ -258,9 +320,10 @@ export async function runRecipeRolesPass(
 
       counters.examinees += 1;
       const data = doc.data() as Record<string, unknown>;
-      // Une page sans `page_type` est une recette : le client n'écrit le
-      // champ que pour les autres types.
-      const pageType = typeof data.page_type === "string" ? data.page_type : "recipe";
+      // Même lecture que le déclencheur : le champ, sinon `>> page_type:` dans
+      // le CookLang, sinon une recette. Une page typée dans son seul texte
+      // n'est pas une recette à classer.
+      const pageType = resolvePageType(data);
       const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
         string,
         unknown
@@ -276,6 +339,19 @@ export async function runRecipeRolesPass(
         cursor = doc.id;
         continue;
       }
+      // Trois échecs : plus soumise au modèle, sauf demande explicite.
+      if (isExcludedAfterFailures(data.meal_role_failure_count, retryExcluded)) {
+        counters.exclues += 1;
+        review.add({
+          kind: "recipe",
+          id: doc.id,
+          label: recipeReviewLabel(doc.id, data),
+          reason: EXCLUDED_AFTER_FAILURES_REASON,
+        });
+        cursor = doc.id;
+        continue;
+      }
+      const storedFailures = readFailureCount(data.meal_role_failure_count);
 
       const titre = asString(data.titre);
       const cooklang = asString(data.draft_cooklang) || asString(data.raw_cooklang);
@@ -287,14 +363,16 @@ export async function runRecipeRolesPass(
         );
         if (fields.mealRole == null) {
           // Pas une erreur : le modèle n'a pas su. La recette reste sans
-          // rôle et sera réexaminée ; le dire, sinon « sansRole » ne se
-          // relie à aucune recette.
+          // rôle et sera réexaminée, jusqu'à trois échecs ; le dire, sinon
+          // « sansRole » ne se relie à aucune recette.
           counters.sansRole += 1;
+          const outcome = await recordRoleFailure(doc, storedFailures, ctx);
+          if (!outcome.excluded) counters.echecsNonExclus += 1;
           review.add({
             kind: "recipe",
             id: doc.id,
             label: recipeReviewLabel(doc.id, data),
-            reason: "L'IA n'a pas su classer la recette",
+            reason: failureReason("L'IA n'a pas su classer la recette", outcome),
           });
           await logInfo({
             message: "Rôle des recettes — le modèle n'a pas su classer une recette",
@@ -317,6 +395,8 @@ export async function runRecipeRolesPass(
               ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
               : {}),
             "tags.roles_tagged_at": FieldValue.serverTimestamp(),
+            // Un succès remet le compteur d'échecs à zéro.
+            ...(storedFailures > 0 ? { meal_role_failure_count: 0 } : {}),
           });
           counters.classees += 1;
         }
@@ -324,11 +404,13 @@ export async function runRecipeRolesPass(
       } catch (e) {
         counters.echouees += 1;
         consecutiveFailures += 1;
+        const outcome = await recordRoleFailure(doc, storedFailures, ctx);
+        if (!outcome.excluded) counters.echecsNonExclus += 1;
         review.add({
           kind: "recipe",
           id: doc.id,
           label: recipeReviewLabel(doc.id, data),
-          reason: `Échec : ${shortErrorMessage(e)}`,
+          reason: failureReason(`Échec : ${shortErrorMessage(e)}`, outcome),
         });
         await logError("Rôle des recettes — échec sur une recette", {
           correlationId: ctx.correlationId,
@@ -387,7 +469,7 @@ export async function runRecipeRolesPass(
     userId: ctx.userId,
     moduleType: "DESIGN",
     feature: FEATURE,
-    extra: { ...withoutReviewList(response), maxRecipes, force },
+    extra: { ...withoutReviewList(response), maxRecipes, force, retryExcluded },
   });
 
   return response;

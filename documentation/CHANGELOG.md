@@ -20,6 +20,61 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.53 — fonctionnel
+
+Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurrents.
+
+« Reprendre la nutrition » n'affiche plus « Terminé » quand des recettes reprises restent
+incomplètes. Le résumé donne les recettes encore incomplètes, et non plus « 0 restante ». Il
+ajoute, s'il y en a, les recettes laissées faute de temps, impossibles à peser, et
+abandonnées après cinq reprises.
+
+La liste « à revoir » de la nutrition donne la cause. Elle sépare les lignes impossibles à
+peser (quantité illisible, pas de poids à la pièce, unité sans poids) des ingrédients sans
+valeurs pour 100 g. Un calcul en échec cite sa raison. Les recettes abandonnées et celles
+qu'aucun appel ne peut compléter y figurent aussi.
+
+Le passage programmé ne reprend plus une recette dont il ne manque que des lignes
+impossibles à peser. Après la correction d'un poids dans un référentiel, le passage manuel
+la reprend.
+
+« Enrichir unités et ingrédients », « Allergènes » et « Rôle des recettes » ne redemandent
+plus à l'IA un élément qui a échoué trois fois. Il apparaît « Exclu après 3 échecs » dans la
+liste « à revoir ». La confirmation propose « Réessayer aussi les éléments en échec ».
+
+Un passage qui a tout parcouru mais laisse des échecs s'affiche « Incomplet », avec « N
+éléments en échec, nouvel essai au prochain passage ». Il ne repart pas l'heure suivante.
+
+« Recalculer les produits d'achat », « Allergènes » et « Rôle des recettes » lisent le type
+de page dans le CookLang quand le champ manque. Une page non-recette n'est plus listée à
+revoir.
+
+### v0.23.53 — technique
+
+`PassSummary` gagne `unresolved` : les éléments traités et restés en échec, non exclus.
+`passStatus` ne rend `termine` que si `unresolved` vaut 0. `repriseDueAfter` ne change pas :
+seul un parcours inachevé déclenche la reprise horaire. Le runner écrit `echecs_restants`
+dans `app_config/backfill_run_<clé>`.
+
+L'instantané `nutrition` gagne `missing_weight` (`{name, cause}`) et `missing_profile`.
+`missing_ingredients` reste l'union des deux. `catchUpDecision` remplace
+`needsNutritionCatchUp`, supprimée, et rend `reprendre`, `ignorer`, `abandonnee` ou
+`impesable`.
+
+`ENRICHMENT_RETRY_AFTER_MS` passe de 24 h à 20 h, la valeur de `MIN_SNAPSHOT_AGE_MS`. Avec
+24 h, le passage quotidien de 5 h trouvait la marque d'essai de la veille encore fraîche un
+jour sur deux. La reprise avait lieu sans appel et consommait une tentative. Ce délai vaut
+aussi à l'écriture d'une recette : une question sans réponse y est reposée après 20 h.
+
+Mémoire des échecs (`backfills/failureMemory.ts`) : `ai_weight_failure_count`,
+`enrichment_failure_count`, `allergens_failure_count` et `allergens_attempt_at`,
+`meal_role_failure_count` et `meal_role_attempt_at`. Exclusion à 3, levée par `retryExcluded`.
+Les déclencheurs ne lisent pas ces compteurs. Aucune règle Firestore ne change, aucun poste
+d'IA nouveau. Les champs se créent au premier échec : aucun backfill à lancer.
+
+`shoppingBackfillCallable`, `recipeRolesBackfillCallable` et `allergensBackfillCallable`
+lisent le type de page par `resolvePageType`.
+
 ### v0.23.52 — technique
 
 Trois backfills ponctuels sortent du code. Ils ont été menés au bout et marqués terminés en

@@ -27,6 +27,9 @@ import { getFirestore } from "firebase-admin/firestore";
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import {
+  MAX_CATCH_UP_ATTEMPTS,
+  readMissingProfile,
+  readMissingWeight,
   runNutritionCatchUp,
   type StillIncompleteRecipe,
 } from "../scheduled/nutritionCatchUpSchedule";
@@ -73,51 +76,113 @@ export interface BackfillNutritionResponse {
   examinees: number;
   reprises: number;
   completees: number;
+  /** Reprises et toujours incomplètes : le passage est « incomplet ». */
   echouees: number;
+  /** Candidates laissées faute de temps, de nombre ou de plafond : reprise due. */
   laissees: number;
+  /** Non reprises : leurs cinq tentatives sont consommées. */
+  abandonnees: number;
+  /** Non reprises : seules des lignes impossibles à peser manquent. */
+  impesables: number;
   collectionParcourue: boolean;
   stoppedByDeadline: boolean;
   stoppedByBudget: boolean;
-  /** Vrai quand plus rien n'attend : le curseur a été remis au début. */
+  /**
+   * Vrai quand le parcours est fini : collection entière, aucune candidate
+   * laissée. Le curseur est remis au début. Ne dit pas que tout est complet :
+   * `echouees` le dit.
+   */
   completed: boolean;
-  /** Recettes reprises restées incomplètes, nommées, avec la raison. */
+  /**
+   * Recettes incomplètes, nommées, avec la cause : reprises sans succès,
+   * abandonnées, impossibles à peser.
+   */
   aRevoir: BackfillReviewList;
 }
 
+/** Libellé d'une cause de ligne sans poids (`MissingWeightCause`). */
+const MISSING_WEIGHT_LABELS: Record<string, string> = {
+  quantite_illisible: "quantité illisible",
+  quantite_absente: "quantité absente",
+  comptage_sans_poids: "pas de poids à la pièce",
+  unite_sans_poids: "unité sans poids",
+};
+
+/** Début des avertissements écrits par `persistFailedNutritionSnapshot`. */
+const FAILED_SNAPSHOT_PREFIX = "Le calcul nutritionnel n'a pas abouti : ";
+
 /**
- * Ligne « à revoir » d'une recette dont la nutrition reste incomplète après
- * la reprise : l'erreur levée, un calcul en échec, ou les ingrédients sans
- * valeurs nutritionnelles.
+ * Raison écrite dans un instantané d'échec (`quality.warnings`), sans le
+ * début commun à tous ; `null` quand il n'en porte pas.
+ */
+export function failedSnapshotReason(nutrition: Record<string, unknown>): string | null {
+  const quality = nutrition.quality;
+  if (!quality || typeof quality !== "object") return null;
+  const warnings = (quality as Record<string, unknown>).warnings;
+  if (!Array.isArray(warnings)) return null;
+  const first = warnings.find((w): w is string => typeof w === "string" && w.trim().length > 0);
+  if (!first) return null;
+  const text = first.startsWith(FAILED_SNAPSHOT_PREFIX)
+    ? first.slice(FAILED_SNAPSHOT_PREFIX.length)
+    : first;
+  return text.trim().length > 0 ? shortErrorMessage(text) : null;
+}
+
+/**
+ * Ce qui manque à un instantané, cause par cause : les lignes impossibles à
+ * peser, avec la leur, puis les ingrédients sans valeurs pour 100 g. Un
+ * instantané antérieur à ces deux champs ne sépare pas les causes : il cite
+ * `missing_ingredients` tel quel.
+ */
+export function missingCausesText(nutrition: Record<string, unknown>): string {
+  const weight = readMissingWeight(nutrition);
+  const profile = readMissingProfile(nutrition);
+  if (profile == null && weight.length === 0) {
+    const missing = Array.isArray(nutrition.missing_ingredients)
+      ? nutrition.missing_ingredients.filter((n): n is string => typeof n === "string")
+      : [];
+    return missing.length > 0
+      ? `Ingrédients non comptés : ${namesList(missing)}`
+      : "Ingrédients non comptés";
+  }
+  const parts: string[] = [];
+  if (weight.length > 0) {
+    const lines = weight.map((w) => `${w.name} (${MISSING_WEIGHT_LABELS[w.cause] ?? w.cause})`);
+    parts.push(`Impossible à peser : ${namesList(lines)}`);
+  }
+  if (profile != null && profile.length > 0) {
+    parts.push(`Sans valeurs pour 100 g : ${namesList(profile)}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : "Ingrédients non comptés";
+}
+
+/**
+ * Ligne « à revoir » d'une recette dont la nutrition reste incomplète : après
+ * une reprise (l'erreur levée, un calcul en échec et sa raison, ou ce qui
+ * manque, cause par cause), abandonnée après ses tentatives, ou impossible à
+ * peser.
  */
 export function nutritionReviewItem(recipe: StillIncompleteRecipe): BackfillReviewItem {
   const label = recipeReviewLabel(recipe.id, recipe.data);
-  if (recipe.error != null) {
-    return {
-      kind: "recipe",
-      id: recipe.id,
-      label,
-      reason: `Reprise en échec : ${shortErrorMessage(recipe.error)}`,
-    };
-  }
-  const nutrition = recipe.nutrition;
-  if (!nutrition) {
-    return { kind: "recipe", id: recipe.id, label, reason: "Nutrition non calculée" };
-  }
-  if (nutrition.coverage_state === "failed") {
-    return { kind: "recipe", id: recipe.id, label, reason: "Calcul de nutrition en échec" };
-  }
-  const missing = Array.isArray(nutrition.missing_ingredients)
-    ? nutrition.missing_ingredients.filter((n): n is string => typeof n === "string")
-    : [];
-  return {
+  const item = (reason: string): BackfillReviewItem => ({
     kind: "recipe",
     id: recipe.id,
     label,
     reason:
-      missing.length > 0
-        ? `Valeurs nutritionnelles introuvables : ${namesList(missing)}`
-        : "Valeurs nutritionnelles introuvables",
-  };
+      recipe.status === "abandonnee"
+        ? `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — ${reason}`
+        : reason,
+  });
+  if (recipe.error != null) {
+    return item(`Reprise en échec : ${shortErrorMessage(recipe.error)}`);
+  }
+  const nutrition = recipe.nutrition;
+  if (!nutrition) return item("Nutrition non calculée");
+  if (nutrition.coverage_state === "failed") {
+    const why = failedSnapshotReason(nutrition);
+    return item(why ? `Calcul de nutrition en échec : ${why}` : "Calcul de nutrition en échec");
+  }
+  return item(missingCausesText(nutrition));
 }
 
 export const backfillNutritionFn = onCall<BackfillNutritionRequest>(
@@ -189,6 +254,11 @@ export function summarizeNutrition(r: BackfillNutritionResponse): PassSummary {
     // Le plafond de dépense de la passe nutrition est celui du propriétaire de
     // chaque recette : `stoppedByBudget` dit qu'il a fermé la porte.
     spendCapHit: r.stoppedByBudget,
+    // Reprises sans succès : le passage est « incomplet », sans reprise à
+    // l'heure suivante. Elles reviennent au passage du lendemain, dans la
+    // limite de leurs cinq tentatives. Abandonnées et impesables ne comptent
+    // pas : aucun passage automatique ne les reprendra.
+    unresolved: r.echouees,
   };
 }
 
@@ -258,7 +328,11 @@ export async function runNutritionBackfillPass(
         report.echouees +
         " encore incomplète(s), " +
         report.laissees +
-        " laissée(s)",
+        " laissée(s), " +
+        report.abandonnees +
+        " abandonnée(s), " +
+        report.impesables +
+        " impossible(s) à peser",
       moduleType: "DESIGN",
       correlationId,
       extra: {
@@ -276,6 +350,8 @@ export async function runNutritionBackfillPass(
       completees: report.completees,
       echouees: report.echouees,
       laissees: report.laissees,
+      abandonnees: report.abandonnees,
+      impesables: report.impesables,
       collectionParcourue: report.collectionParcourue,
       stoppedByDeadline: report.stoppedByDeadline,
       stoppedByBudget: report.stoppedByBudget,

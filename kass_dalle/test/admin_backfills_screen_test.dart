@@ -164,4 +164,36 @@ void main() {
     expect(find.text('Programmation : …'), findsNWidgets(5));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'confirmation : « Réessayer aussi les éléments en échec » pour les '
+    'backfills qui excluent après trois échecs, décochée par défaut',
+    (tester) async {
+      await _pump(tester, size: const Size(400, 3000), runs: runs);
+
+      // Ordre du registre : nutrition, puis « Enrichir unités et ingrédients ».
+      final launches = find.widgetWithText(FilledButton, 'Lancer');
+      await tester.tap(launches.at(1));
+      await tester.pumpAndSettle();
+      final box = find.widgetWithText(
+        CheckboxListTile,
+        'Réessayer aussi les éléments en échec',
+      );
+      expect(box, findsOneWidget);
+      expect(tester.widget<CheckboxListTile>(box).value, isFalse);
+      await tester.tap(box);
+      await tester.pump();
+      expect(tester.widget<CheckboxListTile>(box).value, isTrue);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      // La nutrition n'a pas de mémoire des échecs : pas de case.
+      await tester.tap(launches.at(0));
+      await tester.pumpAndSettle();
+      expect(find.text('Réessayer aussi les éléments en échec'), findsNothing);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

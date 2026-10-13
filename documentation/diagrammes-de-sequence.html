@@ -2786,8 +2786,11 @@ sequenceDiagram
   loop pages de 200 recettes, par identifiant
     RUN->>FS: lit la page
     loop chaque recette
-      RUN->>RUN: needsNutritionCatchUp
-      Note over RUN: reprise si nutrition absente, en échec,<br/>ou avec des ingrédients manquants.<br/>Écartée si écrite il y a moins de 30 min.<br/>Hors forced, écartée aussi si calculée il y a moins de 20 h<br/>ou après 5 tentatives
+      RUN->>RUN: catchUpDecision
+      Note over RUN: reprise si nutrition absente, en échec,<br/>ou avec des ingrédients manquants.<br/>Écartée si écrite il y a moins de 30 min.<br/>Hors forced, écartée aussi si calculée il y a moins de 20 h,<br/>abandonnée après 5 tentatives, impesable si seules<br/>des lignes impossibles à peser manquent
+      opt abandonnée ou impesable (hors forced)
+        RUN->>RUN: comptée et nommée dans aRevoir avec la cause,<br/>sans appel
+      end
       opt à reprendre, sous le plafond de recettes et l'échéance
         RUN->>BU: plafond de dépense du créateur (rattrapage_nutrition)
         alt plafond atteint
@@ -2796,7 +2799,7 @@ sequenceDiagram
           RUN->>NS: syncRecipeNutrition, cause rattrapage-planifie ou backfill-demande
           NS->>FS: nutrition_validation, nutrition
           RUN->>FS: relit la nutrition
-          RUN->>FS: nutrition_catch_up_attempts à 0 si complète, sinon plus 1
+          RUN->>FS: nutrition_catch_up_attempts à 0 si complète, sinon plus 1<br/>(encore incomplète : echouees, cause lue dans missing_weight / missing_profile)
         end
       end
     end
@@ -2804,15 +2807,18 @@ sequenceDiagram
 
   FS-->>TR: onWrite pour chaque recette reprise
   TR-->>FS: entrées inchangées, sortie à la garde
-  RUN-->>CU: complétées, encore incomplètes, laissées<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
+  RUN-->>CU: complétées, encore incomplètes, laissées, impesables, abandonnées<br/>laissées : reprise à l'heure suivante ; encore incomplètes seules :<br/>« incomplet » sans reprise horaire (echecs_restants)<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
   RUN-->>BF: même compte rendu, curseur du passage suivant
   Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 32)
 </pre>
       </div>
       <figcaption>
-        <b>Deux bornes de patience, une borne de prudence.</b> L'âge de l'instantané (20 h) et le
-        plafond de tentatives (<code>MAX_CATCH_UP_ATTEMPTS</code>, 5) ne s'appliquent qu'au passage
-        programmé. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
+        <b>Trois bornes de patience, une borne de prudence.</b> L'âge de l'instantané (20 h, égal
+        au délai de relance de l'enrichissement), le plafond de tentatives
+        (<code>MAX_CATCH_UP_ATTEMPTS</code>, 5) et l'exclusion d'une recette dont il ne manque que
+        des lignes impossibles à peser ne s'appliquent qu'au passage programmé. Une recette
+        abandonnée ou impesable n'est pas reprise, mais elle est nommée dans la liste « à revoir »
+        avec sa cause. Le délai de 30 min après une écriture s'applique toujours : il évite de lancer un
         second calcul pendant que le déclencheur travaille encore.
         <span class="expect">
           <b>Le compteur repart de zéro sur une entrée modifiée.</b>

@@ -34,7 +34,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { COLL_RECIPES } from "../config";
 import { logError } from "../logging";
 import { BudgetExceededError, assertWithinDailyBudget, recipeBudgetUserId } from "../ai/budget";
-import { readTimestampMillis } from "../nutrition/aiEnrichment";
+import { ENRICHMENT_RETRY_AFTER_MS, readTimestampMillis } from "../nutrition/aiEnrichment";
+import type { MissingWeightCause } from "../nutrition/recipeNutrition";
 import { resolvePageType } from "../triggers/recipeWritten";
 import { syncRecipeNutrition } from "../triggers/recipeNutritionAutoSync";
 
@@ -67,8 +68,16 @@ export const MAX_CATCH_UP_ATTEMPTS = 5;
  * Vingt heures, pour un balayage quotidien : une recette calculée par le
  * passage d'hier est reprise par celui de demain, jamais deux fois le même
  * jour.
+ *
+ * Égal au délai de relance de l'enrichissement (`ENRICHMENT_RETRY_AFTER_MS`) :
+ * les marques d'essai des ingrédients et des unités sont écrites pendant le
+ * calcul, donc juste avant l'instantané. Un instantané assez vieux pour être
+ * repris garantit des marques assez vieilles pour que la reprise puisse
+ * redemander au modèle. Avec vingt-quatre heures d'un côté et vingt de
+ * l'autre, une reprise sur deux ne posait aucune question et consommait quand
+ * même une tentative.
  */
-export const MIN_SNAPSHOT_AGE_MS = 20 * 60 * 60 * 1000;
+export const MIN_SNAPSHOT_AGE_MS = ENRICHMENT_RETRY_AFTER_MS;
 
 /**
  * Délai de grâce après une écriture de recette.
@@ -95,46 +104,127 @@ export interface CatchUpCandidate {
 }
 
 /**
- * Cette recette doit-elle être reprise ? Fonction pure, testée seule.
- *
- * Trois raisons de reprendre : aucun instantané, un instantané d'échec, une
- * couverture incomplète. Trois raisons de s'abstenir : ce n'est pas une
- * recette, elle vient d'être écrite, ou elle a déjà consommé ses tentatives.
- *
- * `forced` lève les deux bornes de PATIENCE — l'âge de l'instantané et le
- * nombre de tentatives. Elles n'ont de sens que pour un passage automatique
- * que personne n'a demandé. Un administrateur qui vient de corriger un
- * référentiel sait, lui, pourquoi il redemande. La borne de PRUDENCE, elle,
- * reste : on ne double jamais une chaîne en cours.
+ * Causes d'une ligne sans poids qu'une reprise ne peut pas combler. La
+ * reprise ne demande ni une quantité que la recette n'écrit pas lisiblement,
+ * ni le poids d'une pièce. Le poids d'une unité, elle le demanderait, mais
+ * sous la garde de vingt heures d'`enrichUnknownUnitsWithAI`, et c'est le
+ * backfill « Enrichir unités et ingrédients » qui en porte la charge — avec sa
+ * mémoire des échecs. Une ligne sans quantité ni unité (`quantite_absente`)
+ * reste reprenable : la reprise demande sa portion usuelle au modèle.
  */
-export function needsNutritionCatchUp(
+const UNFIXABLE_BY_CATCH_UP: ReadonlySet<string> = new Set<MissingWeightCause>([
+  "quantite_illisible",
+  "comptage_sans_poids",
+  "unite_sans_poids",
+]);
+
+/** Vrai quand l'instantané laisse quelque chose à calculer. */
+export function nutritionIsIncomplete(nutrition: unknown): boolean {
+  if (!nutrition || typeof nutrition !== "object") return true;
+  const n = nutrition as Record<string, unknown>;
+  if (n.coverage_state === "failed") return true;
+  return Array.isArray(n.missing_ingredients) && n.missing_ingredients.length > 0;
+}
+
+/** Les lignes sans poids d'un instantané (`missing_weight`), lues prudemment. */
+export function readMissingWeight(nutrition: unknown): { name: string; cause: string }[] {
+  if (!nutrition || typeof nutrition !== "object") return [];
+  const raw = (nutrition as Record<string, unknown>).missing_weight;
+  if (!Array.isArray(raw)) return [];
+  const out: { name: string; cause: string }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.name !== "string" || typeof r.cause !== "string") continue;
+    out.push({ name: r.name, cause: r.cause });
+  }
+  return out;
+}
+
+/**
+ * Les ingrédients pesés sans valeurs pour 100 g (`missing_profile`), ou
+ * `null` sur un instantané antérieur au champ.
+ */
+export function readMissingProfile(nutrition: unknown): string[] | null {
+  if (!nutrition || typeof nutrition !== "object") return null;
+  const raw = (nutrition as Record<string, unknown>).missing_profile;
+  if (!Array.isArray(raw)) return null;
+  return raw.filter((n): n is string => typeof n === "string");
+}
+
+/**
+ * Vrai quand tous les manques de l'instantané sont des lignes qu'une reprise
+ * ne peut pas peser : aucun ingrédient sans valeurs, aucun calcul en échec,
+ * et chaque ligne sans poids d'une cause de `UNFIXABLE_BY_CATCH_UP`.
+ *
+ * Un instantané antérieur à `missing_weight` / `missing_profile` ne permet
+ * pas de le dire : il reste reprenable, et la reprise l'écrit au format
+ * actuel.
+ */
+export function onlyUnweighableMissing(nutrition: unknown): boolean {
+  if (!nutrition || typeof nutrition !== "object") return false;
+  if ((nutrition as Record<string, unknown>).coverage_state === "failed") return false;
+  const profile = readMissingProfile(nutrition);
+  if (profile == null || profile.length > 0) return false;
+  const weight = readMissingWeight(nutrition);
+  if (weight.length === 0) return false;
+  return weight.every((w) => UNFIXABLE_BY_CATCH_UP.has(w.cause));
+}
+
+/**
+ * Ce que le rattrapage fait d'une recette :
+ *
+ *  - `reprendre` : elle repart dans la chaîne nutrition ;
+ *  - `ignorer` : rien à faire — ce n'est pas une recette, elle est complète,
+ *    elle vient d'être écrite, ou elle a été calculée il y a moins de vingt
+ *    heures ;
+ *  - `abandonnee` : incomplète, mais ses `MAX_CATCH_UP_ATTEMPTS` tentatives
+ *    sont consommées. Elle n'est plus reprise, et le compte rendu la nomme ;
+ *  - `impesable` : incomplète, mais seulement par des lignes qu'une reprise ne
+ *    peut pas peser (`onlyUnweighableMissing`). Un appel n'y changerait rien :
+ *    elle n'est pas reprise, et le compte rendu la nomme avec la cause.
+ */
+export type CatchUpDecision = "reprendre" | "ignorer" | "abandonnee" | "impesable";
+
+/**
+ * Décision du rattrapage pour une recette. Fonction pure, testée seule.
+ *
+ * `forced` lève les bornes de PATIENCE — l'âge de l'instantané, le nombre de
+ * tentatives et l'exclusion de l'impesable. Elles n'ont de sens que pour un
+ * passage automatique que personne n'a demandé. Un administrateur qui vient de
+ * corriger un référentiel — un poids à la pièce, le poids d'une unité — sait,
+ * lui, pourquoi il redemande. La borne de PRUDENCE, elle, reste : on ne double
+ * jamais une chaîne en cours.
+ */
+export function catchUpDecision(
   candidate: CatchUpCandidate,
   nowMs: number,
   forced = false,
-): boolean {
-  if (candidate.pageType !== "recipe") return false;
-  if (!forced && candidate.catchUpAttempts >= MAX_CATCH_UP_ATTEMPTS) return false;
+): CatchUpDecision {
+  if (candidate.pageType !== "recipe") return "ignorer";
 
   // Écrite à l'instant : le déclencheur travaille peut-être encore.
   if (candidate.updatedAtMs != null && nowMs - candidate.updatedAtMs < RECENT_WRITE_GRACE_MS) {
-    return false;
+    return "ignorer";
   }
 
   const nutrition = candidate.nutrition;
+  if (!nutritionIsIncomplete(nutrition)) return "ignorer";
+  if (forced) return "reprendre";
+
+  if (candidate.catchUpAttempts >= MAX_CATCH_UP_ATTEMPTS) return "abandonnee";
+
   // Jamais calculée. Pas d'instantané, donc pas d'âge à comparer : on reprend.
-  if (!nutrition || typeof nutrition !== "object") return true;
+  if (!nutrition || typeof nutrition !== "object") return "reprendre";
 
   // Calculée il y a moins de vingt heures : le passage d'hier, ou le
-  // déclencheur. Rien de neuf ne peut être arrivé au référentiel entre-temps.
-  if (!forced) {
-    const computedAtMs = readTimestampMillis(nutrition.computed_at);
-    if (computedAtMs != null && nowMs - computedAtMs < MIN_SNAPSHOT_AGE_MS) return false;
-  }
+  // déclencheur. Les marques d'essai de l'enrichissement sont aussi récentes :
+  // une reprise ne pourrait rien redemander.
+  const computedAtMs = readTimestampMillis(nutrition.computed_at);
+  if (computedAtMs != null && nowMs - computedAtMs < MIN_SNAPSHOT_AGE_MS) return "ignorer";
 
-  if (nutrition.coverage_state === "failed") return true;
-
-  const missing = nutrition.missing_ingredients;
-  return Array.isArray(missing) && missing.length > 0;
+  if (onlyUnweighableMissing(nutrition)) return "impesable";
+  return "reprendre";
 }
 
 /** Ce qu'un passage de rattrapage a le droit de faire. */
@@ -163,6 +253,12 @@ export interface StillIncompleteRecipe {
   nutrition: Record<string, unknown> | null;
   /** Message de l'erreur levée par la reprise, `null` sans erreur. */
   error: string | null;
+  /**
+   * Pourquoi elle est listée : `reprise` (reprise, toujours incomplète),
+   * `abandonnee` (tentatives consommées, non reprise), `impesable` (non
+   * reprise : rien qu'un appel puisse peser).
+   */
+  status: "reprise" | "abandonnee" | "impesable";
 }
 
 /** Ce qu'un passage a fait, et pourquoi il s'est arrêté. */
@@ -173,6 +269,10 @@ export interface NutritionCatchUpReport {
   echouees: number;
   /** Candidates vues mais non reprises : plafond, échéance ou budget. */
   laissees: number;
+  /** Incomplètes, non reprises : leurs tentatives sont consommées. */
+  abandonnees: number;
+  /** Incomplètes, non reprises : seules des lignes impossibles à peser manquent. */
+  impesables: number;
   /** Dernière recette REPRISE — le curseur du prochain passage. */
   lastProcessedId: string | null;
   /** Vrai quand le parcours a atteint la fin de la collection. */
@@ -204,6 +304,8 @@ export async function runNutritionCatchUp(
     completees: 0,
     echouees: 0,
     laissees: 0,
+    abandonnees: 0,
+    impesables: 0,
     lastProcessedId: null,
     collectionParcourue: false,
     stoppedByDeadline: false,
@@ -232,7 +334,22 @@ export async function runNutritionCatchUp(
         catchUpAttempts: Number(data.nutrition_catch_up_attempts ?? 0) || 0,
         updatedAtMs: readTimestampMillis(data.updated_at),
       };
-      if (!needsNutritionCatchUp(candidate, nowMs, forced)) continue;
+      const decision = catchUpDecision(candidate, nowMs, forced);
+      if (decision === "abandonnee" || decision === "impesable") {
+        // Non reprise, mais nommée : une recette qui disparaît du compte
+        // rendu se lit comme une recette complète.
+        if (decision === "abandonnee") report.abandonnees += 1;
+        else report.impesables += 1;
+        options.onStillIncomplete?.({
+          id: doc.id,
+          data,
+          nutrition: candidate.nutrition ?? null,
+          error: null,
+          status: decision,
+        });
+        continue;
+      }
+      if (decision !== "reprendre") continue;
 
       if (report.reprises >= options.maxRecipes) {
         report.laissees += 1;
@@ -285,19 +402,22 @@ export async function runNutritionCatchUp(
       }
 
       // Relecture : la reprise a-t-elle abouti ? C'est elle qui décide si le
-      // compteur repart de zéro ou monte d'un cran. L'instant passé est
-      // volontairement lointain, et `forced` faux — on juge la complétude, pas
-      // la fraîcheur ni la patience.
+      // compteur repart de zéro ou monte d'un cran. On juge la complétude
+      // seule : une recette devenue impesable reste incomplète, et son
+      // compteur monte.
       const apres = await doc.ref.get();
       const nutrition = (apres.data()?.nutrition ?? null) as Record<string, unknown> | null;
-      const encoreIncomplete = needsNutritionCatchUp(
-        { pageType: "recipe", nutrition, catchUpAttempts: 0, updatedAtMs: null },
-        Number.MAX_SAFE_INTEGER,
-      );
+      const encoreIncomplete = nutritionIsIncomplete(nutrition);
 
       if (encoreIncomplete) {
         report.echouees += 1;
-        options.onStillIncomplete?.({ id: doc.id, data, nutrition, error: syncError });
+        options.onStillIncomplete?.({
+          id: doc.id,
+          data,
+          nutrition,
+          error: syncError,
+          status: "reprise",
+        });
       } else {
         report.completees += 1;
       }

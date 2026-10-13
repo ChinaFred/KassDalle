@@ -50,11 +50,19 @@ import { getKnownUnitMetadata, normalizeObservedUnit } from "./quantityConversio
  * Les ingrédients portaient déjà leur marque (`estimation_failed`), mais
  * personne ne la lisait : le filtre n'écartait que ceux qui avaient une valeur.
  *
- * Vingt-quatre heures, et non « plus jamais » : un modèle change, un libellé
+ * Vingt heures, et non « plus jamais » : un modèle change, un libellé
  * s'enrichit d'un contexte, une réponse manquante hier peut venir demain. Un
  * refus définitif demanderait une intervention humaine pour être levé.
+ *
+ * Vingt et non vingt-quatre : c'est l'âge minimal d'un instantané avant que le
+ * rattrapage de la nutrition le reprenne (`MIN_SNAPSHOT_AGE_MS`). Le passage
+ * quotidien part chaque jour à la même heure, donc un peu moins de vingt-quatre
+ * heures après l'essai de la veille. Avec vingt-quatre heures ici, il trouvait
+ * la marque encore fraîche un jour sur deux : la reprise avait lieu, consommait
+ * une de ses cinq tentatives, et ne posait aucune question au modèle. Les deux
+ * délais égaux garantissent qu'une reprise due peut aussi redemander.
  */
-export const ENRICHMENT_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+export const ENRICHMENT_RETRY_AFTER_MS = 20 * 60 * 60 * 1000;
 
 /**
  * Lit un instant Firestore, une date, un nombre ou une chaîne ISO.
@@ -357,7 +365,7 @@ export async function enrichUnknownUnitsWithAI(args: {
     const data = snap.data() as Record<string, unknown>;
     const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
     if (!hasGrams) {
-      // Déjà demandée il y a moins d'un jour, sans réponse : on ne repose pas
+      // Déjà demandée il y a moins de vingt heures, sans réponse : on ne repose pas
       // la question. C'est ce qui transformait une unité impossible à peser en
       // dépense permanente.
       if (enrichmentAttemptIsRecent(data.ai_weight_attempt_at, nowMs)) continue;
@@ -522,7 +530,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
     if (hasPer100gValues(data.per100g)) continue; // déjà enrichi
-    // Demandé il y a moins d'un jour, sans réponse exploitable : on attend.
+    // Demandé il y a moins de vingt heures, sans réponse exploitable : on attend.
     // La marque `last_enrichment_attempt_at` était écrite depuis longtemps,
     // mais ce filtre ne regardait que la présence des valeurs — un ingrédient
     // que le modèle ne sait pas estimer repartait donc à chaque passage.
@@ -832,7 +840,7 @@ export function buildUsualPortionPrompt(targets: Array<{ id: string; name: strin
  * s'affiche comme tel — « estimée par l'IA » — sur la ligne concernée.
  *
  * Best-effort : ne lève jamais. Un ingrédient sans réponse exploitable reçoit
- * une marque de tentative, et n'est redemandé qu'après vingt-quatre heures.
+ * une marque de tentative, et n'est redemandé qu'après vingt heures (`ENRICHMENT_RETRY_AFTER_MS`).
  * Retourne le nombre de portions écrites.
  */
 export async function estimateUsualPortionsWithAI(args: {

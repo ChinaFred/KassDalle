@@ -181,6 +181,35 @@ void main() {
       );
     });
 
+    test('incomplet par des échecs : pas de reprise à l\'heure suivante', () {
+      final nutrition = backfillDefinition(BackfillKeys.nutrition)!;
+      final state = BackfillRunState.fromMap('nutrition', {
+        'dernier_passage_statut': 'incomplet',
+        'dernier_passage_origine': 'programme',
+        'reprise_due': false,
+        'echecs_restants': 9,
+        'dernier_passage_le': DateTime.utc(2026, 10, 11, 3, 2),
+        'last_report': {
+          'reprises': 9,
+          'completees': 0,
+          'echouees': 9,
+          'laissees': 0,
+        },
+      });
+      expect(state.echecsRestants, 9);
+      expect(
+        backfillStatusLine(
+          def: nutrition,
+          state: state,
+          schedule: _s(kAllBackfillDays, 5),
+          now: _now,
+        ),
+        'Incomplet — dim. 11/10 à 05:02 · 9 reprises, 0 complétée, '
+        '9 encore incomplètes · 9 éléments en échec, nouvel essai au '
+        'prochain passage',
+      );
+    });
+
     test('incomplet par plafond : reprise au prochain créneau', () {
       final state = BackfillRunState.fromMap('recipe_roles', {
         'dernier_passage_statut': 'incomplet',
@@ -263,6 +292,77 @@ void main() {
         backfillDoneLine(state),
         'Terminé le 10/10/2026 en v0.23.30 — à retirer du code '
         '(marqué à la main)',
+      );
+    });
+  });
+
+  group('résumé chiffré', () {
+    test('nutrition : les recettes encore incomplètes, pas « 0 restante »', () {
+      expect(
+        backfillReportSummary(BackfillKeys.nutrition, {
+          'reprises': 9,
+          'completees': 0,
+          'echouees': 9,
+          'laissees': 0,
+        }),
+        '9 reprises, 0 complétée, 9 encore incomplètes',
+      );
+    });
+
+    test(
+      'nutrition : laissées, impossibles à peser, abandonnées si présentes',
+      () {
+        expect(
+          backfillReportSummary(BackfillKeys.nutrition, {
+            'reprises': 20,
+            'completees': 18,
+            'echouees': 2,
+            'laissees': 7,
+            'impesables': 4,
+            'abandonnees': 1,
+          }),
+          '20 reprises, 18 complétées, 2 encore incomplètes, '
+          '7 laissées faute de temps, 4 impossibles à peser, 1 abandonnée',
+        );
+      },
+    );
+
+    test('exclus après trois échecs, cités seulement quand il y en a', () {
+      expect(
+        backfillReportSummary(BackfillKeys.enrichReferentials, {
+          'enrichedUnits': 1,
+          'enrichedIngredients': 10,
+          'failedIngredients': 2,
+          'excludedUnits': 1,
+          'excludedIngredients': 4,
+        }),
+        '1 unité enrichie, 10 ingrédients enrichis, 2 échecs, '
+        '1 unité exclue après 3 échecs, 4 ingrédients exclus après 3 échecs',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.allergens, {
+          'ingredientsExamines': 38,
+          'recettesCalculees': 2,
+          'recettesIncompletes': 0,
+          'ingredientsExclus': 3,
+        }),
+        '38 ingrédients examinés, 2 recettes recalculées, 0 incomplète, '
+        '3 ingrédients exclus après 3 échecs',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.recipeRoles, {
+          'classees': 38,
+          'restantes': 2,
+          'exclues': 2,
+        }),
+        '38 classées, 2 restantes, 2 recettes exclues après 3 échecs',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.recipeRoles, {
+          'classees': 38,
+          'restantes': 0,
+        }),
+        '38 classées, 0 restante',
       );
     });
   });
