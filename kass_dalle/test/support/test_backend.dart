@@ -15,8 +15,10 @@ import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
+import 'package:kass_dalle/features/planning/data/meal_suggestion_repository.dart';
 import 'package:kass_dalle/features/planning/data/planning_visibility_store.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
+import 'package:kass_dalle/features/planning/presentation/meal_suggestion_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/processing/domain/processing_job.dart';
 import 'package:kass_dalle/features/processing/presentation/processing_providers.dart';
@@ -49,6 +51,7 @@ class TestBackend {
   final RecipeRatingRepository ratings;
   final NutritionIngredientsRepository nutrition;
   final NutritionUnitsReference units;
+  final MealSuggestionRepository mealSuggestions;
 
   /// Mes repas planifiés, rendus par `plannedMealsProvider`.
   final List<PlannedMeal> plannedMeals;
@@ -76,6 +79,8 @@ class TestBackend {
     // en dur, sans passer par un provider injectable : un écran de planning
     // testé le prend donc null, ce qui est son cas « pas de compte ».
     planningRepositoryProvider.overrideWithValue(null),
+    // Les suggestions de repas lisent le Firestore en mémoire.
+    mealSuggestionRepositoryProvider.overrideWithValue(mealSuggestions),
     // Les groupes ne sont pas le sujet des parcours testés : un ensemble vide
     // évite d'ouvrir des flux Firestore sans rapport.
     groupMemberIdsProvider.overrideWith(
@@ -114,7 +119,8 @@ class TestBackend {
        annotations = AnnotationRepository(firestore: firestore),
        ratings = RecipeRatingRepository(firestore: firestore),
        nutrition = NutritionIngredientsRepository(firestore: firestore),
-       units = NutritionUnitsReference(firestore: firestore);
+       units = NutritionUnitsReference(firestore: firestore),
+       mealSuggestions = MealSuggestionRepository(firestore: firestore);
 
   factory TestBackend({
     AppUser? user,

@@ -15,6 +15,7 @@ import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../planning/presentation/schedule_recipe_sheet.dart';
+import '../../../planning/presentation/suggest_meal_sheet.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_illustrations.dart';
 import 'shopping_list_sheet.dart';
@@ -243,6 +244,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                         ingredients: recipe.ingredients,
                       )
                     : null,
+                onSuggest: suggestRecipeAction(context, ref, recipe),
                 recipeTags: recipe.tags,
               ),
               if (_uploadingIllustration)

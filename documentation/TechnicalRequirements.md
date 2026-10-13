@@ -206,6 +206,7 @@ firestore/
 ├── processing_jobs/{jobId}/
 ├── dead_letters/{jobId}/
 ├── planned_meals/{mealId}/                        ← porteur du contexte (personne ou groupe, date)
+├── meal_suggestions/{suggestionId}/               ← suggestions de plats des membres d'un groupe à son propriétaire
 ├── planning_config/{uid}/
 ├── planning_reach/{uid}/                          ← plannings lisibles par uid (personnels et de groupe), écrit par le serveur seul
 ├── nutrition_ingredients/{ingredientId}/
@@ -1445,7 +1446,8 @@ requête `uid == moi` sans filtre (« Mon planning », archive, reprise de « No
 les repas qui portent un `group_id` y sont écartés côté client, et un repas antérieur non encore
 marqué lui reste visible. La fenêtre de variété lit tous les repas du cuisinier
 (`getCookedMealsBetween`, et `readServedHistory` côté serveur sur `uid ==`). La suppression
-d'un groupe supprime ses repas (`deleteGroupMeals`, appelé par `syncGroupReach`). Les repas
+d'un groupe supprime ses repas (`deleteGroupMeals`, appelé par `syncGroupReach`), et ses
+suggestions de repas (`meal_suggestions`, §3.7 bis). Les repas
 personnels d'un propriétaire se lisent, en lecture seule, par les comptes de `planning_reach`
 (§3.8 quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
 `group_id == null`, `planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais
@@ -1488,6 +1490,54 @@ attendant une décision.
 
 ---
 
+### 3.7 bis Collection `meal_suggestions` — les suggestions de repas (v0.23.57)
+
+Un membre d'un groupe actif, autre que son propriétaire, lecteur compris, suggère au
+propriétaire un plat pour un jour du planning du groupe. Pas de statut : le propriétaire
+lit, et planifie lui-même ce qu'il retient (« Planifier ce jour-là », qui écrit un
+`planned_meals` ordinaire). La suggestion n'est jamais modifiée ; « Au planning » se calcule
+à l'affichage (`plannedMatchFor`, `meal_suggestion.dart` : même groupe, même jour, même
+recette ou même titre sans casse). Aucun appel d'IA, aucun poste de coût.
+
+| Champ | Type | Description |
+|---|---|---|
+| `group_id` | `String` | Le groupe, 128 caractères au plus |
+| `group_owner_id` | `String` | Le propriétaire du groupe, **dénormalisé** et vérifié à la création contre `groups/{group_id}.owner_id` (figé) : la requête du propriétaire, `group_owner_id == moi`, est prouvable par les règles |
+| `author_uid` | `String` | L'auteur ; égal à l'appelant à la création |
+| `day` | `String` | Le jour visé, `AAAA-MM-JJ` (jour local de l'auteur). Les règles en vérifient la forme, pas la date : elles ne connaissent pas le fuseau de l'auteur ; le client ne propose que des jours d'aujourd'hui ou à venir |
+| `recipe_id` | `String?` | La recette suggérée — exclusif de `free_title` |
+| `recipe_titre` | `String?` | Le titre de la recette, **copié** (200 caractères au plus) : le propriétaire le lit même si la recette est privée, sans ouvrir la fiche (« Recette non partagée ») |
+| `free_title` | `String?` | Un nom libre, 1 à 60 caractères — exclusif de `recipe_id` et `recipe_titre` |
+| `note` | `String?` | Le mot de l'auteur, 200 caractères au plus ; absent s'il est vide |
+| `created_at` | `Timestamp` | Heure du serveur (`request.time`), seule valeur admise |
+
+**Lectures du client** (`MealSuggestionRepository`, `features/planning/data/`) : le
+propriétaire, `group_owner_id == moi` et `day >= aujourd'hui − 90 jours`, triées par `day`
+(`watchReceived`) ; l'auteur, `author_uid == moi` sur la même fenêtre (`watchSent`).
+« Voir les plus anciennes » lit `day <` cette borne, du plus récent au plus ancien, 100 au plus
+(`loadOlder`). Quatre index composites : (`group_owner_id`, `day` croissant et décroissant),
+(`author_uid`, `day` croissant et décroissant). Un document mal formé est écarté, et signalé
+une fois par lecture (`meal_suggestions.malformed`). Les flux ne s'ouvrent que pour un
+propriétaire d'un groupe actif qui compte un autre membre, ou pour un membre d'un groupe actif
+d'un autre propriétaire (`suggestionOwnerGroups`, `suggestableGroups`).
+
+**Plafond.** Cinq suggestions au plus par auteur, par groupe et par jour
+(`kSuggestionsPerAuthorPerDay`), vérifiées par le client avant l'écriture (requête à trois
+égalités `author_uid`, `group_id`, `day`, sans index composite). Une règle Firestore ne compte
+pas des documents : un client modifié peut dépasser ce nombre, borné par la taille de chaque
+champ. Le risque est un document de quelques centaines d'octets de plus par écriture, lu par
+un seul propriétaire.
+
+**Suppressions.** L'auteur retire sa suggestion (« Annuler » la recrée sous le même
+identifiant, `created_at` reprenant l'heure du serveur) ; le propriétaire peut aussi la
+supprimer (règles), sans geste dans l'écran. Le serveur supprime, dans `syncGroupReach`, les
+suggestions d'un groupe supprimé (`deleteGroupSuggestions`) et celles d'un membre sorti du
+groupe — départ ou retrait par le propriétaire (`departedMembers`,
+`deleteMemberSuggestions`), par lots de 400, `retry: true`. Rien d'autre n'est purgé : une
+suggestion reste après son jour. Aucune migration : la collection est neuve.
+
+---
+
 ### 3.8 Collection `planning_config`
 
 Un document par utilisateur (`{uid}`), écrit depuis « Préférences du planning » par un
@@ -1519,7 +1569,7 @@ ni croiser les groupes avec le rôle de leur propriétaire.
 | Champ | Type | Description |
 |---|---|---|
 | `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning personnel, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe **actif** de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
-| `group_ids` | `List<String>` | Groupes actifs dont le titulaire est membre, propriétaire compris, triés : il en lit le planning (`canReadGroupPlanning`). Groupe actif = propriétaire éditeur ou administrateur non révoqué |
+| `group_ids` | `List<String>` | Groupes actifs dont le titulaire est membre, propriétaire compris, triés : il en lit le planning (`canReadGroupPlanning`), et, s'il n'en est pas le propriétaire, y suggère un plat (`meal_suggestions`, §3.7 bis). Groupe actif = propriétaire éditeur ou administrateur non révoqué |
 | `masked_group_ids` | `List<String>` | Groupes « en pause » : le titulaire en est membre et leur propriétaire ne planifie plus. Lu par le client (`GroupRepository.watchMaskedGroupIds`) : le planning les masque, l'écran Groupes les liste marqués « En pause » (le propriétaire y garde retirer, annuler une invitation, supprimer ; un membre les quitte) ; aucune règle ne le lit. Absent sur un document antérieur : rien n'est en pause |
 | `masked_invitation_ids` | `List<String>` | Groupes qui invitent le titulaire et sont en pause. Le client masque ces invitations (`GroupRepository.watchMyInvitations`) ; aucune règle ne le lit. Recalculé pour les invités ajoutés ou retirés d'un groupe (`invitationsToResync`, `syncGroupReach`) et pour les invités des groupes d'un compte dont le rôle change (`syncPlanningReachOnRole`) |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
@@ -2506,6 +2556,7 @@ service cloud.firestore {
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
+| `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` `AAAA-MM-JJ`, recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
@@ -2834,7 +2885,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
   rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
   propriétaire, `app_config`, collections de coût, `processing_jobs`, référentiels, mémoire des
-  refus du planning (`preferences/planning_refusals`) ; côté
+  refus du planning (`preferences/planning_refusals`) ; `test/mealSuggestions.test.mjs` couvre
+  les suggestions de repas (création par un membre, refus au propriétaire, à l'invité, à
+  l'étranger, au groupe en pause, à un `group_owner_id` faux ; lecture par l'auteur et le
+  propriétaire seuls ; aucune mise à jour ; bornes) ; côté
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
@@ -5717,7 +5771,7 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach (+ suppression des repas d'un groupe supprimé, groupMeals.ts), syncPlanningReachOnConfig, syncPlanningReachOnRole (plannerRole.ts), applyEmailInvitation, applyRevokedInvitation
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach (+ suppression des repas et des suggestions d'un groupe supprimé, et des suggestions d'un membre sorti, groupMeals.ts), syncPlanningReachOnConfig, syncPlanningReachOnRole (plannerRole.ts), applyEmailInvitation, applyRevokedInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 

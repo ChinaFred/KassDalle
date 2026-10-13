@@ -232,9 +232,10 @@ class PlanningRepository {
     return readable;
   }
 
-  /// Ajoute un repas planifié.
-  Future<void> addMeal(PlannedMeal meal) async {
-    await _col.add(meal.toFirestore());
+  /// Ajoute un repas planifié et rend son identifiant.
+  Future<String> addMeal(PlannedMeal meal) async {
+    final ref = await _col.add(meal.toFirestore());
+    return ref.id;
   }
 
   /// Enregistre un lot de repas planifiés (batch planning) et rend leurs

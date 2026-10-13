@@ -20,6 +20,38 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.57 — fonctionnel
+
+Les membres d'un groupe suggèrent des plats au propriétaire. Tout membre d'un groupe actif
+autre que son propriétaire, lecteur compris, ouvre « Suggérer un plat » sur un jour
+d'aujourd'hui ou à venir du planning du groupe, ou « Suggérer pour un planning de groupe »
+depuis une fiche recette : une recette qu'il lit ou un nom libre, et un mot facultatif. Une
+recette privée se suggère par son titre : le propriétaire le lit, sans ouvrir la fiche. Cinq
+suggestions au plus par membre, par groupe et par jour. L'auteur voit sa suggestion sous les
+repas du groupe et la retire ; il ne voit pas celles des autres. Le propriétaire lit le nombre
+de suggestions des jours à venir sur le bouton « Suggestions des membres », un repère
+« 2 suggestions » sur le jour, et une fenêtre qui les range par jour, avec « Planifier ce
+jour-là ». Pas de statut : le propriétaire planifie lui-même ce qu'il retient, et « Au
+planning » s'affiche quand le planning du groupe reprend déjà le plat. Rien n'est purgé ; un
+groupe supprimé emporte ses suggestions, un membre qui sort emporte les siennes. Pas de
+notification, aucun appel d'IA.
+
+### v0.23.57 — technique
+
+Nouvelle collection `meal_suggestions` (`group_id`, `group_owner_id` dénormalisé et vérifié
+contre le groupe, `author_uid`, `day` en `AAAA-MM-JJ`, `recipe_id` + `recipe_titre` copié ou
+`free_title`, `note`, `created_at` du serveur). Règles : création par un membre d'un groupe
+actif (`planning_reach.group_ids` et `member_ids`), pas le propriétaire, forme fermée et
+bornée ; lecture et suppression par l'auteur ou le propriétaire ; aucune mise à jour. Tests
+dans `rules-tests/test/mealSuggestions.test.mjs`. Quatre index composites (`group_owner_id` ou
+`author_uid`, avec `day`). `syncGroupReach` supprime les suggestions d'un groupe supprimé et
+celles d'un membre sorti (`deleteGroupSuggestions`, `deleteMemberSuggestions`,
+`departedMembers`, `groupMeals.ts`), journalisées par `logError` en cas d'échec et rejouées.
+Côté client : `MealSuggestionRepository`, `meal_suggestion.dart`, la feuille
+`suggest_meal_sheet.dart`, la fenêtre `meal_suggestions_window.dart` ; `addMeal` rend
+l'identifiant du repas (pour « Annuler ») et `RecipePickerSheet` reçoit `initialQuery`.
+Aucune migration : la collection est neuve.
+
 ### v0.23.56 — fonctionnel
 
 Un planning est désormais personnel, ou celui d'un groupe familial. Le propriétaire du

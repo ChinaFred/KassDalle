@@ -590,6 +590,20 @@ classDiagram
     +DateTime createdAt
   }
 
+  class MealSuggestion {
+    +String id
+    +String groupId
+    +String groupOwnerId
+    +String authorUid
+    +DateTime day
+    +String? recipeId
+    +String? recipeTitre
+    +String? freeTitle
+    +String? note
+    +DateTime? createdAt
+    +String title()
+  }
+
   class ModerationEntry {
     +String id
     +String status
@@ -617,6 +631,10 @@ classDiagram
   AppUser "1" --&gt; "0..1" GroupReach : group_reach/uid
   FamilyGroup ..> GroupReach : syncGroupReach recalcule
   FamilyGroup "0..1" --&gt; "0..*" PlannedMeal : planning du groupe (groupId), écrit par ownerId
+  FamilyGroup "1" --&gt; "0..*" MealSuggestion : groupId, lue par ownerId (groupOwnerId)
+  AppUser "1" --&gt; "0..*" MealSuggestion : authorUid, membre non propriétaire
+  Recipe "0..1" --&gt; "0..*" MealSuggestion : recipeId, titre copié
+  MealSuggestion ..> PlannedMeal : « Au planning » calculé (plannedMatchFor)
   AppUser ..> GroupReach : rôle du propriétaire, groupe masqué s'il n'est plus éditeur
   AppUser "1" --&gt; "0..*" EmailInvitation : invitedBy (admin)
   EmailInvitation "0..*" --&gt; "1" FamilyGroup : groupId
@@ -642,6 +660,12 @@ classDiagram
         défaut au lieu d'une image téléversée.
         <b>Un invité n'est pas membre</b> (v0.23.19) : son uid vit dans <code>invitedIds</code>
         jusqu'à ce qu'il accepte, et passe alors dans <code>memberIds</code>.
+        <b>MealSuggestion</b> (<code>meal_suggestions/{id}</code>, v0.23.57) : un membre d'un
+        groupe actif, autre que son propriétaire, propose un plat pour un jour du planning du
+        groupe — une recette (<code>recipeId</code>, titre copié dans <code>recipeTitre</code>,
+        lisible du propriétaire même si la recette est privée) ou un nom libre
+        (<code>freeTitle</code>), et un mot (<code>note</code>). Pas de statut ; « Au planning »
+        se calcule contre les repas du groupe. Supprimée avec le groupe, ou au départ de son auteur.
         <b>EmailInvitation</b> (<code>invitations/{id}</code>) est l'invitation par e-mail d'une
         personne qui n'a pas encore de compte, ou dont le compte est révoqué : écrite par le
         serveur seul, lue par l'administrateur. <code>target</code> dit lequel (<code>new</code>
