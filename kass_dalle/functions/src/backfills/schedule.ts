@@ -282,19 +282,36 @@ export interface PassSummary {
   toReview: number;
   /** Arrêté par le plafond de dépense quotidien. */
   spendCapHit: boolean;
+  /**
+   * Éléments traités par ce passage et restés en échec, sans être exclus :
+   * une recette reprise toujours incomplète, un ingrédient sans réponse du
+   * modèle qui n'a pas encore atteint trois échecs. Le passage est alors
+   * « incomplet », mais il n'appelle pas de reprise à l'heure suivante : le
+   * parcours est fini, et le même appel une heure plus tard aurait toutes les
+   * chances d'échouer de la même façon, pour une dépense de plus.
+   */
+  unresolved: number;
 }
 
 export type RunStatus = "termine" | "incomplet" | "erreur" | "en_cours";
 export type RunOrigin = "manuel" | "programme";
 
+/**
+ * « Terminé » demande un parcours fini ET aucun échec laissé derrière lui. Un
+ * passage qui a tout parcouru mais repris neuf recettes sans en compléter
+ * aucune n'est pas terminé : il s'affichait « Terminé » quand même.
+ */
 export function passStatus(summary: PassSummary): "termine" | "incomplet" {
-  return summary.complete ? "termine" : "incomplet";
+  return summary.complete && summary.unresolved === 0 ? "termine" : "incomplet";
 }
 
 /**
- * Faut-il reprendre l'heure suivante ? Un passage programmé incomplet, oui,
- * sauf arrêt par plafond de dépense (reprise au prochain créneau). Un passage
- * terminé, non. Un passage manuel incomplet ne change rien à ce que la
+ * Faut-il reprendre l'heure suivante ? Un passage programmé arrêté avant la
+ * fin de son parcours (délai, nombre de documents), oui, sauf arrêt par
+ * plafond de dépense (reprise au prochain créneau). Un parcours fini, non —
+ * même « incomplet » à cause d'échecs (`unresolved`) : la reprise d'une heure
+ * plus tard reposerait les mêmes questions au modèle et les facturerait de
+ * nouveau. Un passage manuel incomplet ne change rien à ce que la
  * programmation devait.
  */
 export function repriseDueAfter(
@@ -314,7 +331,11 @@ export function repriseDueAfter(
  */
 export function shouldAutoMarkDone(kind: BackfillKind, summary: PassSummary): boolean {
   return (
-    kind === "ponctuel" && summary.complete && summary.remaining === 0 && summary.toReview === 0
+    kind === "ponctuel" &&
+    summary.complete &&
+    summary.unresolved === 0 &&
+    summary.remaining === 0 &&
+    summary.toReview === 0
   );
 }
 

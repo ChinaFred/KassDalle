@@ -12,6 +12,9 @@
  *  - `dernier_passage_le`, `dernier_passage_origine` (`manuel` / `programme`),
  *    `dernier_passage_erreur`, `arret_plafond`, `last_report` (la réponse du
  *    passage, liste « à revoir » comprise) ;
+ *  - `echecs_restants` : éléments traités et restés en échec, non exclus. Un
+ *    passage au parcours fini qui en laisse est « incomplet » sans reprise à
+ *    l'heure suivante ; l'écran le dit ;
  *  - `reprise_due`, `dernier_creneau` : ce que la tâche planifiée lit pour
  *    décider d'une reprise (`schedule.ts`) ;
  *  - `termine_le`, `termine_version`, `termine_par` (`auto` / `manuel`),
@@ -195,6 +198,7 @@ export async function runBackfillPass<R extends object>(args: PassArgs<R>): Prom
       dernier_passage_statut: "erreur",
       dernier_passage_erreur: shortErrorMessage(err),
       arret_plafond: false,
+      echecs_restants: 0,
       reprise_due: false,
     });
     throw err;
@@ -208,6 +212,7 @@ export async function runBackfillPass<R extends object>(args: PassArgs<R>): Prom
     return {
       dernier_passage_statut: passStatus(summary),
       dernier_passage_erreur: null,
+      echecs_restants: summary.unresolved,
       arret_plafond: summary.spendCapHit,
       reprise_due: repriseDueAfter(args.origin, summary, data.reprise_due === true),
       last_report: plain(response),
@@ -351,6 +356,7 @@ export async function recordSpendCapSkip(
       dernier_passage_le: FieldValue.serverTimestamp(),
       dernier_passage_erreur: null,
       arret_plafond: true,
+      echecs_restants: 0,
       reprise_due: false,
       last_correlation_id: correlationId,
       ...(creneau ? { dernier_creneau: creneau } : {}),
@@ -380,6 +386,7 @@ export async function recordScheduledRunBlocked(
       dernier_passage_le: FieldValue.serverTimestamp(),
       dernier_passage_erreur: message,
       arret_plafond: false,
+      echecs_restants: 0,
       reprise_due: false,
       last_correlation_id: correlationId,
       ...(creneau ? { dernier_creneau: creneau } : {}),

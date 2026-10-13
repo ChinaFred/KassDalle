@@ -42,6 +42,15 @@ import {
   type AllergenIssue,
 } from "../nutrition/allergenExamination";
 import { readDocsByIds } from "../nutrition/firestoreBatch";
+import { resolvePageType } from "../triggers/recipeWritten";
+import {
+  EXCLUDED_AFTER_FAILURES_REASON,
+  failureReason,
+  isExcludedAfterFailures,
+  nextFailure,
+  readFailureCount,
+} from "../backfills/failureMemory";
+import { writeFailureMemory } from "../backfills/failureMemoryWrites";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
@@ -86,6 +95,11 @@ interface BackfillAllergensRequest {
   maxRecipes?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /**
+   * Redemande aussi les ingrédients exclus après trois échecs (« Réessayer
+   * aussi les éléments exclus après 3 échecs » dans la confirmation).
+   */
+  retryExcluded?: boolean;
   /** Version de l'application qui lance, pour l'état du backfill. */
   appVersion?: string;
 }
@@ -99,6 +113,16 @@ export interface BackfillAllergensResponse {
   ingredientsIgnores: number;
   /** Lot en échec ou ingrédient sans réponse : reste à examiner. */
   ingredientsEnErreur: number;
+  /**
+   * Ingrédients sautés : trois échecs ou plus, sans « Réessayer aussi les
+   * éléments exclus après 3 échecs ».
+   */
+  ingredientsExclus: number;
+  /**
+   * Ingrédients en erreur pendant ce passage et pas encore exclus : le
+   * passage est « incomplet », sans reprise à l'heure suivante.
+   */
+  echecsNonExclus: number;
   /** Vrai quand la phase 1 a parcouru tout le référentiel. */
   referentielParcouru: boolean;
   recettesExaminees: number;
@@ -124,16 +148,23 @@ export interface BackfillAllergensResponse {
   aRevoir: BackfillReviewList;
 }
 
-/** Ligne « à revoir » d'un ingrédient resté sans allergènes. */
-export function allergenIssueReviewItem(issue: AllergenIssue): BackfillReviewItem {
+/**
+ * Ligne « à revoir » d'un ingrédient resté sans allergènes. [excluded] : cet
+ * échec est le troisième, l'ingrédient ne sera plus redemandé.
+ */
+export function allergenIssueReviewItem(
+  issue: AllergenIssue,
+  excluded = false,
+): BackfillReviewItem {
+  const cause =
+    issue.problem === "unanswered"
+      ? "Pas de réponse de l'IA"
+      : `Lot en échec : ${shortErrorMessage(issue.error ?? "")}`;
   return {
     kind: "ingredient",
     id: issue.id,
     label: issue.name,
-    reason:
-      issue.problem === "unanswered"
-        ? "Pas de réponse de l'IA"
-        : `Lot en échec : ${shortErrorMessage(issue.error ?? "")}`,
+    reason: excluded ? failureReason(cause, { count: 0, excluded: true }) : cause,
   };
 }
 
@@ -153,6 +184,8 @@ function emptyResponse(): BackfillAllergensResponse {
     ingredientsExamines: 0,
     ingredientsIgnores: 0,
     ingredientsEnErreur: 0,
+    ingredientsExclus: 0,
+    echecsNonExclus: 0,
     referentielParcouru: false,
     recettesExaminees: 0,
     recettesCalculees: 0,
@@ -173,6 +206,8 @@ interface Bounds {
   deadline: number;
   maxIngredients: number;
   maxRecipes: number;
+  /** Redemander aussi les ingrédients exclus après trois échecs. */
+  retryExcluded: boolean;
 }
 
 // ── Phase 1 : le référentiel ────────────────────────────────────────────────
@@ -203,7 +238,7 @@ async function runIngredientsPhase(
 
     // La page est traitée lot par lot ; le curseur n'avance qu'après un lot
     // entier, pour qu'un arrêt ne saute aucun ingrédient.
-    let pending: { candidate: AllergenCandidate; docId: string }[] = [];
+    let pending: { candidate: AllergenCandidate; docId: string; failures: number }[] = [];
     const flush = async (): Promise<boolean> => {
       if (pending.length === 0) return true;
       if (Date.now() + BATCH_MARGIN_MS > bounds.deadline) {
@@ -228,7 +263,27 @@ async function runIngredientsPhase(
       response.ingredientsExamines += report.examined;
       response.ingredientsIgnores += report.alreadyExamined;
       response.ingredientsEnErreur += report.failed + report.unanswered;
-      for (const issue of report.issues) review.add(allergenIssueReviewItem(issue));
+      // Mémoire des échecs : un de plus pour chaque ingrédient resté sans
+      // réponse, zéro pour celui qui en portait et vient d'être examiné.
+      const stored = new Map(pending.map((p) => [p.candidate.id, p.failures]));
+      const failures = new Map<string, number>();
+      for (const issue of report.issues) {
+        const outcome = nextFailure(stored.get(issue.id));
+        failures.set(issue.id, outcome.count);
+        if (!outcome.excluded) response.echecsNonExclus += 1;
+        review.add(allergenIssueReviewItem(issue, outcome.excluded));
+      }
+      const successes = pending
+        .filter((p) => p.failures > 0 && !failures.has(p.candidate.id))
+        .map((p) => p.candidate.id);
+      await writeFailureMemory({
+        collection: COLL_NUTRITION_INGREDIENTS,
+        fields: { count: "allergens_failure_count", at: "allergens_attempt_at" },
+        batch: { failures, successes },
+        correlationId: ctx.correlationId,
+        operation: "backfillAllergens.ingredients",
+        userId: ctx.userId,
+      });
       consecutiveFailures = report.failed > 0 ? consecutiveFailures + 1 : 0;
       cursor = pending[pending.length - 1].docId;
       pending = [];
@@ -243,9 +298,22 @@ async function runIngredientsPhase(
         if (pending.length === 0) cursor = doc.id;
         continue;
       }
+      // Trois échecs : plus soumis au modèle, sauf demande explicite.
+      if (isExcludedAfterFailures(data.allergens_failure_count, bounds.retryExcluded)) {
+        response.ingredientsExclus += 1;
+        review.add({
+          kind: "ingredient",
+          id: doc.id,
+          label: allergenCandidateName(doc.id, data),
+          reason: EXCLUDED_AFTER_FAILURES_REASON,
+        });
+        if (pending.length === 0) cursor = doc.id;
+        continue;
+      }
       pending.push({
         candidate: { id: doc.id, name: allergenCandidateName(doc.id, data) },
         docId: doc.id,
+        failures: readFailureCount(data.allergens_failure_count),
       });
       if (pending.length >= ALLERGEN_BATCH_SIZE && !(await flush())) break pages;
     }
@@ -316,10 +384,10 @@ async function runRecipesPhase(
 
       response.recettesExaminees += 1;
       const data = doc.data() as Record<string, unknown>;
-      // Une page sans `page_type` est une recette : le client n'écrit le
-      // champ que pour les autres types.
-      const pageType = typeof data.page_type === "string" ? data.page_type : "recipe";
-      if (pageType !== "recipe") {
+      // Même lecture que le déclencheur : le champ, sinon `>> page_type:` dans
+      // le CookLang, sinon une recette. Une page typée dans son seul texte
+      // n'est pas une recette incomplète.
+      if (resolvePageType(data) !== "recipe") {
         response.recettesHorsRecette += 1;
         cursor = doc.id;
         continue;
@@ -418,6 +486,7 @@ export const backfillAllergensFn = onCall<BackfillAllergensRequest>(
       maxRecipes,
       resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
       resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
+      retryExcluded: parseBoolean(req.data?.retryExcluded, false),
     };
 
     return runBackfillFromCallable({
@@ -438,6 +507,8 @@ export interface AllergensPassOptions {
   maxRecipes: number;
   resumeFromCheckpoint: boolean;
   resetCheckpoint: boolean;
+  /** Redemander aussi les ingrédients exclus après trois échecs. Faux en programmé. */
+  retryExcluded?: boolean;
 }
 
 /** Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`). */
@@ -447,6 +518,7 @@ export function summarizeAllergens(r: BackfillAllergensResponse): PassSummary {
     remaining: r.completed ? 0 : null,
     toReview: r.aRevoir.total,
     spendCapHit: false,
+    unresolved: r.echecsNonExclus,
   };
 }
 
@@ -464,6 +536,7 @@ export async function runAllergensPass(
     deadline: options.deadlineMs - DEADLINE_MARGIN_MS,
     maxIngredients: options.maxIngredients,
     maxRecipes: options.maxRecipes,
+    retryExcluded: options.retryExcluded === true,
   };
   const { resumeFromCheckpoint, resetCheckpoint } = options;
 
@@ -525,6 +598,7 @@ export async function runAllergensPass(
       ...withoutReviewList(response),
       maxIngredients: options.maxIngredients,
       maxRecipes: options.maxRecipes,
+      retryExcluded: bounds.retryExcluded,
     },
   });
 

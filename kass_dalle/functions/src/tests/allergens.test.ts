@@ -29,6 +29,7 @@ import {
 } from "../nutrition/allergens";
 import {
   ALLERGEN_NAME_MAX_LENGTH,
+  allergenAutoExaminationAllowed,
   allergenPromptName,
   buildAllergenPrompt,
   recipeAllergensFromDocs,
@@ -314,5 +315,17 @@ describe("prompt", () => {
   test("le nom est nettoyé et tronqué", () => {
     assert.equal(allergenPromptName("  beurre\t doux\r\n "), "beurre doux");
     assert.equal(allergenPromptName("x".repeat(200)).length, ALLERGEN_NAME_MAX_LENGTH);
+  });
+});
+
+describe("allergens_auto — mémoire des échecs du backfill", () => {
+  test("un ingrédient sans échec, ou à deux échecs, est encore examiné", () => {
+    assert.equal(allergenAutoExaminationAllowed({}), true);
+    assert.equal(allergenAutoExaminationAllowed({ allergens_failure_count: 2 }), true);
+  });
+
+  test("à trois échecs, il n'est plus soumis au modèle à l'écriture d'une recette", () => {
+    assert.equal(allergenAutoExaminationAllowed({ allergens_failure_count: 3 }), false);
+    assert.equal(allergenAutoExaminationAllowed({ allergens_failure_count: 7 }), false);
   });
 });

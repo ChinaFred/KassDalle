@@ -20,6 +20,7 @@ import { logError, logInfo } from "../logging";
 import { deriveShoppingProducts, type ShoppingProduct } from "../nutrition/shoppingDerivation";
 import { shoppingAliasesOrNone, shoppingInputsOf } from "../triggers/recipeShoppingProducts";
 import type { StoredIngredient } from "../triggers/recipeIngredients";
+import { resolvePageType } from "../triggers/recipeWritten";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
@@ -168,8 +169,10 @@ async function runProductsMode(
 
       response.examinees += 1;
       const data = doc.data() as Record<string, unknown>;
-      const pageType = typeof data.page_type === "string" ? data.page_type : "recipe";
-      if (pageType !== "recipe") {
+      // Même lecture que le déclencheur : le champ, sinon `>> page_type:` dans
+      // le CookLang, sinon une recette. Une page non-recette typée dans son
+      // seul texte n'est pas « une recette sans ingrédient » à revoir.
+      if (resolvePageType(data) !== "recipe") {
         response.horsRecette += 1;
         cursor = doc.id;
         continue;
@@ -294,6 +297,10 @@ export function summarizeShopping(r: BackfillShoppingResponse): PassSummary {
     remaining: r.completed ? 0 : null,
     toReview: r.aRevoir.total,
     spendCapHit: false,
+    // Une écriture en échec se retente au passage suivant, sans appel de
+    // modèle : pas de mémoire des échecs ici, et le statut reste celui du
+    // parcours.
+    unresolved: 0,
   };
 }
 
