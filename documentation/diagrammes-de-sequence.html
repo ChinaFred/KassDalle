@@ -1975,55 +1975,79 @@ sequenceDiagram
   <section>
     <h2 id="courses"><span class="n">15</span>Liste de courses</h2>
     <p class="sec-note">
-      Construite depuis les repas <b>à venir</b> de la période lue. Elle additionne les produits
-      d'achat que le serveur a calculés à l'écriture de chaque recette (séquence 06). Aucun appel
-      de modèle : le regroupement se fait sur l'appareil.
-      <span class="path">planning_screen.dart (_showIngredientsList) → planning_widgets.dart
-      (planningAggregateProducts) → core/utils/shopping_products.dart →
-      shopping_list_sheet.dart → GoogleTasksService</span>
+      Chaque compte a <b>un panier</b>, <code>users/{uid}/shopping/current</code>, le même sur
+      tous ses appareils. On le remplit depuis un repas, depuis les repas <b>à venir</b> de la
+      période lue dans tous les plannings affichés, ou depuis une fiche recette — tous les rôles,
+      lecteur compris. Les articles vont toujours dans le panier de celui qui ajoute. Le calcul
+      additionne les produits d'achat que le serveur a posés à l'écriture de chaque recette
+      (séquence 06). Aucun appel de modèle : le regroupement se fait sur l'appareil.
+      <span class="path">planning_screen.dart (_addMealToShopping, _addPeriodToShopping) →
+      planning_widgets.dart (planningAggregateProducts) → core/utils/shopping_products.dart →
+      shopping_list_sheet.dart (addToShoppingList, showShoppingCart) →
+      ShoppingCartRepository → users/{uid}/shopping/current ; GoogleTasksService</span>
     </p>
     <figure class="fig">
       <div class="canvas">
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor U as Lecteur
+  actor U as Membre
   participant P as PlanningScreen
   participant PR as PlanningRepository
   participant FS as recipes
-  participant S as ShoppingListSheet
-  participant SP as SharedPreferences
+  participant A as addToShoppingList
+  participant R as ShoppingCartRepository
+  participant SC as users/uid/shopping/current
   participant GT as Google Tasks
 
-  U->>P: Liste de courses
-  P->>P: mealsToShop — repas à venir de la semaine lue, tous avec « Tout »
+  alt un repas
+    U->>P: Ajouter aux courses (menu ⋮ ou icône)
+  else la période
+    U->>P: Ajouter la période aux courses
+    P->>P: mealsToShop — repas à venir de la période, tous les plannings affichés
+  end
   P->>PR: getRecipesByIds — plats et accompagnements avec recette
   PR->>FS: lecture par identifiant
-  FS-->>P: recettes, brouillons et recettes des membres du groupe compris
+  FS-->>P: recettes lisibles par le compte, une recette illisible n'est pas rendue
   P->>P: planningScaleRecipeForMeal par repas, aux parts du repas
   P->>P: garnitures sans recette, quantité multipliée par les parts
-  P->>P: planningAggregateProducts — shopping_products de chaque recette,<br/>ingrédients bruts si absents, mergeShoppingProducts
-  Note over P: même produit et unités convertibles, quantités additionnées.<br/>Aucun appel de modèle
-  P->>S: produits, provenance de chaque ligne
-  S->>S: rayon de chaque ligne (IngredientCategorizer)
-  S->>SP: lit la liste du jour
-  opt une liste existe déjà pour aujourd'hui
-    S-->>U: Remplacer ou Enrichir ?
-    U-->>S: choix
+  P->>P: planningAggregateProducts puis shoppingItemsFromProducts
+  opt recette introuvable
+    P-->>U: « Recette introuvable, ingrédients non comptés : … »
   end
-  S->>SP: écrit la liste du jour
-  S-->>U: rayons dépliables, articles cochables
+  P->>A: articles, phrase, décompte par planning
+  A->>R: load
+  R->>SC: lecture
+  opt la liste n'est pas vide
+    A-->>U: « Votre liste contient déjà N articles » — Annuler, Remplacer, Ajouter
+    U-->>A: choix
+  end
+  A->>R: addItems(mode)
+  R->>SC: transaction — fusion (Ajouter) ou remplacement, 300 articles au plus
+  SC-->>R: liste précédente
+  alt Ajouter
+    A-->>U: « 9 articles ajoutés aux courses. » — Voir
+  else Remplacer
+    A-->>U: « Liste remplacée : 9 articles. » — Annuler
+    opt Annuler
+      A->>R: restore(liste précédente)
+    end
+  end
 
-  U->>S: coche ce qu'il a déjà
-  S->>SP: état coché, sur l'appareil
+  U->>A: Mes courses (chariot, pastille des articles non cochés)
+  R->>SC: écoute en temps réel
+  Note over R,SC: à la première lecture sur un appareil, l'ancienne liste locale<br/>(sl_items_uid) est reprise si le panier est vide, puis effacée
+  U->>R: coche un article
+  R->>SC: update items.clé.checked — part aussi hors ligne
+  SC-->>U: la case suit sur les autres appareils
 
   alt Envoyer vers Google Tasks
-    S->>S: écarte les articles cochés
-    S->>GT: un rayon = une tâche, un article = une sous-tâche
+    A->>A: écarte les articles cochés
+    A->>GT: un rayon = une tâche, un article = une sous-tâche
     GT-->>U: la liste apparaît dans l'application Tasks
   else Google Keep
-    S->>S: copie la liste dans le presse-papier, rayon par rayon
-    S-->>U: ouvre Keep, à coller dans une note
+    A->>A: copie la liste dans le presse-papier, rayon par rayon
+    A-->>U: ouvre Keep, à coller dans une note
   end
 </pre>
       </div>
@@ -2034,9 +2058,15 @@ sequenceDiagram
         recettes par <code>mergeShoppingProducts</code>. Les deux suivent la fixture
         <code>shopping_products.json</code>.
         <span class="expect">
-          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit dans les
-          préférences locales de l'appareil, une liste par compte et par jour, et ne modifie aucun
-          document partagé.
+          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit sous
+          <code>users/{uid}/shopping/current</code>, lue et écrite par son titulaire seul, et ne
+          modifie aucun document partagé. Ajouter le repas d'un autre membre remplit ma liste,
+          pas la sienne.
+        </span>
+        <span class="expect">
+          <b>Ajouter et remplacer passent par une transaction</b> : la fusion part de la liste à
+          jour, et exige le réseau. Cocher, retirer les cochés et vider sont des écritures simples,
+          qui partent hors ligne. Une case refusée reprend son état, avec un message.
         </span>
         <span class="expect">
           <b>Seuls les articles non cochés partent vers Tasks.</b> Une recette introuvable est

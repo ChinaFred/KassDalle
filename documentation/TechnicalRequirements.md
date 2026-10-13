@@ -191,7 +191,8 @@ firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
 │   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals
-│   └── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   ├── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   └── shopping/current                           ← panier de courses personnel, titulaire seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
@@ -1578,6 +1579,60 @@ document naît au premier refus.
 
 ---
 
+### 3.8 quinquies Document `users/{uid}/shopping/current` — le panier de courses
+
+Un seul document par compte : la liste de courses du titulaire, la même sur tous ses
+appareils, lue en temps réel (`myShoppingCartProvider`). Écrit et lu par le client seul
+(`ShoppingCartRepository`, `features/recipes/data/`) ; aucune Cloud Function ne le touche.
+Les produits ajoutés depuis le repas d'un autre membre vont dans le panier de **celui qui
+ajoute** : rien n'est écrit dans la recette, dans le repas ni dans le planning d'origine. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`), calculées en mémoire.
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `items` | `Map<String, Map>` | clé : l'identité du produit (`shoppingProductKey` du nom, 200 caractères au plus) ; valeur : un article. 300 articles au plus (`kShoppingCartMaxItems`, même borne dans les règles) |
+| `items.*.name` | `String` | nom du produit acheté, 200 caractères au plus |
+| `items.*.quantities` | `List<Map>` | une entrée `{qty: String, unit: String}` par famille d'unité (« 400 ml + 250 g »), 10 au plus, 40 caractères par champ |
+| `items.*.category` | `String` | rayon (`IngredientCategorizer`), 60 caractères au plus |
+| `items.*.source` | `String?` | d'où vient la ligne : « Curry de poulet (400 ml) · Riz (250 g) », 500 caractères au plus |
+| `items.*.checked` | `bool` | article déjà dans le panier |
+| `items.*.pos` | `int` | rang d'ajout, pour l'ordre d'affichage dans un rayon |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Pourquoi une carte et pas une liste.** Cocher une case écrit le seul champ
+`items.<clé>.checked` (`update` par `FieldPath`) : l'écriture part aussi hors ligne, dans le
+magasin, et deux appareils qui cochent des articles différents ne s'écrasent pas. « Retirer les
+articles cochés » supprime les clés montrées cochées (`FieldValue.delete()`) ; « Vider la
+liste » écrit une carte vide.
+
+**Ajouter et remplacer** passent par une transaction (`addItems`) : la fusion part de la liste
+à jour. « Ajouter » fusionne (`mergeShoppingItems` : même produit → même ligne, quantités
+additionnées famille par famille par `mergeShoppingProducts`, provenances réunies ; une ligne
+cochée qui reçoit une quantité redevient à acheter). « Remplacer » écrit les seuls nouveaux
+articles et rend l'ancienne liste, que « Annuler » réécrit (`restore`). Un résultat de plus de
+300 articles lève `ShoppingCartFullException` et n'écrit rien. Une transaction exige le
+réseau : hors ligne, l'ajout échoue avec un message, la case cochée non.
+
+**Lecture tolérante.** Un article sans nom ou mal formé est écarté, le reste s'affiche ; un
+document absent est un panier vide.
+
+**Reprise de l'ancienne liste locale** (`migrateLocalList`, côté client, pas de backfill). Avant
+ce document, la liste vivait dans `SharedPreferences` (`sl_items_{uid}`, `sl_date_{uid}`),
+valable le jour même, propre à un appareil. À la première lecture du panier sur un appareil, si
+`sl_items_{uid}` existe et que le panier Firestore est vide, ses lignes y sont écrites (en
+transaction, après fusion des doublons) ; dans tous les cas, les deux clés locales sont
+ensuite effacées. Un panier déjà rempli depuis un autre appareil fait foi. Un texte local
+illisible est remonté (`shopping.migrateLocal.parse`) et la clé effacée ; un échec d'écriture
+est remonté (`shopping.migrateLocal`), les clés restent pour le lancement suivant, et le panier
+s'affiche quand même.
+
+**Erreurs.** Chaque écriture en échec est remontée par le repository
+(`shopping.load`, `shopping.addItems`, `shopping.restore`, `shopping.setChecked`,
+`shopping.removeItems`, `shopping.clear`), sans attendre l'écriture du rapport, puis relancée à
+l'écran qui la dit.
+
+---
+
 ### 3.9 Collection `recipe_ratings`
 
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
@@ -2382,6 +2437,7 @@ service cloud.firestore {
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
+| `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
@@ -3903,12 +3959,15 @@ l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») pa
 sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` et
 `suggestMealIdeasFn`. Les règles `planned_meals` et `planning_config` exigent `isEditor()` à
 l'écriture (§4). Côté client, `canEditProvider` masque « Planifier » sur la fiche recette,
-« Nouveau planning », « Préférences du planning », « Liste des ingrédients », l'export du
+« Nouveau planning », « Préférences du planning », l'export du
 planning, « Choisir une recette » d'un jour libre, l'heure et le menu d'un repas (sauf
 « Supprimer » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
 l'écran Préférences ; `canWriteRecipeAdviceProvider` rend faux pour un lecteur, et la fiche lui
-montre le conseil de conservation déjà stocké, ou rien. La liste de courses d'une fiche recette
-reste ouverte au lecteur : elle est locale et ne coûte rien.
+montre le conseil de conservation déjà stocké, ou rien. Les courses restent ouvertes au
+lecteur — « Ajouter aux courses » sur un repas (le sien, ou celui d'un planning partagé),
+« Ajouter la période aux courses », « Mes courses », et la fiche recette — : elles s'écrivent
+dans son seul panier (`users/{uid}/shopping/current`, §3.8 quinquies) et n'appellent aucun
+modèle.
 
 **Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
 callables qui produisent une recette à enregistrer exigent `requireEditor` —
@@ -5539,7 +5598,7 @@ lib/
     ├── moderation/                # Publication d'images et écran de revue
     ├── planning/                  # Repas planifiés, batch planning, conservation (+ services/)
     ├── processing/                # Jobs d'import et leur avancement
-    ├── recipes/                   # Scan, révision, détail, liste, nutrition (+ services/)
+    ├── recipes/                   # Scan, révision, détail, liste, nutrition, courses (+ services/)
     ├── sandbox/                   # Bac à sable — hors release, voir 13.3
     └── search/                    # Recherche, filtres, génération de recette
 ```

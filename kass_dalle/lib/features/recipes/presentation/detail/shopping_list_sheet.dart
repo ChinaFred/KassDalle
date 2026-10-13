@@ -1,78 +1,267 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../domain/recipe.dart';
-import '../../../../core/utils/ingredient_categorizer.dart';
-import '../../../../core/utils/context_extensions.dart';
-import '../../../../core/utils/ingredient_display.dart';
-import '../../../../core/utils/shopping_products.dart';
+
 import '../../../../core/services/error_reporting.dart';
-import '../../services/google_tasks_service.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/utils/ingredient_categorizer.dart';
+import '../../../../core/utils/platform_utils.dart';
+import '../../../../core/widgets/app_states.dart';
+import '../../../auth/presentation/auth_providers.dart';
+import '../../data/shopping_cart_repository.dart';
+import '../../domain/recipe.dart';
+import '../../domain/shopping_cart.dart';
+import '../../services/google_tasks_service.dart';
+import '../recipe_providers.dart';
 
-// ── Data model ────────────────────────────────────────────────────────────────
+// ── Ajouter aux courses ───────────────────────────────────────────────────────
 
-/// Une quantité d'une ligne de courses : une famille d'unité, un total.
-typedef _Qty = ({String qty, String unit});
+/// La phrase de la boîte « Ajouter / Remplacer » qui dit les deux choix.
+const _kChoiceSentence =
+    'Ajouter les fusionne avec votre liste. '
+    'Remplacer efface la liste actuelle.';
 
-class _Item {
-  final String name;
+/// « Ajouter aux courses » depuis la fiche d'une recette, pour les parts
+/// affichées.
+///
+/// [products] : produits d'achat calculés par le serveur à l'écriture de la
+/// recette, déjà mis à l'échelle en mémoire ; vides, [fallbackIngredients]
+/// les remplacent. Rien n'est écrit dans la recette.
+Future<void> addRecipeToShoppingList(
+  BuildContext context,
+  WidgetRef ref, {
+  required List<RecipeShoppingProduct> products,
+  required List<RecipeIngredient> fallbackIngredients,
+  required String recipeTitre,
+}) {
+  final items = shoppingItemsForRecipe(
+    products: products,
+    fallbackIngredients: fallbackIngredients,
+    recipeTitre: recipeTitre,
+  );
+  return addToShoppingList(
+    context,
+    ref,
+    incoming: items,
+    summary: '« $recipeTitre » apporte ${shoppingArticles(items.length)}.',
+  );
+}
 
-  /// Une entrée par famille d'unité : « 400 ml » et « 250 g » sur la même
-  /// ligne quand les deux ne se convertissent pas l'une dans l'autre. On
-  /// achète le lait de coco une fois, même si une recette le compte en
-  /// grammes et l'autre en millilitres.
-  final List<_Qty> quantities;
-  final String category;
-  final String? source;
-  bool checked;
+/// Ajoute [incoming] au panier de courses du compte connecté.
+///
+/// Panier vide : ajout direct. Sinon, la boîte « Ajouter / Remplacer »
+/// s'ouvre à chaque fois, avec [summary] (« « Poulet basquaise » apporte
+/// 9 articles. ») et, pour une période, [breakdown] (« 5 de Mon planning,
+/// 7 du planning de Marie »).
+///
+/// Les articles vont toujours dans le panier de celui qui ajoute, quel que
+/// soit le planning dont vient le repas.
+Future<void> addToShoppingList(
+  BuildContext context,
+  WidgetRef ref, {
+  required List<ShoppingItem> incoming,
+  required String summary,
+  String? breakdown,
+}) async {
+  final uid = ref.read(appUserProvider).value?.uid;
+  if (uid == null) return;
+  if (incoming.isEmpty) {
+    context.showSnackBar('Aucun ingrédient à ajouter');
+    return;
+  }
+  final repo = ref.read(shoppingCartRepositoryProvider);
 
-  _Item({
-    required this.name,
-    required this.quantities,
-    required this.category,
-    this.source,
-    this.checked = false,
-  });
+  final ShoppingCart current;
+  try {
+    current = await repo.load(uid);
+  } catch (e) {
+    // Déjà remontée par le repository (`shopping.load`) ; l'écran la dit.
+    if (context.mounted) {
+      context.showErrorSnackBar('Votre liste de courses n\'a pas pu être lue.');
+    }
+    return;
+  }
+  if (!context.mounted) return;
 
-  Map<String, dynamic> toJson() => {
-    'n': name,
-    'qs': [
-      for (final q in quantities) {'q': q.qty, 'u': q.unit},
-    ],
-    'c': category,
-    's': source,
-    'x': checked,
-  };
+  var mode = ShoppingAddMode.add;
+  if (!current.isEmpty) {
+    final choice = await showDialog<ShoppingAddMode>(
+      context: context,
+      builder: (ctx) => _AddOrReplaceDialog(
+        currentCount: current.length,
+        summary: summary,
+        breakdown: breakdown,
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    mode = choice;
+  }
 
-  /// Lit une ligne enregistrée. Une liste d'avant ce format porte `q` et `u`
-  /// à plat : une quantité unique.
-  factory _Item.fromJson(Map<String, dynamic> j) {
-    final raw = j['qs'];
-    final quantities = raw is List
-        ? <_Qty>[
-            for (final e in raw)
-              if (e is Map)
-                (qty: e['q'] as String? ?? '', unit: e['u'] as String? ?? ''),
-          ]
-        : <_Qty>[(qty: j['q'] as String? ?? '', unit: j['u'] as String? ?? '')];
-    return _Item(
-      name: j['n'] as String? ?? '',
-      quantities: quantities,
-      category: j['c'] as String? ?? 'Autres',
-      source: j['s'] as String?,
-      checked: j['x'] as bool? ?? false,
+  final ShoppingAddResult result;
+  try {
+    result = await repo.addItems(uid, incoming, mode: mode);
+  } on ShoppingCartFullException {
+    if (context.mounted) {
+      context.showErrorSnackBar(
+        'Votre liste dépasserait $kShoppingCartMaxItems articles. Retirez '
+        'les articles cochés ou remplacez la liste.',
+      );
+    }
+    return;
+  } catch (e) {
+    // Déjà remontée par le repository (`shopping.addItems`).
+    if (context.mounted) {
+      context.showErrorSnackBar(
+        'Les articles n\'ont pas pu être ajoutés aux courses.',
+      );
+    }
+    return;
+  }
+  if (!context.mounted) return;
+
+  if (mode == ShoppingAddMode.replace) {
+    context.showSuccessSnackBar(
+      'Liste remplacée : ${shoppingArticles(result.written.length)}.',
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () => _undoReplace(context, repo, uid, result.previous),
+      ),
+    );
+  } else {
+    final n = incoming.length;
+    context.showSuccessSnackBar(
+      '${shoppingArticles(n)} ajouté${n > 1 ? 's' : ''} aux courses.',
+      action: SnackBarAction(
+        label: 'Voir',
+        onPressed: () {
+          if (context.mounted) showShoppingCart(context);
+        },
+      ),
     );
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/// « Annuler » après un remplacement : la liste d'avant revient telle quelle.
+Future<void> _undoReplace(
+  BuildContext context,
+  ShoppingCartRepository repo,
+  String uid,
+  List<ShoppingItem> previous,
+) async {
+  try {
+    await repo.restore(uid, previous);
+  } catch (e) {
+    // Déjà remontée par le repository (`shopping.restore`).
+    if (context.mounted) {
+      context.showErrorSnackBar('La liste précédente n\'a pas pu être rendue.');
+    }
+  }
+}
 
-String _todayIso() {
-  final n = DateTime.now();
-  return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+class _AddOrReplaceDialog extends StatelessWidget {
+  final int currentCount;
+  final String summary;
+  final String? breakdown;
+
+  const _AddOrReplaceDialog({
+    required this.currentCount,
+    required this.summary,
+    this.breakdown,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(Icons.shopping_cart_outlined),
+      title: Text(
+        'Votre liste contient déjà ${shoppingArticles(currentCount)}',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(breakdown == null ? summary : '$summary\n$breakdown.'),
+          const SizedBox(height: 12),
+          const Text(_kChoiceSentence),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context, ShoppingAddMode.replace),
+          child: const Text('Remplacer'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, ShoppingAddMode.add),
+          child: const Text('Ajouter'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Mes courses ───────────────────────────────────────────────────────────────
+
+/// « Mes courses » dans une barre d'application : le chariot, et le nombre
+/// d'articles qui restent à acheter.
+class ShoppingCartButton extends ConsumerWidget {
+  const ShoppingCartButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final remaining = ref.watch(myShoppingCartProvider).value?.uncheckedCount;
+    return IconButton(
+      tooltip: 'Mes courses',
+      onPressed: () => showShoppingCart(context),
+      icon: Badge.count(
+        count: remaining ?? 0,
+        isLabelVisible: (remaining ?? 0) > 0,
+        child: const Icon(Icons.shopping_cart_outlined),
+      ),
+    );
+  }
+}
+
+/// Ouvre le panier : une feuille sur téléphone, une fenêtre de 560 px au plus
+/// sur grand écran.
+Future<void> showShoppingCart(BuildContext context) {
+  final isWide =
+      MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+  if (isWide) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: const _ShoppingCartPanel(inDialog: true),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (ctx, scrollCtrl) =>
+          _ShoppingCartPanel(inDialog: false, scrollController: scrollCtrl),
+    ),
+  );
 }
 
 String _todayFr() {
@@ -94,269 +283,112 @@ String _todayFr() {
   return '${n.day} ${months[n.month - 1]} ${n.year}';
 }
 
-/// Une ligne de liste de courses, accordée comme le reste de l'application.
-///
-/// Même règle que la fiche et que le PDF : « 3 cuillères à soupe de sauce
-/// soja », « 2 carottes » — et « 400 ml + 250 g de lait de coco » quand deux
-/// familles d'unités se partagent la ligne. Une liste qu'on lit dans un
-/// magasin mérite autant de soin qu'une recette qu'on imprime.
-String _formatItem(_Item item) =>
-    formatShoppingLine(quantities: item.quantities, name: item.name);
-
-String? _mergeSources(String? left, String? right) {
-  final values = <String>{};
-  for (final source in [left, right]) {
-    if (source == null || source.trim().isEmpty) continue;
-    for (final part in source.split(' · ')) {
-      final trimmed = part.trim();
-      if (trimmed.isNotEmpty) values.add(trimmed);
-    }
-  }
-  if (values.isEmpty) return null;
-  return values.join(' · ');
-}
-
-/// Une ligne par produit.
-///
-/// `mergeShoppingProducts` rend une entrée par produit et famille d'unité,
-/// toutes sous le même nom ; elles se rangent ici sur une seule ligne, avec
-/// une quantité par famille. La provenance d'une ligne est celle que
-/// [sourceOf] donne à son produit — les titres de recettes dans le planning,
-/// le titre de la recette ouverte sinon.
-List<_Item> _itemsFromProducts(
-  Iterable<RecipeShoppingProduct> products,
-  String Function(RecipeShoppingProduct product) sourceOf,
-) {
-  final order = <String>[];
-  final byKey =
-      <String, ({String name, List<_Qty> quantities, Set<String> sources})>{};
-  for (final p in mergeShoppingProducts(products)) {
-    final key = shoppingProductKey(p.name);
-    final slot = byKey.putIfAbsent(key, () {
-      order.add(key);
-      return (name: p.name, quantities: <_Qty>[], sources: <String>{});
-    });
-    slot.quantities.add((qty: p.qty, unit: p.unit));
-    final source = sourceOf(p).trim();
-    if (source.isNotEmpty) slot.sources.add(source);
-  }
+/// Les rayons dans l'ordre du magasin, puis les autres.
+List<String> _orderedCategories(Iterable<String> present) {
+  final set = present.toSet();
   return [
-    for (final key in order)
-      _Item(
-        name: byKey[key]!.name,
-        quantities: byKey[key]!.quantities,
-        category: IngredientCategorizer.categorize(byKey[key]!.name),
-        source: byKey[key]!.sources.isEmpty
-            ? null
-            : byKey[key]!.sources.join(' · '),
-      ),
+    ...IngredientCategorizer.categoryOrder.where(set.contains),
+    ...set.where((k) => !IngredientCategorizer.categoryOrder.contains(k)),
   ];
 }
 
-List<_Item> _buildItems(
-  List<RecipeShoppingProduct> products,
-  List<RecipeIngredient> fallbackIngredients,
-  String recipeTitre, {
-  Map<String, String>? ingredientSources,
-}) {
-  final source = products.isNotEmpty
-      ? products
-      : [
-          for (final ing in fallbackIngredients)
-            RecipeShoppingProduct(name: ing.name, qty: ing.qty, unit: ing.unit),
-        ];
-  return _itemsFromProducts(
-    source,
-    (p) => ingredientSources?[p.name] ?? recipeTitre,
-  );
-}
+enum _CartMenu { removeChecked, clear }
 
-/// Fusionne la liste du jour avec une nouvelle : même produit → même ligne,
-/// quantités additionnées famille par famille, provenances réunies.
-List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
-  final merged = <_Item>[];
-  final indexByKey = <String, int>{};
+class _ShoppingCartPanel extends ConsumerStatefulWidget {
+  final bool inDialog;
+  final ScrollController? scrollController;
 
-  for (final item in [...existing, ...incoming]) {
-    final key = shoppingProductKey(item.name);
-    final existingIndex = indexByKey[key];
-    if (existingIndex == null) {
-      indexByKey[key] = merged.length;
-      merged.add(
-        _Item(
-          name: item.name,
-          quantities: List.of(item.quantities),
-          category: item.category,
-          source: item.source,
-          checked: item.checked,
-        ),
-      );
-      continue;
-    }
-
-    final current = merged[existingIndex];
-    final quantities = mergeShoppingProducts([
-      for (final q in current.quantities)
-        RecipeShoppingProduct(name: current.name, qty: q.qty, unit: q.unit),
-      for (final q in item.quantities)
-        RecipeShoppingProduct(name: item.name, qty: q.qty, unit: q.unit),
-    ]).map((p) => (qty: p.qty, unit: p.unit)).toList();
-    merged[existingIndex] = _Item(
-      name: current.name,
-      quantities: quantities,
-      category: current.category,
-      source: _mergeSources(current.source, item.source),
-      checked: current.checked && item.checked,
-    );
-  }
-
-  return merged;
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/// Affiche la feuille de liste de courses.
-///
-/// [products] : produits d'achat calculés par le serveur à l'écriture de la
-///   recette, mis à l'échelle en mémoire. Si vide, [fallbackIngredients] est
-///   utilisé à la place.
-/// [fallbackIngredients] : ingrédients bruts de la recette (utilisés si
-///   les produits ne sont pas encore disponibles).
-/// [ingredientSources] : map optionnelle `{nom_produit → "Recette A (200 g) ·
-///   Recette B (300 g)"}` — la provenance affichée sous chaque ligne. Sans
-///   elle, chaque ligne porte [recipeTitre].
-Future<void> showShoppingListSheet(
-  BuildContext context,
-  List<RecipeShoppingProduct> products,
-  List<RecipeIngredient> fallbackIngredients,
-  String recipeTitre,
-  String uid, {
-  Map<String, String>? ingredientSources,
-}) async {
-  if (products.isEmpty && fallbackIngredients.isEmpty) {
-    context.showSnackBar('Aucun ingrédient à ajouter');
-    return;
-  }
-
-  final prefs = await SharedPreferences.getInstance();
-  final dateKey = 'sl_date_$uid';
-  final itemsKey = 'sl_items_$uid';
-  final today = _todayIso();
-  final storedDate = prefs.getString(dateKey);
-
-  final newItems = _buildItems(
-    products,
-    fallbackIngredients,
-    recipeTitre,
-    ingredientSources: ingredientSources,
-  );
-
-  List<_Item> itemsToShow;
-
-  if (storedDate == today) {
-    final stored = prefs.getString(itemsKey);
-    final existing = stored != null
-        ? (json.decode(stored) as List)
-              .map((e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList()
-        : <_Item>[];
-
-    if (existing.isNotEmpty && context.mounted) {
-      final choice = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.shopping_cart_outlined),
-          title: const Text('Liste du jour existante'),
-          content: Text(
-            'Vous avez déjà une liste de courses pour aujourd\'hui '
-            '(${existing.length} article${existing.length > 1 ? 's' : ''}).\n\n'
-            'Remplacer supprime la liste actuelle. '
-            'Enrichir ajoute les nouveaux produits à la liste existante.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Annuler'),
-            ),
-            OutlinedButton(
-              onPressed: () => Navigator.pop(ctx, 'replace'),
-              child: const Text('Remplacer'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, 'merge'),
-              child: const Text('Enrichir'),
-            ),
-          ],
-        ),
-      );
-      if (choice == null || !context.mounted) return;
-      itemsToShow = choice == 'merge'
-          ? _mergeShoppingItems(existing, newItems)
-          : newItems;
-    } else {
-      itemsToShow = newItems;
-    }
-  } else {
-    itemsToShow = newItems;
-  }
-
-  await prefs.setString(dateKey, today);
-  await prefs.setString(
-    itemsKey,
-    json.encode(itemsToShow.map((i) => i.toJson()).toList()),
-  );
-
-  if (!context.mounted) return;
-
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) => _ShoppingListSheet(
-      items: itemsToShow,
-      prefs: prefs,
-      itemsKey: itemsKey,
-    ),
-  );
-}
-
-// ── Sheet widget ──────────────────────────────────────────────────────────────
-
-class _ShoppingListSheet extends StatefulWidget {
-  final List<_Item> items;
-  final SharedPreferences prefs;
-  final String itemsKey;
-
-  const _ShoppingListSheet({
-    required this.items,
-    required this.prefs,
-    required this.itemsKey,
-  });
+  const _ShoppingCartPanel({required this.inDialog, this.scrollController});
 
   @override
-  State<_ShoppingListSheet> createState() => _ShoppingListSheetState();
+  ConsumerState<_ShoppingCartPanel> createState() => _ShoppingCartPanelState();
 }
 
-class _ShoppingListSheetState extends State<_ShoppingListSheet> {
-  late final List<_Item> _items;
+class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
+  /// Cases touchées dont l'écriture n'est pas encore confirmée : elles
+  /// s'affichent dans leur nouvel état, et reprennent l'ancien si l'écriture
+  /// échoue.
+  final Map<String, bool> _pending = {};
   bool _opening = false;
   bool _sendingTasks = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _items = List.of(widget.items);
+  String? get _uid => ref.read(appUserProvider).value?.uid;
+
+  List<ShoppingItem> _shown(ShoppingCart cart) => [
+    for (final i in cart.items)
+      _pending.containsKey(i.key) ? i.copyWith(checked: _pending[i.key]) : i,
+  ];
+
+  Future<void> _toggle(ShoppingItem item) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final next = !item.checked;
+    setState(() => _pending[item.key] = next);
+    try {
+      await ref
+          .read(shoppingCartRepositoryProvider)
+          .setChecked(uid, item.key, next);
+    } catch (e) {
+      // Déjà remontée par le repository (`shopping.setChecked`) : la case
+      // reprend son état, l'écran le dit.
+      if (mounted) {
+        context.showErrorSnackBar('La case n\'a pas pu être enregistrée.');
+      }
+    } finally {
+      if (mounted) setState(() => _pending.remove(item.key));
+    }
   }
 
-  void _toggle(int index) {
-    setState(() => _items[index].checked = !_items[index].checked);
-    widget.prefs.setString(
-      widget.itemsKey,
-      json.encode(_items.map((i) => i.toJson()).toList()),
-    );
+  Future<void> _onMenu(_CartMenu action, List<ShoppingItem> items) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final repo = ref.read(shoppingCartRepositoryProvider);
+    switch (action) {
+      case _CartMenu.removeChecked:
+        try {
+          await repo.removeItems(uid, [
+            for (final i in items)
+              if (i.checked) i.key,
+          ]);
+        } catch (e) {
+          // Déjà remontée par le repository (`shopping.removeItems`).
+          if (mounted) {
+            context.showErrorSnackBar(
+              'Les articles cochés n\'ont pas pu être retirés.',
+            );
+          }
+        }
+      case _CartMenu.clear:
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Vider la liste de courses ?'),
+            content: Text(
+              'Les ${shoppingArticles(items.length)} seront retirés, sur tous '
+              'vos appareils.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Vider'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+        try {
+          await repo.clear(uid);
+        } catch (e) {
+          // Déjà remontée par le repository (`shopping.clear`).
+          if (mounted) {
+            context.showErrorSnackBar('La liste n\'a pas pu être vidée.');
+          }
+        }
+    }
   }
 
   /// L'adresse des tâches Google.
@@ -385,10 +417,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
   ///
   /// Seuls les articles **non cochés** partent : ce qui est déjà dans le
   /// panier n'a rien à faire sur une liste de courses.
-  Future<void> _sendToTasks() async {
-    final groups = <({String category, List<String> items})>[];
-    final grouped = <String, List<_Item>>{};
-    for (final item in _items) {
+  Future<void> _sendToTasks(List<ShoppingItem> items) async {
+    final grouped = <String, List<ShoppingItem>>{};
+    for (final item in items) {
       if (item.checked) continue;
       (grouped[item.category] ??= []).add(item);
     }
@@ -396,19 +427,13 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
       context.showSnackBar('Tout est déjà coché : rien à envoyer.');
       return;
     }
-
-    final orderedKeys = [
-      ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
-      ...grouped.keys.where(
-        (k) => !IngredientCategorizer.categoryOrder.contains(k),
-      ),
+    final groups = <({String category, List<String> items})>[
+      for (final key in _orderedCategories(grouped.keys))
+        (
+          category: key,
+          items: grouped[key]!.map((i) => i.label).toList(growable: false),
+        ),
     ];
-    for (final key in orderedKeys) {
-      groups.add((
-        category: key,
-        items: grouped[key]!.map((i) => _formatItem(i)).toList(growable: false),
-      ));
-    }
 
     setState(() => _sendingTasks = true);
     try {
@@ -441,45 +466,42 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     }
   }
 
-  String _buildKeepText() {
-    final title = "Liste de courses Kass'Dalle – ${_todayFr()}";
-    final buffer = StringBuffer();
-    buffer.writeln(title);
-
-    // Group by category order
-    final grouped = <String, List<_Item>>{};
-    for (final item in _items) {
+  String _buildKeepText(List<ShoppingItem> items) {
+    final buffer = StringBuffer()
+      ..writeln("Liste de courses Kass'Dalle – ${_todayFr()}");
+    final grouped = <String, List<ShoppingItem>>{};
+    for (final item in items) {
       (grouped[item.category] ??= []).add(item);
     }
-    final orderedKeys = [
-      ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
-      ...grouped.keys.where(
-        (k) => !IngredientCategorizer.categoryOrder.contains(k),
-      ),
-    ];
-
-    for (final cat in orderedKeys) {
+    for (final cat in _orderedCategories(grouped.keys)) {
       buffer.writeln(cat.toUpperCase());
       for (final item in grouped[cat]!) {
-        buffer.writeln('\t${_formatItem(item)}');
+        buffer.writeln('\t${item.label}');
       }
     }
     return buffer.toString().trim();
   }
 
-  Future<void> _openKeep() async {
+  Future<void> _openKeep(List<ShoppingItem> items) async {
     setState(() => _opening = true);
     try {
-      await Clipboard.setData(ClipboardData(text: _buildKeepText()));
+      await Clipboard.setData(ClipboardData(text: _buildKeepText(items)));
       final uri = Uri.parse('https://keep.google.com/');
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
       if (mounted) {
-        context.showSnackBar(
+        context.showSuccessSnackBar(
           'Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).',
         );
       }
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'shoppingList.openKeep',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) context.showErrorSnackBar('Copie impossible : $error');
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -488,231 +510,259 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final remaining = _items.where((i) => !i.checked).length;
+    final async = ref.watch(myShoppingCartProvider);
+    final cart = async.value;
+    final items = cart == null ? const <ShoppingItem>[] : _shown(cart);
+    final checked = items.where((i) => i.checked).length;
 
-    // Group for display
-    final grouped = <String, List<(int, _Item)>>{};
-    for (int i = 0; i < _items.length; i++) {
-      (grouped[_items[i].category] ??= []).add((i, _items[i]));
+    final Widget body;
+    if (cart == null && async.hasError) {
+      body = AppErrorState(
+        error: async.error,
+        title: 'Votre liste de courses n\'a pas pu être lue.',
+        onRetry: () => ref.invalidate(myShoppingCartProvider),
+      );
+    } else if (cart == null) {
+      body = const AppLoadingState();
+    } else if (items.isEmpty) {
+      body = const AppEmptyState(
+        icon: Icons.shopping_cart_outlined,
+        title: 'Votre liste de courses est vide.',
+        message:
+            'Ajoutez un repas depuis le planning, ou une recette depuis sa '
+            'fiche.',
+      );
+    } else {
+      body = _buildList(theme, items);
     }
-    final orderedKeys = [
-      ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
-      ...grouped.keys.where(
-        (k) => !IngredientCategorizer.categoryOrder.contains(k),
-      ),
-    ];
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.75,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (ctx, scrollCtrl) {
-        return Column(
-          children: [
-            // ── Handle bar ─────────────────────────────────────────────────
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
-              ),
+    return Column(
+      mainAxisSize: widget.inDialog ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        if (!widget.inDialog) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.outlineVariant,
+              borderRadius: BorderRadius.circular(2),
             ),
-            const SizedBox(height: 12),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _buildHeader(theme, items, checked),
+        const SizedBox(height: 8),
+        const Divider(),
+        if (widget.inDialog) Flexible(child: body) else Expanded(child: body),
+        if (items.isNotEmpty) _buildActions(theme, items),
+      ],
+    );
+  }
 
-            // ── Header ─────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.shopping_cart_outlined,
-                      size: AppIconSize.small,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Liste de courses Kass'Dalle",
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          _todayFr(),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: remaining == 0
-                          ? theme.colorScheme.tertiaryContainer
-                          : theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$remaining / ${_items.length}',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: remaining == 0
-                            ? theme.colorScheme.onTertiaryContainer
-                            : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+  Widget _buildHeader(ThemeData theme, List<ShoppingItem> items, int checked) {
+    final subtitle = [
+      shoppingArticles(items.length),
+      if (checked > 0) '$checked coché${checked > 1 ? 's' : ''}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, right: 8),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              shape: BoxShape.circle,
             ),
-
-            const SizedBox(height: 8),
-            const Divider(),
-
-            // ── Checklist ──────────────────────────────────────────────────
-            Expanded(
-              child: ListView(
-                controller: scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 100),
-                children: [
-                  for (final cat in orderedKeys) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                      child: Text(
-                        cat.toUpperCase(),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                    ),
-                    for (final (idx, item) in grouped[cat]!)
-                      CheckboxListTile(
-                        value: item.checked,
-                        onChanged: (_) => _toggle(idx),
-                        title: Text(
-                          _formatItem(item),
-                          style: item.checked
-                              ? TextStyle(
-                                  decoration: TextDecoration.lineThrough,
-                                  color: theme.colorScheme.onSurface.withValues(
-                                    alpha: 0.4,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        subtitle: item.source != null
-                            ? Text(
-                                item.source!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              )
-                            : null,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        dense: true,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                  ],
-                ],
-              ),
+            child: Icon(
+              Icons.shopping_cart_outlined,
+              size: AppIconSize.small,
+              color: theme.colorScheme.onPrimaryContainer,
             ),
-
-            // ── Action bar ─────────────────────────────────────────────────
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: _sendingTasks ? null : _sendToTasks,
-                      icon: _sendingTasks
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.checklist_outlined,
-                              size: AppIconSize.small,
-                            ),
-                      label: const Text('Envoyer vers Google Tasks'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Une liste cochable, un rayon par tâche et un article '
-                      'par sous-tâche. Rien à convertir à la main.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _opening ? null : _openKeep,
-                      icon: _opening
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.open_in_new,
-                              size: AppIconSize.small,
-                            ),
-                      label: const Text('Copier pour Google Keep'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 44),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Keep n\'a pas d\'API : la liste est copiée, à vous de '
-                      'créer la note, de la convertir en cases à cocher et de refaire '
-                      'les rayons.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mes courses',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+                if (items.isNotEmpty)
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (items.isNotEmpty)
+            PopupMenuButton<_CartMenu>(
+              tooltip: 'Actions de la liste',
+              onSelected: (action) => _onMenu(action, items),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: _CartMenu.removeChecked,
+                  enabled: checked > 0,
+                  child: const ListTile(
+                    leading: Icon(Icons.remove_done),
+                    title: Text('Retirer les articles cochés'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _CartMenu.clear,
+                  child: ListTile(
+                    leading: Icon(Icons.delete_sweep_outlined),
+                    title: Text('Vider la liste'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          if (widget.inDialog)
+            IconButton(
+              tooltip: 'Fermer',
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildList(ThemeData theme, List<ShoppingItem> items) {
+    final grouped = <String, List<ShoppingItem>>{};
+    for (final item in items) {
+      (grouped[item.category] ??= []).add(item);
+    }
+    return ListView(
+      controller: widget.scrollController,
+      shrinkWrap: widget.inDialog,
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+      children: [
+        for (final cat in _orderedCategories(grouped.keys)) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              cat.toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          for (final item in grouped[cat]!)
+            CheckboxListTile(
+              value: item.checked,
+              onChanged: (_) => _toggle(item),
+              title: Text(
+                item.label,
+                style: item.checked
+                    ? TextStyle(
+                        decoration: TextDecoration.lineThrough,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.4,
+                        ),
+                      )
+                    : null,
+              ),
+              subtitle: item.source != null
+                  ? Text(
+                      item.source!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  : null,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildActions(ThemeData theme, List<ShoppingItem> items) {
+    final scheme = theme.colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FilledButton.icon(
+              onPressed: _sendingTasks ? null : () => _sendToTasks(items),
+              icon: _sendingTasks
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        // Bouton désactivé pendant l'envoi : l'indicateur
+                        // prend la couleur de son libellé grisé.
+                        color: scheme.onSurface.withValues(alpha: 0.38),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.checklist_outlined,
+                      size: AppIconSize.small,
+                    ),
+              label: const Text('Envoyer vers Google Tasks'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Une liste cochable, un rayon par tâche et un article '
+              'par sous-tâche. Rien à convertir à la main.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _opening ? null : () => _openKeep(items),
+              icon: _opening
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: scheme.primary,
+                      ),
+                    )
+                  : const Icon(Icons.open_in_new, size: AppIconSize.small),
+              label: const Text('Copier pour Google Keep'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Keep n\'a pas d\'API : la liste est copiée, à vous de '
+              'créer la note, de la convertir en cases à cocher et de refaire '
+              'les rayons.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }

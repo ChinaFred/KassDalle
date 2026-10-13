@@ -241,7 +241,9 @@
       Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
       planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
       sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
-      partagés avec ses groupes.
+      partagés avec ses groupes. Les courses sont ouvertes à tous : chacun remplit sa propre
+      liste depuis un repas, la période lue ou une fiche recette, quel que soit le planning du
+      repas.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -257,7 +259,8 @@ flowchart LR
     a2(["Lire une recette en mode livre"])
     a3(["Ajuster le nombre de portions"])
     a4(["Consulter la nutrition"])
-    a5(["Ouvrir la liste de courses"])
+    a5(["Ajouter aux courses&lt;br/&gt;un repas, la période, une recette"])
+    a38(["Ouvrir « Mes courses »&lt;br/&gt;cocher, retirer les cochés, vider"])
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
     a25(["Voir les notes de la famille"])
@@ -307,6 +310,7 @@ flowchart LR
     i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
     i15(["Trouver des pages de recettes sur Google&lt;br/&gt;50 par jour, cache partagé de 7 jours"])
     i16(["Recalculer qui lit quel planning"])
+    i17(["Choisir Ajouter ou Remplacer&lt;br/&gt;si ma liste n'est pas vide"])
   end
 
   LEC --- a1
@@ -342,6 +346,8 @@ flowchart LR
   LEC --- a25
   EDI --- a36
   LEC --- a37
+  LEC --- a5
+  LEC --- a38
   a36 -.->|"étend"| a13
   a36 -.->|"inclut"| i16
   a30 -.->|"Accepter"| i16
@@ -351,7 +357,9 @@ flowchart LR
   a2 --- a4
   a2 --- a29
   a2 --- a5
-  a9 --- a5
+  a37 -.->|"étend : un repas à venir, la période"| a5
+  a5 -.->|"inclut"| i17
+  a5 -.->|"« Voir »"| a38
   a9 --- a14
   a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
@@ -405,7 +413,9 @@ flowchart LR
         totaux de la recette divisés par le nombre de parts choisi, calculés à l'affichage. Rien
         n'est écrit dans la recette partagée.
         <b>La liste de courses n'appelle aucun modèle</b> : l'appareil regroupe les lignes par
-        produit acheté. Le produit d'achat de chaque ingrédient est posé par le serveur à
+        produit acheté, et les écrit dans la liste personnelle du compte
+        (<code>users/{uid}/shopping/current</code>), la même sur tous ses appareils. Ajouter le
+        repas d'un autre membre remplit ma liste, jamais la sienne. Le produit d'achat de chaque ingrédient est posé par le serveur à
         l'écriture de la recette, un appel pour un ingrédient neuf seulement.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.

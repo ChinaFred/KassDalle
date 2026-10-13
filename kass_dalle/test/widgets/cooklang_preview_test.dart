@@ -280,14 +280,14 @@ void main() {
       tester,
     ) async {
       await pump(tester, 'Mélanger la @farine{200%g}.');
-      expect(find.byTooltip('Liste de courses'), findsNothing);
+      expect(find.byTooltip('Ajouter aux courses'), findsNothing);
 
       await pump(
         tester,
         'Mélanger la @farine{200%g}.',
         onCreateShoppingList: () {},
       );
-      expect(find.byTooltip('Liste de courses'), findsOneWidget);
+      expect(find.byTooltip('Ajouter aux courses'), findsOneWidget);
     });
   });
 

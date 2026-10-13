@@ -39,7 +39,7 @@ class CooklangPreview extends StatefulWidget {
   /// Callback appelé avec l'URL de la miniature à supprimer.
   final void Function(String url)? onDeleteIllustration;
 
-  /// Callback optionnel pour déclencher la création de la liste de courses.
+  /// Callback optionnel pour « Ajouter aux courses ».
   /// Si null, le bouton n'est pas affiché dans la section ingrédients.
   final VoidCallback? onCreateShoppingList;
 
@@ -234,8 +234,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                         if (onCreateShoppingList != null)
                           IconButton(
                             onPressed: onCreateShoppingList,
-                            icon: const Icon(Icons.shopping_cart_outlined),
-                            tooltip: 'Liste de courses',
+                            icon: const Icon(Icons.add_shopping_cart),
+                            tooltip: 'Ajouter aux courses',
                             iconSize: AppIconSize.small,
                             visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,

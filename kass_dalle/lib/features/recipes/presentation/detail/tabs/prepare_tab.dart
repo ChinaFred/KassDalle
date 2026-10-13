@@ -131,20 +131,16 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                     ? deleteIllustration
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
-                    ? () {
-                        final uid = ref.read(appUserProvider).value?.uid ?? '';
-                        final scaledProducts = scaleShoppingProducts(
+                    ? () => addRecipeToShoppingList(
+                        context,
+                        ref,
+                        products: scaleShoppingProducts(
                           recipe.shoppingProducts,
                           scaleFactor,
-                        );
-                        showShoppingListSheet(
-                          context,
-                          scaledProducts,
-                          scaledIngredients,
-                          recipe.titre,
-                          uid,
-                        );
-                      }
+                        ),
+                        fallbackIngredients: scaledIngredients,
+                        recipeTitre: recipe.titre,
+                      )
                     : null,
                 // Planifier est un geste d'éditeur : le lecteur ne planifie plus.
                 onSchedule:
