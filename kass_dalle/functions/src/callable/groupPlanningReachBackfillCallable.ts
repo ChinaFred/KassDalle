@@ -148,6 +148,9 @@ export function summarizeGroupPlanningReach(r: BackfillGroupPlanningReachRespons
     complete: r.completed,
     remaining: r.repasRestants == null ? null : r.restants + r.repasRestants,
     toReview: r.aRevoir.total,
+    // Sans IA ni mémoire des échecs : un échec se relance au passage suivant
+    // et reste nommé dans « à revoir » (`toReview`).
+    unresolved: 0,
     spendCapHit: false,
   };
 }
