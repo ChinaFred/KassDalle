@@ -13,6 +13,7 @@ import 'core/services/app_check.dart';
 import 'core/services/error_report_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_mode_preference.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/recipes/presentation/recipe_providers.dart';
 import 'core/widgets/provider_retry.dart';
@@ -90,6 +91,9 @@ class KassDalleApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Réglage de l'appareil (Préférences › Apparence). Suit l'appareil tant
+    // qu'il n'est pas lu.
+    final themeMode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
     // Écouté dès le démarrage : un partage Android qui ouvre l'application
     // avant la connexion attend la session dans ce provider.
     ref.listen(pendingSharedTextProvider, (_, _) {});
@@ -98,7 +102,7 @@ class KassDalleApp extends ConsumerWidget {
       title: "Kass'dalle",
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       // L'application est écrite en français ; les widgets fournis par Flutter
       // (sélecteur de date, menus de sélection de texte, tooltips de barre
       // d'app) parlaient anglais faute de délégués. Le français est imposé et
