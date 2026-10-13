@@ -632,7 +632,7 @@ service cloud.firestore {
     // `member_ids` : n'importe quel compte créait un groupe, y ajoutait un
     // inconnu, et lisait ses livres.
     //
-    // Créer un groupe et le gérer demandent le rôle éditeur (v0.23.53) : un
+    // Créer un groupe et le gérer demandent le rôle éditeur (v0.23.54) : un
     // lecteur rejoint un groupe sur invitation, il n'en ouvre pas. Un groupe
     // créé par un lecteur avant cette version reste lisible ; son
     // propriétaire peut encore le réduire (annuler une invitation, retirer un
@@ -681,7 +681,7 @@ service cloud.firestore {
       /// faire entrer personne : `member_ids` ne peut que perdre des comptes,
       /// le propriétaire y reste, et une invitation ne vise pas un compte déjà
       /// membre. Être propriétaire ne suffit pas : un lecteur propriétaire
-      /// d'un groupe créé avant v0.23.53 n'y invite plus personne.
+      /// d'un groupe créé avant v0.23.54 n'y invite plus personne.
       function isManagement() {
         return ((isOwner(resource.data.owner_id) && isEditor()) || isAdmin())
           && onlyTouches(['name', 'member_ids', 'invited_ids'])
@@ -694,7 +694,7 @@ service cloud.firestore {
       /// Le propriétaire, quel que soit son rôle, ne fait que réduire son
       /// groupe : `invited_ids` et `member_ids` ne perdent que des comptes, il
       /// reste membre, le nom ne change pas. Laisse au lecteur propriétaire
-      /// d'un groupe antérieur à v0.23.53 de quoi en faire sortir quelqu'un.
+      /// d'un groupe antérieur à v0.23.54 de quoi en faire sortir quelqu'un.
       /// Sans doublon : `hasAll` compare des ensembles, et une liste répétée
       /// faisait grossir le document que chaque membre relit.
       function isShrinking() {

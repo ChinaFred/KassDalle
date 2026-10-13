@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.53 — fonctionnel
+### v0.23.54 — fonctionnel
 
 Seuls un éditeur et un administrateur créent un groupe familial. Un lecteur rejoint le
 groupe d'un proche sur invitation : le bouton « Créer un groupe » ne lui est plus proposé,
@@ -36,7 +36,7 @@ groupe. Les membres de ce groupe restent membres, acceptent ou refusent une invi
 quittent le groupe comme avant. Le menu d'un groupe affiche « Gérer les membres » au
 propriétaire et « Voir les membres » aux autres membres. Les règles laissent un administrateur gérer tout groupe ; l'écran ne lui offre ces gestes que sur ses propres groupes.
 
-### v0.23.53 — technique
+### v0.23.54 — technique
 
 `firestore.rules`, collection `groups` : la création exige `isEditor()`. `isManagement()`
 (renommer, inviter) exige `isEditor()` en plus de la propriété ; un administrateur passe
@@ -47,9 +47,17 @@ suppression par le propriétaire ne changent pas. La callable `findMemberByEmail
 `requireAuth` à `requireEditor`, pour refuser la recherche par adresse au lecteur
 propriétaire d'un ancien groupe, que la règle empêche déjà d'inviter. `rules-tests` : le
 groupe `g1` des données de test appartient désormais à l'éditeur, un groupe `g-reader`
-représente un groupe de lecteur créé avant la v0.23.53, et une suite « groupes — rôle
+représente un groupe de lecteur créé avant la v0.23.54, et une suite « groupes — rôle
 éditeur requis » couvre création, gestion, réduction, suppression, sortie et acceptation
 selon le rôle. Aucune donnée à reprendre : les groupes existants restent tels quels.
+
+### v0.23.53 — fonctionnel
+
+Préférences reçoit une section « Apparence » : le thème se choisit entre « Appareil », « Clair »
+et « Sombre ». « Appareil » reste le défaut et suit le mode du téléphone, de l'ordinateur ou du
+navigateur, comme avant. Le choix s'applique tout de suite et se mémorise sur l'appareil
+(`SharedPreferences`, clé `theme_mode`), pas dans le compte : chaque appareil garde le sien. La
+section reste utilisable quand les préférences du compte ne se chargent pas.
 
 ### v0.23.52 — technique
 

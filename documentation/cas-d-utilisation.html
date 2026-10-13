@@ -152,12 +152,13 @@
         <tbody>
           <tr><td>Lire ses livres et recettes, et ceux, non privés, des comptes qui partagent au moins un groupe avec soi — annotations, notes et texte d'origine compris. Un compte hors de ses groupes ne lit rien de soi, et réciproquement</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui, tout</td></tr>
           <tr><td>Lire le livre ou la recette <b>privé</b> d'autrui, ses annotations et ses notes</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Créer un groupe, le renommer, inviter une personne dans son groupe — le propriétaire, qui reste membre ; tout groupe pour l'admin par les règles, ses propres groupes seulement à l'écran (v0.23.53 : plus le lecteur)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Annuler une invitation, retirer un membre, supprimer un groupe dont on est propriétaire — le lecteur propriétaire d'un groupe créé avant la v0.23.53 le peut encore</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer un groupe, le renommer, inviter une personne dans son groupe — le propriétaire, qui reste membre ; tout groupe pour l'admin par les règles, ses propres groupes seulement à l'écran (v0.23.54 : plus le lecteur)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Annuler une invitation, retirer un membre, supprimer un groupe dont on est propriétaire — le lecteur propriétaire d'un groupe créé avant la v0.23.54 le peut encore</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Accepter ou refuser une invitation reçue, quitter un groupe dont on n'est pas propriétaire</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Ajouter directement un membre à un groupe, sans son acceptation</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Choisir le thème de l'application — suivre l'appareil, clair ou sombre (Préférences › Apparence), mémorisé sur l'appareil et non dans le compte</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut seulement supprimer</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -204,7 +205,7 @@
       supprime. Ses anciens repas aussi : il les lit et les supprime. Ce que le rôle
       <code>editor</code> ouvre en plus, c'est le planning et son partage, la création de
       recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
-      création de livres, la relecture des brouillons partagés, et depuis la v0.23.53 la
+      création de livres, la relecture des brouillons partagés, et depuis la v0.23.54 la
       création et la gestion d'un groupe familial : le <code>reader</code> rejoint un groupe
       sur invitation d'un proche. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
@@ -277,7 +278,7 @@ flowchart LR
     a15(["Créer un groupe familial et y inviter"])
     a30(["Accepter ou refuser une invitation"])
     a31(["Quitter un groupe"])
-    a16(["Régler mes préférences"])
+    a16(["Régler mes préférences&lt;br/&gt;thème, import, planning"])
     a17(["Gérer mon compte et mon nom affiché"])
     a18(["Suivre l'avancement de mes imports"])
     a19(["Demander des idées de repas à l'IA"])
@@ -528,7 +529,7 @@ flowchart LR
         les suggestions du propriétaire.
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls
         l'<code>editor</code> et l'<code>admin</code> créent un groupe et le gèrent
-        (v0.23.53) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
+        (v0.23.54) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
         propriétaire d'un groupe plus ancien peut encore annuler une invitation, retirer un
         membre ou supprimer le groupe, sans inviter ni renommer. Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),

@@ -9,7 +9,7 @@
  * Ce que le serveur vérifie :
  *  - un compte connecté, éditeur ou administrateur, non révoqué, attestation
  *    App Check (`requireEditor`) : un lecteur n'invite pas, même propriétaire
- *    d'un groupe créé avant v0.23.53 (`isManagement` de `firestore.rules`) ;
+ *    d'un groupe créé avant v0.23.54 (`isManagement` de `firestore.rules`) ;
  *  - l'appelant est **propriétaire** du groupe (`searcherDenial`) ;
  *  - l'adresse a une forme valide (`cleanEmail`), sinon `invalid-argument` ;
  *  - dix recherches par compte et par jour UTC (`member_email_search_daily`),

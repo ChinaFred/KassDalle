@@ -128,7 +128,7 @@ class _GroupTile extends ConsumerWidget {
     final isOwner = group.isOwner(myUid);
     // Renommer demande aussi le rôle éditeur (`isManagement` de
     // `firestore.rules`) : un lecteur propriétaire d'un groupe créé avant
-    // v0.23.53 ne garde que ce qui réduit son groupe.
+    // v0.23.54 ne garde que ce qui réduit son groupe.
     final canManage = isOwner && ref.watch(canEditProvider);
     return ListTile(
       leading: CircleAvatar(child: Text(group.name[0].toUpperCase())),

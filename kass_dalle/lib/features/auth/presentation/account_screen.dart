@@ -49,7 +49,7 @@ class AccountScreen extends ConsumerWidget {
                         leading: const Icon(Icons.tune_outlined),
                         title: const Text('Préférences'),
                         subtitle: const Text(
-                          'Import des illustrations, planification',
+                          'Thème, import des illustrations, planification',
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => context.push(AppRoutes.preferences),

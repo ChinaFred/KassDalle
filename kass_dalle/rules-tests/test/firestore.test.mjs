@@ -195,7 +195,7 @@ beforeEach(async () => {
     "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
     "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
     // `g1` appartient à l'éditeur : créer et gérer un groupe demandent le
-    // rôle éditeur (v0.23.53). `g-reader` est un groupe de lecteur créé
+    // rôle éditeur (v0.23.54). `g-reader` est un groupe de lecteur créé
     // avant cette version.
     "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] },
     "groups/g-reader": { name: "Ancien", owner_id: READER, member_ids: [READER] },
@@ -3100,7 +3100,7 @@ describe("groupes — invitations", () => {
   });
 });
 
-// ── Rôle éditeur pour créer et gérer un groupe (v0.23.53) ───────────────
+// ── Rôle éditeur pour créer et gérer un groupe (v0.23.54) ───────────────
 //
 // Un lecteur rejoint un groupe sur invitation ; il n'en crée pas. Un groupe
 // qu'il a créé avant cette version, il peut encore le réduire (annuler une
