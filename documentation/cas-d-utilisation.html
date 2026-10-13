@@ -184,7 +184,6 @@
           <tr><td>Lire les allergènes d'une recette qu'on voit — même bloc pour tous les rôles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les durées d'une recette qu'on voit, et ses durées estimées par l'IA (« ≈ Prép. 20 min ») quand elle n'en donne pas — même rendu pour tous les rôles ; compter ou non les durées estimées dans le filtre « Temps total » d'Explorer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Corriger les allergènes d'un ingrédient du référentiel, lancer le backfill « Allergènes »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Lancer le backfill « Durées estimées »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Programmer un backfill récurrent, marquer un backfill ponctuel terminé ou le remettre à lancer</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
@@ -685,8 +684,8 @@ flowchart LR
         <b>La protéine et le féculent se corrigent à la main</b>, dans le même panneau, par deux
         listes placées sous « Rôle dans un repas » et visibles seulement pour un plat ou un
         accompagnement. Le créateur de la recette ou un administrateur les modifie.
-        « Non renseigné » rend la recette à la reprise <i>Protéine et féculent des plats</i>.
-        Ni l'import, ni le classement à l'écriture, ni la reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
+        « Non renseigné » efface la valeur ; aucune reprise automatique ne la redemande.
+        Ni l'import, ni le classement à l'écriture, ni une reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
         dessert ou snack efface les deux valeurs à l'enregistrement.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
         transcription détecte sans appel de plus. Elle ajoute un appel (poste
@@ -777,7 +776,6 @@ flowchart LR
     d25(["Tenir le référentiel des garnitures simples"])
     d26(["Corriger les allergènes d'un ingrédient&lt;br/&gt;14 cases à cocher"])
     d27(["Lancer le backfill Allergènes"])
-    d28(["Lancer le backfill Durées estimées"])
     d29(["Programmer un backfill récurrent&lt;br/&gt;jours et heure de Paris"])
     d30(["Marquer un backfill ponctuel terminé&lt;br/&gt;ou le remettre à lancer"])
     d31(["Inviter un proche par e-mail&lt;br/&gt;rôle, groupe, message"])
@@ -814,7 +812,6 @@ flowchart LR
   ADM --- d25
   ADM --- d26
   ADM --- d27
-  ADM --- d28
   ADM --- d29
   ADM --- d30
   ADM --- d31
@@ -839,17 +836,13 @@ flowchart LR
   d17 -.->|"sinon : « tarifs en panne », appels enregistrés sans montant"| e4(["Écrire app_config/ai_pricing"])
   d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
   d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
-  d12 -.->|"Protéine et féculent des plats, une fois après le déploiement"| e7(["Poser protéine et féculent&lt;br/&gt;sur les plats qui n'en ont pas"])
   d26 -.->|"dans Ingrédients nutrition, liste « vérifiée par l'admin »"| d11
   d26 -.->|"les recettes suivent au prochain passage"| d27
   d27 -.->|"est"| d12
   d27 -.->|"phase 1 : ingrédients non examinés"| e8(["Estimer les allergènes d'un ingrédient"])
   d27 -.->|"phase 2 : toutes les recettes, sans IA"| e9(["Poser sur la recette l'union&lt;br/&gt;des allergènes de ses ingrédients"])
-  d28 -.->|"est"| d12
-  d28 -.->|"recettes sans durée, 8 par appel"| e10(["Estimer la préparation et la cuisson&lt;br/&gt;d'une recette"])
   d29 -.->|"tâche horaire scheduledBackfills, imputée à l'admin qui programme"| e11(["Passage programmé, reprise l'heure suivante&lt;br/&gt;jusqu'à la fin ou au plafond"])
   d30 -.->|"aussi posé seul quand un passage finit sans reste"| d12
-  e10 --- GEM
   e8 --- GEM
 </pre>
       </div>
@@ -864,12 +857,6 @@ flowchart LR
         ne change qu'à l'enregistrement.
         <b>La qualité des données</b> compte quatre anomalies des référentiels nutrition et
         n'écrit rien : chaque échantillon ouvre l'écran du référentiel, où la correction se fait.
-        <b>« Protéine et féculent des plats »</b> est une reprise de Backfills : elle traite les
-        plats et accompagnements qu'elle n'a pas encore examinés, quarante par passage, et rend le
-        compte des recettes examinées, traitées, déjà traitées, ignorées, sans réponse et en échec. Elle ne réécrit ni le rôle dans un repas ni les
-        autres tags, ni une protéine ou un féculent posés à la main. Une recette remise à
-        « Non renseigné » dans le panneau de métadonnées est reprise au passage suivant. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
-        base.
         <b>Les allergènes d'un ingrédient</b> se lisent dans Référentiels › Ingrédients
         nutrition : « estimé par l'IA », « vérifié par l'admin » ou « non examiné ». L'administrateur
         les corrige par quatorze cases à cocher ; la liste passe à « vérifié par l'admin ». La
@@ -878,12 +865,7 @@ flowchart LR
         estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
         chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
         est chiffré pour chaque phase : traités, ignorés, en erreur.
-        <b>« Durées estimées »</b> est une reprise de Backfills : l'IA estime la préparation et la
-        cuisson des recettes qui n'en donnent pas, huit par appel, cent soixante par passage. Une
-        recette dont les durées sont lues, ou déjà estimée pour son texte actuel, n'est ni
-        redemandée ni refacturée. Le compte rendu donne les recettes estimées, sans estimation,
-        ignorées et en erreur. Les recettes écrites ensuite sont estimées à leur écriture.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses dix reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses sept reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au

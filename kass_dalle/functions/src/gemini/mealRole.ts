@@ -94,8 +94,7 @@ const MAX_SIDE_LENGTH = 40;
 const MAX_SIDES = 4;
 
 /**
- * La protéine et le féculent principaux, mot pour mot : dans le prompt du rôle
- * et dans celui du backfill « Protéine et féculent des plats ».
+ * La protéine et le féculent principaux, mot pour mot, dans le prompt du rôle.
  *
  * Une valeur hors liste est lue comme absente, jamais rangée dans une valeur
  * voisine : le prompt demande donc de laisser vide ce qui ne rentre pas.
@@ -207,13 +206,10 @@ const COMPONENT_ALIASES: Record<string, MealComponent> = {
   vegetables: "legume",
 };
 
-/** Nom du marqueur posé sous `tags` quand la recette a été examinée. */
-export const MAIN_INGREDIENTS_CHECKED_FIELD = "main_ingredients_checked_at";
-
 /**
- * Ce que le backfill « Protéine et féculent des plats » écrit, sans le
- * marqueur : seulement les champs absents de la recette. Une valeur déjà
- * posée — à la main ou par un autre chemin — n'est jamais remplacée.
+ * La protéine et le féculent à écrire, sans le marqueur : seulement les champs
+ * absents de la recette. Une valeur déjà posée — à la main ou par un autre
+ * chemin — n'est jamais remplacée.
  */
 export function mainIngredientsPatch(
   existingTags: Record<string, unknown>,
@@ -228,18 +224,6 @@ export function mainIngredientsPatch(
       ? { main_starch: fields.mainStarch }
       : {}),
   };
-}
-
-/**
- * Vrai quand la recette porte déjà une protéine et un féculent : le backfill
- * pose alors le marqueur sans appeler le modèle. Un seul des deux posé — une
- * protéine choisie à la main, le féculent laissé à « Non renseigné » — ne
- * suffit pas : le modèle est questionné, et `mainIngredientsPatch` n'écrit que
- * le champ manquant.
- */
-export function hasBothMainIngredients(tags: Record<string, unknown>): boolean {
-  const present = (v: unknown) => typeof v === "string" && v.trim().length > 0;
-  return present(tags.main_protein) && present(tags.main_starch);
 }
 
 /**
@@ -291,8 +275,8 @@ export function parseMainStarch(value: unknown): MainStarch | null {
 }
 
 /**
- * Les deux champs, sans regarder le rôle : pour le backfill, qui ne
- * questionne que des recettes déjà rangées en plat ou en accompagnement.
+ * Les deux champs, sans regarder le rôle : `parseMealRoleFields` ne l'appelle
+ * que pour un plat ou un accompagnement.
  */
 export function parseMainProteinStarch(json: Record<string, unknown>): MainProteinStarch {
   const answered = (v: unknown) => typeof v === "string" && v.trim().length > 0;

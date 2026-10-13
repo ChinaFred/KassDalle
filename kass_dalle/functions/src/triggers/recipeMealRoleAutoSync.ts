@@ -36,15 +36,14 @@ function asStrings(value: unknown): string[] {
 /**
  * Pose `tags.meal_role` (et `contains`, `suggested_sides`, `main_protein`,
  * `main_starch`) si le rôle est absent. La protéine et le féculent viennent du
- * même appel ; ils ne déclenchent jamais un appel à eux seuls : une recette
- * classée sans eux est reprise par le backfill « Protéine et féculent des
- * plats », et un déclencheur qui rappellerait le modèle tant qu'ils manquent
- * le rappellerait à chaque écho de sa propre écriture.
+ * même appel ; ils ne déclenchent jamais un appel à eux seuls : un
+ * déclencheur qui rappellerait le modèle tant qu'ils manquent le rappellerait
+ * à chaque écho de sa propre écriture.
  *
- * Un seul appel de modèle, sur le rôle seul — comme le backfill, les types de
- * plat déjà connus ne sont pas redemandés. Si le modèle ne sait pas classer la
- * recette, rien n'est écrit : elle reste sans rôle, et la prochaine écriture
- * — ou le backfill — retentera. Aucun compteur d'essais, aucun délai de
+ * Un seul appel de modèle, sur le rôle seul — les types de plat déjà connus ne
+ * sont pas redemandés. Si le modèle ne sait pas classer la recette, rien n'est
+ * écrit : elle reste sans rôle, et la prochaine écriture — ou le backfill
+ * « Rôle des recettes dans un repas » — retentera. Aucun compteur d'essais, aucun délai de
  * reprise : un seul champ à remplir ne justifie pas le mécanisme de budget de
  * l'enrichissement nutritionnel, et reproduire sa marque « tentative
  * récente » reproduirait aussi son défaut — une coupure de budget comptée

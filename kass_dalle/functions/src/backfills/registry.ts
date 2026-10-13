@@ -14,6 +14,10 @@
  *
  * Le pendant côté client est `lib/features/admin/domain/backfill_registry.dart`
  * — mêmes clés, même classement. Un backfill ajouté à l'écran s'ajoute aux deux.
+ *
+ * Retirés en v0.23.52, une fois terminés en production : `recipe_protein`,
+ * `estimated_times` et `planning_defaults`. Leurs documents
+ * `app_config/backfill_run_<clé>` restent en base ; plus rien ne les lit.
  */
 
 export type BackfillKind = "ponctuel" | "recurrent";
@@ -24,10 +28,7 @@ export const BACKFILL_KEYS = [
   "allergens",
   "recipe_roles",
   "shopping_products",
-  "recipe_protein",
-  "estimated_times",
   "refresh_sodium",
-  "planning_defaults",
   "system_books",
 ] as const;
 
@@ -94,31 +95,10 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     defaultSchedule: null,
   },
   {
-    key: "recipe_protein",
-    kind: "ponctuel",
-    title: "Protéine et féculent des plats",
-    usesAi: true,
-    defaultSchedule: null,
-  },
-  {
-    key: "estimated_times",
-    kind: "ponctuel",
-    title: "Durées estimées",
-    usesAi: true,
-    defaultSchedule: null,
-  },
-  {
     key: "refresh_sodium",
     kind: "ponctuel",
     title: "Reprendre le sel des ingrédients",
     usesAi: true,
-    defaultSchedule: null,
-  },
-  {
-    key: "planning_defaults",
-    kind: "ponctuel",
-    title: "Contraintes de variété par défaut",
-    usesAi: false,
     defaultSchedule: null,
   },
   {

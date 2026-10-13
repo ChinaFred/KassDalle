@@ -7,14 +7,9 @@ import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { logError } from "../logging";
 import {
-  MAIN_PROTEIN_STARCH_JSON_KEYS,
-  MAIN_PROTEIN_STARCH_PROMPT,
   MEAL_ROLE_JSON_KEYS,
   MEAL_ROLE_PROMPT,
-  parseMainProteinStarch,
   parseMealRoleFields,
-  type MainProteinStarch,
-  type MealRole,
   type MealRoleFields,
 } from "./mealRole";
 
@@ -146,44 +141,4 @@ Si la recette n'est pas culinaire ou si tu n'es pas sûr, laisse "meal_role" vid
 
   const json = await readJson(result.text, ctx, ctx.feature);
   return parseMealRoleFields(json);
-}
-
-/**
- * La protéine et le féculent principaux, seuls, d'une recette dont le rôle
- * est connu.
- *
- * Pour le backfill « Protéine et féculent des plats » : le rôle, ce que la
- * recette apporte et ses accompagnements ont pu être corrigés à la main, ils
- * ne sont ni redemandés ni réécrits. Le rôle est donné au modèle, pas
- * demandé. Le poste de coût est celui de l'appelant (`ctx.feature`).
- */
-export async function suggestMainProteinStarch(
-  input: { titre: string; cooklang: string; mealRole: MealRole; dishTypes: string[] },
-  ctx: ModelCallContext,
-): Promise<MainProteinStarch> {
-  const dishTypes = input.dishTypes.filter((t) => t.trim().length > 0);
-  const prompt = `Tu es un expert en classification culinaire. Dis quelle est la protéine principale et le féculent principal de cette recette.
-
-TITRE: ${input.titre}
-RÔLE DANS UN REPAS: ${input.mealRole}
-${dishTypes.length > 0 ? `TYPES DE PLAT DÉJÀ CONNUS: ${dishTypes.join(", ")}\n` : ""}
-CONTENU (format CookLang):
-${truncatedContent(input.cooklang)}
-
-${MAIN_PROTEIN_STARCH_PROMPT}
-
-Retourne UNIQUEMENT ce JSON (sans balises markdown, sans commentaire) :
-{
-  ${MAIN_PROTEIN_STARCH_JSON_KEYS}
-}
-
-Si tu n'es pas sûr d'une valeur, laisse-la vide.`;
-
-  const result = await callModel({
-    parts: [textPart(prompt)],
-    ctx: { ...ctx, timeoutMs: 30_000 },
-  });
-
-  const json = await readJson(result.text, ctx, ctx.feature);
-  return parseMainProteinStarch(json);
 }

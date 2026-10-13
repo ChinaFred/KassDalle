@@ -298,13 +298,17 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 5);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 2);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
+    // Ponctuels retirés en v0.23.52 : leur clé n'est plus connue.
+    for (const retired of ["recipe_protein", "estimated_times", "planning_defaults"]) {
+      assert.equal(backfillDefinition(retired), null);
+    }
   });
   test("programmer un ponctuel est refusé", () => {
     assert.throws(
-      () => validateScheduleRequest({ key: "estimated_times", enabled: true, days: [1], hour: 3 }),
+      () => validateScheduleRequest({ key: "refresh_sodium", enabled: true, days: [1], hour: 3 }),
       /ponctuel/,
     );
   });

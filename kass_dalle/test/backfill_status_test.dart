@@ -136,7 +136,7 @@ void main() {
 
   group('ligne d\'état', () {
     final roles = backfillDefinition(BackfillKeys.recipeRoles)!;
-    final protein = backfillDefinition(BackfillKeys.recipeProtein)!;
+    final sodium = backfillDefinition(BackfillKeys.refreshSodium)!;
 
     test('jamais lancé', () {
       expect(
@@ -144,12 +144,7 @@ void main() {
         'Jamais lancé. Lancez un premier passage ou programmez-le.',
       );
       expect(
-        backfillStatusLine(
-          def: protein,
-          state: null,
-          schedule: null,
-          now: _now,
-        ),
+        backfillStatusLine(def: sodium, state: null, schedule: null, now: _now),
         'Jamais lancé.',
       );
     });
@@ -259,7 +254,7 @@ void main() {
     });
 
     test('ponctuel terminé à la main', () {
-      final state = BackfillRunState.fromMap('estimated_times', {
+      final state = BackfillRunState.fromMap('system_books', {
         'termine_le': DateTime.utc(2026, 10, 10, 10),
         'termine_version': '0.23.30',
         'termine_par': 'manuel',
@@ -275,7 +270,7 @@ void main() {
   group('rangement', () {
     test('trois sections, ordre fixe du registre', () {
       final sections = backfillSections(kBackfillRegistry, {
-        'estimated_times': BackfillRunState.fromMap('estimated_times', {
+        'system_books': BackfillRunState.fromMap('system_books', {
           'termine_le': DateTime.utc(2026, 10, 10),
         }),
         // Un état de récurrent marqué terminé ne le déplace pas.
@@ -290,19 +285,42 @@ void main() {
         'recipe_roles',
         'shopping_products',
       ]);
-      expect(sections.ponctuelsALancer.map((d) => d.key), [
-        'recipe_protein',
-        'refresh_sodium',
-        'planning_defaults',
-        'system_books',
-      ]);
-      expect(sections.ponctuelsTermines.map((d) => d.key), ['estimated_times']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), ['refresh_sodium']);
+      expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(5));
+      expect(sections.ponctuelsALancer, hasLength(2));
       expect(sections.ponctuelsTermines, isEmpty);
+    });
+
+    test('clé retirée du registre : son état resté en base est ignoré', () {
+      // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52.
+      final sections = backfillSections(kBackfillRegistry, {
+        for (final key in [
+          'recipe_protein',
+          'estimated_times',
+          'planning_defaults',
+        ])
+          key: BackfillRunState.fromMap(key, {
+            'termine_le': DateTime.utc(2026, 10, 10),
+            'dernier_passage_statut': 'termine',
+            'last_report': {'traitees': 3},
+          }),
+      });
+      final shown = [
+        ...sections.recurrents,
+        ...sections.ponctuelsALancer,
+        ...sections.ponctuelsTermines,
+      ].map((d) => d.key);
+      expect(shown, isNot(contains('recipe_protein')));
+      expect(shown, isNot(contains('estimated_times')));
+      expect(shown, isNot(contains('planning_defaults')));
+      expect(shown, hasLength(kBackfillRegistry.length));
+      expect(sections.ponctuelsTermines, isEmpty);
+      expect(backfillDefinition('estimated_times'), isNull);
+      expect(backfillReportSummary('recipe_protein', {'traitees': 3}), '');
     });
   });
 

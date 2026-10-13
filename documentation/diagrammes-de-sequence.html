@@ -174,7 +174,6 @@
       <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
-      <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
       <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
       <li><a href="#plannings-partages">Partager son planning, lire celui d'un autre</a></li>
       <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
@@ -2754,7 +2753,7 @@ sequenceDiagram
       <code>onRecipeWritten</code> calcule une fois par changement d'entrée. Une nutrition en
       échec ou incomplète est reprise par une passe à part : le passage programmé de
       « Reprendre la nutrition » (tous les jours à 5 h par défaut, réglable dans Admin ›
-      Backfills, lancé par <code>scheduledBackfills</code>, séquence 33), ou à la demande depuis
+      Backfills, lancé par <code>scheduledBackfills</code>, séquence 32), ou à la demande depuis
       Admin › Backfills.
       <span class="path">scheduled/backfillSchedule.ts (scheduledBackfills) →
       callable/nutritionBackfillCallable.ts (backfillNutritionFn, runNutritionBackfillPass) →
@@ -2807,7 +2806,7 @@ sequenceDiagram
   TR-->>FS: entrées inchangées, sortie à la garde
   RUN-->>CU: complétées, encore incomplètes, laissées<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
   RUN-->>BF: même compte rendu, curseur du passage suivant
-  Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 33)
+  Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 32)
 </pre>
       </div>
       <figcaption>
@@ -3329,95 +3328,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="durees-estimees"><span class="n">32</span>Backfill « Durées estimées »</h2>
-    <p class="sec-note">
-      Les recettes écrites avant les durées estimées n'en ont pas. L'administrateur les reprend
-      depuis Admin › Backfills ; les recettes écrites ensuite sont estimées par
-      <code>onRecipeWritten</code> (séquence 06).
-      <span class="path">admin_backfills_screen.dart:_runPass →
-      GcpBillingRepository.backfillEstimatedTimes → callable/estimatedTimesBackfillCallable.ts →
-      backfills/runner.ts (verrou et état communs, séquence 33)</span>
-    </p>
-    <figure class="fig">
-      <div class="canvas">
-<pre class="mermaid">
-sequenceDiagram
-  autonumber
-  actor A as Administrateur
-  participant S as AdminBackfillsScreen
-  participant F as backfillEstimatedTimesFn
-  participant C as app_config
-  participant FS as recipes
-  participant M as Modèle (Gemini ou Claude)
-
-  A->>S: « Durées estimées », puis Lancer
-  S->>F: maxMinutes 8, reprise sur point de contrôle
-  F->>F: requireAdmin
-  F->>C: transaction — running_until encore valide ?
-  alt un autre passage tient le verrou
-    F-->>S: dejaEnCours, rien de lancé
-    S-->>A: « Un passage est déjà en cours »
-  end
-  F->>C: running_until = maintenant + 540 s, running_id
-  F->>C: lit estimated_times_backfill_checkpoint
-  loop pages de 100 recettes, jusqu'au délai, au quota (160, 8 au moins) ou à 3 lots en échec de suite
-    F->>FS: lit la page suivante
-    loop chaque recette
-      alt page_type autre que recipe
-        F->>F: hors recette
-      else durées lues, ou estimation à jour, ou réservation récente
-        F->>F: ignorée, aucun appel
-      else une durée manque
-        F->>F: ajoutée au lot de son propriétaire (created_by)
-      end
-      opt lot de 8 recettes d'un même propriétaire, ou fin de page
-        F->>M: estimateRecipeTimes (backfill_time_estimate_batch)
-        alt réponse lue
-          M-->>F: prep_minutes, cook_minutes par recette
-          loop chaque recette du lot
-            F->>FS: transaction — estimated_times done, si l'empreinte n'a pas changé,<br/>composante déjà lue dans la recette mise à null
-            opt pas de réponse, aucune durée estimée, ou écriture refusée
-              F->>F: recette ajoutée à la liste à revoir
-            end
-          end
-        else échec ou réponse illisible
-          F->>F: logError, lot en erreur, recettes ajoutées à la liste à revoir,<br/>le curseur le dépasse
-        end
-      end
-    end
-    F->>C: curseur
-  end
-  opt quota atteint
-    F->>M: groupes en attente soumis, si le délai le permet
-  end
-  F->>C: curseur (null si tout est parcouru)
-  F->>C: verrou levé (running_until null), s'il est toujours le sien
-  F->>C: état backfill_run_estimated_times : statut, last_report,<br/>termine_* si aucun reste (séquence 33)
-  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur), aRevoir (titre et raison)
-  S-->>A: compte rendu chiffré, « relancer » si incomplet,<br/>« Voir les N à revoir » ouvre la feuille, une ligne ouvre la fiche
-</pre>
-      </div>
-      <figcaption>
-        <b>Relancer ne refacture rien.</b> Une recette déjà estimée pour son contenu est ignorée,
-        une estimation à <code>null</code> (le modèle n'a pas su) aussi. Le curseur ne dépasse une
-        recette mise dans un lot qu'une fois le lot soumis : un passage arrêté par le délai relit
-        ce lot au passage suivant. Un lot en <b>échec</b>, lui, est dépassé : une recette qui
-        échoue toujours ne bloque pas le parcours. Le compte rendu reste « incomplet » ; le
-        passage suivant repart du début et ne reprend, sans refacturer le reste, que les recettes
-        sans estimation.
-        <span class="expect">
-          <b>Un passage à la fois, un propriétaire par lot.</b> Le verrou daté empêche deux
-          passages parallèles de facturer deux fois les mêmes recettes ; il expire seul au bout
-          du délai de la fonction. Un lot ne réunit que des recettes d'un même
-          <code>created_by</code> : le texte saisi par un compte ne partage jamais un prompt avec
-          celui d'un autre.
-        </span>
-      </figcaption>
-    </figure>
-  </section>
-
-  <section>
-    <h2 id="backfills-programmes"><span class="n">33</span>Backfills programmés, verrou et « terminé »</h2>
+    <h2 id="backfills-programmes"><span class="n">32</span>Backfills programmés, verrou et « terminé »</h2>
     <p class="sec-note">
       Chaque backfill d'Admin › Backfills est ponctuel ou récurrent. Un passage, lancé à la main
       ou par la programmation, pose un verrou et écrit son état dans
@@ -3515,7 +3426,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="plannings-partages"><span class="n">34</span>Partager son planning, lire celui d'un autre</h2>
+    <h2 id="plannings-partages"><span class="n">33</span>Partager son planning, lire celui d'un autre</h2>
     <p class="sec-note">
       Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que des éditeurs de
       ses groupes partagent avec lui, en lecture seule. L'éditeur coche les groupes dans
@@ -3585,7 +3496,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-email"><span class="n">35</span>Inviter un proche par e-mail</h2>
+    <h2 id="invitation-email"><span class="n">34</span>Inviter un proche par e-mail</h2>
     <p class="sec-note">
       Un administrateur invite une personne qui n'a pas encore de compte, ou dont le compte est
       révoqué. Aucun appel de modèle.
@@ -3656,7 +3567,7 @@ sequenceDiagram
         repousse l'expiration de trente jours et compte dans les vingt envois du jour ; il
         rejoue avant le contrôle du groupe, et vérifie que le compte visé n'a pas changé
         (<code>resendRefusal</code> : refus <code>target_changed</code> sinon). Un compte
-        révoqué invité reste révoqué : rien ne change pour lui à l'envoi (séquence 37). Le résultat de l'envoi s'écrit dans une transaction
+        révoqué invité reste révoqué : rien ne change pour lui à l'envoi (séquence 36). Le résultat de l'envoi s'écrit dans une transaction
         qui ne touche pas une invitation acceptée ou annulée entre-temps. Un message vide part
         sans paragraphe personnel : le serveur n'a pas de message par défaut.
         Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
@@ -3666,7 +3577,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-connexion"><span class="n">36</span>Première connexion d'un invité</h2>
+    <h2 id="invitation-connexion"><span class="n">35</span>Première connexion d'un invité</h2>
     <p class="sec-note">
       La personne invitée ouvre le lien de l'e-mail et se connecte avec le compte Google de
       l'adresse invitée.
@@ -3728,9 +3639,9 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-retour"><span class="n">37</span>Retour d'un compte révoqué invité</h2>
+    <h2 id="invitation-retour"><span class="n">36</span>Retour d'un compte révoqué invité</h2>
     <p class="sec-note">
-      Un administrateur a invité par e-mail l'adresse d'un compte révoqué (séquence 35, target
+      Un administrateur a invité par e-mail l'adresse d'un compte révoqué (séquence 34, target
       revoked). Le titulaire se reconnecte avec le compte Google de cette adresse.
       <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
       (applyRevokedInvitation) → syncUserClaims · syncPlanningReachOnRole →
