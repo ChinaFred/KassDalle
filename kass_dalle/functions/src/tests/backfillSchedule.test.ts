@@ -290,7 +290,7 @@ describe("verrou commun", () => {
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, cinq ponctuels, clés uniques", () => {
+  test("cinq récurrents, six ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -298,7 +298,7 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 5);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 6);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
   });

@@ -10,7 +10,8 @@
     { "key": "estimated_times", "kind": "ponctuel", "uses_ai": true, "default_schedule": null },
     { "key": "refresh_sodium", "kind": "ponctuel", "uses_ai": true, "default_schedule": null },
     { "key": "planning_defaults", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
-    { "key": "system_books", "kind": "ponctuel", "uses_ai": false, "default_schedule": null }
+    { "key": "system_books", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
+    { "key": "group_planning_reach", "kind": "ponctuel", "uses_ai": false, "default_schedule": null }
   ],
   "parse_schedule": [
     {

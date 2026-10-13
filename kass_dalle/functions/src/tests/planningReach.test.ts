@@ -10,13 +10,19 @@ import assert from "node:assert/strict";
 import {
   canSharePlanning,
   changedSharedGroups,
+  groupPlanningsFrom,
+  isActiveGroup,
   MAX_SHARED_GROUPS,
   planningReachFrom,
   planningShareChanged,
+  samePlanningReach,
   sharedGroupIdsOf,
   type GroupEntry,
   type OwnerState,
 } from "../triggers/planningReach";
+import { membersOfOwnedGroups } from "../triggers/plannerRole";
+import { groupAccounts } from "../callable/groupPlanningReachBackfillCallable";
+import { readPlanningGroupId } from "../callable/_aiInputReaders";
 
 const editor = { role: "editor", is_revoked: false };
 const admin = { role: "admin" };
@@ -144,6 +150,132 @@ describe("planningReachFrom", () => {
   test("données mal formées : ignorées, jamais d'exception", () => {
     const state = owners({ marie: { config: null, user: null } });
     assert.deepEqual(planningReachFrom("paul", [{ id: "x", data: undefined }, famille], state), []);
+  });
+
+  test("un groupe masqué ne partage plus les plannings personnels de ses membres", () => {
+    // Zoé, éditrice, partage avec « famille », dont la propriétaire Marie est
+    // rétrogradée : le groupe est masqué, le partage ne passe plus par lui.
+    const state = owners({
+      marie: { config: {}, user: reader },
+      zoe: { config: { shared_group_ids: ["famille"] }, user: editor },
+    });
+    assert.deepEqual(planningReachFrom("paul", [famille], state), []);
+  });
+});
+
+describe("isActiveGroup", () => {
+  test("le propriétaire planifie : actif", () => {
+    const state = owners({ marie: { config: null, user: editor } });
+    assert.equal(isActiveGroup(famille.data, state), true);
+  });
+
+  test("propriétaire lecteur, révoqué, en attente ou inconnu : masqué", () => {
+    for (const user of [reader, { role: "editor", is_revoked: true }, { role: "pending" }, null]) {
+      assert.equal(isActiveGroup(famille.data, owners({ marie: { config: null, user } })), false);
+    }
+    assert.equal(isActiveGroup(famille.data, owners({})), false);
+    assert.equal(isActiveGroup({ member_ids: ["a"] }, owners({})), false);
+  });
+});
+
+describe("groupPlanningsFrom", () => {
+  const state = owners({
+    marie: { config: null, user: editor },
+    paul: { config: null, user: reader },
+  });
+
+  test("les groupes actifs dont je suis membre, propriétaire compris", () => {
+    assert.deepEqual(groupPlanningsFrom("zoe", [famille, cousins], state), {
+      groupIds: ["famille"],
+      maskedGroupIds: [],
+    });
+    assert.deepEqual(groupPlanningsFrom("marie", [famille], state), {
+      groupIds: ["famille"],
+      maskedGroupIds: [],
+    });
+  });
+
+  test("le groupe d'un propriétaire rétrogradé est masqué, pour lui aussi", () => {
+    assert.deepEqual(groupPlanningsFrom("lea", [cousins], state), {
+      groupIds: [],
+      maskedGroupIds: ["cousins"],
+    });
+    assert.deepEqual(groupPlanningsFrom("paul", [famille, cousins], state), {
+      groupIds: ["famille"],
+      maskedGroupIds: ["cousins"],
+    });
+  });
+
+  test("un invité ne lit pas le planning du groupe", () => {
+    assert.deepEqual(groupPlanningsFrom("invite", [famille], state), {
+      groupIds: [],
+      maskedGroupIds: [],
+    });
+  });
+});
+
+describe("samePlanningReach", () => {
+  const expected = { uids: ["a"], groupIds: ["g"], maskedGroupIds: [] };
+
+  test("mêmes listes : rien à écrire", () => {
+    assert.equal(
+      samePlanningReach({ uids: ["a"], group_ids: ["g"], masked_group_ids: [] }, expected),
+      true,
+    );
+  });
+
+  test("document antérieur sans group_ids : à écrire", () => {
+    assert.equal(samePlanningReach({ uids: ["a"] }, expected), false);
+    assert.equal(samePlanningReach(undefined, expected), false);
+  });
+
+  test("une liste différente : à écrire", () => {
+    assert.equal(
+      samePlanningReach({ uids: ["a"], group_ids: [], masked_group_ids: ["g"] }, expected),
+      false,
+    );
+  });
+});
+
+describe("membersOfOwnedGroups", () => {
+  test("le propriétaire et les membres de ses groupes, triés", () => {
+    assert.deepEqual(membersOfOwnedGroups("marie", [famille.data, { owner_id: "marie" }]), [
+      "marie",
+      "paul",
+      "zoe",
+    ]);
+  });
+
+  test("aucun groupe : le propriétaire seul", () => {
+    assert.deepEqual(membersOfOwnedGroups("marie", []), ["marie"]);
+  });
+});
+
+describe("groupAccounts (backfill)", () => {
+  test("les membres de tous les groupes, sans invité, sans doublon", () => {
+    assert.deepEqual(groupAccounts([famille.data, cousins.data, undefined]), [
+      "lea",
+      "marie",
+      "paul",
+      "zoe",
+    ]);
+  });
+});
+
+describe("readPlanningGroupId", () => {
+  test("absent ou nul : planning personnel", () => {
+    assert.equal(readPlanningGroupId({}), null);
+    assert.equal(readPlanningGroupId({ groupId: null }), null);
+  });
+
+  test("identifiant de document : gardé", () => {
+    assert.equal(readPlanningGroupId({ groupId: "Ab3_x-9" }), "Ab3_x-9");
+  });
+
+  test("autre forme : refusée", () => {
+    for (const groupId of ["", "a/b", 42, "x".repeat(129), ["g"]]) {
+      assert.throws(() => readPlanningGroupId({ groupId }), /groupId/);
+    }
   });
 });
 

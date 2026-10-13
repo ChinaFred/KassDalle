@@ -141,6 +141,7 @@ export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillEstimatedTimesFn } from "./callable/estimatedTimesBackfillCallable";
 export { backfillPlanningDefaultsFn } from "./callable/planningDefaultsBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
+export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.
@@ -161,7 +162,8 @@ export { onRecipeWritten } from "./triggers/recipeWritten";
 export { onBookWritten } from "./triggers/bookWritten";
 export { syncUserClaims } from "./triggers/userClaimsSync";
 export { syncGroupReach } from "./triggers/groupReach";
-export { syncPlanningReachOnConfig, syncPlanningReachOnRole } from "./triggers/planningReach";
+export { syncPlanningReachOnConfig } from "./triggers/planningReach";
+export { syncPlanningReachOnRole } from "./triggers/plannerRole";
 export { enforceFounderRole } from "./triggers/founderRole";
 // Invitations par e-mail : première connexion d'un compte neuf, reconnexion d'un compte révoqué.
 export { applyEmailInvitation, applyRevokedInvitation } from "./triggers/invitationSignup";

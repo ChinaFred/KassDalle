@@ -1,6 +1,6 @@
 /**
  * Portée des groupes : `group_reach/{uid}`, la liste des autres comptes avec
- * qui `uid` partage au moins un groupe familial.
+ * qui `uid` partage au moins un groupe familial actif.
  *
  * Les règles Firestore cloisonnent la lecture des livres et des recettes par
  * groupe : un document non privé d'un autre compte ne se lit que si ce compte
@@ -13,25 +13,34 @@
  *
  * Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`.
  *
+ * Groupe actif = son propriétaire planifie (éditeur ou administrateur, non
+ * révoqué, voir `isPlannerAccount`). Un groupe dont le propriétaire est
+ * rétrogradé lecteur ne relie plus personne : ses membres cessent de lire les
+ * livres que le groupe leur ouvrait, sans que rien ne soit effacé, et les
+ * relisent s'il redevient éditeur. La portée est retirée ici plutôt que
+ * vérifiée par les règles : `group_reach` ne dit pas quel groupe relie deux
+ * comptes, et vérifier le propriétaire à la lecture coûterait une lecture de
+ * plus par livre et par recette, à chaque requête.
+ *
  * Écrit par le déclencheur `syncGroupReach` (toute écriture sur
- * `groups/{groupId}`). Le même déclencheur recalcule, pour les mêmes
- * comptes, la portée des plannings (`planning_reach`, voir
- * `planningReach.ts`) : être membre d'un groupe ouvre aussi la lecture des
- * plannings que ses membres partagent avec lui. Le backfill « Portée des groupes », qui l'a écrit pour
- * les groupes antérieurs à la v0.23.19, est retiré depuis la v0.23.23. Les règles en interdisent l'écriture
- * au client : un compte qui pourrait s'ajouter la portée d'un autre lirait
- * ses livres.
+ * `groups/{groupId}`) et par `syncPlanningReachOnRole` (changement de rôle
+ * du propriétaire, `plannerRole.ts`). `syncGroupReach` recalcule aussi, pour
+ * les mêmes comptes, la portée des plannings (`planning_reach`, voir
+ * `planningReach.ts`), et supprime les repas planifiés d'un groupe supprimé.
+ * Les règles en interdisent l'écriture au client : un compte qui pourrait
+ * s'ajouter la portée d'un autre lirait ses livres.
  *
  * Aucun SDK lourd : `firebase-admin/firestore` est déjà chargé par toutes les
  * fonctions du bundle.
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentSnapshot } from "firebase-admin/firestore";
 
-import { COLL_GROUP_REACH, COLL_GROUPS, REGION } from "../config";
+import { COLL_GROUP_REACH, COLL_GROUPS, COLL_USERS, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { membersOf, sameReach, type GroupData } from "./groupMembers";
+import { deleteGroupMeals } from "./groupMeals";
+import { isPlannerAccount, membersOf, ownerOf, sameReach, type GroupData } from "./groupMembers";
 import { syncPlanningReachFor } from "./planningReach";
 
 // `membersOf`, `sameReach` et `GroupData` vivent dans `groupMembers.ts`, sans
@@ -40,13 +49,20 @@ import { syncPlanningReachFor } from "./planningReach";
 export { membersOf, sameReach, type GroupData } from "./groupMembers";
 
 /**
- * La portée de [uid] : les autres membres des groupes dont il est membre.
- * Un groupe dont il n'est pas membre est ignoré, ce qui permet de passer
- * tous les groupes de la base. Triée, sans doublon, sans [uid].
+ * La portée de [uid] : les autres membres des groupes actifs dont il est
+ * membre. Un groupe dont il n'est pas membre est ignoré, ce qui permet de
+ * passer tous les groupes de la base ; un groupe dont le propriétaire n'est
+ * pas dans [plannerOwners] est masqué. Triée, sans doublon, sans [uid].
  */
-export function reachFromGroups(uid: string, groups: Iterable<GroupData>): string[] {
+export function reachFromGroups(
+  uid: string,
+  groups: Iterable<GroupData>,
+  plannerOwners: ReadonlySet<string>,
+): string[] {
   const reach = new Set<string>();
   for (const group of groups) {
+    const owner = ownerOf(group);
+    if (!owner || !plannerOwners.has(owner)) continue;
     const members = membersOf(group);
     if (!members.includes(uid)) continue;
     for (const member of members) {
@@ -77,12 +93,14 @@ export function accountsToResync(before: GroupData, after: GroupData): string[] 
 export type ReachSyncOutcome = "created" | "updated" | "unchanged";
 
 /**
- * Recalcule et écrit `group_reach/{uid}` en relisant les groupes de [uid].
+ * Recalcule et écrit `group_reach/{uid}` en relisant les groupes de [uid] et
+ * le compte de leurs propriétaires.
  *
- * Deux requêtes (`member_ids array-contains uid`, `owner_id == uid`) et la
- * lecture du document de portée, dans une transaction : une écriture
- * concurrente sur un des groupes lus fait rejouer le calcul, au lieu de
- * laisser une portée périmée. N'écrit rien si la liste n'a pas changé.
+ * Deux requêtes (`member_ids array-contains uid`, `owner_id == uid`), la
+ * lecture du document de portée, puis celle des propriétaires, dans une
+ * transaction : une écriture concurrente sur un des documents lus fait
+ * rejouer le calcul, au lieu de laisser une portée périmée. N'écrit rien si
+ * la liste n'a pas changé.
  *
  * Les erreurs remontent à l'appelant, qui les journalise.
  */
@@ -97,10 +115,18 @@ export async function syncReachFor(uid: string): Promise<ReachSyncOutcome> {
       tx.get(groups.where("owner_id", "==", uid)),
       tx.get(reachRef),
     ]);
-    const expected = reachFromGroups(uid, [
-      ...asMember.docs.map((d) => d.data()),
-      ...asOwner.docs.map((d) => d.data()),
-    ]);
+    const data = [...asMember.docs.map((d) => d.data()), ...asOwner.docs.map((d) => d.data())];
+    const ownerIds = [...new Set(data.map(ownerOf).filter((o): o is string => o != null))].sort();
+    const plannerOwners = new Set<string>();
+    if (ownerIds.length > 0) {
+      const snaps: DocumentSnapshot[] = await tx.getAll(
+        ...ownerIds.map((id) => db.collection(COLL_USERS).doc(id)),
+      );
+      ownerIds.forEach((id, i) => {
+        if (isPlannerAccount(snaps[i]?.data())) plannerOwners.add(id);
+      });
+    }
+    const expected = reachFromGroups(uid, data, plannerOwners);
     if (stored.exists && sameReach(stored.data(), expected)) return "unchanged";
     tx.set(reachRef, { uids: expected, updated_at: FieldValue.serverTimestamp() });
     return stored.exists ? "updated" : "created";
@@ -109,8 +135,9 @@ export async function syncReachFor(uid: string): Promise<ReachSyncOutcome> {
 
 export const syncGroupReach = onDocumentWritten(
   // `retry` : une portée non recalculée laisse un membre sorti lire encore
-  // les livres du groupe. L'événement est rejoué tant qu'un compte échoue ;
-  // `syncReachFor` est idempotent, un compte déjà juste n'est pas réécrit.
+  // les livres du groupe, et un repas d'un groupe supprimé resterait en base.
+  // L'événement est rejoué tant qu'un compte ou la suppression échoue ;
+  // `syncReachFor` et `deleteGroupMeals` sont idempotents.
   { document: "groups/{groupId}", region: REGION, retry: true },
   async (event) => {
     const groupId = event.params.groupId;
@@ -121,12 +148,35 @@ export const syncGroupReach = onDocumentWritten(
       ? (event.data.after.data() as Record<string, unknown> | undefined)
       : undefined;
 
-    const accounts = accountsToResync(before, after);
-    if (accounts.length === 0) return;
-
     const correlationId = newCorrelationId("portee_groupes");
-    const changed: string[] = [];
     let failures = 0;
+
+    // Groupe supprimé : son planning part avec lui. Les repas planifiés du
+    // groupe n'appartiennent à aucun autre planning, et plus personne ne
+    // pourrait les lire ni les supprimer.
+    if (before && !after) {
+      try {
+        const deleted = await deleteGroupMeals(groupId);
+        if (deleted > 0) {
+          await logInfo({
+            message: `syncGroupReach: groupe ${groupId} supprimé, ${deleted} repas planifié(s) supprimé(s)`,
+            correlationId,
+            extra: { groupId, deleted },
+          });
+        }
+      } catch (err) {
+        failures += 1;
+        await logError({
+          message: `syncGroupReach: repas planifiés du groupe supprimé ${groupId} non supprimés`,
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          extra: { groupId },
+        });
+      }
+    }
+
+    const accounts = accountsToResync(before, after);
+    const changed: string[] = [];
 
     // Compte par compte : l'échec de l'un n'empêche pas les autres.
     for (const uid of accounts) {
@@ -167,7 +217,43 @@ export const syncGroupReach = onDocumentWritten(
       });
     }
     if (failures > 0) {
-      throw new Error(`syncGroupReach: ${failures} portée(s) non recalculée(s) pour ${groupId}`);
+      throw new Error(`syncGroupReach: ${failures} échec(s) pour le groupe ${groupId}`);
     }
   },
 );
+
+/**
+ * Recalcule la portée des groupes de chaque compte de [accounts], un par un :
+ * l'échec de l'un n'empêche pas les autres, et chacun est journalisé. Rend le
+ * nombre d'échecs.
+ */
+export async function resyncGroupReach(
+  accounts: string[],
+  context: { correlationId: string; reason: string; owner?: string },
+): Promise<number> {
+  const changed: string[] = [];
+  let failures = 0;
+  for (const uid of accounts) {
+    try {
+      const outcome = await syncReachFor(uid);
+      if (outcome !== "unchanged") changed.push(uid);
+    } catch (err) {
+      failures += 1;
+      await logError({
+        message: `groupReach: portée des groupes non recalculée pour ${uid} (${context.reason})`,
+        correlationId: context.correlationId,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: uid,
+        extra: { reason: context.reason, owner: context.owner ?? null },
+      });
+    }
+  }
+  if (changed.length > 0 || failures > 0) {
+    await logInfo({
+      message: `groupReach: ${context.reason}, ${changed.length} portée(s) réécrite(s), ${failures} échec(s)`,
+      correlationId: context.correlationId,
+      extra: { reason: context.reason, owner: context.owner ?? null, accounts, changed, failures },
+    });
+  }
+  return failures;
+}
