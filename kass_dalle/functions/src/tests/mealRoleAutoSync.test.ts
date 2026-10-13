@@ -90,3 +90,11 @@ describe("le déclencheur peut-il demander le rôle ?", () => {
     assert.equal(mealRoleCallAllowed(base, { ...base }), true);
   });
 });
+
+describe("remise à zéro — recette déjà classée", () => {
+  test("une recette qui a un rôle ne remet pas son compteur à zéro", () => {
+    const before = { titre: "A", tags: { meal_role: "plat" }, meal_role_failure_count: 2 };
+    const after = { ...before, titre: "B" };
+    assert.equal(mealRoleFailureResetNeeded(after, before), false);
+  });
+});

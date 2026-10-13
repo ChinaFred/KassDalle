@@ -104,6 +104,13 @@ export function mealRoleFailureResetNeeded(
   data: Record<string, unknown>,
   beforeData: Record<string, unknown> | undefined,
 ): boolean {
+  // Une recette déjà classée n'a plus besoin de compteur : la remettre à zéro
+  // coûterait une écriture et un écho à chaque modification de son texte.
+  const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
+    string,
+    unknown
+  >;
+  if (asString(tags.meal_role).length > 0) return false;
   return (
     readFailureCount(data.meal_role_failure_count) > 0 && mealRoleContentChanged(data, beforeData)
   );
