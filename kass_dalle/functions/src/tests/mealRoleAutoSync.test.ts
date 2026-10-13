@@ -2,14 +2,20 @@
  * Le classement du rôle à l'écriture d'une recette (`syncRecipeMealRole`).
  *
  * Ce que ces tests verrouillent : le déclencheur ne redemande pas au modèle
- * une recette que le backfill a exclue après trois échecs, et l'écriture par
- * laquelle le backfill compte un échec ne coûte pas un second appel.
+ * une recette que le backfill a exclue après trois échecs, sauf si son
+ * contenu change — le compteur repart alors à zéro —, et l'écriture par
+ * laquelle le backfill compte un échec (ou le déclencheur le remet à zéro)
+ * ne coûte pas un second appel.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { mealRoleCallAllowed } from "../triggers/recipeMealRoleAutoSync";
+import {
+  mealRoleCallAllowed,
+  mealRoleContentChanged,
+  mealRoleFailureResetNeeded,
+} from "../triggers/recipeMealRoleAutoSync";
 
 const base = { titre: "Quiche", raw_cooklang: "@oeufs{3}", tags: { dish_types: ["entrée"] } };
 
@@ -22,15 +28,47 @@ describe("le déclencheur peut-il demander le rôle ?", () => {
     assert.equal(mealRoleCallAllowed({ ...base, tags: { meal_role: "plat" } }, undefined), false);
   });
 
-  test("exclue après trois échecs du backfill : non, à toute écriture", () => {
+  test("exclue après trois échecs, sans changement de contenu : non", () => {
     const exclue = { ...base, meal_role_failure_count: 3 };
     assert.equal(mealRoleCallAllowed(exclue, undefined), false);
     assert.equal(
-      mealRoleCallAllowed({ ...exclue, titre: "Quiche lorraine" }, exclue),
+      mealRoleCallAllowed({ ...exclue, notes: "à refaire" }, exclue),
       false,
-      "même une vraie modification ne la resoumet pas",
+      "une écriture qui ne touche ni le titre ni le CookLang ne la resoumet pas",
     );
+    assert.equal(mealRoleCallAllowed(exclue, { ...exclue }), false, "écho identique");
+    assert.equal(mealRoleFailureResetNeeded({ ...exclue, notes: "à refaire" }, exclue), false);
     assert.equal(mealRoleCallAllowed({ ...base, meal_role_failure_count: 2 }, undefined), true);
+  });
+
+  test("exclue après trois échecs, contenu changé : oui, et le compteur repart à zéro", () => {
+    const exclue = { ...base, meal_role_failure_count: 3, meal_role_attempt_at: 1 };
+    for (const apres of [
+      { ...exclue, titre: "Quiche lorraine" },
+      { ...exclue, raw_cooklang: "@oeufs{3}\n@lardons{200%g}" },
+      { ...exclue, draft_cooklang: "@oeufs{4}" },
+    ]) {
+      assert.equal(mealRoleContentChanged(apres, exclue), true);
+      assert.equal(mealRoleCallAllowed(apres, exclue), true);
+      assert.equal(mealRoleFailureResetNeeded(apres, exclue), true);
+    }
+  });
+
+  test("remise à zéro : ni à la création, ni sans échec compté", () => {
+    const exclue = { ...base, meal_role_failure_count: 3 };
+    assert.equal(mealRoleFailureResetNeeded(exclue, undefined), false);
+    assert.equal(
+      mealRoleFailureResetNeeded({ ...base, titre: "Quiche lorraine" }, base),
+      false,
+      "aucun compteur : rien à écrire",
+    );
+  });
+
+  test("écho de la remise à zéro : ni appel, ni nouvelle remise", () => {
+    const avant = { ...base, titre: "Quiche lorraine", meal_role_failure_count: 3 };
+    const apres = { ...avant, meal_role_failure_count: 0 };
+    assert.equal(mealRoleCallAllowed(apres, avant), false);
+    assert.equal(mealRoleFailureResetNeeded(apres, avant), false);
   });
 
   test("écriture qui ne change que la mémoire des échecs : non", () => {

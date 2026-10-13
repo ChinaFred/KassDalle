@@ -77,7 +77,7 @@ interface BackfillRolesRequest {
   force?: boolean;
   /**
    * Redemande aussi les recettes exclues après trois échecs (« Réessayer
-   * aussi les éléments en échec » dans la confirmation). `force` les
+   * aussi les éléments exclus après 3 échecs » dans la confirmation). `force` les
    * redemande aussi.
    */
   retryExcluded?: boolean;

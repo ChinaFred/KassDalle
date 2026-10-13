@@ -730,7 +730,10 @@ sequenceDiagram
   end
 
   par rôle et durées, en parallèle
-    opt tags.meal_role absent
+    opt titre ou CookLang changé, et meal_role_failure_count > 0
+      TR->>FS: meal_role_failure_count remis à 0
+    end
+    opt tags.meal_role absent, sauf exclue après 3 échecs (reprise si titre ou CookLang changé),<br/>ni écriture des seuls meal_role_failure_count / meal_role_attempt_at
       TR->>M: suggestMealRole (inline_meal_role_classification)
       M-->>TR: rôle, contains, suggested_sides, main_protein, main_starch, ou aucun rôle
       TR->>FS: tags.meal_role, contains, suggested_sides, roles_tagged_at,<br/>main_protein et main_starch s'ils sont connus
@@ -774,7 +777,7 @@ sequenceDiagram
         NS->>NI: create sinon merge des alias et du compteur
       end
       par en parallèle
-        opt ingrédients sans allergens (jamais examinés)
+        opt ingrédients sans allergens (jamais examinés), hors exclus après 3 échecs
           NS->>M: allergènes, lots de 40 (allergens_auto)
           NS->>NI: allergens, si toujours absent (transaction)
         end
@@ -826,7 +829,10 @@ sequenceDiagram
         entrée de la garde : l'y ajouter relancerait nutrition et courses à chaque rangement d'une
         recette dans un autre livre. Le rôle se pose sur une recette créée à la main, générée par
         l'IA ou copiée, qui n'a pas de <code>tags.meal_role</code>. Si le modèle ne rend
-        aucun rôle, rien n'est écrit, et la prochaine écriture retente.
+        aucun rôle, rien n'est écrit, et la prochaine écriture retente. Une recette exclue après
+        3 échecs du backfill « Rôle des recettes dans un repas » n'est reprise que si son titre ou son CookLang
+        change : son compteur <code>meal_role_failure_count</code> repart alors à zéro, et un
+        échec ici n'est pas compté. Une écriture des seuls champs de cette mémoire ne relance rien.
       </figcaption>
       <figcaption>
         <b>Les durées estimées passent aussi avant la garde.</b> Une recette sans préparation ou
@@ -839,7 +845,8 @@ sequenceDiagram
       <figcaption>
         <b>Les allergènes se déduisent en dernier.</b> Le modèle juge chaque ingrédient du
         référentiel une seule fois, juste après sa création par la nutrition (poste
-        <code>allergens_auto</code>) ; l'examen ne crée jamais de document, et n'écrase jamais
+        <code>allergens_auto</code>), hors ingrédients exclus après 3 échecs du backfill
+        « Allergènes des ingrédients et des recettes » ; l'examen ne crée jamais de document, et n'écrase jamais
         une valeur posée. La recette reçoit ensuite l'union, sans appel. Quand le champ manque
         sans qu'aucune entrée ait changé — recette ancienne, ou écho d'un calcul en cours —, il
         est posé tout de suite avec ce que le référentiel sait déjà, sans appel de modèle :

@@ -507,7 +507,7 @@ Document principal d'une recette.
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
 | `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie. À 5, la recette n'est plus reprise par le passage programmé ; elle est comptée « abandonnée » et nommée dans la liste « à revoir ». **Serveur seul** depuis la v0.23.54 : les règles refusent au client de le poser, de le changer ou de l'effacer (`serverOnlyRetryFields`, §4) |
-| `meal_role_failure_count` | `int?` | Échecs du backfill « Rôle des recettes dans un repas » sur cette recette : le modèle n'a pas su la classer, ou l'appel a échoué. Écrit par le serveur seul (`runRecipeRolesPass`, par `update` : une recette supprimée ne renaît pas). À 3, la recette n'est plus soumise au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ou `force` ; elle est listée « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par un classement réussi. Le déclencheur `onRecipeWritten` le lit (`mealRoleCallAllowed`) : à 3, il ne demande plus le rôle non plus, et une écriture qui ne change que ce champ et `meal_role_attempt_at` ne lui coûte aucun appel. **Serveur seul** : les règles refusent au client de le poser à la création, de le changer ou de l'effacer, administrateur compris (`serverOnlyRetryFields`, §4) |
+| `meal_role_failure_count` | `int?` | Échecs du backfill « Rôle des recettes dans un repas » sur cette recette : le modèle n'a pas su la classer, ou l'appel a échoué. Écrit par le serveur seul (`runRecipeRolesPass`, par `update` : une recette supprimée ne renaît pas). À 3, la recette n'est plus soumise au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ou `force` ; elle est listée « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par un classement réussi. Le déclencheur `onRecipeWritten` le lit (`mealRoleCallAllowed`) : à 3, il ne demande plus le rôle non plus, sauf si l'écriture change le contenu de la recette (`titre`, `draft_cooklang` ou `raw_cooklang`, `mealRoleContentChanged`) ; une écriture qui ne change que ce champ et `meal_role_attempt_at` ne lui coûte aucun appel. Quand le contenu change et que le compteur est positif, le déclencheur le remet à 0 avant l'appel (`mealRoleFailureResetNeeded`, Admin SDK ; `meal_role_attempt_at` est gardé), que l'appel aboutisse ou non : un échec du déclencheur n'est pas compté, et le backfill reprend la recette avec un compteur à 0. L'écho de cette remise à zéro ne change que ce champ : ni appel, ni nouvelle remise. **Serveur seul** : les règles refusent au client de le poser à la création, de le changer ou de l'effacer, administrateur compris (`serverOnlyRetryFields`, §4) |
 | `meal_role_attempt_at` | `Timestamp?` | Date du dernier échec compté dans `meal_role_failure_count`. Serveur seul, même règle |
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
@@ -1148,7 +1148,9 @@ modèle, poste `inline_meal_role_classification`, qui écrit `tags.meal_role`, `
 `suggested_sides` et `roles_tagged_at`, plus `main_protein` et `main_starch` quand le modèle
 les rend et qu'ils sont absents (`mainIngredientsPatch` : une valeur posée à la main n'est pas
 remplacée), et `main_ingredients_checked_at` dès qu'il a répondu. Si le modèle ne rend aucun rôle, rien n'est écrit et la prochaine écriture retente ;
-une erreur passe par `logError`. L'absence de `main_protein` seule ne déclenche aucun appel :
+une erreur passe par `logError`. Une recette exclue après trois échecs du backfill n'est
+reprise que si son titre ou son CookLang change, et son compteur repart alors à zéro
+(`meal_role_failure_count`, §3). L'absence de `main_protein` seule ne déclenche aucun appel :
 un déclencheur qui rappellerait le modèle tant qu'elle manque le rappellerait à chaque écho de
 sa propre écriture. Une recette classée sans elle la garde absente : le backfill qui reprenait
 ces recettes est retiré en v0.23.52.
@@ -4650,11 +4652,14 @@ trois échecs (`BACKFILL_FAILURE_LIMIT`), l'élément n'est plus soumis au modè
 programmé ni par un passage manuel ordinaire ; il est listé « Plus redemandé à l'IA après 3 échecs ». Le
 passage manuel lancé avec la case « Réessayer aussi les éléments exclus après 3 échecs » (`retryExcluded`)
 le reprend ; un succès remet le compteur à zéro. Les autres chemins respectent aussi
-l'exclusion, sans jamais la lever : l'enrichissement à l'écriture d'une recette et celui du
+l'exclusion : l'enrichissement à l'écriture d'une recette et celui du
 rattrapage de la nutrition (`ingredientEnrichmentAllowed`, `unitWeightRequestAllowed`,
 `aiEnrichment.ts`) ne redemandent pas un ingrédient ou une unité exclus, et le classement du
 rôle à l'écriture (`mealRoleCallAllowed`, `recipeMealRoleAutoSync.ts`) ne redemande pas une
-recette exclue. Ce dernier ne réagit pas non plus à l'écriture par laquelle le backfill compte
+recette exclue tant que son contenu ne change pas. Un changement de `titre`, `draft_cooklang`
+ou `raw_cooklang` la lui soumet de nouveau et remet `meal_role_failure_count` à 0 : les
+échecs comptés portaient sur un autre contenu. C'est le seul chemin, hors `retryExcluded`, qui
+lève une exclusion. Ce dernier ne réagit pas non plus à l'écriture par laquelle le backfill compte
 un échec (seuls `meal_role_failure_count` et `meal_role_attempt_at` changent) : sans cette
 garde, chaque échec coûtait un second appel. L'examen des allergènes à l'écriture
 (`allergens_auto`, `examineIngredientAllergens`) écarte aussi un ingrédient à trois échecs

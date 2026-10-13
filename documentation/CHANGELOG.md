@@ -43,7 +43,8 @@ plus à l'IA un élément qui a échoué trois fois. Il apparaît « Plus redema
 liste « à revoir ». La confirmation propose une case « Réessayer aussi les éléments exclus
 après 3 échecs ». L'enrichissement à l'écriture d'une recette et le rattrapage de la nutrition
 ne redemandent plus non plus un ingrédient ou une unité exclus, et le classement du rôle à
-l'écriture ne redemande plus une recette exclue.
+l'écriture ne redemande plus une recette exclue. Une recette exclue dont on modifie le titre,
+les ingrédients ou les étapes est de nouveau classée, et son compteur d'échecs repart à zéro.
 
 Un passage qui a tout parcouru mais laisse des échecs s'affiche « Incomplet », avec « N
 éléments en échec, nouvel essai demain à 05:00 » quand une programmation est active, et « N
@@ -81,6 +82,9 @@ Mémoire des échecs (`backfills/failureMemory.ts`) : `ai_weight_failure_count`,
 passe `retryExcluded`. `syncRecipeMealRole` ne demande plus le rôle d'une recette exclue, ni
 pour une écriture qui ne change que `meal_role_failure_count` et `meal_role_attempt_at`
 (`mealRoleCallAllowed`) : chaque échec du backfill coûtait un second appel au déclencheur.
+Une écriture qui change `titre`, `draft_cooklang` ou `raw_cooklang` lève l'exclusion et remet
+`meal_role_failure_count` à 0 avant l'appel (`mealRoleContentChanged`,
+`mealRoleFailureResetNeeded`).
 L'examen des allergènes à l'écriture d'une recette (`allergens_auto`) écarte aussi un
 ingrédient à trois échecs : il ne le redemande plus à chaque écriture.
 

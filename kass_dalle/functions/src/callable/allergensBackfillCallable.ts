@@ -97,7 +97,7 @@ interface BackfillAllergensRequest {
   resetCheckpoint?: boolean;
   /**
    * Redemande aussi les ingrédients exclus après trois échecs (« Réessayer
-   * aussi les éléments en échec » dans la confirmation).
+   * aussi les éléments exclus après 3 échecs » dans la confirmation).
    */
   retryExcluded?: boolean;
   /** Version de l'application qui lance, pour l'état du backfill. */

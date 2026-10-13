@@ -252,13 +252,6 @@ async function writeAnswers(
 }
 
 /**
- * Examine les ingrédients du référentiel désignés par `ids` qui n'ont pas
- * encore d'allergènes. Ne lève jamais : un lot en échec est journalisé
- * (`logError`) et sauté, ses ingrédients restent « jamais examinés » et
- * seront redemandés. Une clé hors liste dans une réponse est écartée et
- * journalisée (`logWarn`).
- */
-/**
  * Vrai si l'examen à l'écriture d'une recette (`allergens_auto`) peut encore
  * soumettre cet ingrédient au modèle : pas après trois échecs du backfill.
  */
@@ -266,6 +259,13 @@ export function allergenAutoExaminationAllowed(doc: Record<string, unknown>): bo
   return !isExcludedAfterFailures(doc.allergens_failure_count, false);
 }
 
+/**
+ * Examine les ingrédients du référentiel désignés par `ids` qui n'ont pas
+ * encore d'allergènes. Ne lève jamais : un lot en échec est journalisé
+ * (`logError`) et sauté, ses ingrédients restent « jamais examinés » et
+ * seront redemandés. Une clé hors liste dans une réponse est écartée et
+ * journalisée (`logWarn`).
+ */
 export async function examineIngredientAllergens(args: {
   ids: readonly string[];
   ctx: AllergenCallContext;

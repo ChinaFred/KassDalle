@@ -20,8 +20,12 @@
  * | allergènes | `nutrition_ingredients` | `allergens_failure_count` | `allergens_attempt_at` |
  * | rôle dans un repas | `recipes` | `meal_role_failure_count` | `meal_role_attempt_at` |
  *
- * Les déclencheurs d'écriture d'une recette ne lisent pas ce compteur : ils
- * gardent leur propre garde de vingt heures (`ENRICHMENT_RETRY_AFTER_MS`).
+ * À l'écriture d'une recette, deux traitements lisent aussi leur compteur :
+ * le rôle dans un repas (`mealRoleCallAllowed`), qui reprend malgré tout une
+ * recette exclue dont le contenu change et remet alors son compteur à zéro,
+ * et l'examen des allergènes (`allergenAutoExaminationAllowed`).
+ * L'enrichissement nutritionnel garde sa propre garde de vingt heures
+ * (`ENRICHMENT_RETRY_AFTER_MS`).
  */
 
 /** Échecs au-delà desquels un élément n'est plus redemandé au modèle. */

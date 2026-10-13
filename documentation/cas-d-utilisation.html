@@ -878,6 +878,8 @@ flowchart LR
         suivante : ils reviennent au prochain passage. « Enrichir unités et ingrédients »,
         « Allergènes » et « Rôle des recettes » n'envoient plus à l'IA un élément qui a échoué
         trois fois ; la confirmation propose « Réessayer aussi les éléments exclus après 3 échecs ».
+        Une recette exclue de « Rôle des recettes » est aussi reclassée, compteur remis à zéro,
+        dès qu'on modifie son titre, ses ingrédients ou ses étapes.
         <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
         chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
         manquent. Un compte approuvé depuis la v0.23.50 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le

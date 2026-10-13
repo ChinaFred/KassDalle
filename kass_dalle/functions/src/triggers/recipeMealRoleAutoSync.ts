@@ -43,15 +43,37 @@ const MEAL_ROLE_MEMORY_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Champs qui portent le contenu soumis au modèle : le titre, et le CookLang
+ * (ingrédients et étapes), brouillon comme publié.
+ */
+const MEAL_ROLE_CONTENT_FIELDS: readonly string[] = ["titre", "draft_cooklang", "raw_cooklang"];
+
+/**
+ * Le contenu de la recette a-t-il changé à cette écriture ? Faux à la
+ * création : il n'y a rien à comparer, et aucun compteur d'échecs à lever.
+ */
+export function mealRoleContentChanged(
+  data: Record<string, unknown>,
+  beforeData: Record<string, unknown> | undefined,
+): boolean {
+  if (!beforeData) return false;
+  return MEAL_ROLE_CONTENT_FIELDS.some((key) => asString(beforeData[key]) !== asString(data[key]));
+}
+
+/**
  * Le déclencheur peut-il demander le rôle au modèle ? Fonction pure.
  *
  *  - non si la recette a déjà un rôle ;
  *  - non si le backfill l'a exclue (`meal_role_failure_count` ≥
- *    `BACKFILL_FAILURE_LIMIT`) : seul un administrateur la redemande, par
+ *    `BACKFILL_FAILURE_LIMIT`), sauf si cette écriture change son contenu
+ *    (titre, ingrédients ou étapes : `mealRoleContentChanged`). Le modèle
+ *    reçoit alors une autre question que celle qu'il n'a pas su trancher.
+ *    Sans changement de contenu, seul un administrateur la redemande, par
  *    « Réessayer aussi les éléments exclus après 3 échecs » ;
  *  - non si l'écriture ne change que la mémoire des échecs : c'est le
- *    backfill qui vient de compter un échec. Sans cette garde, chaque échec
- *    du backfill coûtait un second appel, ici, dans la seconde.
+ *    backfill qui vient de compter un échec, ou ce déclencheur qui vient de
+ *    remettre le compteur à zéro. Sans cette garde, chaque échec du backfill
+ *    coûtait un second appel, ici, dans la seconde.
  */
 export function mealRoleCallAllowed(
   data: Record<string, unknown>,
@@ -62,9 +84,29 @@ export function mealRoleCallAllowed(
     unknown
   >;
   if (asString(tags.meal_role).length > 0) return false;
-  if (readFailureCount(data.meal_role_failure_count) >= BACKFILL_FAILURE_LIMIT) return false;
+  if (
+    readFailureCount(data.meal_role_failure_count) >= BACKFILL_FAILURE_LIMIT &&
+    !mealRoleContentChanged(data, beforeData)
+  ) {
+    return false;
+  }
   if (beforeData && onlyFieldsChanged(beforeData, data, MEAL_ROLE_MEMORY_FIELDS)) return false;
   return true;
+}
+
+/**
+ * Le compteur d'échecs du backfill doit-il repartir à zéro ? Oui quand le
+ * contenu change et que la recette porte au moins un échec : les échecs
+ * comptés portaient sur un autre contenu. `meal_role_attempt_at` est gardé,
+ * comme après un succès du backfill : il date le dernier essai, pas l'état.
+ */
+export function mealRoleFailureResetNeeded(
+  data: Record<string, unknown>,
+  beforeData: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    readFailureCount(data.meal_role_failure_count) > 0 && mealRoleContentChanged(data, beforeData)
+  );
 }
 
 /** Vrai quand au moins un champ a changé, et seulement parmi [fields]. */
@@ -101,7 +143,9 @@ function onlyFieldsChanged(
  *
  * Il lit en revanche le compteur du backfill (`meal_role_failure_count`) :
  * une recette que le backfill n'a plus le droit de soumettre au modèle ne lui
- * est pas soumise non plus ici (`mealRoleCallAllowed`).
+ * est pas soumise non plus ici (`mealRoleCallAllowed`), sauf si son contenu
+ * vient de changer — et le compteur repart alors à zéro
+ * (`mealRoleFailureResetNeeded`).
  */
 export async function syncRecipeMealRole(args: {
   recipeId: string;
@@ -113,17 +157,26 @@ export async function syncRecipeMealRole(args: {
 }): Promise<void> {
   const { recipeId, data, correlationId, scanId } = args;
 
+  // Jamais vide : une recette sans propriétaire s'impute au compte des
+  // recettes orphelines, plafonné comme un autre (`ai/budget.ts`). Un uid vide
+  // faisait passer l'appel hors de tout plafond.
+  const userId = recipeBudgetUserId(data.created_by);
+  const titre = asString(data.titre);
+
+  // Avant l'appel, et indépendamment de son issue : un appel qui échoue ici
+  // ne compte pas d'échec, et le backfill reprendra la recette avec un
+  // compteur à zéro. L'écho de cette écriture ne change que la mémoire des
+  // échecs : `mealRoleCallAllowed` l'écarte, et le contenu n'a pas bougé.
+  if (mealRoleFailureResetNeeded(data, args.beforeData)) {
+    await resetMealRoleFailures({ recipeId, correlationId, userId, scanId, titre });
+  }
+
   if (!mealRoleCallAllowed(data, args.beforeData)) return;
   const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
     string,
     unknown
   >;
 
-  // Jamais vide : une recette sans propriétaire s'impute au compte des
-  // recettes orphelines, plafonné comme un autre (`ai/budget.ts`). Un uid vide
-  // faisait passer l'appel hors de tout plafond.
-  const userId = recipeBudgetUserId(data.created_by);
-  const titre = asString(data.titre);
   const cooklang = asString(data.draft_cooklang) || asString(data.raw_cooklang);
 
   try {
@@ -165,6 +218,39 @@ export async function syncRecipeMealRole(args: {
   } catch (e) {
     await logError({
       message: "syncRecipeMealRole: échec de la classification",
+      correlationId,
+      userId,
+      scanId,
+      moduleType: "DESIGN",
+      feature: FEATURE,
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { recipeId, titre },
+    });
+  }
+}
+
+/**
+ * Remet `meal_role_failure_count` à zéro (Admin SDK). Best-effort : un échec
+ * est journalisé et laisse le compteur en place ; l'appel de modèle part
+ * quand même, `mealRoleCallAllowed` ne dépendant pas de cette écriture.
+ */
+async function resetMealRoleFailures(args: {
+  recipeId: string;
+  correlationId: string;
+  userId: string;
+  scanId?: string;
+  titre: string;
+}): Promise<void> {
+  const { recipeId, correlationId, userId, scanId, titre } = args;
+  try {
+    await getFirestore()
+      .collection(COLL_RECIPES)
+      .doc(recipeId)
+      .update({ meal_role_failure_count: 0 });
+  } catch (e) {
+    await logError({
+      message:
+        "syncRecipeMealRole: compteur d'échecs non remis à zéro après un changement de contenu",
       correlationId,
       userId,
       scanId,
