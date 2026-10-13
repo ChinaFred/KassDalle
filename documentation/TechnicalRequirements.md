@@ -191,7 +191,8 @@ firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
 │   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals
-│   └── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   ├── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   └── shopping/current                           ← panier de courses personnel, titulaire seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
@@ -503,7 +504,7 @@ Document principal d'une recette.
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `allergens` | `Map?` | Allergènes majeurs de la recette — les 14 de l'annexe II INCO — **déduits sans appel de modèle** des `allergens` du référentiel (§3.10). Écrit par le serveur seul (`onRecipeWritten` → `syncRecipeAllergens`, et le backfill « Allergènes des ingrédients et des recettes ») — par convention du client : comme pour `nutrition`, les règles de `recipes` ne restreignent pas les champs qu'un créateur écrit ; le client le lit (`Recipe.allergens`, `RecipeAllergens`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour partielle le laisse en place, une copie ne le reprend pas. Absent tant qu'aucun calcul n'a eu lieu — la fiche n'affiche alors rien. Voir structure ci-dessous |
-| `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes`, et le backfill « Durées estimées ») ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent tant que la recette n'a jamais manqué d'une durée. Quand les deux durées sont lues, le champ est **vidé** (`prep` et `cook` à `null`) et garde l'empreinte, pas supprimé. Voir structure ci-dessous |
+| `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes` ; le backfill « Durées estimées », qui a repris les recettes antérieures, est retiré en v0.23.52) ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent tant que la recette n'a jamais manqué d'une durée. Quand les deux durées sont lues, le champ est **vidé** (`prep` et `cook` à `null`) et garde l'empreinte, pas supprimé. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
 | `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie |
@@ -1090,9 +1091,9 @@ documents déjà écrits, sans migration. Cas de test dans
 | `contains` | `List<String>` | Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`. Un plat à qui il manque l'un des deux derniers appelle un accompagnement (`needsSide`) |
 | `suggested_sides` | `List<String>` | Accompagnements classiques d'un plat, noms courts, quatre au plus ; vide pour les autres rôles. Le programme y choisit au moment du planning, jamais le modèle |
 | `roles_tagged_at` | `Timestamp?` | Quand le backfill a posé le rôle |
-| `main_protein` | `String?` | **Protéine principale** d'un plat ou d'un accompagnement : `boeuf` \| `porc` \| `volaille` \| `agneau` \| `poisson` \| `fruits_de_mer` \| `oeuf` \| `vegetarien` \| `legumineuses`. Rendue par le même appel que `meal_role` (`MEAL_ROLE_PROMPT`) — passe 2 de l'import, suggestion de tags, `onRecipeWritten`, backfill « Rôle des recettes » — ou par le backfill « Protéine et féculent des plats » pour les recettes classées avant v0.23.24. Une valeur hors liste est lue comme absente (`parseMainProtein`), jamais rangée dans une valeur voisine. Absente pour une entrée, un dessert ou un snack. Écrite seulement quand elle est connue. Lue par la présélection du planning (`proteinOf`) et affichée dans « Catégorisation ». Corrigeable à la main dans la liste « Protéine principale » du panneau de métadonnées (relecture d'un import, correction, création), visible pour un plat ou un accompagnement seulement ; voir « Correction à la main de la protéine et du féculent » ci-dessous |
+| `main_protein` | `String?` | **Protéine principale** d'un plat ou d'un accompagnement : `boeuf` \| `porc` \| `volaille` \| `agneau` \| `poisson` \| `fruits_de_mer` \| `oeuf` \| `vegetarien` \| `legumineuses`. Rendue par le même appel que `meal_role` (`MEAL_ROLE_PROMPT`) — passe 2 de l'import, suggestion de tags, `onRecipeWritten`, backfill « Rôle des recettes » — ou, pour les recettes classées avant v0.23.24, par le backfill « Protéine et féculent des plats » (retiré en v0.23.52). Une valeur hors liste est lue comme absente (`parseMainProtein`), jamais rangée dans une valeur voisine. Absente pour une entrée, un dessert ou un snack. Écrite seulement quand elle est connue. Lue par la présélection du planning (`proteinOf`) et affichée dans « Catégorisation ». Corrigeable à la main dans la liste « Protéine principale » du panneau de métadonnées (relecture d'un import, correction, création), visible pour un plat ou un accompagnement seulement ; voir « Correction à la main de la protéine et du féculent » ci-dessous |
 | `main_starch` | `String?` | **Féculent principal** : `pates` \| `riz` \| `pommes_de_terre` \| `semoule` \| `pain` \| `aucun`. Même origine, même règle de lecture (`parseMainStarch`), même affichage. Lu par la présélection pour alterner les féculents (`starchOf`). Corrigeable à la main dans la liste « Féculent principal », mêmes règles que `main_protein` |
-| `main_ingredients_checked_at` | `Timestamp?` | **Marqueur d'examen** : le modèle a répondu sur la protéine et le féculent, même par une valeur hors liste (« veau ») qui laisse les champs vides. Posé par la passe 2 de l'import, `onRecipeWritten`, le backfill « Rôle des recettes », le backfill « Protéine et féculent des plats » (heure serveur) et « Suggérer les tags » (heure du client). Deux chaînes vides ou des clés absentes ne sont pas une réponse : pas de marqueur. Le backfill saute une recette marquée. `RecipeTags` le relit et le réécrit, pour qu'une carte `tags` réécrite en bloc ne l'efface pas ; « Non classé » le retire. Posé aussi (heure du client) quand l'utilisateur renseigne à la main les deux champs ; retiré quand il remet l'un des deux à « Non renseigné », ou quand le rôle final est une entrée, un dessert ou un snack |
+| `main_ingredients_checked_at` | `Timestamp?` | **Marqueur d'examen** : le modèle a répondu sur la protéine et le féculent, même par une valeur hors liste (« veau ») qui laisse les champs vides. Posé par la passe 2 de l'import, `onRecipeWritten`, le backfill « Rôle des recettes » (heure serveur) et « Suggérer les tags » (heure du client) ; le backfill « Protéine et féculent des plats », retiré en v0.23.52, le posait aussi. Deux chaînes vides ou des clés absentes ne sont pas une réponse : pas de marqueur. `RecipeTags` le relit et le réécrit, pour qu'une carte `tags` réécrite en bloc ne l'efface pas ; « Non classé » le retire. Posé aussi (heure du client) quand l'utilisateur renseigne à la main les deux champs ; retiré quand il remet l'un des deux à « Non renseigné », ou quand le rôle final est une entrée, un dessert ou un snack |
 
 **Le rôle survit aux réécritures de `tags`.** Côté client, `RecipeTags.toMap()` n'écrit
 les trois champs que si le rôle est connu, et `validateDraft` écrit `tags` champ par champ
@@ -1116,10 +1117,9 @@ les valeurs du formulaire, `null` compris (`RecipeTags.withMainIngredients`) :
 
 - un choix à la main remplace la valeur de la base ; quand les deux champs sont renseignés, le
   marqueur `main_ingredients_checked_at` prend l'heure du choix ;
-- « Non renseigné » retire le champ **et** le marqueur : le backfill « Protéine et féculent des
-  plats » reprend la recette, demande au modèle le champ manquant et ne remplace pas l'autre
-  (`mainIngredientsPatch`). Il ne pose le marqueur sans appel que si les deux champs sont
-  présents (`hasBothMainIngredients`) ;
+- « Non renseigné » retire le champ **et** le marqueur. Aucun chemin automatique ne redemande
+  ensuite le champ manquant : le backfill « Protéine et féculent des plats », qui le faisait,
+  est retiré en v0.23.52. « Suggérer les tags » le propose à la demande ;
 - un rôle final qui ne les porte pas (entrée, dessert, snack, non classé) retire les deux champs
   et le marqueur. Changer de rôle puis revenir à plat dans la même session retrouve les valeurs
   du formulaire.
@@ -1131,8 +1131,8 @@ quand le rôle final ne les porte pas, ou quand l'écran de relecture passe
 `mainIngredientsFromForm: true`. La validation en lot de la file de travail ne passe pas ce
 drapeau : un champ posé par le serveur depuis la lecture du brouillon reste. Aucun chemin
 serveur ne remplace une valeur posée à la main : l'import écrit une recette neuve,
-`onRecipeWritten` ne classe qu'une recette sans rôle, et les deux backfills passent par
-`mainIngredientsPatch`.
+`onRecipeWritten` ne classe qu'une recette sans rôle, et le backfill « Rôle des recettes » passe
+par `mainIngredientsPatch`.
 
 **Le rôle se pose aussi à l'écriture.** Trois chemins créent une recette sans rôle : une
 création manuelle sans clic « Suggérer », une recette de l'Explorer IA (`generateRecipeFn` ne
@@ -1145,8 +1145,9 @@ modèle, poste `inline_meal_role_classification`, qui écrit `tags.meal_role`, `
 les rend et qu'ils sont absents (`mainIngredientsPatch` : une valeur posée à la main n'est pas
 remplacée), et `main_ingredients_checked_at` dès qu'il a répondu. Si le modèle ne rend aucun rôle, rien n'est écrit et la prochaine écriture retente ;
 une erreur passe par `logError`. L'absence de `main_protein` seule ne déclenche aucun appel :
-une recette classée sans elle est reprise par le backfill, et un déclencheur qui rappellerait
-le modèle tant qu'elle manque le rappellerait à chaque écho de sa propre écriture.
+un déclencheur qui rappellerait le modèle tant qu'elle manque le rappellerait à chaque écho de
+sa propre écriture. Une recette classée sans elle la garde absente : le backfill qui reprenait
+ces recettes est retiré en v0.23.52.
 
 **Les durées estimées se posent au même endroit.** `onRecipeWritten` appelle
 `syncRecipeEstimatedTimes` (`triggers/recipeEstimatedTimes.ts`) en parallèle de
@@ -1625,6 +1626,60 @@ document naît au premier refus.
 
 ---
 
+### 3.8 quinquies Document `users/{uid}/shopping/current` — le panier de courses
+
+Un seul document par compte : la liste de courses du titulaire, la même sur tous ses
+appareils, lue en temps réel (`myShoppingCartProvider`). Écrit et lu par le client seul
+(`ShoppingCartRepository`, `features/recipes/data/`) ; aucune Cloud Function ne le touche.
+Les produits ajoutés depuis le repas d'un autre membre vont dans le panier de **celui qui
+ajoute** : rien n'est écrit dans la recette, dans le repas ni dans le planning d'origine. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`), calculées en mémoire.
+
+| Champ | Type | Contenu |
+|---|---|---|
+| `items` | `Map<String, Map>` | clé : l'identité du produit (`shoppingProductKey` du nom, 200 caractères au plus) ; valeur : un article. 300 articles au plus (`kShoppingCartMaxItems`, même borne dans les règles) |
+| `items.*.name` | `String` | nom du produit acheté, 200 caractères au plus |
+| `items.*.quantities` | `List<Map>` | une entrée `{qty: String, unit: String}` par famille d'unité (« 400 ml + 250 g »), 10 au plus, 40 caractères par champ |
+| `items.*.category` | `String` | rayon (`IngredientCategorizer`), 60 caractères au plus |
+| `items.*.source` | `String?` | d'où vient la ligne : « Curry de poulet (400 ml) · Riz (250 g) », 500 caractères au plus |
+| `items.*.checked` | `bool` | article déjà dans le panier |
+| `items.*.pos` | `int` | rang d'ajout, pour l'ordre d'affichage dans un rayon |
+| `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
+
+**Pourquoi une carte et pas une liste.** Cocher une case écrit le seul champ
+`items.<clé>.checked` (`update` par `FieldPath`) : l'écriture part aussi hors ligne, dans le
+magasin, et deux appareils qui cochent des articles différents ne s'écrasent pas. « Retirer les
+articles cochés » supprime les clés montrées cochées (`FieldValue.delete()`) ; « Vider la
+liste » écrit une carte vide.
+
+**Ajouter et remplacer** passent par une transaction (`addItems`) : la fusion part de la liste
+à jour. « Ajouter » fusionne (`mergeShoppingItems` : même produit → même ligne, quantités
+additionnées famille par famille par `mergeShoppingProducts`, provenances réunies ; une ligne
+cochée qui reçoit une quantité redevient à acheter). « Remplacer » écrit les seuls nouveaux
+articles et rend l'ancienne liste, que « Annuler » réécrit (`restore`). Un résultat de plus de
+300 articles lève `ShoppingCartFullException` et n'écrit rien. Une transaction exige le
+réseau : hors ligne, l'ajout échoue avec un message, la case cochée non.
+
+**Lecture tolérante.** Un article sans nom ou mal formé est écarté, le reste s'affiche ; un
+document absent est un panier vide.
+
+**Reprise de l'ancienne liste locale** (`migrateLocalList`, côté client, pas de backfill). Avant
+ce document, la liste vivait dans `SharedPreferences` (`sl_items_{uid}`, `sl_date_{uid}`),
+valable le jour même, propre à un appareil. À la première lecture du panier sur un appareil, si
+`sl_items_{uid}` existe et que le panier Firestore est vide, ses lignes y sont écrites (en
+transaction, après fusion des doublons) ; dans tous les cas, les deux clés locales sont
+ensuite effacées. Un panier déjà rempli depuis un autre appareil fait foi. Un texte local
+illisible est remonté (`shopping.migrateLocal.parse`) et la clé effacée ; un échec d'écriture
+est remonté (`shopping.migrateLocal`), les clés restent pour le lancement suivant, et le panier
+s'affiche quand même.
+
+**Erreurs.** Chaque écriture en échec est remontée par le repository
+(`shopping.load`, `shopping.addItems`, `shopping.restore`, `shopping.setChecked`,
+`shopping.removeItems`, `shopping.clear`), sans attendre l'écriture du rapport, puis relancée à
+l'écran qui la dit.
+
+---
+
 ### 3.9 Collection `recipe_ratings`
 
 Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
@@ -1802,10 +1857,10 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn`, passage manuel seulement : le passage programmé repart du début à chaque fois, comme l'ancienne tâche de 5 h |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
-| `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn` |
+| `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn`, retiré en v0.23.52 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel |
 | `allergens_recipes_backfill_checkpoint` | `backfillAllergensFn` — curseur du recalcul des recettes |
-| `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn` — curseur du parcours des recettes, et verrou propre aux durées estimées (`running_until` : `Timestamp`, heure d'expiration, délai maximal de la fonction ; `running_id` : identifiant du passage qui le tient). Le verrou est posé en transaction au début, levé à la fin ; un lancement pendant qu'il est valide rend `dejaEnCours: true` sans rien faire |
+| `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn`, retiré en v0.23.52 : le document reste en base, verrou `running_until` compris, plus rien ne l'écrit ni ne le lit |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_planning_reach_backfill_checkpoint` | `backfillGroupPlanningReachFn` : `last_doc_id`, le dernier repas planifié parcouru par la phase des repas ; `null` quand `planned_meals` a été parcourue en entier |
@@ -1824,8 +1879,9 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `recipe_protein`, `estimated_times`, `refresh_sodium`, `planning_defaults`,
-`system_books`, `group_planning_reach` — ponctuels). Deux sortes de documents, écrits par le serveur seul — les règles refusent
+récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach` — ponctuels). Les ponctuels `recipe_protein`,
+`estimated_times` et `planning_defaults` sont retirés en v0.23.52 : leur `backfill_run_<clé>`
+reste en base, et l'écran ignore une clé absente du registre. Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
 (administrateurs seulement) :
 
@@ -2430,9 +2486,10 @@ service cloud.firestore {
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
 | `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
+| `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
-| `groups` | membres du groupe, et ses invités (`invited_ids`) | création à son nom, soi seul membre, sans invité ; `owner_id` figé ; quatre mises à jour et elles seules (v0.23.19) : **gestion** par le propriétaire ou un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Suppression par le propriétaire ou un admin |
+| `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) — la requête du client filtre `group_id == groupe` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
@@ -3127,8 +3184,9 @@ Le propriétaire d'un groupe cherche un compte existant à inviter par son adres
 complète. `users/{uid}` n'est pas lisible par lui (§4) : le serveur fait la recherche. Aucun
 appel de modèle : ce n'est pas un poste d'IA.
 
-**`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireAuth` —
-compte approuvé, non révoqué, App Check selon la politique ; traitement
+**`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireEditor` —
+editor ou admin, non révoqué, App Check selon la politique (v0.23.54 : un reader
+propriétaire d'un ancien groupe n'invite plus) ; traitement
 `recherche_membre_adresse`). Entrée `{groupId, email}`. Le serveur vérifie, dans cet ordre :
 
 1. `groupId` lisible (`readGroupId` : non vide, 128 caractères au plus, sans `/`), sinon
@@ -3136,8 +3194,8 @@ compte approuvé, non révoqué, App Check selon la politique ; traitement
 2. adresse de forme valide après espaces retirés et minuscules (`cleanEmail`), sinon
    `invalid-argument` « Adresse e-mail invalide. » ;
 3. groupe existant (`not-found` « Ce groupe n'existe plus. ») dont l'appelant est
-   **propriétaire** (`searcherDenial`, `permission-denied`) — le propriétaire seul invite
-   (`isManagement` dans `firestore.rules`) ;
+   **propriétaire** (`searcherDenial`, `permission-denied`) — le propriétaire éditeur seul
+   invite (`isManagement` dans `firestore.rules`) ;
 4. moins de 10 recherches du jour UTC pour l'appelant : transaction sur
    `member_email_search_daily/{uid}_{AAAA-MM-JJ}`, incrémentée avant la recherche, trouvée ou
    non, qui pose aussi `expires_at` (TTL, 30 jours) ; au-delà, `resource-exhausted` « Trop de
@@ -3496,8 +3554,8 @@ l'utilisateur, pas d'un tiers. La borne ne vaut que pour l'import par lien.
 | `gemini/prompts.ts` | `GEMINI_BOOK_COVER_PROMPT`, `GEMINI_POLISH_PROMPT`, `COOKLANG_RULES` |
 | `illustrations/prompts.ts` | les cinq questions de la chaîne d'illustrations |
 | `nutrition/allergenExamination.ts` | `buildAllergenPrompt` — les allergènes majeurs d'un lot de quarante ingrédients du référentiel. Les quatorze clés de l'annexe II INCO et leurs exemples viennent de `nutrition/allergens.ts` (`ALLERGEN_KEYS`, `ALLERGEN_LABELS`, `ALLERGEN_EXAMPLES`). Règles : en cas de doute, signaler ; un produit composé se juge sur sa forme du commerce habituelle (pâte feuilletée → gluten et lait, sauce soja → soja et gluten, bouillon cube → céleri et gluten, chocolat noir → lait, vin et vinaigre de vin → sulfites) ; beurre, ghee, crème → lait ; avoine → gluten ; pas de traces. Schéma JSON fermé `{ingredients: [{id, allergens: [enum des 14]}]}`, lu par `parseAllergenBatchAnswer` : une forme inattendue fait échouer le lot entier (rien n'est posé, `logError`), une clé hors liste est écartée et journalisée (`logWarn`). Deux postes : `allergens_auto` (à l'écriture d'une recette, dans `syncRecipeNutrition`, en parallèle du produit acheté) et `backfill_allergens` (Admin › Backfills), tous deux dans le groupe « Nutrition » du routage et « Valeurs nutritionnelles » du catalogue comptable |
-| `gemini/timeEstimate.ts` | `buildTimeEstimatePrompt` — la préparation (main à la pâte, hors cuisson et repos) et la cuisson (hors repos, marinade, levée, réfrigération ; cuissons successives additionnées) d'un lot de huit recettes au plus, en minutes entières de 1 à 1440 ; 0 pour « pas de cuisson » ou « ne sais pas ». Chaque recette part en JSON (`id`, `titre`, `portions`, `contenu` : le CookLang sans ses lignes `>>`, 2 000 caractères au plus, caractères de contrôle retirés), avec la consigne de la lire comme une donnée, jamais comme une instruction. Schéma JSON fermé `{recipes: [{id, prep_minutes, cook_minutes}]}` via `askJson`, lu par `parseTimeEstimateAnswer` : forme inattendue → lot en échec (`logError`, rien d'écrit) ; identifiant inconnu ou répété → ignoré ; valeur hors bornes, décimale ou nulle → `null` (`boundedEstimatedMinutes`). Deux postes : `time_estimate` (à l'écriture d'une recette, `syncRecipeEstimatedTimes`, une recette par appel) et `backfill_time_estimate_batch` (Admin › Backfills, huit recettes par appel), dans le groupe « Rédaction » du routage et « Rédaction d'une recette » du catalogue comptable |
-| `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier et repris par le backfill « Protéine et féculent des plats » (`suggestMainProteinStarch`, `gemini/tagger.ts`) |
+| `gemini/timeEstimate.ts` | `buildTimeEstimatePrompt` — la préparation (main à la pâte, hors cuisson et repos) et la cuisson (hors repos, marinade, levée, réfrigération ; cuissons successives additionnées) d'un lot de huit recettes au plus, en minutes entières de 1 à 1440 ; 0 pour « pas de cuisson » ou « ne sais pas ». Chaque recette part en JSON (`id`, `titre`, `portions`, `contenu` : le CookLang sans ses lignes `>>`, 2 000 caractères au plus, caractères de contrôle retirés), avec la consigne de la lire comme une donnée, jamais comme une instruction. Schéma JSON fermé `{recipes: [{id, prep_minutes, cook_minutes}]}` via `askJson`, lu par `parseTimeEstimateAnswer` : forme inattendue → lot en échec (`logError`, rien d'écrit) ; identifiant inconnu ou répété → ignoré ; valeur hors bornes, décimale ou nulle → `null` (`boundedEstimatedMinutes`). Un poste : `time_estimate` (à l'écriture d'une recette, `syncRecipeEstimatedTimes`, une recette par appel), dans le groupe « Rédaction » du routage et « Rédaction d'une recette » du catalogue comptable. `backfill_time_estimate_batch` (huit recettes par appel) a quitté le routage avec son backfill en v0.23.52 et reste au catalogue comptable |
+| `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier ; le backfill « Protéine et féculent des plats », qui le reprenait seul (`suggestMainProteinStarch`), est retiré en v0.23.52 |
 
 **Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
 semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu'ils imposent :
@@ -3976,12 +4034,15 @@ l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») pa
 sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` et
 `suggestMealIdeasFn`. Les règles `planned_meals` et `planning_config` exigent `isEditor()` à
 l'écriture (§4). Côté client, `canEditProvider` masque « Planifier » sur la fiche recette,
-« Nouveau planning », « Préférences du planning », « Liste des ingrédients », l'export du
+« Nouveau planning », « Préférences du planning », l'export du
 planning, « Choisir une recette » d'un jour libre, l'heure et le menu d'un repas (sauf
-« Supprimer » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
+« Supprimer » et « Ajouter aux courses » sur ses propres repas), et « Préférences du planning » et « Mes garnitures » de
 l'écran Préférences ; `canWriteRecipeAdviceProvider` rend faux pour un lecteur, et la fiche lui
-montre le conseil de conservation déjà stocké, ou rien. La liste de courses d'une fiche recette
-reste ouverte au lecteur : elle est locale et ne coûte rien.
+montre le conseil de conservation déjà stocké, ou rien. Les courses restent ouvertes au
+lecteur — « Ajouter aux courses » sur un repas (le sien, ou celui d'un planning partagé),
+« Ajouter la période aux courses », « Mes courses », et la fiche recette — : elles s'écrivent
+dans son seul panier (`users/{uid}/shopping/current`, §3.8 quinquies) et n'appellent aucun
+modèle.
 
 **Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
 callables qui produisent une recette à enregistrer exigent `requireEditor` —
@@ -4580,7 +4641,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Trois tâches planifiées (Cloud Scheduler), huit reprises manuelles et deux réglages. Aucune
+Trois tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -4596,12 +4657,18 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
-| `backfillEstimatedTimesFn` | `admin` | un seul passage à la fois : verrou daté `running_until` sur le point de reprise, posé en transaction, levé à la fin, expiré au bout de 540 s ; un second lancement rend « déjà en cours » (`dejaEnCours`) sans appel. Parcourt `recipes` et soumet au modèle, par lots de huit recettes **d'un même `created_by`** — le texte d'un compte ne partage jamais un prompt avec celui d'un autre — (poste `backfill_time_estimate_batch`, 160 recettes par appel par défaut, 8 au moins, 400 au plus ; quota atteint, les groupes en attente partent avant l'arrêt si le délai le permet), les recettes de type `recipe` à qui il manque une durée de préparation ou de cuisson et qui ne portent pas d'estimation pour leur contenu actuel (`decideEstimatedTimes`). Une recette dont les durées sont lues, ou déjà estimée, n'est ni redemandée ni refacturée. Chaque réponse s'écrit dans une transaction qui revérifie l'empreinte : une recette modifiée pendant l'appel est ignorée. S'arrête après trois lots en échec de suite. Un lot en échec ne bloque pas le parcours : le curseur le dépasse, et `completed` reste faux tant qu'un passage compte une erreur ; une fois la collection parcourue, le curseur revient au début, et le passage suivant reprend les recettes en erreur en ignorant sans appel celles déjà estimées. Compte rendu : examinées, estimées, sans estimation, ignorées, hors recette, en erreur, et la liste `aRevoir` des recettes non estimées (voir « Liste à revoir » ci-dessous), recopiée dans le `last_report` de l'état du backfill. Point de reprise dans `app_config/estimated_times_backfill_checkpoint`. À lancer une fois après le déploiement qui introduit les durées estimées — Admin › Backfills, « Durées estimées » |
-| `backfillPlanningDefaultsFn` | `admin` | pose le texte reçu (`kDefaultGlobalConstraints`, envoyé par le client, 4 000 caractères au plus) dans `planning_config/{uid}.global_constraints` des autres comptes : vide → posé, écrit → ajouté à la suite, déjà présent → sauté, fusion au-delà de 5 000 caractères (`SHORT_TEXT_MAX_CHARS`, la borne de la génération) → laissé tel quel et compté ; le compte qui lance l'opération n'est pas modifié. Écriture sous précondition `lastUpdateTime` : un enregistrement concurrent fait échouer le compte au lieu d'être écrasé. Le journal garde la longueur et l'empreinte SHA-256 du texte posé. Sans appel de modèle, sans curseur : réentrant parce qu'un compte traité contient le texte |
 | `backfillSystemBooksFn` | `admin` | parcourt `users` et crée, pour chaque compte `reader`, `editor` ou `admin` non révoqué, ceux des quatre livres système qui lui manquent, reconnus à leur tag (`missingSystemBooks`) : `__kassdale_ia`, `__libres`, `__secretes` par `books.add` avec les champs de `BookRepository.findOrCreate…Book`, `__web` par `findOrCreateWebBook`. Couverture vide. Comptes en attente ou révoqués sautés. 500 comptes complétés par appel au plus, arrêt sur trois échecs de suite. Sans appel de modèle, sans curseur : réentrant parce qu'un compte complet est sauté |
 | `backfillGroupPlanningReachFn` | `admin` | ponctuel `group_planning_reach`. Lit tous les `groups` une fois, et recalcule pour chacun de leurs membres `group_reach` (`syncReachFor`) et `planning_reach` (`syncPlanningReachFor`, dont `group_ids` et `masked_group_ids`), les fonctions des déclencheurs ; un document déjà juste n'est pas réécrit. Puis, si la première phase n'a pas été arrêtée, parcourt `planned_meals` par identifiant depuis le point de reprise `app_config/group_planning_reach_backfill_checkpoint` (pages de 400, projection `group_id`) et pose `group_id: null` sur chaque repas qui n'a pas le champ, par lots ; un lot en échec est repris repas par repas. À lancer une fois après le déploiement du planning de groupe : sans lui, un membre d'un groupe que personne n'a touché depuis ne lit pas le planning du groupe, un groupe dont le propriétaire est déjà lecteur reste ouvert, et un planning personnel partagé ne montre aucun repas antérieur. 500 comptes réécrits et 4 000 repas marqués par appel au plus, arrêt sur trois échecs de suite dans chaque phase. Sans appel de modèle. Réentrant : un compte à jour est sauté, un repas qui porte le champ n'est pas réécrit |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
-| `backfillRecipeProteinFn` | `admin` | questionne les plats et accompagnements sans marqueur `tags.main_ingredients_checked_at`. Un appel de modèle par recette (poste `backfill_recipe_protein`, prompt `MAIN_PROTEIN_STARCH_PROMPT` avec le rôle donné), 40 recettes par appel par défaut. Écrit les champs **absents** seulement (`mainIngredientsPatch`) : une `main_protein` ou une `main_starch` déjà posée, à la main ou par un autre chemin, n'est jamais remplacée. Pose le marqueur dès que le modèle a répondu, même hors liste : la recette n'est plus requestionnée ni refacturée. Sans réponse (deux chaînes vides, réponse illisible, échec), rien n'est écrit et la recette sera reprise au tour complet suivant. Une recette qui porte `main_protein` **et** `main_starch` sans marqueur reçoit le marqueur seul, sans appel (`hasBothMainIngredients`) ; une recette qui n'en porte qu'un — l'autre remis à « Non renseigné » à la main — est questionnée, et seul le champ manquant est écrit. N'écrit rien d'autre : ni `meal_role`, ni `contains`, ni `dish_types`. S'arrête après trois échecs de suite. Compte rendu : examinées, traitées, déjà traitées, ignorées, sans réponse, échecs, restantes (ordre de grandeur : plats et accompagnements moins recettes marquées ; tombe à zéro après un tour complet sans réponse manquante ni échec). Point de reprise dans `app_config/recipe_protein_backfill_checkpoint`. À lancer une fois après le déploiement de v0.23.24 — Admin › Backfills, « Protéine et féculent des plats » |
+
+Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
+callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),
+`backfillEstimatedTimesFn` (« Durées estimées ») et `backfillPlanningDefaultsFn` (« Contraintes
+de variété par défaut »). Leurs postes de coût `backfill_recipe_protein` et
+`backfill_time_estimate_batch` quittent `ROUTABLE_FEATURES` et restent au catalogue comptable.
+`onRecipeWritten` estime les durées et classe les recettes neuves ; un compte sans
+`global_constraints` enregistrées lit les règles de variété par défaut
+(`kDefaultGlobalConstraints`, §3).
 
 Le point de reprise est la seule chose qui distingue un backfill d'une boucle : chacun écrit
 où il s'est arrêté, et l'appel suivant repart de là.
@@ -4689,13 +4756,10 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillEnrichReferentialsFn` (et « Reprendre le sel ») | unités dont le poids n'a pas été estimé ou d'un lot en échec ; ingrédients sans valeurs nutritionnelles estimées (« Valeurs nutritionnelles introuvables ») ou d'un lot en échec |
 | `backfillNutritionFn` | recettes reprises encore incomplètes : erreur de la reprise, calcul en échec, ou ingrédients sans valeurs (`missing_ingredients`, cinq noms au plus) |
 | `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec |
-| `backfillRecipeProteinFn` | recettes sans réponse du modèle, en échec, ou dont le marqueur n'a pas pu être écrit |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
-| `backfillEstimatedTimesFn` | recettes sans réponse du modèle (« Pas de réponse de l'IA pour cette recette »), sans aucune durée estimée (« L'IA n'a estimé aucune durée »), d'un lot en échec (« Lot en échec : <message> ») ou dont l'écriture a échoué (« Écriture refusée : <message> »), nommées par leur titre. Une recette modifiée pendant l'appel est ignorée, pas listée |
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
 | `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
-| `backfillPlanningDefaultsFn` | comptes laissés tels quels (contraintes trop longues) ou en échec d'écriture, nommés par `display_name`, à défaut l'uid — jamais l'adresse |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
@@ -5614,7 +5678,7 @@ lib/
     ├── moderation/                # Publication d'images et écran de revue
     ├── planning/                  # Repas planifiés, batch planning, conservation (+ services/)
     ├── processing/                # Jobs d'import et leur avancement
-    ├── recipes/                   # Scan, révision, détail, liste, nutrition (+ services/)
+    ├── recipes/                   # Scan, révision, détail, liste, nutrition, courses (+ services/)
     ├── sandbox/                   # Bac à sable — hors release, voir 13.3
     └── search/                    # Recherche, filtres, génération de recette
 ```

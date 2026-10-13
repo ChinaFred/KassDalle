@@ -18,7 +18,7 @@ const _kNotFilled = '';
 
 /// Aide sous les listes protéine et féculent.
 const kMainIngredientHelper =
-    'Laissé à Non renseigné, il sera proposé par l\'IA.';
+    'Laissé à Non renseigné, « Suggérer les tags » peut le proposer.';
 
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.

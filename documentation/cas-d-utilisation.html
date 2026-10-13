@@ -152,13 +152,16 @@
         <tbody>
           <tr><td>Lire ses livres et recettes, et ceux, non privés, des comptes qui partagent au moins un groupe avec soi — annotations, notes et texte d'origine compris. Un compte hors de ses groupes ne lit rien de soi, et réciproquement</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui, tout</td></tr>
           <tr><td>Lire le livre ou la recette <b>privé</b> d'autrui, ses annotations et ses notes</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Créer un groupe, inviter une personne dans son groupe, annuler l'invitation, retirer un membre — le propriétaire seul, qui reste membre</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer un groupe, le renommer, inviter une personne dans son groupe — le propriétaire, qui reste membre ; tout groupe pour l'admin par les règles, ses propres groupes seulement à l'écran (v0.23.54 : plus le lecteur)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Annuler une invitation, retirer un membre, supprimer un groupe dont on est propriétaire — le lecteur propriétaire d'un groupe créé avant la v0.23.54 le peut encore</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Accepter ou refuser une invitation reçue, quitter un groupe dont on n'est pas propriétaire</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Ajouter directement un membre à un groupe, sans son acceptation</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Choisir le thème de l'application — suivre l'appareil, clair ou sombre (Préférences › Apparence), mémorisé sur l'appareil et non dans le compte</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning, liste des ingrédients du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, en lecture seule : il ne les supprime plus</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier — repas, cycle, préférences et garnitures du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut ajouter aux courses mais ne supprime plus</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -186,7 +189,6 @@
           <tr><td>Lire les allergènes d'une recette qu'on voit — même bloc pour tous les rôles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les durées d'une recette qu'on voit, et ses durées estimées par l'IA (« ≈ Prép. 20 min ») quand elle n'en donne pas — même rendu pour tous les rôles ; compter ou non les durées estimées dans le filtre « Temps total » d'Explorer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Corriger les allergènes d'un ingrédient du référentiel, lancer le backfill « Allergènes »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Lancer le backfill « Durées estimées »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Programmer un backfill récurrent, marquer un backfill ponctuel terminé ou le remettre à lancer</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
@@ -206,7 +208,9 @@
       supprime. Ses anciens repas aussi : il les lit et les supprime. Ce que le rôle
       <code>editor</code> ouvre en plus, c'est le planning et son partage, la création de
       recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
-      création de livres et la relecture des brouillons partagés. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
+      création de livres, la relecture des brouillons partagés, et depuis la v0.23.54 la
+      création et la gestion d'un groupe familial : le <code>reader</code> rejoint un groupe
+      sur invitation d'un proche. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
       modifie que ses propres livres et recettes, et seul l'<code>admin</code> agit sur ceux
       d'autrui comme leur créateur. Un livre ou une recette privé ne se lit que par son créateur
       et l'<code>admin</code>.
@@ -243,7 +247,9 @@
       Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
       planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
       sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
-      partagés avec ses groupes.
+      partagés avec ses groupes. Les courses sont ouvertes à tous : chacun remplit sa propre
+      liste depuis un repas, la période lue ou une fiche recette, quel que soit le planning du
+      repas.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -259,7 +265,8 @@ flowchart LR
     a2(["Lire une recette en mode livre"])
     a3(["Ajuster le nombre de portions"])
     a4(["Consulter la nutrition"])
-    a5(["Ouvrir la liste de courses"])
+    a5(["Ajouter aux courses&lt;br/&gt;un repas, la période, une recette"])
+    a38(["Ouvrir « Mes courses »&lt;br/&gt;cocher, retirer les cochés, vider"])
     a6(["Noter une recette sur 10"])
     a7(["Annoter une recette"])
     a25(["Voir les notes de la famille"])
@@ -277,7 +284,7 @@ flowchart LR
     a15(["Créer un groupe familial et y inviter"])
     a30(["Accepter ou refuser une invitation"])
     a31(["Quitter un groupe"])
-    a16(["Régler mes préférences"])
+    a16(["Régler mes préférences&lt;br/&gt;thème, import, planning"])
     a17(["Gérer mon compte et mon nom affiché"])
     a18(["Suivre l'avancement de mes imports"])
     a19(["Demander des idées de repas à l'IA"])
@@ -292,8 +299,8 @@ flowchart LR
     a29(["Consulter les allergènes&lt;br/&gt;d'une recette"])
     a36(["Partager mon planning&lt;br/&gt;avec mes groupes"])
     a37(["Consulter un planning partagé&lt;br/&gt;en lecture seule"])
-    a38(["Planifier pour mon groupe&lt;br/&gt;propriétaire, éditeur"])
-    a39(["Consulter le planning&lt;br/&gt;de mon groupe"])
+    a40(["Planifier pour mon groupe&lt;br/&gt;propriétaire, éditeur"])
+    a41(["Consulter le planning&lt;br/&gt;de mon groupe"])
     i0(["Diviser les totaux par le nombre de parts"])
     i1(["Recalculer la nutrition"])
     i2(["Regrouper les lignes par produit acheté"])
@@ -311,6 +318,7 @@ flowchart LR
     i14(["Enregistrer en brouillon dans&lt;br/&gt;« Mes créations Kass'Dalle ✨ »"])
     i15(["Trouver des pages de recettes sur Google&lt;br/&gt;50 par jour, cache partagé de 7 jours"])
     i16(["Recalculer qui lit quel planning"])
+    i17(["Choisir Ajouter ou Remplacer&lt;br/&gt;si ma liste n'est pas vide"])
   end
 
   LEC --- a1
@@ -334,7 +342,7 @@ flowchart LR
   LEC --- a11
   EDI --- a12
   EDI --- a13
-  LEC --- a15
+  EDI --- a15
   LEC --- a30
   LEC --- a31
   LEC --- a16
@@ -346,11 +354,13 @@ flowchart LR
   LEC --- a25
   EDI --- a36
   LEC --- a37
-  EDI --- a38
-  LEC --- a39
-  a38 -.->|"étend : « Planifier pour… »"| a12
-  a38 -.->|"inclut, même cuisinier"| i4
-  a39 -.->|"appui sur un repas, recette lisible"| a2
+  EDI --- a40
+  LEC --- a41
+  a40 -.->|"étend : « Planifier pour… »"| a12
+  a40 -.->|"inclut, même cuisinier"| i4
+  a41 -.->|"appui sur un repas, recette lisible"| a2
+  LEC --- a5
+  LEC --- a38
   a36 -.->|"étend"| a13
   a36 -.->|"inclut"| i16
   a30 -.->|"Accepter"| i16
@@ -360,7 +370,9 @@ flowchart LR
   a2 --- a4
   a2 --- a29
   a2 --- a5
-  a9 --- a5
+  a37 -.->|"étend : un repas à venir, la période"| a5
+  a5 -.->|"inclut"| i17
+  a5 -.->|"« Voir »"| a38
   a9 --- a14
   a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
@@ -414,7 +426,9 @@ flowchart LR
         totaux de la recette divisés par le nombre de parts choisi, calculés à l'affichage. Rien
         n'est écrit dans la recette partagée.
         <b>La liste de courses n'appelle aucun modèle</b> : l'appareil regroupe les lignes par
-        produit acheté. Le produit d'achat de chaque ingrédient est posé par le serveur à
+        produit acheté, et les écrit dans la liste personnelle du compte
+        (<code>users/{uid}/shopping/current</code>), la même sur tous ses appareils. Ajouter le
+        repas d'un autre membre remplit ma liste, jamais la sienne. Le produit d'achat de chaque ingrédient est posé par le serveur à
         l'écriture de la recette, un appel pour un ingrédient neuf seulement.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.
@@ -514,9 +528,10 @@ flowchart LR
         Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
         change rien pour les autres membres.
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
-        préférences, garnitures, liste des ingrédients du planning et conseil de conservation.
+        préférences, garnitures et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
-        décoché par défaut, en lecture seule : il ne les supprime plus. « Mon planning » n'apparaît
+        décoché par défaut, avec, sur un repas à venir, « Ajouter aux courses » pour seule
+        action : il ne les supprime plus. « Mon planning » n'apparaît
         que s'il lui reste un repas dans les 90 derniers jours ; un planning partagé montre
         les 90 derniers jours et la suite.
         <b>Partager mon planning n'appelle aucun modèle</b> : dans Préférences du planning,
@@ -546,7 +561,12 @@ flowchart LR
         rétrogradé est masqué à tous ses membres — planning, livres partagés par le groupe,
         écran des groupes — sans rien effacer ; tout revient s'il redevient éditeur
         (<code>syncPlanningReachOnRole</code>).
-        <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Le
+        <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls
+        l'<code>editor</code> et l'<code>admin</code> créent un groupe et le gèrent
+        (v0.23.54) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
+        propriétaire d'un groupe plus ancien peut encore annuler une invitation, retirer un
+        membre ou supprimer le groupe, sans inviter ni renommer ; ce groupe est en pause pour
+        ses membres tant qu'il n'est pas éditeur. Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),
         ou par son adresse e-mail complète : celle-ci part au serveur
         (<code>findMemberByEmailFn</code>), qui ne rend que le compte approuvé dont l'adresse est
@@ -707,8 +727,8 @@ flowchart LR
         <b>La protéine et le féculent se corrigent à la main</b>, dans le même panneau, par deux
         listes placées sous « Rôle dans un repas » et visibles seulement pour un plat ou un
         accompagnement. Le créateur de la recette ou un administrateur les modifie.
-        « Non renseigné » rend la recette à la reprise <i>Protéine et féculent des plats</i>.
-        Ni l'import, ni le classement à l'écriture, ni la reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
+        « Non renseigné » efface la valeur ; aucune reprise automatique ne la redemande.
+        Ni l'import, ni le classement à l'écriture, ni une reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
         dessert ou snack efface les deux valeurs à l'enregistrement.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
         transcription détecte sans appel de plus. Elle ajoute un appel (poste
@@ -799,7 +819,6 @@ flowchart LR
     d25(["Tenir le référentiel des garnitures simples"])
     d26(["Corriger les allergènes d'un ingrédient&lt;br/&gt;14 cases à cocher"])
     d27(["Lancer le backfill Allergènes"])
-    d28(["Lancer le backfill Durées estimées"])
     d29(["Programmer un backfill récurrent&lt;br/&gt;jours et heure de Paris"])
     d30(["Marquer un backfill ponctuel terminé&lt;br/&gt;ou le remettre à lancer"])
     d31(["Inviter un proche par e-mail&lt;br/&gt;rôle, groupe, message"])
@@ -836,7 +855,6 @@ flowchart LR
   ADM --- d25
   ADM --- d26
   ADM --- d27
-  ADM --- d28
   ADM --- d29
   ADM --- d30
   ADM --- d31
@@ -861,17 +879,13 @@ flowchart LR
   d17 -.->|"sinon : « tarifs en panne », appels enregistrés sans montant"| e4(["Écrire app_config/ai_pricing"])
   d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
   d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
-  d12 -.->|"Protéine et féculent des plats, une fois après le déploiement"| e7(["Poser protéine et féculent&lt;br/&gt;sur les plats qui n'en ont pas"])
   d26 -.->|"dans Ingrédients nutrition, liste « vérifiée par l'admin »"| d11
   d26 -.->|"les recettes suivent au prochain passage"| d27
   d27 -.->|"est"| d12
   d27 -.->|"phase 1 : ingrédients non examinés"| e8(["Estimer les allergènes d'un ingrédient"])
   d27 -.->|"phase 2 : toutes les recettes, sans IA"| e9(["Poser sur la recette l'union&lt;br/&gt;des allergènes de ses ingrédients"])
-  d28 -.->|"est"| d12
-  d28 -.->|"recettes sans durée, 8 par appel"| e10(["Estimer la préparation et la cuisson&lt;br/&gt;d'une recette"])
   d29 -.->|"tâche horaire scheduledBackfills, imputée à l'admin qui programme"| e11(["Passage programmé, reprise l'heure suivante&lt;br/&gt;jusqu'à la fin ou au plafond"])
   d30 -.->|"aussi posé seul quand un passage finit sans reste"| d12
-  e10 --- GEM
   e8 --- GEM
 </pre>
       </div>
@@ -886,12 +900,6 @@ flowchart LR
         ne change qu'à l'enregistrement.
         <b>La qualité des données</b> compte quatre anomalies des référentiels nutrition et
         n'écrit rien : chaque échantillon ouvre l'écran du référentiel, où la correction se fait.
-        <b>« Protéine et féculent des plats »</b> est une reprise de Backfills : elle traite les
-        plats et accompagnements qu'elle n'a pas encore examinés, quarante par passage, et rend le
-        compte des recettes examinées, traitées, déjà traitées, ignorées, sans réponse et en échec. Elle ne réécrit ni le rôle dans un repas ni les
-        autres tags, ni une protéine ou un féculent posés à la main. Une recette remise à
-        « Non renseigné » dans le panneau de métadonnées est reprise au passage suivant. Elle est facturée sous un poste d'IA à part, quelques centimes pour toute la
-        base.
         <b>Les allergènes d'un ingrédient</b> se lisent dans Référentiels › Ingrédients
         nutrition : « estimé par l'IA », « vérifié par l'admin » ou « non examiné ». L'administrateur
         les corrige par quatorze cases à cocher ; la liste passe à « vérifié par l'admin ». La
@@ -900,12 +908,7 @@ flowchart LR
         estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
         chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
         est chiffré pour chaque phase : traités, ignorés, en erreur.
-        <b>« Durées estimées »</b> est une reprise de Backfills : l'IA estime la préparation et la
-        cuisson des recettes qui n'en donnent pas, huit par appel, cent soixante par passage. Une
-        recette dont les durées sont lues, ou déjà estimée pour son texte actuel, n'est ni
-        redemandée ni refacturée. Le compte rendu donne les recettes estimées, sans estimation,
-        ignorées et en erreur. Les recettes écrites ensuite sont estimées à leur écriture.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses dix reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses sept reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au

@@ -1174,6 +1174,25 @@ classDiagram
     +isActiveAt(now) bool
   }
 
+  class ShoppingCart {
+    &lt;&lt;users/uid/shopping/current&gt;&gt;
+    +List~ShoppingItem~ items
+    +int checkedCount
+    +int uncheckedCount
+    +fromFirestore(data) ShoppingCart$
+    +itemsToFirestore(items) Map$
+  }
+
+  class ShoppingItem {
+    +String name
+    +List~ShoppingQuantity~ quantities
+    +String category
+    +String? source
+    +bool checked
+    +String key
+    +fromLegacyJson(json) ShoppingItem$
+  }
+
   class PlanningPolicy {
     &lt;&lt;app_config&gt;&gt;
     +int platsPerSlot
@@ -1219,9 +1238,17 @@ classDiagram
   PlannedMeal ..> MealPrepContext : construit quand la préparation précède le repas
   MealPrepContext ..> RecipeDetailScreen : passé en paramètres d'URL
   MealPrepContext --> MealStorageMode : au-delà de kMaxFridgeDays
+  ShoppingCart "1" *-- "0..300" ShoppingItem : items, par produit
+  PlannedMeal ..> ShoppingItem : « Ajouter aux courses », parts du repas, dans le panier de qui ajoute
+  Recipe ..> ShoppingItem : fiche recette, parts affichées
 </pre>
       </div>
       <figcaption>
+        <b><code>ShoppingCart</code> — <code>users/{uid}/shopping/current</code></b> : la liste
+        de courses d'un compte, la même sur tous ses appareils, lue et écrite par lui seul.
+        Ajouter un repas, qu'il soit à soi ou à un autre membre, écrit dans le panier de celui qui
+        ajoute ; la recette et le repas ne sont jamais touchés. <code>items</code> est une carte
+        indexée par <code>ShoppingItem.key</code> : cocher n'écrit qu'un champ, hors ligne aussi.
         <b><code>planning_config/{uid}</code> — un document par personne</b>, lisible par elle
         seule et modifiable par elle si elle est éditeur ou administrateur (v0.23.47). C'est
         l'application directe de la règle : un état propre à un utilisateur vit sous cet
@@ -1664,23 +1691,6 @@ classDiagram
     +fromMap(map, finishedAt) RecipeRolesBackfillReport$
   }
 
-  class RecipeProteinBackfillReport {
-    +DateTime? finishedAt
-    +int examinees
-    +int traitees
-    +int dejaTraitees
-    +int ignorees
-    +int sansReponse
-    +int echouees
-    +int? restantes
-    +bool completed
-    +bool stoppedByBudget
-    +bool stoppedByErrors
-    +bool stoppedByDeadline
-    +BackfillFailures? failures
-    +bool termineAuto
-    +fromMap(map, finishedAt) RecipeProteinBackfillReport$
-  }
 
   class BackfillDefinition {
     +String key
@@ -1757,7 +1767,6 @@ classDiagram
   DataQualityCheck "1" *-- "0..200" DataQualityExample : examples
   BackfillFailures "1" *-- "0..100" BackfillFailure : items
   RecipeRolesBackfillReport --&gt; BackfillFailures : failures
-  RecipeProteinBackfillReport --&gt; BackfillFailures : failures
   BackfillCounts --&gt; BackfillFailures : failures
   BackfillRunState --&gt; BackfillFailures : failures du last_report
   BackfillRunState ..&gt; BackfillDefinition : même clé
@@ -1798,10 +1807,6 @@ classDiagram
           <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
           <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
           <code>last_report</code> de <code>app_config/backfill_run_recipe_roles</code>.
-          <b><code>RecipeProteinBackfillReport</code></b> est celui de
-          <code>backfillRecipeProteinFn</code> (examinées, traitées, déjà traitées, ignorées, sans
-          réponse, échecs, restantes), lu de la même façon dans
-          <code>app_config/backfill_run_recipe_protein</code>.
           <b><code>BackfillFailures</code></b> est la liste « à revoir » qu'un backfill renvoie
           dans <code>aRevoir</code> : cent <code>BackfillFailure</code> au plus (nature, id, nom,
           raison), et le total compté au-delà. <b><code>BackfillCounts</code></b> porte les
@@ -1927,6 +1932,19 @@ classDiagram
     +retryPending() Future
   }
 
+  class ShoppingCartRepository {
+    -FirebaseFirestore _db
+    -ErrorReportService _errorReportService
+    +watchAfterMigration(uid) Stream~ShoppingCart~
+    +load(uid) Future~ShoppingCart~
+    +addItems(uid, items, mode) Future~ShoppingAddResult~
+    +restore(uid, items) Future
+    +setChecked(uid, key, checked) Future
+    +removeItems(uid, keys) Future
+    +clear(uid) Future
+    +migrateLocalList(uid) Future~bool~
+  }
+
   class ErrorReportService {
     +reportError(feature, error, stackTrace, context) Future
   }
@@ -1938,6 +1956,7 @@ classDiagram
 
   RecipeRepository --&gt; ErrorReportService
   OriginalTextRepository --&gt; ErrorReportService
+  ShoppingCartRepository --&gt; ErrorReportService
   RecipeRepository --&gt; GeminiService : scanAndPromoteUpload
   RecipeRepository --&gt; CloudFunctions : normalizeRecipeReferentialsFn, computeRecipeNutritionFn
   GeminiService --&gt; CloudFunctions
@@ -2010,7 +2029,7 @@ classDiagram
           <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>
           <tr><td><code>allergens</code></td><td><code>allergens</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill) ; <code>toFirestore</code> l'omet, une mise à jour partielle le laisse en place. Absent tant qu'aucun calcul n'a eu lieu</td></tr>
-          <tr><td><code>estimatedTimes</code></td><td><code>estimated_times</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>, backfill « Durées estimées ») ; les règles refusent au client de le poser, le changer ou l'effacer. <code>toFirestore</code> l'omet, une copie ne le reprend pas. Seules <code>prep</code> et <code>cook</code> sont relues, quand <code>status</code> vaut <code>done</code></td></tr>
+          <tr><td><code>estimatedTimes</code></td><td><code>estimated_times</code></td><td>Écrit par le serveur seul (<code>onRecipeWritten</code>) ; les règles refusent au client de le poser, le changer ou l'effacer. <code>toFirestore</code> l'omet, une copie ne le reprend pas. Seules <code>prep</code> et <code>cook</code> sont relues, quand <code>status</code> vaut <code>done</code></td></tr>
           <tr><td>—</td><td><code>pipeline_correlation_id</code></td><td>Trace du job d'import, pour rapprocher recette et logs</td></tr>
         </tbody>
       </table>

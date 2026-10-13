@@ -120,6 +120,54 @@ List<PlannedMeal> mealsToShop(
   ];
 }
 
+/// D'où viennent les repas ajoutés aux courses : « 5 de Mon planning, 3 du
+/// groupe Famille Dupont, 7 du planning de Marie ». Null quand ils viennent
+/// d'un seul planning.
+///
+/// Un repas de groupe (`group_id`) compte pour son groupe, nommé par
+/// [groupNameOf], quel que soit son cuisinier ; un repas personnel, pour son
+/// propriétaire (`uid`). Mon planning d'abord, puis les groupes par nom, puis
+/// les autres plannings par prénom ([nameOf]).
+String? planningShoppingBreakdown(
+  Iterable<PlannedMeal> meals, {
+  required String? myUid,
+  required String Function(String uid) nameOf,
+  String Function(String groupId)? groupNameOf,
+}) {
+  final byPlanning = <({String? groupId, String uid}), int>{};
+  for (final m in meals) {
+    final key = m.groupId != null
+        ? (groupId: m.groupId, uid: '')
+        : (groupId: null, uid: m.uid);
+    byPlanning[key] = (byPlanning[key] ?? 0) + 1;
+  }
+  if (byPlanning.length < 2) return null;
+  String label(({String? groupId, String uid}) k) => k.groupId != null
+      ? (groupNameOf?.call(k.groupId!) ?? 'Groupe')
+      : nameOf(k.uid);
+  int rank(({String? groupId, String uid}) k) => k.groupId != null
+      ? 1
+      : k.uid == myUid
+      ? 0
+      : 2;
+  final plannings = byPlanning.keys.toList()
+    ..sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      if (byRank != 0) return byRank;
+      final byName = label(a).toLowerCase().compareTo(label(b).toLowerCase());
+      if (byName != 0) return byName;
+      return (a.groupId ?? a.uid).compareTo(b.groupId ?? b.uid);
+    });
+  return [
+    for (final k in plannings)
+      k.groupId != null
+          ? '${byPlanning[k]} du groupe ${label(k)}'
+          : k.uid == myUid
+          ? '${byPlanning[k]} de Mon planning'
+          : '${byPlanning[k]} du planning de ${label(k)}',
+  ].join(', ');
+}
+
 /// Les semaines qui couvrent [month], dans l'ordre : une ligne du calendrier
 /// chacune.
 ///

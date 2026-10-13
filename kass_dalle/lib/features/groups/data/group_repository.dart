@@ -337,7 +337,7 @@ class GroupRepository {
   /// [groupId] ; `null` si aucun compte approuvé ne la porte.
   ///
   /// Passe par `findMemberByEmailFn` : le serveur vérifie que l'appelant est
-  /// propriétaire du groupe, compte la recherche (dix par jour) et ne rend
+  /// éditeur ou administrateur et propriétaire du groupe, compte la recherche (dix par jour) et ne rend
   /// que l'identifiant et les noms publics. Plafond atteint :
   /// [MemberSearchLimitReached] ; groupe supprimé ou appelant qui n'en est
   /// plus propriétaire : [MemberSearchRefused], avec le message du serveur.

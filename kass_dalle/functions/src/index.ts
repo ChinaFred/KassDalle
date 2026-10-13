@@ -135,16 +135,17 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
-export { backfillRecipeProteinFn } from "./callable/recipeProteinBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
-export { backfillEstimatedTimesFn } from "./callable/estimatedTimesBackfillCallable";
-export { backfillPlanningDefaultsFn } from "./callable/planningDefaultsBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
 export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.
+// `backfillRecipeProteinFn` (v0.23.24), `backfillPlanningDefaultsFn` (v0.23.28) et
+// `backfillEstimatedTimesFn` (v0.23.38) sont retirés en v0.23.52 : lancés en production et marqués
+// terminés, leur travail est fait. `onRecipeWritten` tient protéine, féculent et durées
+// estimées à jour ; un compte sans contraintes enregistrées lit celles par défaut.
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

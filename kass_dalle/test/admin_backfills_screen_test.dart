@@ -37,7 +37,7 @@ Future<void> _pump(
 
 void main() {
   final runs = {
-    'estimated_times': BackfillRunState.fromMap('estimated_times', {
+    'system_books': BackfillRunState.fromMap('system_books', {
       'termine_le': DateTime.utc(2026, 10, 10, 10),
       'termine_version': '0.23.30',
       'termine_par': 'auto',
@@ -51,7 +51,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(400, 3600), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (5)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -64,6 +64,42 @@ void main() {
       findsOneWidget,
       reason: 'tuile terminée : la seconde ligne dit de quoi elle parle',
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('état d\'un backfill retiré du code : ignoré, sans erreur', (
+    tester,
+  ) async {
+    // Les ponctuels retirés en v0.23.52 laissent leur
+    // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
+    await _pump(
+      tester,
+      size: const Size(400, 3600),
+      runs: {
+        ...runs,
+        'estimated_times': BackfillRunState.fromMap('estimated_times', {
+          'termine_le': DateTime.utc(2026, 10, 10, 10),
+          'termine_par': 'auto',
+          'dernier_passage_statut': 'termine',
+        }),
+        'recipe_protein': BackfillRunState.fromMap('recipe_protein', {
+          'dernier_passage_statut': 'en_cours',
+          'en_cours_expire_le': DateTime.now().add(const Duration(hours: 1)),
+          'last_report': {'traitees': 3, 'restantes': 0},
+        }),
+        'planning_defaults': BackfillRunState.fromMap('planning_defaults', {
+          'dernier_passage_statut': 'erreur',
+          'dernier_passage_erreur': 'ancienne erreur',
+        }),
+      },
+    );
+    expect(find.text('Récurrents (5)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
+    expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
+    expect(find.text('Durées estimées'), findsNothing);
+    expect(find.text('Protéine et féculent des plats'), findsNothing);
+    expect(find.text('Contraintes de variété par défaut'), findsNothing);
+    expect(find.textContaining('ancienne erreur'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

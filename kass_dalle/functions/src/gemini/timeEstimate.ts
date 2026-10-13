@@ -7,8 +7,8 @@
  * appel. Il ne décide pas QUAND estimer (`triggers/recipeEstimatedTimes.ts`)
  * ni où l'écrire : il rend des minutes bornées, ou `null`.
  *
- * Les deux durées sont demandées, même quand une seule manque : un prompt
- * unique sert le déclencheur et le backfill. L'appelant met à `null`, à
+ * Les deux durées sont demandées, même quand une seule manque. L'appelant
+ * met à `null`, à
  * l'écriture, une durée que la recette donne déjà (`doneEstimatedTimes`).
  */
 
@@ -155,7 +155,8 @@ Format strict, une entrée par recette :
  * Estime les durées d'un lot de recettes (huit au plus) en un appel.
  *
  * Le poste de coût est celui de l'appelant (`ctx.feature`) : `time_estimate`
- * à l'écriture d'une recette, `backfill_time_estimate_batch` pour la reprise.
+ * à l'écriture d'une recette. `backfill_time_estimate_batch`, celui de la
+ * reprise de l'existant, est retiré en v0.23.52 avec son backfill.
  * Jette en cas d'échec de l'appel ou de réponse illisible : rien n'est alors
  * écrit, et l'appelant journalise.
  */

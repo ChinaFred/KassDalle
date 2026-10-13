@@ -18,6 +18,140 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-13
+
+### v0.23.56 — fonctionnel
+
+Un planning est désormais personnel, ou celui d'un groupe familial. Le propriétaire du
+groupe, éditeur ou administrateur, y planifie seul : « Nouveau planning » demande « Planifier
+pour… » dès qu'il possède un groupe, un jour libre propose « Rien de prévu pour Famille
+Dupont », et la feuille « Planifier » d'une recette porte une ligne « Planning ». Tous les
+membres du groupe lisent son planning, lecteurs compris, marqué de l'icône et du nom du
+groupe ; un invité ne le lit pas. Les suggestions de repas par les membres ne font pas partie
+de cette version. Un repas de groupe se met aux courses comme les autres, et le décompte d'un
+ajout nomme le groupe. Un lecteur ne supprime plus ses anciens repas : il les relit et les
+ajoute à ses courses. Un groupe dont le propriétaire n'est plus éditeur est mis en pause pour
+tous ses membres — planning, livres partagés par le groupe, écran Groupes — sans rien effacer,
+et le propriétaire lit « Votre groupe … est en pause. » ; tout revient s'il redevient éditeur.
+Un planning personnel partagé ne montre plus les repas des groupes de son propriétaire.
+
+Après le déploiement, un administrateur lance **Admin › Backfills › « Portée des groupes et
+des plannings »**, et le relance tant qu'il indique « incomplet ». Jusqu'à ce passage, les
+membres des groupes existants ne lisent pas le planning de leur groupe, et les plannings
+personnels partagés n'affichent aucun repas antérieur.
+
+### v0.23.56 — technique
+
+`planned_meals` reçoit `group_id` (`null` pour un repas personnel, toujours écrit par le
+client) ; seul le propriétaire du groupe écrit un repas qui le porte (`ownsMealGroup`), le
+champ est figé, et la suppression d'un repas exige `isEditor()`. `planning_reach` reçoit
+`group_ids` (groupes actifs dont le compte est membre, lus par les règles) et
+`masked_group_ids` (groupes dont le propriétaire ne planifie plus). Le partage personnel ne
+lit que `group_id == null` : la règle porte `resource.data.group_id == null`, car la forme
+`.get('group_id', null)` laissait une requête `uid ==` sans filtre ramener les repas de
+groupe. Deux index composites : `group_id` + `planned_at`, et `uid` + `group_id` +
+`planned_at`. Un groupe masqué sort aussi de `group_reach` : les livres qu'il ouvrait cessent
+d'être lisibles, sans vérification de plus dans les règles des livres.
+`syncPlanningReachOnRole` passe dans `triggers/plannerRole.ts` et recalcule les membres des
+groupes possédés ; `syncGroupReach` supprime les repas d'un groupe supprimé
+(`deleteGroupMeals`). `suggestMealPlanFn` accepte `groupId`, vérifie que l'appelant est
+propriétaire du groupe et l'écrit dans `planning_runs.group_id` ; aucun poste d'IA de plus.
+Nouveau backfill ponctuel `group_planning_reach` (`backfillGroupPlanningReachFn`) : il
+recalcule les deux portées de chaque membre de groupe, puis pose `group_id: null` sur les
+repas antérieurs depuis un point de reprise (4 000 par passage). `showAdaptiveSheet`
+(`core/presentation/adaptive_sheet.dart`) sert la feuille « Planifier pour… » et l'éditeur
+de programmation des backfills.
+
+### v0.23.55 — fonctionnel
+
+La liste de courses devient un panier personnel, le même sur tous les appareils : « Mes
+courses », dans la barre du planning, avec le nombre d'articles à acheter. Elle n'expire plus
+d'un jour à l'autre. Chaque repas d'un planning affiché propose « Ajouter aux courses », y
+compris les repas partagés par un autre membre, et « Ajouter la période aux courses » prend
+les repas à venir de tous les plannings affichés. Un lecteur y a droit comme un éditeur : les
+produits vont toujours dans le panier de celui qui les ajoute. Quand le panier n'est pas vide,
+une boîte propose « Ajouter » (l'ancien « Enrichir ») ou « Remplacer », avec « Annuler » après
+un remplacement. La feuille « Mes courses » retire les articles cochés ou vide la liste, sur
+confirmation. Une recette sous cadenas dans une période s'annonce « Recette non partagée » ;
+ses ingrédients ne sont pas comptés. Sur la fiche recette, le bouton devient « Ajouter aux
+courses » et alimente le même panier.
+
+### v0.23.55 — technique
+
+Le panier quitte `SharedPreferences` pour `users/{uid}/shopping/current` : une carte
+d'articles (300 au plus) indexée par la clé produit, pour qu'une case cochée n'écrive que son
+champ et parte hors ligne. Ajouter et Remplacer passent par une transaction. Au premier
+lancement, une liste locale `sl_items_{uid}` est reprise si le panier est vide, puis effacée.
+`firestore.rules` : bloc `users/{uid}/shopping/{docId}`, `current` seulement, titulaire
+approuvé seul (l'administrateur n'y a pas accès), forme vérifiée par `isShoppingCart`. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`) sans écrire dans la
+recette. Tests : `rules-tests/test/shopping.test.mjs`, `shopping_cart_test.dart`,
+`shopping_cart_widgets_test.dart`.
+
+### v0.23.54 — fonctionnel
+
+Seuls un éditeur et un administrateur créent un groupe familial. Un lecteur rejoint le
+groupe d'un proche sur invitation : le bouton « Créer un groupe » ne lui est plus proposé,
+et son écran vide dit « Vous rejoignez un groupe sur invitation d'un proche ». Jusqu'ici
+tout compte nommé ouvrait un groupe, y invitait qui il voulait et lisait les livres de ceux
+qui acceptaient, alors que le rôle lecteur n'ouvre rien d'autre que la lecture.
+
+Un lecteur propriétaire d'un groupe créé avant cette version n'y invite plus personne et ne
+le renomme plus : la recherche et « Renommer » lui sont masqués, et la feuille des membres
+dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. ». Il garde ce qui
+réduit son groupe : annuler une invitation en attente, retirer un membre, supprimer le
+groupe. Les membres de ce groupe restent membres, acceptent ou refusent une invitation et
+quittent le groupe comme avant. Le menu d'un groupe affiche « Gérer les membres » au
+propriétaire et « Voir les membres » aux autres membres. Les règles laissent un administrateur gérer tout groupe ; l'écran ne lui offre ces gestes que sur ses propres groupes.
+
+### v0.23.54 — technique
+
+`firestore.rules`, collection `groups` : la création exige `isEditor()`. `isManagement()`
+(renommer, inviter) exige `isEditor()` en plus de la propriété ; un administrateur passe
+toujours. Une nouvelle écriture `isShrinking()` laisse le propriétaire, quel que soit son
+rôle, ne faire que réduire son groupe : `invited_ids` et `member_ids` ne perdent que des
+comptes, le propriétaire reste membre, le nom ne change pas. Acceptation, refus, sortie et
+suppression par le propriétaire ne changent pas. La callable `findMemberByEmailFn` passe de
+`requireAuth` à `requireEditor`, pour refuser la recherche par adresse au lecteur
+propriétaire d'un ancien groupe, que la règle empêche déjà d'inviter. `rules-tests` : le
+groupe `g1` des données de test appartient désormais à l'éditeur, un groupe `g-reader`
+représente un groupe de lecteur créé avant la v0.23.54, et une suite « groupes — rôle
+éditeur requis » couvre création, gestion, réduction, suppression, sortie et acceptation
+selon le rôle. Aucune donnée à reprendre : les groupes existants restent tels quels.
+
+### v0.23.53 — fonctionnel
+
+Préférences reçoit une section « Apparence » : le thème se choisit entre « Appareil », « Clair »
+et « Sombre ». « Appareil » reste le défaut et suit le mode du téléphone, de l'ordinateur ou du
+navigateur, comme avant. Le choix s'applique tout de suite et se mémorise sur l'appareil
+(`SharedPreferences`, clé `theme_mode`), pas dans le compte : chaque appareil garde le sien. La
+section reste utilisable quand les préférences du compte ne se chargent pas.
+
+### v0.23.52 — technique
+
+Trois backfills ponctuels sortent du code. Ils ont été menés au bout et marqués terminés en
+production : « Protéine et féculent des plats » (`backfillRecipeProteinFn`), « Durées
+estimées » (`backfillEstimatedTimesFn`) et « Contraintes de variété par défaut »
+(`backfillPlanningDefaultsFn`).
+
+Les trois callables, leurs méthodes de `GcpBillingRepository`, leurs tuiles et
+`RecipeProteinBackfillReport` sont supprimés. Les clés `recipe_protein`, `estimated_times` et
+`planning_defaults` quittent les deux registres et la fixture `backfill_schedule.json`. Code
+devenu mort, supprimé aussi : `suggestMainProteinStarch`, `hasBothMainIngredients` et
+`MAIN_INGREDIENTS_CHECKED_FIELD`.
+
+Les postes `backfill_recipe_protein` et `backfill_time_estimate_batch` quittent
+`ROUTABLE_FEATURES` et restent au catalogue comptable. Les documents
+`app_config/backfill_run_<clé>` et les points de reprise restent en base. Plus rien ne les
+lit, et l'écran ignore une clé absente du registre.
+
+L'aide sous les listes « Protéine principale » et « Féculent principal » disait « il sera
+proposé par l'IA ». Plus aucun traitement automatique ne la redemande pour une recette déjà
+classée : elle dit maintenant « « Suggérer les tags » peut le proposer ».
+
+Le déclencheur `onRecipeWritten` continue d'estimer les durées et de classer les recettes
+neuves. Un compte sans contraintes enregistrées lit toujours `kDefaultGlobalConstraints`.
+
 ## 2026-10-12
 
 ### v0.23.51 — fonctionnel

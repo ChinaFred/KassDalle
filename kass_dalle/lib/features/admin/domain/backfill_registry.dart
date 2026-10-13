@@ -9,6 +9,11 @@
 /// - **récurrent** : a du travail à chaque nouvelle recette ou à chaque
 ///   nouvel ingrédient. Il garde la date de son dernier passage et se
 ///   programme (jours + heure de Paris).
+///
+/// Retirés en v0.23.52, une fois terminés en production : `recipe_protein`,
+/// `estimated_times` et `planning_defaults`. Leurs documents
+/// `app_config/backfill_run_<clé>` restent en base ; l'écran ignore une clé
+/// absente de ce registre.
 library;
 
 enum BackfillKind { ponctuel, recurrent }
@@ -20,10 +25,7 @@ abstract final class BackfillKeys {
   static const allergens = 'allergens';
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
-  static const recipeProtein = 'recipe_protein';
-  static const estimatedTimes = 'estimated_times';
   static const refreshSodium = 'refresh_sodium';
-  static const planningDefaults = 'planning_defaults';
   static const systemBooks = 'system_books';
   static const groupPlanningReach = 'group_planning_reach';
 }
@@ -129,26 +131,7 @@ const List<BackfillDefinition> kBackfillRegistry = [
     usesAi: false,
     passLimit: 'Chaque passage recalcule au plus 500 recettes.',
   ),
-  BackfillDefinition(
-    key: BackfillKeys.recipeProtein,
-    kind: BackfillKind.ponctuel,
-    title: 'Protéine et féculent des plats',
-    description:
-        'Pose la protéine et le féculent principaux des plats qui n\'en ont '
-        'pas.',
-    usesAi: true,
-    passLimit: 'Chaque passage traite au plus 40 recettes.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.estimatedTimes,
-    kind: BackfillKind.ponctuel,
-    title: 'Durées estimées',
-    description:
-        'Estime la préparation et la cuisson des recettes qui n\'en donnent '
-        'pas.',
-    usesAi: true,
-    passLimit: 'Chaque passage traite au plus 160 recettes.',
-  ),
+
   BackfillDefinition(
     key: BackfillKeys.refreshSodium,
     kind: BackfillKind.ponctuel,
@@ -157,16 +140,7 @@ const List<BackfillDefinition> kBackfillRegistry = [
     usesAi: true,
     passLimit: 'Chaque passage travaille au plus huit minutes.',
   ),
-  BackfillDefinition(
-    key: BackfillKeys.planningDefaults,
-    kind: BackfillKind.ponctuel,
-    title: 'Contraintes de variété par défaut',
-    description:
-        'Pose les règles de variété du planning sur les autres comptes, sans '
-        'rien effacer.',
-    usesAi: false,
-    passLimit: 'Chaque passage traite au plus 500 comptes.',
-  ),
+
   BackfillDefinition(
     key: BackfillKeys.systemBooks,
     kind: BackfillKind.ponctuel,

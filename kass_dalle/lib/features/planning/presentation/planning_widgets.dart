@@ -292,6 +292,12 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback? onTimeChanged;
   final VoidCallback? onExportToCalendar;
 
+  /// « Ajouter aux courses » : les produits du repas vont dans le panier de
+  /// celui qui regarde, sur un repas en lecture seule aussi. Null : l'action
+  /// n'existe pas (repas passé, recette illisible, repas libre sans
+  /// accompagnement) — absente, pas grisée.
+  final VoidCallback? onAddToShopping;
+
   /// Ouvre la fiche d'un composant qui est une recette — un accompagnement,
   /// une entrée, un dessert du corpus. Une garniture n'a pas de fiche.
   final ValueChanged<MealComponent>? onComponentTap;
@@ -334,6 +340,7 @@ class PlanningMealTile extends StatelessWidget {
     this.onStorageAdvice,
     this.onTimeChanged,
     this.onExportToCalendar,
+    this.onAddToShopping,
     this.onTap,
     this.onComponentTap,
     this.readOnly = false,
@@ -625,7 +632,11 @@ class PlanningMealTile extends StatelessWidget {
     );
     final onTime = _action(onTimeChanged);
     final onExport = _action(onExportToCalendar);
+    final onShop = onAddToShopping;
     final menu = _buildMenu();
+    // Le chariot s'affiche en icône sur grand écran, et sur un repas sans
+    // menu ⋮ : ailleurs, il vit dans le menu.
+    final shopIcon = onShop != null && (isWide || menu == null);
 
     return Opacity(
       opacity: isPast ? 0.6 : 1.0,
@@ -655,10 +666,19 @@ class PlanningMealTile extends StatelessWidget {
                   height: 24,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : (isWide && onExport != null) || menu != null
+              : (isWide && onExport != null) || shopIcon || menu != null
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (shopIcon)
+                      IconButton(
+                        tooltip: 'Ajouter aux courses',
+                        icon: const Icon(
+                          Icons.add_shopping_cart,
+                          size: AppIconSize.small,
+                        ),
+                        onPressed: onShop,
+                      ),
                     if (isWide && onExport != null)
                       IconButton(
                         // L'infobulle du bouton remplace le `Tooltip` qui
@@ -684,7 +704,12 @@ class PlanningMealTile extends StatelessWidget {
 
   /// Le menu ⋮ : seules les actions fournies y figurent, et aucun menu
   /// quand il n'y en a pas.
+  ///
+  /// « Ajouter aux courses » rejoint, sur téléphone, un menu qui existe
+  /// déjà ; il n'en crée pas un à lui seul : un repas en lecture seule le
+  /// porte en icône, et sur grand écran l'icône est sur toutes les tuiles.
   Widget? _buildMenu() {
+    final onDeleteAction = _action(onDelete);
     final actions = <PlanningMealAction, VoidCallback>{
       PlanningMealAction.otherSuggestion: ?_action(onOtherSuggestion),
       PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
@@ -695,9 +720,16 @@ class PlanningMealTile extends StatelessWidget {
       if (meal.recipeId != null)
         PlanningMealAction.storageAdvice: ?_action(onStorageAdvice),
       PlanningMealAction.exportToCalendar: ?_action(onExportToCalendar),
-      PlanningMealAction.delete: ?_action(onDelete),
     };
-    if (actions.isEmpty) return null;
+    if (actions.isEmpty && onDeleteAction == null) return null;
+    // Sur grand écran, l'icône de la tuile suffit.
+    final onShop = onAddToShopping;
+    if (onShop != null && !isWide) {
+      actions[PlanningMealAction.addToShopping] = onShop;
+    }
+    if (onDeleteAction != null) {
+      actions[PlanningMealAction.delete] = onDeleteAction;
+    }
     final hasOthers = actions.keys.any((a) => a != PlanningMealAction.delete);
     return PopupMenuButton<PlanningMealAction>(
       iconSize: AppIconSize.small,
@@ -744,6 +776,10 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.exportToCalendar => (
         AppIcons.calendarExport,
         'Exporter vers Calendar',
+      ),
+      PlanningMealAction.addToShopping => (
+        Icons.add_shopping_cart,
+        'Ajouter aux courses',
       ),
       PlanningMealAction.delete => (Icons.delete_outline, 'Supprimer'),
     };
@@ -802,6 +838,7 @@ enum PlanningMealAction {
   clearRecipe,
   storageAdvice,
   exportToCalendar,
+  addToShopping,
   delete,
 }
 

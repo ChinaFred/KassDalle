@@ -21,6 +21,9 @@ class GroupsScreen extends ConsumerWidget {
     final paused = ref.watch(myPausedGroupsProvider).value ?? const [];
     final pausedTitle = pausedGroupsTitle(paused);
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
+    // Créer un groupe demande le rôle éditeur (règle `create` de `groups`) :
+    // un lecteur rejoint un groupe sur invitation d'un proche.
+    final canCreate = ref.watch(canEditProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Groupes familiaux')),
@@ -47,6 +50,15 @@ class GroupsScreen extends ConsumerWidget {
           if (groups.isEmpty &&
               invitations.isEmpty &&
               !invitationsAsync.hasError) {
+            if (!canCreate) {
+              return const AppEmptyState(
+                icon: Icons.group_outlined,
+                title: 'Aucun groupe familial',
+                message:
+                    'Vous rejoignez un groupe sur invitation d\'un proche. '
+                    'Ses invitations apparaîtront ici.',
+              );
+            }
             return AppEmptyState(
               icon: Icons.group_outlined,
               title: 'Aucun groupe familial',
@@ -68,7 +80,7 @@ class GroupsScreen extends ConsumerWidget {
           );
 
           return ListView(
-            padding: const EdgeInsets.only(top: 8, bottom: 88),
+            padding: EdgeInsets.only(top: 8, bottom: canCreate ? 88 : 16),
             children: [
               if (pausedTitle != null)
                 ListTile(
@@ -105,11 +117,13 @@ class GroupsScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateGroupDialog(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('Créer un groupe'),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              onPressed: () => _showCreateGroupDialog(context, ref),
+              icon: const Icon(Icons.add),
+              label: const Text('Créer un groupe'),
+            )
+          : null,
     );
   }
 
@@ -132,6 +146,10 @@ class _GroupTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOwner = group.isOwner(myUid);
+    // Renommer demande aussi le rôle éditeur (`isManagement` de
+    // `firestore.rules`) : un lecteur propriétaire d'un groupe créé avant
+    // v0.23.54 ne garde que ce qui réduit son groupe.
+    final canManage = isOwner && ref.watch(canEditProvider);
     return ListTile(
       leading: CircleAvatar(child: Text(group.name[0].toUpperCase())),
       title: Text(group.name),
@@ -144,7 +162,7 @@ class _GroupTile extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isOwner)
+          if (canManage)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Renommer',
@@ -165,11 +183,13 @@ class _GroupTile extends ConsumerWidget {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: _GroupAction.manageMembers,
                 child: ListTile(
-                  leading: Icon(Icons.people_outline),
-                  title: Text('Gérer les membres'),
+                  leading: const Icon(Icons.people_outline),
+                  title: Text(
+                    isOwner ? 'Gérer les membres' : 'Voir les membres',
+                  ),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -512,7 +532,11 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     // de membre se voit tout de suite dans la liste.
     final liveGroup = ref.watch(groupByIdProvider(widget.group.id));
     final group = liveGroup ?? widget.group;
+    // Inviter : même condition que la règle `isManagement`, propriétaire et
+    // éditeur. Annuler une invitation et retirer un membre : le propriétaire
+    // quel que soit son rôle (`isShrinking`).
     final isOwner = group.isOwner(widget.myUid);
+    final canManage = isOwner && ref.watch(canEditProvider);
     final candidates = _searchResults
         .where((u) => !group.isMember(u.uid) && !group.isInvited(u.uid))
         .toList();
@@ -576,7 +600,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   ],
                 ),
               ),
-              if (isOwner) ...[
+              if (canManage) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SearchBar(
@@ -693,6 +717,18 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   ),
                 ),
               ),
+              if (isOwner && !canManage)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Seul un éditeur invite de nouveaux membres et renomme '
+                      'le groupe.',
+                      style: smallText,
+                    ),
+                  ),
+                ),
               Expanded(
                 child: ListView(
                   controller: scrollController,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/theme_mode_preference.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/services/error_reporting.dart';
@@ -52,63 +53,120 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
     final preferences = ref.watch(userPreferencesProvider);
     final canPlan = ref.watch(canEditProvider);
 
+    final themeMode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Préférences')),
-      body: preferences.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => AppErrorState(
-          error: error,
-          title: 'Préférences illisibles',
-          onRetry: () => ref.invalidate(userPreferencesProvider),
-        ),
-        data: (value) => ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text('Import de livres', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Card(
-              child: SwitchListTile(
-                value: value.importIllustrations,
-                onChanged: _saving ? null : _setImportIllustrations,
-                title: const Text('Extraire les illustrations des pages'),
-                subtitle: const Text(
-                  'Repère les photos et dessins d\'une page importée, les '
-                  'découpe et les attache à la recette. Ce réglage est le '
-                  'défaut : chaque import peut le changer pour lui seul.',
-                ),
+      // L'apparence est un réglage de l'appareil : elle s'affiche sans
+      // attendre les préférences du compte, et reste réglable si elles sont
+      // illisibles.
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Apparence', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: RadioGroup<ThemeMode>(
+              groupValue: themeMode,
+              onChanged: (mode) {
+                if (mode == null) return;
+                ref.read(themeModeProvider.notifier).select(mode);
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const RadioListTile<ThemeMode>(
+                    value: ThemeMode.system,
+                    title: Text('Appareil'),
+                    subtitle: Text(
+                      'Suit le mode clair ou sombre du téléphone, de '
+                      'l\'ordinateur ou du navigateur.',
+                    ),
+                    secondary: Icon(Icons.brightness_auto_outlined),
+                  ),
+                  const RadioListTile<ThemeMode>(
+                    value: ThemeMode.light,
+                    title: Text('Clair'),
+                    secondary: Icon(Icons.light_mode_outlined),
+                  ),
+                  const RadioListTile<ThemeMode>(
+                    value: ThemeMode.dark,
+                    title: Text('Sombre'),
+                    secondary: Icon(Icons.dark_mode_outlined),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text(
+                      'Ce choix vaut pour cet appareil seulement.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            // Le lecteur ne planifie pas : ni préférences du planning, ni
-            // garnitures.
-            if (canPlan) ...[
-              const SizedBox(height: 24),
-              Text('Planification', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.tune_outlined),
-                  title: const Text('Préférences du planning'),
-                  subtitle: const Text('Cycle, contraintes, Calendar'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push(AppRoutes.planningConfig),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.rice_bowl_outlined),
-                  title: const Text('Mes garnitures'),
-                  subtitle: const Text(
-                    'Riz, pâtes, salade, yaourt : la part par personne, à '
-                    'votre main. Ne change rien pour les autres.',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push(AppRoutes.myStaples),
-                ),
+          ),
+          const SizedBox(height: 24),
+          ...preferences.when(
+            loading: () => const [
+              Padding(padding: EdgeInsets.all(24), child: AppLoadingState()),
+            ],
+            error: (error, _) => [
+              AppErrorState(
+                compact: true,
+                error: error,
+                title: 'Préférences illisibles',
+                onRetry: () => ref.invalidate(userPreferencesProvider),
               ),
             ],
-          ],
-        ),
+            data: (value) => [
+              Text('Import de livres', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Card(
+                child: SwitchListTile(
+                  value: value.importIllustrations,
+                  onChanged: _saving ? null : _setImportIllustrations,
+                  title: const Text('Extraire les illustrations des pages'),
+                  subtitle: const Text(
+                    'Repère les photos et dessins d\'une page importée, les '
+                    'découpe et les attache à la recette. Ce réglage est le '
+                    'défaut : chaque import peut le changer pour lui seul.',
+                  ),
+                ),
+              ),
+              // Le lecteur ne planifie pas : ni préférences du planning, ni
+              // garnitures.
+              if (canPlan) ...[
+                const SizedBox(height: 24),
+                Text('Planification', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.tune_outlined),
+                    title: const Text('Préférences du planning'),
+                    subtitle: const Text('Cycle, contraintes, Calendar'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.planningConfig),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.rice_bowl_outlined),
+                    title: const Text('Mes garnitures'),
+                    subtitle: const Text(
+                      'Riz, pâtes, salade, yaourt : la part par personne, à '
+                      'votre main. Ne change rien pour les autres.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.myStaples),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

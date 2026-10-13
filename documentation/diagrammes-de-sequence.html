@@ -174,7 +174,6 @@
       <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
-      <li><a href="#durees-estimees">Backfill « Durées estimées »</a></li>
       <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
       <li><a href="#plannings-partages">Partager son planning, lire celui d'un autre</a></li>
       <li><a href="#invitation-email">Inviter un proche par e-mail</a></li>
@@ -1976,55 +1975,79 @@ sequenceDiagram
   <section>
     <h2 id="courses"><span class="n">15</span>Liste de courses</h2>
     <p class="sec-note">
-      Construite depuis les repas <b>à venir</b> de la période lue. Elle additionne les produits
-      d'achat que le serveur a calculés à l'écriture de chaque recette (séquence 06). Aucun appel
-      de modèle : le regroupement se fait sur l'appareil.
-      <span class="path">planning_screen.dart (_showIngredientsList) → planning_widgets.dart
-      (planningAggregateProducts) → core/utils/shopping_products.dart →
-      shopping_list_sheet.dart → GoogleTasksService</span>
+      Chaque compte a <b>un panier</b>, <code>users/{uid}/shopping/current</code>, le même sur
+      tous ses appareils. On le remplit depuis un repas, depuis les repas <b>à venir</b> de la
+      période lue dans tous les plannings affichés, ou depuis une fiche recette — tous les rôles,
+      lecteur compris. Les articles vont toujours dans le panier de celui qui ajoute. Le calcul
+      additionne les produits d'achat que le serveur a posés à l'écriture de chaque recette
+      (séquence 06). Aucun appel de modèle : le regroupement se fait sur l'appareil.
+      <span class="path">planning_screen.dart (_addMealToShopping, _addPeriodToShopping) →
+      planning_widgets.dart (planningAggregateProducts) → core/utils/shopping_products.dart →
+      shopping_list_sheet.dart (addToShoppingList, showShoppingCart) →
+      ShoppingCartRepository → users/{uid}/shopping/current ; GoogleTasksService</span>
     </p>
     <figure class="fig">
       <div class="canvas">
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor U as Lecteur
+  actor U as Membre
   participant P as PlanningScreen
   participant PR as PlanningRepository
   participant FS as recipes
-  participant S as ShoppingListSheet
-  participant SP as SharedPreferences
+  participant A as addToShoppingList
+  participant R as ShoppingCartRepository
+  participant SC as users/uid/shopping/current
   participant GT as Google Tasks
 
-  U->>P: Liste de courses
-  P->>P: mealsToShop — repas à venir de la semaine lue, tous avec « Tout »
+  alt un repas
+    U->>P: Ajouter aux courses (menu ⋮ ou icône)
+  else la période
+    U->>P: Ajouter la période aux courses
+    P->>P: mealsToShop — repas à venir de la période, tous les plannings affichés
+  end
   P->>PR: getRecipesByIds — plats et accompagnements avec recette
   PR->>FS: lecture par identifiant
-  FS-->>P: recettes, brouillons et recettes des membres du groupe compris
+  FS-->>P: recettes lisibles par le compte, une recette illisible n'est pas rendue
   P->>P: planningScaleRecipeForMeal par repas, aux parts du repas
   P->>P: garnitures sans recette, quantité multipliée par les parts
-  P->>P: planningAggregateProducts — shopping_products de chaque recette,<br/>ingrédients bruts si absents, mergeShoppingProducts
-  Note over P: même produit et unités convertibles, quantités additionnées.<br/>Aucun appel de modèle
-  P->>S: produits, provenance de chaque ligne
-  S->>S: rayon de chaque ligne (IngredientCategorizer)
-  S->>SP: lit la liste du jour
-  opt une liste existe déjà pour aujourd'hui
-    S-->>U: Remplacer ou Enrichir ?
-    U-->>S: choix
+  P->>P: planningAggregateProducts puis shoppingItemsFromProducts
+  opt recette introuvable
+    P-->>U: « Recette introuvable, ingrédients non comptés : … »
   end
-  S->>SP: écrit la liste du jour
-  S-->>U: rayons dépliables, articles cochables
+  P->>A: articles, phrase, décompte par planning
+  A->>R: load
+  R->>SC: lecture
+  opt la liste n'est pas vide
+    A-->>U: « Votre liste contient déjà N articles » — Annuler, Remplacer, Ajouter
+    U-->>A: choix
+  end
+  A->>R: addItems(mode)
+  R->>SC: transaction — fusion (Ajouter) ou remplacement, 300 articles au plus
+  SC-->>R: liste précédente
+  alt Ajouter
+    A-->>U: « 9 articles ajoutés aux courses. » — Voir
+  else Remplacer
+    A-->>U: « Liste remplacée : 9 articles. » — Annuler
+    opt Annuler
+      A->>R: restore(liste précédente)
+    end
+  end
 
-  U->>S: coche ce qu'il a déjà
-  S->>SP: état coché, sur l'appareil
+  U->>A: Mes courses (chariot, pastille des articles non cochés)
+  R->>SC: écoute en temps réel
+  Note over R,SC: à la première lecture sur un appareil, l'ancienne liste locale<br/>(sl_items_uid) est reprise si le panier est vide, puis effacée
+  U->>R: coche un article
+  R->>SC: update items.clé.checked — part aussi hors ligne
+  SC-->>U: la case suit sur les autres appareils
 
   alt Envoyer vers Google Tasks
-    S->>S: écarte les articles cochés
-    S->>GT: un rayon = une tâche, un article = une sous-tâche
+    A->>A: écarte les articles cochés
+    A->>GT: un rayon = une tâche, un article = une sous-tâche
     GT-->>U: la liste apparaît dans l'application Tasks
   else Google Keep
-    S->>S: copie la liste dans le presse-papier, rayon par rayon
-    S-->>U: ouvre Keep, à coller dans une note
+    A->>A: copie la liste dans le presse-papier, rayon par rayon
+    A-->>U: ouvre Keep, à coller dans une note
   end
 </pre>
       </div>
@@ -2035,9 +2058,15 @@ sequenceDiagram
         recettes par <code>mergeShoppingProducts</code>. Les deux suivent la fixture
         <code>shopping_products.json</code>.
         <span class="expect">
-          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit dans les
-          préférences locales de l'appareil, une liste par compte et par jour, et ne modifie aucun
-          document partagé.
+          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle vit sous
+          <code>users/{uid}/shopping/current</code>, lue et écrite par son titulaire seul, et ne
+          modifie aucun document partagé. Ajouter le repas d'un autre membre remplit ma liste,
+          pas la sienne.
+        </span>
+        <span class="expect">
+          <b>Ajouter et remplacer passent par une transaction</b> : la fusion part de la liste à
+          jour, et exige le réseau. Cocher, retirer les cochés et vider sont des écritures simples,
+          qui partent hors ligne. Une case refusée reprend son état, avec un message.
         </span>
         <span class="expect">
           <b>Seuls les articles non cochés partent vers Tasks.</b> Une recette introuvable est
@@ -2064,7 +2093,7 @@ sequenceDiagram
 <pre class="mermaid">
 sequenceDiagram
   autonumber
-  actor O as Propriétaire
+  actor O as Propriétaire (éditeur ou admin)
   actor I as Invité
   participant G as GroupsScreen
   participant R as GroupRepository
@@ -2080,7 +2109,7 @@ sequenceDiagram
   O->>G: Créer un groupe — nom libre
   G->>R: createGroup(nom, ownerUid)
   R->>FS: owner_id, member_ids [owner]
-  Note over R,FS: un reader peut créer un groupe et en être propriétaire
+  Note over R,FS: create, renommer et inviter exigent isEditor() (v0.23.54) —<br/>un reader ne crée pas de groupe, le bouton lui est masqué
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
@@ -2091,7 +2120,7 @@ sequenceDiagram
   else adresse complète — à la validation ou à la flèche « Chercher cette adresse »
     G->>R: findMemberByEmail(groupId, adresse)
     R->>MS: findMemberByEmailFn {groupId, email}
-    MS->>MS: requireAuth (approuvé, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
+    MS->>MS: requireEditor (éditeur ou admin, non révoqué, App Check),<br/>cleanEmail, propriétaire du groupe sinon permission-denied
     MS->>MD: transaction — moins de 10 recherches du jour, sinon resource-exhausted
     MS->>UU: parcours de users (email, role, is_revoked, noms)
     MS->>MS: findAccountByEmail — adresse égale en minuscules,<br/>compte non révoqué avec profil public
@@ -2755,7 +2784,7 @@ sequenceDiagram
       <code>onRecipeWritten</code> calcule une fois par changement d'entrée. Une nutrition en
       échec ou incomplète est reprise par une passe à part : le passage programmé de
       « Reprendre la nutrition » (tous les jours à 5 h par défaut, réglable dans Admin ›
-      Backfills, lancé par <code>scheduledBackfills</code>, séquence 33), ou à la demande depuis
+      Backfills, lancé par <code>scheduledBackfills</code>, séquence 32), ou à la demande depuis
       Admin › Backfills.
       <span class="path">scheduled/backfillSchedule.ts (scheduledBackfills) →
       callable/nutritionBackfillCallable.ts (backfillNutritionFn, runNutritionBackfillPass) →
@@ -2808,7 +2837,7 @@ sequenceDiagram
   TR-->>FS: entrées inchangées, sortie à la garde
   RUN-->>CU: complétées, encore incomplètes, laissées<br/>plafond atteint (stoppedByBudget) : reprise au prochain créneau
   RUN-->>BF: même compte rendu, curseur du passage suivant
-  Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 33)
+  Note over CU,BF: l'un et l'autre écrivent l'état backfill_run_nutrition (séquence 32)
 </pre>
       </div>
       <figcaption>
@@ -3330,95 +3359,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="durees-estimees"><span class="n">32</span>Backfill « Durées estimées »</h2>
-    <p class="sec-note">
-      Les recettes écrites avant les durées estimées n'en ont pas. L'administrateur les reprend
-      depuis Admin › Backfills ; les recettes écrites ensuite sont estimées par
-      <code>onRecipeWritten</code> (séquence 06).
-      <span class="path">admin_backfills_screen.dart:_runPass →
-      GcpBillingRepository.backfillEstimatedTimes → callable/estimatedTimesBackfillCallable.ts →
-      backfills/runner.ts (verrou et état communs, séquence 33)</span>
-    </p>
-    <figure class="fig">
-      <div class="canvas">
-<pre class="mermaid">
-sequenceDiagram
-  autonumber
-  actor A as Administrateur
-  participant S as AdminBackfillsScreen
-  participant F as backfillEstimatedTimesFn
-  participant C as app_config
-  participant FS as recipes
-  participant M as Modèle (Gemini ou Claude)
-
-  A->>S: « Durées estimées », puis Lancer
-  S->>F: maxMinutes 8, reprise sur point de contrôle
-  F->>F: requireAdmin
-  F->>C: transaction — running_until encore valide ?
-  alt un autre passage tient le verrou
-    F-->>S: dejaEnCours, rien de lancé
-    S-->>A: « Un passage est déjà en cours »
-  end
-  F->>C: running_until = maintenant + 540 s, running_id
-  F->>C: lit estimated_times_backfill_checkpoint
-  loop pages de 100 recettes, jusqu'au délai, au quota (160, 8 au moins) ou à 3 lots en échec de suite
-    F->>FS: lit la page suivante
-    loop chaque recette
-      alt page_type autre que recipe
-        F->>F: hors recette
-      else durées lues, ou estimation à jour, ou réservation récente
-        F->>F: ignorée, aucun appel
-      else une durée manque
-        F->>F: ajoutée au lot de son propriétaire (created_by)
-      end
-      opt lot de 8 recettes d'un même propriétaire, ou fin de page
-        F->>M: estimateRecipeTimes (backfill_time_estimate_batch)
-        alt réponse lue
-          M-->>F: prep_minutes, cook_minutes par recette
-          loop chaque recette du lot
-            F->>FS: transaction — estimated_times done, si l'empreinte n'a pas changé,<br/>composante déjà lue dans la recette mise à null
-            opt pas de réponse, aucune durée estimée, ou écriture refusée
-              F->>F: recette ajoutée à la liste à revoir
-            end
-          end
-        else échec ou réponse illisible
-          F->>F: logError, lot en erreur, recettes ajoutées à la liste à revoir,<br/>le curseur le dépasse
-        end
-      end
-    end
-    F->>C: curseur
-  end
-  opt quota atteint
-    F->>M: groupes en attente soumis, si le délai le permet
-  end
-  F->>C: curseur (null si tout est parcouru)
-  F->>C: verrou levé (running_until null), s'il est toujours le sien
-  F->>C: état backfill_run_estimated_times : statut, last_report,<br/>termine_* si aucun reste (séquence 33)
-  F-->>S: estimées, sans estimation, ignorées, hors recette, en erreur,<br/>completed (parcourue et aucune erreur), aRevoir (titre et raison)
-  S-->>A: compte rendu chiffré, « relancer » si incomplet,<br/>« Voir les N à revoir » ouvre la feuille, une ligne ouvre la fiche
-</pre>
-      </div>
-      <figcaption>
-        <b>Relancer ne refacture rien.</b> Une recette déjà estimée pour son contenu est ignorée,
-        une estimation à <code>null</code> (le modèle n'a pas su) aussi. Le curseur ne dépasse une
-        recette mise dans un lot qu'une fois le lot soumis : un passage arrêté par le délai relit
-        ce lot au passage suivant. Un lot en <b>échec</b>, lui, est dépassé : une recette qui
-        échoue toujours ne bloque pas le parcours. Le compte rendu reste « incomplet » ; le
-        passage suivant repart du début et ne reprend, sans refacturer le reste, que les recettes
-        sans estimation.
-        <span class="expect">
-          <b>Un passage à la fois, un propriétaire par lot.</b> Le verrou daté empêche deux
-          passages parallèles de facturer deux fois les mêmes recettes ; il expire seul au bout
-          du délai de la fonction. Un lot ne réunit que des recettes d'un même
-          <code>created_by</code> : le texte saisi par un compte ne partage jamais un prompt avec
-          celui d'un autre.
-        </span>
-      </figcaption>
-    </figure>
-  </section>
-
-  <section>
-    <h2 id="backfills-programmes"><span class="n">33</span>Backfills programmés, verrou et « terminé »</h2>
+    <h2 id="backfills-programmes"><span class="n">32</span>Backfills programmés, verrou et « terminé »</h2>
     <p class="sec-note">
       Chaque backfill d'Admin › Backfills est ponctuel ou récurrent. Un passage, lancé à la main
       ou par la programmation, pose un verrou et écrit son état dans
@@ -3516,7 +3457,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="plannings-partages"><span class="n">34</span>Partager son planning, lire celui d'un autre</h2>
+    <h2 id="plannings-partages"><span class="n">33</span>Partager son planning, lire celui d'un autre</h2>
     <p class="sec-note">
       Depuis la v0.23.47, le lecteur ne planifie plus : il lit les plannings que des éditeurs de
       ses groupes partagent avec lui, en lecture seule. L'éditeur coche les groupes dans
@@ -3587,7 +3528,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-email"><span class="n">35</span>Inviter un proche par e-mail</h2>
+    <h2 id="invitation-email"><span class="n">34</span>Inviter un proche par e-mail</h2>
     <p class="sec-note">
       Un administrateur invite une personne qui n'a pas encore de compte, ou dont le compte est
       révoqué. Aucun appel de modèle.
@@ -3658,7 +3599,7 @@ sequenceDiagram
         repousse l'expiration de trente jours et compte dans les vingt envois du jour ; il
         rejoue avant le contrôle du groupe, et vérifie que le compte visé n'a pas changé
         (<code>resendRefusal</code> : refus <code>target_changed</code> sinon). Un compte
-        révoqué invité reste révoqué : rien ne change pour lui à l'envoi (séquence 37). Le résultat de l'envoi s'écrit dans une transaction
+        révoqué invité reste révoqué : rien ne change pour lui à l'envoi (séquence 36). Le résultat de l'envoi s'écrit dans une transaction
         qui ne touche pas une invitation acceptée ou annulée entre-temps. Un message vide part
         sans paragraphe personnel : le serveur n'a pas de message par défaut.
         Annuler (<code>action cancel</code>) passe l'invitation à <code>cancelled</code> ; l'e-mail
@@ -3668,7 +3609,7 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-connexion"><span class="n">36</span>Première connexion d'un invité</h2>
+    <h2 id="invitation-connexion"><span class="n">35</span>Première connexion d'un invité</h2>
     <p class="sec-note">
       La personne invitée ouvre le lien de l'e-mail et se connecte avec le compte Google de
       l'adresse invitée.
@@ -3730,9 +3671,9 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="invitation-retour"><span class="n">37</span>Retour d'un compte révoqué invité</h2>
+    <h2 id="invitation-retour"><span class="n">36</span>Retour d'un compte révoqué invité</h2>
     <p class="sec-note">
-      Un administrateur a invité par e-mail l'adresse d'un compte révoqué (séquence 35, target
+      Un administrateur a invité par e-mail l'adresse d'un compte révoqué (séquence 34, target
       revoked). Le titulaire se reconnecte avec le compte Google de cette adresse.
       <span class="path">auth_repository.dart:_upsertUser → users/{uid} → triggers/invitationSignup.ts
       (applyRevokedInvitation) → syncUserClaims · syncPlanningReachOnRole →
