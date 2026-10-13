@@ -520,6 +520,11 @@ class _SharingSection extends ConsumerWidget {
     final groupsAsync = ref.watch(myGroupsProvider);
     final invitations = ref.watch(pendingInvitationsCountProvider);
     final groups = groupsAsync.value ?? const <FamilyGroup>[];
+    // Un groupe en pause (propriétaire qui n'est plus éditeur) reste
+    // cochable : le partage prendra effet quand il reprendra. Une portée
+    // illisible ne marque rien (l'erreur est déjà au rapport).
+    final pausedIds =
+        ref.watch(maskedGroupIdsProvider).value ?? const <String>{};
     final hint = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
@@ -558,7 +563,12 @@ class _SharingSection extends ConsumerWidget {
                 value: sharedGroupIds.contains(group.id),
                 onChanged: (v) => onChanged(group.id, v ?? false),
                 title: Text(group.name),
-                subtitle: Text(_membersLabel(group)),
+                subtitle: Text(
+                  pausedIds.contains(group.id)
+                      ? 'En pause · ${_membersLabel(group)} — vos repas '
+                            'seront visibles quand le groupe reprendra'
+                      : _membersLabel(group),
+                ),
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: EdgeInsets.zero,
               ),

@@ -1045,28 +1045,85 @@ service cloud.firestore {
              .data.get('uids', []);
     }
 
+    // Plannings de groupe
+    //
+    // Un repas dont `group_id` vaut un groupe appartient au planning de ce
+    // groupe : son propriétaire (`owner_id`, éditeur ou administrateur) le
+    // tient, tous les membres le lisent, un invité non. Le serveur pose dans
+    // `planning_reach/{lecteur}.group_ids` les groupes ACTIFS dont ce compte
+    // est membre, propriétaire compris ; un groupe dont le propriétaire est
+    // rétrogradé en sort, et son planning n'est plus lu par personne, sans
+    // être effacé.
+    //
+    // Une requête du client reste prouvable : elle filtre `group_id == X` et
+    // `uid == propriétaire` sur un seul groupe, et la règle vérifie le groupe
+    // contre la liste, puis que `uid` est le propriétaire ACTUEL du groupe :
+    // un groupe supprimé puis recréé sous le même identifiant par un autre
+    // compte n'ouvre pas aux nouveaux membres les repas de l'ancien
+    // propriétaire.
+    function canReadGroupPlanning(groupId) {
+      return groupId is string
+        && isApproved()
+        && exists(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+        && groupId in get(/databases/$(database)/documents/planning_reach/$(request.auth.uid))
+             .data.get('group_ids', []);
+    }
+
+    /// Le repas écrit est personnel (`group_id` absent ou nul), ou d'un groupe
+    /// dont l'appelant est le propriétaire. Une lecture du groupe par écriture
+    /// d'un repas de groupe ; aucune pour un repas personnel.
+    function ownsMealGroup(data) {
+      return data.get('group_id', null) == null
+        || (data.group_id is string
+            && get(/databases/$(database)/documents/groups/$(data.group_id)).data.owner_id
+                 == request.auth.uid);
+    }
+
     // Repas planifiés
     //
     // Planifier est un geste d'éditeur (v0.23.47) : un lecteur, un compte en
-    // attente ou révoqué relit et supprime ses repas antérieurs, il n'en crée
-    // ni n'en modifie. `uid` est figé : un repas offert à un autre compte
-    // apparaîtrait dans son planning. Les repas d'un planning partagé se
-    // lisent, jamais ne s'écrivent.
+    // attente ou révoqué ne crée, ne modifie ni ne supprime aucun repas. Il
+    // relit ses repas antérieurs ; il les supprimait aussi, jusqu'au planning
+    // de groupe. `uid` est figé : un repas offert à un autre compte
+    // apparaîtrait dans son planning. `group_id` est figé aussi : un repas ne
+    // change pas de planning. Les repas d'un planning partagé ou d'un groupe
+    // se lisent ; seul leur propriétaire les écrit.
     match /planned_meals/{mealId} {
+      // Le partage d'un planning personnel n'ouvre que ses repas personnels
+      // (`group_id` nul) : les repas des groupes du propriétaire ne se lisent
+      // que par les membres de ces groupes. La requête d'un planning partagé
+      // filtre donc `uid == propriétaire` ET `group_id == null` ; un repas
+      // personnel porte `group_id: null` explicite (le backfill « Portée des
+      // groupes et des plannings » le pose sur les repas antérieurs).
+      // `resource.data.group_id`, et non `.get('group_id', null)` : sur une
+      // requête qui ne contraint pas `group_id`, la valeur par défaut rendrait
+      // la condition vraie, et `uid == propriétaire` seul ramènerait ses
+      // repas de groupe. Un champ absent fait échouer la condition.
       allow read: if isAuthenticated()
-        && (resource.data.uid == request.auth.uid || canReadPlanningOf(resource.data.uid));
-      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      allow create: if isEditor() && request.resource.data.uid == request.auth.uid;
+        && (resource.data.uid == request.auth.uid
+            || (canReadPlanningOf(resource.data.uid)
+                && resource.data.group_id == null)
+            || (canReadGroupPlanning(resource.data.get('group_id', null))
+                && resource.data.uid == get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id));
+      allow delete: if isEditor() && resource.data.uid == request.auth.uid;
+      allow create: if isEditor() && request.resource.data.uid == request.auth.uid
+        && ownsMealGroup(request.resource.data);
       allow update: if isEditor() && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == resource.data.uid;
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.get('group_id', null) == resource.data.get('group_id', null)
+        && ownsMealGroup(request.resource.data);
     }
 
     /// `shared_group_ids` de `planning_config` : une liste bornée. Les règles
     /// ne savent pas parcourir une liste pour en vérifier chaque élément ; le
     /// serveur ignore toute valeur qui n'est pas un identifiant de groupe.
+    /// `group_portions` (parts par défaut de chaque groupe possédé) : une
+    /// table bornée de la même façon.
     function isPlanningConfig(data) {
-      return !('shared_group_ids' in data)
-        || (data.shared_group_ids is list && data.shared_group_ids.size() <= 50);
+      return (!('shared_group_ids' in data)
+          || (data.shared_group_ids is list && data.shared_group_ids.size() <= 50))
+        && (!('group_portions' in data)
+          || (data.group_portions is map && data.group_portions.size() <= 50));
     }
 
     // Préférences de planning — lues par leur titulaire, écrites par un

@@ -110,6 +110,23 @@ export function readSearchInput(
   };
 }
 
+/** Identifiant de groupe familial : un identifiant de document Firestore. */
+const GROUP_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * `suggestMealPlanFn` — le planning visé : `null` pour le planning personnel,
+ * l'identifiant du groupe pour un planning de groupe. Lu à part : il ne part
+ * pas au modèle, il sert au contrôle d'appartenance et à la traçabilité.
+ */
+export function readPlanningGroupId(data: Record<string, unknown>): string | null {
+  const raw = data.groupId;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string" || !GROUP_ID_PATTERN.test(raw)) {
+    throw new HttpsError("invalid-argument", "« groupId » n'est pas un identifiant de groupe.");
+  }
+  return raw;
+}
+
 /** `suggestMealPlanFn` — feature `planning`. */
 export function readPlanningInput(
   data: Record<string, unknown>,

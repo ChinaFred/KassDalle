@@ -205,9 +205,9 @@ firestore/
 ├── member_email_search_daily/{uid}_{AAAA-MM-JJ}/  ← compteur du plafond de recherches de membre par adresse
 ├── processing_jobs/{jobId}/
 ├── dead_letters/{jobId}/
-├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
+├── planned_meals/{mealId}/                        ← porteur du contexte (personne ou groupe, date)
 ├── planning_config/{uid}/
-├── planning_reach/{uid}/                          ← plannings lisibles par uid, écrit par le serveur seul
+├── planning_reach/{uid}/                          ← plannings lisibles par uid (personnels et de groupe), écrit par le serveur seul
 ├── nutrition_ingredients/{ingredientId}/
 ├── nutrition_units/{unitId}/
 ├── meal_staples/{stapleId}/                       ← garnitures simples, référentiel partagé
@@ -1256,18 +1256,27 @@ répondre à cette question ; la portée la leur donne en une lecture.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uids` | `List<String>` | UIDs des comptes qui partagent un groupe avec le titulaire, sans lui, triés, sans doublon. Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id` |
+| `uids` | `List<String>` | UIDs des comptes qui partagent un groupe **actif** avec le titulaire, sans lui, triés, sans doublon. Membre d'un groupe = présent dans `member_ids` ou égal à `owner_id`. Groupe actif = son propriétaire est éditeur ou administrateur non révoqué (`isPlannerAccount`, `triggers/groupMembers.ts`) : un groupe dont le propriétaire est rétrogradé ne relie plus personne, propriétaire compris, sans que rien ne soit effacé |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
 **Qui l'écrit :** le serveur seul. `syncGroupReach`, déclencheur sur `groups/{groupId}`, recalcule
 la portée de chaque compte présent avant ou après l'écriture, dans une transaction qui relit
-tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`). Un renommage ne déclenche
-rien. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
+tous ses groupes (`member_ids array-contains uid` et `owner_id == uid`) et le document `users`
+de leurs propriétaires. Un renommage ne déclenche rien. `syncPlanningReachOnRole`
+(`triggers/plannerRole.ts`) la recalcule aussi pour les membres des groupes d'un compte dont le
+droit de planifier change : un propriétaire rétrogradé masque son groupe, et le rétablit en
+redevenant éditeur. **Pourquoi par la portée et non par les règles** : `group_reach` ne dit pas
+quel groupe relie deux comptes ; vérifier le rôle du propriétaire dans les règles des livres et
+recettes coûterait une lecture de plus par document lu, à chaque requête. Le retrait de la
+portée ne coûte que des lectures de déclencheur, à chaque changement de rôle. Le délai est
+celui de `syncGroupReach` (quelques secondes). Le backfill « Portée des groupes et des
+plannings » (`backfillGroupPlanningReachFn`, §7.10) recalcule les portées antérieures. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
 Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée périmée laisserait
 un membre sorti lire encore les livres du groupe. `backfillGroupReachFn`, qui a semé le fonds
 après la v0.23.19, est retiré depuis la v0.23.23 : lancé en production, son travail est fait.
 
-**Risque accepté (v0.23.23).** Aucun outil ne recalcule plus la portée en masse. Si
+**Risque accepté (v0.23.23).** Hors du backfill ponctuel `group_planning_reach` (§7.10),
+aucun outil ne recalcule la portée en masse ; une fois ce backfill retiré du code, plus aucun. Si
 `syncGroupReach` échoue au-delà de la fenêtre de nouvelles tentatives d'Eventarc (environ
 7 jours), la portée des comptes concernés reste périmée jusqu'à la prochaine modification des
 membres de ce groupe ; un renommage ne la corrige pas. Un membre retiré pendant cette panne
@@ -1404,10 +1413,43 @@ adaptation d'une recette — un nombre de parts différent — vit ici, jamais d
 partagée.
 
 Depuis v0.23.47, seul un éditeur ou un administrateur crée et modifie ses repas. Un lecteur
-garde la lecture et la suppression de ses repas antérieurs, sans migration. Les repas d'un
-propriétaire se lisent aussi, en lecture seule, par les comptes de `planning_reach` (§3.8
-quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
-`planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais une requête `in`.
+garde la lecture de ses repas antérieurs ; depuis le planning de groupe, il ne les supprime
+plus (`delete` exige `isEditor()`).
+
+**Planning de groupe.** Un repas est personnel (`group_id` `null` ; absent sur les repas
+antérieurs jusqu'au passage du backfill `group_planning_reach`, qui le pose), ou du planning
+d'un groupe familial (`group_id` =
+identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
+propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
+request.auth.uid` à la création et à la modification). `group_id` est figé à la modification.
+Les membres du groupe le lisent par `planning_reach/{lecteur}.group_ids` (§3.8 quater) ; le
+client ouvre **un flux par groupe affiché** (`group_id == groupe` et `uid == propriétaire du
+groupe`, `planned_at` sur 90 jours, `PlanningRepository.watchGroupMeals`, index composite
+`uid`, `group_id`, `planned_at`). La règle vérifie que `uid` est le propriétaire **actuel** du
+groupe (`get(groups/{group_id}).owner_id`) : un groupe supprimé puis recréé sous le même
+identifiant par un autre compte n'ouvre pas aux nouveaux membres les repas de l'ancien
+propriétaire. Une requête sans le filtre `uid` est refusée. Le titre d'une recette privée
+planifiée pour le groupe se lit sur le repas ; la recette, elle, reste fermée.
+**Un repas personnel porte `group_id: null` explicite** (`PlannedMeal.toFirestore`), et le
+partage d'un planning personnel n'ouvre que ces repas : la règle de lecture n'accepte
+`canReadPlanningOf(uid)` que si `resource.data.group_id == null` — le champ présent et nul : la
+forme `.get('group_id', null)` rendait la condition vraie sur une requête qui ne contraint pas
+`group_id`, et `uid == propriétaire` seul ramenait les repas de groupe. Sans cela, un compte qui lit le planning
+personnel d'un membre recevait aussi, par `uid == propriétaire`, les repas des groupes de ce
+membre dont il n'est pas membre. Le flux d'un planning partagé filtre donc `uid ==
+propriétaire` **et** `group_id == null` (index `uid`, `group_id`, `planned_at`) ; une égalité à
+`null` ne trouve pas un document sans le champ, et le backfill « Portée des groupes et des
+plannings » (§7.10) pose `group_id: null` sur les repas antérieurs ; d'ici là, un repas
+antérieur sans le champ ne se lit plus par le partage, ni un par un ni par requête. Le titulaire garde sa
+requête `uid == moi` sans filtre (« Mon planning », archive, reprise de « Nouveau planning ») :
+les repas qui portent un `group_id` y sont écartés côté client, et un repas antérieur non encore
+marqué lui reste visible. La fenêtre de variété lit tous les repas du cuisinier
+(`getCookedMealsBetween`, et `readServedHistory` côté serveur sur `uid ==`). La suppression
+d'un groupe supprime ses repas (`deleteGroupMeals`, appelé par `syncGroupReach`). Les repas
+personnels d'un propriétaire se lisent, en lecture seule, par les comptes de `planning_reach`
+(§3.8 quater) : le client ouvre **un flux par planning affiché** (`uid == propriétaire`,
+`group_id == null`, `planned_at` sur 90 jours, `PlanningRepository.watchSharedMeals`), jamais
+une requête `in`.
 Le client n'affiche sur un repas d'autrui ni `justification`, ni `choice_source`, ni
 menu, ni heure modifiable. L'écran d'un planning partagé couvre les 90 derniers jours et la suite ;
 il ne propose l'archive plus ancienne que pour son propre planning. C'est une limite du
@@ -1428,7 +1470,8 @@ attendant une décision.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uid` | `String` | Propriétaire du repas |
+| `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Absent sur un repas antérieur jusqu'au passage du backfill `group_planning_reach`, qui le pose à `null`. Figé |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -1462,36 +1505,51 @@ Un document par utilisateur (`{uid}`), écrit depuis « Préférences du plannin
 | `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
 | `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
 | `shared_group_ids` | `List<String>` | **Partager mon planning** (v0.23.47) : les groupes familiaux dont les membres voient ce planning, en lecture seule. Absent ou vide = rien n'est partagé (aucune migration). Cochés parmi les groupes dont le compte est membre, propriétaire compris ; 50 au plus (règles). Le serveur ignore un identifiant de groupe disparu, quitté ou mal formé (`sharedGroupIdsOf`). Un propriétaire qui n'est plus éditeur ou administrateur, ou révoqué, garde ses groupes en base : le partage est **suspendu**, et reprend s'il redevient éditeur. Un changement déclenche `syncPlanningReachOnConfig` |
+| `group_portions` | `Map<String, int>?` | Parts par défaut des repas de chaque groupe dont le compte est propriétaire (identifiant du groupe → parts). Absent ou groupe absent = nombre de membres du groupe, propriétaire compris (`groupDefaultPortions`). 50 entrées au plus (`isPlanningConfig`). Lu par « Nouveau planning » et un jour libre du planning d'un groupe ; aucun écran ne l'écrit encore |
 
 ---
 
 ### 3.8 quater Collection `planning_reach` — la portée des plannings
 
-Un document par compte lecteur : les propriétaires dont il peut lire le planning
-(`planned_meals`). Les règles Firestore le relisent (§4, `canReadPlanningOf`) : elles ne
-peuvent ni parcourir `groups`, ni croiser les groupes cochés avec le rôle du propriétaire.
+Un document par compte lecteur : les propriétaires dont il peut lire le planning personnel,
+et les groupes dont il lit le planning (`planned_meals`). Les règles Firestore le relisent
+(§4, `canReadPlanningOf`, `canReadGroupPlanning`) : elles ne peuvent ni parcourir `groups`,
+ni croiser les groupes avec le rôle de leur propriétaire.
 
 | Champ | Type | Description |
 |---|---|---|
-| `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
+| `uids` | `List<String>` | Propriétaires dont le titulaire lit le planning personnel, sans lui, triés, sans doublon. `owner` y figure quand il est éditeur ou administrateur non révoqué, et qu'un groupe **actif** de son `shared_group_ids` existe et compte `owner` et le titulaire parmi ses **membres** (`owner_id` ou `member_ids`, jamais `invited_ids`). Pas de réciprocité |
+| `group_ids` | `List<String>` | Groupes actifs dont le titulaire est membre, propriétaire compris, triés : il en lit le planning (`canReadGroupPlanning`). Groupe actif = propriétaire éditeur ou administrateur non révoqué |
+| `masked_group_ids` | `List<String>` | Groupes « en pause » : le titulaire en est membre et leur propriétaire ne planifie plus. Lu par le client (`GroupRepository.watchMaskedGroupIds`) : le planning les masque, l'écran Groupes les liste marqués « En pause » (le propriétaire y garde retirer, annuler une invitation, supprimer ; un membre les quitte) ; aucune règle ne le lit. Absent sur un document antérieur : rien n'est en pause |
+| `masked_invitation_ids` | `List<String>` | Groupes qui invitent le titulaire et sont en pause. Le client masque ces invitations (`GroupRepository.watchMyInvitations`) ; aucune règle ne le lit. Recalculé pour les invités ajoutés ou retirés d'un groupe (`invitationsToResync`, `syncGroupReach`) et pour les invités des groupes d'un compte dont le rôle change (`syncPlanningReachOnRole`) |
 | `updated_at` | `Timestamp` | heure serveur de la dernière écriture |
 
 **Qui l'écrit :** le serveur seul (`triggers/planningReach.ts`, `syncPlanningReachFor`, dans
-une transaction qui relit les groupes du titulaire, puis `planning_config` et `users` de chaque
-autre membre). Trois déclencheurs :
+une transaction qui relit les groupes du titulaire et les groupes qui l'invitent, puis
+`planning_config` et `users` de chaque membre, titulaire compris, et du propriétaire de chaque
+groupe qui l'invite). Trois déclencheurs :
 
 - `syncGroupReach` (écriture d'un groupe dont la composition change) recalcule, pour les
-  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre ;
+  mêmes comptes, `group_reach` puis `planning_reach` ; l'un peut échouer sans l'autre. Il
+  recalcule aussi `planning_reach` des invités ajoutés ou retirés, et de tous les invités d'un
+  groupe supprimé (`invitationsToResync`) : leur `masked_invitation_ids` peut changer ;
 - `syncPlanningReachOnConfig` (écriture de `planning_config/{uid}` dont `shared_group_ids`
   change) recalcule les membres des groupes ajoutés ou retirés, `retry: true` ;
-- `syncPlanningReachOnRole` (écriture de `users/{uid}` dont `role` ou `is_revoked` fait
-  changer le droit de partager, `planningShareChanged`) recalcule les membres des groupes
-  cochés par ce compte, `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
+- `syncPlanningReachOnRole` (`triggers/plannerRole.ts` ; écriture de `users/{uid}` dont `role`
+  ou `is_revoked` fait changer le droit de planifier, `planningShareChanged`) recalcule les
+  membres des groupes cochés par ce compte et ceux des groupes dont il est propriétaire, lui
+  compris — `planning_reach`, puis `group_reach` de ces derniers —, ainsi que `planning_reach`
+  des invités des groupes dont il est propriétaire (`invitedOfOwnedGroups`), `retry: true`. Il lève à l'échec pour que l'événement soit rejoué :
   un éditeur rétrogradé ou révoqué ne doit pas rester lisible. `syncUserClaims` ne s'en
   occupe pas.
 
-Aucun backfill : sans `shared_group_ids` rien n'est partagé, et sans `planning_reach` rien ne
-se lit. Le même risque accepté que `group_reach` (§3.5 bis) vaut ici : un échec au-delà de la
+Un backfill, « Portée des groupes et des plannings » (`backfillGroupPlanningReachFn`, §7.10),
+écrit `group_ids`, `masked_group_ids` et `masked_invitation_ids` sur les comptes antérieurs,
+membres et invités de tous les groupes (`groupAccounts`) — sans lui, un membre d'un
+groupe que personne n'a touché depuis le déploiement ne lirait pas le planning du groupe —, puis
+pose `group_id: null` sur les repas antérieurs, sans quoi un planning partagé n'en montrerait
+aucun.
+Sans `shared_group_ids` rien n'est partagé, et sans `planning_reach` rien ne se lit. Le même risque accepté que `group_reach` (§3.5 bis) vaut ici : un échec au-delà de la
 fenêtre de nouvelles tentatives laisse une portée périmée jusqu'au prochain changement, et se
 voit dans Admin › Journaux.
 
@@ -1519,6 +1577,7 @@ déploiement des index).
 |---|---|---|
 | `created_at` · `expires_at` | `Timestamp` | heure serveur ; `created_at` + 180 jours |
 | `correlation_id` | `String` | fil des journaux de la génération |
+| `group_id` | `String?` | groupe dont le planning est généré, `null` pour le planning personnel |
 | `cycle_start` | `String` | `YYYY-MM-DD` du premier créneau |
 | `slots` | `int` | créneaux du cycle |
 | `corpus_size` · `candidates_sent` · `duration_ms` · `rejected_choices` | `int` | recettes reçues, candidats envoyés au modèle, durée, choix du modèle remplacés |
@@ -1816,6 +1875,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn`, retiré en v0.23.52 : le document reste en base, verrou `running_until` compris, plus rien ne l'écrit ni ne le lit |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `group_planning_reach_backfill_checkpoint` | `backfillGroupPlanningReachFn` : `last_doc_id`, le dernier repas planifié parcouru par la phase des repas ; `null` quand `planned_meals` a été parcourue en entier |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -1831,7 +1891,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `system_books` — ponctuels). Les ponctuels `recipe_protein`,
+récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach` — ponctuels). Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52 : leur `backfill_run_<clé>`
 reste en base, et l'écran ignore une clé absente du registre. Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
@@ -2443,8 +2503,8 @@ service cloud.firestore {
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
-| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`) — la requête du client filtre `uid == propriétaire`. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7) | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; suppression d'un repas par son propriétaire seul, quel que soit son rôle (le lecteur supprime ses repas antérieurs) |
-| `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
+| `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
 | `app_config` | admin ; `usage` et `ai_pricing` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules` et `backfill_run_*` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte ou lever un verrou ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
@@ -2850,6 +2910,21 @@ partagé est acceptée, une requête sur un propriétaire non partagé ou sans f
 client ; l'éditeur écrit `shared_group_ids`, liste de 50 au plus, pour lui seul. Les tests
 « repas créé au nom d'un autre », « modifier son repas », « uid figé » et « planifier et
 écrire `planning_config` » portent désormais sur l'éditeur.
+
+Le planning de groupe ajoute 11 tests (« plannings de groupe ») et en réécrit 1 : un membre lit
+le repas du groupe et la requête `group_id ==` ; un invité et un compte hors du groupe ne lisent
+rien ; un membre n'écrit ni ne supprime ; le propriétaire crée, modifie, lit et supprime ; un
+éditeur ne planifie pas avec le `group_id` d'un groupe dont il n'est pas propriétaire, ni avec
+un groupe inexistant ou un `group_id` non textuel ; `group_id` est figé ; un lecteur ne supprime
+aucun repas (le test « le relit et le supprime » devient « le relit, sans le supprimer ») ; un
+propriétaire rétrogradé, dont le serveur a retiré le groupe de `group_ids` et de `group_reach`,
+ne laisse plus ses membres lire ni le planning ni les livres du groupe ; `group_portions` est
+bornée à 50 entrées. La correction de relecture ajoute 2 tests et en réécrit 1 : un compte qui
+lit le planning personnel d'un éditeur ne lit pas son repas de groupe (`get` refusé, requête
+`uid ==` sans filtre refusée, requête `uid ==` et `group_id == null` acceptée) ; un repas
+antérieur sans le champ ne se lit plus par le partage, ni un par un ni par requête, et son
+propriétaire le relit ; le test
+« requête uid == propriétaire partagé » filtre désormais `group_id == null`.
 
 La v0.23.14 rend bloquant le dernier `todo`, « un éditeur ne lit pas le document d'un autre »,
 et ajoute 13 tests : un éditeur ne liste pas `users`, un administrateur lit et liste `users` ;
@@ -3530,6 +3605,16 @@ ses `recipe_ratings` (`readUserRatings`), et depuis v0.23.22 sa mémoire des ref
 (`readUserRefusals`, §3.8 ter). Une lecture en échec : `logError`, la génération continue
 sans historique (`historyAvailable: false`, aucun fait de service affirmé), sans note ou sans
 pénalité de refus.
+
+**Planning d'un groupe.** `suggestMealPlanFn` accepte `groupId` (identifiant de document,
+`readPlanningGroupId`) : le planning généré est celui de ce groupe. Le serveur lit
+`groups/{groupId}` et refuse (`permission-denied`, « Seul le propriétaire du groupe planifie
+pour lui. ») si l'appelant n'en est pas `owner_id` (`assertGroupPlanningOwner`) ; une lecture
+en échec rend `unavailable` après `logError`. Rien d'autre ne change : l'appelant est le
+propriétaire, et ce sont son historique (`uid ==`, repas de groupe compris : même cuisinier),
+ses notes, sa mémoire des refus et ses préférences qui servent. `groupId` ne part pas au
+modèle ; il est écrit dans le document de génération (`planning_runs.group_id`). Aucun poste
+d'IA de plus : le coût reste imputé à `planning` (et `planning_concept`), au nom de l'appelant.
 
 **Présélection** (`preselect`), créneau par créneau dans l'ordre des dates :
 
@@ -4410,7 +4495,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `searchWebRecipesFn` | `web_recipe_search` | `query` → 200 car., requis (`readWebSearchQuery`, caractères de contrôle retirés, espaces resserrées) |
 | `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
-| `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée |
+| `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée ; `groupId` → absent, `null`, ou identifiant de document (lettres, chiffres, `_`, `-`, 128 car. au plus), lu hors de l'entrée du modèle |
 | `generateRecipeConceptFn` | `planning_concept` | `slotDate` → 5 000 car., requis ; `globalConstraints` → 5 000 car. ; `dayConstraint`, `requestedDish` → 20 000 car. JSON ; `alreadyPlanned` → 500 éléments de 5 000 car. ; `runId` → motif `^pr_[0-9a-f]{32}$`, sinon refusé |
 | `suggestMealIdeasFn` | `planning_meal_ideas` | règles propres au poste (voir ci-dessus) ; tailles relevées avant troncature : `prompt`, `previousTitles`, `globalConstraints` |
 | `consolidateShoppingListFn` | `shopping_list` | `ingredients` → 500 éléments de 20 000 car., requis et non vide |
@@ -4585,6 +4670,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Compte rendu : ingrédients examinés, ignorés, en erreur ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillSystemBooksFn` | `admin` | parcourt `users` et crée, pour chaque compte `reader`, `editor` ou `admin` non révoqué, ceux des quatre livres système qui lui manquent, reconnus à leur tag (`missingSystemBooks`) : `__kassdale_ia`, `__libres`, `__secretes` par `books.add` avec les champs de `BookRepository.findOrCreate…Book`, `__web` par `findOrCreateWebBook`. Couverture vide. Comptes en attente ou révoqués sautés. 500 comptes complétés par appel au plus, arrêt sur trois échecs de suite. Sans appel de modèle, sans curseur : réentrant parce qu'un compte complet est sauté |
+| `backfillGroupPlanningReachFn` | `admin` | ponctuel `group_planning_reach`. Lit tous les `groups` une fois, et recalcule pour chacun de leurs membres et de leurs invités `group_reach` (`syncReachFor`) et `planning_reach` (`syncPlanningReachFor`, dont `group_ids`, `masked_group_ids` et `masked_invitation_ids`), les fonctions des déclencheurs ; un document déjà juste n'est pas réécrit. Puis, si la première phase n'a pas été arrêtée, parcourt `planned_meals` par identifiant depuis le point de reprise `app_config/group_planning_reach_backfill_checkpoint` (pages de 400, projection `group_id`) et pose `group_id: null` sur chaque repas qui n'a pas le champ, par lots ; un lot en échec est repris repas par repas. À lancer une fois après le déploiement du planning de groupe : sans lui, un membre d'un groupe que personne n'a touché depuis ne lit pas le planning du groupe, un groupe dont le propriétaire est déjà lecteur reste ouvert, et un planning personnel partagé ne montre aucun repas antérieur. 500 comptes réécrits et 4 000 repas marqués par appel au plus, arrêt sur trois échecs de suite dans chaque phase. Sans appel de modèle. Réentrant : un compte à jour est sauté, un repas qui porte le champ n'est pas réécrit |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
@@ -4685,6 +4771,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
+| `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
@@ -5630,7 +5717,7 @@ functions/src/
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
-├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach, syncPlanningReachOnConfig, syncPlanningReachOnRole, applyEmailInvitation, applyRevokedInvitation
+├── triggers/      # onRecipeWritten, onBookWritten, syncUserClaims, enforceFounderRole, syncGroupReach (+ suppression des repas d'un groupe supprimé, groupMeals.ts), syncPlanningReachOnConfig, syncPlanningReachOnRole (plannerRole.ts), applyEmailInvitation, applyRevokedInvitation
 └── utils/         # sécurité d'upload, DOCX, images
 ```
 
@@ -5678,8 +5765,8 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
 | `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
-| `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui, supprime ses repas antérieurs ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
-| `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2) |
+| `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui et ceux de ses groupes, relit ses repas antérieurs et les ajoute aux courses ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
+| `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2). `?group=<groupId>` (`kPlanningGroupParam`) ouvre le planning d'un groupe dont l'utilisateur est le propriétaire ; sinon l'écran dit « Le planning de ce groupe ne vous est pas accessible. » |
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |

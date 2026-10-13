@@ -143,6 +143,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'révoqués sont sautés. Un livre déjà présent, même renommé, '
             'n\'est pas recréé.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.groupPlanningReach:
+        return 'Recalcule, pour chaque membre d\'un groupe familial, ce qu\'il '
+            'peut lire : le planning des groupes dont il est membre, et les '
+            'livres que ses groupes lui ouvrent. Un groupe dont le propriétaire '
+            'n\'est plus éditeur est masqué, sans rien effacer. Puis marque '
+            'chaque repas planifié antérieur comme personnel, pour que les '
+            'plannings partagés le retrouvent. Ce qui est déjà à jour n\'est '
+            'pas réécrit ; on peut relancer.\n\n'
+            'Aucun appel d\'IA.';
       default:
         return '';
     }
@@ -242,6 +251,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '(livres créés=${r['livresCrees']}), déjà à jour=${r['dejaAJour']}, '
           'en attente ou révoqués=${r['ignores']}, '
           'échecs=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
+        );
+      case BackfillKeys.groupPlanningReach:
+        final r = await _repo.backfillGroupPlanningReach();
+        return _fromCounts(
+          r,
+          'Groupes lus=${r['groupes']} | Comptes : examinés=${r['examines']}, '
+          'réécrits=${r['ecrits']}, déjà à jour=${r['dejaAJour']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']} | '
+          'Repas : examinés=${r['repasExamines']}, '
+          'marqués personnels=${r['repasMarques']}, '
+          'échecs=${r['repasEchoues']}, restants=${r['repasRestants'] ?? '?'}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
       default:
@@ -829,6 +850,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.systemBooks: Icons.library_books_outlined,
+    BackfillKeys.groupPlanningReach: Icons.groups_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

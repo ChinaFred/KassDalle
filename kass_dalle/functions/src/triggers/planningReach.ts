@@ -1,26 +1,53 @@
 /**
- * Portée des plannings : `planning_reach/{uid}`, la liste des comptes dont
- * `uid` peut lire le planning (`planned_meals`), en lecture seule.
+ * Portée des plannings : `planning_reach/{uid}`, ce que `uid` peut lire des
+ * repas planifiés (`planned_meals`) d'autrui, en lecture seule.
  *
- * Un compte partage son planning avec des groupes familiaux qu'il coche dans
- * « Préférences du planning » (`planning_config/{owner}.shared_group_ids`).
+ * Deux sortes de planning se lisent ainsi :
+ *
+ *  - le planning personnel d'un autre membre, qu'il partage avec des groupes
+ *    familiaux cochés dans « Préférences du planning »
+ *    (`planning_config/{owner}.shared_group_ids`) — liste `uids` ;
+ *  - le planning d'un groupe familial (repas dont `group_id` vaut le groupe),
+ *    tenu par le propriétaire du groupe et lu par tous ses membres — liste
+ *    `group_ids`.
+ *
  * Les règles Firestore ne peuvent ni parcourir `groups`, ni croiser ces
- * groupes avec le rôle du propriétaire : elles lisent cette liste toute
- * faite.
+ * groupes avec le rôle des propriétaires : elles lisent ces listes toutes
+ * faites.
  *
  * `owner` figure dans `planning_reach/{viewer}.uids` quand :
  *   - `owner` est éditeur ou administrateur, et n'est pas révoqué — un
  *     propriétaire lecteur, en attente ou révoqué ne partage rien ; ses
  *     `shared_group_ids` restent en base, ignorés, et le partage reprend
  *     s'il redevient éditeur ;
- *   - un groupe de `shared_group_ids` existe encore, et `owner` et `viewer` en
- *     sont tous deux MEMBRES (`owner_id` ou `member_ids`, jamais
+ *   - un groupe ACTIF de `shared_group_ids` existe encore, et `owner` et
+ *     `viewer` en sont tous deux MEMBRES (`owner_id` ou `member_ids`, jamais
  *     `invited_ids`, voir `membersOf`).
  * Le partage n'est pas réciproque, et `uids` ne contient jamais `viewer`.
  *
- * Forme : `{ uids: string[], updated_at: Timestamp }`, `uids` trié, sans
- * doublon. Écrit par le serveur seul (les règles l'interdisent au client :
- * un compte qui s'ajouterait la portée d'un autre lirait ses repas).
+ * Groupe actif : son propriétaire (`owner_id`) est éditeur ou administrateur
+ * non révoqué (`isPlannerAccount`). Un groupe dont le propriétaire est
+ * rétrogradé est masqué pour tous ses membres, propriétaire compris.
+ *
+ * `group_ids` : les groupes actifs dont `viewer` est membre (propriétaire
+ * compris : il relit le planning de son groupe par ce champ). Les règles
+ * laissent lire un repas dont `group_id` y figure.
+ *
+ * `masked_group_ids` : les groupes dont `viewer` est membre et que le
+ * propriétaire rétrogradé met en pause. Lu par le client : le planning les
+ * masque, l'écran des groupes les marque « En pause » ; aucune règle ne le
+ * lit.
+ *
+ * `masked_invitation_ids` : les groupes qui invitent `viewer` et sont en
+ * pause. Le client masque ces invitations ; aucune règle ne le lit.
+ *
+ * Forme : `{ uids: string[], group_ids: string[], masked_group_ids:
+ * string[], masked_invitation_ids: string[], updated_at: Timestamp }`,
+ * chaque liste triée, sans doublon. Un
+ * document antérieur au planning de groupe n'a que `uids` : le client lit alors
+ * « groupes inconnus » et ne masque rien. Écrit par le serveur seul (les
+ * règles l'interdisent au client : un compte qui s'ajouterait la portée d'un
+ * autre lirait ses repas).
  *
  * Trois événements recalculent les portées touchées :
  *   - l'écriture d'un groupe dont la composition change — `syncGroupReach`,
@@ -28,10 +55,11 @@
  *   - un changement de `shared_group_ids` — `syncPlanningReachOnConfig`,
  *     ci-dessous ;
  *   - un changement de rôle ou de révocation d'un compte —
- *     `syncPlanningReachOnRole`, déclencheur dédié sur `users/{uid}`.
- *
- * Aucun backfill : sans `shared_group_ids`, rien n'est partagé, et sans
- * `planning_reach`, rien ne se lit.
+ *     `syncPlanningReachOnRole` (`plannerRole.ts`), déclencheur dédié sur
+ *     `users/{uid}`.
+ * Le backfill « Portée des groupes et des plannings »
+ * (`group_planning_reach`) écrit `group_ids` et `masked_group_ids` sur les
+ * comptes antérieurs.
  *
  * Aucun SDK lourd : `firebase-admin/firestore` est déjà chargé par toutes les
  * fonctions du bundle.
@@ -53,22 +81,17 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { membersOf, sameReach, type GroupData } from "./groupMembers";
+import { isPlannerAccount, membersOf, ownerOf, sameList, type GroupData } from "./groupMembers";
 
 /** Plafond de `shared_group_ids`, le même que celui des règles Firestore. */
 export const MAX_SHARED_GROUPS = 50;
-
-/** Les rôles qui planifient, et donc partagent. */
-const PLANNER_ROLES = ["editor", "admin"];
 
 /**
  * Le compte peut-il partager son planning ? Éditeur ou administrateur, non
  * révoqué. Un document absent ou mal formé ne partage rien.
  */
 export function canSharePlanning(user: Record<string, unknown> | undefined | null): boolean {
-  if (!user) return false;
-  const role = typeof user.role === "string" ? user.role.trim() : "";
-  return PLANNER_ROLES.includes(role) && user.is_revoked !== true;
+  return isPlannerAccount(user);
 }
 
 /**
@@ -97,7 +120,7 @@ export interface GroupEntry {
   data: GroupData;
 }
 
-/** Ce qu'il faut savoir d'un propriétaire possible. */
+/** Ce qu'il faut savoir d'un membre : propriétaire de planning ou de groupe. */
 export interface OwnerState {
   /** `planning_config/{owner}`, ou rien. */
   config: Record<string, unknown> | undefined | null;
@@ -106,12 +129,22 @@ export interface OwnerState {
 }
 
 /**
- * La portée de [viewer] : les propriétaires dont il peut lire le planning.
+ * Le groupe est-il actif ? Son propriétaire a un état dans [owners] et
+ * planifie. Un propriétaire sans état n'active rien.
+ */
+export function isActiveGroup(group: GroupData, owners: ReadonlyMap<string, OwnerState>): boolean {
+  const owner = ownerOf(group);
+  return owner != null && isPlannerAccount(owners.get(owner)?.user);
+}
+
+/**
+ * La portée de [viewer] : les propriétaires dont il peut lire le planning
+ * personnel.
  *
  * [groups] : les groupes dont [viewer] est membre (un groupe dont il n'est
- * pas membre est ignoré). [owners] : l'état de chaque autre membre de ces
- * groupes ; un membre sans état ne partage rien. Triée, sans doublon, sans
- * [viewer].
+ * pas membre est ignoré, un groupe inactif aussi). [owners] : l'état de
+ * chaque membre de ces groupes, [viewer] compris ; un membre sans état ne
+ * partage rien. Triée, sans doublon, sans [viewer].
  */
 export function planningReachFrom(
   viewer: string,
@@ -122,6 +155,7 @@ export function planningReachFrom(
   for (const group of groups) {
     const members = membersOf(group.data);
     if (!members.includes(viewer)) continue;
+    if (!isActiveGroup(group.data, owners)) continue;
     for (const owner of members) {
       if (owner === viewer || reach.has(owner)) continue;
       const state = owners.get(owner);
@@ -130,6 +164,72 @@ export function planningReachFrom(
     }
   }
   return [...reach].sort();
+}
+
+/**
+ * Les plannings de groupe de [viewer] : `groupIds`, les groupes actifs dont
+ * il est membre, et `maskedGroupIds`, ceux dont il est membre et que leur
+ * propriétaire rétrogradé masque. Un invité n'est pas membre. Triés, sans
+ * doublon.
+ */
+export function groupPlanningsFrom(
+  viewer: string,
+  groups: Iterable<GroupEntry>,
+  owners: ReadonlyMap<string, OwnerState>,
+): { groupIds: string[]; maskedGroupIds: string[] } {
+  const active = new Set<string>();
+  const masked = new Set<string>();
+  for (const group of groups) {
+    if (!membersOf(group.data).includes(viewer)) continue;
+    if (isActiveGroup(group.data, owners)) active.add(group.id);
+    else masked.add(group.id);
+  }
+  return { groupIds: [...active].sort(), maskedGroupIds: [...masked].sort() };
+}
+
+/**
+ * Les invitations de [viewer] vers un groupe en pause : [viewer] figure dans
+ * `invited_ids` (et n'est pas membre) d'un groupe dont le propriétaire ne
+ * planifie plus. L'écran les masque à l'invité. Triées, sans doublon.
+ */
+export function maskedInvitationsFrom(
+  viewer: string,
+  groups: Iterable<GroupEntry>,
+  owners: ReadonlyMap<string, OwnerState>,
+): string[] {
+  const masked = new Set<string>();
+  for (const group of groups) {
+    const invited = group.data?.invited_ids;
+    if (!Array.isArray(invited) || !invited.includes(viewer)) continue;
+    if (membersOf(group.data).includes(viewer)) continue;
+    if (!isActiveGroup(group.data, owners)) masked.add(group.id);
+  }
+  return [...masked].sort();
+}
+
+/** Ce que `planning_reach/{viewer}` doit contenir. */
+export interface PlanningReach {
+  uids: string[];
+  groupIds: string[];
+  maskedGroupIds: string[];
+  maskedInvitationIds: string[];
+}
+
+/**
+ * Le document stocké vaut-il déjà [expected] ? Un document absent, mal formé
+ * ou antérieur à `group_ids` ne vaut rien : il faut l'écrire.
+ */
+export function samePlanningReach(
+  stored: Record<string, unknown> | undefined | null,
+  expected: PlanningReach,
+): boolean {
+  if (!stored) return false;
+  return (
+    sameList(stored.uids, expected.uids) &&
+    sameList(stored.group_ids, expected.groupIds) &&
+    sameList(stored.masked_group_ids, expected.maskedGroupIds) &&
+    sameList(stored.masked_invitation_ids, expected.maskedInvitationIds)
+  );
 }
 
 /**
@@ -156,10 +256,10 @@ export type PlanningReachOutcome = "created" | "updated" | "unchanged";
  * Recalcule et écrit `planning_reach/{viewer}`.
  *
  * Dans une transaction : les groupes de [viewer] (deux requêtes), puis les
- * préférences et le document de chaque autre membre. Une écriture
- * concurrente sur l'un d'eux fait rejouer le calcul. N'écrit rien si la
- * liste n'a pas changé. Les erreurs remontent à l'appelant, qui les
- * journalise.
+ * préférences et le document de chaque membre de ces groupes, [viewer]
+ * compris (il peut être propriétaire d'un groupe). Une écriture concurrente
+ * sur l'un d'eux fait rejouer le calcul. N'écrit rien si le document n'a pas
+ * changé. Les erreurs remontent à l'appelant, qui les journalise.
  */
 export async function syncPlanningReachFor(viewer: string): Promise<PlanningReachOutcome> {
   const db = getFirestore();
@@ -167,20 +267,28 @@ export async function syncPlanningReachFor(viewer: string): Promise<PlanningReac
   const reachRef = db.collection(COLL_PLANNING_REACH).doc(viewer);
 
   return db.runTransaction(async (tx) => {
-    const [asMember, asOwner, stored] = await Promise.all([
+    const [asMember, asOwner, asInvited, stored] = await Promise.all([
       tx.get(groups.where("member_ids", "array-contains", viewer)),
       tx.get(groups.where("owner_id", "==", viewer)),
+      tx.get(groups.where("invited_ids", "array-contains", viewer)),
       tx.get(reachRef),
     ]);
     const entries = new Map<string, GroupEntry>();
     for (const doc of [...asMember.docs, ...asOwner.docs]) {
       entries.set(doc.id, { id: doc.id, data: doc.data() });
     }
+    const invitations = asInvited.docs.map((doc) => ({ id: doc.id, data: doc.data() }));
     const candidates = new Set<string>();
     for (const entry of entries.values()) {
       const members = membersOf(entry.data);
       if (!members.includes(viewer)) continue;
-      for (const member of members) if (member !== viewer) candidates.add(member);
+      for (const member of members) candidates.add(member);
+    }
+    // Le propriétaire de chaque groupe qui m'invite : son rôle dit si
+    // l'invitation est en pause.
+    for (const invitation of invitations) {
+      const owner = ownerOf(invitation.data);
+      if (owner) candidates.add(owner);
     }
 
     const owners = new Map<string, OwnerState>();
@@ -200,9 +308,20 @@ export async function syncPlanningReachFor(viewer: string): Promise<PlanningReac
       });
     }
 
-    const expected = planningReachFrom(viewer, entries.values(), owners);
-    if (stored.exists && sameReach(stored.data(), expected)) return "unchanged";
-    tx.set(reachRef, { uids: expected, updated_at: FieldValue.serverTimestamp() });
+    const groupPlannings = groupPlanningsFrom(viewer, entries.values(), owners);
+    const expected: PlanningReach = {
+      uids: planningReachFrom(viewer, entries.values(), owners),
+      ...groupPlannings,
+      maskedInvitationIds: maskedInvitationsFrom(viewer, invitations, owners),
+    };
+    if (stored.exists && samePlanningReach(stored.data(), expected)) return "unchanged";
+    tx.set(reachRef, {
+      uids: expected.uids,
+      group_ids: expected.groupIds,
+      masked_group_ids: expected.maskedGroupIds,
+      masked_invitation_ids: expected.maskedInvitationIds,
+      updated_at: FieldValue.serverTimestamp(),
+    });
     return stored.exists ? "updated" : "created";
   });
 }
@@ -262,9 +381,9 @@ export async function resyncPlanningReach(
 }
 
 /**
- * Le droit de partager son planning a-t-il changé entre [before] et
- * [after] (`users/{uid}`) ? Seuls `role` et `is_revoked` comptent : les
- * autres écritures du document ne recalculent rien.
+ * Le droit de planifier a-t-il changé entre [before] et [after]
+ * (`users/{uid}`) ? Seuls `role` et `is_revoked` comptent : les autres
+ * écritures du document ne recalculent rien.
  */
 export function planningShareChanged(
   before: Record<string, unknown> | undefined | null,
@@ -273,48 +392,27 @@ export function planningShareChanged(
   return canSharePlanning(before) !== canSharePlanning(after);
 }
 
-export const syncPlanningReachOnRole = onDocumentWritten(
-  // Déclencheur dédié, `retry: true` : un éditeur rétrogradé ou révoqué dont
-  // la portée n'est pas recalculée resterait lisible par ses groupes. Il
-  // lève à l'échec pour que l'événement soit rejoué ; `syncPlanningReachFor`
-  // est idempotent.
-  { document: "users/{uid}", region: REGION, retry: true },
-  async (event) => {
-    const owner = event.params.uid;
-    const before = event.data?.before?.exists
-      ? (event.data.before.data() as Record<string, unknown> | undefined)
-      : undefined;
-    const after = event.data?.after?.exists
-      ? (event.data.after.data() as Record<string, unknown> | undefined)
-      : undefined;
-    if (!planningShareChanged(before, after)) return;
-
-    const correlationId = newCorrelationId("portee_plannings");
-    let viewers: string[];
-    try {
-      const config = await getFirestore().collection(COLL_PLANNING_CONFIG).doc(owner).get();
-      viewers = await audienceOf(owner, sharedGroupIdsOf(config.data()));
-    } catch (err) {
-      await logError({
-        message: `syncPlanningReachOnRole: audience du planning de ${owner} illisible`,
-        correlationId,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        userId: owner,
-      });
-      throw err;
-    }
-    const failures = await resyncPlanningReach(viewers, {
-      correlationId,
-      reason: "rôle du propriétaire",
-      owner,
-    });
-    if (failures > 0) {
-      throw new Error(
-        `syncPlanningReachOnRole: ${failures} portée(s) non recalculée(s) pour ${owner}`,
-      );
-    }
-  },
-);
+/**
+ * Les invités dont l'invitation change après l'écriture d'un groupe : ceux
+ * ajoutés ou retirés de `invited_ids`, et tous les invités d'un groupe
+ * supprimé. Leur `masked_invitation_ids` peut bouger. Triés, sans doublon.
+ */
+export function invitationsToResync(before: GroupData, after: GroupData): string[] {
+  const invited = (g: GroupData): Set<string> =>
+    new Set(
+      Array.isArray(g?.invited_ids)
+        ? g.invited_ids.filter(
+            (v): v is string => typeof v === "string" && v.length > 0 && !v.includes("/"),
+          )
+        : [],
+    );
+  const a = invited(before);
+  const b = invited(after);
+  const changed = new Set<string>();
+  for (const id of a) if (!b.has(id)) changed.add(id);
+  for (const id of b) if (!a.has(id)) changed.add(id);
+  return [...changed].sort();
+}
 
 export const syncPlanningReachOnConfig = onDocumentWritten(
   // `retry` : une portée non recalculée laisse un membre lire un planning qui

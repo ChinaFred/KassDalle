@@ -339,5 +339,26 @@ void main() {
         '1 de Mon planning, 1 du planning de Alain, 2 du planning de Marie',
       );
     });
+
+    test('un repas de groupe compte pour son groupe, nommé', () {
+      final group = PlannedMeal(
+        id: 'g',
+        uid: 'me',
+        groupId: 'gd',
+        recipeTitre: 'Plat',
+        plannedAt: DateTime(2026, 10, 20, 19),
+        durationMinutes: 0,
+        createdAt: DateTime(2026, 10, 1),
+      );
+      expect(
+        planningShoppingBreakdown(
+          [meal('1', 'me'), group, meal('3', 'm')],
+          myUid: 'me',
+          nameOf: nameOf,
+          groupNameOf: (id) => {'gd': 'Famille Dupont'}[id]!,
+        ),
+        '1 de Mon planning, 1 du groupe Famille Dupont, 1 du planning de Marie',
+      );
+    });
   });
 }

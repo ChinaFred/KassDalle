@@ -120,33 +120,51 @@ List<PlannedMeal> mealsToShop(
   ];
 }
 
-/// D'où viennent les repas ajoutés aux courses : « 5 de Mon planning, 7 du
-/// planning de Marie ». Null quand ils viennent d'un seul planning.
+/// D'où viennent les repas ajoutés aux courses : « 5 de Mon planning, 3 du
+/// groupe Famille Dupont, 7 du planning de Marie ». Null quand ils viennent
+/// d'un seul planning.
 ///
-/// Mon planning d'abord, puis les autres par prénom ([nameOf]). Les repas se
-/// comptent par propriétaire (`uid`).
+/// Un repas de groupe (`group_id`) compte pour son groupe, nommé par
+/// [groupNameOf], quel que soit son cuisinier ; un repas personnel, pour son
+/// propriétaire (`uid`). Mon planning d'abord, puis les groupes par nom, puis
+/// les autres plannings par prénom ([nameOf]).
 String? planningShoppingBreakdown(
   Iterable<PlannedMeal> meals, {
   required String? myUid,
   required String Function(String uid) nameOf,
+  String Function(String groupId)? groupNameOf,
 }) {
-  final byOwner = <String, int>{};
+  final byPlanning = <({String? groupId, String uid}), int>{};
   for (final m in meals) {
-    byOwner[m.uid] = (byOwner[m.uid] ?? 0) + 1;
+    final key = m.groupId != null
+        ? (groupId: m.groupId, uid: '')
+        : (groupId: null, uid: m.uid);
+    byPlanning[key] = (byPlanning[key] ?? 0) + 1;
   }
-  if (byOwner.length < 2) return null;
-  final owners = byOwner.keys.toList()
+  if (byPlanning.length < 2) return null;
+  String label(({String? groupId, String uid}) k) => k.groupId != null
+      ? (groupNameOf?.call(k.groupId!) ?? 'Groupe')
+      : nameOf(k.uid);
+  int rank(({String? groupId, String uid}) k) => k.groupId != null
+      ? 1
+      : k.uid == myUid
+      ? 0
+      : 2;
+  final plannings = byPlanning.keys.toList()
     ..sort((a, b) {
-      if (a == myUid) return -1;
-      if (b == myUid) return 1;
-      final byName = nameOf(a).toLowerCase().compareTo(nameOf(b).toLowerCase());
-      return byName != 0 ? byName : a.compareTo(b);
+      final byRank = rank(a).compareTo(rank(b));
+      if (byRank != 0) return byRank;
+      final byName = label(a).toLowerCase().compareTo(label(b).toLowerCase());
+      if (byName != 0) return byName;
+      return (a.groupId ?? a.uid).compareTo(b.groupId ?? b.uid);
     });
   return [
-    for (final uid in owners)
-      uid == myUid
-          ? '${byOwner[uid]} de Mon planning'
-          : '${byOwner[uid]} du planning de ${nameOf(uid)}',
+    for (final k in plannings)
+      k.groupId != null
+          ? '${byPlanning[k]} du groupe ${label(k)}'
+          : k.uid == myUid
+          ? '${byPlanning[k]} de Mon planning'
+          : '${byPlanning[k]} du planning de ${label(k)}',
   ].join(', ');
 }
 

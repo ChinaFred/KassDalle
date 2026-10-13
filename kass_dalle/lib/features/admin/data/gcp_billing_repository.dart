@@ -448,6 +448,20 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Recalcule `group_reach` et `planning_reach` (dont `group_ids` et
+  /// `masked_group_ids`) de chaque membre d'un groupe familial. Sans appel de
+  /// modèle. Les drapeaux valent 1 ou 0 ; les comptes en échec sont dans
+  /// `failures`.
+  Future<BackfillCounts> backfillGroupPlanningReach() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillGroupPlanningReachFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Recalcule `shopping_products` sur toutes les recettes, sans appel de
   /// modèle. Réentrante, avec reprise sur point de contrôle. Rend les
   /// compteurs tels quels ; les drapeaux valent 1 ou 0. Les recettes à

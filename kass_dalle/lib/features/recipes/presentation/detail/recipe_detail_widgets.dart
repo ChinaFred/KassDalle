@@ -239,6 +239,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                         recipeId: recipe.id,
                         prepTimeMin: recipe.tags.prepTime,
                         cookTimeMin: recipe.tags.cookTime,
+                        portions: recipe.portions,
                         ingredients: recipe.ingredients,
                       )
                     : null,

@@ -41,29 +41,53 @@ describe("reachFromGroups", () => {
   const famille = { owner_id: "papa", member_ids: ["papa", "maman", "lea"] };
   const amis = { owner_id: "lea", member_ids: ["zoe"] };
   const voisins = { owner_id: "voisin", member_ids: ["voisine"] };
+  // Tous les propriétaires planifient : aucun groupe n'est masqué.
+  const ALL = new Set(["papa", "lea", "voisin", "maman", "solo"]);
+
+  test("un groupe dont le propriétaire ne planifie plus est masqué", () => {
+    const sansPapa = new Set(["lea", "voisin", "maman"]);
+    assert.deepEqual(reachFromGroups("lea", [famille, amis], sansPapa), ["zoe"]);
+    assert.deepEqual(reachFromGroups("maman", [famille], sansPapa), []);
+    // Le propriétaire rétrogradé perd aussi la portée de son groupe.
+    assert.deepEqual(reachFromGroups("papa", [famille], sansPapa), []);
+  });
+
+  test("un lien gardé par un autre groupe actif reste", () => {
+    const autre = { owner_id: "maman", member_ids: ["lea"] };
+    assert.deepEqual(reachFromGroups("lea", [famille, autre], new Set(["maman"])), ["maman"]);
+  });
 
   test("les autres membres de mes groupes, sans moi, triés", () => {
-    assert.deepEqual(reachFromGroups("lea", [famille, amis, voisins]), ["maman", "papa", "zoe"]);
+    assert.deepEqual(reachFromGroups("lea", [famille, amis, voisins], ALL), [
+      "maman",
+      "papa",
+      "zoe",
+    ]);
   });
 
   test("propriétaire seul de member_ids absent : il voit ses membres", () => {
-    assert.deepEqual(reachFromGroups("lea", [amis]), ["zoe"]);
-    assert.deepEqual(reachFromGroups("zoe", [amis]), ["lea"]);
+    assert.deepEqual(reachFromGroups("lea", [amis], ALL), ["zoe"]);
+    assert.deepEqual(reachFromGroups("zoe", [amis], ALL), ["lea"]);
   });
 
   test("un compte sans groupe, ou seul dans le sien, a une portée vide", () => {
-    assert.deepEqual(reachFromGroups("inconnu", [famille, amis]), []);
-    assert.deepEqual(reachFromGroups("solo", [{ owner_id: "solo", member_ids: ["solo"] }]), []);
-    assert.deepEqual(reachFromGroups("lea", []), []);
+    assert.deepEqual(reachFromGroups("inconnu", [famille, amis], ALL), []);
+    assert.deepEqual(
+      reachFromGroups("solo", [{ owner_id: "solo", member_ids: ["solo"] }], ALL),
+      [],
+    );
+    assert.deepEqual(reachFromGroups("lea", [], ALL), []);
   });
 
   test("un membre commun à deux groupes n'apparaît qu'une fois", () => {
     const autre = { owner_id: "maman", member_ids: ["lea"] };
-    assert.deepEqual(reachFromGroups("lea", [famille, autre]), ["maman", "papa"]);
+    assert.deepEqual(reachFromGroups("lea", [famille, autre], ALL), ["maman", "papa"]);
   });
 
   test("un groupe mal formé ne casse pas le calcul", () => {
-    assert.deepEqual(reachFromGroups("lea", [undefined, null, { member_ids: 7 }, amis]), ["zoe"]);
+    assert.deepEqual(reachFromGroups("lea", [undefined, null, { member_ids: 7 }, amis], ALL), [
+      "zoe",
+    ]);
   });
 });
 
