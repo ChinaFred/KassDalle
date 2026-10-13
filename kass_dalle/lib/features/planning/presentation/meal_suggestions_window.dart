@@ -364,6 +364,19 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
     } on PlanSuggestionFailure catch (failure) {
       if (mounted) _snackContext.showErrorSnackBar(failure.message);
       return;
+    } catch (e, stackTrace) {
+      // Dernier recours (sélecteur de recette, par exemple) : sans lui, le
+      // chargement s'arrêtait sans rien dire.
+      reportUnexpectedError(
+        feature: 'meal_suggestions.plan',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'suggestion_id': s.id},
+      );
+      if (mounted) {
+        _snackContext.showErrorSnackBar('Repas non enregistré. Réessayez.');
+      }
+      return;
     } finally {
       if (mounted) setState(() => _planning.remove(s.id));
     }

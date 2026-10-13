@@ -265,6 +265,16 @@ describe("meal_suggestions — bornes", () => {
     await assertSucceeds(at(dayIn(59)));
   });
 
+  it("jour : un 08 et un 09 (jour du mois) acceptés", async () => {
+    // `int('08')` et `int('09')` : un interpréteur octal les refuserait.
+    const at = (day) => db("reader").doc(sid(READER, 0, { day })).set(freeSuggestion(READER, { day }));
+    for (const dd of ["08", "09"]) {
+      let offset = 0;
+      while (dayIn(offset).slice(8, 10) !== dd) offset += 1;
+      await assertSucceeds(at(dayIn(offset)));
+    }
+  });
+
   it("champ inconnu, ou date de création fournie par le client : refusé", async () => {
     await assertFails(
       db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { status: "open" })),

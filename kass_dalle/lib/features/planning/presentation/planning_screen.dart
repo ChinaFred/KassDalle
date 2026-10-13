@@ -2415,6 +2415,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         .firstOrNull;
     final repo = ref.read(planningRepositoryProvider);
     if (group == null || repo == null) {
+      reportUnexpectedError(
+        feature: 'meal_suggestions.plan_group_missing',
+        error: StateError('Groupe ou planning indisponible'),
+        stackTrace: StackTrace.current,
+        context: {
+          'group_id': suggestion.groupId,
+          'group_found': group != null,
+          'repo_ready': repo != null,
+        },
+      );
       throw const PlanSuggestionFailure(
         'Ce groupe n\'est plus accessible. Réessayez.',
       );

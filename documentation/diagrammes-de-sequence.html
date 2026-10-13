@@ -4041,10 +4041,10 @@ sequenceDiagram
   SS->>MS: set gd_léo_2026-10-17_n, premier n libre de 0 à 4 { group_id, group_owner_id: marie, author_uid, day,<br/>recipe_id + recipe_titre ou free_title, note ≤ 200, created_at: serveur }
   Note over MS: règles : isApproved(), gd dans planning_reach/{léo}.group_ids,<br/>léo dans groups/gd.member_ids, group_owner_id == groups/gd.owner_id ≠ léo,<br/>isMealSuggestion (champs fermés, bornes, jour de la veille à J+60), identifiant _0 à _4
   MS-->>SS: ok — « Suggestion envoyée à Marie. »
-  S->>MS: author_uid == léo, day ≥ J−90 — « Votre suggestion : Lasagnes »
+  S->>MS: author_uid == léo, J−90 ≤ day ≤ J+60, 500 au plus — « Votre suggestion : Lasagnes »
 
   O->>S: ouvre le planning
-  S->>MS: group_owner_id == marie, day ≥ J−90
+  S->>MS: group_owner_id == marie, J−90 ≤ day ≤ J+60, 500 au plus
   MS-->>S: badge (jours à venir), repère « 1 suggestion » sur le samedi<br/>titre actuel d'une recette lisible, titre copié sinon
   O->>W: appui sur le repère
   W->>PM: repas du groupe ce jour-là — « Déjà prévu » / « Au planning »
