@@ -18,6 +18,14 @@ class RecipeRolesBackfillReport {
   final int sansRole;
   final int echouees;
 
+  /// Recettes sautées : trois échecs ou plus, sans « Réessayer aussi les
+  /// éléments exclus après 3 échecs ».
+  final int exclues;
+
+  /// Recettes sans rôle ou en échec dans ce passage, pas encore exclues : le
+  /// passage est « incomplet », sans reprise à l'heure suivante.
+  final int echecsNonExclus;
+
   /// Recettes encore sans rôle après ce passage, sur toute la collection.
   /// `null` quand le serveur n'a pas pu les compter : un zéro à sa place
   /// dirait que tout est classé.
@@ -39,6 +47,8 @@ class RecipeRolesBackfillReport {
     required this.horsRecette,
     required this.sansRole,
     required this.echouees,
+    this.exclues = 0,
+    this.echecsNonExclus = 0,
     required this.restantes,
     required this.completed,
     required this.stoppedByBudget,
@@ -63,6 +73,8 @@ class RecipeRolesBackfillReport {
       horsRecette: count('horsRecette'),
       sansRole: count('sansRole'),
       echouees: count('echouees'),
+      exclues: count('exclues'),
+      echecsNonExclus: count('echecsNonExclus'),
       restantes: restantes is num ? restantes.toInt() : null,
       completed: map['completed'] == true,
       stoppedByBudget: map['stoppedByBudget'] == true,
@@ -89,7 +101,8 @@ class RecipeRolesBackfillReport {
       'examinées=$examinees, classées=$classees, '
       'déjà classées=$dejaClassees, hors recette=$horsRecette, '
       'sans rôle=$sansRole, échecs=$echouees'
-      '${completed ? ' — terminé' : ' — incomplet'}'
+      '${exclues > 0 ? ', exclues après 3 échecs=$exclues' : ''}'
+      '${completed && echecsNonExclus == 0 ? ' — terminé' : ' — incomplet'}'
       '${stoppedByBudget ? ' (quota du passage atteint, relancer pour continuer)' : ''}'
       '${stoppedByErrors ? ' (trois échecs de suite : voir les rapports d\'erreurs)' : ''}'
       '${stoppedByDeadline ? ' (arrêt préventif, relancer pour continuer)' : ''}';

@@ -29,6 +29,8 @@ import {
   type FryAbsorptionVerdict,
 } from "./fryAbsorption";
 import {
+  getKnownUnitMetadata,
+  isBareIngredientLine,
   normalizeObservedUnit,
   resolveUnitFactorToGrams,
   resolveWeighingInput,
@@ -36,6 +38,7 @@ import {
   type ReferentialUnitOverride,
 } from "./quantityConversion";
 import { asPositiveNumber, roundValue } from "./unitDisplay";
+import { isExcludedAfterFailures } from "../backfills/failureMemory";
 
 interface IngredientInput {
   name?: unknown;
@@ -80,6 +83,57 @@ const NUTRIENT_KEYS = [
   "sodium_mg",
   "salt_g",
 ] as const;
+/**
+ * Pourquoi une ligne d'ingrédient n'a pas de poids. Écrit dans
+ * `nutrition.missing_weight` ; lu par le rattrapage, qui ne reprend pas une
+ * recette dont aucun manque ne peut être comblé par un appel, et par sa liste
+ * « à revoir », qui nomme la cause.
+ *
+ *  - `quantite_illisible` : un nombre manque ou ne se lit pas, devant une
+ *    unité (« quelques g ») — seule la recette peut le corriger ;
+ *  - `quantite_absente` : ni nombre ni unité (« roquette ») et pas encore de
+ *    portion usuelle — une reprise la demande au modèle ;
+ *  - `comptage_sans_poids` : compté à la pièce (« 2 œufs ») sans poids à la
+ *    pièce connu pour cet ingrédient — la reprise ne le demande pas ;
+ *  - `unite_sans_poids` : une unité que ni le référentiel ni la table ne
+ *    savent peser.
+ */
+export type MissingWeightCause =
+  "quantite_illisible" | "quantite_absente" | "comptage_sans_poids" | "unite_sans_poids";
+
+/** Une ligne sans poids, et sa cause. */
+export interface MissingWeight {
+  name: string;
+  cause: MissingWeightCause;
+}
+
+/**
+ * Cause d'une ligne qui ne se pèse pas. `weighingUnit` est l'unité retenue
+ * par `resolveWeighingInput`, `null` quand la quantité elle-même ne se lit
+ * pas. Fonction pure, testée seule.
+ */
+export function missingWeightCause(args: {
+  name: string;
+  qty: unknown;
+  unit: unknown;
+  weighingUnit: string | null;
+}): MissingWeightCause {
+  if (args.weighingUnit == null) {
+    return isBareIngredientLine(args.name, args.qty, args.unit)
+      ? "quantite_absente"
+      : "quantite_illisible";
+  }
+  const normalized = normalizeObservedUnit(args.weighingUnit);
+  if (
+    normalized === "" ||
+    normalized === "piece" ||
+    getKnownUnitMetadata(args.weighingUnit, args.name)?.measurementType === "count"
+  ) {
+    return "comptage_sans_poids";
+  }
+  return "unite_sans_poids";
+}
+
 export interface ComputedNutritionResult {
   recipeId: string;
   nutrition: Record<string, unknown>;
@@ -107,6 +161,9 @@ function degradedNutritionSnapshot(args: {
     per_100g: null,
     quality: { score: 0, level: "C", warnings: [args.warning] },
     missing_ingredients: [],
+    missing_weight: [],
+    missing_profile: [],
+    missing_profile_excluded: [],
     not_consumed_ingredients: [],
     duplicate_ingredients: [],
     duplicate_indices: [],
@@ -249,7 +306,21 @@ export async function computeAndPersistRecipeNutrition(args: {
   const policy = await getNutritionSourcePolicy();
 
   const totals: Record<string, number> = {};
+  // `missing_ingredients` garde l'union des deux causes, que l'écran lit déjà.
+  // Les deux listes qui suivent la séparent : une ligne qui ne se pèse pas, et
+  // un ingrédient pesé dont le référentiel n'a pas de valeurs pour 100 g. Le
+  // rattrapage ne traite pas l'une comme l'autre.
   const missingIngredients: string[] = [];
+  const missingWeight: MissingWeight[] = [];
+  const missingProfile: string[] = [];
+  /**
+   * Parmi `missingProfile`, ceux que plus rien ne redemande au modèle : trois
+   * échecs au backfill « Enrichir unités et ingrédients »
+   * (`enrichment_failure_count`). Le rattrapage ne reprend pas une recette
+   * qui n'attend plus qu'eux.
+   */
+  const missingProfileExcluded: string[] = [];
+  const excludedProfileIds = new Set<string>();
   let totalWeightGrams = 0;
   let convertibleCount = 0;
   let mappedCount = 0;
@@ -416,7 +487,10 @@ export async function computeAndPersistRecipeNutrition(args: {
    * Une ligne nue — « roquette », « parmesan » — prend la portion usuelle que
    * la fiche de l'ingrédient porte, quand elle en porte une.
    */
-  function weightOf(ingredient: IngredientInput, name: string): number | null {
+  function weighOf(
+    ingredient: IngredientInput,
+    name: string,
+  ): { grams: number } | { grams: null; cause: MissingWeightCause } {
     const ingredientWeights = referentialWeights(name);
     const weighing = resolveWeighingInput(
       name,
@@ -424,7 +498,17 @@ export async function computeAndPersistRecipeNutrition(args: {
       ingredient.unit,
       ingredientWeights?.usualPortionGrams,
     );
-    if (weighing == null) return null;
+    if (weighing == null) {
+      return {
+        grams: null,
+        cause: missingWeightCause({
+          name,
+          qty: ingredient.qty,
+          unit: ingredient.unit,
+          weighingUnit: null,
+        }),
+      };
+    }
     const normalizedUnit = weighing.unit ? normalizeObservedUnit(weighing.unit) : "";
     const factor = resolveUnitFactorToGrams(
       weighing.unit,
@@ -432,8 +516,22 @@ export async function computeAndPersistRecipeNutrition(args: {
       normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
       ingredientWeights,
     );
-    if (factor == null) return null;
-    return weighing.qty * factor;
+    if (factor == null) {
+      return {
+        grams: null,
+        cause: missingWeightCause({
+          name,
+          qty: ingredient.qty,
+          unit: ingredient.unit,
+          weighingUnit: weighing.unit,
+        }),
+      };
+    }
+    return { grams: weighing.qty * factor };
+  }
+
+  function weightOf(ingredient: IngredientInput, name: string): number | null {
+    return weighOf(ingredient, name).grams;
   }
 
   for (const [index, ingredient] of ingredients.entries()) {
@@ -470,11 +568,13 @@ export async function computeAndPersistRecipeNutrition(args: {
       continue;
     }
 
-    const weightGrams = weightOf(ingredient, name);
-    if (weightGrams == null) {
+    const weighed = weighOf(ingredient, name);
+    if (weighed.grams == null) {
       missingIngredients.push(name);
+      missingWeight.push({ name, cause: weighed.cause });
       continue;
     }
+    const weightGrams = weighed.grams;
 
     convertibleCount++;
     totalWeightGrams += weightGrams;
@@ -482,6 +582,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     const lookupIds = buildIngredientLookupIds(name);
     if (lookupIds.length === 0) {
       missingIngredients.push(name);
+      missingProfile.push(name);
       continue;
     }
 
@@ -502,7 +603,10 @@ export async function computeAndPersistRecipeNutrition(args: {
     const snaps = await db.getAll(...chunk);
     for (const snap of snaps) {
       if (!snap.exists) continue;
-      const profile = snap.data() as IngredientProfile;
+      const profile = snap.data() as IngredientProfile & { enrichment_failure_count?: unknown };
+      if (isExcludedAfterFailures(profile.enrichment_failure_count, false)) {
+        excludedProfileIds.add(snap.id);
+      }
       const normalized = normalizeNutrients(profile.per100g ?? {});
       if (Object.keys(normalized).length === 0) continue;
       normalizedProfilesById.set(snap.id, normalized);
@@ -520,6 +624,10 @@ export async function computeAndPersistRecipeNutrition(args: {
 
     if (!normalizedProfile) {
       missingIngredients.push(resolution.name);
+      missingProfile.push(resolution.name);
+      if (resolution.lookupIds.some((id) => excludedProfileIds.has(id))) {
+        missingProfileExcluded.push(resolution.name);
+      }
       continue;
     }
 
@@ -733,6 +841,9 @@ export async function computeAndPersistRecipeNutrition(args: {
       warnings,
     },
     missing_ingredients: missingIngredients,
+    missing_weight: missingWeight,
+    missing_profile: missingProfile,
+    missing_profile_excluded: missingProfileExcluded,
     not_consumed_ingredients: notConsumedIngredients,
     duplicate_ingredients: duplicateIngredients,
     // Verdict hérité : plus personne ne le produit, on le reconduit tel quel

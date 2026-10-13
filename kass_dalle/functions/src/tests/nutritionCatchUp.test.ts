@@ -21,9 +21,18 @@ import {
   MAX_CATCH_UP_ATTEMPTS,
   MIN_SNAPSHOT_AGE_MS,
   RECENT_WRITE_GRACE_MS,
-  needsNutritionCatchUp,
+  catchUpDecision,
+  nutritionIsIncomplete,
+  nothingLeftToAsk,
   type CatchUpCandidate,
 } from "../scheduled/nutritionCatchUpSchedule";
+import { ENRICHMENT_RETRY_AFTER_MS, enrichmentAttemptIsRecent } from "../nutrition/aiEnrichment";
+import { missingWeightCause } from "../nutrition/recipeNutrition";
+
+/** La recette part-elle dans la chaîne nutrition ? */
+function needsNutritionCatchUp(c: CatchUpCandidate, nowMs: number, forced = false): boolean {
+  return catchUpDecision(c, nowMs, forced) === "reprendre";
+}
 
 const MAINTENANT = 1_800_000_000_000;
 const VIEUX = MAINTENANT - MIN_SNAPSHOT_AGE_MS - 1;
@@ -180,5 +189,170 @@ describe("reprise demandée : ce qui saute et ce qui reste", () => {
   test("une recette déjà complète n'est pas reprise, même de force", () => {
     // Forcer lève la patience, pas le discernement : il n'y a rien à refaire.
     assert.equal(needsNutritionCatchUp(candidat(), MAINTENANT, true), false);
+  });
+});
+
+describe("ce qui n'est pas repris, et pourquoi", () => {
+  function avec(nutrition: Record<string, unknown>, patch: Partial<CatchUpCandidate> = {}) {
+    return candidat({ nutrition: { computed_at: VIEUX, ...nutrition }, ...patch });
+  }
+
+  test("tentatives consommées : abandonnée, pas ignorée", () => {
+    // Elle disparaissait du compte rendu ; elle y est maintenant nommée.
+    const c = avec(
+      { coverage_state: "partial", missing_ingredients: ["sumac"] },
+      { catchUpAttempts: MAX_CATCH_UP_ATTEMPTS },
+    );
+    assert.equal(catchUpDecision(c, MAINTENANT), "abandonnee");
+    assert.equal(catchUpDecision(c, MAINTENANT, true), "reprendre");
+  });
+
+  test("seules des lignes impossibles à peser manquent : non reprenable", () => {
+    for (const cause of ["quantite_illisible", "comptage_sans_poids", "unite_sans_poids"]) {
+      const c = avec({
+        coverage_state: "partial",
+        missing_ingredients: ["œufs"],
+        missing_weight: [{ name: "œufs", cause }],
+        missing_profile: [],
+      });
+      assert.equal(catchUpDecision(c, MAINTENANT), "non_reprenable", cause);
+      // Un administrateur qui vient de corriger un poids redemande.
+      assert.equal(catchUpDecision(c, MAINTENANT, true), "reprendre", cause);
+    }
+  });
+
+  test("une ligne sans quantité ni unité reste reprenable : sa portion usuelle se demande", () => {
+    const c = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["roquette"],
+      missing_weight: [{ name: "roquette", cause: "quantite_absente" }],
+      missing_profile: [],
+    });
+    assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
+  });
+
+  test("un ingrédient sans valeurs pour 100 g suffit à reprendre", () => {
+    const c = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["œufs", "sumac"],
+      missing_weight: [{ name: "œufs", cause: "comptage_sans_poids" }],
+      missing_profile: ["sumac"],
+    });
+    assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
+  });
+
+  test("ingrédients sans valeurs plus redemandés à l'IA : non reprenable", () => {
+    // L'enrichissement de la reprise ne les soumet plus au modèle : la
+    // reprendre consommerait une tentative pour rien.
+    const seulsExclus = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["œufs", "verjus"],
+      missing_weight: [{ name: "œufs", cause: "comptage_sans_poids" }],
+      missing_profile: ["verjus"],
+      missing_profile_excluded: ["verjus"],
+    });
+    assert.equal(catchUpDecision(seulsExclus, MAINTENANT), "non_reprenable");
+    assert.equal(catchUpDecision(seulsExclus, MAINTENANT, true), "reprendre");
+
+    const unSeulExclu = avec({
+      coverage_state: "partial",
+      missing_ingredients: ["sumac", "verjus"],
+      missing_weight: [],
+      missing_profile: ["sumac", "verjus"],
+      missing_profile_excluded: ["verjus"],
+    });
+    assert.equal(catchUpDecision(unSeulExclu, MAINTENANT), "reprendre");
+  });
+
+  test("un instantané sans les deux listes ne permet pas de conclure : reprenable", () => {
+    const c = avec({ coverage_state: "partial", missing_ingredients: ["œufs"] });
+    assert.equal(nothingLeftToAsk(c.nutrition), false);
+    assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
+  });
+
+  test("un calcul en échec n'est jamais non reprenable", () => {
+    const c = avec({
+      coverage_state: "failed",
+      missing_ingredients: [],
+      missing_weight: [{ name: "œufs", cause: "comptage_sans_poids" }],
+      missing_profile: [],
+    });
+    assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
+  });
+
+  test("complète : ignorée, jamais listée", () => {
+    assert.equal(catchUpDecision(candidat(), MAINTENANT), "ignorer");
+    assert.equal(
+      catchUpDecision(candidat({ catchUpAttempts: MAX_CATCH_UP_ATTEMPTS }), MAINTENANT),
+      "ignorer",
+    );
+  });
+
+  test("complétude jugée après la reprise", () => {
+    assert.equal(nutritionIsIncomplete(null), true);
+    assert.equal(nutritionIsIncomplete({ coverage_state: "failed" }), true);
+    assert.equal(nutritionIsIncomplete({ missing_ingredients: ["œufs"] }), true);
+    assert.equal(nutritionIsIncomplete({ missing_ingredients: [] }), false);
+  });
+});
+
+describe("délai du rattrapage aligné sur la relance de l'enrichissement", () => {
+  test("les deux délais sont égaux", () => {
+    assert.equal(MIN_SNAPSHOT_AGE_MS, ENRICHMENT_RETRY_AFTER_MS);
+  });
+
+  test("passage quotidien à heure fixe : la reprise d'hier peut redemander aujourd'hui", () => {
+    // Hier 5 h 00 min 40 s : l'essai d'enrichissement, puis l'instantané.
+    // Aujourd'hui 5 h 00 min 10 s : un peu moins de vingt-quatre heures.
+    const hier = MAINTENANT - 24 * 3_600_000 + 30_000;
+    const c = candidat({
+      nutrition: {
+        coverage_state: "partial",
+        missing_ingredients: ["sumac"],
+        missing_weight: [],
+        missing_profile: ["sumac"],
+        computed_at: hier + 5_000,
+      },
+      updatedAtMs: hier + 5_000,
+    });
+    assert.equal(catchUpDecision(c, MAINTENANT), "reprendre");
+    // Et la marque d'essai de l'ingrédient n'empêche plus de lui redemander.
+    assert.equal(enrichmentAttemptIsRecent(hier, MAINTENANT), false);
+  });
+});
+
+describe("cause d'une ligne sans poids", () => {
+  test("quantité illisible devant une unité, quantité absente sur une ligne nue", () => {
+    assert.equal(
+      missingWeightCause({ name: "farine", qty: "quelques", unit: "g", weighingUnit: null }),
+      "quantite_illisible",
+    );
+    assert.equal(
+      missingWeightCause({ name: "roquette", qty: "", unit: "", weighingUnit: null }),
+      "quantite_absente",
+    );
+  });
+
+  test("compté à la pièce sans poids à la pièce", () => {
+    assert.equal(
+      missingWeightCause({ name: "aubergine", qty: "2", unit: "", weighingUnit: "" }),
+      "comptage_sans_poids",
+    );
+    assert.equal(
+      missingWeightCause({ name: "aubergine", qty: "2", unit: "pièce", weighingUnit: "pièce" }),
+      "comptage_sans_poids",
+    );
+  });
+
+  test("une unité que personne ne sait peser", () => {
+    assert.equal(
+      missingWeightCause({
+        name: "safran",
+        qty: "1",
+        unit: "dosette",
+        weighingUnit: "dosette",
+      }),
+      "unite_sans_poids",
+    );
   });
 });

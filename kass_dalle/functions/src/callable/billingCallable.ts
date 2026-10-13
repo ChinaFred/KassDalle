@@ -26,7 +26,19 @@ import {
   COLL_AI_RECONCILIATION_MONTHLY,
   MAX_CALLABLE_INSTANCES,
 } from "../config";
-import { enrichUnknownUnitsWithAI, unitAcceptsOwnWeight } from "../nutrition/aiEnrichment";
+import {
+  enrichUnknownUnitsWithAI,
+  enrichmentAttemptIsRecent,
+  unitAcceptsOwnWeight,
+} from "../nutrition/aiEnrichment";
+import {
+  EXCLUDED_AFTER_FAILURES_REASON,
+  failureReason,
+  isExcludedAfterFailures,
+  nextFailure,
+  readFailureCount,
+} from "../backfills/failureMemory";
+import { writeFailureMemory } from "../backfills/failureMemoryWrites";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
@@ -153,6 +165,11 @@ interface BackfillEnrichReferentialsRequest {
    * possède déjà, et coûte donc autant qu'un premier remplissage.
    */
   refreshSodium?: boolean;
+  /**
+   * Redemande aussi les unités et les ingrédients exclus après trois échecs
+   * (« Réessayer aussi les éléments exclus après 3 échecs » dans la confirmation).
+   */
+  retryExcluded?: boolean;
   /** Version de l'application qui lance, pour l'état du backfill. */
   appVersion?: string;
 }
@@ -189,6 +206,16 @@ export interface BackfillEnrichReferentialsResponse {
   stoppedByDeadline: boolean;
   /** Profils repris parce qu'ils portaient du sodium — mode `refreshSodium`. */
   refreshedIngredients: number;
+  /** Unités sautées : trois échecs ou plus, sans « Réessayer aussi les éléments exclus après 3 échecs ». */
+  excludedUnits: number;
+  /** Ingrédients sautés pour la même raison. */
+  excludedIngredients: number;
+  /**
+   * Unités et ingrédients soumis au modèle pendant ce passage, restés sans
+   * estimation, et pas encore exclus : le passage est « incomplet », sans
+   * reprise à l'heure suivante.
+   */
+  unresolvedFailures: number;
   /** Unités et ingrédients restés sans estimation, nommés, avec la raison. */
   aRevoir: BackfillReviewList;
 }
@@ -921,6 +948,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
       resumeFromCheckpoint: parseBoolean(req.data?.resumeFromCheckpoint, true),
       resetCheckpoint: parseBoolean(req.data?.resetCheckpoint, false),
       refreshSodium: parseBoolean(req.data?.refreshSodium, false),
+      retryExcluded: parseBoolean(req.data?.retryExcluded, false),
     };
 
     // Deux backfills derrière une même fonction : l'enrichissement courant
@@ -944,6 +972,12 @@ export interface EnrichReferentialsPassOptions {
   /** Mode réparation du sel (`refresh_sodium`), ponctuel. */
   refreshSodium: boolean;
   /**
+   * Redemande aussi les éléments exclus après trois échecs. Faux pour un
+   * passage programmé ; sans effet en mode `refreshSodium`, qui ne tient pas
+   * de mémoire des échecs.
+   */
+  retryExcluded?: boolean;
+  /**
    * Saute la phase 1 (poids des unités). Une reprise programmée, à l'heure
    * suivante, ne reparcourt pas toutes les unités : la phase 1 n'a pas de
    * curseur, et l'heure précédente vient de les traiter.
@@ -958,6 +992,7 @@ export function summarizeEnrichReferentials(r: BackfillEnrichReferentialsRespons
     remaining: r.completed ? 0 : null,
     toReview: r.aRevoir.total,
     spendCapHit: false,
+    unresolved: r.unresolvedFailures,
   };
 }
 
@@ -973,6 +1008,10 @@ export async function runEnrichReferentialsPass(
   const correlationId = ctx.correlationId;
   const softDeadlineMs = options.deadlineMs;
   const { resumeFromCheckpoint, resetCheckpoint, refreshSodium } = options;
+  // La mémoire des échecs ne vaut que pour le remplissage courant : la
+  // réparation du sel reprend des profils déjà remplis, et ne la lit ni ne
+  // l'écrit.
+  const retryExcluded = options.retryExcluded === true;
 
   const db = getFirestore();
 
@@ -983,6 +1022,9 @@ export async function runEnrichReferentialsPass(
   let failedIngredients = 0;
   let remainingUnitsWithoutWeight = 0;
   let refreshedIngredients = 0;
+  let excludedUnits = 0;
+  let excludedIngredients = 0;
+  let unresolvedFailures = 0;
   let stoppedByDeadline = false;
   const review = new BackfillReview();
 
@@ -1000,7 +1042,9 @@ export async function runEnrichReferentialsPass(
   // appels pour un problème qui n'existe pas. Sautée aussi en reprise
   // programmée (`skipUnits`).
   if (!refreshSodium && !options.skipUnits) {
-    const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
+    const unitsWithoutWeight: Array<{ id: string; ingredients: string[]; failures: number }> = [];
+    let waitingUnits = 0;
+    const nowMs = Date.now();
     let cursor: string | null = null;
     const PAGE = 300;
     for (;;) {
@@ -1018,17 +1062,46 @@ export async function runEnrichReferentialsPass(
         const data = doc.data() as Record<string, unknown>;
         const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
         if (hasGrams) continue;
+        // Trois échecs : plus soumise au modèle, sauf demande explicite.
+        if (isExcludedAfterFailures(data.ai_weight_failure_count, retryExcluded)) {
+          excludedUnits++;
+          waitingUnits++;
+          review.add({
+            kind: "unit",
+            id: doc.id,
+            label: doc.id,
+            reason: EXCLUDED_AFTER_FAILURES_REASON,
+          });
+          continue;
+        }
+        // Demandée il y a moins de vingt heures : `enrichUnknownUnitsWithAI`
+        // la sauterait. L'écarter ici évite de la compter comme un échec du
+        // passage — aucune question n'a été posée.
+        if (enrichmentAttemptIsRecent(data.ai_weight_attempt_at, nowMs)) {
+          waitingUnits++;
+          review.add({
+            kind: "unit",
+            id: doc.id,
+            label: doc.id,
+            reason: "Poids non estimé, nouvel essai après vingt heures",
+          });
+          continue;
+        }
         const ingredients = Array.isArray(data.sample_ingredient_names)
           ? (data.sample_ingredient_names as unknown[]).filter(
               (v): v is string => typeof v === "string",
             )
           : [];
-        unitsWithoutWeight.push({ id: doc.id, ingredients });
+        unitsWithoutWeight.push({
+          id: doc.id,
+          ingredients,
+          failures: readFailureCount(data.ai_weight_failure_count),
+        });
       }
       if (snap.size < PAGE) break;
     }
 
-    remainingUnitsWithoutWeight = unitsWithoutWeight.length;
+    remainingUnitsWithoutWeight = unitsWithoutWeight.length + waitingUnits;
 
     // Enrichissement par lots : l'IA reçoit le contexte ingrédient de chaque unité.
     const BATCH = 15;
@@ -1042,11 +1115,17 @@ export async function runEnrichReferentialsPass(
       for (const u of batch) {
         if (u.ingredients.length > 0) unitIngredientNames.set(u.id, u.ingredients);
       }
+      const failuresById = new Map(batch.map((u) => [u.id, u.failures]));
+      const unitFailures = new Map<string, number>();
+      const unitSuccesses: string[] = [];
       try {
         await enrichUnknownUnitsWithAI({
           unitCanonicals: batch.map((u) => u.id),
           userId: ctx.userId,
           unitIngredientNames,
+          // Les unités exclues n'arrivent ici qu'avec la case cochée : la
+          // sélection ci-dessus les a déjà écartées sinon.
+          retryExcluded,
         });
         // Vérifie combien de docs du lot ont effectivement reçu un poids.
         const refs = batch.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u.id));
@@ -1056,22 +1135,29 @@ export async function runEnrichReferentialsPass(
           if (d && typeof d.grams_per_unit === "number" && d.grams_per_unit > 0) {
             enrichedUnits++;
             remainingUnitsWithoutWeight = Math.max(0, remainingUnitsWithoutWeight - 1);
+            if ((failuresById.get(s.id) ?? 0) > 0) unitSuccesses.push(s.id);
           } else {
+            const outcome = nextFailure(failuresById.get(s.id));
+            unitFailures.set(s.id, outcome.count);
+            if (!outcome.excluded) unresolvedFailures++;
             review.add({
               kind: "unit",
               id: s.id,
               label: s.id,
-              reason: "Poids non estimé par l'IA",
+              reason: failureReason("Poids non estimé par l'IA", outcome),
             });
           }
         }
       } catch (err) {
         for (const u of batch) {
+          const outcome = nextFailure(u.failures);
+          unitFailures.set(u.id, outcome.count);
+          if (!outcome.excluded) unresolvedFailures++;
           review.add({
             kind: "unit",
             id: u.id,
             label: u.id,
-            reason: `Lot en échec : ${shortErrorMessage(err)}`,
+            reason: failureReason(`Lot en échec : ${shortErrorMessage(err)}`, outcome),
           });
         }
         await logFailure({
@@ -1082,6 +1168,14 @@ export async function runEnrichReferentialsPass(
           extra: { unitIds: batch.map((u) => u.id) },
         });
       }
+      await writeFailureMemory({
+        collection: COLL_NUTRITION_UNITS,
+        fields: { count: "ai_weight_failure_count", at: "ai_weight_attempt_at" },
+        batch: { failures: unitFailures, successes: unitSuccesses },
+        correlationId,
+        operation: "backfillEnrichReferentials.units",
+        userId: ctx.userId,
+      });
     }
   }
 
@@ -1113,6 +1207,7 @@ export async function runEnrichReferentialsPass(
       // dépensait auparavant un appel Gemini par ingrédient, ce qui le faisait
       // buter sur son échéance bien avant d'avoir fini le référentiel.
       const pageTargets: Per100gEnrichmentTarget[] = [];
+      const storedFailures = new Map<string, number>();
       for (const doc of snap.docs) {
         cursor = doc.id;
         scannedIngredients++;
@@ -1122,6 +1217,20 @@ export async function runEnrichReferentialsPass(
         // double comptage pouvait fausser.
         const keep = refreshSodium ? carriesSodium(data.per100g) : !hasPer100gValues(data.per100g);
         if (!keep) continue;
+        if (!refreshSodium) {
+          // Trois échecs : plus soumis au modèle, sauf demande explicite.
+          if (isExcludedAfterFailures(data.enrichment_failure_count, retryExcluded)) {
+            excludedIngredients++;
+            review.add({
+              kind: "ingredient",
+              id: doc.id,
+              label: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
+              reason: EXCLUDED_AFTER_FAILURES_REASON,
+            });
+            continue;
+          }
+          storedFailures.set(doc.id, readFailureCount(data.enrichment_failure_count));
+        }
         pageTargets.push({
           id: doc.id,
           canonicalName: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
@@ -1130,6 +1239,20 @@ export async function runEnrichReferentialsPass(
             : [],
         });
       }
+
+      // Un échec de plus sur un ingrédient : compteur à écrire, et la raison
+      // « à revoir », suivie de l'exclusion quand cet échec la déclenche.
+      const ingredientFailures = new Map<string, number>();
+      // Échéance dépassée : `estimatePer100gForTargets` a pu s'arrêter avant
+      // d'avoir soumis cet ingrédient. Sans certitude qu'il a été demandé, on
+      // ne compte pas d'échec — il repart au passage suivant.
+      const noteIngredientFailure = (id: string, cause: string): string => {
+        if (refreshSodium || Date.now() >= softDeadlineMs) return cause;
+        const outcome = nextFailure(storedFailures.get(id));
+        ingredientFailures.set(id, outcome.count);
+        if (!outcome.excluded) unresolvedFailures++;
+        return failureReason(cause, outcome);
+      };
 
       if (pageTargets.length > 0) {
         try {
@@ -1152,6 +1275,10 @@ export async function runEnrichReferentialsPass(
               ...AI_PER100G_MARKERS,
               last_enriched_at: FieldValue.serverTimestamp(),
               updated_at: FieldValue.serverTimestamp(),
+              // Un succès remet le compteur d'échecs à zéro.
+              ...((storedFailures.get(ingredientId) ?? 0) > 0
+                ? { enrichment_failure_count: 0 }
+                : {}),
             };
             // Une réparation REMPLACE le profil : `set(merge)` fusionne les
             // cartes champ par champ et laisserait survivre l'ancienne valeur
@@ -1173,7 +1300,7 @@ export async function runEnrichReferentialsPass(
               kind: "ingredient",
               id: t.id,
               label: t.canonicalName,
-              reason: "Valeurs nutritionnelles introuvables",
+              reason: noteIngredientFailure(t.id, "Valeurs nutritionnelles introuvables"),
             });
           }
         } catch (err) {
@@ -1183,7 +1310,7 @@ export async function runEnrichReferentialsPass(
               kind: "ingredient",
               id: t.id,
               label: t.canonicalName,
-              reason: `Lot en échec : ${shortErrorMessage(err)}`,
+              reason: noteIngredientFailure(t.id, `Lot en échec : ${shortErrorMessage(err)}`),
             });
           }
           await logFailure({
@@ -1192,6 +1319,16 @@ export async function runEnrichReferentialsPass(
             adminUid: ctx.userId,
             err,
             extra: { ingredientIds: pageTargets.map((t) => t.id) },
+          });
+        }
+        if (!refreshSodium) {
+          await writeFailureMemory({
+            collection: COLL_NUTRITION_INGREDIENTS,
+            fields: { count: "enrichment_failure_count", at: "last_enrichment_attempt_at" },
+            batch: { failures: ingredientFailures, successes: [] },
+            correlationId,
+            operation: "backfillEnrichReferentials.ingredients",
+            userId: ctx.userId,
           });
         }
       }
@@ -1228,6 +1365,10 @@ export async function runEnrichReferentialsPass(
       failedIngredients,
       refreshedIngredients,
       refreshSodium,
+      retryExcluded,
+      excludedUnits,
+      excludedIngredients,
+      unresolvedFailures,
       completed,
       stoppedByDeadline,
       aRevoirTotal: review.toJSON().total,
@@ -1242,6 +1383,9 @@ export async function runEnrichReferentialsPass(
     failedIngredients,
     refreshedIngredients,
     remainingUnitsWithoutWeight,
+    excludedUnits,
+    excludedIngredients,
+    unresolvedFailures,
     completed,
     stoppedByDeadline,
     aRevoir: review.toJSON(),

@@ -24,6 +24,7 @@ import type { DocumentReference } from "firebase-admin/firestore";
 
 import { askJson } from "../ai/askJson";
 import { COLL_NUTRITION_INGREDIENTS } from "../config";
+import { isExcludedAfterFailures } from "../backfills/failureMemory";
 import { logError, logWarn } from "../logging";
 import {
   ALLERGEN_EXAMPLES,
@@ -163,6 +164,13 @@ export interface AllergenExaminationReport {
   alreadyExamined: number;
   /** Identifiants sans document : rien n'est créé. */
   missing: number;
+  /**
+   * Ingrédients que le backfill « Allergènes » a manqués trois fois
+   * (`allergens_failure_count`) : plus redemandés à l'écriture d'une recette.
+   * Seul le backfill, case « Réessayer aussi les éléments exclus » cochée,
+   * les soumet encore au modèle.
+   */
+  excluded: number;
   /** Ingrédients d'un lot en échec (appel, réponse illisible, écriture). */
   failed: number;
   /** Ingrédients d'un lot réussi que le modèle n'a pas traités. */
@@ -244,6 +252,14 @@ async function writeAnswers(
 }
 
 /**
+ * Vrai si l'examen à l'écriture d'une recette (`allergens_auto`) peut encore
+ * soumettre cet ingrédient au modèle : pas après trois échecs du backfill.
+ */
+export function allergenAutoExaminationAllowed(doc: Record<string, unknown>): boolean {
+  return !isExcludedAfterFailures(doc.allergens_failure_count, false);
+}
+
+/**
  * Examine les ingrédients du référentiel désignés par `ids` qui n'ont pas
  * encore d'allergènes. Ne lève jamais : un lot en échec est journalisé
  * (`logError`) et sauté, ses ingrédients restent « jamais examinés » et
@@ -263,6 +279,7 @@ export async function examineIngredientAllergens(args: {
     examined: 0,
     alreadyExamined: 0,
     missing: 0,
+    excluded: 0,
     failed: 0,
     unanswered: 0,
     batches: 0,
@@ -304,6 +321,8 @@ export async function examineIngredientAllergens(args: {
       report.missing += 1;
     } else if (Array.isArray(doc.allergens)) {
       report.alreadyExamined += 1;
+    } else if (!allergenAutoExaminationAllowed(doc)) {
+      report.excluded += 1;
     } else {
       candidates.push({ id, name: allergenCandidateName(id, doc) });
     }
@@ -348,6 +367,7 @@ export async function examineAllergenCandidates(args: {
     examined: 0,
     alreadyExamined: 0,
     missing: 0,
+    excluded: 0,
     failed: 0,
     unanswered: 0,
     batches: 0,

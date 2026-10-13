@@ -303,7 +303,15 @@ classDiagram
         dans une recette. Seul le <code>RecipeNutritionSnapshot</code> est agrégé — il est calculé
         côté serveur et peut être absent. Les champs <code>totals</code>, <code>perPortion</code>
         et <code>per100g</code> sont des <code>Map&lt;String, double&gt;</code> indexées par
-        nutriment.
+        nutriment. <code>missingIngredients</code> est l'union de deux listes que le serveur
+        écrit à côté depuis la v0.23.59, et que le modèle Dart ne lit pas :
+        <code>missing_weight</code> (<code>{name, cause}</code>, lignes impossibles à peser —
+        <code>quantite_illisible</code>, <code>quantite_absente</code>,
+        <code>comptage_sans_poids</code>, <code>unite_sans_poids</code>) et
+        <code>missing_profile</code> (ingrédients pesés sans valeurs pour 100 g), dont
+        <code>missing_profile_excluded</code> (ceux que l'IA a manqués trois fois). Le rattrapage
+        de la nutrition les lit pour ne plus reprendre une recette qu'aucun appel ne peut
+        compléter, et sa liste « à revoir » pour nommer la cause.
         <br><br>
         <code>RecipeAllergens</code> est agrégé de la même façon : calculé côté serveur à partir
         du référentiel (champ <code>allergens</code>), absent tant qu'aucun calcul n'a eu lieu,
@@ -1764,6 +1772,8 @@ classDiagram
     +int horsRecette
     +int sansRole
     +int echouees
+    +int exclues
+    +int echecsNonExclus
     +int? restantes
     +bool completed
     +bool stoppedByBudget
@@ -1793,6 +1803,7 @@ classDiagram
     +String? dernierPassageOrigine
     +bool arretPlafond
     +bool repriseDue
+    +int echecsRestants
     +Map? lastReport
     +DateTime? termineLe
     +String? termineVersion
@@ -1898,7 +1909,12 @@ classDiagram
           <b><code>BackfillRunState</code></b> lit <code>app_config/backfill_run_&lt;clé&gt;</code> :
           statut du dernier passage, verrou (<code>en_cours</code> dont l'échéance
           <code>en_cours_expire_le</code>, écrite par le serveur, est passée =
-          <code>interrompu</code>), compte rendu, « terminé ».
+          <code>interrompu</code>), compte rendu, « terminé ». <code>echecsRestants</code>
+          (<code>echecs_restants</code>) compte les éléments restés en échec d'un passage qui a
+          tout parcouru : « incomplet » sans reprise à l'heure suivante.
+          <code>RecipeRolesBackfillReport.exclues</code> compte les recettes sautées après trois
+          échecs (<code>meal_role_failure_count</code>), <code>echecsNonExclus</code> celles
+          restées en échec sous ce seuil.
           <b><code>BackfillSchedules</code></b> lit <code>app_config/backfill_schedules</code>,
           et retombe sur <code>BackfillDefinition.defaultSchedule</code> tant que la clé
           manque (<code>isDefault</code>, affiché « (par défaut) »). Lecture stricte,

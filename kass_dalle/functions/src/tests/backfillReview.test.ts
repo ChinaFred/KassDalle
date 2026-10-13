@@ -18,7 +18,12 @@ import {
   allergenIssueReviewItem,
   incompleteRecipeReason,
 } from "../callable/allergensBackfillCallable";
-import { nutritionReviewItem } from "../callable/nutritionBackfillCallable";
+import {
+  failedSnapshotReason,
+  missingCausesText,
+  nutritionReviewItem,
+} from "../callable/nutritionBackfillCallable";
+import { MAX_CATCH_UP_ATTEMPTS } from "../scheduled/nutritionCatchUpSchedule";
 import {
   examineAllergenCandidates,
   unexaminedIngredientNames,
@@ -216,36 +221,125 @@ describe("allergènes — recettes incomplètes à revoir", () => {
 describe("nutrition — recettes à revoir", () => {
   const data = { titre: "Quiche" };
 
-  test("ingrédients sans valeurs nommés", () => {
+  test("ancien instantané : les ingrédients non comptés, sans cause inventée", () => {
     assert.deepEqual(
       nutritionReviewItem({
         id: "r1",
         data,
         nutrition: { coverage_state: "partial", missing_ingredients: ["lardons", "crème"] },
         error: null,
+        status: "reprise",
       }),
       {
         kind: "recipe",
         id: "r1",
         label: "Quiche",
-        reason: "Valeurs nutritionnelles introuvables : lardons, crème",
+        reason: "Ingrédients non comptés : lardons, crème",
       },
     );
   });
 
-  test("erreur de la reprise, calcul en échec, instantané absent", () => {
+  test("les deux causes séparées : impossible à peser, sans valeurs pour 100 g", () => {
+    const nutrition = {
+      coverage_state: "partial",
+      missing_ingredients: ["œufs", "farine", "beurre"],
+      missing_weight: [
+        { name: "œufs", cause: "comptage_sans_poids" },
+        { name: "farine", cause: "quantite_illisible" },
+      ],
+      missing_profile: ["beurre"],
+    };
     assert.equal(
-      nutritionReviewItem({ id: "r1", data, nutrition: null, error: "quota" }).reason,
+      nutritionReviewItem({ id: "r1", data, nutrition, error: null, status: "reprise" }).reason,
+      "Impossible à peser : œufs (pas de poids à la pièce), farine (quantité illisible) · " +
+        "Sans valeurs pour 100 g : beurre",
+    );
+    assert.equal(
+      missingCausesText({
+        missing_weight: [
+          { name: "roquette", cause: "quantite_absente" },
+          { name: "safran", cause: "unite_sans_poids" },
+        ],
+        missing_profile: [],
+      }),
+      "Impossible à peser : roquette (quantité absente), safran (unité sans poids)",
+    );
+    assert.equal(
+      missingCausesText({ missing_weight: [], missing_profile: ["sumac"] }),
+      "Sans valeurs pour 100 g : sumac",
+    );
+    assert.equal(
+      missingCausesText({
+        missing_weight: [],
+        missing_profile: ["sumac", "verjus"],
+        missing_profile_excluded: ["verjus"],
+      }),
+      "Sans valeurs pour 100 g : sumac · " +
+        "Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : verjus",
+    );
+  });
+
+  test("abandonnée : la cause, précédée de l'abandon", () => {
+    const nutrition = {
+      coverage_state: "partial",
+      missing_ingredients: ["sumac"],
+      missing_weight: [],
+      missing_profile: ["sumac"],
+    };
+    assert.equal(
+      nutritionReviewItem({ id: "r1", data, nutrition, error: null, status: "abandonnee" }).reason,
+      `Abandonnée après ${MAX_CATCH_UP_ATTEMPTS} reprises — sans valeurs pour 100 g : sumac`,
+    );
+  });
+
+  test("calcul en échec : la raison écrite dans l'instantané", () => {
+    const nutrition = {
+      coverage_state: "failed",
+      quality: {
+        warnings: ["Le calcul nutritionnel n'a pas abouti : Recette introuvable."],
+      },
+    };
+    assert.equal(
+      nutritionReviewItem({ id: "r1", data, nutrition, error: null, status: "reprise" }).reason,
+      "Calcul de nutrition en échec : Recette introuvable.",
+    );
+    assert.equal(failedSnapshotReason({ quality: { warnings: [] } }), null);
+    assert.equal(failedSnapshotReason({}), null);
+  });
+
+  test("erreur de la reprise, calcul en échec sans raison, instantané absent", () => {
+    assert.equal(
+      nutritionReviewItem({ id: "r1", data, nutrition: null, error: "quota", status: "reprise" })
+        .reason,
       "Reprise en échec : quota",
     );
     assert.equal(
-      nutritionReviewItem({ id: "r1", data, nutrition: { coverage_state: "failed" }, error: null })
-        .reason,
+      nutritionReviewItem({
+        id: "r1",
+        data,
+        nutrition: { coverage_state: "failed" },
+        error: null,
+        status: "reprise",
+      }).reason,
       "Calcul de nutrition en échec",
     );
     assert.equal(
-      nutritionReviewItem({ id: "r1", data, nutrition: null, error: null }).reason,
+      nutritionReviewItem({ id: "r1", data, nutrition: null, error: null, status: "reprise" })
+        .reason,
       "Nutrition non calculée",
+    );
+  });
+});
+
+describe("allergènes — ingrédient exclu après trois échecs", () => {
+  test("la raison dit l'exclusion", () => {
+    assert.equal(
+      allergenIssueReviewItem({ id: "x", name: "x", problem: "unanswered" }, true).reason,
+      "Pas de réponse de l'IA — plus redemandé à l'IA après 3 échecs",
+    );
+    assert.equal(
+      allergenIssueReviewItem({ id: "x", name: "x", problem: "unanswered" }).reason,
+      "Pas de réponse de l'IA",
     );
   });
 });

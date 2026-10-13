@@ -3687,6 +3687,57 @@ describe("recipes — durées estimées (estimated_times)", () => {
   });
 });
 
+// ── recipes — compteurs des reprises automatiques ───────────────────────
+//
+// `nutrition_catch_up_attempts`, `meal_role_failure_count` et
+// `meal_role_attempt_at` bornent les appels de modèle des reprises
+// programmées. Écrits par le serveur seul : un créateur qui les remettrait à
+// zéro relancerait des appels facturés.
+describe("recipes — compteurs des reprises automatiques", () => {
+  const counters = {
+    nutrition_catch_up_attempts: 5,
+    meal_role_failure_count: 3,
+    meal_role_attempt_at: new Date("2026-10-12T05:00:00Z"),
+  };
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "recipes/retry-editor": {
+        title: "Quiche",
+        created_by: EDITOR,
+        review_status: "validated",
+        ...counters,
+      },
+    });
+  });
+
+  for (const field of Object.keys(counters)) {
+    it(`l'éditeur créateur ne change pas ${field}`, async () => {
+      await assertFails(db("editor").doc("recipes/retry-editor").update({ [field]: 0 }));
+    });
+
+    it(`l'éditeur créateur n'efface pas ${field}`, async () => {
+      await assertFails(
+        db("editor").doc("recipes/retry-editor").update({ [field]: deleteField() }),
+      );
+    });
+
+    it(`l'éditeur ne crée pas de recette avec ${field}`, async () => {
+      await assertFails(
+        db("editor")
+          .doc("recipes/new-retry")
+          .set({ title: "x", created_by: EDITOR, review_status: "draft", [field]: 0 }),
+      );
+    });
+  }
+
+  it("l'éditeur créateur change le titre seul", async () => {
+    await assertSucceeds(
+      db("editor").doc("recipes/retry-editor").update({ title: "Quiche lorraine" }),
+    );
+  });
+});
+
 // ── users/{uid}/preferences/explore_filters ──────────────────────────────
 //
 // Filtres, sources et tri de l'écran Explorer : une préférence de lecteur,

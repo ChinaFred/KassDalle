@@ -106,6 +106,7 @@ export const onRecipeWritten = onDocumentWritten(
       syncRecipeMealRole({
         recipeId: after.id,
         data,
+        beforeData,
         correlationId: newCorrelationId(qualify("ecriture_recette", "role_repas")),
         scanId,
       }),

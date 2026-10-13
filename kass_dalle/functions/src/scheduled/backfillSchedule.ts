@@ -60,6 +60,7 @@ import {
   effectiveSchedule,
   lockHeld,
   parisSlot,
+  passStatus,
   slotMatches,
   type BackfillSchedule,
   type DueReason,
@@ -166,6 +167,9 @@ function scheduledPassFor(
             resumeFromCheckpoint: true,
             resetCheckpoint: false,
             refreshSodium: false,
+            // Un passage programmé ne redemande jamais un élément exclu
+            // après trois échecs : seul un administrateur le décide.
+            retryExcluded: false,
             // Reprise à l'heure suivante : les unités viennent d'être
             // parcourues, seule la phase des ingrédients a un curseur.
             skipUnits: reason === "reprise",
@@ -182,6 +186,7 @@ function scheduledPassFor(
             maxRecipes: ALLERGEN_RECIPES_PER_PASS,
             resumeFromCheckpoint: true,
             resetCheckpoint: false,
+            retryExcluded: false,
           }),
         summarize: (r) => summarizeAllergens(r as Parameters<typeof summarizeAllergens>[0]),
       };
@@ -192,6 +197,7 @@ function scheduledPassFor(
             deadlineMs,
             maxRecipes: ROLES_PER_PASS,
             force: false,
+            retryExcluded: false,
             resumeFromCheckpoint: true,
             resetCheckpoint: false,
           }),
@@ -305,7 +311,7 @@ async function runScheduledBackfill(args: {
     });
 
     await logInfo({
-      message: `Backfill programmé ${key} — ${result.summary.complete ? "terminé" : "incomplet"}`,
+      message: `Backfill programmé ${key} — ${passStatus(result.summary) === "termine" ? "terminé" : "incomplet"}`,
       correlationId,
       userId: uid ?? undefined,
       moduleType: "DESIGN",
