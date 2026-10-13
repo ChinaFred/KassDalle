@@ -286,6 +286,34 @@ service cloud.firestore {
         allow read: if isAdmin();
         allow write: if false;
       }
+
+      // ── Panier de courses personnel (`users/{uid}/shopping/current`) ──────
+      //
+      // Un seul document par compte, le même sur tous ses appareils. Il ne se
+      // lit et ne s'écrit que par son titulaire nommé ; un administrateur n'y
+      // a pas accès : ce qu'un membre achète ne regarde que lui.
+      // Les produits ajoutés depuis le planning d'un autre membre vont dans le
+      // panier de celui qui ajoute (`ShoppingCartRepository`).
+      //
+      // Forme bornée : `items` est une carte d'au plus 300 articles, et rien
+      // d'autre que `items` et `updated_at`. Les règles ne parcourent pas une
+      // carte : la longueur de chaque champ d'un article est bornée par le
+      // client (`ShoppingItem.toFirestore`), le document entier par la limite
+      // de 1 Mio de Firestore.
+      match /shopping/{docId} {
+        function isShoppingCart(data) {
+          return data.keys().hasOnly(['items', 'updated_at'])
+            && data.items is map
+            && data.items.size() <= 300
+            && (!('updated_at' in data) || data.updated_at is timestamp);
+        }
+
+        allow read, delete: if docId == 'current'
+          && isOwner(uid) && isApproved();
+        allow create, update: if docId == 'current'
+          && isOwner(uid) && isApproved()
+          && isShoppingCart(request.resource.data);
+      }
     }
 
     // Profils publics : la part d'un compte que les autres membres voient.

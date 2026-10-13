@@ -20,6 +20,32 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.55 — fonctionnel
+
+La liste de courses devient un panier personnel, le même sur tous les appareils : « Mes
+courses », dans la barre du planning, avec le nombre d'articles à acheter. Elle n'expire plus
+d'un jour à l'autre. Chaque repas d'un planning affiché propose « Ajouter aux courses », y
+compris les repas partagés par un autre membre, et « Ajouter la période aux courses » prend
+les repas à venir de tous les plannings affichés. Un lecteur y a droit comme un éditeur : les
+produits vont toujours dans le panier de celui qui les ajoute. Quand le panier n'est pas vide,
+une boîte propose « Ajouter » (l'ancien « Enrichir ») ou « Remplacer », avec « Annuler » après
+un remplacement. La feuille « Mes courses » retire les articles cochés ou vide la liste, sur
+confirmation. Une recette sous cadenas dans une période s'annonce « Recette non partagée » ;
+ses ingrédients ne sont pas comptés. Sur la fiche recette, le bouton devient « Ajouter aux
+courses » et alimente le même panier.
+
+### v0.23.55 — technique
+
+Le panier quitte `SharedPreferences` pour `users/{uid}/shopping/current` : une carte
+d'articles (300 au plus) indexée par la clé produit, pour qu'une case cochée n'écrive que son
+champ et parte hors ligne. Ajouter et Remplacer passent par une transaction. Au premier
+lancement, une liste locale `sl_items_{uid}` est reprise si le panier est vide, puis effacée.
+`firestore.rules` : bloc `users/{uid}/shopping/{docId}`, `current` seulement, titulaire
+approuvé seul (l'administrateur n'y a pas accès), forme vérifiée par `isShoppingCart`. Les
+quantités suivent les parts du repas (`planningScaleRecipeForMeal`) sans écrire dans la
+recette. Tests : `rules-tests/test/shopping.test.mjs`, `shopping_cart_test.dart`,
+`shopping_cart_widgets_test.dart`.
+
 ### v0.23.54 — fonctionnel
 
 Seuls un éditeur et un administrateur créent un groupe familial. Un lecteur rejoint le
