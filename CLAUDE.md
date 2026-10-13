@@ -676,7 +676,12 @@ Une session ne touche à un ticket que sur demande de l'utilisateur :
 - **Traiter** (« traite les tickets validés », « traite #12 ») : seulement les Issues portant
   `validé`, posée par l'utilisateur. Le ticket suit la « Chaîne de travail » comme toute autre
   demande — une nouvelle fonctionnalité passe par le cadrage et `ux-designer`. La PR contient
-  `Closes #N`.
+  `Closes #N`. Pour un **bug** — type confirmé par l'analyse, pas seulement choisi par le
+  membre —, « traite #N » vaut aussi « fusionne » : la session principale fusionne la PR
+  elle-même, après une CI verte, des relectures sans anomalie restante et le numéro de
+  version vérifié contre `origin/master`, puis suit le déploiement. Une évolution, une
+  nouvelle fonctionnalité, ou une PR qui touche `check-version.sh`, `ci.yml` ou `deploy.yml`,
+  attend un « fusionne » explicite de l'utilisateur.
 - **Question** : elle reçoit une réponse, jamais de code. La réponse que le membre lira dans
   l'application est un commentaire de `ChinaFred` qui commence par `Réponse :` ; la session
   propose ce texte à l'utilisateur, qui le publie. Le motif d'un refus suit la même forme.
