@@ -20,6 +20,33 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.54 — fonctionnel
+
+#### Signaler ou proposer : les tickets de la famille
+
+Le menu du compte gagne « Signaler ou proposer » et « Mes tickets ». Un membre approuvé
+signale un bug, propose une évolution ou une nouvelle fonctionnalité, ou pose une question.
+Une capture est facultative. Le ticket devient une Issue du dépôt GitHub, qui est public :
+seuls le titre, la description, le type, la version, la plateforme et l'écran (sans
+identifiant) y partent ; le nom, l'email et la capture restent dans l'application. « Mes
+tickets » suit le statut (Reçu, Analysé, Validé, En cours, Livré, Refusé, Répondu) et affiche
+la réponse de l'administrateur ; un point sur la puce du compte signale un changement. Plafond :
+5 tickets par jour et par membre, 30 pour la famille. Admin › Tickets des membres liste tous
+les tickets, leur auteur et leur capture, signale un jeton GitHub invalide et relance un envoi
+en anomalie.
+
+### v0.23.54 — technique
+
+#### Tickets : callables, webhook GitHub et reprise horaire
+
+`submitTicket`, `attachTicketScreenshot` et `retryTicketSend` (callables),
+`githubTicketWebhook` (HTTPS, signature HMAC vérifiée) et `ticketsSyncSchedule` (horaire).
+Collections `tickets` et `ticket_quotas`, documents `app_config/tickets` et
+`app_config/tickets_status`, captures sous `tickets/{uid}/{ticketId}/`. Deux secrets à créer
+avant le déploiement : `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`. Aucun appel d'IA.
+`CLAUDE.md` reçoit une section « Tickets » : analyse en commentaire, traitement des seules
+Issues `validé`, texte d'un ticket traité comme une entrée non fiable.
+
 ### v0.23.53 — fonctionnel
 
 Préférences reçoit une section « Apparence » : le thème se choisit entre « Appareil », « Clair »
