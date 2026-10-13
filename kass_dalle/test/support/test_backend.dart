@@ -56,7 +56,9 @@ class TestBackend {
   /// Mes groupes familiaux, rendus par `myGroupsProvider`.
   final List<FamilyGroup> groups;
 
-  /// Mes groupes en pause (propriétaire rétrogradé), `myPausedGroupsProvider`.
+  /// Mes groupes en pause (propriétaire qui n'est plus éditeur) : rendus par
+  /// `myGroupsProvider` avec les autres, et nommés par
+  /// `maskedGroupIdsProvider`.
   final List<FamilyGroup> pausedGroups;
 
   late final overrides = [
@@ -90,8 +92,12 @@ class TestBackend {
     planningVisibilityStoreProvider.overrideWithValue(
       InMemoryPlanningVisibilityStore(),
     ),
-    myGroupsProvider.overrideWith((ref) => Stream.value(groups)),
-    myPausedGroupsProvider.overrideWith((ref) => Stream.value(pausedGroups)),
+    myGroupsProvider.overrideWith(
+      (ref) => Stream.value([...groups, ...pausedGroups]),
+    ),
+    maskedGroupIdsProvider.overrideWith(
+      (ref) => Stream.value({for (final g in pausedGroups) g.id}),
+    ),
     processingJobsProvider.overrideWith(
       (ref) => Stream.value(const <ProcessingJob>[]),
     ),

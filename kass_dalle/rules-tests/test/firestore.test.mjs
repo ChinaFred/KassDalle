@@ -2146,12 +2146,46 @@ describe("plannings de groupe", () => {
     });
   });
 
+  // La requête du client : le groupe ET son propriétaire.
   const groupQuery = (name) =>
     db(name)
       .collection("planned_meals")
       .where("group_id", "==", "gp")
+      .where("uid", "==", EDITOR)
       .where("planned_at", ">=", new Date("2026-10-01T00:00:00Z"))
       .orderBy("planned_at");
+
+  it("groupe recréé sous le même identifiant : les repas de l'ancien propriétaire restent fermés", async () => {
+    // `gp` est supprimé puis recréé par un autre compte, dont le lecteur est
+    // membre. Le repas de l'ancien propriétaire (l'éditeur) reste en base.
+    await seedDocs(env, {
+      "groups/gp": {
+        name: "Autre famille",
+        owner_id: OTHER,
+        member_ids: [OTHER, READER],
+      },
+    });
+    await assertFails(db("reader").doc("planned_meals/gm1").get());
+    await assertFails(groupQuery("reader").get());
+    // Le planning du nouveau propriétaire se lit normalement.
+    await seedDocs(env, {
+      "planned_meals/gm-new": { uid: OTHER, group_id: "gp", planned_at: at },
+    });
+    await assertSucceeds(db("reader").doc("planned_meals/gm-new").get());
+    await assertSucceeds(
+      db("reader")
+        .collection("planned_meals")
+        .where("group_id", "==", "gp")
+        .where("uid", "==", OTHER)
+        .get(),
+    );
+  });
+
+  it("requête sans filtre sur le propriétaire du groupe : refusée", async () => {
+    await assertFails(
+      db("reader").collection("planned_meals").where("group_id", "==", "gp").get(),
+    );
+  });
 
   it("un membre lit le planning du groupe, un repas et la requête", async () => {
     await assertSucceeds(db("reader").doc("planned_meals/gm1").get());

@@ -3464,7 +3464,7 @@ sequenceDiagram
       « Préférences du planning ». Le serveur en tire <code>planning_reach/{lecteur}</code>, que
       les règles Firestore relisent pour laisser lire <code>planned_meals</code>.
       <span class="path">planning_config_screen.dart → planning_config/{uid} →
-      syncPlanningReachOnConfig · syncGroupReach · syncPlanningReachOnRole → triggers/planningReach.ts →
+      syncPlanningReachOnConfig · syncGroupReach → triggers/planningReach.ts · syncPlanningReachOnRole → triggers/plannerRole.ts →
       planning_reach/{uid} → planning_providers.dart → planning_screen.dart</span>
     </p>
     <figure class="fig">
@@ -3512,8 +3512,11 @@ sequenceDiagram
 </pre>
       </div>
       <figcaption>
-        <b>Aucun backfill pour le partage.</b> Sans <code>shared_group_ids</code>, rien n'est
-        partagé ; sans <code>planning_reach</code>, rien ne se lit. Un groupe dont le
+        <b>Un backfill après le déploiement du planning de groupe.</b> « Portée des groupes et
+        des plannings » pose <code>group_id: null</code> sur les repas antérieurs, que la
+        requête <code>group_id == null</code> ne trouverait pas sans lui. Sans
+        <code>shared_group_ids</code>, rien n'est partagé ; sans <code>planning_reach</code>,
+        rien ne se lit. Un groupe dont le
         propriétaire n'est plus éditeur ne transmet plus aucun partage (section 38). <b>Le partage n'est pas réciproque</b> et
         ne passe que par les membres (<code>owner_id</code>, <code>member_ids</code>), jamais par
         les invités. L'écran n'affiche sur un repas d'autrui ni sa justification ni l'origine du
@@ -3812,7 +3815,7 @@ sequenceDiagram
   O->>S: Nouveau planning
   S->>O: « Planifier pour… » — Mon planning, Famille Dupont<br/>(feuille du bas, ou dialogue de 480 px)
   O->>B: Famille Dupont → /planning/batch?group=gd
-  B->>PM: group_id == gd, dates du cycle — ce que le planning contient déjà
+  B->>PM: group_id == gd, uid == marie, dates du cycle — ce que le planning contient déjà
   B->>PM: uid == marie, fenêtre de variété (personnel et groupes : même cuisinier)
   B->>F: suggestMealPlanFn(…, groupId: gd)
   F->>G: owner_id == appelant ? sinon permission-denied
@@ -3824,15 +3827,15 @@ sequenceDiagram
 
   L->>S: ouvre le planning
   S->>PR: watchPlanningReach — group_ids [gd]
-  S->>PM: group_id == gd, planned_at sur 90 jours
-  Note over PM: règles : isApproved() et gd dans planning_reach/{paul}.group_ids
+  S->>PM: group_id == gd, uid == marie, planned_at sur 90 jours
+  Note over PM: règles : isApproved(), gd dans planning_reach/{paul}.group_ids,<br/>et uid == groups/gd.owner_id (propriétaire actuel)
   PM-->>S: repas du groupe, ou erreur isolée — « Le planning du groupe Famille Dupont n'a pas pu être lu. »
   S->>L: icône du groupe, « Repas du groupe Famille Dupont », lecture seule
 
   opt Marie est rétrogradée lectrice
     T->>PR: group_ids sans gd, masked_group_ids [gd] — membres de ses groupes, elle comprise
     T->>T: group_reach des mêmes membres — le groupe ne relie plus personne
-    PR-->>S: le groupe quitte le sélecteur et l'écran Groupes
+    PR-->>S: le groupe quitte le sélecteur — l'écran Groupes le marque « En pause »,<br/>ses invitations en attente sont masquées aux invités
     S->>L: « Le planning du groupe Famille Dupont ne vous est plus accessible. »
     Note over PM: rien n'est effacé, tout revient si Marie redevient éditrice
   end

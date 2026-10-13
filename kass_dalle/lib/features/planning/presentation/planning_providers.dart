@@ -108,23 +108,26 @@ class PlanningRepository {
   }
 
   /// Stream des repas du planning du groupe [groupId], triés par date : le
-  /// propriétaire les écrit, chaque membre les lit.
+  /// propriétaire [ownerUid] les écrit, chaque membre les lit.
   ///
-  /// Filtré sur `group_id == groupId` : les règles Firestore vérifient cette
-  /// valeur contre `planning_reach/{moi}.group_ids`. Un flux par groupe :
-  /// l'erreur de l'un ne masque pas les autres. L'erreur est remontée au
-  /// rapport puis transmise.
-  Stream<List<PlannedMeal>> watchGroupMeals(String groupId) {
-    return _mealsOf(_col.where('group_id', isEqualTo: groupId)).handleError((
-      Object e,
-      StackTrace st,
-    ) {
+  /// Filtré sur `group_id == groupId` et `uid == ownerUid` : les règles
+  /// Firestore vérifient le groupe contre `planning_reach/{moi}.group_ids`, et
+  /// que `uid` est le propriétaire actuel du groupe. Un groupe supprimé puis
+  /// recréé sous le même identifiant par un autre compte n'ouvre donc pas les
+  /// repas de l'ancien. Un flux par groupe : l'erreur de l'un ne masque pas
+  /// les autres. L'erreur est remontée au rapport puis transmise.
+  Stream<List<PlannedMeal>> watchGroupMeals(String groupId, String ownerUid) {
+    return _mealsOf(
+      _col
+          .where('group_id', isEqualTo: groupId)
+          .where('uid', isEqualTo: ownerUid),
+    ).handleError((Object e, StackTrace st) {
       unawaited(
         _errorReportService.reportError(
           feature: 'planning_group_meals',
           error: e,
           stackTrace: st,
-          context: {'uid': _uid, 'group_id': groupId},
+          context: {'uid': _uid, 'group_id': groupId, 'owner_uid': ownerUid},
         ),
       );
       Error.throwWithStackTrace(e, st);
@@ -271,8 +274,11 @@ class PlanningRepository {
     String? groupId,
   }) async {
     if (groupId != null) {
+      // Seul le propriétaire planifie pour son groupe : ses repas.
       return _mealsBetween(
-        _col.where('group_id', isEqualTo: groupId),
+        _col
+            .where('group_id', isEqualTo: groupId)
+            .where('uid', isEqualTo: _uid),
         from: from,
         to: to,
       );
@@ -669,13 +675,13 @@ final sharedPlannedMealsProvider = StreamProvider.autoDispose
       return repo.watchSharedMeals(ownerUid);
     });
 
-/// Les repas du planning d'un groupe, un flux par groupe : l'erreur de l'un
-/// ne masque pas les autres.
+/// Les repas du planning d'un groupe, un flux par groupe et par
+/// propriétaire : l'erreur de l'un ne masque pas les autres.
 final groupPlannedMealsProvider = StreamProvider.autoDispose
-    .family<List<PlannedMeal>, String>((ref, groupId) {
+    .family<List<PlannedMeal>, ({String groupId, String ownerUid})>((ref, key) {
       final repo = ref.watch(planningRepositoryProvider);
       if (repo == null) return Stream.value(const <PlannedMeal>[]);
-      return repo.watchGroupMeals(groupId);
+      return repo.watchGroupMeals(key.groupId, key.ownerUid);
     });
 
 /// Les groupes où l'utilisateur planifie : ceux dont il est le propriétaire,
@@ -789,6 +795,9 @@ class PlanningOwnerOption {
   /// Le groupe, pour un planning de groupe ; `null` sinon.
   final String? groupId;
 
+  /// Le propriétaire du groupe, pour un planning de groupe.
+  final String? groupOwnerId;
+
   /// Prénom du propriétaire du groupe, « vous » si c'est l'utilisateur.
   final String? organizer;
 
@@ -801,11 +810,16 @@ class PlanningOwnerOption {
     required this.isMine,
     required this.shown,
     this.groupId,
+    this.groupOwnerId,
     this.organizer,
     this.isOrganizer = false,
   });
 
   bool get isGroup => groupId != null;
+
+  /// La clé du flux de ce planning de groupe.
+  ({String groupId, String ownerUid}) get groupKey =>
+      (groupId: groupId!, ownerUid: groupOwnerId!);
 
   /// « Mon planning », « Planning de Marie », « Famille Dupont ».
   String get title => isGroup
@@ -898,6 +912,7 @@ final planningOwnerOptionsProvider =
             isMine: false,
             shown: shown.contains(groupPlanningKey(g.id)),
             groupId: g.id,
+            groupOwnerId: g.ownerId,
             isOrganizer: g.ownerId == me.uid,
             organizer: g.ownerId == me.uid
                 ? 'vous'

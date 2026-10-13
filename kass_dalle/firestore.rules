@@ -1055,8 +1055,12 @@ service cloud.firestore {
     // rétrogradé en sort, et son planning n'est plus lu par personne, sans
     // être effacé.
     //
-    // Une requête du client reste prouvable : elle filtre `group_id == X` sur
-    // un seul groupe, et la règle vérifie la valeur contre la liste.
+    // Une requête du client reste prouvable : elle filtre `group_id == X` et
+    // `uid == propriétaire` sur un seul groupe, et la règle vérifie le groupe
+    // contre la liste, puis que `uid` est le propriétaire ACTUEL du groupe :
+    // un groupe supprimé puis recréé sous le même identifiant par un autre
+    // compte n'ouvre pas aux nouveaux membres les repas de l'ancien
+    // propriétaire.
     function canReadGroupPlanning(groupId) {
       return groupId is string
         && isApproved()
@@ -1099,7 +1103,8 @@ service cloud.firestore {
         && (resource.data.uid == request.auth.uid
             || (canReadPlanningOf(resource.data.uid)
                 && resource.data.group_id == null)
-            || canReadGroupPlanning(resource.data.get('group_id', null)));
+            || (canReadGroupPlanning(resource.data.get('group_id', null))
+                && resource.data.uid == get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id));
       allow delete: if isEditor() && resource.data.uid == request.auth.uid;
       allow create: if isEditor() && request.resource.data.uid == request.auth.uid
         && ownsMealGroup(request.resource.data);

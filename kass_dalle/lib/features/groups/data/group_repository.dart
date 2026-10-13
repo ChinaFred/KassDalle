@@ -35,122 +35,111 @@ class GroupRepository {
 
   // ── Lecture ─────────────────────────────────────────────────────────────────
 
-  /// Groupes dont [uid] est membre, hors ceux que le serveur masque.
+  /// Groupes dont [uid] est membre, groupes en pause compris.
   ///
-  /// Un groupe dont le propriétaire n'est plus éditeur est masqué pour tous
-  /// ses membres, propriétaire compris : le serveur le pose dans
-  /// `planning_reach/{uid}.masked_group_ids` (voir [watchMaskedGroupIds]), et
-  /// les écrans des groupes ne le listent plus. Rien n'est effacé : il revient
-  /// si son propriétaire redevient éditeur.
-  ///
-  /// Les deux lectures sont réunies ici : la liste n'est rendue qu'une fois
-  /// les deux connues, pour qu'un groupe masqué n'apparaisse pas un instant.
-  /// Une portée illisible est signalée au rapport et ne masque rien : mieux
-  /// vaut un groupe masqué visible qu'aucun groupe du tout.
-  Stream<List<FamilyGroup>> watchMyGroups(String uid) => _watchGroupsMasked(
-    uid,
-    (groups, masked) => [
-      for (final group in groups)
-        if (!masked.contains(group.id)) group,
-    ],
-  );
-
-  /// Les groupes dont [uid] est le propriétaire et que le serveur masque :
-  /// il n'est plus éditeur. Ils sont « en pause » : les écrans le lui disent
-  /// au lieu de prétendre qu'il n'a aucun groupe, et ils reviennent quand il
-  /// redevient éditeur.
-  Stream<List<FamilyGroup>> watchMyPausedGroups(String uid) =>
-      _watchGroupsMasked(
-        uid,
-        (groups, masked) => [
-          for (final group in groups)
-            if (group.ownerId == uid && masked.contains(group.id)) group,
-        ],
-      );
-
-  /// Les groupes de [uid] et ses groupes masqués, réunis par [select].
-  Stream<List<FamilyGroup>> _watchGroupsMasked(
-    String uid,
-    List<FamilyGroup> Function(List<FamilyGroup> groups, Set<String> masked)
-    select,
-  ) {
-    final groups = _col.where('member_ids', arrayContains: uid).snapshots().map(
-      (snap) {
-        final list = snap.docs
-            .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
-            .toList();
-        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-        return list;
-      },
-    );
-    late final StreamController<List<FamilyGroup>> controller;
-    StreamSubscription<List<FamilyGroup>>? groupsSub;
-    StreamSubscription<Set<String>>? maskedSub;
-    List<FamilyGroup>? lastGroups;
-    Set<String>? lastMasked;
-    void emit() {
-      final g = lastGroups, m = lastMasked;
-      if (g == null || m == null) return;
-      controller.add(select(g, m));
-    }
-
-    controller = StreamController<List<FamilyGroup>>(
-      onListen: () {
-        groupsSub = groups.listen((g) {
-          lastGroups = g;
-          emit();
-        }, onError: controller.addError);
-        maskedSub = watchMaskedGroupIds(uid).listen(
-          (m) {
-            lastMasked = m;
-            emit();
-          },
-          onError: (Object e, StackTrace st) {
-            unawaited(
-              _errorReportService.reportError(
-                feature: 'group_masked_ids',
-                error: e,
-                stackTrace: st,
-                context: {'uid': uid},
-              ),
-            );
-            lastMasked = const {};
-            emit();
-          },
-        );
-      },
-      onCancel: () async {
-        await groupsSub?.cancel();
-        await maskedSub?.cancel();
-      },
-    );
-    return controller.stream;
-  }
-
-  /// Les groupes de [uid] masqués par le serveur parce que leur propriétaire
-  /// n'est plus éditeur : `planning_reach/{uid}.masked_group_ids`. Document
-  /// ou champ absent (portée antérieure au planning de groupe) : aucun.
-  Stream<Set<String>> watchMaskedGroupIds(String uid) {
-    return _firestore.collection('planning_reach').doc(uid).snapshots().map((
-      doc,
-    ) {
-      final raw = doc.data()?['masked_group_ids'];
-      if (raw is! List) return <String>{};
-      return raw.whereType<String>().toSet();
-    });
-  }
-
-  /// Groupes qui invitent [uid] et attendent sa réponse.
-  Stream<List<FamilyGroup>> watchMyInvitations(String uid) {
-    return _col.where('invited_ids', arrayContains: uid).snapshots().map((
-      snap,
-    ) {
+  /// Un groupe dont le propriétaire n'est plus éditeur est « en pause » : le
+  /// serveur le pose dans `planning_reach/{uid}.masked_group_ids` (voir
+  /// [watchMaskedGroupIds]). L'écran Groupes le liste toujours, marqué « En
+  /// pause », pour que son propriétaire en retire des membres ou le supprime,
+  /// et qu'un membre le quitte ; seul le planning le masque.
+  Stream<List<FamilyGroup>> watchMyGroups(String uid) {
+    return _col.where('member_ids', arrayContains: uid).snapshots().map((snap) {
       final list = snap.docs
           .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
           .toList();
       list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return list;
     });
+  }
+
+  /// Les groupes de [uid] en pause : `planning_reach/{uid}.masked_group_ids`.
+  /// Document ou champ absent (portée antérieure au planning de groupe) :
+  /// aucun. Une lecture en échec est signalée au rapport, puis transmise.
+  Stream<Set<String>> watchMaskedGroupIds(String uid) =>
+      _watchReachField(uid, 'masked_group_ids');
+
+  /// Groupes qui invitent [uid] et attendent sa réponse, hors ceux en pause.
+  ///
+  /// Une invitation vers un groupe dont le propriétaire n'est plus éditeur
+  /// est masquée à l'invité : le serveur la pose dans
+  /// `planning_reach/{uid}.masked_invitation_ids`. Les deux lectures sont
+  /// réunies : la liste n'est rendue qu'une fois les deux connues, pour
+  /// qu'une invitation masquée n'apparaisse pas un instant. Une portée
+  /// illisible ne masque rien : mieux vaut une invitation de trop qu'aucune.
+  Stream<List<FamilyGroup>> watchMyInvitations(String uid) {
+    final invitations = _col
+        .where('invited_ids', arrayContains: uid)
+        .snapshots()
+        .map((snap) {
+          final list = snap.docs
+              .map((d) => FamilyGroup.fromFirestore(d.id, d.data()))
+              .toList();
+          list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          return list;
+        });
+    late final StreamController<List<FamilyGroup>> controller;
+    StreamSubscription<List<FamilyGroup>>? invitationsSub;
+    StreamSubscription<Set<String>>? maskedSub;
+    List<FamilyGroup>? lastInvitations;
+    Set<String>? lastMasked;
+    void emit() {
+      final g = lastInvitations, m = lastMasked;
+      if (g == null || m == null) return;
+      controller.add([
+        for (final group in g)
+          if (!m.contains(group.id)) group,
+      ]);
+    }
+
+    controller = StreamController<List<FamilyGroup>>(
+      onListen: () {
+        invitationsSub = invitations.listen((g) {
+          lastInvitations = g;
+          emit();
+        }, onError: controller.addError);
+        maskedSub = _watchReachField(uid, 'masked_invitation_ids').listen(
+          (m) {
+            lastMasked = m;
+            emit();
+          },
+          onError: (Object e, StackTrace st) {
+            // Déjà signalée par `_watchReachField`.
+            lastMasked = const {};
+            emit();
+          },
+        );
+      },
+      onCancel: () async {
+        await invitationsSub?.cancel();
+        await maskedSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Une liste d'identifiants de `planning_reach/{uid}`. Une lecture en échec
+  /// est signalée au rapport, puis transmise.
+  Stream<Set<String>> _watchReachField(String uid, String field) {
+    return _firestore
+        .collection('planning_reach')
+        .doc(uid)
+        .snapshots()
+        .map((doc) {
+          final raw = doc.data()?[field];
+          if (raw is! List) return <String>{};
+          return raw.whereType<String>().toSet();
+        })
+        .handleError((Object e, StackTrace st) {
+          unawaited(
+            _errorReportService.reportError(
+              feature: 'group_reach_field',
+              error: e,
+              stackTrace: st,
+              context: {'uid': uid, 'field': field},
+            ),
+          );
+          Error.throwWithStackTrace(e, st);
+        });
   }
 
   /// Les autres comptes avec qui [uid] partage un groupe : `group_reach/{uid}`.

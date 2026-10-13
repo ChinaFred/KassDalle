@@ -8,19 +8,41 @@ final groupRepositoryProvider = Provider<GroupRepository>((ref) {
   return GroupRepository();
 });
 
-/// Groupes familiaux dont l'utilisateur connecté est membre.
+/// Groupes familiaux dont l'utilisateur connecté est membre, groupes en
+/// pause compris (voir [myPausedGroupsProvider]).
 final myGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
-/// Groupes dont l'utilisateur connecté est le propriétaire et que le serveur
-/// masque parce qu'il n'est plus éditeur : ses groupes « en pause ».
-final myPausedGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
+/// Identifiants des groupes de l'utilisateur connecté qui sont « en pause » :
+/// leur propriétaire n'est plus éditeur (`planning_reach.masked_group_ids`).
+final maskedGroupIdsProvider = StreamProvider<Set<String>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
-  return ref.watch(groupRepositoryProvider).watchMyPausedGroups(uid);
+  return ref.watch(groupRepositoryProvider).watchMaskedGroupIds(uid);
+});
+
+/// Les groupes de l'utilisateur connecté qui sont en pause, les siens comme
+/// ceux d'un autre propriétaire. En chargement tant que les deux lectures ne
+/// sont pas arrivées, en erreur si l'une échoue : un écran ne choisit pas un
+/// état vide sur une réponse partielle.
+final myPausedGroupsProvider = Provider<AsyncValue<List<FamilyGroup>>>((ref) {
+  final groups = ref.watch(myGroupsProvider);
+  final masked = ref.watch(maskedGroupIdsProvider);
+  if (groups.hasError && !groups.hasValue) {
+    return AsyncError(groups.error!, groups.stackTrace ?? StackTrace.empty);
+  }
+  if (masked.hasError && !masked.hasValue) {
+    return AsyncError(masked.error!, masked.stackTrace ?? StackTrace.empty);
+  }
+  if (!groups.hasValue || !masked.hasValue) return const AsyncLoading();
+  final ids = masked.value!;
+  return AsyncData([
+    for (final g in groups.value!)
+      if (ids.contains(g.id)) g,
+  ]);
 });
 
 /// « Votre groupe Famille Dupont est en pause. », ou « Vos groupes A et B
@@ -33,10 +55,18 @@ String? pausedGroupsTitle(List<FamilyGroup> paused) {
   return 'Vos groupes $head et ${names.last} sont en pause.';
 }
 
-/// Ce qui suit le titre d'un groupe en pause.
+/// Ce qui suit le titre d'un groupe en pause que l'on possède.
 String pausedGroupsMessage(int count) => count > 1
     ? 'Ils reviendront quand vous serez de nouveau éditeur.'
     : 'Il reviendra quand vous serez de nouveau éditeur.';
+
+/// Pour un membre : « Le groupe Famille Dupont est en pause : Marie, qui en
+/// est propriétaire, n'est plus éditeur. Il reviendra quand Marie le sera de
+/// nouveau. »
+String pausedMemberGroupMessage(FamilyGroup group, String ownerName) =>
+    'Le groupe ${group.name} est en pause : $ownerName, qui en est '
+    'propriétaire, n\'est plus éditeur. Il reviendra quand $ownerName le '
+    'sera de nouveau.';
 
 /// Groupes qui invitent l'utilisateur connecté et attendent sa réponse.
 final myInvitationsProvider = StreamProvider<List<FamilyGroup>>((ref) {
@@ -94,8 +124,10 @@ final sharedGroupNamesProvider = Provider.family<List<String>, String>((
   uid,
 ) {
   final groups = ref.watch(myGroupsProvider).value ?? const <FamilyGroup>[];
+  // Un groupe en pause ne partage plus rien : il n'est pas cité.
+  final paused = ref.watch(maskedGroupIdsProvider).value ?? const <String>{};
   final names = groups
-      .where((g) => g.isMember(uid))
+      .where((g) => g.isMember(uid) && !paused.contains(g.id))
       .map((g) => g.name)
       .toList();
   names.sort();

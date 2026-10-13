@@ -848,7 +848,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         [
           ...?ref.read(plannedMealsProvider).value,
           for (final groupId in _ownedGroupIdsShown)
-            ...?ref.read(groupPlannedMealsProvider(groupId)).value,
+            ...?ref
+                .read(
+                  groupPlannedMealsProvider((
+                    groupId: groupId,
+                    ownerUid: meal.uid,
+                  )),
+                )
+                .value,
         ],
         cycleStart: meal.plannedAt,
         windowWeeks: prefs.varietyWindowWeeks,
@@ -1180,7 +1187,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
     final failedGroups = <PlanningOwnerOption>[];
     for (final group in shownGroups) {
-      final async = ref.watch(groupPlannedMealsProvider(group.groupId!));
+      final async = ref.watch(groupPlannedMealsProvider(group.groupKey));
       if (async.hasValue) {
         sharedMeals.addAll(async.value!);
       } else if (async.hasError) {
@@ -1408,7 +1415,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               message:
                   'Le planning du groupe ${group.name} n\'a pas pu être lu.',
               onRetry: () =>
-                  ref.invalidate(groupPlannedMealsProvider(group.groupId!)),
+                  ref.invalidate(groupPlannedMealsProvider(group.groupKey)),
             ),
           Expanded(
             child: RefreshIndicator(onRefresh: _refreshMeals, child: content),
@@ -1517,26 +1524,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Un lecteur à qui personne ne partage de planning : sans groupe, on lui
-  /// dit d'en rejoindre un ; membre, on lui dit qui peut partager.
+  /// dit d'en rejoindre un ; membre, on lui dit qui peut partager. Quand tous
+  /// ses groupes sont en pause (propriétaire qui n'est plus éditeur), on le
+  /// dit : il en possède un, ou il attend celui d'un proche.
+  ///
+  /// Les deux lectures (groupes, groupes en pause) arrivent avant tout état
+  /// vide, et une erreur se dit avant la pause.
   ///
   /// Un lecteur qui garde d'anciens repas apprend où les retrouver.
   Widget _buildReaderWithoutShares({required bool hasOwnMeals}) {
     const ownMealsHint =
         'Cochez « Mon planning » pour revoir vos anciens repas.';
+    String withHint(String text) => hasOwnMeals ? '$text $ownMealsHint' : text;
     final groups = ref.watch(myGroupsProvider);
-    if (!groups.hasValue && !groups.hasError) return const AppLoadingState();
-    // Propriétaire rétrogradé : ses groupes sont en pause, pas absents.
-    final paused = ref.watch(myPausedGroupsProvider).value ?? const [];
-    final pausedTitle = pausedGroupsTitle(paused);
-    if (pausedTitle != null && (groups.value ?? const []).isEmpty) {
-      return AppEmptyState(
-        icon: Icons.pause_circle_outline,
-        title: pausedTitle,
-        message: hasOwnMeals
-            ? '${pausedGroupsMessage(paused.length)} $ownMealsHint'
-            : pausedGroupsMessage(paused.length),
-      );
-    }
+    final paused = ref.watch(myPausedGroupsProvider);
     if (groups.hasError && !groups.hasValue) {
       return AppErrorState(
         error: groups.error,
@@ -1544,14 +1545,47 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         onRetry: () => ref.invalidate(myGroupsProvider),
       );
     }
-    if ((groups.value ?? const []).isEmpty) {
+    if (paused.hasError && !paused.hasValue) {
+      return AppErrorState(
+        error: paused.error,
+        title: 'Vos groupes familiaux n\'ont pas pu être lus',
+        onRetry: () => ref.invalidate(maskedGroupIdsProvider),
+      );
+    }
+    if (!groups.hasValue || !paused.hasValue) return const AppLoadingState();
+    final all = groups.value!;
+    final pausedGroups = paused.value!;
+    final active = all.length - pausedGroups.length;
+    if (all.isNotEmpty && active == 0) {
+      final myUid = ref.read(appUserProvider).value?.uid;
+      final owned = [
+        for (final g in pausedGroups)
+          if (g.ownerId == myUid) g,
+      ];
+      if (owned.isNotEmpty) {
+        return AppEmptyState(
+          icon: Icons.pause_circle_outline,
+          title: pausedGroupsTitle(owned)!,
+          message: withHint(pausedGroupsMessage(owned.length)),
+        );
+      }
+      final group = pausedGroups.first;
+      final ownerName =
+          ref.watch(memberNameProvider(group.ownerId)) ??
+          UserProfile.fallbackName;
+      return AppEmptyState(
+        icon: Icons.pause_circle_outline,
+        title: 'Le groupe ${group.name} est en pause.',
+        message: withHint(pausedMemberGroupMessage(group, ownerName)),
+      );
+    }
+    if (all.isEmpty) {
       return AppEmptyState(
         icon: Icons.group_outlined,
         title: 'Vous ne faites partie d\'aucun groupe familial.',
-        message: hasOwnMeals
-            ? 'Rejoignez le groupe de votre famille pour voir ses plannings. '
-                  '$ownMealsHint'
-            : 'Rejoignez le groupe de votre famille pour voir ses plannings.',
+        message: withHint(
+          'Rejoignez le groupe de votre famille pour voir ses plannings.',
+        ),
         action: FilledButton.icon(
           onPressed: () => context.push('/groups'),
           icon: const Icon(Icons.group_outlined),
@@ -1562,11 +1596,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     return AppEmptyState(
       icon: Icons.calendar_today_outlined,
       title: 'Aucun planning n\'est partagé avec vous.',
-      message: hasOwnMeals
-          ? 'Un membre de votre groupe peut partager le sien depuis les '
-                'préférences de son planning. $ownMealsHint'
-          : 'Un membre de votre groupe peut partager le sien depuis les '
-                'préférences de son planning.',
+      message: withHint(
+        'Un membre de votre groupe peut partager le sien depuis les '
+        'préférences de son planning.',
+      ),
     );
   }
 

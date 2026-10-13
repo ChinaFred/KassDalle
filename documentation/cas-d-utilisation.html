@@ -165,7 +165,7 @@
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est en pause : son planning est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -558,15 +558,19 @@ flowchart LR
         <b>Consulter le planning de mon groupe</b> ouvre à chaque membre, lecteur compris, les
         repas du groupe en lecture seule, marqués de l'icône et du nom du groupe. Un invité ne
         les lit pas. Un groupe supprimé emporte ses repas. Un groupe dont le propriétaire est
-        rétrogradé est masqué à tous ses membres — planning, livres partagés par le groupe,
-        écran des groupes — sans rien effacer ; tout revient s'il redevient éditeur
-        (<code>syncPlanningReachOnRole</code>).
+        rétrogradé est en pause pour tous ses membres : son planning est masqué, ses livres
+        ne sont plus partagés par lui, ses invitations en attente sont masquées aux invités ;
+        l'écran Groupes le liste marqué « En pause », où son propriétaire retire un membre,
+        annule une invitation ou supprime le groupe, et où un membre le quitte. Rien n'est
+        effacé ; tout revient s'il redevient éditeur (<code>syncPlanningReachOnRole</code>).
+        Le titre d'une recette privée planifiée pour le groupe se lit sur le repas ; la
+        recette reste fermée.
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls
         l'<code>editor</code> et l'<code>admin</code> créent un groupe et le gèrent
         (v0.23.54) ; le <code>reader</code> rejoint celui d'un proche. Le <code>reader</code>
         propriétaire d'un groupe plus ancien peut encore annuler une invitation, retirer un
-        membre ou supprimer le groupe, sans inviter ni renommer ; ce groupe est en pause pour
-        ses membres tant qu'il n'est pas éditeur. Le
+        membre ou supprimer le groupe, sans inviter ni renommer, depuis l'écran Groupes ; ce
+        groupe est en pause pour ses membres tant qu'il n'est pas éditeur. Le
         propriétaire cherche une personne par son nom (« Nom ou adresse e-mail complète »),
         ou par son adresse e-mail complète : celle-ci part au serveur
         (<code>findMemberByEmailFn</code>), qui ne rend que le compte approuvé dont l'adresse est

@@ -90,9 +90,9 @@ void main() {
             (ref, uid) => Stream.value(shared[uid] ?? const []),
           ),
           groupPlannedMealsProvider.overrideWith(
-            (ref, groupId) => failingGroups.contains(groupId)
+            (ref, key) => failingGroups.contains(key.groupId)
                 ? Stream.error(StateError('planning du groupe illisible'))
-                : Stream.value(groupMeals[groupId] ?? const []),
+                : Stream.value(groupMeals[key.groupId] ?? const []),
           ),
           memberNameProvider.overrideWith(
             (ref, uid) => uid == 'marie' ? 'Marie' : 'Paul',
@@ -434,6 +434,22 @@ void main() {
       find.text('Vous ne faites partie d\'aucun groupe familial.'),
       findsNothing,
     );
+  });
+
+  testWidgets('un membre lit que le groupe d\'un proche est en pause', (
+    tester,
+  ) async {
+    await pump(tester, role: UserRole.reader, pausedGroups: [dupont()]);
+
+    expect(find.text('Le groupe Famille Dupont est en pause.'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Marie, qui en est propriétaire, n\'est plus éditeur',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Voir les groupes familiaux'), findsNothing);
+    expect(find.text('Aucun planning n\'est partagé avec vous.'), findsNothing);
   });
 
   testWidgets('« Nouveau planning » demande pour qui au propriétaire', (

@@ -62,8 +62,8 @@ void main() {
     expect(groups, isEmpty);
   });
 
-  group('groupes masqués', () {
-    test('un groupe masqué par le serveur n\'est plus listé', () async {
+  group('groupes en pause', () {
+    test('un groupe en pause reste listé, et se lit dans la portée', () async {
       await firestore.collection('groups').doc('g2').set({
         'name': 'Cousins',
         'owner_id': 'owner',
@@ -77,22 +77,34 @@ void main() {
       });
 
       final groups = await repo.watchMyGroups('owner').first;
-      expect(groups.map((g) => g.id), ['g1']);
-      // Le propriétaire le retrouve parmi ses groupes en pause.
-      final paused = await repo.watchMyPausedGroups('owner').first;
-      expect(paused.map((g) => g.id), ['g2']);
+      expect(groups.map((g) => g.id), ['g1', 'g2']);
+      expect(await repo.watchMaskedGroupIds('owner').first, {'g2'});
     });
 
-    test('sans portée, ou portée antérieure : rien de masqué', () async {
-      expect((await repo.watchMyGroups('owner').first).map((g) => g.id), [
-        'g1',
-      ]);
+    test('sans portée, ou portée antérieure : rien en pause', () async {
+      expect(await repo.watchMaskedGroupIds('owner').first, isEmpty);
       await firestore.collection('planning_reach').doc('owner').set({
         'uids': <String>[],
       });
-      expect((await repo.watchMyGroups('owner').first).map((g) => g.id), [
-        'g1',
-      ]);
+      expect(await repo.watchMaskedGroupIds('owner').first, isEmpty);
+    });
+
+    test('une invitation vers un groupe en pause est masquée', () async {
+      await repo.inviteMember('g1', 'invite');
+      await firestore.collection('groups').doc('g3').set({
+        'name': 'Voisins',
+        'owner_id': 'autre',
+        'member_ids': ['autre'],
+        'invited_ids': ['invite'],
+        'created_at': DateTime.utc(2026, 10, 3),
+      });
+      await firestore.collection('planning_reach').doc('invite').set({
+        'uids': <String>[],
+        'masked_invitation_ids': ['g3'],
+      });
+
+      final invitations = await repo.watchMyInvitations('invite').first;
+      expect(invitations.map((g) => g.id), ['g1']);
     });
   });
 

@@ -34,15 +34,34 @@ import {
 } from "./planningReach";
 
 /**
- * Les membres des groupes dont [owner] est propriétaire, [owner] compris.
- * Triés, sans doublon ; `[owner]` seul s'il n'en possède aucun.
+ * Les membres des groupes dont [owner] est propriétaire, [owner] compris, et
+ * leurs invités. Triés, sans doublon ; `members` vaut `[owner]` seul s'il
+ * n'en possède aucun.
  */
-export async function ownedGroupsMembers(owner: string): Promise<string[]> {
+export async function ownedGroupsAudience(
+  owner: string,
+): Promise<{ members: string[]; invited: string[] }> {
   const snap = await getFirestore().collection(COLL_GROUPS).where("owner_id", "==", owner).get();
-  return membersOfOwnedGroups(
-    owner,
-    snap.docs.map((d) => d.data()),
-  );
+  const groups = snap.docs.map((d) => d.data());
+  return {
+    members: membersOfOwnedGroups(owner, groups),
+    invited: invitedOfOwnedGroups(groups),
+  };
+}
+
+/** Pure : les invités de [groups]. Triés, sans doublon. */
+export function invitedOfOwnedGroups(
+  groups: Iterable<Record<string, unknown> | undefined | null>,
+): string[] {
+  const invited = new Set<string>();
+  for (const group of groups) {
+    const raw = group?.invited_ids;
+    if (!Array.isArray(raw)) continue;
+    for (const id of raw) {
+      if (typeof id === "string" && id && !id.includes("/")) invited.add(id);
+    }
+  }
+  return [...invited].sort();
 }
 
 /** Pure : [owner] et les membres de [groups]. Triés, sans doublon. */
@@ -74,12 +93,16 @@ export const syncPlanningReachOnRole = onDocumentWritten(
     const correlationId = newCorrelationId("portee_plannings");
     let sharedAudience: string[];
     let groupMembers: string[];
+    let groupInvited: string[];
     try {
       const config = await getFirestore().collection(COLL_PLANNING_CONFIG).doc(owner).get();
-      [sharedAudience, groupMembers] = await Promise.all([
+      const [audience, owned] = await Promise.all([
         audienceOf(owner, sharedGroupIdsOf(config.data())),
-        ownedGroupsMembers(owner),
+        ownedGroupsAudience(owner),
       ]);
+      sharedAudience = audience;
+      groupMembers = owned.members;
+      groupInvited = owned.invited;
     } catch (err) {
       await logError({
         message: `syncPlanningReachOnRole: audience du planning et des groupes de ${owner} illisible`,
@@ -89,7 +112,8 @@ export const syncPlanningReachOnRole = onDocumentWritten(
       });
       throw err;
     }
-    const viewers = [...new Set([...sharedAudience, ...groupMembers])].sort();
+    // Les invités aussi : leur invitation vers un groupe en pause se masque.
+    const viewers = [...new Set([...sharedAudience, ...groupMembers, ...groupInvited])].sort();
     const planningFailures = await resyncPlanningReach(viewers, {
       correlationId,
       reason: "rôle du propriétaire",

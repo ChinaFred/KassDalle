@@ -325,6 +325,27 @@ void main() {
       expect(backfillDefinition('estimated_times'), isNull);
       expect(backfillReportSummary('recipe_protein', {'traitees': 3}), '');
     });
+
+    test('portée des groupes : repas restants inconnus, reste inconnu', () {
+      expect(
+        backfillReportSummary('group_planning_reach', {
+          'ecrits': 2,
+          'repasMarques': 40,
+          'restants': 0,
+          'repasRestants': 12,
+        }),
+        '2 comptes réécrits, 40 repas marqués, 12 restants',
+      );
+      expect(
+        backfillReportSummary('group_planning_reach', {
+          'ecrits': 1,
+          'repasMarques': 0,
+          'restants': 3,
+          'repasRestants': null,
+        }),
+        '1 compte réécrit, 0 repas marqué, reste inconnu',
+      );
+    });
   });
 
   group('fixture backfill_schedule.json (partagée avec le serveur)', () {

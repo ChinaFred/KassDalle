@@ -200,7 +200,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       );
       if (mounted) {
         setState(() => _loading = false);
-        context.showErrorSnackBar('Repas non enregistré : $e');
+        // Le détail part au rapport d'erreurs, pas à l'écran.
+        context.showErrorSnackBar('Repas non enregistré. Réessayez.');
       }
       return;
     }
@@ -236,7 +237,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         // ce qui manque.
         Navigator.of(context).pop();
         context.showErrorSnackBar(
-          '$_addedTo. Google Calendar n\'a pas reçu l\'événement : $e',
+          '$_addedTo. Google Calendar n\'a pas reçu l\'événement.',
         );
       }
     }
@@ -449,7 +450,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(AppIcons.calendarExport),
-              label: const Text('Ajouter à Google Calendar'),
+              label: const Text('Ajouter au planning et à l\'agenda'),
             ),
           ),
         ],

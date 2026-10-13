@@ -41,7 +41,7 @@ import { COLL_GROUP_REACH, COLL_GROUPS, COLL_USERS, REGION } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { deleteGroupMeals } from "./groupMeals";
 import { isPlannerAccount, membersOf, ownerOf, sameReach, type GroupData } from "./groupMembers";
-import { syncPlanningReachFor } from "./planningReach";
+import { invitationsToResync, syncPlanningReachFor } from "./planningReach";
 
 // `membersOf`, `sameReach` et `GroupData` vivent dans `groupMembers.ts`, sans
 // dépendance : `planningReach.ts` les importe sans repasser par ce fichier.
@@ -201,6 +201,26 @@ export const syncGroupReach = onDocumentWritten(
         failures += 1;
         await logError({
           message: `syncGroupReach: portée des plannings non recalculée pour ${uid}`,
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          userId: uid,
+          extra: { groupId },
+        });
+      }
+    }
+
+    // Les invités dont l'invitation change : seule leur portée des plannings
+    // bouge (`masked_invitation_ids`, invitations vers un groupe en pause).
+    const accountSet = new Set(accounts);
+    for (const uid of invitationsToResync(before, after)) {
+      if (accountSet.has(uid)) continue;
+      try {
+        const outcome = await syncPlanningReachFor(uid);
+        if (outcome !== "unchanged") changed.push(`planning:${uid}`);
+      } catch (err) {
+        failures += 1;
+        await logError({
+          message: `syncGroupReach: portée des plannings non recalculée pour l'invité ${uid}`,
           correlationId,
           errorDescription: err instanceof Error ? err.message : String(err),
           userId: uid,

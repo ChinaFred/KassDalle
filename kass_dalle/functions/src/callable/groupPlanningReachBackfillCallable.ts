@@ -41,6 +41,7 @@ import { logError, logInfo } from "../logging";
 import { membersOf, type GroupData } from "../triggers/groupMembers";
 import { syncReachFor } from "../triggers/groupReach";
 import { syncPlanningReachFor } from "../triggers/planningReach";
+import { invitedOfOwnedGroups } from "../triggers/plannerRole";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { getBackfillCursor, setBackfillCursor } from "./_backfillCursor";
 import { runBackfillFromCallable } from "../backfills/runner";
@@ -78,12 +79,16 @@ export function needsGroupIdField(data: Record<string, unknown> | undefined): bo
 }
 
 /**
- * Les comptes à recalculer : les membres de tous les groupes, triés, sans
- * doublon. Pure, testée.
+ * Les comptes à recalculer : les membres et les invités de tous les groupes
+ * (un invité reçoit `masked_invitation_ids`), triés, sans doublon. Pure,
+ * testée.
  */
 export function groupAccounts(groups: Iterable<GroupData>): string[] {
   const accounts = new Set<string>();
-  for (const group of groups) for (const member of membersOf(group)) accounts.add(member);
+  for (const group of groups) {
+    for (const member of membersOf(group)) accounts.add(member);
+    for (const invited of invitedOfOwnedGroups([group])) accounts.add(invited);
+  }
   return [...accounts].sort();
 }
 

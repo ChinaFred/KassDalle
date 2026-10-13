@@ -11,7 +11,9 @@ import {
   canSharePlanning,
   changedSharedGroups,
   groupPlanningsFrom,
+  invitationsToResync,
   isActiveGroup,
+  maskedInvitationsFrom,
   MAX_SHARED_GROUPS,
   planningReachFrom,
   planningShareChanged,
@@ -20,7 +22,7 @@ import {
   type GroupEntry,
   type OwnerState,
 } from "../triggers/planningReach";
-import { membersOfOwnedGroups } from "../triggers/plannerRole";
+import { invitedOfOwnedGroups, membersOfOwnedGroups } from "../triggers/plannerRole";
 import {
   groupAccounts,
   needsGroupIdField,
@@ -219,12 +221,22 @@ describe("groupPlanningsFrom", () => {
 });
 
 describe("samePlanningReach", () => {
-  const expected = { uids: ["a"], groupIds: ["g"], maskedGroupIds: [] };
+  const expected = { uids: ["a"], groupIds: ["g"], maskedGroupIds: [], maskedInvitationIds: [] };
 
   test("mêmes listes : rien à écrire", () => {
     assert.equal(
-      samePlanningReach({ uids: ["a"], group_ids: ["g"], masked_group_ids: [] }, expected),
+      samePlanningReach(
+        { uids: ["a"], group_ids: ["g"], masked_group_ids: [], masked_invitation_ids: [] },
+        expected,
+      ),
       true,
+    );
+  });
+
+  test("document sans masked_invitation_ids : à écrire", () => {
+    assert.equal(
+      samePlanningReach({ uids: ["a"], group_ids: ["g"], masked_group_ids: [] }, expected),
+      false,
     );
   });
 
@@ -256,13 +268,60 @@ describe("membersOfOwnedGroups", () => {
 });
 
 describe("groupAccounts (backfill)", () => {
-  test("les membres de tous les groupes, sans invité, sans doublon", () => {
+  test("les membres et les invités de tous les groupes, sans doublon", () => {
     assert.deepEqual(groupAccounts([famille.data, cousins.data, undefined]), [
+      "invite",
       "lea",
       "marie",
       "paul",
       "zoe",
     ]);
+  });
+});
+
+describe("maskedInvitationsFrom", () => {
+  test("une invitation vers un groupe en pause est masquée", () => {
+    const state = owners({ marie: { config: null, user: reader } });
+    assert.deepEqual(maskedInvitationsFrom("invite", [famille], state), ["famille"]);
+  });
+
+  test("propriétaire éditeur : invitation visible", () => {
+    const state = owners({ marie: { config: null, user: editor } });
+    assert.deepEqual(maskedInvitationsFrom("invite", [famille], state), []);
+  });
+
+  test("un compte non invité n'a rien", () => {
+    const state = owners({ marie: { config: null, user: reader } });
+    assert.deepEqual(maskedInvitationsFrom("paul", [famille], state), []);
+  });
+});
+
+describe("invitationsToResync", () => {
+  test("invités ajoutés et retirés", () => {
+    assert.deepEqual(
+      invitationsToResync({ invited_ids: ["a", "b"] }, { invited_ids: ["b", "c"] }),
+      ["a", "c"],
+    );
+  });
+
+  test("groupe supprimé : tous ses invités", () => {
+    assert.deepEqual(invitationsToResync({ invited_ids: ["a", "b"] }, undefined), ["a", "b"]);
+  });
+
+  test("invitations inchangées : personne", () => {
+    assert.deepEqual(
+      invitationsToResync({ invited_ids: ["a"], name: "x" }, { invited_ids: ["a"], name: "y" }),
+      [],
+    );
+  });
+});
+
+describe("invitedOfOwnedGroups", () => {
+  test("les invités, triés, sans valeur mal formée", () => {
+    assert.deepEqual(
+      invitedOfOwnedGroups([{ invited_ids: ["b", "a", 3, "", "x/y"] }, { invited_ids: ["a"] }]),
+      ["a", "b"],
+    );
   });
 });
 

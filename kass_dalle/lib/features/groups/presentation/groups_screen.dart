@@ -16,10 +16,12 @@ class GroupsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(myGroupsProvider);
     final invitationsAsync = ref.watch(myInvitationsProvider);
-    // Les groupes que je possède et que le serveur masque (je ne suis plus
-    // éditeur) : l'écran le dit, au lieu de prétendre que je n'en ai aucun.
-    final paused = ref.watch(myPausedGroupsProvider).value ?? const [];
-    final pausedTitle = pausedGroupsTitle(paused);
+    // Les groupes en pause (propriétaire qui n'est plus éditeur) restent
+    // listés, marqués « En pause » : leur propriétaire en retire des membres
+    // ou les supprime, un membre les quitte. Une portée illisible ne marque
+    // rien (l'erreur est déjà au rapport).
+    final maskedAsync = ref.watch(maskedGroupIdsProvider);
+    final pausedIds = maskedAsync.value ?? const <String>{};
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
     // Créer un groupe demande le rôle éditeur (règle `create` de `groups`) :
     // un lecteur rejoint un groupe sur invitation d'un proche.
@@ -27,96 +29,87 @@ class GroupsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Groupes familiaux')),
-      body: groupsAsync.when(
-        loading: () => const AppLoadingState(),
-        error: (e, _) => AppErrorState(
-          error: e,
-          onRetry: () => ref.invalidate(myGroupsProvider),
-        ),
-        data: (groups) {
-          // Les invitations ont leur propre flux : en chargement, la section
-          // n'apparaît pas ; en erreur, un encart, et le reste de l'écran sert.
-          final invitations = invitationsAsync.value ?? const <FamilyGroup>[];
-          if (groups.isEmpty &&
-              invitations.isEmpty &&
-              !invitationsAsync.hasError &&
-              pausedTitle != null) {
-            return AppEmptyState(
-              icon: Icons.pause_circle_outline,
-              title: pausedTitle,
-              message: pausedGroupsMessage(paused.length),
-            );
-          }
-          if (groups.isEmpty &&
-              invitations.isEmpty &&
-              !invitationsAsync.hasError) {
-            if (!canCreate) {
-              return const AppEmptyState(
-                icon: Icons.group_outlined,
-                title: 'Aucun groupe familial',
-                message:
-                    'Vous rejoignez un groupe sur invitation d\'un proche. '
-                    'Ses invitations apparaîtront ici.',
-              );
-            }
-            return AppEmptyState(
-              icon: Icons.group_outlined,
-              title: 'Aucun groupe familial',
-              message:
-                  'Créez un groupe, ou attendez qu\'un proche vous invite '
-                  'dans le sien. Ses invitations apparaîtront ici.',
-              action: FilledButton.icon(
-                onPressed: () => _showCreateGroupDialog(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('Créer un groupe'),
+      body: (!maskedAsync.hasValue && !maskedAsync.hasError)
+          ? const AppLoadingState()
+          : groupsAsync.when(
+              loading: () => const AppLoadingState(),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(myGroupsProvider),
               ),
-            );
-          }
+              data: (groups) {
+                // Les invitations ont leur propre flux : en chargement, la section
+                // n'apparaît pas ; en erreur, un encart, et le reste de l'écran sert.
+                final invitations =
+                    invitationsAsync.value ?? const <FamilyGroup>[];
+                if (groups.isEmpty &&
+                    invitations.isEmpty &&
+                    !invitationsAsync.hasError) {
+                  if (!canCreate) {
+                    return const AppEmptyState(
+                      icon: Icons.group_outlined,
+                      title: 'Aucun groupe familial',
+                      message:
+                          'Vous rejoignez un groupe sur invitation d\'un proche. '
+                          'Ses invitations apparaîtront ici.',
+                    );
+                  }
+                  return AppEmptyState(
+                    icon: Icons.group_outlined,
+                    title: 'Aucun groupe familial',
+                    message:
+                        'Créez un groupe, ou attendez qu\'un proche vous invite '
+                        'dans le sien. Ses invitations apparaîtront ici.',
+                    action: FilledButton.icon(
+                      onPressed: () => _showCreateGroupDialog(context, ref),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Créer un groupe'),
+                    ),
+                  );
+                }
 
-          final textTheme = Theme.of(context).textTheme;
-          Widget header(String text) => Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(text, style: textTheme.titleSmall),
-          );
+                final textTheme = Theme.of(context).textTheme;
+                Widget header(String text) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Text(text, style: textTheme.titleSmall),
+                );
 
-          return ListView(
-            padding: EdgeInsets.only(top: 8, bottom: canCreate ? 88 : 16),
-            children: [
-              if (pausedTitle != null)
-                ListTile(
-                  leading: const Icon(Icons.pause_circle_outline),
-                  title: Text(pausedTitle),
-                  subtitle: Text(pausedGroupsMessage(paused.length)),
-                ),
-              if (invitationsAsync.hasError)
-                AppErrorState(
-                  compact: true,
-                  error: invitationsAsync.error,
-                  title: 'Invitations illisibles',
-                  onRetry: () => ref.invalidate(myInvitationsProvider),
-                ),
-              if (invitations.isNotEmpty) ...[
-                header('Invitations reçues'),
-                for (final group in invitations)
-                  _InvitationCard(group: group, myUid: myUid),
-                header('Mes groupes'),
-              ],
-              if (groups.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                  child: Text(
-                    'Vous ne faites partie d\'aucun groupe pour l\'instant.',
-                    style: textTheme.bodySmall,
-                  ),
-                ),
-              for (var i = 0; i < groups.length; i++) ...[
-                if (i > 0) const Divider(height: 1),
-                _GroupTile(group: groups[i], myUid: myUid),
-              ],
-            ],
-          );
-        },
-      ),
+                return ListView(
+                  padding: EdgeInsets.only(top: 8, bottom: canCreate ? 88 : 16),
+                  children: [
+                    if (invitationsAsync.hasError)
+                      AppErrorState(
+                        compact: true,
+                        error: invitationsAsync.error,
+                        title: 'Invitations illisibles',
+                        onRetry: () => ref.invalidate(myInvitationsProvider),
+                      ),
+                    if (invitations.isNotEmpty) ...[
+                      header('Invitations reçues'),
+                      for (final group in invitations)
+                        _InvitationCard(group: group, myUid: myUid),
+                      header('Mes groupes'),
+                    ],
+                    if (groups.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                        child: Text(
+                          'Vous ne faites partie d\'aucun groupe pour l\'instant.',
+                          style: textTheme.bodySmall,
+                        ),
+                      ),
+                    for (var i = 0; i < groups.length; i++) ...[
+                      if (i > 0) const Divider(height: 1),
+                      _GroupTile(
+                        group: groups[i],
+                        myUid: myUid,
+                        paused: pausedIds.contains(groups[i].id),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
       floatingActionButton: canCreate
           ? FloatingActionButton.extended(
               onPressed: () => _showCreateGroupDialog(context, ref),
@@ -141,7 +134,15 @@ class _GroupTile extends ConsumerWidget {
   final FamilyGroup group;
   final String myUid;
 
-  const _GroupTile({required this.group, required this.myUid});
+  /// Le propriétaire n'est plus éditeur : le groupe est masqué dans le
+  /// planning, et la tuile le dit (« En pause · … »).
+  final bool paused;
+
+  const _GroupTile({
+    required this.group,
+    required this.myUid,
+    this.paused = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -154,10 +155,12 @@ class _GroupTile extends ConsumerWidget {
       leading: CircleAvatar(child: Text(group.name[0].toUpperCase())),
       title: Text(group.name),
       subtitle: Text(
-        isOwner && group.invitedIds.isNotEmpty
-            ? '${group.memberIds.length} membre(s) · '
-                  '${group.invitedIds.length} invitation(s) en attente'
-            : '${group.memberIds.length} membre(s)',
+        [
+          if (paused) 'En pause',
+          '${group.memberIds.length} membre(s)',
+          if (isOwner && group.invitedIds.isNotEmpty)
+            '${group.invitedIds.length} invitation(s) en attente',
+        ].join(' · '),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

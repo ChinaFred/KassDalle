@@ -34,11 +34,16 @@
  * laissent lire un repas dont `group_id` y figure.
  *
  * `masked_group_ids` : les groupes dont `viewer` est membre et que le
- * propriétaire rétrogradé masque. Lu par l'écran des groupes, qui ne les
- * liste plus ; aucune règle ne le lit.
+ * propriétaire rétrogradé met en pause. Lu par le client : le planning les
+ * masque, l'écran des groupes les marque « En pause » ; aucune règle ne le
+ * lit.
+ *
+ * `masked_invitation_ids` : les groupes qui invitent `viewer` et sont en
+ * pause. Le client masque ces invitations ; aucune règle ne le lit.
  *
  * Forme : `{ uids: string[], group_ids: string[], masked_group_ids:
- * string[], updated_at: Timestamp }`, chaque liste triée, sans doublon. Un
+ * string[], masked_invitation_ids: string[], updated_at: Timestamp }`,
+ * chaque liste triée, sans doublon. Un
  * document antérieur au planning de groupe n'a que `uids` : le client lit alors
  * « groupes inconnus » et ne masque rien. Écrit par le serveur seul (les
  * règles l'interdisent au client : un compte qui s'ajouterait la portée d'un
@@ -182,11 +187,32 @@ export function groupPlanningsFrom(
   return { groupIds: [...active].sort(), maskedGroupIds: [...masked].sort() };
 }
 
+/**
+ * Les invitations de [viewer] vers un groupe en pause : [viewer] figure dans
+ * `invited_ids` (et n'est pas membre) d'un groupe dont le propriétaire ne
+ * planifie plus. L'écran les masque à l'invité. Triées, sans doublon.
+ */
+export function maskedInvitationsFrom(
+  viewer: string,
+  groups: Iterable<GroupEntry>,
+  owners: ReadonlyMap<string, OwnerState>,
+): string[] {
+  const masked = new Set<string>();
+  for (const group of groups) {
+    const invited = group.data?.invited_ids;
+    if (!Array.isArray(invited) || !invited.includes(viewer)) continue;
+    if (membersOf(group.data).includes(viewer)) continue;
+    if (!isActiveGroup(group.data, owners)) masked.add(group.id);
+  }
+  return [...masked].sort();
+}
+
 /** Ce que `planning_reach/{viewer}` doit contenir. */
 export interface PlanningReach {
   uids: string[];
   groupIds: string[];
   maskedGroupIds: string[];
+  maskedInvitationIds: string[];
 }
 
 /**
@@ -201,7 +227,8 @@ export function samePlanningReach(
   return (
     sameList(stored.uids, expected.uids) &&
     sameList(stored.group_ids, expected.groupIds) &&
-    sameList(stored.masked_group_ids, expected.maskedGroupIds)
+    sameList(stored.masked_group_ids, expected.maskedGroupIds) &&
+    sameList(stored.masked_invitation_ids, expected.maskedInvitationIds)
   );
 }
 
@@ -240,20 +267,28 @@ export async function syncPlanningReachFor(viewer: string): Promise<PlanningReac
   const reachRef = db.collection(COLL_PLANNING_REACH).doc(viewer);
 
   return db.runTransaction(async (tx) => {
-    const [asMember, asOwner, stored] = await Promise.all([
+    const [asMember, asOwner, asInvited, stored] = await Promise.all([
       tx.get(groups.where("member_ids", "array-contains", viewer)),
       tx.get(groups.where("owner_id", "==", viewer)),
+      tx.get(groups.where("invited_ids", "array-contains", viewer)),
       tx.get(reachRef),
     ]);
     const entries = new Map<string, GroupEntry>();
     for (const doc of [...asMember.docs, ...asOwner.docs]) {
       entries.set(doc.id, { id: doc.id, data: doc.data() });
     }
+    const invitations = asInvited.docs.map((doc) => ({ id: doc.id, data: doc.data() }));
     const candidates = new Set<string>();
     for (const entry of entries.values()) {
       const members = membersOf(entry.data);
       if (!members.includes(viewer)) continue;
       for (const member of members) candidates.add(member);
+    }
+    // Le propriétaire de chaque groupe qui m'invite : son rôle dit si
+    // l'invitation est en pause.
+    for (const invitation of invitations) {
+      const owner = ownerOf(invitation.data);
+      if (owner) candidates.add(owner);
     }
 
     const owners = new Map<string, OwnerState>();
@@ -277,12 +312,14 @@ export async function syncPlanningReachFor(viewer: string): Promise<PlanningReac
     const expected: PlanningReach = {
       uids: planningReachFrom(viewer, entries.values(), owners),
       ...groupPlannings,
+      maskedInvitationIds: maskedInvitationsFrom(viewer, invitations, owners),
     };
     if (stored.exists && samePlanningReach(stored.data(), expected)) return "unchanged";
     tx.set(reachRef, {
       uids: expected.uids,
       group_ids: expected.groupIds,
       masked_group_ids: expected.maskedGroupIds,
+      masked_invitation_ids: expected.maskedInvitationIds,
       updated_at: FieldValue.serverTimestamp(),
     });
     return stored.exists ? "updated" : "created";
@@ -353,6 +390,28 @@ export function planningShareChanged(
   after: Record<string, unknown> | undefined | null,
 ): boolean {
   return canSharePlanning(before) !== canSharePlanning(after);
+}
+
+/**
+ * Les invités dont l'invitation change après l'écriture d'un groupe : ceux
+ * ajoutés ou retirés de `invited_ids`, et tous les invités d'un groupe
+ * supprimé. Leur `masked_invitation_ids` peut bouger. Triés, sans doublon.
+ */
+export function invitationsToResync(before: GroupData, after: GroupData): string[] {
+  const invited = (g: GroupData): Set<string> =>
+    new Set(
+      Array.isArray(g?.invited_ids)
+        ? g.invited_ids.filter(
+            (v): v is string => typeof v === "string" && v.length > 0 && !v.includes("/"),
+          )
+        : [],
+    );
+  const a = invited(before);
+  const b = invited(after);
+  const changed = new Set<string>();
+  for (const id of a) if (!b.has(id)) changed.add(id);
+  for (const id of b) if (!a.has(id)) changed.add(id);
+  return [...changed].sort();
 }
 
 export const syncPlanningReachOnConfig = onDocumentWritten(
