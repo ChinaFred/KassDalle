@@ -1538,7 +1538,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     // Seuls des plannings partagés sont affichés, et ils arrivent encore :
     // des jours « Rien de prévu » seraient faux.
     if (sharedLoading && !view.mineShown) return const AppLoadingState();
-    if (meals.isEmpty && view.canPlan && view.mineShown && !sharedLoading) {
+    // Un membre d'un groupe garde les jours : c'est là qu'il suggère un plat.
+    if (meals.isEmpty &&
+        view.canPlan &&
+        view.mineShown &&
+        !sharedLoading &&
+        view.suggestGroups.isEmpty) {
       return _withSelectorOnWide(view, _buildPlannerEmptyState(theme));
     }
     return _buildPeriod(context, theme, meals, isWide, view);
@@ -2075,7 +2080,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               : 'Rien de prévu pour ${entry.value}',
           actionLabel: 'Suggérer un plat',
           actionIcon: Icons.lightbulb_outline,
-          onPick: isPast ? null : () => _suggestOnDay(day, entry.key),
+          onPick: _canSuggestOn(day, isPast: isPast)
+              ? () => _suggestOnDay(day, entry.key)
+              : null,
         ),
       );
       emptyRows.addAll(
@@ -2326,12 +2333,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Écrit le repas [recipe] le jour [day] dans le planning [target] et rend
-  /// son identifiant, ou `null` si l'écriture a échoué (signalée à l'écran
-  /// et au rapport d'erreurs).
+  /// son identifiant, ou `null` si l'écriture a échoué (signalée au rapport
+  /// d'erreurs, et à l'écran du planning si [showError]).
   Future<String?> _placeRecipeOnDay(
     DateTime day,
     Recipe recipe, {
     PlanningTarget target = const PlanningTarget.personal(),
+    bool showError = true,
   }) async {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return null;
@@ -2386,7 +2394,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
         context: {'group_id': ?target.groupId},
       );
-      if (mounted) context.showErrorSnackBar('Repas non enregistré : $e');
+      if (showError && mounted) {
+        context.showErrorSnackBar('Repas non enregistré : $e');
+      }
       return null;
     }
   }
@@ -2398,13 +2408,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// telle quelle, aux parts du groupe ; un nom libre ou une recette qu'il
   /// ne lit pas ouvre le sélecteur, pré-rempli du titre. La suggestion n'est
   /// pas modifiée : « Au planning » se calcule à l'affichage.
-  Future<void> _planSuggestion(MealSuggestion suggestion) async {
+  Future<PlannedSuggestion?> _planSuggestion(MealSuggestion suggestion) async {
     final group = ref
         .read(suggestionOwnerGroupsProvider)
         .where((g) => g.id == suggestion.groupId)
         .firstOrNull;
     final repo = ref.read(planningRepositoryProvider);
-    if (group == null || repo == null) return;
+    if (group == null || repo == null) {
+      throw const PlanSuggestionFailure(
+        'Ce groupe n\'est plus accessible. Réessayez.',
+      );
+    }
     final target = PlanningTarget.ofGroup(group);
     Recipe? recipe;
     final recipeId = suggestion.recipeId;
@@ -2418,47 +2432,41 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           stackTrace: stackTrace,
           context: {'group_id': group.id, 'recipe_id': recipeId},
         );
-        if (mounted) {
-          context.showErrorSnackBar(
-            'La recette n\'a pas pu être lue. Réessayez.',
-          );
-        }
-        return;
+        throw const PlanSuggestionFailure(
+          'La recette n\'a pas pu être lue. Réessayez.',
+        );
       }
     }
-    if (!mounted) return;
+    if (!mounted) return null;
     recipe ??= await _pickRecipeForDay(
       suggestion.day,
       initialQuery: suggestion.title,
     );
-    if (recipe == null || !mounted) return;
+    if (recipe == null || !mounted) return null;
     final mealId = await _placeRecipeOnDay(
       suggestion.day,
       recipe,
       target: target,
+      showError: false,
     );
-    if (mealId == null || !mounted) return;
-    final when = DateFormat('EEEE d MMMM', 'fr').format(suggestion.day);
-    context.showSuccessSnackBar(
-      'Repas planifié le $when pour ${group.name} : ${recipe.titre}.',
-      action: SnackBarAction(
-        label: 'Annuler',
-        onPressed: () async {
-          try {
-            await repo.deleteMeal(mealId);
-          } catch (e, stackTrace) {
-            reportUnexpectedError(
-              feature: 'planningScreen.undoPlanSuggestion',
-              error: e,
-              stackTrace: stackTrace,
-              context: {'group_id': group.id, 'meal_id': mealId},
-            );
-            if (mounted) {
-              context.showErrorSnackBar('Le repas n\'a pas pu être retiré.');
-            }
-          }
-        },
-      ),
+    if (mealId == null) {
+      throw const PlanSuggestionFailure('Repas non enregistré. Réessayez.');
+    }
+    return PlannedSuggestion(
+      title: recipe.titre,
+      mealId: mealId,
+      day: suggestion.day,
+      groupName: group.name,
+    );
+  }
+
+  /// On suggère un plat d'aujourd'hui à [lastSuggestionDay] : les règles
+  /// refusent un jour plus lointain.
+  bool _canSuggestOn(DateTime day, {required bool isPast}) {
+    if (isPast) return false;
+    final now = DateTime.now();
+    return !day.isAfter(
+      lastSuggestionDay(DateTime(now.year, now.month, now.day)),
     );
   }
 
@@ -2491,7 +2499,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           suggestion: s,
           planned: plannedMatchFor(s, groupMeals) != null,
         ),
-      if (withButton && !isPast)
+      if (withButton && _canSuggestOn(day, isPast: isPast))
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Wrap(

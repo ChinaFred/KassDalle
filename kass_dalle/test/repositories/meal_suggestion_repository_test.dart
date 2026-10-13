@@ -72,12 +72,25 @@ void main() {
     });
     expect(data['day'], '2026-10-17');
     expect(data['created_at'], isA<Timestamp>());
+    // L'identifiant imposé par les règles.
+    expect(id, 'gd_leo_2026-10-17_0');
+  });
+
+  test('un brouillon invalide est signalé au rapport, puis relancé', () async {
+    await expectLater(
+      repo.suggest(draft(title: 'a' * 61), 'leo'),
+      throwsArgumentError,
+    );
+    await pumpEventQueue();
+    expect(reports.features, ['meal_suggestions.suggest']);
   });
 
   test('cinq suggestions par auteur, groupe et jour au plus', () async {
-    for (var i = 0; i < kSuggestionsPerAuthorPerDay; i++) {
-      await repo.suggest(draft(title: 'Plat $i'), 'leo');
-    }
+    final ids = [
+      for (var i = 0; i < kSuggestionsPerAuthorPerDay; i++)
+        await repo.suggest(draft(title: 'Plat $i'), 'leo'),
+    ];
+    expect(ids, [for (var n = 0; n < 5; n++) 'gd_leo_2026-10-17_$n']);
     await expectLater(
       repo.suggest(draft(title: 'Un de trop'), 'leo'),
       throwsA(isA<SuggestionLimitReached>()),
@@ -105,6 +118,14 @@ void main() {
       'day': '2026-10-17',
       'free_title': 'Chez Jean',
     });
+    // Au-delà de la borne haute (aujourd'hui + 60 jours) : pas lue.
+    await firestore.collection('meal_suggestions').add({
+      'group_id': 'gd',
+      'group_owner_id': 'marie',
+      'author_uid': 'leo',
+      'day': '2027-06-01',
+      'free_title': 'Lointaine',
+    });
     final received = await repo.watchReceived('marie').first;
     expect(received.map((s) => s.title), ['Lasagnes']);
     final sent = await repo.watchSent('leo').first;
@@ -125,6 +146,14 @@ void main() {
     expect(received.map((s) => s.title), ['Lasagnes']);
     await pumpEventQueue();
     expect(reports.features, ['meal_suggestions.malformed']);
+  });
+
+  test('un identifiant retiré se réutilise', () async {
+    final first = await repo.suggest(draft(), 'leo');
+    await repo.suggest(draft(title: 'Autre'), 'leo');
+    final mine = await repo.watchSent('leo').first;
+    await repo.remove(mine.firstWhere((s) => s.id == first));
+    expect(await repo.suggest(draft(title: 'Encore'), 'leo'), first);
   });
 
   test(

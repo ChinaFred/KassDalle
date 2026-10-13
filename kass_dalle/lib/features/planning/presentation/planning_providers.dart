@@ -191,9 +191,17 @@ class PlanningRepository {
   /// par recette. Les refus sont attendus mais pas tus : un seul rapport par
   /// lot (`planning.shared_recipe_denied`), avec leur nombre et la première
   /// recette refusée. Toute autre erreur est relancée.
-  Future<Set<String>> readableRecipeIds(Iterable<String> ids) async {
+  Future<Set<String>> readableRecipeIds(Iterable<String> ids) async =>
+      (await readableRecipeTitles(ids)).keys.toSet();
+
+  /// Comme [readableRecipeIds], avec le titre actuel de chaque recette
+  /// lisible : la fenêtre des suggestions affiche ce titre plutôt que celui
+  /// copié dans la suggestion.
+  Future<Map<String, String>> readableRecipeTitles(Iterable<String> ids) async {
+    String titleOf(Map<String, dynamic>? data) =>
+        data?['titre'] is String ? data!['titre'] as String : '';
     final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
-    final readable = <String>{};
+    final readable = <String, String>{};
     for (var i = 0; i < unique.length; i += 30) {
       final chunk = unique.sublist(i, (i + 30).clamp(0, unique.length));
       try {
@@ -201,14 +209,16 @@ class PlanningRepository {
             .collection('recipes')
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
-        readable.addAll(snap.docs.map((d) => d.id));
+        for (final d in snap.docs) {
+          readable[d.id] = titleOf(d.data());
+        }
       } on FirebaseException catch (e, st) {
         if (e.code != 'permission-denied') rethrow;
         final denied = <String>[];
         for (final id in chunk) {
           try {
             final doc = await _db.collection('recipes').doc(id).get();
-            if (doc.exists) readable.add(id);
+            if (doc.exists) readable[id] = titleOf(doc.data());
           } on FirebaseException catch (refusal) {
             if (refusal.code != 'permission-denied') rethrow;
             denied.add(id);

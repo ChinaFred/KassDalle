@@ -18,9 +18,38 @@ import 'meal_suggestion_providers.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
 
+/// Le repas posé par « Planifier ce jour-là » : de quoi dire ce qui a été
+/// fait, et l'annuler.
+class PlannedSuggestion {
+  final String title;
+  final String mealId;
+  final DateTime day;
+  final String groupName;
+
+  const PlannedSuggestion({
+    required this.title,
+    required this.mealId,
+    required this.day,
+    required this.groupName,
+  });
+}
+
+/// « Planifier ce jour-là » a échoué ; [message] se lit dans la fenêtre.
+/// L'erreur est déjà au rapport.
+class PlanSuggestionFailure implements Exception {
+  final String message;
+  const PlanSuggestionFailure(this.message);
+
+  @override
+  String toString() => 'PlanSuggestionFailure: $message';
+}
+
 /// Ce que le planning fait d'une suggestion retenue par le propriétaire :
-/// la poser dans le planning du groupe, ce jour-là.
-typedef PlanSuggestion = Future<void> Function(MealSuggestion suggestion);
+/// la poser dans le planning du groupe, ce jour-là. `null` si le
+/// propriétaire a renoncé (sélecteur fermé) ; [PlanSuggestionFailure] en
+/// cas d'échec.
+typedef PlanSuggestion =
+    Future<PlannedSuggestion?> Function(MealSuggestion suggestion);
 
 /// Les deux listes de la fenêtre : les suggestions reçues (propriétaire) et
 /// les suggestions envoyées (membre).
@@ -177,6 +206,7 @@ class _PastToggleRow extends _Row {
   const _PastToggleRow(this.count);
 }
 
+/// La fenêtre ouverte sur un jour masque les autres : ce bouton les rend.
 class _EarlierDaysRow extends _Row {
   const _EarlierDaysRow();
 }
@@ -211,7 +241,21 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
   SuggestionsMode? _mode;
   late String? _groupFilter = widget.groupId;
   late DateTime? _focusDay = widget.focusDay;
-  bool _pastExpanded = false;
+
+  /// Ouverte sur un jour passé, la fenêtre déplie les jours passés.
+  late bool _pastExpanded =
+      widget.focusDay != null && widget.focusDay!.isBefore(_today());
+
+  /// Le `Scaffold` propre à la fenêtre : ses messages s'y affichent, au
+  /// lieu de passer sous la feuille, dans l'écran du planning.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  BuildContext get _snackContext => _scaffoldKey.currentContext ?? context;
+
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
 
   /// Suggestions de plus de [kSuggestionHistoryDays] jours, lues à la
   /// demande ; `null` tant qu'on ne les a pas demandées.
@@ -226,6 +270,10 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
   /// s'ouvre, faux si elle n'est pas partagée avec lui.
   final Map<String, bool> _readable = {};
   final Set<String> _readablePending = {};
+
+  /// Titre actuel des recettes lisibles : affiché à la place du titre copié
+  /// dans la suggestion (revue sécurité v0.23.58).
+  final Map<String, String> _titles = {};
 
   SuggestionsMode _modeFor(bool owner, bool member) {
     final chosen = _mode;
@@ -276,11 +324,13 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
     _readablePending.addAll(ids);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final readable = await repo.readableRecipeIds(ids);
+        final readable = await repo.readableRecipeTitles(ids);
         if (!mounted) return;
         setState(() {
           for (final id in ids) {
-            _readable[id] = readable.contains(id);
+            _readable[id] = readable.containsKey(id);
+            final title = readable[id];
+            if (title != null && title.trim().isNotEmpty) _titles[id] = title;
           }
           _readablePending.removeAll(ids);
         });
@@ -303,14 +353,51 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
     });
   }
 
+  /// « Planifier ce jour-là » ; le message, et son « Annuler », s'affichent
+  /// dans la fenêtre.
   Future<void> _plan(MealSuggestion s) async {
     if (_planning.contains(s.id)) return;
     setState(() => _planning.add(s.id));
+    PlannedSuggestion? planned;
     try {
-      await widget.onPlan(s);
+      planned = await widget.onPlan(s);
+    } on PlanSuggestionFailure catch (failure) {
+      if (mounted) _snackContext.showErrorSnackBar(failure.message);
+      return;
     } finally {
       if (mounted) setState(() => _planning.remove(s.id));
     }
+    if (planned == null || !mounted) return;
+    final done = planned;
+    final repo = ref.read(planningRepositoryProvider);
+    final snack = _snackContext;
+    if (!snack.mounted) return;
+    snack.showSuccessSnackBar(
+      'Repas planifié le ${_dayFormat.format(done.day)} pour '
+      '${done.groupName} : ${done.title}.',
+      action: repo == null
+          ? null
+          : SnackBarAction(
+              label: 'Annuler',
+              onPressed: () async {
+                try {
+                  await repo.deleteMeal(done.mealId);
+                } catch (e, stackTrace) {
+                  reportUnexpectedError(
+                    feature: 'meal_suggestions.undo_plan',
+                    error: e,
+                    stackTrace: stackTrace,
+                    context: {'meal_id': done.mealId},
+                  );
+                  if (snack.mounted) {
+                    snack.showErrorSnackBar(
+                      'Le repas n\'a pas pu être retiré.',
+                    );
+                  }
+                }
+              },
+            ),
+    );
   }
 
   @override
@@ -330,10 +417,10 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
     final async = ref.watch(
       received ? receivedSuggestionsProvider : sentSuggestionsProvider,
     );
-    final otherCount = received
-        ? (ref.watch(sentSuggestionsProvider).value?.length ?? 0)
-        : ref.watch(upcomingReceivedCountProvider);
-    final ownCount = async.value?.length ?? 0;
+    // Le même décompte dans les deux onglets : les jours à venir, comme le
+    // badge.
+    final receivedCount = ref.watch(upcomingReceivedCountProvider);
+    final sentCount = ref.watch(upcomingSentCountProvider);
 
     // Les repas des plannings de groupe : « Déjà prévu », « Au planning ».
     final meals = <PlannedMeal>[
@@ -380,72 +467,83 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 8, 4),
-          child: Row(
-            children: [
-              Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
-              if (widget.showClose)
-                TextButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text('Fermer'),
-                ),
-            ],
-          ),
-        ),
-        if (owner && member)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
-            child: SegmentedButton<SuggestionsMode>(
-              segments: [
-                ButtonSegment(
-                  value: SuggestionsMode.received,
-                  label: Text('Reçues (${received ? ownCount : otherCount})'),
-                ),
-                ButtonSegment(
-                  value: SuggestionsMode.sent,
-                  label: Text('Envoyées (${received ? otherCount : ownCount})'),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (next) => setState(() {
-                _mode = next.single;
-                _groupFilter = null;
-                _focusDay = null;
-                _older = null;
-                _olderFailed = false;
-                _pastExpanded = false;
-              }),
-            ),
-          ),
-        if (groups.length > 1)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-            child: Row(
-              children: [
-                ChoiceChip(
-                  label: const Text('Tous'),
-                  selected: _groupFilter == null,
-                  onSelected: (_) => setState(() => _groupFilter = null),
-                ),
-                for (final g in groups) ...[
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: Text(g.name),
-                    selected: _groupFilter == g.id,
-                    onSelected: (_) => setState(() => _groupFilter = g.id),
+    return ScaffoldMessenger(
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: Colors.transparent,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(title, style: theme.textTheme.titleLarge),
                   ),
+                  if (widget.showClose)
+                    TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Fermer'),
+                    ),
                 ],
-              ],
+              ),
             ),
-          ),
-        const Divider(height: 1),
-        Expanded(child: body),
-      ],
+            if (owner && member)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
+                child: SegmentedButton<SuggestionsMode>(
+                  segments: [
+                    ButtonSegment(
+                      value: SuggestionsMode.received,
+                      label: Text('Reçues ($receivedCount)'),
+                    ),
+                    ButtonSegment(
+                      value: SuggestionsMode.sent,
+                      label: Text('Envoyées ($sentCount)'),
+                    ),
+                  ],
+                  selected: {mode},
+                  onSelectionChanged: (next) => setState(() {
+                    _mode = next.single;
+                    _groupFilter = null;
+                    _focusDay = null;
+                    _older = null;
+                    _olderFailed = false;
+                    _pastExpanded = false;
+                  }),
+                ),
+              ),
+            if (groups.length > 1)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Tous'),
+                      selected: _groupFilter == null,
+                      onSelected: (_) => setState(() => _groupFilter = null),
+                    ),
+                    for (final g in groups) ...[
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: Text(g.name),
+                        selected: _groupFilter == g.id,
+                        onSelected: (_) => setState(() => _groupFilter = g.id),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            const Divider(height: 1),
+            Expanded(child: body),
+          ],
+        ),
+      ),
     );
   }
 
@@ -485,23 +583,20 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
                 : 'Suggérez un plat depuis un jour du planning d\'un groupe, '
                       'ou depuis une fiche recette.',
           ),
-          if (_older == null && !_olderLoading)
-            Center(
-              child: TextButton(
-                onPressed: () => _loadOlder(mode),
-                child: const Text('Voir les plus anciennes'),
-              ),
-            ),
+          _olderRow(mode),
         ],
       );
     }
 
     final focus = _focusDay;
+    final focusPast = focus != null && focus.isBefore(today);
     final rows = <_Row>[];
-    var earlierHidden = false;
+    var othersHidden = false;
     for (final entry in upcoming.entries) {
-      if (focus != null && entry.key.isBefore(focus)) {
-        earlierHidden = true;
+      // Ouverte sur un jour : les jours d'avant, ou tous les jours à venir si
+      // ce jour est passé, sont masqués derrière « Afficher tous les jours ».
+      if (focus != null && (focusPast || entry.key.isBefore(focus))) {
+        othersHidden = true;
         continue;
       }
       rows.add(_DayRow(entry.key, past: false));
@@ -509,17 +604,21 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
         rows.add(_SuggestionRow(s, past: false));
       }
     }
-    if (earlierHidden) rows.insert(0, const _EarlierDaysRow());
     final pastCount = past.values.fold<int>(0, (n, l) => n + l.length);
-    if (pastCount > 0 || _older == null || older.isNotEmpty) {
-      rows.add(_PastToggleRow(pastCount + older.length));
-    }
-    if (_pastExpanded) {
-      // Les jours passés, du plus récent au plus ancien.
+    // Sans jour passé dans la fenêtre lue, pas de section repliée : « Voir
+    // les plus anciennes » vient directement.
+    if (pastCount > 0) rows.add(_PastToggleRow(pastCount));
+    if (_pastExpanded || pastCount == 0) {
+      // Les jours passés, du plus récent au plus ancien ; ouverte sur un jour
+      // passé, la liste commence à ce jour.
       for (final day in [
         ...past.keys.toList().reversed,
         ...olderByDay.keys.toList().reversed,
       ]) {
+        if (focusPast && day.isAfter(focus)) {
+          othersHidden = true;
+          continue;
+        }
         rows.add(_DayRow(day, past: true));
         for (final s in past[day] ?? olderByDay[day]!) {
           rows.add(_SuggestionRow(s, past: true));
@@ -527,6 +626,7 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
       }
       rows.add(const _OlderRow());
     }
+    if (othersHidden) rows.insert(0, const _EarlierDaysRow());
 
     return ListView.builder(
       controller: widget.scrollController,
@@ -560,8 +660,8 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextButton.icon(
               onPressed: () => setState(() => _focusDay = null),
-              icon: const Icon(Icons.expand_less),
-              label: const Text('Afficher aussi les jours précédents'),
+              icon: const Icon(Icons.unfold_more),
+              label: const Text('Afficher tous les jours'),
             ),
           ),
         ),
@@ -585,7 +685,21 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
         onRetry: () => _loadOlder(mode),
       );
     }
-    if (_older != null) return const SizedBox.shrink();
+    final older = _older;
+    if (older != null) {
+      if (older.isNotEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text(
+            'Aucune suggestion plus ancienne.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
     return Center(
       child: TextButton(
         onPressed: () => _loadOlder(mode),
@@ -675,7 +789,11 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
               locked ? Icons.lock_outline : Icons.menu_book_outlined,
               size: AppIconSize.small,
             ),
-      title: Text(s.title),
+      // Chez le propriétaire, une recette lisible prend son titre actuel ; le
+      // titre copié ne sert qu'à une recette qu'il ne lit pas.
+      title: Text(
+        received && readable ? (_titles[recipeId] ?? s.title) : s.title,
+      ),
       onTap: readable
           ? () => context.push(recipeLocationFor(recipeId: recipeId))
           : null,
@@ -726,7 +844,7 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
           : IconButton(
               tooltip: 'Retirer ma suggestion',
               icon: const Icon(Icons.delete_outline),
-              onPressed: () => removeSuggestionWithUndo(context, ref, s),
+              onPressed: () => removeSuggestionWithUndo(_snackContext, ref, s),
             ),
     );
   }

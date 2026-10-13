@@ -236,7 +236,6 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             icon: const Icon(Icons.calendar_month_outlined),
                             tooltip: 'Planifier',
                             iconSize: AppIconSize.small,
-                            visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),
                         if (widget.onSuggest != null)
@@ -245,7 +244,6 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             icon: const Icon(Icons.lightbulb_outline),
                             tooltip: 'Suggérer pour un planning de groupe',
                             iconSize: AppIconSize.small,
-                            visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),
                         if (onCreateShoppingList != null)
@@ -254,7 +252,6 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             icon: const Icon(Icons.add_shopping_cart),
                             tooltip: 'Ajouter aux courses',
                             iconSize: AppIconSize.small,
-                            visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),
                       ],

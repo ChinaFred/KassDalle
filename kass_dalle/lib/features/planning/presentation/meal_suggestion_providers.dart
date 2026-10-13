@@ -78,6 +78,17 @@ final upcomingReceivedCountProvider = Provider.autoDispose<int>((ref) {
   );
 });
 
+/// Les suggestions envoyées des jours à venir, aujourd'hui compris, pour les
+/// groupes actifs de l'auteur : l'onglet « Envoyées ».
+final upcomingSentCountProvider = Provider.autoDispose<int>((ref) {
+  final groups = {for (final g in ref.watch(suggestableGroupsProvider)) g.id};
+  final sent = ref.watch(sentSuggestionsProvider).value ?? const [];
+  return upcomingSuggestionCount(
+    sent.where((s) => groups.contains(s.groupId)),
+    DateTime.now(),
+  );
+});
+
 /// Les recettes qu'un membre peut suggérer : les siennes validées et celles,
 /// validées et non privées, des membres de ses groupes. Triées par titre,
 /// sans doublon. Lues une fois par ouverture de la feuille.

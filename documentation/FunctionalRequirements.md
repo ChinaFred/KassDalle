@@ -921,8 +921,9 @@ lui-même celles qu'il retient.
   compris. Un invité, un compte hors du groupe, le propriétaire lui-même et les
   membres d'un groupe en pause (5.7) ne suggèrent rien. Les règles Firestore
   l'imposent.
-- **Où.** Sur un jour d'aujourd'hui ou à venir du planning du groupe, quand ce
-  planning est affiché. Un jour sans repas du groupe porte « Rien de prévu ·
+- **Où.** Sur un jour d'aujourd'hui ou des 59 jours suivants du planning du groupe,
+  quand ce planning est affiché ; un membre sans aucun repas sur la période garde la
+  liste des jours, pour y suggérer. Un jour sans repas du groupe porte « Rien de prévu ·
   Suggérer un plat » ; un jour avec des repas porte « Suggérer un plat » sous les
   repas du groupe. Aucun bouton sur un jour passé. Depuis une fiche recette, l'icône
   ampoule « Suggérer pour un planning de groupe », à côté de « Planifier » et
@@ -935,16 +936,20 @@ lui-même celles qu'il retient.
   l'IA : une suggestion ne coûte aucun appel d'IA. Champ « Un mot pour Marie
   (facultatif) », 200 caractères au plus. « Envoyer la suggestion » s'active dès
   qu'un plat est choisi. Depuis une fiche recette, la feuille demande aussi le
-  « Groupe » (s'il y en a plusieurs) et le « Jour » (à partir d'aujourd'hui). Succès :
+  « Groupe » (s'il y en a plusieurs) et le « Jour » (d'aujourd'hui à 59 jours après).
+  Une erreur de lecture des recettes se dit dans la feuille : « Les recettes n'ont pas
+  pu être lues. Réessayez. » ; un nom libre reste possible. Succès :
   « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée. Réessayez. », la
   feuille reste ouverte et la saisie est conservée. Feuille du bas sur un téléphone,
-  boîte de dialogue de 480 px sur grand écran ; Ctrl+Entrée ou Ctrl+S envoient,
-  Échap ferme.
+  boîte de dialogue de 480 px sur grand écran ; Ctrl+Entrée ou Ctrl+S (Cmd sur Mac)
+  envoient, Échap ferme.
 - **Une recette privée se suggère par son titre.** La feuille le dit : « Recette
   privée : Marie ne verra que son titre. » Le propriétaire lit ce titre, avec un
-  cadenas « Recette non partagée », sans pouvoir ouvrir la fiche.
-- **Cinq suggestions au plus** par membre, par groupe et par jour. Au-delà, la
-  feuille dit « Vous avez déjà fait 5 suggestions pour ce jour. »
+  cadenas « Recette non partagée », sans pouvoir ouvrir la fiche. Une recette qu'il
+  lit s'affiche sous son titre actuel, pas sous celui copié à l'envoi.
+- **Cinq suggestions au plus** par membre, par groupe et par jour, imposées par les
+  règles Firestore. Au-delà, la feuille dit « Vous avez déjà fait 5 suggestions pour
+  ce jour. » Une suggestion retirée libère sa place.
 - **Pas de statut.** Le propriétaire n'accepte ni ne décline. Une suggestion déjà
   reprise par le planning du groupe ce jour-là (même recette ou même titre) porte
   « Au planning » avec une coche ; rien n'est enregistré pour cela.
@@ -958,9 +963,11 @@ lui-même celles qu'il retient.
   la barre du planning, sur les deux tailles d'écran, porte le nombre de suggestions
   des jours à venir (aujourd'hui compris). Il n'apparaît qu'au propriétaire d'un
   groupe actif qui compte un autre membre. Un jour du planning du groupe porte la
-  ligne « 2 suggestions » ; un appui ouvre la fenêtre sur ce jour. Un utilisateur
+  ligne « 2 suggestions » ; un appui ouvre la fenêtre sur ce jour (« Afficher tous les
+  jours » rend les autres), jours passés dépliés si ce jour est passé. Un utilisateur
   propriétaire d'un groupe et membre d'un autre bascule entre « Reçues (n) » et
-  « Envoyées (n) ».
+  « Envoyées (n) » ; n compte les suggestions des jours à venir, comme le badge, et
+  ne change pas d'un onglet à l'autre.
 - **La fenêtre des suggestions.** Une puce par groupe (« Tous » d'abord) quand il y
   en a plusieurs ; une section par jour, d'aujourd'hui vers l'avenir, qui dit « Déjà
   prévu : … » ou « Rien de prévu ce jour-là ». Chaque suggestion : son titre (icône
@@ -968,10 +975,14 @@ lui-même celles qu'il retient.
   nom libre), « Proposé par Léo · il y a 2 jours », le mot sur trois lignes, dépliable.
   Sur un jour à venir, « Planifier ce jour-là » pose une recette lisible dans le
   planning du groupe, aux parts du groupe, avec « Annuler » ; un nom libre ou une
-  recette privée ouvre le sélecteur, pré-rempli du titre. Les jours passés se
-  replient sous « Jours passés (n) », sans bouton ; la fenêtre lit 90 jours, puis
-  « Voir les plus anciennes ». Feuille à 75 % de la hauteur sur un téléphone, boîte de
-  dialogue de 640 px sur grand écran.
+  recette privée ouvre le sélecteur, pré-rempli du titre. Le message « Repas planifié
+  le samedi 17 octobre pour Famille Dupont : Lasagnes. », avec « Annuler », s'affiche
+  dans la fenêtre, comme « Suggestion retirée. ». Les jours passés se replient sous
+  « Jours passés (n) », sans bouton ; la fenêtre lit 90 jours, puis « Voir les plus
+  anciennes » — directement, sans section repliée, quand aucun jour passé n'a de
+  suggestion. Sans suggestion plus ancienne : « Aucune suggestion plus ancienne. ».
+  Feuille à 75 % de la hauteur sur un téléphone, boîte de dialogue de 640 px sur grand
+  écran.
 - **Rien n'est purgé.** Une suggestion reste visible après son jour. Elle disparaît
   quand son auteur la retire, quand le groupe est supprimé, ou quand son auteur
   quitte le groupe ou en est retiré.

@@ -13,9 +13,28 @@ const kSuggestionNoteMax = 200;
 /// Longueur maximale du titre copié d'une recette (`recipe_titre`).
 const kSuggestionRecipeTitleMax = 200;
 
-/// Suggestions au plus par auteur, par groupe et par jour. Tenu par le
-/// client : une règle Firestore ne compte pas des documents.
+/// Suggestions au plus par auteur, par groupe et par jour. Tenu par les
+/// règles : l'identifiant d'une suggestion se termine par `_0` à `_4`.
 const kSuggestionsPerAuthorPerDay = 5;
+
+/// Jours après aujourd'hui où l'on suggère encore un plat : les règles
+/// admettent un jour dont le début tombe au plus tard soixante jours après
+/// l'heure du serveur ; 59 garde une marge pour un fuseau en avance sur UTC.
+const kSuggestionDaysAhead = 59;
+
+/// Le dernier jour qu'on peut viser depuis [today].
+DateTime lastSuggestionDay(DateTime today) =>
+    DateTime(today.year, today.month, today.day + kSuggestionDaysAhead);
+
+/// L'identifiant imposé par les règles :
+/// `{group_id}_{author_uid}_{AAAA-MM-JJ}_{n}`, n de 0 à
+/// [kSuggestionsPerAuthorPerDay] − 1. Il borne le volume côté serveur.
+String mealSuggestionId({
+  required String groupId,
+  required String authorUid,
+  required String dayKey,
+  required int n,
+}) => '${groupId}_${authorUid}_${dayKey}_$n';
 
 /// Profondeur des suggestions lues en continu, en jours avant aujourd'hui.
 /// Les plus anciennes se lisent à la demande (« Voir les plus anciennes »).

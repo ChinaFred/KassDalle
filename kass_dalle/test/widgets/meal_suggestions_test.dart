@@ -12,6 +12,7 @@ import 'package:kass_dalle/features/planning/domain/meal_suggestion.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/domain/planning_reach.dart';
 import 'package:kass_dalle/features/planning/presentation/meal_suggestion_providers.dart';
+import 'package:kass_dalle/features/planning/presentation/meal_suggestions_window.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_screen.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
@@ -135,7 +136,10 @@ void main() {
 
     expect(find.text('Suggestion envoyée à Marie.'), findsOneWidget);
     final docs = await backend.firestore.collection('meal_suggestions').get();
-    final data = docs.docs.single.data();
+    final doc = docs.docs.single;
+    expect(doc.id, startsWith('gd_uid-test_'));
+    expect(doc.id, endsWith('_0'));
+    final data = doc.data();
     expect(data['recipe_id'], 'r1');
     expect(data['recipe_titre'], 'Lasagnes');
     expect(data['group_owner_id'], 'marie');
@@ -197,6 +201,44 @@ void main() {
     expect(find.text('« Pour l\'anniversaire de Léo »'), findsOneWidget);
     expect(find.text('Rien de prévu ce jour-là'), findsOneWidget);
     expect(find.text('Planifier ce jour-là'), findsOneWidget);
+    // Aucun jour passé : « Voir les plus anciennes » vient directement.
+    expect(find.textContaining('Jours passés'), findsNothing);
+    expect(find.text('Voir les plus anciennes'), findsOneWidget);
+    await tester.tap(find.text('Voir les plus anciennes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Aucune suggestion plus ancienne.'), findsOneWidget);
+  });
+
+  testWidgets('« Mes suggestions » retire, et le dit dans la fenêtre', (
+    tester,
+  ) async {
+    final backend = await pump(
+      tester,
+      role: UserRole.reader,
+      group: dupont(),
+      suggestions: [lasagnes()],
+    );
+
+    await tester.tap(find.byTooltip('Mes suggestions'));
+    await tester.pumpAndSettle();
+    final window = find.byType(MealSuggestionsView);
+    expect(
+      find.descendant(of: window, matching: find.text('Lasagnes')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(
+        of: window,
+        matching: find.byTooltip('Retirer ma suggestion'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: window, matching: find.text('Suggestion retirée.')),
+      findsOneWidget,
+    );
+    final docs = await backend.firestore.collection('meal_suggestions').get();
+    expect(docs.docs, isEmpty);
   });
 
   testWidgets('le propriétaire sans suggestion lit l\'état vide', (

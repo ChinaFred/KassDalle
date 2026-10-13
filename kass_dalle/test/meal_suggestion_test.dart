@@ -43,6 +43,27 @@ void main() {
     });
   });
 
+  group('identifiant et bornes du jour', () {
+    test('identifiant imposé par les règles', () {
+      expect(
+        mealSuggestionId(
+          groupId: 'gd',
+          authorUid: 'leo',
+          dayKey: '2026-10-17',
+          n: 4,
+        ),
+        'gd_leo_2026-10-17_4',
+      );
+    });
+
+    test('dernier jour qu\'on peut viser : aujourd\'hui + 59', () {
+      expect(
+        lastSuggestionDay(DateTime(2026, 10, 13, 18)),
+        DateTime(2026, 12, 11),
+      );
+    });
+  });
+
   group('MealSuggestionDraft', () {
     final day = DateTime(2026, 10, 17, 15);
 

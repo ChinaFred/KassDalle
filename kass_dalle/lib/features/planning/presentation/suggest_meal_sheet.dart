@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../../core/presentation/adaptive_sheet.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/platform_utils.dart';
+import '../../../core/widgets/app_shortcuts.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/domain/family_group.dart';
@@ -133,8 +135,8 @@ class _SuggestMealSheetState extends ConsumerState<SuggestMealSheet> {
       // libre, et on dit que les recettes manquent.
       recipes = recipesAsync.value ?? const [];
       if (mounted) {
-        context.showErrorSnackBar(
-          'Les recettes n\'ont pas pu être lues. Réessayez.',
+        setState(
+          () => _error = 'Les recettes n\'ont pas pu être lues. Réessayez.',
         );
       }
     }
@@ -166,7 +168,8 @@ class _SuggestMealSheetState extends ConsumerState<SuggestMealSheet> {
       context: context,
       initialDate: _day ?? today,
       firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
+      // Les règles refusent un jour plus lointain que soixante jours.
+      lastDate: lastSuggestionDay(today),
       helpText: 'Jour du repas',
     );
     if (picked == null || !mounted) return;
@@ -235,164 +238,174 @@ class _SuggestMealSheetState extends ConsumerState<SuggestMealSheet> {
       if (day != null && widget.fixedGroupAndDay) _dayFormat.format(day),
     ].join(' · ');
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): _send,
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true): _send,
-        const SingleActivator(LogicalKeyboardKey.escape): () =>
-            Navigator.of(context).maybePop(),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Padding(
-          // Sur un téléphone, le bouton reste au-dessus du clavier.
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Suggérer un plat', style: theme.textTheme.titleLarge),
-                if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                if (!widget.fixedGroupAndDay && widget.groups.length > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: DropdownButtonFormField<String>(
-                      initialValue: group?.id,
-                      decoration: const InputDecoration(
-                        labelText: 'Groupe',
-                        border: OutlineInputBorder(),
+    // Ctrl/Cmd+S par les raccourcis communs, Ctrl/Cmd+Entrée en plus. Échap
+    // ferme déjà la feuille comme la boîte de dialogue.
+    final wide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+    return AppShortcuts(
+      onSave: _send,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): _send,
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true): _send,
+        },
+        child: Focus(
+          autofocus: true,
+          child: Padding(
+            // Sur un téléphone, le bouton reste au-dessus du clavier ; la boîte
+            // de dialogue d'un grand écran se place seule.
+            padding: EdgeInsets.only(
+              bottom: wide ? 0 : MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Suggérer un plat', style: theme.textTheme.titleLarge),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                      items: [
-                        for (final g in widget.groups)
-                          DropdownMenuItem(value: g.id, child: Text(g.name)),
-                      ],
-                      onChanged: _sending
-                          ? null
-                          : (id) => setState(
-                              () => _group = widget.groups.firstWhere(
-                                (g) => g.id == id,
-                              ),
-                            ),
-                    ),
-                  ),
-                if (!widget.fixedGroupAndDay)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.event_outlined),
-                    title: const Text('Jour'),
-                    subtitle: Text(
-                      day == null ? 'Choisir un jour' : _dayFormat.format(day),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _sending ? null : _pickDay,
-                  ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.restaurant_menu_outlined),
-                  title: const Text('Plat'),
-                  subtitle: Text(
-                    dish == null ? 'Choisir une recette' : dish.titre,
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _sending ? null : _pickDish,
-                ),
-                if (dish != null && dish.id.isNotEmpty && dish.isPrivate)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.lock_outline,
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Recette privée : $ownerName ne verra que son '
-                            'titre.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_freeNameTooLong)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Le nom ne doit pas dépasser $kSuggestionFreeTitleMax '
-                      'caractères.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _noteCtrl,
-                  enabled: !_sending,
-                  maxLength: kSuggestionNoteMax,
-                  minLines: 1,
-                  maxLines: 3,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    labelText: 'Un mot pour $ownerName (facultatif)',
-                    hintText: 'Pour l\'anniversaire de Léo',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      _error!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    TextButton(
-                      onPressed: _sending
-                          ? null
-                          : () => Navigator.of(context).maybePop(),
-                      child: const Text('Annuler'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _canSend ? _send : null,
-                      icon: _sending
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send_outlined),
-                      label: const Text('Envoyer la suggestion'),
                     ),
                   ],
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  if (!widget.fixedGroupAndDay && widget.groups.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: DropdownButtonFormField<String>(
+                        initialValue: group?.id,
+                        decoration: const InputDecoration(
+                          labelText: 'Groupe',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final g in widget.groups)
+                            DropdownMenuItem(value: g.id, child: Text(g.name)),
+                        ],
+                        onChanged: _sending
+                            ? null
+                            : (id) => setState(
+                                () => _group = widget.groups.firstWhere(
+                                  (g) => g.id == id,
+                                ),
+                              ),
+                      ),
+                    ),
+                  if (!widget.fixedGroupAndDay)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event_outlined),
+                      title: const Text('Jour'),
+                      subtitle: Text(
+                        day == null
+                            ? 'Choisir un jour'
+                            : _dayFormat.format(day),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _sending ? null : _pickDay,
+                    ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.restaurant_menu_outlined),
+                    title: const Text('Plat'),
+                    subtitle: Text(
+                      dish == null ? 'Choisir une recette' : dish.titre,
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _sending ? null : _pickDish,
+                  ),
+                  if (dish != null && dish.id.isNotEmpty && dish.isPrivate)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Recette privée : $ownerName ne verra que son '
+                              'titre.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_freeNameTooLong)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Le nom ne doit pas dépasser $kSuggestionFreeTitleMax '
+                        'caractères.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _noteCtrl,
+                    enabled: !_sending,
+                    maxLength: kSuggestionNoteMax,
+                    minLines: 1,
+                    maxLines: 3,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Un mot pour $ownerName (facultatif)',
+                      hintText: 'Pour l\'anniversaire de Léo',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _error!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: _sending
+                            ? null
+                            : () => Navigator.of(context).maybePop(),
+                        child: const Text('Annuler'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _canSend ? _send : null,
+                        icon: _sending
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.send_outlined),
+                        label: const Text('Envoyer la suggestion'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

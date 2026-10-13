@@ -1506,16 +1506,22 @@ recette ou même titre sans casse). Aucun appel d'IA, aucun poste de coût.
 | `group_id` | `String` | Le groupe, 128 caractères au plus |
 | `group_owner_id` | `String` | Le propriétaire du groupe, **dénormalisé** et vérifié à la création contre `groups/{group_id}.owner_id` (figé) : la requête du propriétaire, `group_owner_id == moi`, est prouvable par les règles |
 | `author_uid` | `String` | L'auteur ; égal à l'appelant à la création |
-| `day` | `String` | Le jour visé, `AAAA-MM-JJ` (jour local de l'auteur). Les règles en vérifient la forme, pas la date : elles ne connaissent pas le fuseau de l'auteur ; le client ne propose que des jours d'aujourd'hui ou à venir |
+| `day` | `String` | Le jour visé, `AAAA-MM-JJ` (jour local de l'auteur). Les règles exigent une date réelle (`isSuggestionDay` : mois 1 à 12, jour cohérent via `timestamp.date`) dont la fin tombe au plus tôt un jour avant `request.time` (la veille UTC passe, pour le décalage de fuseau) et le début au plus tard 60 jours après. Le client propose aujourd'hui à aujourd'hui + 59 jours (`kSuggestionDaysAhead`, marge d'un fuseau en avance sur UTC) |
 | `recipe_id` | `String?` | La recette suggérée — exclusif de `free_title` |
-| `recipe_titre` | `String?` | Le titre de la recette, **copié** (200 caractères au plus) : le propriétaire le lit même si la recette est privée, sans ouvrir la fiche (« Recette non partagée ») |
+| `recipe_titre` | `String?` | Le titre de la recette, **copié** (200 caractères au plus) : le propriétaire le lit si la recette lui est fermée (privée), sans ouvrir la fiche (« Recette non partagée »). Une recette qu'il lit s'affiche sous son titre actuel, relu par `PlanningRepository.readableRecipeTitles` : un auteur ne fait pas passer un autre texte sous le nom d'une recette ouverte |
 | `free_title` | `String?` | Un nom libre, 1 à 60 caractères — exclusif de `recipe_id` et `recipe_titre` |
 | `note` | `String?` | Le mot de l'auteur, 200 caractères au plus ; absent s'il est vide |
 | `created_at` | `Timestamp` | Heure du serveur (`request.time`), seule valeur admise |
 
+**Identifiant imposé.** `{group_id}_{author_uid}_{day}_{n}`, n de 0 à 4
+(`suggestionIds`, règles ; `mealSuggestionId`, client). Le client lit ses suggestions du
+jour pour ce groupe (trois égalités, sans index composite) et prend le premier n libre ;
+une suggestion retirée libère le sien, et « Annuler » la recrée sous le même identifiant.
+
 **Lectures du client** (`MealSuggestionRepository`, `features/planning/data/`) : le
-propriétaire, `group_owner_id == moi` et `day >= aujourd'hui − 90 jours`, triées par `day`
-(`watchReceived`) ; l'auteur, `author_uid == moi` sur la même fenêtre (`watchSent`).
+propriétaire, `group_owner_id == moi` et `day` d'aujourd'hui − 90 jours à aujourd'hui +
+60 jours, triées par `day`, 500 au plus (`watchReceived`) ; l'auteur, `author_uid == moi`
+sur la même fenêtre (`watchSent`).
 « Voir les plus anciennes » lit `day <` cette borne, du plus récent au plus ancien, 100 au plus
 (`loadOlder`). Quatre index composites : (`group_owner_id`, `day` croissant et décroissant),
 (`author_uid`, `day` croissant et décroissant). Un document mal formé est écarté, et signalé
@@ -1524,11 +1530,10 @@ propriétaire d'un groupe actif qui compte un autre membre, ou pour un membre d'
 d'un autre propriétaire (`suggestionOwnerGroups`, `suggestableGroups`).
 
 **Plafond.** Cinq suggestions au plus par auteur, par groupe et par jour
-(`kSuggestionsPerAuthorPerDay`), vérifiées par le client avant l'écriture (requête à trois
-égalités `author_uid`, `group_id`, `day`, sans index composite). Une règle Firestore ne compte
-pas des documents : un client modifié peut dépasser ce nombre, borné par la taille de chaque
-champ. Le risque est un document de quelques centaines d'octets de plus par écriture, lu par
-un seul propriétaire.
+(`kSuggestionsPerAuthorPerDay`), **tenu par les règles** (revue sécurité v0.23.58) : une
+sixième n'a pas d'identifiant admis, et réécrire un identifiant pris est une mise à jour,
+refusée. Avec le jour borné à soixante et un jours, un membre écrit au plus
+5 × 61 suggestions par groupe à un instant donné, chacune de quelques centaines d'octets.
 
 **Suppressions.** L'auteur retire sa suggestion (« Annuler » la recrée sous le même
 identifiant, `created_at` reprenant l'heure du serveur) ; le propriétaire peut aussi la
@@ -2630,7 +2635,7 @@ service cloud.firestore {
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
-| `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` `AAAA-MM-JJ`, recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
+| `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
 | `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*` et `tickets_status` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
@@ -2977,7 +2982,8 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   refus du planning (`preferences/planning_refusals`) ; `test/mealSuggestions.test.mjs` couvre
   les suggestions de repas (création par un membre, refus au propriétaire, à l'invité, à
   l'étranger, au groupe en pause, à un `group_owner_id` faux ; lecture par l'auteur et le
-  propriétaire seuls ; aucune mise à jour ; bornes) ; côté
+  propriétaire seuls ; aucune mise à jour ; identifiant imposé `_0` à `_4` et sixième
+  refusée ; jour mal formé, impossible ou hors de la veille à J+60 refusé ; bornes) ; côté
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et

@@ -36,6 +36,15 @@ planning » s'affiche quand le planning du groupe reprend déjà le plat. Rien n
 groupe supprimé emporte ses suggestions, un membre qui sort emporte les siennes. Pas de
 notification, aucun appel d'IA.
 
+Après relecture : on suggère d'aujourd'hui à 59 jours après ; une recette que le
+propriétaire lit s'affiche sous son titre actuel ; les messages de la fenêtre des
+suggestions (« Repas planifié… », « Suggestion retirée. », avec « Annuler ») s'affichent
+dans la fenêtre ; un repère sur un jour passé ouvre la fenêtre sur ce jour, jours passés
+dépliés ; un membre sans repas sur la période garde la liste des jours pour suggérer ;
+« Reçues (n) » et « Envoyées (n) » comptent les jours à venir ; « Voir les plus anciennes »
+vient directement sans jour passé, et dit « Aucune suggestion plus ancienne. » ; une
+erreur de lecture des recettes se dit dans la feuille.
+
 ### v0.23.58 — technique
 
 Nouvelle collection `meal_suggestions` (`group_id`, `group_owner_id` dénormalisé et vérifié
@@ -51,6 +60,13 @@ Côté client : `MealSuggestionRepository`, `meal_suggestion.dart`, la feuille
 `suggest_meal_sheet.dart`, la fenêtre `meal_suggestions_window.dart` ; `addMeal` rend
 l'identifiant du repas (pour « Annuler ») et `RecipePickerSheet` reçoit `initialQuery`.
 Aucune migration : la collection est neuve.
+
+Revue sécurité : le volume est borné par les règles. L'identifiant d'une suggestion est
+imposé, `{group_id}_{auteur}_{day}_{0..4}` (`suggestionIds`), ce qui tient le plafond de cinq
+par auteur, groupe et jour côté serveur ; `day` doit être une date réelle, de la veille à
+J+60 (`isSuggestionDay`). Les flux du client ont une borne haute et une limite de 500.
+`PlanningRepository.readableRecipeTitles` rend le titre actuel des recettes lisibles.
+`suggest()` signale aussi au rapport un brouillon invalide.
 
 ### v0.23.57 — fonctionnel
 

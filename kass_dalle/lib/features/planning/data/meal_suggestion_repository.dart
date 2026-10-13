@@ -53,6 +53,21 @@ class MealSuggestionRepository {
     );
   }
 
+  /// Dernier jour lu : un jour de plus que ce que l'écran laisse viser, pour
+  /// un fuseau en avance sur celui de l'auteur.
+  String get _toKey {
+    final t = now();
+    return mealSuggestionDayKey(
+      DateTime(t.year, t.month, t.day + kSuggestionDaysAhead + 1),
+    );
+  }
+
+  /// Suggestions lues au plus par flux. Un groupe de six membres qui en font
+  /// cinq par jour sur 150 jours dépasserait ce nombre ; la borne protège
+  /// l'écran d'un volume que les règles n'empêchent pas entre plusieurs
+  /// groupes.
+  static const watchLimit = 500;
+
   /// Les suggestions reçues par [ownerUid], propriétaire de groupes, depuis
   /// [kSuggestionHistoryDays] jours.
   Stream<List<MealSuggestion>> watchReceived(String ownerUid) => _watch(
@@ -76,7 +91,9 @@ class MealSuggestionRepository {
   }) {
     return query
         .where('day', isGreaterThanOrEqualTo: _fromKey)
+        .where('day', isLessThanOrEqualTo: _toKey)
         .orderBy('day')
+        .limit(watchLimit)
         .snapshots()
         .map((snap) => _read(snap.docs))
         .handleError((Object e, StackTrace st) {
@@ -150,22 +167,33 @@ class MealSuggestionRepository {
 
   /// Envoie la suggestion [draft] de [authorUid] et rend son identifiant.
   ///
-  /// Lève [SuggestionLimitReached] si l'auteur a déjà fait
-  /// [kSuggestionsPerAuthorPerDay] suggestions pour ce groupe et ce jour.
-  /// Toute autre erreur est remontée au rapport, puis relancée.
+  /// L'identifiant est imposé par les règles :
+  /// `{group_id}_{auteur}_{jour}_{n}`, n de 0 à 4. Le premier n libre parmi
+  /// les suggestions de l'auteur ce jour-là est pris. Lève
+  /// [SuggestionLimitReached] quand les cinq sont pris. Toute autre erreur,
+  /// brouillon invalide compris, est remontée au rapport, puis relancée.
   Future<String> suggest(MealSuggestionDraft draft, String authorUid) async {
-    final suggestion = draft.toSuggestion(authorUid);
+    MealSuggestion? suggestion;
     try {
+      suggestion = draft.toSuggestion(authorUid);
       final existing = await _col
           .where('author_uid', isEqualTo: authorUid)
           .where('group_id', isEqualTo: suggestion.groupId)
           .where('day', isEqualTo: suggestion.dayKey)
           .get();
-      if (existing.size >= kSuggestionsPerAuthorPerDay) {
-        throw const SuggestionLimitReached();
+      final taken = {for (final d in existing.docs) d.id};
+      for (var n = 0; n < kSuggestionsPerAuthorPerDay; n++) {
+        final id = mealSuggestionId(
+          groupId: suggestion.groupId,
+          authorUid: authorUid,
+          dayKey: suggestion.dayKey,
+          n: n,
+        );
+        if (taken.contains(id)) continue;
+        await _col.doc(id).set(suggestion.toFirestore());
+        return id;
       }
-      final ref = await _col.add(suggestion.toFirestore());
-      return ref.id;
+      throw const SuggestionLimitReached();
     } on SuggestionLimitReached {
       rethrow;
     } catch (e, st) {
@@ -176,9 +204,10 @@ class MealSuggestionRepository {
           stackTrace: st,
           context: {
             'uid': authorUid,
-            'group_id': suggestion.groupId,
-            'day': suggestion.dayKey,
-            'free_name': suggestion.isFreeName,
+            'group_id': draft.groupId,
+            'day': mealSuggestionDayKey(draft.day),
+            'free_name': draft.recipeId == null,
+            'built': suggestion != null,
           },
         ),
       );

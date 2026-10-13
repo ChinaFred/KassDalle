@@ -22,12 +22,25 @@ const EDITOR = PERSONAS.editor.uid;
 const ADMIN = PERSONAS.admin.uid;
 const STRANGER = PERSONAS.stranger.uid;
 
+/// Un jour `AAAA-MM-JJ` à [offset] jours d'aujourd'hui (UTC) : les règles
+/// bornent le jour entre la veille et soixante jours après l'heure du serveur.
+const dayIn = (offset) => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offset);
+  return d.toISOString().slice(0, 10);
+};
+const DAY = dayIn(4);
+
+/// L'identifiant imposé : `{group_id}_{auteur}_{day}_{n}`, n de 0 à 4.
+const sid = (author, n = 0, { group = "gp", day = DAY } = {}) =>
+  `meal_suggestions/${group}_${author}_${day}_${n}`;
+
 /// Une suggestion de recette de [author] au groupe `gp` (propriétaire : l'éditeur).
 const recipeSuggestion = (author, extra = {}) => ({
   group_id: "gp",
   group_owner_id: EDITOR,
   author_uid: author,
-  day: "2026-10-17",
+  day: DAY,
   recipe_id: "r1",
   recipe_titre: "Lasagnes",
   note: "Pour l'anniversaire de Léo",
@@ -40,7 +53,7 @@ const freeSuggestion = (author, extra = {}) => ({
   group_id: "gp",
   group_owner_id: EDITOR,
   author_uid: author,
-  day: "2026-10-17",
+  day: DAY,
   free_title: "Raclette",
   created_at: FieldValue.serverTimestamp(),
   ...extra,
@@ -77,7 +90,7 @@ beforeEach(async () => {
       group_id: "gp",
       group_owner_id: EDITOR,
       author_uid: READER,
-      day: "2026-10-17",
+      day: DAY,
       free_title: "Crêpes",
       created_at: new Date("2026-10-13T10:00:00Z"),
     },
@@ -86,36 +99,36 @@ beforeEach(async () => {
 
 describe("meal_suggestions — création", () => {
   it("un membre lecteur suggère une recette ou un nom libre", async () => {
-    await assertSucceeds(db("reader").doc("meal_suggestions/new1").set(recipeSuggestion(READER)));
-    await assertSucceeds(db("reader").doc("meal_suggestions/new2").set(freeSuggestion(READER)));
+    await assertSucceeds(db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER)));
+    await assertSucceeds(db("reader").doc(sid(READER, 1)).set(freeSuggestion(READER)));
   });
 
   it("un membre administrateur non propriétaire suggère aussi", async () => {
-    await assertSucceeds(db("admin").doc("meal_suggestions/new").set(recipeSuggestion(ADMIN)));
+    await assertSucceeds(db("admin").doc(sid(ADMIN, 0)).set(recipeSuggestion(ADMIN)));
   });
 
   it("sans mot : accepté", async () => {
     const data = recipeSuggestion(READER);
     delete data.note;
-    await assertSucceeds(db("reader").doc("meal_suggestions/new").set(data));
+    await assertSucceeds(db("reader").doc(sid(READER, 0)).set(data));
   });
 
   it("le propriétaire ne se suggère rien", async () => {
-    await assertFails(db("editor").doc("meal_suggestions/new").set(recipeSuggestion(EDITOR)));
+    await assertFails(db("editor").doc(sid(EDITOR, 0)).set(recipeSuggestion(EDITOR)));
   });
 
   it("un invité ne suggère rien", async () => {
-    await assertFails(db("otherReader").doc("meal_suggestions/new").set(recipeSuggestion(OTHER)));
+    await assertFails(db("otherReader").doc(sid(OTHER, 0)).set(recipeSuggestion(OTHER)));
   });
 
   it("un compte hors du groupe ne suggère rien", async () => {
-    await assertFails(db("stranger").doc("meal_suggestions/new").set(recipeSuggestion(STRANGER)));
+    await assertFails(db("stranger").doc(sid(STRANGER, 0)).set(recipeSuggestion(STRANGER)));
   });
 
   it("groupe en pause : refusé", async () => {
     await assertFails(
       db("reader")
-        .doc("meal_suggestions/new")
+        .doc(sid(READER, 0, { group: "gpause" }))
         .set(recipeSuggestion(READER, { group_id: "gpause", group_owner_id: OTHER })),
     );
   });
@@ -124,115 +137,141 @@ describe("meal_suggestions — création", () => {
     await seedDocs(env, {
       "groups/gp": { name: "Famille Dupont", owner_id: EDITOR, member_ids: [EDITOR, ADMIN] },
     });
-    await assertFails(db("reader").doc("meal_suggestions/new").set(recipeSuggestion(READER)));
+    await assertFails(db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER)));
   });
 
   it("group_owner_id faux : refusé", async () => {
     await assertFails(
-      db("reader")
-        .doc("meal_suggestions/new")
-        .set(recipeSuggestion(READER, { group_owner_id: ADMIN })),
+      db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { group_owner_id: ADMIN })),
     );
   });
 
   it("au nom d'un autre membre : refusé", async () => {
-    await assertFails(db("reader").doc("meal_suggestions/new").set(recipeSuggestion(ADMIN)));
+    await assertFails(db("reader").doc(sid(ADMIN, 0)).set(recipeSuggestion(ADMIN)));
+    await assertFails(db("reader").doc(sid(READER, 0)).set(recipeSuggestion(ADMIN)));
   });
 
   it("compte en attente ou révoqué : refusé", async () => {
+    const pending = PERSONAS.pending.uid;
+    const stale = PERSONAS.revokedStaleToken.uid;
+    await assertFails(db("pending").doc(sid(pending, 0)).set(recipeSuggestion(pending)));
     await assertFails(
-      db("pending").doc("meal_suggestions/new").set(recipeSuggestion(PERSONAS.pending.uid)),
-    );
-    await assertFails(
-      db("revokedStaleToken")
-        .doc("meal_suggestions/new")
-        .set(recipeSuggestion(PERSONAS.revokedStaleToken.uid)),
+      db("revokedStaleToken").doc(sid(stale, 0)).set(recipeSuggestion(stale)),
     );
   });
 
   it("groupe inexistant : refusé", async () => {
     await assertFails(
-      db("reader").doc("meal_suggestions/new").set(recipeSuggestion(READER, { group_id: "absent" })),
+      db("reader")
+        .doc(sid(READER, 0, { group: "absent" }))
+        .set(recipeSuggestion(READER, { group_id: "absent" })),
     );
+  });
+});
+
+describe("meal_suggestions — identifiant imposé et plafond", () => {
+  it("_0 à _4 acceptés, une sixième refusée", async () => {
+    for (let n = 0; n < 5; n++) {
+      await assertSucceeds(
+        db("reader").doc(sid(READER, n)).set(freeSuggestion(READER, { free_title: `Plat ${n}` })),
+      );
+    }
+    await assertFails(db("reader").doc(sid(READER, 5)).set(freeSuggestion(READER)));
+    // Réécrire un identifiant pris est une mise à jour : refusée.
+    await assertFails(db("reader").doc(sid(READER, 0)).set(freeSuggestion(READER)));
+  });
+
+  it("identifiant libre, ou d'un autre jour, groupe ou auteur : refusé", async () => {
+    await assertFails(db("reader").doc("meal_suggestions/libre").set(freeSuggestion(READER)));
+    await assertFails(
+      db("reader").doc(sid(READER, 0, { day: dayIn(5) })).set(freeSuggestion(READER)),
+    );
+    await assertFails(
+      db("reader").doc(sid(READER, 0, { group: "gpause" })).set(freeSuggestion(READER)),
+    );
+    await assertFails(db("reader").doc(sid(ADMIN, 0)).set(freeSuggestion(READER)));
+  });
+
+  it("retirer libère l'identifiant : la suggestion se remet", async () => {
+    await assertSucceeds(db("reader").doc(sid(READER, 0)).set(freeSuggestion(READER)));
+    await assertSucceeds(db("reader").doc(sid(READER, 0)).delete());
+    await assertSucceeds(db("reader").doc(sid(READER, 0)).set(freeSuggestion(READER)));
   });
 });
 
 describe("meal_suggestions — bornes", () => {
   it("un mot de 200 caractères passe, 201 non", async () => {
     await assertSucceeds(
-      db("reader")
-        .doc("meal_suggestions/new1")
-        .set(recipeSuggestion(READER, { note: "a".repeat(200) })),
+      db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { note: "a".repeat(200) })),
     );
     await assertFails(
-      db("reader")
-        .doc("meal_suggestions/new2")
-        .set(recipeSuggestion(READER, { note: "a".repeat(201) })),
+      db("reader").doc(sid(READER, 1)).set(recipeSuggestion(READER, { note: "a".repeat(201) })),
     );
   });
 
   it("un nom libre de 60 caractères passe, 61 non, vide non", async () => {
     await assertSucceeds(
-      db("reader")
-        .doc("meal_suggestions/new1")
-        .set(freeSuggestion(READER, { free_title: "a".repeat(60) })),
+      db("reader").doc(sid(READER, 0)).set(freeSuggestion(READER, { free_title: "a".repeat(60) })),
     );
     await assertFails(
-      db("reader")
-        .doc("meal_suggestions/new2")
-        .set(freeSuggestion(READER, { free_title: "a".repeat(61) })),
+      db("reader").doc(sid(READER, 1)).set(freeSuggestion(READER, { free_title: "a".repeat(61) })),
     );
-    await assertFails(
-      db("reader").doc("meal_suggestions/new3").set(freeSuggestion(READER, { free_title: "" })),
-    );
+    await assertFails(db("reader").doc(sid(READER, 2)).set(freeSuggestion(READER, { free_title: "" })));
   });
 
   it("un titre de recette de 201 caractères est refusé", async () => {
     await assertFails(
       db("reader")
-        .doc("meal_suggestions/new")
+        .doc(sid(READER, 0))
         .set(recipeSuggestion(READER, { recipe_titre: "a".repeat(201) })),
     );
   });
 
   it("recette ET nom libre, ou ni l'un ni l'autre : refusé", async () => {
     await assertFails(
-      db("reader")
-        .doc("meal_suggestions/new1")
-        .set(recipeSuggestion(READER, { free_title: "Raclette" })),
+      db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { free_title: "Raclette" })),
     );
     const neither = freeSuggestion(READER);
     delete neither.free_title;
-    await assertFails(db("reader").doc("meal_suggestions/new2").set(neither));
+    await assertFails(db("reader").doc(sid(READER, 1)).set(neither));
     await assertFails(
-      db("reader")
-        .doc("meal_suggestions/new3")
-        .set(freeSuggestion(READER, { recipe_titre: "Raclette" })),
+      db("reader").doc(sid(READER, 2)).set(freeSuggestion(READER, { recipe_titre: "Raclette" })),
     );
   });
 
   it("recette sans titre copié : refusé", async () => {
     const data = recipeSuggestion(READER);
     delete data.recipe_titre;
-    await assertFails(db("reader").doc("meal_suggestions/new").set(data));
+    await assertFails(db("reader").doc(sid(READER, 0)).set(data));
   });
 
-  it("jour mal formé : refusé", async () => {
+  it("jour mal formé, impossible ou hors bornes : refusé", async () => {
+    const at = (day) => db("reader").doc(sid(READER, 0, { day })).set(freeSuggestion(READER, { day }));
+    await assertFails(at("17/10/2026"));
+    await assertFails(at("9999-12-31"));
+    await assertFails(at("2026-13-45"));
+    await assertFails(at(`${dayIn(30).slice(0, 4)}-02-30`));
+    await assertFails(at(dayIn(-3)));
+    await assertFails(at(dayIn(62)));
     await assertFails(
-      db("reader").doc("meal_suggestions/new1").set(recipeSuggestion(READER, { day: "17/10/2026" })),
+      db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { day: 20261017 })),
     );
-    await assertFails(
-      db("reader").doc("meal_suggestions/new2").set(recipeSuggestion(READER, { day: 20261017 })),
-    );
+  });
+
+  it("jour : la veille, aujourd'hui et J+59 acceptés", async () => {
+    const at = (day) => db("reader").doc(sid(READER, 0, { day })).set(freeSuggestion(READER, { day }));
+    await assertSucceeds(at(dayIn(-1)));
+    await assertSucceeds(at(dayIn(0)));
+    await assertSucceeds(at(dayIn(59)));
   });
 
   it("champ inconnu, ou date de création fournie par le client : refusé", async () => {
     await assertFails(
-      db("reader").doc("meal_suggestions/new1").set(recipeSuggestion(READER, { status: "open" })),
+      db("reader").doc(sid(READER, 0)).set(recipeSuggestion(READER, { status: "open" })),
     );
     await assertFails(
       db("reader")
-        .doc("meal_suggestions/new2")
+        .doc(sid(READER, 1))
         .set(recipeSuggestion(READER, { created_at: new Date("2020-01-01T00:00:00Z") })),
     );
   });
@@ -245,7 +284,7 @@ describe("meal_suggestions — lecture", () => {
       db("reader")
         .collection("meal_suggestions")
         .where("author_uid", "==", READER)
-        .where("day", ">=", "2026-07-15")
+        .where("day", ">=", dayIn(-90))
         .orderBy("day")
         .get(),
     );
@@ -257,7 +296,7 @@ describe("meal_suggestions — lecture", () => {
       db("editor")
         .collection("meal_suggestions")
         .where("group_owner_id", "==", EDITOR)
-        .where("day", ">=", "2026-10-13")
+        .where("day", ">=", dayIn(0))
         .orderBy("day")
         .get(),
     );
