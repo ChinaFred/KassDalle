@@ -20,8 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
-### v0.23.59 — fonctionnel
+### v0.23.60 — fonctionnel
 
+#### Les messages en bas d'écran se ferment de nouveau (ticket #69)
+
+Depuis Flutter 3.29, un message en bas d'écran qui porte un bouton (« Voir », « Annuler »,
+« Réessayer », « Ouvrir »…) restait affiché tant qu'on n'agissait pas : sa durée était ignorée
+et rien ne permettait de le fermer. Un tel message reste maintenant 8 secondes, le temps de
+lire puis d'atteindre le bouton, et une croix le ferme plus tôt. Avec un lecteur d'écran
+actif (TalkBack, VoiceOver), il reste jusqu'à ce qu'on agisse ou qu'on le ferme. Le libellé
+du bouton prend la couleur du texte, plus lisible sur les fonds de succès et d'erreur. Seize
+messages sont concernés : ticket envoyé, planning, liste de courses, fiche recette,
+brouillons, import par URL, recette générée.
 Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurrents.
 
 « Reprendre la nutrition » n'affiche plus « Terminé » quand des recettes reprises restent
