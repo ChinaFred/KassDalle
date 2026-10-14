@@ -32,6 +32,7 @@ export const BACKFILL_KEYS = [
   "system_books",
   "group_planning_reach",
   "move_meals_to_group",
+  "ticket_analyses",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -123,6 +124,13 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "move_meals_to_group",
     kind: "ponctuel",
     title: "Déplacer mes repas vers un groupe",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  {
+    key: "ticket_analyses",
+    kind: "ponctuel",
+    title: "Analyses des tickets",
     usesAi: false,
     defaultSchedule: null,
   },

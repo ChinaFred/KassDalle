@@ -18,6 +18,45 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-14
+
+### v0.23.62 — fonctionnel
+
+Admin › Tickets des membres permet de valider et de refuser un ticket sans passer par GitHub
+(ticket #73, lot A). « Valider » n'existe que pour un ticket Analysé qui n'est pas une
+Question. « Refuser » vaut pour un ticket Reçu, Analysé, Validé ou En cours : le motif, 5 à
+2 000 caractères, est publié sur GitHub et le membre le lit sous « Motif du refus ». Les
+boutons sont dans une barre fixée en bas de la fiche, et un bouton qui ne s'applique pas est
+masqué.
+
+La fiche affiche aussi les analyses de l'administrateur publiées sur l'Issue (« ## Analyse… »),
+en Markdown, dix au plus. L'écran s'ouvre sur le filtre « À traiter » (tickets Reçus ou
+Analysés), depuis la tuile d'Administration et depuis la nouvelle entrée « Tickets à traiter
+(N) » du menu du compte. Leur nombre allume le point de la puce du compte de l'administrateur.
+
+Admin › Backfills gagne le ponctuel « Analyses des tickets », qui relève les analyses déjà
+publiées. À lancer une fois après le déploiement.
+
+### v0.23.62 — technique
+
+Deux callables administrateur, `validateTicket` et `refuseTicket` (`tickets/decisions.ts`) :
+étiquette `validé`, ou commentaire « Réponse : motif » puis fermeture `not_planned`, et
+écriture du statut sans attendre le webhook. Le refus prend un bail `decision_lease_until` de
+deux minutes, partagé avec la validation, et ne republie pas un motif déjà publié après un
+échec partiel, signalé par `reply_published_close_failed`. La validation n'écrit `validated`
+que si le ticket est encore `analyzed`. Les conditions des deux décisions et la valeur de
+l'échec partiel sont en double entre le client et le serveur : nouvelle fixture
+`test-fixtures/ticket_decisions.json`, rejouée par les deux suites. `tickets/github.ts` gagne trois appels REST (étiquette,
+commentaire, fermeture), toujours sans SDK.
+
+Nouveau sous-document `tickets/{id}/admin/analysis` (`analyses`, `checked_at`), écrit par le
+serveur seul et lu par l'administrateur seul (règle Firestore et six tests d'émulateur). Il est
+réécrit par le webhook à chaque commentaire du mainteneur, `deleted` compris, par la tâche
+horaire depuis les commentaires qu'elle lit déjà, et après chaque décision. Le webhook monte
+désormais `GITHUB_TICKETS_TOKEN` pour relire les commentaires. Backfill ponctuel
+`ticket_analyses` (`backfillTicketAnalysesFn`) ajouté aux deux registres et à la fixture
+`backfill_schedule.json`. Aucun appel d'IA, aucun poste de coût.
+
 ## 2026-10-13
 
 ### v0.23.61 — fonctionnel

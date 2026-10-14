@@ -537,7 +537,8 @@ quantité, conversion d'unités en grammes, normalisation des noms d'ingrédient
 regroupement des lignes de courses.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
 sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning, le **statut
-effectif d'une invitation par e-mail** et la
+effectif d'une invitation par e-mail**, les **décisions de l'administrateur
+sur un ticket** et la
 **géométrie du redressement** : le client redresse à la main dans l'atelier de
 retouche, le serveur redresse tout seul à l'import d'une page. Enfin, le
 **registre des backfills** et la lecture d'une programmation : l'écran les
@@ -561,6 +562,7 @@ affiche, la tâche planifiée les applique.
 | `allergens.json` | les quatorze allergènes majeurs de l'annexe II INCO — clés dans l'ordre du règlement et libellés, valeurs seules ; le serveur les cite dans le prompt et calcule le champ `allergens` d'une recette (serveur seul), le client les affiche sur la fiche et dans la correction admin | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 | `backfill_schedule.json` | registre des backfills d'Admin › Backfills (clés dans l'ordre, nature ponctuel / récurrent, appel d'IA) et lecture d'une programmation stockée (jours et heure entiers sans conversion, `enabled` booléen strict) ; le registre porte aussi la programmation par défaut (`defaultSchedule` : la nutrition, tous les jours à 5 h), que le serveur applique et écrit, et que le client affiche « (par défaut) » tant que la clé manque ; la durée du verrou n'est pas en double : le serveur en écrit l'échéance `en_cours_expire_le` | `features/admin/domain/backfill_registry.dart`, `features/admin/domain/backfill_status.dart` | `backfills/registry.ts`, `backfills/schedule.ts` |
 | `email_invitation_status.json` | statut effectif d'une invitation par e-mail : `sent` ou `send_failed` expirée quand `expires_at` est passée, égale à l'instant ou absente ; statut inconnu lu `send_failed` ; `accepted` et `cancelled` fixes — le client affiche (sections, actions, compteur de l'onglet), le serveur décide (doublon, renvoi, rôle à la première connexion) | `features/admin/domain/email_invitation.dart` (`statusAt`) | `invitations/rules.ts` (`effectiveStatus`) |
+| `ticket_decisions.json` | décisions de l'administrateur sur un ticket : « Valider » permis sur un ticket `analyzed` hors `question` avec Issue, « Refuser » sur `received`, `analyzed`, `validated` ou `in_progress` avec Issue, tout type ; statut stocké inconnu : aucune décision ; valeur `reply_published_close_failed` de l'échec partiel d'un refus — le client affiche (boutons de la barre de décision), le serveur décide (`validateTicket`, `refuseTicket`) | `features/tickets/domain/ticket.dart` (`adminTicketDecisions`, `kTicketRefusalPartialReason`) | `tickets/rules.ts` (`validatePrecondition`, `refusePrecondition`, `ticketDecisions`, `REFUSAL_PARTIAL_REASON`) |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

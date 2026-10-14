@@ -478,6 +478,19 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Relève les analyses déjà publiées sur GitHub de chaque ticket dans
+  /// `tickets/{id}/admin/analysis`. Sans appel de modèle. Les drapeaux valent
+  /// 1 ou 0 ; les tickets en échec sont dans `failures`.
+  Future<BackfillCounts> backfillTicketAnalyses() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillTicketAnalysesFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Déplace les repas du planning personnel de l'appelant, sur la période de
   /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
   /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.

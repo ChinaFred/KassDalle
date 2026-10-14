@@ -66,7 +66,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
-> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures et l'auteur de chacun (Admin › Tickets des membres), et relance un envoi en anomalie. Un compte en attente ou révoqué n'envoie rien.
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé et refuse un ticket avec un motif publié sur GitHub. Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -688,7 +688,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
   - **Inviter par e-mail** (`/admin/users/invite`) : adresse (« L'adresse du compte Google qu'il utilisera pour se connecter. »), rôle Lecteur / Éditeur avec une ligne d'aide (Lecteur : « Consulte, note, planifie. Ne crée pas de recette. » ; Éditeur : « Crée et importe ses propres recettes. »), groupe obligatoire (présélectionné s'il n'y en a qu'un ; pendant le chargement, champ désactivé « Chargement des groupes… » ; lecture en échec, « Groupes illisibles » avec Réessayer ; sans groupe, « Vous n'appartenez à aucun groupe. Créez-en un dans Groupes familiaux. », le bouton « Ouvrir Groupes familiaux », et l'envoi est impossible), message prérempli de 500 caractères au plus, dont le nom du groupe suit le choix tant qu'il n'a pas été retouché ; vidé, l'e-mail part sans message personnel. Le bouton « Envoyer l'invitation » est actif dès qu'un groupe existe ; au clic, une adresse vide (« Saisissez une adresse e-mail. »), mal formée (« Adresse e-mail invalide. ») ou un groupe non choisi (« Choisissez un groupe. ») s'affichent sous leur champ. Entrée dans l'adresse et Ctrl/Cmd+S envoient aussi. Un aperçu de l'e-mail se replie sous le formulaire sur téléphone et occupe une colonne à droite sur grand écran ; il suit chaque frappe. Pendant l'envoi le bouton affiche « Envoi… » et les champs sont désactivés. Quitter l'écran avec une saisie demande confirmation. Quand l'adresse saisie est celle d'un compte révoqué, l'aide sous l'adresse devient « Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion avec cette adresse. », celle du groupe « Il devra accepter l'invitation au groupe dans Groupes familiaux. », et l'aperçu montre le pied du compte révoqué (la comparaison se fait sans casse ; une autre écriture d'une adresse Gmail n'est reconnue qu'après l'envoi). Succès : « Invitation envoyée à …. », ou « Invitation envoyée à … — accès rétabli à sa prochaine connexion. » pour un compte révoqué, retour sur l'onglet Invitations. E-mail non parti : « E-mail non envoyé. L'invitation est enregistrée : renvoyez-la depuis la liste, ou copiez le lien. » Les refus du serveur s'affichent sous l'adresse ; un doublon propose « Renvoyer l'invitation », dont le succès affiche « Invitation renvoyée à …. » (ou « … — accès rétabli à sa prochaine connexion. » pour un compte révoqué). L'e-mail porte l'objet « {Admin} t'invite dans « {Groupe} » sur Kass'Dalle », le message, un bouton « Ouvrir Kass'Dalle », le lien de l'APK Android, l'adresse Google à utiliser, la date d'expiration et la signature de l'Admin.
   - **Invitations** : « En attente (n) » puis « Historique », les plus récentes d'abord. Chaque ligne : l'adresse, puis une puce de statut — En attente, Acceptée, Expirée, Annulée, Envoi échoué — suivie de « Lecteur · {groupe} · envoyée le jj/mm, expire le jj/mm » (acceptée : « Lecteur · {groupe} · par {nom}, le jj/mm », suivi de « · accès rétabli » pour un compte révoqué revenu, de « · pas invité au groupe, complet (50 invitations en attente) : invitez-le depuis Groupes familiaux quand une place se libère » si le groupe avait déjà 50 invitations en attente, et de « · pas invité au groupe (l'invitant n'en fait plus partie) : invitez-le depuis Groupes familiaux » si l'Admin de l'invitation n'en était plus membre ; en attente, expirée ou en échec pour un compte révoqué, la ligne finit par « · compte révoqué » ; annulée : « Lecteur · {groupe} »), la raison de l'échec sous un envoi échoué ou sous une invitation annulée par le serveur (adresse refusée par Gmail, ou, pour un compte révoqué rétabli autrement, « Accès rétabli à la main : invitation sans objet. » ou « Accès rétabli par une autre invitation : invitation sans objet. »), et, quand une action est possible, un menu « Actions » : Renvoyer (en attente, expirée, échec ; succès « Invitation renvoyée à …. », ou « … — accès rétabli à sa prochaine connexion. » pour un compte révoqué), Annuler l'invitation (en attente, échec ; confirmation « Annuler l'invitation de … ? » — « Le lien ne donnera plus de rôle. L'e-mail déjà reçu ne peut pas être repris. »), Copier le lien (l'adresse de l'application ; seulement quand l'invitation peut être renvoyée). Sans invitation : « Aucune invitation envoyée ». Lecture en échec : « Invitations illisibles », avec Réessayer.
 - **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul (seuils d'affichage, repli, priorité des sources), garnitures simples. Quatre écrans en dépendent : ingrédients, unités, politique, garnitures. L'écran *Ingrédients nutrition* montre aussi les allergènes de chaque ingrédient — « estimé par l'IA », « vérifié par l'admin » ou « non examiné » — et les corrige par quatorze cases à cocher (voir 5.9, « Allergènes »).
-- **Backfills** : neuf reprises sur l'existant, rangées en trois sections, chacune avec son nombre. **Récurrents** (5) — ils ont du travail à chaque nouvelle recette ou nouvel ingrédient : reprendre la nutrition, enrichir les unités et les ingrédients des référentiels, analyser les allergènes, classer le rôle des recettes dans un repas, recalculer les produits d'achat. **Ponctuels à lancer** — ils reprennent un fonds antérieur une fois : reprendre le sel des ingrédients, créer les livres système manquants de chaque compte lecteur, éditeur ou administrateur (un livre déjà présent, même renommé, n'est pas recréé), recalculer la portée des groupes et des plannings partagés de chaque membre et invité d'un groupe, et **déplacer ses repas vers un groupe** — la tuile demande d'abord un groupe actif dont l'administrateur est propriétaire et une période de 62 jours au plus, puis confirme (« Déplacer vos repas du … au … vers « … » ? ») ; les repas de « Mon planning » de la période passent dans le planning du groupe et quittent le planning personnel, sans changer de recette, de date ni de parts. Réutilisable pour une autre période ou un autre groupe, ce dernier n'est jamais marqué terminé, ni tout seul ni par le menu ⋮ ; quand un seul groupe convient, il est déjà choisi. **Ponctuels terminés** — en bas, grisés, dépliés par défaut, section masquée si vide. L'ordre est fixe dans chaque section. Toute écriture ponctuelle sur un ensemble de documents vit ici, avec un compte rendu chiffré ; l'écran d'un référentiel montre et corrige, il ne lance pas d'opération de masse.
+- **Backfills** : dix reprises sur l'existant, rangées en trois sections, chacune avec son nombre. **Récurrents** (5) — ils ont du travail à chaque nouvelle recette ou nouvel ingrédient : reprendre la nutrition, enrichir les unités et les ingrédients des référentiels, analyser les allergènes, classer le rôle des recettes dans un repas, recalculer les produits d'achat. **Ponctuels à lancer** — ils reprennent un fonds antérieur une fois : reprendre le sel des ingrédients, créer les livres système manquants de chaque compte lecteur, éditeur ou administrateur (un livre déjà présent, même renommé, n'est pas recréé), recalculer la portée des groupes et des plannings partagés de chaque membre et invité d'un groupe, et **déplacer ses repas vers un groupe** — la tuile demande d'abord un groupe actif dont l'administrateur est propriétaire et une période de 62 jours au plus, puis confirme (« Déplacer vos repas du … au … vers « … » ? ») ; les repas de « Mon planning » de la période passent dans le planning du groupe et quittent le planning personnel, sans changer de recette, de date ni de parts. Réutilisable pour une autre période ou un autre groupe, ce dernier n'est jamais marqué terminé, ni tout seul ni par le menu ⋮ ; quand un seul groupe convient, il est déjà choisi. **Analyses des tickets** relève sur GitHub les analyses déjà publiées des tickets, pour les lire dans Admin › Tickets des membres (sans appel d'IA, deux cents tickets par passage, un ticket déjà relevé est sauté). **Ponctuels terminés** — en bas, grisés, dépliés par défaut, section masquée si vide. L'ordre est fixe dans chaque section. Toute écriture ponctuelle sur un ensemble de documents vit ici, avec un compte rendu chiffré ; l'écran d'un référentiel montre et corrige, il ne lance pas d'opération de masse.
   - **Tuile.** Icône, titre, puce « IA » (facturé) ou « Sans IA », une phrase de description. Pour un récurrent, la ligne « Programmation : Tous les dimanches à 3 h », « Lun., mer. et ven. à 3 h », « Tous les jours à 5 h » ou « Non programmé ». Puis l'état du dernier passage, icône et texte, lu en direct : « Jamais lancé. », « Terminé — dim. 11/10 à 03:02, programmé · 38 classées, 0 restante », « Incomplet — … · reprise à 04:00 » quand le passage s'est arrêté avant la fin, « Incomplet — … · 9 éléments en échec, nouvel essai demain à 05:00 » quand il a tout parcouru mais laisse des éléments en échec (pas de reprise une heure plus tard ; sans programmation active : « … · 9 éléments en échec. Relancez pour réessayer. »), « Incomplet — plafond de dépense atteint · reprise demain à 03:00 », « En erreur — … : <message> », « En cours depuis 03:00 (programmé) » avec une barre de progression, ou « En erreur — passage interrompu » quand un passage n'a pas rendu la main après dix minutes. Heures de Paris. Si le dernier passage a laissé des éléments à revoir, le lien « Voir les N à revoir » reste sur la tuile. Pendant la lecture, les tuiles affichent « … » pour l'état et la programmation, et les ponctuels restent réunis sous un seul en-tête « Ponctuels » jusqu'à ce que l'état dise lesquels sont terminés. Un état illisible affiche « Impossible de lire l'état des backfills. » avec « Réessayer », les tuiles disent « État inconnu » (« Programmation : inconnue ») et « Lancer » reste actif.
   - **Lancer.** « Lancer » ouvre une confirmation qui dit ce que fait le passage, s'il appelle l'IA, et combien de documents il traite au plus. « Reprendre la nutrition » rappelle que le passage manuel lève les trois garde-fous du passage programmé (vingt heures entre deux tentatives, cinq essais, recettes auxquelles il ne manque que des lignes impossibles à peser ou des ingrédients plus redemandés à l'IA). « Enrichir unités et ingrédients », « Allergènes des ingrédients et des recettes » et « Rôle des recettes dans un repas » rappellent qu'un élément qui échoue trois fois n'est plus redemandé à l'IA, et proposent une case « Réessayer aussi les éléments exclus après 3 échecs », décochée par défaut ; cochée, le passage redemande aussi ces éléments. Un passage programmé ne les redemande jamais. Pendant le passage, la tuile affiche « Passage en cours » à la place de « Lancer » ; le reste de l'écran reste utilisable et un autre backfill peut être lancé. À la fin, la bannière donne le compte rendu chiffré. Deux passages du même backfill ne tournent jamais ensemble : le second reçoit « Un passage de « X » est déjà en cours. Son résultat s'affichera sur sa tuile. » Les confirmations des backfills qui appellent l'IA disent toutes « Appels d'IA facturés. »
   - **Programmer un récurrent.** « Programmer » ouvre une feuille du bas sur téléphone, un dialogue sur web et desktop : interrupteur « Passage programmé », jours (« Tous les jours » ou lun. à dim.), heure de 0 h à 23 h (« Heure de Paris »), résumé « Tous les dimanches à 3 h. Prochain passage : dimanche 18 octobre à 3 h. » Un encadré dit le coût : « Ce passage appelle l'IA et est facturé », suivi du nombre de documents qu'un passage traite au plus, propre à chaque backfill (par exemple, pour « Rôle des recettes dans un repas » : « Chaque passage traite au plus 40 recettes »), puis « S'il reste du travail, il reprend l'heure suivante, jusqu'à la fin ou jusqu'au plafond de dépense quotidien », avec le lien « Régler le plafond (sans enregistrer) » vers Dépense par utilisateur, inactif pendant l'enregistrement ; ou, sans IA, « Aucun appel d'IA : ce passage n'est pas facturé » et le même nombre de documents. Une erreur d'enregistrement s'affiche dans le contrôle, au-dessus des boutons, et le contrôle reste ouvert ; il ne se ferme pas pendant l'enregistrement. Sans jour coché, « Enregistrer » reste inactif (« Choisissez au moins un jour. »). Ctrl/Cmd+S enregistre, Échap ferme. Le passage programmé est imputé au plafond quotidien de base de l'administrateur qui a enregistré la programmation, sans la marge propre à son compte ; « Reprendre la nutrition » reste imputée au propriétaire de chaque recette. Arrêté par le plafond, un passage reprend au prochain créneau programmé. Si l'auteur de la programmation n'est plus administrateur, le passage ne part pas et la tuile affiche « En erreur — … : L'auteur de la programmation n'est plus administrateur. » ; un administrateur le reprogramme. Sans réglage, « Reprendre la nutrition » passe tous les jours à 5 h : la tuile affiche « Tous les jours à 5 h (par défaut) », et « Programmer » part de ce réglage. « Enrichir unités et ingrédients » et « Reprendre le sel des ingrédients » réécrivent les mêmes valeurs : l'un refuse de partir pendant que l'autre tourne.
@@ -701,7 +701,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
-- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. Rien ne s'y décide : valider, refuser, répondre se fait sur GitHub (voir 5.13).
+- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé et on y refuse un ticket ; répondre à une Question se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -1103,10 +1103,12 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   lit tous.
 - **Aucun appel d'IA.** Créer, envoyer, suivre un ticket n'appelle aucun modèle et n'est pas
   facturé. L'analyse d'un ticket est faite par l'administrateur avec sa session Claude Code,
-  à sa demande, en dehors de l'application.
+  à sa demande, en dehors de l'application ; l'application en affiche le texte publié sur
+  GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
   proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
-  a pas d'autre.
+  a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter (N) », juste après
+  « Mes tickets » (voir « Tickets des membres »).
 - **Quatre types** : « Bug », « Évolution », « Nouvelle fonctionnalité », « Question ».
 
 #### Signaler ou proposer (`/tickets/new`)
@@ -1227,38 +1229,87 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   n'est relayé.
 - GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
-- L'application ne valide, ne refuse et ne ferme rien : ces décisions se prennent sur GitHub.
+- Valider et refuser se font depuis Admin › Tickets des membres, ou sur GitHub par les mêmes
+  gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue comme
+  non prévue. Répondre à une Question se fait sur GitHub.
 
 #### Tickets des membres (Admin, `/admin/tickets`, `/admin/tickets/:ticketId`)
 
 - Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
   questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
   (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
+- **À traiter.** Un ticket Reçu ou Analysé attend une décision de l'Admin. Leur nombre allume
+  le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
+  s'affiche dans l'entrée « Tickets à traiter (N) » du menu du compte, avec un badge quand N
+  dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni le point n'existent pour
+  un Editor ou un Reader.
+- La tuile et l'entrée du menu ouvrent l'écran sur le filtre « À traiter ». S'il n'y a rien à
+  traiter, l'écran passe une fois sur « Tous ». Le filtre choisi ensuite est gardé.
 - **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
   pas un statut : le membre continue de voir « Envoi en cours ».
-- Filtres : statut (« Tous », « En anomalie », puis les huit statuts) et type (« Tous les
+- Filtres : statut (« À traiter (N) », « Tous », « En anomalie », puis les huit statuts) et type (« Tous les
   types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, auteur (son nom dans l'application),
   statut, date, et la puce « En anomalie ».
-- Détail : auteur, date, type, version, plateforme, écran, statut, description, capture en
-  grand. « Ouvrir sur GitHub » et « Copier le lien ». Pour un ticket en anomalie : « Essais
-  d'envoi : N », « Dernière erreur : … » et « Relancer l'envoi ». Une relance qui échoue encore
-  affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une relance réussie,
-  « Envoi relancé : <statut>. ». Le motif d'un refus s'affiche sous « Motif du refus ».
+- Détail, dans l'ordre : type, titre, statut ; « Ouvrir sur GitHub » et « Copier le lien » ;
+  pour un ticket en anomalie, « Essais d'envoi : N », « Dernière erreur : … » et « Relancer
+  l'envoi » ; la réponse ou le motif du refus ; auteur, date, version, plateforme, écran ;
+  description et capture en grand ; enfin la section « Analyses (N) ». Une relance qui échoue
+  encore affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une
+  relance réussie, « Envoi relancé : <statut>. ».
+- **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
+  « ## Analyse » (« ## Analyse — compléments » compris) s'affiche dans l'ordre chronologique,
+  sous « Analyse du jj/mm/aa à hh:mm », en Markdown, texte sélectionnable. Les dix plus
+  récentes au plus. Un commentaire d'un autre compte n'est jamais repris. Les images ne sont
+  pas chargées : « [Image non affichée : …] ». Un lien `http` ou `https` s'ouvre dans le
+  navigateur (« Impossible d'ouvrir le lien. » en cas d'échec) ; tout autre lien ne s'ouvre
+  pas. Une analyse de plus de 20 000 caractères est coupée à la fin d'un paragraphe :
+  « Analyse tronquée, voir GitHub. » avec « Ouvrir sur GitHub ». États : « Chargement des
+  analyses… » ; « Pas encore analysé. » ; pour un ticket Analysé ou plus avancé jamais relevé,
+  « Analyse pas encore relevée. » avec « Ouvrir sur GitHub » ; « Impossible de charger les
+  analyses. » avec Réessayer. Les analyses ne sont lisibles que par l'Admin, jamais par
+  l'auteur du ticket.
+- **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
+  décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé.
+  - « Valider » : seulement pour un ticket Analysé qui n'est pas une Question. Confirmation
+    « Valider ce ticket ? » — « Il sera traité à votre prochaine demande. », « Annuler » ou
+    « Valider ». Succès : « Ticket validé. » et le statut passe à Validé. Une Issue déjà fermée
+    sur GitHub : « Ce ticket a déjà été clos sur GitHub. », et la fiche reprend l'état de
+    GitHub. Pour un ticket Reçu, la fiche dit « Valider sera possible une fois le ticket
+    analysé. » ; pour une Question, « Une question reçoit une réponse sur GitHub, pas une
+    validation. ». Un ticket dont le statut est inconnu de la version installée n'offre aucune
+    décision : « Statut inconnu de cette version : mettez l'application à jour pour
+    décider. ».
+  - « Refuser » : pour un ticket Reçu, Analysé, Validé ou En cours, de tout type, Question
+    comprise. La boîte « Refuser ce ticket » prévient : « Le motif sera publié sur GitHub,
+    dépôt public, et lu par le membre. N'y mettez ni nom ni donnée privée. » Pour un ticket En
+    cours, elle ajoute « Une pull request est ouverte. Elle ne sera pas fermée. » Le champ
+    « Motif du refus » prend 5 à 2 000 caractères (« Le motif doit faire au moins 5
+    caractères. ») ; le texte saisi est gardé si l'on ferme puis rouvre la boîte. Succès :
+    « Ticket refusé. Le motif est publié sur GitHub. » ; le membre voit le statut Refusé et
+    l'encadré « Motif du refus ». Un échec laisse la boîte ouverte avec le message. Si le motif
+    est publié mais l'Issue pas fermée : « Motif publié, mais l'Issue n'a pas été fermée.
+    Réessayez. », et le motif ne se modifie plus ; rouverte, la boîte dit « Ce motif est déjà
+    publié sur GitHub. Refuser ferme l'Issue. » ; réessayer ne le publie pas une seconde fois.
+  - Autres refus du serveur, affichés tels quels : « GitHub refuse le jeton. Rien n'a été
+    modifié. », « L'Issue n'existe plus sur GitHub. », « Une décision est déjà en cours sur ce
+    ticket. ».
 - Jeton GitHub refusé : un bandeau dit « Jeton GitHub invalide : aucun ticket n'est transmis
   à GitHub depuis le jj/mm/aa à hh:mm. Remplacez le jeton dans Secret Manager. Les tickets en
   attente repartiront ensuite. » Il disparaît au premier envoi réussi.
 - États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
   signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
-  tous les tickets » ; « Impossible de charger les tickets. » ; capture illisible « Capture
-  illisible. ».
+  tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu
+  ou analysé a une décision. », avec « Afficher tous les tickets » ; « Impossible de charger
+  les tickets. » ; capture illisible « Capture illisible. ».
 
 #### Hors de cette version
 
 Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
-envoyé ; notification push ou e-mail ; version exacte de la livraison ; valider depuis
-l'application ; détection des doublons ; plusieurs captures ; purge des captures ; analyse ou
-traitement automatiques.
+envoyé ; notification push ou e-mail ; version exacte de la livraison ; répondre à une
+Question depuis l'application ; lancer une analyse ou un développement depuis l'application ;
+détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
+automatiques.
 
 ---
 

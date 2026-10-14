@@ -82,7 +82,13 @@ class AdminHubScreen extends ConsumerWidget {
                 'Bugs, idées et questions de la famille, et leur suivi sur '
                 'GitHub.',
             trailing: const _TicketAnomalyBadge(),
-            onTap: () => context.push(AppRoutes.adminTickets),
+            onTap: () {
+              // Point d'entrée : l'écran s'ouvre sur « À traiter ».
+              ref
+                  .read(adminTicketStatusFilterProvider.notifier)
+                  .enterToProcess();
+              context.push(AppRoutes.adminTickets);
+            },
           ),
           _AdminTile(
             icon: Icons.verified_user_outlined,

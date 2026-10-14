@@ -45,6 +45,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'group_reach_backfill': 'Reprise de la portée des groupes',
   'group_planning_reach_backfill':
       'Reprise de la portée des groupes et des plannings de groupe',
+  'ticket_analyses_backfill': 'Reprise des analyses des tickets',
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'portee_plannings':
       'Portée des plannings après un changement de groupes ou de rôle',
@@ -131,6 +132,8 @@ const Map<String, String> kLogTreatmentLabels = {
   'ticket': 'Envoi d\'un ticket',
   'ticket_capture': 'Capture jointe à un ticket',
   'ticket_relance': 'Relance de l\'envoi d\'un ticket',
+  'ticket_validation': 'Validation d\'un ticket',
+  'ticket_refus': 'Refus d\'un ticket',
   'ticket_webhook': 'Retour de GitHub sur un ticket',
   'tickets_sync': 'Synchronisation horaire des tickets',
 

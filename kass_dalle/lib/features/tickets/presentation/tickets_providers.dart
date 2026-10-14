@@ -6,6 +6,7 @@ import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../data/ticket_repository.dart';
 import '../domain/ticket.dart';
+import '../domain/ticket_analysis.dart';
 import '../domain/ticket_form.dart';
 
 final ticketRepositoryProvider = Provider<TicketRepository>((ref) {
@@ -139,6 +140,22 @@ final ticketAnomalyCountProvider = StreamProvider<int>((ref) {
   return ref.watch(ticketRepositoryProvider).watchAnomalyCount();
 });
 
+/// Nombre de tickets à traiter (Reçus ou Analysés) : pastille du compte,
+/// entrée « Tickets à traiter » du menu et puce « À traiter ». Zéro, sans
+/// requête, hors administrateur.
+final adminTicketsToProcessCountProvider = StreamProvider<int>((ref) {
+  if (!ref.watch(isAdminProvider)) return Stream.value(0);
+  return ref.watch(ticketRepositoryProvider).watchToProcessCount();
+});
+
+/// Les analyses d'un ticket (`tickets/{id}/admin/analysis`), en flux ;
+/// `null` tant qu'aucun relevé n'a eu lieu.
+final ticketAnalysisProvider = StreamProvider.autoDispose
+    .family<TicketAnalysisDoc?, String>((ref, ticketId) {
+      if (!ref.watch(isAdminProvider)) return Stream.value(null);
+      return ref.watch(ticketRepositoryProvider).watchAnalysis(ticketId);
+    });
+
 /// Depuis quand le jeton GitHub est refusé, ou `null`.
 final ticketsTokenInvalidSinceProvider = StreamProvider<DateTime?>((ref) {
   if (!ref.watch(isAdminProvider)) return Stream.value(null);
@@ -146,12 +163,38 @@ final ticketsTokenInvalidSinceProvider = StreamProvider<DateTime?>((ref) {
 });
 
 /// Filtre de statut de l'écran d'administration, voir
-/// [kAdminTicketAnomalyFilter].
+/// [kAdminTicketTodoFilter] et [kAdminTicketAnomalyFilter].
+///
+/// Global et sans `autoDispose` : sur grand écran, chaque ticket ouvert
+/// reconstruit l'écran, et le filtre choisi doit survivre. Il n'est donc
+/// jamais remis à zéro par l'écran : ce sont les points d'entrée (tuile
+/// d'Administration, menu du compte) qui posent « À traiter » par
+/// [enterToProcess] avant de naviguer.
 class AdminTicketStatusFilterNotifier extends Notifier<String?> {
+  bool _entryPending = false;
+
   @override
   String? build() => null;
 
-  void set(String? value) => state = value;
+  void set(String? value) {
+    _entryPending = false;
+    state = value;
+  }
+
+  /// Pose « À traiter » à l'entrée dans l'écran. Le premier compteur reçu
+  /// ([settleEntry]) bascule sur « Tous » s'il n'y a rien à traiter.
+  void enterToProcess() {
+    _entryPending = true;
+    state = kAdminTicketTodoFilter;
+  }
+
+  /// Une seule fois après [enterToProcess] : zéro ticket à traiter, et le
+  /// filtre toujours sur « À traiter », bascule sur « Tous ».
+  void settleEntry(int toProcessCount) {
+    if (!_entryPending) return;
+    _entryPending = false;
+    if (toProcessCount == 0 && state == kAdminTicketTodoFilter) state = null;
+  }
 }
 
 final adminTicketStatusFilterProvider =

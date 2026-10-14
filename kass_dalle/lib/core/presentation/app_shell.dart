@@ -327,6 +327,7 @@ enum _AccountAction {
   groups,
   newTicket,
   myTickets,
+  adminTickets,
   signOut,
 }
 
@@ -357,6 +358,11 @@ class _AccountBadge extends ConsumerWidget {
         }
         if (action == _AccountAction.myTickets) {
           context.push(AppRoutes.tickets);
+          return;
+        }
+        if (action == _AccountAction.adminTickets) {
+          ref.read(adminTicketStatusFilterProvider.notifier).enterToProcess();
+          context.push(AppRoutes.adminTickets);
           return;
         }
         ref.read(authRepositoryProvider).signOut();
@@ -463,6 +469,17 @@ class _AccountBadge extends ConsumerWidget {
             ],
           ),
         ),
+        if (user.isAdmin)
+          const PopupMenuItem<_AccountAction>(
+            value: _AccountAction.adminTickets,
+            child: Row(
+              children: [
+                _AdminTicketsIcon(),
+                SizedBox(width: 8),
+                _AdminTicketsLabel(),
+              ],
+            ),
+          ),
         const PopupMenuItem<_AccountAction>(
           value: _AccountAction.signOut,
           child: Row(
@@ -513,8 +530,9 @@ class _AdminIcon extends ConsumerWidget {
   }
 }
 
-/// Point sur le compte = invitation(s) de groupe en attente, ou ticket
-/// arrivé à Répondu, Refusé ou Livré que son auteur n'a pas encore ouvert.
+/// Point sur le compte = invitation(s) de groupe en attente, ticket arrivé à
+/// Répondu, Refusé ou Livré que son auteur n'a pas encore ouvert, ou, pour
+/// l'administrateur, ticket de membre à traiter (Reçu ou Analysé).
 ///
 /// Les Groupes et « Mes tickets » ne s'ouvrent que par le menu du compte :
 /// sans ce signal, un invité ne trouverait pas son invitation, et un membre
@@ -527,14 +545,46 @@ class _AccountDot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final invitations = ref.watch(pendingInvitationsCountProvider);
     final tickets = ref.watch(unseenTicketsCountProvider);
-    if (invitations == 0 && tickets == 0) return child;
+    final toProcess = ref.watch(adminTicketsToProcessCountProvider).value ?? 0;
+    if (invitations == 0 && tickets == 0 && toProcess == 0) return child;
     return Semantics(
       label: [
         if (invitations > 0) 'Invitation(s) de groupe en attente',
         if (tickets > 0) 'Ticket(s) avec un nouveau suivi',
+        if (toProcess > 0) 'Ticket(s) de membres à traiter',
       ].join(', '),
       child: Badge(child: child),
     );
+  }
+}
+
+/// Icône « Tickets à traiter » du menu compte (administrateur) — badge =
+/// tickets Reçus ou Analysés.
+class _AdminTicketsIcon extends ConsumerWidget {
+  const _AdminTicketsIcon();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(adminTicketsToProcessCountProvider).value ?? 0;
+    if (count == 0) return const Icon(AppIcons.ticketsToProcess);
+    return Semantics(
+      label: '$count ticket(s) de membres à traiter',
+      child: Badge(
+        label: Text('$count'),
+        child: const Icon(AppIcons.ticketsToProcess),
+      ),
+    );
+  }
+}
+
+/// « Tickets à traiter (N) » du menu compte (administrateur).
+class _AdminTicketsLabel extends ConsumerWidget {
+  const _AdminTicketsLabel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(adminTicketsToProcessCountProvider).value ?? 0;
+    return Text('Tickets à traiter ($count)');
   }
 }
 

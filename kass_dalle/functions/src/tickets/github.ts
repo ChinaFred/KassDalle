@@ -1,9 +1,10 @@
 /**
  * Client REST GitHub minimal des tickets, par `fetch` — aucun SDK.
  *
- * Cinq appels : créer une Issue, lire une Issue, lire ses commentaires, lire
+ * Huit appels : créer une Issue, lire une Issue, lire ses commentaires, lire
  * sa chronologie (PR qui la référencent), chercher une Issue par la référence
- * d'un ticket. Le jeton vient de `process.env.GITHUB_TICKETS_TOKEN`, peuplé par
+ * d'un ticket, et pour les décisions de l'administrateur : poser une
+ * étiquette, publier un commentaire, fermer une Issue « not planned ». Le jeton vient de `process.env.GITHUB_TICKETS_TOKEN`, peuplé par
  * le secret du même nom une fois attaché ; absent, `githubToken()` rend `null`.
  *
  * Chaque échec lève une `GithubError` classée (`kind`) : l'appelant distingue
@@ -61,7 +62,7 @@ export function classifyGithubFailure(
 
 async function request<T>(
   token: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   path: string,
   opts: { body?: unknown; repoLevel?: boolean } = {},
 ): Promise<T> {
@@ -164,9 +165,26 @@ export async function getIssue(token: string, issueNumber: number): Promise<Remo
 }
 
 export interface RemoteComment {
+  /** Identifiant numérique du commentaire, ou `null`. */
+  id: number | null;
   /** Identifiant numérique du compte auteur (`user.id`), ou `null`. */
   authorId: number | null;
   body: string | null;
+  /** Horodatages ISO de GitHub, ou `null`. */
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/** Lit un commentaire de la forme rendue par l'API ou par un webhook. Pure. */
+export function readRemoteComment(raw: Record<string, unknown>): RemoteComment {
+  const user = raw.user as { id?: unknown } | null | undefined;
+  return {
+    id: typeof raw.id === "number" ? raw.id : null,
+    authorId: typeof user?.id === "number" ? user.id : null,
+    body: typeof raw.body === "string" ? raw.body : null,
+    createdAt: typeof raw.created_at === "string" ? raw.created_at : null,
+    updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : null,
+  };
 }
 
 const MAX_PAGES = 5;
@@ -183,16 +201,54 @@ export async function listIssueComments(
       "GET",
       `${REPO_PATH}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
     );
-    for (const c of batch) {
-      const user = c.user as { id?: unknown } | null | undefined;
-      out.push({
-        authorId: typeof user?.id === "number" ? user.id : null,
-        body: typeof c.body === "string" ? c.body : null,
-      });
-    }
+    for (const c of batch) out.push(readRemoteComment(c));
     if (batch.length < 100) break;
   }
   return out;
+}
+
+/** Pose des étiquettes sur une Issue (les autres restent). */
+export async function addIssueLabels(
+  token: string,
+  issueNumber: number,
+  labels: string[],
+): Promise<string[]> {
+  const result = await request<unknown>(
+    token,
+    "POST",
+    `${REPO_PATH}/issues/${issueNumber}/labels`,
+    { body: { labels } },
+  );
+  return labelNames(result);
+}
+
+/** Publie un commentaire sur une Issue. Rend son identifiant. */
+export async function createIssueComment(
+  token: string,
+  issueNumber: number,
+  body: string,
+): Promise<RemoteComment> {
+  const raw = await request<Record<string, unknown>>(
+    token,
+    "POST",
+    `${REPO_PATH}/issues/${issueNumber}/comments`,
+    { body: { body } },
+  );
+  return readRemoteComment(raw);
+}
+
+/** Ferme une Issue avec la raison `not_planned` (refus). Rend l'Issue relue. */
+export async function closeIssueNotPlanned(
+  token: string,
+  issueNumber: number,
+): Promise<RemoteIssue> {
+  const raw = await request<Record<string, unknown>>(
+    token,
+    "PATCH",
+    `${REPO_PATH}/issues/${issueNumber}`,
+    { body: { state: "closed", state_reason: "not_planned" } },
+  );
+  return readRemoteIssue(raw);
 }
 
 /**

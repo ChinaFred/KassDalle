@@ -198,7 +198,7 @@
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Envoyer un ticket — bug, évolution, nouvelle fonctionnalité, question — et suivre <b>ses</b> tickets dans « Mes tickets » ; 5 par jour et par membre, 30 pour la famille, sans plafond pour l'admin</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Lire les tickets des autres membres, leur auteur et leur capture, relancer un envoi en anomalie (Admin › Tickets des membres)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les tickets des autres membres, leur auteur, leur capture et les analyses, relancer un envoi en anomalie, valider un ticket analysé, refuser un ticket avec un motif publié (Admin › Tickets des membres, « Tickets à traiter » du menu du compte)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Inviter un proche par e-mail (Lecteur ou Éditeur, dans un de ses groupes), renvoyer ou annuler une invitation, lire la liste des invitations</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -1042,10 +1042,15 @@ flowchart LR
     t1(["Signaler ou proposer&lt;br/&gt;type, titre, description, écran"])
     t2(["Joindre une capture&lt;br/&gt;PNG ou JPEG, 5 Mo au plus"])
     t3(["Suivre mes tickets"])
-    t4(["Lire la réponse ou le motif d'un refus"])
-    t5(["Consulter les tickets des membres&lt;br/&gt;filtres statut et type"])
+    t4(["Lire la réponse à une Question"])
+    t5(["Consulter les tickets des membres&lt;br/&gt;filtre « À traiter » à l'entrée, statut et type"])
     t6(["Ouvrir l'Issue sur GitHub"])
     t7(["Relancer l'envoi&lt;br/&gt;d'un ticket en anomalie"])
+    t8(["Lire l'analyse&lt;br/&gt;commentaires « ## Analyse » de l'administrateur"])
+    t9(["Valider un ticket&lt;br/&gt;Analysé, hors Question"])
+    t10(["Refuser un ticket&lt;br/&gt;motif publié, Issue fermée non prévue"])
+    t11(["Voir le motif du refus"])
+    f6(["Relever les analyses&lt;br/&gt;commentaire du mainteneur, chaque heure, après une décision"])
     f1(["Contrôler les bornes et le plafond du jour&lt;br/&gt;5 par membre, 30 pour la famille"])
     f2(["Créer l'Issue&lt;br/&gt;sans nom, sans capture, mentions neutralisées"])
     f3(["Mettre à jour le statut&lt;br/&gt;d'après l'Issue"])
@@ -1057,6 +1062,17 @@ flowchart LR
   MEM --- t3
   ADM --- t5
   ADM --- t7
+  ADM --- t8
+  ADM --- t9
+  ADM --- t10
+  t5 -.->|"détail d'un ticket"| t8
+  t5 -.->|"détail d'un ticket"| t9
+  t5 -.->|"détail d'un ticket"| t10
+  t9 -.->|"étiquette validé"| GH
+  t10 -.->|"« Réponse : motif », fermeture"| GH
+  GH -.->|"commentaires de l'administrateur"| f6
+  f6 -.->|"alimente"| t8
+  t3 -.->|"étend : refus motivé, saisi sur GitHub ou dans l'application"| t11
   t1 -.->|"étend : case cochée, ou galerie, ou fichier"| t2
   t1 -.->|"inclut"| f1
   f1 -.->|"ticket enregistré « Envoi en cours »"| f2
@@ -1070,7 +1086,7 @@ flowchart LR
   t6 --- GH
   f3 -.->|"état final"| f5
   t3 -.->|"ouvrir le ticket éteint le point"| f5
-  t3 -.->|"étend : Question répondue ou refus motivé"| t4
+  t3 -.->|"étend : Question répondue"| t4
 </pre>
       </div>
       <figcaption>
@@ -1083,12 +1099,26 @@ flowchart LR
         <b>Les plafonds se comptent par jour calendaire, à l'heure de Paris</b> : cinq tickets par
         membre, trente pour toute la famille ; l'administrateur n'en a pas. Quand il reste deux
         envois ou moins, le formulaire le dit.
-        <b>Le statut se décide sur GitHub</b>, jamais dans l'application. Issue créée : Reçu ;
+        <b>Le statut suit l'Issue GitHub.</b> Issue créée : Reçu ;
         étiquette <code>statut:analysé</code> : Analysé ; étiquette <code>validé</code> : Validé ;
         pull request « Closes #N » : En cours ; Issue fermée comme terminée : Livré, ou Répondu
         pour une Question ; fermée comme non prévue : Refusé. Un statut ne recule jamais, sauf
         à la réouverture de l'Issue. GitHub prévient l'application à chaque changement ; une
         vérification horaire rattrape un avis perdu.
+        <b>L'administrateur décide aussi depuis l'application</b> (Admin › Tickets des membres,
+        barre fixée en bas de la fiche). « Valider » n'existe que pour un ticket Analysé qui n'est
+        pas une Question : l'application pose l'étiquette <code>validé</code>. « Refuser » vaut
+        pour un ticket Reçu, Analysé, Validé ou En cours, Question comprise : le motif, 5 à
+        2 000 caractères, est publié sur GitHub en « Réponse : … », puis l'Issue est fermée comme
+        non prévue ; le membre voit Refusé et le motif. Un bouton qui ne s'applique pas est
+        masqué. La tuile d'administration et l'entrée « Tickets à traiter (N) » du menu du compte
+        ouvrent l'écran sur les tickets Reçus ou Analysés ; leur nombre allume le point de la
+        puce du compte de l'administrateur.
+        <b>Les analyses</b> sont les commentaires du compte GitHub de l'administrateur qui
+        commencent par « ## Analyse ». L'application les relève à chaque commentaire, à chaque
+        vérification horaire et après une décision, et les affiche sur la fiche, dix au plus,
+        pour l'administrateur seul. Les tickets antérieurs se relèvent par Admin › Backfills,
+        « Analyses des tickets ».
         <b>Seul un commentaire de l'administrateur qui commence par « Réponse : » revient dans
         l'application</b>, comme réponse à une Question ou motif d'un refus. Les autres
         commentaires restent sur GitHub. Le membre n'a pas de lien vers l'Issue.
@@ -1098,8 +1128,8 @@ flowchart LR
         l'envoi ». Un jeton GitHub refusé affiche un bandeau dans le même écran jusqu'au premier
         envoi réussi.
         <b>L'analyse d'un ticket</b> est faite par l'administrateur avec sa session Claude Code,
-        à sa demande, hors de l'application. Elle n'entre dans aucun poste de coût de
-        l'application.
+        à sa demande, hors de l'application ; l'application en affiche le texte sans rien
+        générer. Elle n'entre dans aucun poste de coût de l'application.
       </figcaption>
     </figure>
   </section>

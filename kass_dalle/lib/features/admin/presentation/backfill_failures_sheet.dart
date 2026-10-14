@@ -9,7 +9,8 @@ import '../../../core/utils/context_extensions.dart';
 
 /// Feuille « À revoir » d'un backfill : les éléments que le passage n'a pas
 /// pu traiter, nommés, avec la raison. Une ligne ouvre l'ingrédient ou l'unité
-/// dans son référentiel, la recette dans sa fiche.
+/// dans son référentiel, la recette dans sa fiche, le ticket dans Admin ›
+/// Tickets des membres.
 Future<void> showBackfillFailuresSheet(
   BuildContext context, {
   required String title,
@@ -33,6 +34,7 @@ const _kindOrder = [
   BackfillFailureKind.recipe,
   BackfillFailureKind.account,
   BackfillFailureKind.meal,
+  BackfillFailureKind.ticket,
 ];
 
 String _groupLabel(String kind, int count) => switch (kind) {
@@ -41,14 +43,17 @@ String _groupLabel(String kind, int count) => switch (kind) {
   BackfillFailureKind.recipe => 'Recettes ($count)',
   BackfillFailureKind.account => 'Comptes ($count)',
   BackfillFailureKind.meal => 'Repas planifiés ($count)',
+  BackfillFailureKind.ticket => 'Tickets ($count)',
   _ => 'Autres ($count)',
 };
 
-/// Une ligne s'ouvre quand sa nature a un écran : ingrédient, unité, recette.
+/// Une ligne s'ouvre quand sa nature a un écran : ingrédient, unité, recette,
+/// ticket.
 bool _isOpenable(BackfillFailure f) =>
     f.kind == BackfillFailureKind.ingredient ||
     f.kind == BackfillFailureKind.unit ||
-    f.kind == BackfillFailureKind.recipe;
+    f.kind == BackfillFailureKind.recipe ||
+    f.kind == BackfillFailureKind.ticket;
 
 /// Tri par raison puis par nom : les éléments qui ont la même cause se suivent.
 List<BackfillFailure> _sorted(Iterable<BackfillFailure> items) {
@@ -111,6 +116,8 @@ class BackfillFailuresSheet extends StatelessWidget {
         context.push(AppRoutes.adminNutritionUnits, extra: f.id);
       case BackfillFailureKind.recipe:
         context.push('/recipes/${f.id}');
+      case BackfillFailureKind.ticket:
+        context.push(AppRoutes.adminTicketDetail(f.id));
     }
   }
 

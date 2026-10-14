@@ -10,6 +10,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../domain/ticket.dart';
+import '../domain/ticket_analysis.dart';
 import '../domain/ticket_form.dart';
 
 /// Lecture des tickets, envoi d'un ticket et de sa capture.
@@ -89,6 +90,38 @@ class TicketRepository {
                 .length,
           ),
       step: 'watch_anomaly_count',
+    );
+  }
+
+  /// Nombre de tickets à traiter (Reçus ou Analysés) : pastille du compte,
+  /// entrée « Tickets à traiter » et puce « À traiter » (administrateur).
+  Stream<int> watchToProcessCount() {
+    return _reported(
+      _col
+          .where(
+            'status',
+            whereIn: [for (final s in kAdminTicketToProcessStatuses) s.value],
+          )
+          .snapshots()
+          .map((snap) => snap.size),
+      step: 'watch_to_process_count',
+    );
+  }
+
+  /// Les analyses relevées sur l'Issue de [ticketId]
+  /// (`tickets/{ticketId}/admin/analysis`), ou `null` tant qu'aucun relevé
+  /// n'a eu lieu. Lisible par l'administrateur seul.
+  Stream<TicketAnalysisDoc?> watchAnalysis(String ticketId) {
+    return _reported(
+      _col.doc(ticketId).collection('admin').doc('analysis').snapshots().map((
+        snap,
+      ) {
+        final data = snap.data();
+        return snap.exists && data != null
+            ? TicketAnalysisDoc.fromMap(data)
+            : null;
+      }),
+      step: 'watch_analysis',
     );
   }
 
@@ -288,6 +321,58 @@ class TicketRepository {
         error: e,
         stackTrace: st,
         context: {'step': 'retry_send', 'ticket_id': ticketId},
+      );
+      rethrow;
+    }
+  }
+
+  /// Valide [ticketId] (administrateur). Lève [TicketDecisionError] pour un
+  /// refus du serveur ; toute autre erreur est relancée telle quelle.
+  Future<String> validate(String ticketId) {
+    return _decide(
+      step: 'validate',
+      ticketId: ticketId,
+      call: () => _callables.validateTicket(ticketId),
+    );
+  }
+
+  /// Refuse [ticketId] avec [reason] (administrateur). Lève
+  /// [TicketDecisionError] pour un refus du serveur, échec partiel compris ;
+  /// toute autre erreur est relancée telle quelle.
+  Future<String> refuse(String ticketId, String reason) {
+    return _decide(
+      step: 'refuse',
+      ticketId: ticketId,
+      call: () => _callables.refuseTicket(ticketId, reason.trim()),
+    );
+  }
+
+  Future<String> _decide({
+    required String step,
+    required String ticketId,
+    required Future<String> Function() call,
+  }) async {
+    try {
+      return await call();
+    } on GeminiCallableException catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {'step': step, 'ticket_id': ticketId, 'code': e.code},
+      );
+      final known = ticketDecisionErrorFrom(
+        message: e.message,
+        details: e.details,
+      );
+      if (known != null) throw known;
+      rethrow;
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {'step': step, 'ticket_id': ticketId},
       );
       rethrow;
     }

@@ -13,6 +13,13 @@
  *   écrit `screenshot_path`. La capture ne part jamais sur GitHub.
  * - `retryTicketSend` — administrateur (`requireAdmin`). Remet le compteur
  *   d'essais à zéro et tente l'envoi une fois.
+ * - `validateTicket` — administrateur. Pose l'étiquette `validé` sur l'Issue
+ *   d'un ticket Analysé (hors Question) et écrit `validated`
+ *   (`tickets/decisions.ts`). Rend `{ status, changed }`.
+ * - `refuseTicket` — administrateur. Publie `Réponse : <motif>` sur l'Issue,
+ *   la ferme `not_planned` et écrit `refused` et `reply_text`. Rend
+ *   `{ status }`. Échec partiel (motif publié, Issue ouverte) : `aborted`,
+ *   `details.reason = "reply_published_close_failed"`.
  *
  * Plafonds : `app_config/tickets` (`per_member_per_day`, `global_per_day`,
  * 5 et 30 si le document manque), jour calendaire Europe/Paris, compteurs
@@ -43,6 +50,7 @@ import {
   SCREENSHOT_SIGNATURE_BYTES,
   TicketInputError,
   globalQuotaDocId,
+  readRefusalReason,
   isPlausibleDocId,
   memberQuotaDocId,
   parisDay,
@@ -56,6 +64,7 @@ import {
   type TicketStatus,
 } from "../tickets/rules";
 import { sendTicket } from "../tickets/service";
+import { refuseTicketDecision, validateTicketDecision } from "../tickets/decisions";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -349,5 +358,79 @@ export const retryTicketSend = onCall(
       feature: "tickets",
     });
     return { status: sent.status };
+  },
+);
+
+/** Identifiant de ticket d'une requête de décision. Lève `invalid-argument`. Pure. */
+export function readTicketIdArg(data: unknown): string {
+  const ticketId = (data as Record<string, unknown> | undefined)?.ticketId;
+  if (!isPlausibleDocId(ticketId)) {
+    throw new HttpsError("invalid-argument", "Identifiant de ticket invalide.");
+  }
+  return ticketId;
+}
+
+/** Motif de refus d'une requête. Lève `invalid-argument` (champ `reason`). Pure. */
+export function readRefusalArg(data: unknown): string {
+  const raw = (data as Record<string, unknown> | undefined)?.reason;
+  requireBoundedText(raw, { field: "reason", max: SHORT_TEXT_MAX_CHARS });
+  try {
+    return readRefusalReason(raw);
+  } catch (err) {
+    if (err instanceof TicketInputError) {
+      throw new HttpsError("invalid-argument", err.message, { field: err.field });
+    }
+    throw err;
+  }
+}
+
+export const validateTicket = onCall(
+  { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
+  async (req): Promise<{ status: TicketStatus; changed: boolean }> => {
+    const ctx = await requireAdmin(req, "ticket_validation");
+    const ticketId = readTicketIdArg(req.data);
+    try {
+      return await validateTicketDecision(ticketId, {
+        correlationId: ctx.correlationId,
+        userId: ctx.userId,
+      });
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      await logError({
+        message: `validateTicket : ticket ${ticketId} non validé`,
+        errorDescription: describe(err),
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError("internal", "Le ticket n'a pas pu être validé. Réessayez.");
+    }
+  },
+);
+
+export const refuseTicket = onCall(
+  { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
+  async (req): Promise<{ status: TicketStatus }> => {
+    const ctx = await requireAdmin(req, "ticket_refus");
+    const ticketId = readTicketIdArg(req.data);
+    const reason = readRefusalArg(req.data);
+    try {
+      return await refuseTicketDecision(ticketId, reason, {
+        correlationId: ctx.correlationId,
+        userId: ctx.userId,
+      });
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      await logError({
+        message: `refuseTicket : ticket ${ticketId} non refusé`,
+        errorDescription: describe(err),
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError("internal", "Le ticket n'a pas pu être refusé. Réessayez.");
+    }
   },
 );

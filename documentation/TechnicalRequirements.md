@@ -224,6 +224,7 @@ firestore/
 ├── token_usage/{uid}/
 ├── error_reports/{id}/
 ├── tickets/{ticketId}/                            ← tickets des membres, écrits par le serveur (sauf seen_by_author_at)
+│   └── admin/analysis                             ← analyses du mainteneur relevées sur l'Issue, admin seul, serveur seul
 ├── ticket_quotas/{uid}_{AAAAMMJJ}, _global_{AAAAMMJJ} ← compteurs du plafond quotidien des tickets, serveur seul
 └── app_config/{decision}/                         ← routage, tarifs, plafonds, attestation…
 ```
@@ -1923,7 +1924,8 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 Un ticket créé par un membre approuvé depuis le menu du compte (« Signaler ou proposer »),
 publié en Issue sur le dépôt **public** `ChinaFred/KassDalle`, et suivi dans « Mes tickets »
 et Admin › Tickets (§5, « Tickets »). Écrit par les Functions seules (`submitTicket`,
-`attachTicketScreenshot`, `retryTicketSend`, `githubTicketWebhook`, `ticketsSyncSchedule`),
+`attachTicketScreenshot`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
+`githubTicketWebhook`, `ticketsSyncSchedule`),
 à une exception : l'auteur pose `seen_by_author_at`. Lu par l'auteur (approuvé, non révoqué)
 et par l'administrateur. Le document est **privé** : le nom de l'auteur, son uid et la capture
 ne partent jamais sur GitHub.
@@ -1949,7 +1951,27 @@ ne partent jamais sur GitHub.
 | `last_send_error` | `String?` | Dernière erreur d'envoi (300 caractères au plus, jamais le jeton), `null` après un envoi réussi |
 | `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire du compte `ChinaFred` (identifiant numérique 16348852) qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
 | `send_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé pendant un envoi, pour qu'un « Relancer l'envoi » et la tâche horaire ne publient pas deux Issues. Retiré à la fin de l'envoi |
+| `decision_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé en transaction par `validateTicket` et `refuseTicket`, pour que deux décisions simultanées ne se croisent pas (deux motifs publiés, ou un refus écrasé par une validation). Retiré à la fin de la décision (validation ou refus), réussie ou non ; s'il n'a pas pu l'être, il expire seul. Absent sur les tickets antérieurs : rien à reprendre |
 
+**Sous-document `tickets/{ticketId}/admin/analysis`** — les analyses de l'administrateur
+relevées sur l'Issue (`analysesFromComments`, `functions/src/tickets/rules.ts`). Écrit par le
+serveur seul, réécrit en entier à chaque relevé : webhook `issue_comment` (`created`,
+`edited`, `deleted`) d'un commentaire du mainteneur, `resyncTicket` (tâche horaire, avec les
+commentaires qu'elle lit déjà), après `validateTicket` et `refuseTicket`, et le backfill
+`ticket_analyses`. Lu par l'administrateur seul, jamais par l'auteur du ticket (§4).
+
+| Champ | Type | Description |
+|---|---|---|
+| `analyses` | `List<Map>` | Ordre chronologique, dix au plus (`ANALYSIS_MAX_COUNT`, les plus récentes). Une analyse est un commentaire dont l'auteur a l'identifiant numérique `GITHUB_TICKETS_MAINTAINER_ID` et dont le texte, NFC, espaces de tête retirées, commence par `## Analyse` (« ## Analyse — compléments » compte) ; tout autre auteur est ignoré |
+| `analyses[].comment_id` | `int?` | Identifiant du commentaire GitHub |
+| `analyses[].body` | `String` | Texte Markdown, ligne de titre comprise (le client la retire), fins de ligne Unix, 20 000 caractères au plus (`ANALYSIS_MAX_CHARS`) : un texte plus long est coupé à la dernière ligne vide avant la limite, sinon à la limite |
+| `analyses[].created_at` | `Timestamp?` | Création du commentaire sur GitHub |
+| `analyses[].updated_at` | `Timestamp?` | Dernière modification du commentaire sur GitHub |
+| `analyses[].truncated` | `bool` | Vrai quand le texte a été coupé : la fiche affiche « Analyse tronquée, voir GitHub. » |
+| `checked_at` | `Timestamp` | Heure serveur du dernier relevé |
+
+Le client lit les analyses une à une : une entrée illisible (texte absent) est ignorée, sans
+faire tomber la section (`TicketAnalysis.fromMap`).
 **Correspondance GitHub → statut** (`statusFromIssue`, `nextTicketStatus`,
 `functions/src/tickets/rules.ts`, logique serveur seule) :
 
@@ -1976,8 +1998,13 @@ de plafond et n'incrémente pas le compteur de la famille. Aucun accès client.
 client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (`status ==`,
 `status in`, `github_issue_number ==`) se servent des index simples.
 
-**Migration :** aucune. Les deux collections naissent vides ; `app_config/tickets` n'a pas
-besoin d'être semé (§3.13).
+**Migration :** aucune pour `tickets` et `ticket_quotas` ; `app_config/tickets` n'a pas
+besoin d'être semé (§3.13). Les analyses publiées sur GitHub avant v0.23.62 se relèvent par le
+backfill ponctuel `ticket_analyses` (Admin › Backfills › « Analyses des tickets », §7.10).
+Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
+
+**Index.** Le compteur « à traiter » (`status in ['received', 'analyzed']`,
+`watchToProcessCount`) se sert de l'index simple sur `status`.
 
 ---
 
@@ -2033,8 +2060,8 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group` —
-ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group`,
+`ticket_analyses` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
 `planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
@@ -2684,6 +2711,7 @@ service cloud.firestore {
 | `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
 | `tickets` | admin, ou l'auteur (`author_uid`) approuvé et non révoqué — un compte en attente ou révoqué ne relit pas ses tickets ; un ticket absent se lit comme absent par un compte approuvé (`resource == null`), pour que le détail affiche « Ce ticket n'existe plus » au lieu d'un refus | **serveur seul**, sauf une mise à jour de l'auteur approuvé et non révoqué qui ne touche que `seen_by_author_at` (`affectedKeys().hasOnly`) et le pose à `request.time`. Création et suppression refusées à tous, administrateur compris : un ticket créé par le client échapperait aux plafonds, et un statut écrit par le client ne dirait plus l'état de l'Issue |
+| `tickets/{id}/admin/{doc}` | admin seul (`isAdmin()`) — l'auteur du ticket ne lit pas les analyses | **serveur seul** (`allow write: if false`) — `githubTicketWebhook`, `ticketsSyncSchedule`, `validateTicket`, `refuseTicket`, `backfillTicketAnalysesFn` |
 | `ticket_quotas` | **personne** | **serveur seul** (`allow read, write: if false`) — `submitTicket`. Un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 
 Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
@@ -3153,7 +3181,10 @@ attente ne le posent pas ; personne ne crée ni ne supprime un ticket, administr
 l'administrateur ne modifie pas le ticket d'un membre ; `ticket_quotas` ne se lit ni ne s'écrit
 par aucun rôle ; `app_config/tickets` se lit par un compte approuvé, pas par un compte en
 attente ou révoqué, ne s'écrit pas par un membre et s'écrit par l'administrateur ; `app_config/tickets_status` se lit par
-l'administrateur seul et ne s'écrit par aucun client. Storage (9) : `tickets/` — l'auteur dépose
+l'administrateur seul et ne s'écrit par aucun client ; `tickets/{id}/admin/analysis` (v0.23.62,
+6 tests) se lit par l'administrateur et ne se lit ni par l'auteur, ni par un éditeur, un autre
+lecteur, un compte en attente ou un anonyme, et ne s'écrit par aucun rôle, administrateur
+compris. Storage (9) : `tickets/` — l'auteur dépose
 une capture PNG ou JPEG sous son uid, nommée `screenshot`, de 5 Mo au plus ; personne ne dépose
 chez un autre, administrateur compris ; un compte en attente, révoqué ou anonyme ne dépose
 rien ; l'auteur et l'administrateur lisent la capture, un autre membre non ; un compte révoqué
@@ -3468,18 +3499,24 @@ Un membre approuvé (`reader`, `editor`, `admin`) envoie un ticket depuis le men
 serveur l'enregistre dans `tickets` (§3.12 bis), le publie en Issue sur le dépôt **public**
 `ChinaFred/KassDalle`, et en suit le statut par un webhook GitHub, doublé d'une relecture
 horaire. Aucun appel de modèle : pas de poste d'IA, rien au reporting de coûts. L'analyse des
-tickets est faite par une session Claude Code, sur demande de l'administrateur.
+tickets est faite par une session Claude Code, sur demande de l'administrateur ; le serveur en
+relève le texte publié (`## Analyse…`) pour la fiche admin. L'administrateur valide ou refuse
+depuis Admin › Tickets des membres.
 
 Code serveur : `functions/src/tickets/` — `rules.ts` (règles pures, testées par
-`tests/tickets.test.ts`), `github.ts` (client REST par `fetch`, aucun SDK), `service.ts`
-(envoi et application des retours), `webhook.ts` ; `callable/ticketsCallable.ts` ;
-`scheduled/ticketsSyncSchedule.ts`.
+`tests/tickets.test.ts` et `tests/ticketDecisions.test.ts`), `github.ts` (client REST par
+`fetch`, aucun SDK), `service.ts` (envoi, application des retours, analyses), `decisions.ts`
+(valider, refuser), `webhook.ts` ; `callable/ticketsCallable.ts` ;
+`callable/ticketAnalysesBackfillCallable.ts` ; `scheduled/ticketsSyncSchedule.ts`.
 
 | Fonction | Type | Garde | Contrat |
 |---|---|---|---|
 | `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field`), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
 | `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus, et ses 8 premiers octets porter la signature de ce format (`screenshotBytesMatch` : `89 50 4E 47 0D 0A 1A 0A` pour PNG, `FF D8 FF` pour JPEG), sinon `invalid-argument` |
 | `retryTicketSend` | Callable | `requireAdmin` | `{ ticketId }` → `{ status }`. Remet `send_attempts` à zéro et tente l'envoi une fois ; sans effet sur un ticket déjà publié |
+| `validateTicket` | Callable | `requireAdmin` (rôle relu côté serveur, App Check) | `{ ticketId }` → `{ status: "validated", changed }`. Ticket `analyzed`, d'un autre type que `question`, avec une Issue (`validatePrecondition`) ; déjà `validated` : succès sans rien changer. Prend le même bail `decision_lease_until` que le refus, en transaction, libéré à la fin. Relit l'Issue : fermée → l'état relu est appliqué et `failed-precondition` « Ce ticket a déjà été clos sur GitHub. » (`details.reason: "issue_closed"`). Pose l'étiquette `validé` (`POST /issues/{n}/labels`) sauf si elle y est, puis écrit `validated` sans attendre le webhook, dans une transaction qui revérifie que le ticket est encore `analyzed` (`shouldWriteValidated`) : un refus arrivé entre-temps n'est pas écrasé. Puis réécrit les analyses |
+| `refuseTicket` | Callable | `requireAdmin` | `{ ticketId, reason }` → `{ status: "refused" }`. Motif : garde de taille brute, puis `readRefusalReason` (caractères de contrôle retirés sauf retour à la ligne, NFC, 5 à 2 000 caractères, mentions et renvois `#N` neutralisés). Ticket `received`, `analyzed`, `validated` ou `in_progress` avec une Issue (`refusePrecondition`), tout type. Bail `decision_lease_until` en transaction, sinon « Une décision est déjà en cours sur ce ticket. ». Relit l'Issue et ses commentaires ; publie `Réponse : <motif>` (`POST /issues/{n}/comments`) sauf si la dernière réponse du mainteneur porte déjà ce motif (`sameReply`, réessai après échec partiel) ; ferme l'Issue `not_planned` (`PATCH /issues/{n}`) ; écrit `refused` et `reply_text`. Échec de fermeture après publication : `aborted` « Motif publié, mais l'Issue n'a pas été fermée. Réessayez. », `details.reason: "reply_published_close_failed"`. Issue déjà fermée : état relu appliqué ; succès si elle est fermée non prévue avec ce motif, sinon « Ce ticket a déjà été clos sur GitHub. ». Le bail est libéré à la fin |
+| `backfillTicketAnalysesFn` | Callable | `requireAdmin` | ponctuel `ticket_analyses` d'Admin › Backfills (§7.10) |
 | `githubTicketWebhook` | HTTPS (`onRequest`, `invoker: "public"`) | signature `X-Hub-Signature-256` | voir ci-dessous |
 | `ticketsSyncSchedule` | Cloud Scheduler, toutes les heures | — | reprise des envois, resynchronisation |
 
@@ -3525,6 +3562,12 @@ traités (`updatesFromEvent`) :
   compte `ChinaFred` qui commence par « Réponse : » devient `reply_text`, préfixe retiré. Le
   contrôle compare `comment.user.id` à l'identifiant numérique `GITHUB_TICKETS_MAINTAINER_ID`
   (16348852), pas le login : un login se renomme et peut être repris par un autre compte ;
+- `issue_comment` (`created`, `edited`, `deleted`) d'un commentaire du mainteneur, quel que
+  soit son texte (`analysisRefreshFromEvent`) : le serveur relit les commentaires de l'Issue
+  (`GET /issues/{n}/comments`) et réécrit `tickets/{id}/admin/analysis`. Une modification peut
+  retirer le titre `## Analyse`, une suppression retire une analyse. Cette relecture demande le
+  jeton `GITHUB_TICKETS_TOKEN` : absent ou refusé, `token_invalid_since` est posé et la
+  livraison rend 500 ;
 - `pull_request` (`opened`, `reopened`, `edited`, `ready_for_review`, PR ouverte) : chaque
   Issue citée par un mot-clé de fermeture passe à `in_progress`, jamais depuis une fin, si
   l'auteur de la PR est le mainteneur (`user.id`) ou si `author_association` vaut `OWNER`,
@@ -3533,7 +3576,8 @@ traités (`updatesFromEvent`) :
 - `ping` : 200.
 
 Tout autre événement, un autre dépôt, ou une Issue sans ticket (elle ne vient pas de
-l'application) : 200, ignoré. Aucun texte de GitHub n'est écrit hormis `reply_text` filtré.
+l'application) : 200, ignoré. Aucun texte de GitHub n'est écrit hormis `reply_text` filtré et
+les analyses du mainteneur, lisibles par l'administrateur seul.
 Une panne Firestore rend 500 : GitHub affiche la livraison en échec, et la tâche horaire
 rattrape l'état. Un commentaire supprimé ne retire pas `reply_text`.
 
@@ -3542,12 +3586,39 @@ rattrape l'état. Un commentaire supprimé ne retire pas `reply_text`.
 (`GET /issues/{n}`), PR ouvertes qui la ferment (chronologie, événements `cross-referenced`,
 « Closes #N » dans leur corps, auteur de confiance selon la même règle que le webhook, lue sur
 `source.issue.user.id` et `source.issue.author_association`), dernière réponse du compte
-16348852 (commentaires). Les tickets
+16348852 (commentaires), et réécrit les analyses depuis les mêmes commentaires, sans appel de
+plus. Les tickets
 clos ne sont pas relus : une réouverture dont le webhook est perdu n'est pas rattrapée.
+
+**Décisions de l'administrateur, côté client.** `TicketRepository.validate` et `refuse`
+appellent `validateTicket` et `refuseTicket` par `GeminiService` ; un refus du serveur qui porte
+`details.reason` ou `details.field` devient une `TicketDecisionError` dont le message s'affiche
+tel quel (`ticketDecisionErrorFrom`), l'échec partiel d'un refus est reconnu à
+`reply_published_close_failed`, toute autre erreur est remontée (`ErrorReportService`, feature
+`tickets`) puis affichée « Ticket non validé : … » ou « Ticket non refusé : … ». Les boutons
+suivent `adminTicketDecisions` (`features/tickets/domain/ticket.dart`), qui reprend les
+conditions de `validatePrecondition` et `refusePrecondition` pour masquer un bouton sans
+appel ; le serveur refait le contrôle. Cette logique est dupliquée et verrouillée par la
+fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente, et la valeur
+`reply_published_close_failed`), rejouée par `test/ticket_decisions_test.dart` et
+`functions/src/tests/ticketDecisions.test.ts`. Un statut stocké inconnu de cette version
+n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
+l'application à jour pour décider. ». Le compteur « à traiter »
+(`adminTicketsToProcessCountProvider`, requête `status in ['received', 'analyzed']` en flux,
+aucune requête hors administrateur) alimente le point de la puce du compte, l'entrée « Tickets à
+traiter (N) » et la puce « À traiter (N) ». Le filtre de statut
+(`adminTicketStatusFilterProvider`) est global, sans `autoDispose`, et l'écran ne le remet
+jamais à zéro : `enterToProcess` le pose à l'entrée, `settleEntry` le bascule une fois sur
+« Tous » si le premier compteur reçu vaut zéro. Les analyses se lisent en flux
+(`ticketAnalysisProvider`) ; le client retire la ligne `## Analyse…`, rend le Markdown
+GitHub-flavored, ne charge aucune image et n'ouvre que les liens `http` et `https`.
 
 **Secrets.** `GITHUB_TICKETS_TOKEN` : jeton « fine-grained » limité au dépôt
 `ChinaFred/KassDalle`, permissions Issues lecture-écriture, Metadata lecture, Pull requests
-lecture ; attaché à `submitTicket`, `retryTicketSend` et `ticketsSyncSchedule`.
+lecture ; attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
+`backfillTicketAnalysesFn`, `ticketsSyncSchedule` et `githubTicketWebhook` (relecture des
+commentaires pour les analyses). Les permissions existantes suffisent : poser une étiquette,
+commenter et fermer une Issue relèvent de « Issues lecture-écriture ».
 `GITHUB_WEBHOOK_SECRET` : secret partagé du webhook, attaché à `githubTicketWebhook` seule. Les
 deux sont lus par `process.env`, comme `ANTHROPIC_API_KEY` : une valeur vide n'arrête aucune
 fonction, elle laisse les tickets en « Envoi en cours » (jeton) ou refuse les livraisons du
@@ -3561,7 +3632,7 @@ valeur vide suffit pour débloquer le déploiement) :
 2. `firebase functions:secrets:set GITHUB_WEBHOOK_SECRET --project kassdale-6d948`, coller une
    chaîne aléatoire longue (par exemple `openssl rand -hex 32`).
 
-Remplacer un jeton demande un `functions:secrets:set` puis un redéploiement des trois fonctions
+Remplacer un jeton demande un `functions:secrets:set` puis un redéploiement des sept fonctions
 qui le montent (une version de secret est figée au déploiement).
 
 **Mise en place du webhook GitHub** (dépôt `ChinaFred/KassDalle` › Settings › Webhooks › Add
@@ -4976,7 +5047,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Quatre tâches planifiées (Cloud Scheduler), huit reprises manuelles et deux réglages. Aucune
+Quatre tâches planifiées (Cloud Scheduler), neuf reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -4997,6 +5068,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillGroupPlanningReachFn` | `admin` | ponctuel `group_planning_reach`. Lit tous les `groups` une fois, et recalcule pour chacun de leurs membres et de leurs invités `group_reach` (`syncReachFor`) et `planning_reach` (`syncPlanningReachFor`, dont `group_ids`, `masked_group_ids` et `masked_invitation_ids`), les fonctions des déclencheurs ; un document déjà juste n'est pas réécrit. Puis, si la première phase n'a pas été arrêtée, parcourt `planned_meals` par identifiant depuis le point de reprise `app_config/group_planning_reach_backfill_checkpoint` (pages de 400, projection `group_id`) et pose `group_id: null` sur chaque repas qui n'a pas le champ, par lots ; un lot en échec est repris repas par repas. À lancer une fois après le déploiement du planning de groupe : sans lui, un membre d'un groupe que personne n'a touché depuis ne lit pas le planning du groupe, un groupe dont le propriétaire est déjà lecteur reste ouvert, et un planning personnel partagé ne montre aucun repas antérieur. 500 comptes réécrits et 4 000 repas marqués par appel au plus, arrêt sur trois échecs de suite dans chaque phase. Sans appel de modèle. Réentrant : un compte à jour est sauté, un repas qui porte le champ n'est pas réécrit |
 | `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Verrou commun avec `group_planning_reach`. Sans appel de modèle |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
+| `backfillTicketAnalysesFn` | `admin` | ponctuel `ticket_analyses`, « Analyses des tickets » (v0.23.62). Lit tous les `tickets` une fois ; pour chaque ticket qui a un numéro d'Issue et pas encore de sous-document `tickets/{id}/admin/analysis`, relit les commentaires de l'Issue (`GET /issues/{n}/comments`, un appel par tranche de cent) et écrit le sous-document (`writeTicketAnalyses`, §3.12 bis). Un ticket sans Issue est compté « sans Issue » ; un ticket déjà relevé est sauté. 200 tickets écrits par appel, arrêt sur trois échecs de suite, sur un jeton refusé (`token_invalid_since` posé) ou sur la limite de débit de GitHub. Un ticket en échec rejoint la liste « À revoir » (nature `ticket`, libellé « Issue #N », ouvert dans Admin › Tickets des membres). Monte `GITHUB_TICKETS_TOKEN`. Sans appel de modèle. À lancer une fois après le déploiement de v0.23.62 ; le webhook, la tâche horaire et les décisions tiennent ensuite les analyses à jour |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
 callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),
@@ -6184,8 +6256,8 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
-| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, et le bandeau « Jeton GitHub invalide » (`app_config/tickets_status`) |
-| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`) |
+| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, et le bandeau « Jeton GitHub invalide » (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter (N) » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
+| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`) et « Refuser » (`refuseTicket`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
 

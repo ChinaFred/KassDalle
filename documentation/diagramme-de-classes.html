@@ -501,6 +501,27 @@ classDiagram
     +String? replyText
   }
 
+  class TicketAnalysisDoc {
+    &lt;&lt;tickets/{id}/admin/analysis, écrit par le serveur, lu par l'admin&gt;&gt;
+    +List~TicketAnalysis~ analyses
+    +DateTime? checkedAt
+  }
+
+  class TicketAnalysis {
+    +int? commentId
+    +String body
+    +DateTime? createdAt
+    +DateTime? updatedAt
+    +bool truncated
+  }
+
+  class AdminTicketDecisions {
+    &lt;&lt;calculé, adminTicketDecisions(Ticket)&gt;&gt;
+    +bool canValidate
+    +bool canRefuse
+    +String? validateHint
+  }
+
   class TicketType {
     &lt;&lt;enumeration&gt;&gt;
     bug
@@ -695,6 +716,9 @@ classDiagram
   AppUser "1" --&gt; "0..*" Ticket : authorUid
   Ticket "1" --&gt; "1" TicketType
   Ticket "1" --&gt; "1" TicketStatus
+  Ticket "1" --&gt; "0..1" TicketAnalysisDoc : admin/analysis
+  TicketAnalysisDoc "1" --&gt; "0..10" TicketAnalysis
+  Ticket ..&gt; AdminTicketDecisions : calcule
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
   Book "0..1" --&gt; "0..*" Recipe : bookId
@@ -747,6 +771,13 @@ classDiagram
         <code>sendAttempts</code> atteint 10 sans <code>githubIssueNumber</code>. Les noms Dart
         sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
         <span class="path">TechnicalRequirements.md</span>).
+        <b>TicketAnalysisDoc</b> (<code>tickets/{id}/admin/analysis</code>) porte les analyses de
+        l'administrateur relevées sur l'Issue : dix au plus, dans l'ordre chronologique, chacune
+        coupée à 20 000 caractères (<code>truncated</code>). Écrit par le serveur seul, lu par
+        l'administrateur seul. <b>AdminTicketDecisions</b> n'est pas stocké : il dit quels
+        boutons la fiche admin montre (« Valider » pour un ticket Analysé hors Question,
+        « Refuser » pour un ticket Reçu, Analysé, Validé ou En cours) ; le serveur refait le même
+        contrôle.
       </figcaption>
     </figure>
 

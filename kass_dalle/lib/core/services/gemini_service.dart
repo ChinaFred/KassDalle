@@ -671,6 +671,23 @@ class GeminiService {
     return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
   }
 
+  /// Valide un ticket analysé (administrateur) : étiquette `validé` sur
+  /// l'Issue. Rend le statut du ticket.
+  Future<String> validateTicket(String ticketId) async {
+    final data = await _call('validateTicket', {'ticketId': ticketId});
+    return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
+  }
+
+  /// Refuse un ticket (administrateur) : publie `Réponse : <motif>` sur
+  /// l'Issue et la ferme. Rend le statut du ticket.
+  Future<String> refuseTicket(String ticketId, String reason) async {
+    final data = await _call('refuseTicket', {
+      'ticketId': ticketId,
+      'reason': reason,
+    });
+    return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
+  }
+
   /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par
   /// Google pour [query], tous rôles.
   ///
