@@ -40,6 +40,12 @@ abstract final class AppIcons {
   static const ticketStatusRefused = Icons.block;
   static const ticketStatusAnswered = Icons.question_answer_outlined;
 
+  /// « Lancer l'analyse » : session Claude Code d'analyse d'un ticket Reçu.
+  static const ticketLaunchAnalysis = Icons.manage_search;
+
+  /// « Lancer le développement » : session Claude Code sur un ticket Validé.
+  static const ticketLaunchDevelopment = Icons.construction_outlined;
+
   /// Ticket que le serveur n'arrive plus à transmettre à GitHub.
   static const ticketAnomaly = Icons.error_outline;
 }

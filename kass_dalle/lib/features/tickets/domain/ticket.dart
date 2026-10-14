@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'ticket_launch.dart';
+
 /// Un ticket envoyé par un membre : bug, évolution, nouvelle fonctionnalité
 /// ou question.
 ///
@@ -317,16 +319,33 @@ List<Ticket> filterAdminTickets(
 
 /// Les décisions offertes à l'administrateur sur la fiche d'un ticket.
 ///
-/// Le serveur refait le même contrôle (`validatePrecondition` et
-/// `refusePrecondition`, `functions/src/tickets/rules.ts`) : un bouton
-/// masqué ici n'est qu'un confort, jamais la protection. Logique dupliquée,
-/// verrouillée par `test-fixtures/ticket_decisions.json`.
+/// Le serveur refait le même contrôle (`validatePrecondition`,
+/// `refusePrecondition`, `launchPrecondition` et `launchRunState`,
+/// `functions/src/tickets/rules.ts`) : un bouton masqué ici n'est qu'un
+/// confort, jamais la protection. Logique dupliquée, verrouillée par
+/// `test-fixtures/ticket_decisions.json`.
 class AdminTicketDecisions {
   /// « Valider » : ticket Analysé, d'un autre type que Question, avec Issue.
   final bool canValidate;
 
   /// « Refuser » : ticket Reçu, Analysé, Validé ou En cours, avec Issue.
   final bool canRefuse;
+
+  /// « Lancer l'analyse » : ticket Reçu, tout type, avec Issue, aucune
+  /// analyse en cours, historique lu ou en erreur.
+  final bool canLaunchAnalysis;
+
+  /// « Lancer le développement » : ticket Validé, hors Question, avec Issue,
+  /// aucun développement en cours, historique lu ou en erreur.
+  final bool canLaunchDevelopment;
+
+  /// Le bouton de lancement devient « Relancer… » : le lancement de cet
+  /// instant n'a rien changé au ticket avant son échéance.
+  final DateTime? relaunchOf;
+
+  /// Un lancement est en cours depuis cet instant : le bouton est masqué et
+  /// la ligne « … en cours depuis … » le remplace.
+  final DateTime? runningSince;
 
   /// Ligne d'explication quand « Valider » est masqué pour une raison que
   /// l'administrateur doit connaître, ou `null`.
@@ -336,9 +355,27 @@ class AdminTicketDecisions {
     required this.canValidate,
     required this.canRefuse,
     required this.validateHint,
+    this.canLaunchAnalysis = false,
+    this.canLaunchDevelopment = false,
+    this.relaunchOf,
+    this.runningSince,
+    this.runningUntil,
+    this.launchAction,
   });
 
-  bool get hasAction => canValidate || canRefuse;
+  /// Échéance du lancement en cours : la fiche se redessine à cet instant.
+  final DateTime? runningUntil;
+
+  /// Le lancement que le statut du ticket permet (offert, en cours ou en
+  /// attente de l'historique), ou `null`.
+  final TicketLaunchAction? launchAction;
+
+  bool get hasAction =>
+      canValidate ||
+      canRefuse ||
+      canLaunchAnalysis ||
+      canLaunchDevelopment ||
+      runningSince != null;
 }
 
 const kTicketValidateAfterAnalysisHint =
@@ -351,7 +388,16 @@ const kTicketUnknownStatusHint =
 
 /// Les boutons de décision de [t]. Un statut inconnu de cette version (lu
 /// « Reçu ») n'offre aucune décision.
-AdminTicketDecisions adminTicketDecisions(Ticket t) {
+///
+/// [launches] : l'historique des lancements, `null` s'il n'a pas pu être lu
+/// (le bouton de lancement reste offert, le serveur refera le contrôle).
+/// [launchesLoading] : historique en cours de lecture, bouton masqué.
+AdminTicketDecisions adminTicketDecisions(
+  Ticket t, {
+  List<TicketLaunch>? launches,
+  bool launchesLoading = false,
+  DateTime? now,
+}) {
   final known = t.rawStatus == t.status.value;
   final hasIssue = t.githubIssueNumber != null;
   final status = t.status;
@@ -379,10 +425,36 @@ AdminTicketDecisions adminTicketDecisions(Ticket t) {
       hint = kTicketValidateAfterAnalysisHint;
     }
   }
+
+  TicketLaunchAction? action;
+  if (known && hasIssue) {
+    if (status == TicketStatus.received) {
+      action = TicketLaunchAction.analysis;
+    } else if (status == TicketStatus.validated &&
+        t.type != TicketType.question) {
+      action = TicketLaunchAction.development;
+    }
+  }
+  var run = TicketLaunchRunState.none;
+  if (action != null && launches != null && !launchesLoading) {
+    run = ticketLaunchRunState(
+      launches: launches,
+      action: action,
+      rawStatus: t.rawStatus,
+      now: now ?? DateTime.now(),
+    );
+  }
+  final offered = action != null && !launchesLoading && !run.running;
   return AdminTicketDecisions(
     canValidate: canValidate,
     canRefuse: canRefuse,
     validateHint: hint,
+    canLaunchAnalysis: offered && action == TicketLaunchAction.analysis,
+    canLaunchDevelopment: offered && action == TicketLaunchAction.development,
+    relaunchOf: offered ? run.relaunchOf : null,
+    runningSince: run.runningSince,
+    runningUntil: run.runningUntil,
+    launchAction: action,
   );
 }
 

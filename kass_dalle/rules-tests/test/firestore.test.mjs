@@ -4001,6 +4001,54 @@ describe("tickets/{id}/admin — analyses, lecture administrateur seule", () => 
   }
 });
 
+describe("tickets/{id}/admin/launches — lancements de sessions, lecture administrateur seule", () => {
+  const LAUNCHES = "tickets/t-reader/admin/launches";
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "tickets/t-reader": {
+        type: "bug",
+        title: "Liste vide",
+        author_uid: READER,
+        status: "received",
+        github_issue_number: 12,
+      },
+      [LAUNCHES]: {
+        launches: [
+          {
+            id: "l1",
+            action: "analyse",
+            outcome: "launched",
+            launched_by_name: "Fred",
+            session_url: "https://claude.ai/code/session_1",
+            from_status: "received",
+          },
+        ],
+      },
+    });
+  });
+
+  it("l'administrateur lit l'historique des lancements", async () => {
+    await assertSucceeds(db("admin").doc(LAUNCHES).get());
+  });
+
+  it("l'auteur du ticket, un éditeur, un autre lecteur ne lisent ni lien de session ni nom", async () => {
+    await assertFails(db("reader").doc(LAUNCHES).get());
+    await assertFails(db("editor").doc(LAUNCHES).get());
+    await assertFails(db("otherReader").doc(LAUNCHES).get());
+    await assertFails(db("pending").doc(LAUNCHES).get());
+    await assertFails(db("anonymous").doc(LAUNCHES).get());
+  });
+
+  for (const persona of ["admin", "editor", "reader", "anonymous"]) {
+    it(`${persona} n'écrit pas l'historique des lancements`, async () => {
+      await assertFails(db(persona).doc(LAUNCHES).set({ launches: [] }));
+      await assertFails(db(persona).doc(LAUNCHES).update({ launches: [] }));
+      await assertFails(db(persona).doc(LAUNCHES).delete());
+    });
+  }
+});
+
 describe("ticket_quotas — compteur serveur seul", () => {
   const DOC = `ticket_quotas/${READER}_20261013`;
 
@@ -4060,6 +4108,19 @@ describe("app_config — tickets et tickets_status", () => {
   it("personne n'écrit l'état du jeton depuis le client, pas même l'administrateur", async () => {
     await assertFails(
       db("admin").doc("app_config/tickets_status").set({ token_invalid_since: null }),
+    );
+  });
+
+  it("l'administrateur ne remet ni les compteurs de lancements ni l'alerte d'une routine à zéro", async () => {
+    await assertFails(
+      db("admin")
+        .doc("app_config/tickets_status")
+        .set({ launches_today: { day: "20261014", count: 0 } }, { merge: true }),
+    );
+    await assertFails(
+      db("admin")
+        .doc("app_config/tickets_status")
+        .set({ routine_invalid_since: { analyse: null } }, { merge: true }),
     );
   });
 });

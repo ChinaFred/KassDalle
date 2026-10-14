@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -16,6 +18,7 @@ import '../../../core/widgets/error_message.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
+import '../domain/ticket_launch.dart';
 import '../domain/ticket_screens.dart';
 import 'ticket_widgets.dart';
 import 'tickets_providers.dart';
@@ -24,9 +27,11 @@ import 'tickets_providers.dart';
 /// `/admin/tickets/:ticketId`).
 ///
 /// L'écran montre les tickets et leurs analyses, relance un envoi, et porte
-/// les deux décisions de l'administrateur : « Valider » (étiquette `validé`
-/// sur l'Issue) et « Refuser » (motif publié sur GitHub, Issue fermée). Les
-/// deux passent par les callables `validateTicket` et `refuseTicket`.
+/// les décisions de l'administrateur : « Valider » (étiquette `validé` sur
+/// l'Issue), « Refuser » (motif publié sur GitHub, Issue fermée), « Lancer
+/// l'analyse » et « Lancer le développement » (session Claude Code lancée
+/// par une Routine). Elles passent par les callables `validateTicket`,
+/// `refuseTicket`, `launchTicketAnalysis` et `launchTicketDevelopment`.
 ///
 /// Le filtre « À traiter » est posé par les points d'entrée
 /// ([AdminTicketStatusFilterNotifier.enterToProcess]) ; l'écran ne le remet
@@ -68,13 +73,20 @@ class _AdminTicketsScreenState extends ConsumerState<AdminTicketsScreen> {
     if (!isWide && selected != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Tickets des membres')),
-        body: _AdminTicketDetailPane(ticketId: selected),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _ConfigAlerts(),
+            Expanded(child: _AdminTicketDetailPane(ticketId: selected)),
+          ],
+        ),
       );
     }
 
     final list = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _LaunchCounter(),
         // Sous le seuil large, chaque rangée de filtres défile de côté : la
         // liste reste visible à 200 % et en paysage.
         _Filters(scrollable: !isWide),
@@ -90,7 +102,7 @@ class _AdminTicketsScreenState extends ConsumerState<AdminTicketsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TokenBanner(),
+          const _ConfigAlerts(),
           Expanded(
             child: isWide
                 ? Row(
@@ -118,14 +130,59 @@ class _AdminTicketsScreenState extends ConsumerState<AdminTicketsScreen> {
   }
 }
 
-/// Bandeau « Jeton GitHub invalide », tant que le serveur le signale.
-class _TokenBanner extends ConsumerWidget {
-  const _TokenBanner();
+/// Les bandeaux d'alerte de configuration, tant que le serveur les signale
+/// (`app_config/tickets_status`) : jeton GitHub, jeton de la routine
+/// d'analyse, jeton de la routine de développement. Posés sur la liste et
+/// sur la fiche au téléphone.
+class _ConfigAlerts extends ConsumerWidget {
+  const _ConfigAlerts();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final since = ref.watch(ticketsTokenInvalidSinceProvider).value;
-    if (since == null) return const SizedBox.shrink();
+    final status = ref.watch(ticketsStatusProvider).value;
+    if (status == null) return const SizedBox.shrink();
+    final messages = [
+      if (status.githubTokenInvalidSince case final since?)
+        'Jeton GitHub invalide : aucun ticket n\'est transmis à GitHub '
+            'depuis le ${formatTicketDateTime(since)}. Remplacez le jeton '
+            'dans Secret Manager. Les tickets en attente repartiront ensuite.',
+      if (status.analysisRoutineInvalidSince case final since?)
+        'Jeton de la routine d\'analyse refusé depuis le '
+            '${formatTicketDateTime(since)}. Remplacez-le dans Secret '
+            'Manager.',
+      if (status.developmentRoutineInvalidSince case final since?)
+        'Jeton de la routine de développement refusé depuis le '
+            '${formatTicketDateTime(since)}. Remplacez-le dans Secret '
+            'Manager.',
+    ];
+    if (messages.isEmpty) return const SizedBox.shrink();
+    // Au plus un tiers de l'écran : à 200 % sur un téléphone, trois bandeaux
+    // masqueraient la liste ou la fiche ; ils défilent alors entre eux.
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height / 3,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (i, message) in messages.indexed) ...[
+              if (i > 0) const Divider(height: 1),
+              _ConfigAlertBanner(message),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigAlertBanner extends StatelessWidget {
+  final String message;
+  const _ConfigAlertBanner(this.message);
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Semantics(
       liveRegion: true,
@@ -134,19 +191,67 @@ class _TokenBanner extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            Icon(Icons.warning_amber_outlined, color: cs.onErrorContainer),
+            ExcludeSemantics(
+              child: Icon(
+                Icons.warning_amber_outlined,
+                color: cs.onErrorContainer,
+              ),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Jeton GitHub invalide : aucun ticket n\'est transmis à '
-                'GitHub depuis le ${formatTicketDateTime(since)}. Remplacez '
-                'le jeton dans Secret Manager. Les tickets en attente '
-                'repartiront ensuite.',
+                message,
                 style: TextStyle(color: cs.onErrorContainer, fontSize: 13),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// « Lancements de sessions : N ce mois-ci · R aujourd'hui sur 10 » : un
+/// nombre de lancements, jamais un montant (le coût est facturé sur
+/// l'abonnement Claude de l'administrateur).
+class _LaunchCounter extends ConsumerWidget {
+  const _LaunchCounter();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(ticketsStatusProvider);
+    final limit = ref.watch(ticketLaunchesPerDayProvider).value;
+    if (statusAsync.hasError && !statusAsync.hasValue) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 4, 0),
+        child: Row(
+          children: [
+            const Expanded(
+              child: TicketInfoLine(
+                'Lancements de sessions : compteur indisponible.',
+              ),
+            ),
+            IconButton(
+              onPressed: () => ref.invalidate(ticketsStatusProvider),
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Réessayer',
+            ),
+          ],
+        ),
+      );
+    }
+    final status = statusAsync.value;
+    if (status == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final today = status.launchesTodayAt(now);
+    final month = status.launchesMonthAt(now);
+    final todayText = limit == null
+        ? '$today aujourd\'hui'
+        : '$today aujourd\'hui sur $limit';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: TicketInfoLine(
+        'Lancements de sessions : $month ce mois-ci · $todayText',
       ),
     );
   }
@@ -388,7 +493,37 @@ class _AdminTicketDetail extends ConsumerStatefulWidget {
 
 class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   bool _retrying = false;
-  bool _validating = false;
+
+  /// Une validation ou un lancement en cours : un seul à la fois.
+  bool _busy = false;
+
+  /// Redessine la fiche à l'échéance du lancement en cours, pour que
+  /// « … en cours depuis » laisse place à « Relancer… » sans geste.
+  Timer? _runTimer;
+  DateTime? _runTimerAt;
+
+  void _armRunTimer(DateTime? until) {
+    if (until == _runTimerAt) return;
+    _cancelRunTimer();
+    if (until == null) return;
+    _runTimerAt = until;
+    final delay = until.difference(DateTime.now());
+    // Une seconde de marge : à l'instant exact, la règle compare encore
+    // « avant l'échéance ».
+    _runTimer = Timer(
+      (delay.isNegative ? Duration.zero : delay) + const Duration(seconds: 1),
+      () {
+        _runTimerAt = null;
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  void _cancelRunTimer() {
+    _runTimer?.cancel();
+    _runTimer = null;
+    _runTimerAt = null;
+  }
 
   /// Motif du refus : gardé si l'administrateur ferme puis rouvre la boîte.
   final _reasonController = TextEditingController();
@@ -400,6 +535,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   void didUpdateWidget(covariant _AdminTicketDetail oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ticket.id != widget.ticket.id) {
+      _cancelRunTimer();
       _reasonController.clear();
       _reasonLocked = false;
     }
@@ -407,6 +543,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
 
   @override
   void dispose() {
+    _cancelRunTimer();
     _reasonController.dispose();
     super.dispose();
   }
@@ -461,7 +598,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _validating = true);
+    setState(() => _busy = true);
     try {
       await ref.read(ticketRepositoryProvider).validate(widget.ticket.id);
       if (mounted) context.showSuccessSnackBar('Ticket validé.');
@@ -476,7 +613,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         );
       }
     } finally {
-      if (mounted) setState(() => _validating = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -504,26 +641,99 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     );
   }
 
-  Future<void> _openGithub(String url) async {
+  Future<void> _launch(TicketLaunchAction action, DateTime? relaunchOf) async {
+    final ticket = widget.ticket;
+    final issue = ticket.githubIssueNumber;
+    if (issue == null) return;
+    final status = ref.read(ticketsStatusProvider);
+    final limit = ref.read(ticketLaunchesPerDayProvider).value;
+    final todayStatus = status.hasError ? null : status.value;
+    final remaining = limit == null || todayStatus == null
+        ? null
+        : (limit - todayStatus.launchesTodayAt(DateTime.now()))
+              .clamp(0, limit)
+              .toInt();
+    setState(() => _busy = true);
+    try {
+      final result = await showDialog<_LaunchDialogOutcome>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _LaunchTicketDialog(
+          action: action,
+          issueNumber: issue,
+          relaunchOf: relaunchOf,
+          remaining: remaining,
+          limit: limit,
+          submit: () =>
+              ref.read(ticketRepositoryProvider).launch(ticket.id, action),
+        ),
+      );
+      if (!mounted || result == null) return;
+      switch (result.kind) {
+        case _LaunchDialogResult.launched:
+          context.showSuccessSnackBar(
+            'Session lancée. Le lien est dans la section Lancements.',
+          );
+        case _LaunchDialogResult.unknown:
+          // Un 5xx de Claude a son message ; sans réponse, le message
+          // générique du résultat inconnu.
+          context.showErrorSnackBar(
+            result.message ??
+                'Résultat inconnu : vérifiez sur claude.ai/code avant de '
+                    'relancer.',
+          );
+        case _LaunchDialogResult.lost:
+          context.showErrorSnackBar(
+            'Réponse perdue. Regardez la section Lancements avant de '
+            'relancer.',
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Ouvre [url] hors de l'application ; [failure] s'affiche en cas d'échec.
+  Future<void> _openLink(
+    String url, {
+    required String failure,
+    required String step,
+  }) async {
     try {
       final ok = await launchUrl(
         Uri.parse(url),
         mode: LaunchMode.externalApplication,
       );
-      if (!ok && mounted) {
-        context.showErrorSnackBar('Impossible d\'ouvrir GitHub.');
-      }
+      if (!ok && mounted) context.showErrorSnackBar(failure);
     } catch (e, st) {
       reportUnexpectedError(
         feature: 'tickets',
         error: e,
         stackTrace: st,
-        context: {'step': 'open_github', 'ticket_id': widget.ticket.id},
+        context: {'step': step, 'ticket_id': widget.ticket.id},
       );
-      if (mounted) {
-        context.showErrorSnackBar('Impossible d\'ouvrir GitHub.');
-      }
+      if (mounted) context.showErrorSnackBar(failure);
     }
+  }
+
+  Future<void> _openGithub(String url) => _openLink(
+    url,
+    failure: 'Impossible d\'ouvrir GitHub.',
+    step: 'open_github',
+  );
+
+  /// Ouvre une session Claude Code, seulement sur `https://claude.ai`.
+  Future<void> _openSession(String? url) async {
+    final uri = openableSessionLink(url);
+    if (uri == null) {
+      context.showErrorSnackBar('Lien de session invalide.');
+      return;
+    }
+    await _openLink(
+      uri.toString(),
+      failure: 'Impossible d\'ouvrir la session.',
+      step: 'open_session',
+    );
   }
 
   Future<void> _copyLink(String url) async {
@@ -550,130 +760,175 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     final url = ticket.githubUrl;
     final screenshot = ticket.screenshotPath;
     final reply = ticket.replyText;
-    final decisions = adminTicketDecisions(ticket);
+    final launchesAsync = ref.watch(ticketLaunchesProvider(ticket.id));
+    // Lus par la boîte de lancement (lancements restants) : surveillés ici
+    // pour être chargés avant l'appui, sur la fiche seule au téléphone.
+    ref.watch(ticketsStatusProvider);
+    ref.watch(ticketLaunchesPerDayProvider);
+    final now = DateTime.now();
+    final decisions = adminTicketDecisions(
+      ticket,
+      launches: launchesAsync.hasError ? null : launchesAsync.value,
+      launchesLoading: launchesAsync.isLoading && !launchesAsync.hasValue,
+      now: now,
+    );
     final hint = decisions.validateHint;
+    _armRunTimer(decisions.runningUntil);
+    final launchAction = decisions.canLaunchAnalysis
+        ? TicketLaunchAction.analysis
+        : decisions.canLaunchDevelopment
+        ? TicketLaunchAction.development
+        : null;
+    final runningSince = decisions.runningSince;
+    final runningAction = decisions.launchAction;
 
-    final details = SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // Le libellé suit : l'icône n'est pas annoncée une seconde fois.
-              ExcludeSemantics(child: TicketTypeIcon(type: ticket.type)),
-              const SizedBox(width: 8),
-              Text(ticket.type.label, style: theme.textTheme.labelLarge),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SelectableText(ticket.title, style: theme.textTheme.titleLarge),
-          const SizedBox(height: 8),
+    final detailsColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            // Le libellé suit : l'icône n'est pas annoncée une seconde fois.
+            ExcludeSemantics(child: TicketTypeIcon(type: ticket.type)),
+            const SizedBox(width: 8),
+            Text(ticket.type.label, style: theme.textTheme.labelLarge),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SelectableText(ticket.title, style: theme.textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            TicketStatusChip(status: ticket.status),
+            if (ticket.isInAnomaly) const TicketAnomalyChip(),
+          ],
+        ),
+        if (url != null) ...[
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              TicketStatusChip(status: ticket.status),
-              if (ticket.isInAnomaly) const TicketAnomalyChip(),
+              OutlinedButton.icon(
+                onPressed: () => _openGithub(url),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Ouvrir sur GitHub'),
+              ),
+              IconButton(
+                onPressed: () => _copyLink(url),
+                icon: const Icon(Icons.link),
+                tooltip: 'Copier le lien',
+              ),
             ],
           ),
-          if (url != null) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => _openGithub(url),
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('Ouvrir sur GitHub'),
-                ),
-                IconButton(
-                  onPressed: () => _copyLink(url),
-                  icon: const Icon(Icons.link),
-                  tooltip: 'Copier le lien',
-                ),
-              ],
-            ),
-          ],
-          if (ticket.isInAnomaly) ...[
-            const SizedBox(height: 12),
-            TicketInfoLine('Essais d\'envoi : ${ticket.sendAttempts}'),
-            if (ticket.lastSendError != null)
-              TicketInfoLine('Dernière erreur : ${ticket.lastSendError}'),
-            const SizedBox(height: 8),
-            FilledButton.tonalIcon(
-              onPressed: _retrying ? null : _retry,
-              icon: _retrying
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              label: const Text('Relancer l\'envoi'),
-            ),
-          ],
-          if (reply != null) ...[
-            const SizedBox(height: 12),
-            TicketReplyBox(
-              title: ticket.status == TicketStatus.refused
-                  ? 'Motif du refus'
-                  : 'Réponse de l\'administrateur',
-              text: reply,
-            ),
-          ],
-          const SizedBox(height: 12),
-          if (hint != null) TicketInfoLine(hint),
-          TicketInfoLine('Auteur : $author'),
-          if (created != null)
-            TicketInfoLine('Envoyé le ${formatTicketDateTime(created)}'),
-          TicketInfoLine('Version ${ticket.appVersion}'),
-          TicketInfoLine(
-            'Plateforme : ${ticketPlatformLabel(ticket.platform)}',
-          ),
-          TicketInfoLine('Écran : ${ticketScreenLabel(ticket.screen)}'),
-          const SizedBox(height: 16),
-          Text('Description', style: theme.textTheme.titleSmall),
-          const SizedBox(height: 4),
-          SelectableText(ticket.description),
-          if (screenshot != null) ...[
-            const SizedBox(height: 16),
-            TicketScreenshotView(path: screenshot, height: 360),
-          ],
-          const SizedBox(height: 24),
-          _AnalysesSection(ticket: ticket, onOpenGithub: _openGithub),
         ],
-      ),
+        if (ticket.isInAnomaly) ...[
+          const SizedBox(height: 12),
+          TicketInfoLine('Essais d\'envoi : ${ticket.sendAttempts}'),
+          if (ticket.lastSendError != null)
+            TicketInfoLine('Dernière erreur : ${ticket.lastSendError}'),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: _retrying ? null : _retry,
+            icon: _retrying
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            label: const Text('Relancer l\'envoi'),
+          ),
+        ],
+        if (reply != null) ...[
+          const SizedBox(height: 12),
+          TicketReplyBox(
+            title: ticket.status == TicketStatus.refused
+                ? 'Motif du refus'
+                : 'Réponse de l\'administrateur',
+            text: reply,
+          ),
+        ],
+        const SizedBox(height: 12),
+        if (hint != null) TicketInfoLine(hint),
+        TicketInfoLine('Auteur : $author'),
+        if (created != null)
+          TicketInfoLine('Envoyé le ${formatTicketDateTime(created)}'),
+        TicketInfoLine('Version ${ticket.appVersion}'),
+        TicketInfoLine('Plateforme : ${ticketPlatformLabel(ticket.platform)}'),
+        TicketInfoLine('Écran : ${ticketScreenLabel(ticket.screen)}'),
+        const SizedBox(height: 16),
+        Text('Description', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        SelectableText(ticket.description),
+        if (screenshot != null) ...[
+          const SizedBox(height: 16),
+          TicketScreenshotView(path: screenshot, height: 360),
+        ],
+        const SizedBox(height: 24),
+        _LaunchesSection(
+          ticketId: ticket.id,
+          onOpenSession: _openSession,
+          onCopyLink: _copyLink,
+        ),
+        const SizedBox(height: 24),
+        _AnalysesSection(ticket: ticket, onOpenGithub: _openGithub),
+      ],
     );
 
-    if (!decisions.hasAction) return details;
+    if (!decisions.hasAction) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: detailsColumn,
+      );
+    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: details),
-        const Divider(height: 1),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Wrap(
+    final bar = SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (runningSince != null && runningAction != null) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(
+                    child: Icon(
+                      Icons.hourglass_top,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TicketInfoLine(
+                      ticketLaunchRunningLine(runningAction, runningSince, now),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            Wrap(
               alignment: WrapAlignment.end,
               spacing: 8,
               runSpacing: 8,
               children: [
                 if (decisions.canRefuse)
                   OutlinedButton.icon(
-                    onPressed: _validating ? null : _refuse,
+                    onPressed: _busy ? null : _refuse,
                     icon: const Icon(AppIcons.ticketStatusRefused),
                     label: const Text('Refuser'),
                   ),
                 if (decisions.canValidate)
                   FilledButton.icon(
-                    onPressed: _validating ? null : _validate,
-                    icon: _validating
+                    onPressed: _busy ? null : _validate,
+                    icon: _busy
                         ? const SizedBox(
                             width: 18,
                             height: 18,
@@ -682,11 +937,438 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                         : const Icon(AppIcons.ticketStatusValidated),
                     label: const Text('Valider'),
                   ),
+                if (launchAction != null)
+                  _LaunchButton(
+                    action: launchAction,
+                    relaunch: decisions.relaunchOf != null,
+                    onPressed: _busy
+                        ? null
+                        : () => _launch(launchAction, decisions.relaunchOf),
+                  ),
               ],
             ),
-          ),
+          ],
         ),
-      ],
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // La barre reste en bas tant qu'elle laisse de quoi lire la fiche.
+        // Sur un écran bas (paysage, texte agrandi, bandeaux), elle suit la
+        // fiche en fin de défilement plutôt que de la masquer.
+        if (constraints.maxHeight >= PlatformUtils.pinnedActionBarMinHeight) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: detailsColumn,
+                ),
+              ),
+              const Divider(height: 1),
+              bar,
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(padding: const EdgeInsets.all(16), child: detailsColumn),
+              const Divider(height: 1),
+              bar,
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// « Lancer l'analyse » / « Lancer le développement », ou leur variante
+/// « Relancer… » quand le lancement précédent n'a rien changé au ticket.
+class _LaunchButton extends StatelessWidget {
+  final TicketLaunchAction action;
+  final bool relaunch;
+  final VoidCallback? onPressed;
+
+  const _LaunchButton({
+    required this.action,
+    required this.relaunch,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch ((action, relaunch)) {
+      (TicketLaunchAction.analysis, false) => 'Lancer l\'analyse',
+      (TicketLaunchAction.analysis, true) => 'Relancer l\'analyse',
+      (TicketLaunchAction.development, false) => 'Lancer le développement',
+      (TicketLaunchAction.development, true) => 'Relancer le développement',
+    };
+    if (relaunch) {
+      return FilledButton.tonalIcon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.refresh),
+        label: Text(label),
+      );
+    }
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: Icon(
+        action == TicketLaunchAction.analysis
+            ? AppIcons.ticketLaunchAnalysis
+            : AppIcons.ticketLaunchDevelopment,
+      ),
+      label: Text(label),
+    );
+  }
+}
+
+/// Ce que la boîte de lancement rend en se fermant.
+enum _LaunchDialogResult { launched, unknown, lost }
+
+/// Ce que la boîte rend, avec le message du serveur pour un résultat inconnu.
+typedef _LaunchDialogOutcome = ({_LaunchDialogResult kind, String? message});
+
+/// Boîte « Lancer l'analyse de ce ticket ? » / « Lancer le développement de
+/// ce ticket ? ».
+///
+/// Reste ouverte sur un refus du serveur, avec son message : rien n'a été
+/// lancé. Se ferme sur un succès, un résultat inconnu, ou une réponse perdue
+/// (l'appelant le dit par un message).
+class _LaunchTicketDialog extends StatefulWidget {
+  final TicketLaunchAction action;
+  final int issueNumber;
+  final DateTime? relaunchOf;
+
+  /// Lancements restants aujourd'hui, ou `null` s'ils ne se lisent pas.
+  final int? remaining;
+  final int? limit;
+  final Future<TicketLaunchResult> Function() submit;
+
+  const _LaunchTicketDialog({
+    required this.action,
+    required this.issueNumber,
+    required this.relaunchOf,
+    required this.remaining,
+    required this.limit,
+    required this.submit,
+  });
+
+  @override
+  State<_LaunchTicketDialog> createState() => _LaunchTicketDialogState();
+}
+
+class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
+  bool _sending = false;
+  String? _error;
+
+  Future<void> _submit() async {
+    setState(() {
+      _error = null;
+      _sending = true;
+    });
+    try {
+      final result = await widget.submit();
+      if (!mounted) return;
+      final _LaunchDialogOutcome outcome =
+          result.outcome == TicketLaunchOutcome.launched
+          ? (kind: _LaunchDialogResult.launched, message: null)
+          : (kind: _LaunchDialogResult.unknown, message: result.message);
+      Navigator.of(context).pop(outcome);
+    } on TicketLaunchError catch (e) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`).
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`) : la
+      // réponse s'est perdue, la session a pu partir.
+      if (mounted) {
+        final _LaunchDialogOutcome lost = (
+          kind: _LaunchDialogResult.lost,
+          message: null,
+        );
+        Navigator.of(context).pop(lost);
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant);
+    final error = _error;
+    final remaining = widget.remaining;
+    final limit = widget.limit;
+    final exhausted = remaining != null && remaining <= 0;
+    final relaunchOf = widget.relaunchOf;
+    final isAnalysis = widget.action == TicketLaunchAction.analysis;
+    final String quotaLine;
+    if (remaining == null || limit == null) {
+      quotaLine = 'Lancements restants aujourd\'hui : inconnu.';
+    } else if (exhausted) {
+      quotaLine =
+          'Vous avez lancé $limit sessions aujourd\'hui. Réessayez demain.';
+    } else {
+      quotaLine = 'Lancements restants aujourd\'hui : $remaining sur $limit.';
+    }
+
+    Widget box(IconData icon, String text) => Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ExcludeSemantics(child: Icon(icon, color: cs.onSurfaceVariant)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: muted)),
+        ],
+      ),
+    );
+
+    return PopScope(
+      canPop: !_sending,
+      child: AlertDialog(
+        scrollable: true,
+        title: Text(
+          isAnalysis
+              ? 'Lancer l\'analyse de ce ticket ?'
+              : 'Lancer le développement de ce ticket ?',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              isAnalysis
+                  ? 'Une session Claude Code va lire l\'Issue '
+                        '#${widget.issueNumber} et publier son analyse sur '
+                        'GitHub.'
+                  : 'Une session Claude Code va écrire le code et ouvrir une '
+                        'pull request. Elle ne fusionne rien.',
+            ),
+            const SizedBox(height: 12),
+            Text(quotaLine),
+            if (relaunchOf != null) ...[
+              const SizedBox(height: 12),
+              box(
+                Icons.warning_amber_outlined,
+                'Le lancement du ${formatTicketDateTime(relaunchOf)} n\'a '
+                'rien changé au ticket. Vérifiez sur claude.ai/code qu\'aucune '
+                'session ne tourne encore.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            box(
+              Icons.payments_outlined,
+              'Facturé sur l\'abonnement Claude de l\'administrateur. Ce coût '
+              'n\'apparaît pas dans le suivi des coûts de l\'application.',
+            ),
+            if (_sending) ...[
+              const SizedBox(height: 12),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  'Lancement en cours. Cela peut prendre jusqu\'à 30 '
+                  'secondes.',
+                  style: muted,
+                ),
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Semantics(
+                liveRegion: true,
+                child: Text(error, style: TextStyle(color: cs.error)),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _sending ? null : () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: _sending || exhausted ? null : _submit,
+            child: _sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(relaunchOf != null ? 'Relancer' : 'Lancer'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Section « Lancements (N) » de la fiche : les sessions lancées sur ce
+/// ticket, plus récente en tête.
+class _LaunchesSection extends ConsumerWidget {
+  final String ticketId;
+  final Future<void> Function(String? url) onOpenSession;
+  final Future<void> Function(String url) onCopyLink;
+
+  const _LaunchesSection({
+    required this.ticketId,
+    required this.onOpenSession,
+    required this.onCopyLink,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return ref
+        .watch(ticketLaunchesProvider(ticketId))
+        .when(
+          skipLoadingOnRefresh: false,
+          // Hauteur minimale, pas fixe : à 200 % le libellé passe sur deux
+          // lignes et déborderait d'une boîte de 120 px.
+          loading: () => ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 120),
+            child: const AppLoadingState(label: 'Chargement des lancements…'),
+          ),
+          error: (error, _) => AppErrorState(
+            error: error,
+            compact: true,
+            title: 'Impossible de charger les lancements.',
+            onRetry: () => ref.invalidate(ticketLaunchesProvider(ticketId)),
+          ),
+          data: (launches) {
+            final list = launches ?? const <TicketLaunch>[];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Lancements (${list.length})',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                if (list.isEmpty)
+                  const TicketInfoLine('Aucune session lancée pour ce ticket.')
+                else
+                  for (final (i, launch) in list.indexed) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    _LaunchCard(
+                      launch: launch,
+                      onOpenSession: onOpenSession,
+                      onCopyLink: onCopyLink,
+                    ),
+                  ],
+              ],
+            );
+          },
+        );
+  }
+}
+
+class _LaunchCard extends StatelessWidget {
+  final TicketLaunch launch;
+  final Future<void> Function(String? url) onOpenSession;
+  final Future<void> Function(String url) onCopyLink;
+
+  const _LaunchCard({
+    required this.launch,
+    required this.onOpenSession,
+    required this.onCopyLink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final at = launch.launchedAt;
+    final by = launch.launchedByName.isEmpty ? '…' : launch.launchedByName;
+    final url = launch.sessionUrl;
+    final (
+      IconData icon,
+      Color color,
+      String result,
+    ) = switch (launch.outcome) {
+      TicketLaunchOutcome.launched => (
+        Icons.check_circle_outline,
+        cs.primary,
+        'Session créée',
+      ),
+      TicketLaunchOutcome.failed => (
+        Icons.error_outline,
+        cs.error,
+        'Échec : ${launch.errorReason ?? 'raison inconnue'}',
+      ),
+      TicketLaunchOutcome.unknown || null => (
+        Icons.help_outline,
+        cs.onSurfaceVariant,
+        'Résultat inconnu : vérifiez sur claude.ai/code',
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            launch.action?.historyTitle ?? 'Lancement',
+            style: theme.textTheme.labelLarge,
+          ),
+          const SizedBox(height: 4),
+          TicketInfoLine(
+            at == null ? 'par $by' : 'le ${formatTicketDateTime(at)} par $by',
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ExcludeSemantics(child: Icon(icon, size: 20, color: color)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  result,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                ),
+              ),
+            ],
+          ),
+          if (launch.outcome == TicketLaunchOutcome.launched &&
+              url != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                TextButton.icon(
+                  onPressed: () => onOpenSession(url),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Ouvrir la session'),
+                ),
+                IconButton(
+                  onPressed: () => onCopyLink(url),
+                  icon: const Icon(Icons.link),
+                  tooltip: 'Copier le lien',
+                ),
+              ],
+            ),
+            const TicketInfoLine(
+              'Visible seulement depuis le compte Claude de '
+              'l\'administrateur.',
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -878,9 +1560,11 @@ class _AnalysesSection extends ConsumerWidget {
         .watch(ticketAnalysisProvider(ticket.id))
         .when(
           skipLoadingOnRefresh: false,
-          loading: () => const SizedBox(
-            height: 120,
-            child: AppLoadingState(label: 'Chargement des analyses…'),
+          // Hauteur minimale, pas fixe : à 200 % le libellé passe sur deux
+          // lignes et déborderait d'une boîte de 120 px.
+          loading: () => ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 120),
+            child: const AppLoadingState(label: 'Chargement des analyses…'),
           ),
           error: (error, _) => AppErrorState(
             error: error,

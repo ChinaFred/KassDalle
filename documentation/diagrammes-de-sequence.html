@@ -185,6 +185,7 @@
       <li><a href="#suggestions-repas">Suggérer un plat, planifier une suggestion</a></li>
       <li><a href="#ticket-valider">Valider un ticket depuis l'application</a></li>
       <li><a href="#ticket-refuser">Refuser un ticket depuis l'application</a></li>
+      <li><a href="#ticket-lancer">Lancer une analyse ou un développement depuis l'application</a></li>
     </ol>
   </nav>
 
@@ -4220,6 +4221,86 @@ sequenceDiagram
         la publication rend « GitHub refuse le jeton. Rien n'a été modifié. » et pose
         <code>token_invalid_since</code>. Le bail est retiré même en échec ; s'il ne peut pas
         l'être, il expire seul au bout de deux minutes.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-lancer"><span class="n">44</span>Lancer une analyse ou un développement depuis l'application</h2>
+    <p class="sec-note">
+      L'administrateur lance une session Claude Code par une Routine : « Lancer l'analyse » sur un
+      ticket Reçu, « Lancer le développement » sur un ticket Validé hors Question. La session tourne
+      sur l'abonnement Claude de l'administrateur : aucun appel de modèle n'est facturé au projet.
+      <span class="path">admin_tickets_screen.dart (_launch, _LaunchTicketDialog) →
+      TicketRepository.launch → GeminiService.launchTicketAnalysis / launchTicketDevelopment →
+      callable/ticketsCallable.ts → tickets/launch.ts (launchTicketSession) →
+      tickets/decisions.ts (claimDecision) → tickets/github.ts (getIssue) →
+      tickets/routine.ts (fireRoutine)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as launchTicketAnalysis / Development
+  participant T as Firestore
+  participant G as GitHub
+  participant R as API Routines (Anthropic)
+  participant S as Session Claude Code
+
+  AD->>C: « Lancer l'analyse » / « Lancer le développement »
+  C-->>AD: confirmation : action, lancements restants R sur 10, facturé sur l'abonnement
+  AD->>C: « Lancer »
+  C->>F: { ticketId }
+  F->>F: requireAdmin ; secrets de la routine (vides : « Lancement non configuré », rien compté)
+  F->>T: transaction : statut et Issue (launchPrecondition), bail decision_lease_until
+  F->>T: lit admin/launches : lancement du même type en cours ? (launchRunState)
+  alt en cours
+    F-->>C: « Une analyse a été lancée le … Attendez son résultat ou relancez après hh:mm. »
+  end
+  F->>T: transaction : ticket_quotas/launch_jour + tickets_status (launches_today, launches_month)
+  alt plafond atteint
+    F-->>C: « Vous avez lancé 10 sessions aujourd'hui. Réessayez demain. »
+  end
+  F->>G: GET /issues/N
+  alt fermée, ou étiquettes donnant un autre statut
+    F->>T: état relu appliqué, compteur rendu
+    F-->>C: « Le ticket a changé sur GitHub. Rien n'a été lancé. »
+  end
+  F->>T: admin/launches : entrée outcome = unknown, from_status, retry_after (+1 h / +3 h)
+  F->>R: POST /routines/{id}/fire { "text": "analyse #N" } (30 s, aucune relance)
+  alt 200
+    R-->>F: claude_code_session_id, claude_code_session_url
+    F->>T: entrée launched + lien ; routine_invalid_since effacé
+    F-->>C: { outcome: launched, session_url }
+    C-->>AD: « Session lancée. Le lien est dans la section Lancements. »
+    R->>S: session sur ChinaFred/KassDalle
+    S->>G: analyse : commentaire « ## Analyse », étiquette statut:analysé
+    S->>G: développement : branche claude/ticket-N-…, pull request « Closes #N »
+    G-->>T: webhook : statut Analysé ou En cours (le lancement n'est plus « en cours »)
+  else réponse d'erreur (3xx non suivie, 400, 401/403, 404, 429)
+    F->>T: entrée failed + message ; 401/403 : routine_invalid_since ; compteur rendu
+    F-->>C: message (« La routine est en pause sur claude.ai… », « Trop de lancements… »)
+    C-->>AD: la boîte reste ouverte avec le message
+  else aucune réponse (délai, réseau), ou 500 / 503 / tout 5xx
+    F->>T: entrée laissée unknown, comptée (5xx : error_reason)
+    F-->>C: { outcome: unknown, message (5xx seulement) }
+    C-->>AD: « Résultat inconnu : vérifiez sur claude.ai/code avant de relancer. »<br/>5xx : « Claude ne répond pas. Vérifiez sur claude.ai/code avant de relancer. »
+  end
+  F->>T: bail retiré (finally)
+</pre>
+      </div>
+      <figcaption>
+        Le texte envoyé est contrôlé par <code>^(analyse|developpement) #[1-9][0-9]{0,6}$</code>
+        avant l'appel ; la routine refuse tout autre contenu. L'entrée <code>unknown</code> écrite
+        avant l'appel garde une trace même si la fonction s'arrête pendant l'appel. Tant que le
+        ticket garde son statut de départ et que l'échéance n'est pas passée (1 h, 3 h), le bouton
+        est masqué et la fiche dit « Analyse en cours depuis hh:mm » ; ensuite il devient
+        « Relancer… », et la confirmation rappelle de vérifier qu'aucune session ne tourne encore.
+        Une réponse perdue côté client ferme la boîte sur « Réponse perdue. Regardez la section
+        Lancements avant de relancer. ».
       </figcaption>
     </figure>
   </section>

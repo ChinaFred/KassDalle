@@ -1,510 +1,916 @@
 {
-  "_comment": "Décisions de l'administrateur sur un ticket : « Valider » et « Refuser ». Le serveur décide (validatePrecondition, refusePrecondition, functions/src/tickets/rules.ts, appelées par validateTicket et refuseTicket) ; le client affiche (adminTicketDecisions, lib/features/tickets/domain/ticket.dart : boutons de la barre de décision, masqués quand la décision n'est pas permise). can_validate : ticket 'analyzed', d'un autre type que 'question', avec un numéro d'Issue. Un ticket déjà 'validated' n'offre pas le bouton (le serveur répond succès sans rien changer). can_refuse : 'received', 'analyzed', 'validated' ou 'in_progress', tout type, avec un numéro d'Issue. Un statut stocké inconnu ('archived' ici) n'offre aucune décision : le client l'affiche « Reçu », le serveur le lit 'sending'. Les types inconnus ne figurent pas ici : le client les lit 'bug', le serveur 'question'. refusal_partial_reason : valeur de details.reason quand le motif est publié mais l'Issue pas fermée (REFUSAL_PARTIAL_REASON, kTicketRefusalPartialReason). Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts.",
+  "_comment": "Décisions de l'administrateur sur un ticket : « Valider », « Refuser », « Lancer l'analyse » et « Lancer le développement ». Le serveur décide (validatePrecondition, refusePrecondition, launchPrecondition et launchRunState, functions/src/tickets/rules.ts, appelées par validateTicket, refuseTicket, launchTicketAnalysis et launchTicketDevelopment) ; le client affiche (lib/features/tickets/domain/ticket.dart (adminTicketDecisions, kTicketRefusalPartialReason) et lib/features/tickets/domain/ticket_launch.dart (ticketLaunchRunState, kTicketDefaultLaunchesPerDay) : boutons de la barre de décision, masqués quand la décision n'est pas permise, ligne « en cours »). can_validate : ticket 'analyzed', d'un autre type que 'question', avec un numéro d'Issue. Un ticket déjà 'validated' n'offre pas le bouton (le serveur répond succès sans rien changer). can_refuse : 'received', 'analyzed', 'validated' ou 'in_progress', tout type, avec un numéro d'Issue. can_launch_analysis : 'received', tout type (question comprise), avec un numéro d'Issue. can_launch_development : 'validated', d'un autre type que 'question', avec un numéro d'Issue. Ces deux valeurs supposent un historique vide : launch_runs dit ce que l'historique y change. Un statut stocké inconnu ('archived' ici) n'offre aucune décision : le client l'affiche « Reçu », le serveur le lit 'sending'. Les types inconnus ne figurent pas ici : le client les lit 'bug', le serveur 'question'. refusal_partial_reason : valeur de details.reason quand le motif est publié mais l'Issue pas fermée (REFUSAL_PARTIAL_REASON, kTicketRefusalPartialReason). default_launches_per_day : plafond quotidien des lancements quand app_config/tickets.launches_per_day manque (DEFAULT_LAUNCHES_PER_DAY, kTicketDefaultLaunchesPerDay). max_launches_per_day : borne haute de ce réglage ; au-delà, le serveur refuse tout lancement et le client affiche « inconnu » (MAX_LAUNCHES_PER_DAY, kTicketMaxLaunchesPerDay). launch_runs : état d'un type de lancement d'après l'historique tickets/{id}/admin/launches. Seule la dernière entrée du type compte (plus grand launched_at) ; elle est en cours si outcome vaut 'launched' ou 'unknown', si from_status égale le statut stocké du ticket et si now < retry_after (échéance écrite par le serveur : 1 h analyse, 3 h développement). Échéance atteinte ou passée, mêmes conditions : relance proposée (relaunch_of = son launched_at). Entrée 'failed', sans retry_after, ou partie d'un autre statut : rien. Dates ISO 8601 UTC, null = champ absent. Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts.",
   "refusal_partial_reason": "reply_published_close_failed",
+  "default_launches_per_day": 10,
+  "max_launches_per_day": 50,
   "cases": [
     {
       "status": "sending",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "sending",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": true,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": true,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": true,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": true,
+      "can_launch_development": false
     },
     {
       "status": "received",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "bug",
       "has_issue": true,
       "can_validate": true,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "evolution",
       "has_issue": true,
       "can_validate": true,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "feature",
       "has_issue": true,
       "can_validate": true,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "analyzed",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "validated",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": true
     },
     {
       "status": "validated",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "validated",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": true
     },
     {
       "status": "validated",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "validated",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": true
     },
     {
       "status": "validated",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "validated",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "validated",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": true
+      "can_refuse": true,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "in_progress",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "delivered",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "refused",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "answered",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "bug",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "bug",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "evolution",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "evolution",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "feature",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "feature",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "question",
       "has_issue": true,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
     },
     {
       "status": "archived",
       "type": "question",
       "has_issue": false,
       "can_validate": false,
-      "can_refuse": false
+      "can_refuse": false,
+      "can_launch_analysis": false,
+      "can_launch_development": false
+    }
+  ],
+  "launch_runs": [
+    {
+      "name": "historique vide",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:30:00Z",
+      "launches": [],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "analyse lancée il y a 30 min, ticket toujours Reçu : en cours",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:30:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-14T12:00:00Z",
+      "relaunch_of": null
+    },
+    {
+      "name": "résultat inconnu : bloque comme un succès",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:59:59Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "unknown",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-14T12:00:00Z",
+      "relaunch_of": null
+    },
+    {
+      "name": "échéance atteinte à la seconde près : relance",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T13:00:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": "2026-10-14T12:00:00Z"
+    },
+    {
+      "name": "échec : ne bloque pas, pas de relance",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:10:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "failed",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "le statut a changé depuis le lancement : rien",
+      "action": "analyse",
+      "raw_status": "analyzed",
+      "now": "2026-10-14T12:10:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "seule la dernière entrée du type compte (échec récent après un succès)",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:40:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "failed",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:30:00Z",
+          "retry_after": "2026-10-14T13:30:00Z"
+        },
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "ordre de la liste indifférent : le plus grand launched_at gagne",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:40:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "failed",
+          "from_status": "received",
+          "launched_at": "2026-10-14T11:00:00Z",
+          "retry_after": "2026-10-14T12:00:00Z"
+        },
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:30:00Z",
+          "retry_after": "2026-10-14T13:30:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-14T12:30:00Z",
+      "relaunch_of": null
+    },
+    {
+      "name": "un lancement de l'autre type est ignoré",
+      "action": "developpement",
+      "raw_status": "received",
+      "now": "2026-10-14T12:30:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "développement lancé il y a 2 h, ticket toujours Validé : en cours",
+      "action": "developpement",
+      "raw_status": "validated",
+      "now": "2026-10-14T14:00:00Z",
+      "launches": [
+        {
+          "action": "developpement",
+          "outcome": "launched",
+          "from_status": "validated",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T15:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-14T12:00:00Z",
+      "relaunch_of": null
+    },
+    {
+      "name": "développement après 3 h sans changement : relance",
+      "action": "developpement",
+      "raw_status": "validated",
+      "now": "2026-10-14T15:30:00Z",
+      "launches": [
+        {
+          "action": "developpement",
+          "outcome": "unknown",
+          "from_status": "validated",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": "2026-10-14T12:00:00Z"
+    },
+    {
+      "name": "entrée sans échéance : rien",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:10:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": null
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "entrée sans date : ignorée",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:10:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "launched",
+          "from_status": "received",
+          "launched_at": null,
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
+    },
+    {
+      "name": "résultat inconnu de cette version : rien",
+      "action": "analyse",
+      "raw_status": "received",
+      "now": "2026-10-14T12:10:00Z",
+      "launches": [
+        {
+          "action": "analyse",
+          "outcome": "pending",
+          "from_status": "received",
+          "launched_at": "2026-10-14T12:00:00Z",
+          "retry_after": "2026-10-14T13:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null
     }
   ]
 }

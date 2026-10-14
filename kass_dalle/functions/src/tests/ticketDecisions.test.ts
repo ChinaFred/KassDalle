@@ -28,6 +28,9 @@ import {
   refusePrecondition,
   replyFromComment,
   sameReply,
+  DEFAULT_LAUNCHES_PER_DAY,
+  MAX_LAUNCHES_PER_DAY,
+  launchRunState,
   shouldWriteValidated,
   ticketDecisions,
   truncateAnalysis,
@@ -410,14 +413,36 @@ const DECISIONS_FIXTURE = JSON.parse(
   ),
 ) as {
   refusal_partial_reason: string;
+  default_launches_per_day: number;
+  max_launches_per_day: number;
   cases: {
     status: string;
     type: TicketType;
     has_issue: boolean;
     can_validate: boolean;
     can_refuse: boolean;
+    can_launch_analysis: boolean;
+    can_launch_development: boolean;
+  }[];
+  launch_runs: {
+    name: string;
+    action: "analyse" | "developpement";
+    raw_status: string;
+    now: string;
+    launches: {
+      action: string;
+      outcome: string;
+      from_status: string;
+      launched_at: string | null;
+      retry_after: string | null;
+    }[];
+    running: boolean;
+    running_since: string | null;
+    relaunch_of: string | null;
   }[];
 };
+
+const isoMs = (iso: string | null): number | null => (iso === null ? null : Date.parse(iso));
 
 describe("fixture ticket_decisions.json (partagée avec le client)", () => {
   test("raison de l'échec partiel d'un refus", () => {
@@ -428,8 +453,40 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
     test(`${c.status} · ${c.type} · ${c.has_issue ? "avec" : "sans"} Issue`, () => {
       assert.deepEqual(
         ticketDecisions({ rawStatus: c.status, type: c.type, hasIssue: c.has_issue }),
-        { canValidate: c.can_validate, canRefuse: c.can_refuse },
+        {
+          canValidate: c.can_validate,
+          canRefuse: c.can_refuse,
+          canLaunchAnalysis: c.can_launch_analysis,
+          canLaunchDevelopment: c.can_launch_development,
+        },
       );
+    });
+  }
+
+  test("plafond quotidien des lancements par défaut", () => {
+    assert.equal(DEFAULT_LAUNCHES_PER_DAY, DECISIONS_FIXTURE.default_launches_per_day);
+    assert.equal(MAX_LAUNCHES_PER_DAY, DECISIONS_FIXTURE.max_launches_per_day);
+  });
+
+  for (const r of DECISIONS_FIXTURE.launch_runs) {
+    test(`lancements : ${r.name}`, () => {
+      const state = launchRunState({
+        entries: r.launches.map((e) => ({
+          action: e.action,
+          outcome: e.outcome,
+          from_status: e.from_status,
+          launched_at_ms: isoMs(e.launched_at),
+          retry_after_ms: isoMs(e.retry_after),
+        })),
+        action: r.action,
+        rawStatus: r.raw_status,
+        nowMs: Date.parse(r.now),
+      });
+      assert.deepEqual(state, {
+        running: r.running,
+        runningSinceMs: isoMs(r.running_since),
+        relaunchOfMs: isoMs(r.relaunch_of),
+      });
     });
   }
 });

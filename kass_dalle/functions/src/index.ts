@@ -130,13 +130,17 @@ export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 // validation et refus par l'administrateur. GITHUB_TICKETS_TOKEN est monté par
 // ces callables (sauf la capture), la tâche horaire, le webhook (relecture des
 // analyses) et le backfill des analyses ; le webhook seul monte
-// GITHUB_WEBHOOK_SECRET. Aucun appel d'IA.
+// GITHUB_WEBHOOK_SECRET. Les deux lancements de session (routines Claude Code)
+// montent chacun l'identifiant et le jeton de leur routine. Aucun appel d'IA
+// facturé au projet.
 export {
   submitTicket,
   attachTicketScreenshot,
   retryTicketSend,
   validateTicket,
   refuseTicket,
+  launchTicketAnalysis,
+  launchTicketDevelopment,
 } from "./callable/ticketsCallable";
 export { githubTicketWebhook } from "./tickets/webhook";
 export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";

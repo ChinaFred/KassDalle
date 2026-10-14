@@ -66,7 +66,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
-> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé et refuse un ticket avec un motif publié sur GitHub. Un compte en attente ou révoqué n'envoie rien.
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille). Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -701,7 +701,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
-- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé et on y refuse un ticket ; répondre à une Question se fait sur GitHub (voir 5.13).
+- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé, on y refuse un ticket, et on y lance une session Claude Code d'analyse ou de développement ; répondre à une Question se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -1101,10 +1101,12 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
 - **Qui.** Tout compte nommé et non révoqué : Reader, Editor, Admin. Un compte en attente ou
   révoqué n'envoie rien et ne lit rien. Un membre ne lit que ses propres tickets ; l'Admin les
   lit tous.
-- **Aucun appel d'IA.** Créer, envoyer, suivre un ticket n'appelle aucun modèle et n'est pas
-  facturé. L'analyse d'un ticket est faite par l'administrateur avec sa session Claude Code,
-  à sa demande, en dehors de l'application ; l'application en affiche le texte publié sur
-  GitHub, sans rien générer.
+- **Aucun appel d'IA facturé à l'application.** Créer, envoyer, suivre un ticket n'appelle
+  aucun modèle. L'analyse et le développement d'un ticket sont faits par une session Claude
+  Code de l'administrateur, à sa demande : depuis sa propre session, ou lancée depuis la fiche
+  admin (« Lancements de sessions » ci-dessous). Ces sessions sont facturées sur l'abonnement
+  Claude de l'administrateur, hors du suivi des coûts de l'application. L'application affiche
+  le texte publié sur GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
   proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
   a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter (N) », juste après
@@ -1254,7 +1256,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - Détail, dans l'ordre : type, titre, statut ; « Ouvrir sur GitHub » et « Copier le lien » ;
   pour un ticket en anomalie, « Essais d'envoi : N », « Dernière erreur : … » et « Relancer
   l'envoi » ; la réponse ou le motif du refus ; auteur, date, version, plateforme, écran ;
-  description et capture en grand ; enfin la section « Analyses (N) ». Une relance qui échoue
+  description et capture en grand ; la section « Lancements (N) » ; enfin la section
+  « Analyses (N) ». Une relance qui échoue
   encore affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une
   relance réussie, « Envoi relancé : <statut>. ».
 - **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
@@ -1269,8 +1272,21 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   « Analyse pas encore relevée. » avec « Ouvrir sur GitHub » ; « Impossible de charger les
   analyses. » avec Réessayer. Les analyses ne sont lisibles que par l'Admin, jamais par
   l'auteur du ticket.
+- **Lancements.** Section « Lancements (N) », avant « Analyses », toujours affichée : les
+  sessions lancées sur ce ticket, plus récente en haut, vingt au plus. Chaque carte : « Analyse
+  lancée » ou « Développement lancé », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
+  « Session créée », « Échec : <message> » ou « Résultat inconnu : vérifiez sur
+  claude.ai/code ». Pour une session créée : « Ouvrir la session », « Copier le lien », et
+  « Visible seulement depuis le compte Claude de l'administrateur. ». Le lien ne s'ouvre que
+  s'il mène à `https://claude.ai`. États : « Chargement des lancements… » ; « Aucune session
+  lancée pour ce ticket. » ; « Impossible de charger les lancements. » avec Réessayer.
+  L'auteur du ticket ne voit ni cette section, ni le lien, ni le nom de l'administrateur.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
-  décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé.
+  décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
+  Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser » et « Valider » ; Validé :
+  « Refuser » et « Lancer le développement ». « Valider » et un lancement ne s'affichent
+  jamais ensemble. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche en
+  fin de défilement au lieu de rester fixée.
   - « Valider » : seulement pour un ticket Analysé qui n'est pas une Question. Confirmation
     « Valider ce ticket ? » — « Il sera traité à votre prochaine demande. », « Annuler » ou
     « Valider ». Succès : « Ticket validé. » et le statut passe à Validé. Une Issue déjà fermée
@@ -1291,12 +1307,57 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     est publié mais l'Issue pas fermée : « Motif publié, mais l'Issue n'a pas été fermée.
     Réessayez. », et le motif ne se modifie plus ; rouverte, la boîte dit « Ce motif est déjà
     publié sur GitHub. Refuser ferme l'Issue. » ; réessayer ne le publie pas une seconde fois.
+  - « Lancer l'analyse » : pour un ticket Reçu, de tout type, Question comprise, avec son
+    Issue. « Lancer le développement » : pour un ticket Validé (jamais une Question). Une
+    confirmation s'ouvre. Analyse : « Lancer l'analyse de ce ticket ? » — « Une session Claude
+    Code va lire l'Issue #N et publier son analyse sur GitHub. ». Développement : « Lancer le
+    développement de ce ticket ? » — « Une session Claude Code va écrire le code et ouvrir une
+    pull request. Elle ne fusionne rien. ». Les deux ajoutent « Lancements restants
+    aujourd'hui : R sur 10. » (« … : inconnu. » quand le compteur ne se lit pas ; à zéro,
+    « Vous avez lancé 10 sessions aujourd'hui. Réessayez demain. » et « Lancer » grisé) et
+    l'encadré « Facturé sur l'abonnement Claude de l'administrateur. Ce coût n'apparaît pas
+    dans le suivi des coûts de l'application. ». Boutons « Annuler » et « Lancer ». Pendant
+    l'envoi : « Lancement en cours. Cela peut prendre jusqu'à 30 secondes. », « Annuler »
+    grisé. Session créée : « Session lancée. Le lien est dans la section Lancements. ».
+    Aucune réponse de Claude : « Résultat inconnu : vérifiez sur claude.ai/code avant de
+    relancer. ». Réponse perdue en route : « Réponse perdue. Regardez la section Lancements
+    avant de relancer. ». Un refus laisse la boîte ouverte avec son message.
+  - **Un lancement à la fois.** Tant qu'un lancement du même type n'a rien changé au statut du
+    ticket, depuis moins d'une heure (analyse) ou de trois heures (développement), le bouton
+    est masqué et la barre affiche « Analyse en cours depuis hh:mm » (« … depuis le jj/mm/aa à
+    hh:mm » un autre jour) ou « Développement en cours depuis … ». Un résultat inconnu compte
+    comme un lancement. Passé ce délai, le bouton devient « Relancer l'analyse » ou « Relancer
+    le développement », et la confirmation ajoute « Le lancement du jj/mm/aa à hh:mm n'a rien
+    changé au ticket. Vérifiez sur claude.ai/code qu'aucune session ne tourne encore. », avec
+    le bouton « Relancer ». Le serveur refuse aussi : « Une analyse a été lancée le jj/mm/aa
+    à hh:mm. Attendez son résultat ou relancez après hh:mm. » (ou « Un développement a été
+    lancé… »).
+  - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse et
+    développement confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
+    plus). Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
+    reçoit une erreur du serveur de Claude, compte et bloque comme un lancement réussi :
+    la session a pu partir. La boîte se ferme alors sur « Claude ne répond pas. Vérifiez sur
+    claude.ai/code avant de relancer. ».
+  - Refus d'un lancement, affichés tels quels : « Ce lancement n'est pas possible pour ce
+    statut. », « Le ticket a changé sur GitHub. Rien n'a été lancé. » (la fiche reprend l'état
+    de GitHub), « Lancement non configuré : ajoutez l'identifiant et le jeton de la routine
+    dans Secret Manager. » (rien n'est compté), « La routine est en pause sur claude.ai.
+    Réactivez-la, puis relancez. », « Lancement refusé par Claude. », « Le jeton de la
+    routine est refusé. Remplacez-le dans Secret Manager. », « Routine introuvable : vérifiez
+    son identifiant dans Secret Manager. », « Trop de lancements chez Claude. Réessayez dans
+    N min. ».
   - Autres refus du serveur, affichés tels quels : « GitHub refuse le jeton. Rien n'a été
     modifié. », « L'Issue n'existe plus sur GitHub. », « Une décision est déjà en cours sur ce
     ticket. ».
 - Jeton GitHub refusé : un bandeau dit « Jeton GitHub invalide : aucun ticket n'est transmis
   à GitHub depuis le jj/mm/aa à hh:mm. Remplacez le jeton dans Secret Manager. Les tickets en
-  attente repartiront ensuite. » Il disparaît au premier envoi réussi.
+  attente repartiront ensuite. » Il disparaît au premier envoi réussi. Jeton d'une routine
+  refusé : « Jeton de la routine d'analyse refusé depuis le jj/mm/aa à hh:mm. Remplacez-le
+  dans Secret Manager. » (ou « de développement »), effacé au premier lancement réussi de
+  cette routine. Les bandeaux s'empilent en haut de la liste et de la fiche au téléphone.
+- **Compteur** au-dessus des filtres : « Lancements de sessions : N ce mois-ci · R aujourd'hui
+  sur 10 ». Un nombre de lancements, jamais un montant. Compteur illisible : « Lancements de
+  sessions : compteur indisponible. » avec « Réessayer ».
 - États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
   signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
   tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu
@@ -1307,7 +1368,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 
 Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
 envoyé ; notification push ou e-mail ; version exacte de la livraison ; répondre à une
-Question depuis l'application ; lancer une analyse ou un développement depuis l'application ;
+Question depuis l'application ; fusionner ou déployer depuis l'application, ou laisser une
+session lancée le faire ; montant facturé d'une session dans le suivi des coûts ;
 détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
 automatiques.
 

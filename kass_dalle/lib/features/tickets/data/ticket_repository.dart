@@ -12,6 +12,7 @@ import '../../../core/utils/platform_utils.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
 import '../domain/ticket_form.dart';
+import '../domain/ticket_launch.dart';
 
 /// Lecture des tickets, envoi d'un ticket et de sa capture.
 ///
@@ -125,17 +126,76 @@ class TicketRepository {
     );
   }
 
-  /// Depuis quand le jeton GitHub est refusé (`app_config/tickets_status`),
-  /// ou `null` s'il fonctionne. Lisible par l'administrateur seul.
-  Stream<DateTime?> watchTokenInvalidSince() {
+  /// L'historique des lancements de sessions de [ticketId]
+  /// (`tickets/{ticketId}/admin/launches`), plus récent en tête ; liste vide
+  /// tant qu'aucun lancement n'a eu lieu. Lisible par l'administrateur seul.
+  Stream<List<TicketLaunch>> watchLaunches(String ticketId) {
+    return _reported(
+      _col
+          .doc(ticketId)
+          .collection('admin')
+          .doc('launches')
+          .snapshots()
+          .map((snap) => ticketLaunchesFromDoc(snap.data())),
+      step: 'watch_launches',
+    );
+  }
+
+  /// `app_config/tickets_status` : jetons refusés (GitHub, routines) et
+  /// compteurs des lancements. Lisible par l'administrateur seul.
+  Stream<TicketsStatus> watchStatus() {
     return _reported(
       _db
           .collection('app_config')
           .doc('tickets_status')
           .snapshots()
-          .map((snap) => parseTicketDate(snap.data()?['token_invalid_since'])),
-      step: 'watch_token_status',
+          .map((snap) => TicketsStatus.fromMap(snap.data())),
+      step: 'watch_tickets_status',
     );
+  }
+
+  /// Le plafond quotidien des lancements de sessions
+  /// (`app_config/tickets.launches_per_day`).
+  ///
+  /// Document ou champ absent : [kTicketDefaultLaunchesPerDay], le réglage
+  /// par défaut du serveur, verrouillé par la fixture
+  /// `ticket_decisions.json`. Champ présent mais pas un entier de 1 à
+  /// [kTicketMaxLaunchesPerDay] : le serveur refuse tout lancement ; `null` (« inconnu ») et
+  /// rapport d'erreur. Une lecture refusée rend aussi `null`.
+  Future<int?> fetchLaunchesPerDay() async {
+    try {
+      final snap = await _db.collection('app_config').doc('tickets').get();
+      final data = snap.data();
+      if (!snap.exists || data == null) return kTicketDefaultLaunchesPerDay;
+      if (!data.containsKey('launches_per_day')) {
+        return kTicketDefaultLaunchesPerDay;
+      }
+      final raw = data['launches_per_day'];
+      if (raw is int && raw > 0 && raw <= kTicketMaxLaunchesPerDay) return raw;
+      if (raw is double &&
+          raw > 0 &&
+          raw <= kTicketMaxLaunchesPerDay &&
+          raw == raw.truncateToDouble()) {
+        return raw.toInt();
+      }
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: FormatException(
+          'app_config/tickets.launches_per_day illisible',
+          '$raw',
+        ),
+        context: {'step': 'fetch_launches_per_day'},
+      );
+      return null;
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {'step': 'fetch_launches_per_day'},
+      );
+      return null;
+    }
   }
 
   /// Le plafond quotidien d'un membre (`app_config/tickets`,
@@ -345,6 +405,49 @@ class TicketRepository {
       ticketId: ticketId,
       call: () => _callables.refuseTicket(ticketId, reason.trim()),
     );
+  }
+
+  /// Lance la routine [action] sur [ticketId] (administrateur).
+  ///
+  /// Lève [TicketLaunchError] pour un refus du serveur (rien n'a été lancé) ;
+  /// toute autre erreur est relancée telle quelle : la réponse s'est perdue,
+  /// et rien ne dit si la session est partie.
+  Future<TicketLaunchResult> launch(
+    String ticketId,
+    TicketLaunchAction action,
+  ) async {
+    final step = 'launch_${action.value}';
+    try {
+      final data = switch (action) {
+        TicketLaunchAction.analysis => await _callables.launchTicketAnalysis(
+          ticketId,
+        ),
+        TicketLaunchAction.development =>
+          await _callables.launchTicketDevelopment(ticketId),
+      };
+      return TicketLaunchResult.fromMap(data);
+    } on GeminiCallableException catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {'step': step, 'ticket_id': ticketId, 'code': e.code},
+      );
+      final known = ticketDecisionErrorFrom(
+        message: e.message,
+        details: e.details,
+      );
+      if (known != null) throw TicketLaunchError(known.message);
+      rethrow;
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: _feature,
+        error: e,
+        stackTrace: st,
+        context: {'step': step, 'ticket_id': ticketId},
+      );
+      rethrow;
+    }
   }
 
   Future<String> _decide({

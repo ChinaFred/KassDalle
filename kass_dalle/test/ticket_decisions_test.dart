@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_analysis.dart';
+import 'package:kass_dalle/features/tickets/domain/ticket_launch.dart';
 import 'package:kass_dalle/features/tickets/presentation/tickets_providers.dart';
 
 Ticket _ticket({
@@ -211,11 +212,273 @@ void main() {
           ),
         );
         expect(
-          {'can_validate': d.canValidate, 'can_refuse': d.canRefuse},
-          {'can_validate': c['can_validate'], 'can_refuse': c['can_refuse']},
+          {
+            'can_validate': d.canValidate,
+            'can_refuse': d.canRefuse,
+            'can_launch_analysis': d.canLaunchAnalysis,
+            'can_launch_development': d.canLaunchDevelopment,
+          },
+          {
+            'can_validate': c['can_validate'],
+            'can_refuse': c['can_refuse'],
+            'can_launch_analysis': c['can_launch_analysis'],
+            'can_launch_development': c['can_launch_development'],
+          },
         );
       });
     }
+
+    test('plafond quotidien des lancements par défaut', () {
+      expect(kTicketDefaultLaunchesPerDay, fixture['default_launches_per_day']);
+      expect(kTicketMaxLaunchesPerDay, fixture['max_launches_per_day']);
+    });
+
+    DateTime? iso(Object? v) => v is String ? DateTime.parse(v) : null;
+
+    for (final r
+        in (fixture['launch_runs'] as List).cast<Map<String, dynamic>>()) {
+      test('lancements : ${r['name']}', () {
+        final launches = (r['launches'] as List)
+            .cast<Map<String, dynamic>>()
+            .map(
+              (e) => TicketLaunch.fromMap({
+                ...e,
+                'launched_at': iso(e['launched_at']),
+                'retry_after': iso(e['retry_after']),
+              })!,
+            )
+            .toList();
+        final state = ticketLaunchRunState(
+          launches: launches,
+          action: TicketLaunchAction.fromValue(r['action'])!,
+          rawStatus: r['raw_status'] as String,
+          now: DateTime.parse(r['now'] as String),
+        );
+        expect(state.running, r['running']);
+        expect(state.runningSince, iso(r['running_since']));
+        expect(state.relaunchOf, iso(r['relaunch_of']));
+      });
+    }
+  });
+
+  group('boutons de lancement', () {
+    final now = DateTime.utc(2026, 10, 14, 12, 30);
+    TicketLaunch entry({
+      String action = 'analyse',
+      String outcome = 'launched',
+      String from = 'received',
+      DateTime? at,
+      Duration delay = const Duration(hours: 1),
+    }) {
+      final launched = at ?? DateTime.utc(2026, 10, 14, 12);
+      return TicketLaunch.fromMap({
+        'id': 'l1',
+        'action': action,
+        'outcome': outcome,
+        'from_status': from,
+        'launched_at': launched,
+        'retry_after': launched.add(delay),
+        'launched_by_name': 'Fred',
+      })!;
+    }
+
+    test('Reçu : Refuser et Lancer l\'analyse, jamais Valider', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'received'),
+        launches: const [],
+        now: now,
+      );
+      expect(d.canRefuse, isTrue);
+      expect(d.canValidate, isFalse);
+      expect(d.canLaunchAnalysis, isTrue);
+      expect(d.canLaunchDevelopment, isFalse);
+      expect(d.relaunchOf, isNull);
+      expect(d.launchAction, TicketLaunchAction.analysis);
+    });
+
+    test('Question reçue : Lancer l\'analyse aussi', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'received', type: 'question'),
+        launches: const [],
+        now: now,
+      );
+      expect(d.canLaunchAnalysis, isTrue);
+    });
+
+    test('Validé : Lancer le développement, sauf une Question', () {
+      expect(
+        adminTicketDecisions(
+          _ticket(status: 'validated'),
+          launches: const [],
+          now: now,
+        ).canLaunchDevelopment,
+        isTrue,
+      );
+      final question = adminTicketDecisions(
+        _ticket(status: 'validated', type: 'question'),
+        launches: const [],
+        now: now,
+      );
+      expect(question.canLaunchDevelopment, isFalse);
+      expect(question.launchAction, isNull);
+    });
+
+    test('Analysé : Valider, aucun lancement', () {
+      final d = adminTicketDecisions(_ticket(), launches: const [], now: now);
+      expect(d.canValidate, isTrue);
+      expect(d.canLaunchAnalysis || d.canLaunchDevelopment, isFalse);
+    });
+
+    test('lancement en cours : bouton masqué, ligne « en cours »', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'received'),
+        launches: [entry()],
+        now: now,
+      );
+      expect(d.canLaunchAnalysis, isFalse);
+      expect(d.runningSince, DateTime.utc(2026, 10, 14, 12));
+      expect(d.hasAction, isTrue);
+    });
+
+    test('échéance passée : « Relancer »', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'received'),
+        launches: [entry()],
+        now: DateTime.utc(2026, 10, 14, 13, 5),
+      );
+      expect(d.canLaunchAnalysis, isTrue);
+      expect(d.relaunchOf, DateTime.utc(2026, 10, 14, 12));
+      expect(d.runningSince, isNull);
+    });
+
+    test('historique en chargement : bouton masqué ; en erreur : affiché', () {
+      final loading = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launchesLoading: true,
+        now: now,
+      );
+      expect(loading.canLaunchDevelopment, isFalse);
+      expect(loading.runningSince, isNull);
+      final failed = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launches: null,
+        now: now,
+      );
+      expect(failed.canLaunchDevelopment, isTrue);
+    });
+
+    test('statut inconnu : aucun lancement', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'archived'),
+        launches: const [],
+        now: now,
+      );
+      expect(d.canLaunchAnalysis || d.canLaunchDevelopment, isFalse);
+      expect(d.launchAction, isNull);
+    });
+
+    test('ligne « en cours » : heure seule le jour même, date sinon', () {
+      final since = DateTime(2026, 10, 14, 14, 5);
+      expect(
+        ticketLaunchRunningLine(
+          TicketLaunchAction.analysis,
+          since,
+          DateTime(2026, 10, 14, 15),
+        ),
+        'Analyse en cours depuis 14:05',
+      );
+      expect(
+        ticketLaunchRunningLine(
+          TicketLaunchAction.development,
+          since,
+          DateTime(2026, 10, 15, 9),
+        ),
+        'Développement en cours depuis le 14/10/26 à 14:05',
+      );
+    });
+
+    test('historique : plus récent en tête, entrées illisibles écartées', () {
+      final list = ticketLaunchesFromDoc({
+        'launches': [
+          {
+            'id': 'a',
+            'action': 'analyse',
+            'outcome': 'failed',
+            'launched_at': Timestamp.fromDate(DateTime.utc(2026, 10, 13)),
+          },
+          'texte',
+          {
+            'id': 'b',
+            'action': 'developpement',
+            'outcome': 'launched',
+            'launched_at': Timestamp.fromDate(DateTime.utc(2026, 10, 14)),
+            'session_url': 'https://claude.ai/code/s1',
+          },
+        ],
+      });
+      expect(list.map((l) => l.id), ['b', 'a']);
+      expect(list.first.action, TicketLaunchAction.development);
+      expect(list.first.outcome, TicketLaunchOutcome.launched);
+      expect(ticketLaunchesFromDoc(null), isEmpty);
+    });
+
+    test('lien de session : https et claude.ai seulement', () {
+      expect(
+        openableSessionLink('https://claude.ai/code/session_1')?.host,
+        'claude.ai',
+      );
+      expect(openableSessionLink('http://claude.ai/code/s'), isNull);
+      expect(openableSessionLink('https://evil.example/claude.ai'), isNull);
+      expect(openableSessionLink('https://claude.ai.evil.example/x'), isNull);
+      expect(openableSessionLink('javascript:alert(1)'), isNull);
+      expect(openableSessionLink(null), isNull);
+    });
+
+    test('compteurs : jour et mois de Paris, sinon zéro', () {
+      final status = TicketsStatus.fromMap({
+        'launches_today': {'day': '20261014', 'count': 3},
+        'launches_month': {'month': '202610', 'count': 8},
+        'routine_invalid_since': {
+          'analyse': Timestamp.fromDate(DateTime.utc(2026, 10, 14, 8)),
+          'developpement': null,
+        },
+      });
+      final today = DateTime.utc(2026, 10, 14, 10);
+      expect(status.launchesTodayAt(today), 3);
+      expect(status.launchesMonthAt(today), 8);
+      expect(status.launchesTodayAt(DateTime.utc(2026, 10, 15, 10)), 0);
+      expect(status.launchesMonthAt(DateTime.utc(2026, 11, 2, 10)), 0);
+      expect(status.analysisRoutineInvalidSince, isNotNull);
+      expect(status.developmentRoutineInvalidSince, isNull);
+      expect(TicketsStatus.fromMap(null).launchesTodayAt(today), 0);
+    });
+
+    test('réponse du serveur : résultat illisible lu « inconnu »', () {
+      expect(
+        TicketLaunchResult.fromMap({
+          'outcome': 'launched',
+          'session_url': 'https://claude.ai/code/s',
+        }).outcome,
+        TicketLaunchOutcome.launched,
+      );
+      expect(
+        TicketLaunchResult.fromMap({'outcome': 'bizarre'}).outcome,
+        TicketLaunchOutcome.unknown,
+      );
+      final serverError = TicketLaunchResult.fromMap({
+        'outcome': 'unknown',
+        'session_url': null,
+        'message':
+            'Claude ne répond pas. Vérifiez sur claude.ai/code avant de '
+            'relancer.',
+      });
+      expect(serverError.outcome, TicketLaunchOutcome.unknown);
+      expect(serverError.message, startsWith('Claude ne répond pas.'));
+      expect(
+        TicketLaunchResult.fromMap({'outcome': 'unknown'}).message,
+        isNull,
+      );
+    });
   });
 
   group('erreurs de décision', () {

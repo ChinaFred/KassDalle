@@ -15,7 +15,10 @@
  *  - le jour calendaire Europe/Paris du plafond, et la lecture des plafonds ;
  *  - les analyses du mainteneur relevées sur l'Issue (`## Analyse…`) ;
  *  - les décisions de l'administrateur : conditions de « Valider » et
- *    « Refuser », lecture du motif de refus, message d'une erreur GitHub.
+ *    « Refuser », lecture du motif de refus, message d'une erreur GitHub ;
+ *  - les lancements de sessions Claude Code : texte de commande, condition
+ *    de statut, échéance, règle « en cours », plafond et compteurs
+ *    (`tests/ticketLaunches.test.ts`, fixture `ticket_decisions.json`).
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -626,19 +629,31 @@ export function storedTicketStatus(raw: unknown): TicketStatus {
 }
 
 /**
- * Les deux décisions permises sur un ticket stocké, telles que le client les
+ * Les décisions permises sur un ticket stocké, telles que le client les
  * affiche (`adminTicketDecisions`, fixture `ticket_decisions.json`). Pure.
+ *
+ * Les lancements suivent leur condition de statut (`launchPrecondition`) ;
+ * l'historique (lancement en cours, relance) est la règle à part
+ * `launchRunState`, que le client combine de la même façon.
  */
 export function ticketDecisions(args: {
   rawStatus: unknown;
   type: TicketType;
   hasIssue: boolean;
-}): { canValidate: boolean; canRefuse: boolean } {
+}): {
+  canValidate: boolean;
+  canRefuse: boolean;
+  canLaunchAnalysis: boolean;
+  canLaunchDevelopment: boolean;
+} {
   const status = storedTicketStatus(args.rawStatus);
+  const launchArgs = { status, type: args.type, hasIssue: args.hasIssue };
   return {
     canValidate:
       validatePrecondition({ status, type: args.type, hasIssue: args.hasIssue }).kind === "ok",
     canRefuse: refusePrecondition({ status, hasIssue: args.hasIssue }) === null,
+    canLaunchAnalysis: launchPrecondition(launchArgs, "analyse") === null,
+    canLaunchDevelopment: launchPrecondition(launchArgs, "developpement") === null,
   };
 }
 
@@ -691,6 +706,240 @@ export function decisionGithubFailure(kind: string): {
         reason: "github_unavailable",
       };
   }
+}
+
+// ── Lancements de sessions Claude Code (Routines) ──────────────────────────
+
+/**
+ * Les deux routines : `analyse` (ticket Reçu) et `developpement` (ticket
+ * Validé). La valeur est aussi le premier mot du texte envoyé à la routine.
+ */
+export const LAUNCH_ACTIONS = ["analyse", "developpement"] as const;
+export type LaunchAction = (typeof LAUNCH_ACTIONS)[number];
+
+export function isLaunchAction(value: unknown): value is LaunchAction {
+  return typeof value === "string" && (LAUNCH_ACTIONS as readonly string[]).includes(value);
+}
+
+/** Le statut que le ticket doit avoir pour lancer, et garder pendant le lancement. */
+export const LAUNCH_FROM_STATUS: Record<LaunchAction, TicketStatus> = {
+  analyse: "received",
+  developpement: "validated",
+};
+
+/**
+ * Délai après lequel un lancement resté sans effet sur le statut du ticket
+ * peut être relancé : 1 h pour une analyse, 3 h pour un développement.
+ */
+export const LAUNCH_RETRY_MS: Record<LaunchAction, number> = {
+  analyse: 60 * 60 * 1000,
+  developpement: 3 * 60 * 60 * 1000,
+};
+
+/** Plafond par défaut, analyse et développement confondus, pour toute la famille. */
+export const DEFAULT_LAUNCHES_PER_DAY = 10;
+
+/**
+ * Plus haut réglage accepté pour `launches_per_day`. Au-delà, le réglage est
+ * refusé comme illisible : une faute de frappe (1000) ne lève pas le plafond.
+ */
+export const MAX_LAUNCHES_PER_DAY = 50;
+
+/** Entrées gardées dans `tickets/{id}/admin/launches`, plus récente en tête. */
+export const LAUNCH_HISTORY_MAX = 20;
+
+/** Seule forme de texte envoyée à une routine. */
+export const LAUNCH_TEXT_PATTERN = /^(analyse|developpement) #[1-9][0-9]{0,6}$/;
+
+/**
+ * Le texte envoyé à la routine : `analyse #N` ou `developpement #N`. Lève si
+ * le résultat ne suit pas [LAUNCH_TEXT_PATTERN] : rien d'autre ne part.
+ */
+export function launchCommandText(action: LaunchAction, issueNumber: number): string {
+  const text = `${action} #${issueNumber}`;
+  if (!LAUNCH_TEXT_PATTERN.test(text)) {
+    throw new Error(`texte de lancement refusé : ${JSON.stringify(text)}`);
+  }
+  return text;
+}
+
+/** Lit un texte de commande ; `null` hors de la forme permise. Pure. */
+export function readLaunchCommandText(
+  text: unknown,
+): { action: LaunchAction; issueNumber: number } | null {
+  if (typeof text !== "string" || !LAUNCH_TEXT_PATTERN.test(text)) return null;
+  const [word, ref] = text.split(" ");
+  if (!isLaunchAction(word)) return null;
+  return { action: word, issueNumber: Number(ref.slice(1)) };
+}
+
+export const LAUNCH_NOT_ALLOWED_MESSAGE = "Ce lancement n'est pas possible pour ce statut.";
+
+/**
+ * Ce que décide un lancement avant tout appel : `null` s'il est permis, sinon
+ * le message du refus. Analyse : ticket Reçu, tout type. Développement :
+ * ticket Validé, d'un autre type que Question. Une Issue est requise.
+ */
+export function launchPrecondition(
+  args: { status: TicketStatus; type: TicketType; hasIssue: boolean },
+  action: LaunchAction,
+): string | null {
+  if (!args.hasIssue) return "Ce ticket n'a pas encore d'Issue GitHub.";
+  if (args.status !== LAUNCH_FROM_STATUS[action]) return LAUNCH_NOT_ALLOWED_MESSAGE;
+  if (action === "developpement" && args.type === "question") return LAUNCH_NOT_ALLOWED_MESSAGE;
+  return null;
+}
+
+/** Échéance d'un lancement : l'instant à partir duquel il peut être relancé. */
+export function launchRetryAfterMs(action: LaunchAction, launchedAtMs: number): number {
+  return launchedAtMs + LAUNCH_RETRY_MS[action];
+}
+
+/** Une entrée d'historique, lue sans supposer sa forme (dates en millisecondes). */
+export interface LaunchEntryView {
+  action: unknown;
+  outcome: unknown;
+  from_status: unknown;
+  launched_at_ms: number | null;
+  retry_after_ms: number | null;
+}
+
+/**
+ * L'état d'un type de lancement sur un ticket, d'après son historique.
+ *
+ * Seule compte la dernière entrée de ce type (plus grand `launched_at`).
+ * Elle est « en cours » si elle a abouti ou si son résultat est inconnu
+ * (`launched`, `unknown`), si le ticket a toujours le statut d'où elle est
+ * partie (`from_status`) et si son échéance (`retry_after`) n'est pas
+ * passée. Échéance passée, mêmes conditions : relance proposée. Une entrée
+ * en échec, sans date, sans échéance, ou partie d'un autre statut ne bloque
+ * rien. Pure ; fixture `ticket_decisions.json`, section `launch_runs`.
+ */
+export function launchRunState(args: {
+  entries: readonly LaunchEntryView[];
+  action: LaunchAction;
+  rawStatus: unknown;
+  nowMs: number;
+}): { running: boolean; runningSinceMs: number | null; relaunchOfMs: number | null } {
+  const none = { running: false, runningSinceMs: null, relaunchOfMs: null };
+  let last: LaunchEntryView | null = null;
+  for (const e of args.entries) {
+    if (e.action !== args.action || e.launched_at_ms === null) continue;
+    if (last === null || e.launched_at_ms > (last.launched_at_ms ?? -Infinity)) last = e;
+  }
+  if (last === null || last.launched_at_ms === null) return none;
+  if (last.outcome !== "launched" && last.outcome !== "unknown") return none;
+  if (typeof args.rawStatus !== "string" || last.from_status !== args.rawStatus) return none;
+  if (last.retry_after_ms === null) return none;
+  if (args.nowMs < last.retry_after_ms) {
+    return { running: true, runningSinceMs: last.launched_at_ms, relaunchOfMs: null };
+  }
+  return { running: false, runningSinceMs: null, relaunchOfMs: last.launched_at_ms };
+}
+
+const PARIS_DATE_TIME = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "Europe/Paris",
+  year: "2-digit",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+function parisParts(ms: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const p of PARIS_DATE_TIME.formatToParts(new Date(ms))) out[p.type] = p.value;
+  return out;
+}
+
+/** « 13/10/26 », heure de Paris. */
+export function parisShortDate(ms: number): string {
+  const p = parisParts(ms);
+  return `${p.day}/${p.month}/${p.year}`;
+}
+
+/** « 14:05 », heure de Paris. */
+export function parisHourMinute(ms: number): string {
+  const p = parisParts(ms);
+  return `${p.hour}:${p.minute}`;
+}
+
+/** Message d'un lancement refusé parce qu'un lancement du même type est en cours. */
+export function launchRunningMessage(
+  action: LaunchAction,
+  launchedAtMs: number,
+  retryAfterMs: number,
+): string {
+  const what = action === "analyse" ? "Une analyse a été lancée" : "Un développement a été lancé";
+  return (
+    `${what} le ${parisShortDate(launchedAtMs)} à ${parisHourMinute(launchedAtMs)}. ` +
+    `Attendez son résultat ou relancez après ${parisHourMinute(retryAfterMs)}.`
+  );
+}
+
+/** Message du plafond quotidien des lancements. */
+export function launchQuotaMessage(limit: number): string {
+  return `Vous avez lancé ${limit} sessions aujourd'hui. Réessayez demain.`;
+}
+
+/**
+ * Le plafond lu dans `app_config/tickets.launches_per_day` : document ou champ
+ * absent → [DEFAULT_LAUNCHES_PER_DAY] ; présent mais pas un entier de 1 à
+ * [MAX_LAUNCHES_PER_DAY] → `null`, et le lancement est refusé.
+ */
+export function readLaunchesPerDay(data: Record<string, unknown> | undefined): number | null {
+  const value = data?.launches_per_day;
+  if (value === undefined) return DEFAULT_LAUNCHES_PER_DAY;
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= MAX_LAUNCHES_PER_DAY
+    ? value
+    : null;
+}
+
+/** Compteur du jour des lancements : `launch_{AAAAMMJJ}`. */
+export function launchQuotaDocId(day: string): string {
+  return `launch_${day}`;
+}
+
+/**
+ * Les compteurs affichés par le client (`app_config/tickets_status`), après
+ * un lancement compté (`delta` = 1) ou un lancement rendu (`delta` = -1), le
+ * jour `day` étant celui où il a été compté.
+ *
+ * Compter : un compteur d'un autre jour ou d'un autre mois repart de zéro.
+ * Rendre : un compteur déjà passé à un autre jour ou à un autre mois reste
+ * tel quel (`null` : rien à écrire). Aucun ne descend sous zéro.
+ */
+export function nextLaunchCounters(
+  current: { today?: unknown; month?: unknown },
+  day: string,
+  delta: 1 | -1,
+): {
+  today: { day: string; count: number } | null;
+  month: { month: string; count: number } | null;
+} {
+  const read = (raw: unknown, key: "day" | "month", value: string): number | null => {
+    if (raw === null || typeof raw !== "object") return null;
+    const r = raw as Record<string, unknown>;
+    if (r[key] !== value) return null;
+    return typeof r.count === "number" && Number.isFinite(r.count) && r.count > 0 ? r.count : 0;
+  };
+  const month = day.slice(0, 6);
+  const today = read(current.today, "day", day);
+  const monthly = read(current.month, "month", month);
+  if (delta === 1) {
+    return {
+      today: { day, count: (today ?? 0) + 1 },
+      month: { month, count: (monthly ?? 0) + 1 },
+    };
+  }
+  return {
+    today: today === null ? null : { day, count: Math.max(0, today - 1) },
+    month: monthly === null ? null : { month, count: Math.max(0, monthly - 1) },
+  };
 }
 
 // ── Signature du webhook ────────────────────────────────────────────────────

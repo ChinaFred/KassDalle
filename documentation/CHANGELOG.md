@@ -20,6 +20,59 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-14
 
+### v0.23.63 — fonctionnel
+
+Admin › Tickets des membres lance une session Claude Code sur un ticket (ticket #73, lot B).
+Sur un ticket Reçu, « Lancer l'analyse » : la session lit l'Issue et publie son analyse sur
+GitHub. Sur un ticket Validé, « Lancer le développement » : la session écrit le code et ouvre
+une pull request, sans rien fusionner. Une confirmation annonce les lancements restants du
+jour (10 pour toute la famille) et rappelle que la session est facturée sur l'abonnement
+Claude de l'administrateur, hors du suivi des coûts de l'application.
+
+Un lancement du même type ne repart pas tant que le précédent n'a rien changé au ticket :
+1 h pour une analyse, 3 h pour un développement. La barre affiche alors « Analyse en cours
+depuis hh:mm » ; passé ce délai, le bouton devient « Relancer ». La nouvelle section
+« Lancements » de la fiche donne le résultat et le lien de chaque session ; l'auteur du ticket
+ne la voit pas. L'écran affiche « Lancements de sessions : N ce mois-ci · R aujourd'hui sur
+10 », et un bandeau quand le jeton d'une routine est refusé. Les bandeaux s'affichent aussi
+sur la fiche au téléphone. À 200 % sur un petit écran, la barre de décision suit la fiche en
+fin de défilement au lieu de la masquer.
+
+### v0.23.63 — technique
+
+Deux callables admin, `launchTicketAnalysis` et `launchTicketDevelopment`
+(`tickets/launch.ts`), appellent l'API des Routines Claude Code par `fetch`
+(`tickets/routine.ts`, aucun SDK) : un seul appel, 30 s, corps exact `{"text": "analyse #N"}`
+ou `{"text": "developpement #N"}` contrôlé par une expression régulière, aucune relance,
+redirection refusée (`redirect: "error"`) pour que le jeton ne parte pas ailleurs. Une réponse
+500, 503 ou tout 5xx compte comme un résultat inconnu, comme un délai dépassé : le lancement
+est compté et bloque 1 h ou 3 h, et la fiche dit « Claude ne répond pas. Vérifiez sur
+claude.ai/code avant de relancer. ». Elles
+réutilisent le bail `decision_lease_until` des décisions (`claimDecision`, désormais exporté),
+relisent l'Issue avant de lancer, et écrivent une entrée `unknown` dans
+`tickets/{id}/admin/launches` avant l'appel : une fonction coupée pendant l'appel laisse une
+trace qui bloque comme un succès. Le plafond se compte dans `ticket_quotas/launch_{AAAAMMJJ}` ;
+`app_config/tickets_status` reçoit `launches_today`, `launches_month` et
+`routine_invalid_since` ; `app_config/tickets.launches_per_day` est borné à 50, au-delà le
+réglage est refusé comme illisible. Quatre secrets nouveaux, `TICKETS_ROUTINE_ANALYSIS_ID`,
+`TICKETS_ROUTINE_ANALYSIS_TOKEN`, `TICKETS_ROUTINE_DEV_ID` et `TICKETS_ROUTINE_DEV_TOKEN`,
+doivent exister dans Secret Manager avant la fusion (une valeur vide suffit). Aucun appel de
+modèle facturé au projet : pas de poste d'IA.
+
+Logique dupliquée : `ticket_decisions.json` couvre les deux lancements (cases
+`can_launch_analysis`, `can_launch_development`), la règle « en cours » (section
+`launch_runs`) et le plafond par défaut ; `rules.ts` (`launchPrecondition`, `launchRunState`)
+et `ticket.dart` / `ticket_launch.dart` (`adminTicketDecisions`, `ticketLaunchRunState`) la
+rejouent. `ticketsTokenInvalidSinceProvider` est remplacé par `ticketsStatusProvider`. Les
+règles Firestore ne changent pas ; `rules-tests` vérifie que l'auteur ne lit pas
+`admin/launches`. CLAUDE.md, section « Tickets », reçoit le point « Session lancée depuis
+l'application », et TechnicalRequirements.md la procédure de création des deux routines et
+leurs prompts. Le prompt de développement exige un `validé` posé après la dernière analyse
+retenue (sinon « ## Analyse — compléments », revalidation nécessaire) et ne compte que les
+pull requests ouvertes depuis le dépôt lui-même. La fiche se redessine à l'échéance d'un
+lancement en cours pour proposer « Relancer » ; la hauteur sous laquelle la barre de décision
+suit la fiche devient `PlatformUtils.pinnedActionBarMinHeight`.
+
 ### v0.23.62 — fonctionnel
 
 Admin › Tickets des membres permet de valider et de refuser un ticket sans passer par GitHub

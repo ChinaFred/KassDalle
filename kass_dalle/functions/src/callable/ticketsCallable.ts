@@ -21,6 +21,15 @@
  *   `{ status }`. Échec partiel (motif publié, Issue ouverte) : `aborted`,
  *   `details.reason = "reply_published_close_failed"`.
  *
+ * - `launchTicketAnalysis` — administrateur. Lance la routine Claude Code
+ *   d'analyse sur un ticket Reçu (`analyse #N`). Rend `{ outcome, session_url }`.
+ * - `launchTicketDevelopment` — administrateur. Lance la routine de
+ *   développement sur un ticket Validé (`developpement #N`). Même réponse.
+ *   Les deux suivent `tickets/launch.ts` : bail partagé avec les décisions,
+ *   plafond quotidien (`launches_per_day`, 10 par défaut), Issue relue, appel
+ *   unique sans relance. Deux callables plutôt qu'un seul avec `action` :
+ *   chacune ne monte que les secrets de sa routine.
+ *
  * Plafonds : `app_config/tickets` (`per_member_per_day`, `global_per_day`,
  * 5 et 30 si le document manque), jour calendaire Europe/Paris, compteurs
  * dans `ticket_quotas`. L'administrateur n'a pas de plafond et n'use pas le
@@ -41,6 +50,10 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
   TICKETS_CONFIG_DOC_ID,
+  TICKETS_ROUTINE_ANALYSIS_ID,
+  TICKETS_ROUTINE_ANALYSIS_TOKEN,
+  TICKETS_ROUTINE_DEV_ID,
+  TICKETS_ROUTINE_DEV_TOKEN,
 } from "../config";
 import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
 import { SHORT_TEXT_MAX_CHARS, requireBoundedText } from "./_inputBounds";
@@ -65,6 +78,8 @@ import {
 } from "../tickets/rules";
 import { sendTicket } from "../tickets/service";
 import { refuseTicketDecision, validateTicketDecision } from "../tickets/decisions";
+import { launchTicketSession, type LaunchResult } from "../tickets/launch";
+import type { LaunchAction } from "../tickets/rules";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -433,4 +448,56 @@ export const refuseTicket = onCall(
       throw new HttpsError("internal", "Le ticket n'a pas pu être refusé. Réessayez.");
     }
   },
+);
+
+/**
+ * Corps commun des deux lancements. Les refus attendus (`HttpsError`) passent
+ * tels quels ; toute autre panne est journalisée et rendue sans `reason` :
+ * le client ne sait pas si la session est partie, et le dit.
+ */
+async function launch(
+  req: Parameters<typeof requireAdmin>[0],
+  action: LaunchAction,
+): Promise<LaunchResult> {
+  const ctx = await requireAdmin(req, `ticket_lancement_${action}`);
+  const ticketId = readTicketIdArg(req.data);
+  try {
+    return await launchTicketSession(ticketId, action, {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+    });
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    await logError({
+      message: `launchTicket (${action}) : ticket ${ticketId} en échec inattendu`,
+      errorDescription: describe(err),
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+    throw new HttpsError(
+      "internal",
+      "Le lancement a échoué. Regardez la section Lancements avant de relancer.",
+    );
+  }
+}
+
+/** Délai d'un lancement : relecture GitHub (15 s) + appel de la routine (30 s) + écritures. */
+const launchOpts = { ...opts, timeoutSeconds: 120 };
+
+export const launchTicketAnalysis = onCall(
+  {
+    ...launchOpts,
+    secrets: [GITHUB_TICKETS_TOKEN, TICKETS_ROUTINE_ANALYSIS_ID, TICKETS_ROUTINE_ANALYSIS_TOKEN],
+  },
+  async (req): Promise<LaunchResult> => launch(req, "analyse"),
+);
+
+export const launchTicketDevelopment = onCall(
+  {
+    ...launchOpts,
+    secrets: [GITHUB_TICKETS_TOKEN, TICKETS_ROUTINE_DEV_ID, TICKETS_ROUTINE_DEV_TOKEN],
+  },
+  async (req): Promise<LaunchResult> => launch(req, "developpement"),
 );
