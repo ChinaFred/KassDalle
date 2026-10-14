@@ -2035,7 +2035,7 @@ client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (
 
 **Migration :** aucune pour `tickets` et `ticket_quotas` ; `app_config/tickets` n'a pas
 besoin d'être semé (§3.13). `tickets/{id}/admin/launches` n'existe que pour les tickets qui ont
-reçu un lancement (v0.23.63) : document absent, la section « Lancements » est vide. Les analyses publiées sur GitHub avant v0.23.62 se relèvent par le
+reçu un lancement (v0.23.64) : document absent, la section « Lancements » est vide. Les analyses publiées sur GitHub avant v0.23.62 se relèvent par le
 backfill ponctuel `ticket_analyses` (Admin › Backfills › « Analyses des tickets », §7.10).
 Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
 
@@ -3220,7 +3220,7 @@ attente ou révoqué, ne s'écrit pas par un membre et s'écrit par l'administra
 l'administrateur seul et ne s'écrit par aucun client ; `tickets/{id}/admin/analysis` (v0.23.62,
 6 tests) se lit par l'administrateur et ne se lit ni par l'auteur, ni par un éditeur, un autre
 lecteur, un compte en attente ou un anonyme, et ne s'écrit par aucun rôle, administrateur
-compris ; `tickets/{id}/admin/launches` (v0.23.63, 6 tests) suit la même règle — l'auteur ne lit
+compris ; `tickets/{id}/admin/launches` (v0.23.64, 6 tests) suit la même règle — l'auteur ne lit
 ni le lien de session ni le nom de l'administrateur — et l'administrateur ne réécrit ni les
 compteurs de lancements ni l'alerte d'une routine dans `app_config/tickets_status` (1 test).
 Storage (9) : `tickets/` — l'auteur dépose
@@ -3762,7 +3762,7 @@ valeur vide suffit pour débloquer le déploiement) :
    `ChinaFred/KassDalle` seul) ;
 2. `firebase functions:secrets:set GITHUB_WEBHOOK_SECRET --project kassdale-6d948`, coller une
    chaîne aléatoire longue (par exemple `openssl rand -hex 32`) ;
-3. avant la fusion de v0.23.63, les quatre secrets des routines, même vides :
+3. avant la fusion de v0.23.64, les quatre secrets des routines, même vides :
    `firebase functions:secrets:set TICKETS_ROUTINE_ANALYSIS_ID --project kassdale-6d948`, puis
    `TICKETS_ROUTINE_ANALYSIS_TOKEN`, `TICKETS_ROUTINE_DEV_ID` et `TICKETS_ROUTINE_DEV_TOKEN`
    (valeurs : « Routines des tickets » ci-dessous).

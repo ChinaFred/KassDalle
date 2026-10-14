@@ -10,10 +10,14 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [FunctionalRequirements.md](FunctionalRequirements.md) | Intention, parcours, modules, rôles et règles d'accès, couverture mobile / web / desktop | Markdown |
 | [TechnicalRequirements.md](TechnicalRequirements.md) | Architecture détaillée, schéma Firestore complet (champs + types), Security Rules, routage multi-fournisseur et traitement des réponses JSON | Markdown |
 | [CHANGELOG.md](CHANGELOG.md) | Historique des versions, de la plus récente à la plus ancienne : une entrée par version depuis la v0.22.104, et avant elle les 175 sections « Mise à jour release » sorties des deux specs | Markdown |
-| [architecture.html](architecture.html) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
-| [diagramme-de-classes.html](diagramme-de-classes.html) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
-| [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
-| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Vingt-trois opérations détaillées, de l'import à la réconciliation comptable — chaque flux nomme ses classes et ses fonctions réelles | HTML + Mermaid |
+| [architecture.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/architecture.html) ([source](architecture.html)) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
+| [diagramme-de-classes.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagramme-de-classes.html) ([source](diagramme-de-classes.html)) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
+| [cas-d-utilisation.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/cas-d-utilisation.html) ([source](cas-d-utilisation.html)) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
+| [diagrammes-de-sequence.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagrammes-de-sequence.html) ([source](diagrammes-de-sequence.html)) | Vingt-trois opérations détaillées, de l'import à la réconciliation comptable — chaque flux nomme ses classes et ses fonctions réelles | HTML + Mermaid |
+
+GitHub affiche le code d'un fichier HTML, pas la page. Le lien principal de chaque
+fichier HTML passe donc par raw.githack.com, qui sert la page rendue depuis `master` ;
+le lien « source » ouvre le fichier dans le dépôt.
 
 ## Les vingt-trois séquences documentées
 

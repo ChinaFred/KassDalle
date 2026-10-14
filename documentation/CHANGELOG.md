@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-14
 
-### v0.23.63 — fonctionnel
+### v0.23.64 — fonctionnel
 
 Admin › Tickets des membres lance une session Claude Code sur un ticket (ticket #73, lot B).
 Sur un ticket Reçu, « Lancer l'analyse » : la session lit l'Issue et publie son analyse sur
@@ -38,7 +38,7 @@ ne la voit pas. L'écran affiche « Lancements de sessions : N ce mois-ci · R a
 sur la fiche au téléphone. À 200 % sur un petit écran, la barre de décision suit la fiche en
 fin de défilement au lieu de la masquer.
 
-### v0.23.63 — technique
+### v0.23.64 — technique
 
 Deux callables admin, `launchTicketAnalysis` et `launchTicketDevelopment`
 (`tickets/launch.ts`), appellent l'API des Routines Claude Code par `fetch`
@@ -72,6 +72,14 @@ retenue (sinon « ## Analyse — compléments », revalidation nécessaire) et n
 pull requests ouvertes depuis le dépôt lui-même. La fiche se redessine à l'échéance d'un
 lancement en cours pour proposer « Relancer » ; la hauteur sous laquelle la barre de décision
 suit la fiche devient `PlatformUtils.pinnedActionBarMinHeight`.
+
+### v0.23.63 — technique
+
+GitHub affiche le code d'un fichier HTML, pas la page. Les liens vers les quatre documents
+HTML de `documentation/` dans `README.md` et `documentation/README.md` pointent désormais
+sur leur page rendue par raw.githack.com, depuis `master`, avec le fichier du dépôt en lien
+« source ». `CLAUDE.md` en fait une règle (« Documentation à tenir à jour »), et
+`relecteur-regles` la vérifie au contrôle 10.
 
 ### v0.23.62 — fonctionnel
 
