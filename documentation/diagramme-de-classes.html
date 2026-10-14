@@ -515,10 +515,49 @@ classDiagram
     +bool truncated
   }
 
+  class TicketLaunch {
+    &lt;&lt;élément de tickets/{id}/admin/launches, écrit par le serveur, lu par l'admin&gt;&gt;
+    +String id
+    +TicketLaunchAction? action
+    +DateTime? launchedAt
+    +String launchedByName
+    +TicketLaunchOutcome? outcome
+    +String? sessionUrl
+    +String? errorReason
+    +String? fromStatus
+    +DateTime? retryAfter
+  }
+
+  class TicketLaunchAction {
+    &lt;&lt;enumeration&gt;&gt;
+    analyse
+    developpement
+  }
+
+  class TicketLaunchOutcome {
+    &lt;&lt;enumeration&gt;&gt;
+    launched
+    failed
+    unknown
+  }
+
+  class TicketsStatus {
+    &lt;&lt;app_config/tickets_status, écrit par le serveur, lu par l'admin&gt;&gt;
+    +DateTime? githubTokenInvalidSince
+    +DateTime? analysisRoutineInvalidSince
+    +DateTime? developmentRoutineInvalidSince
+    +launchesToday
+    +launchesMonth
+  }
+
   class AdminTicketDecisions {
-    &lt;&lt;calculé, adminTicketDecisions(Ticket)&gt;&gt;
+    &lt;&lt;calculé, adminTicketDecisions(Ticket, launches)&gt;&gt;
     +bool canValidate
     +bool canRefuse
+    +bool canLaunchAnalysis
+    +bool canLaunchDevelopment
+    +DateTime? relaunchOf
+    +DateTime? runningSince
     +String? validateHint
   }
 
@@ -718,6 +757,10 @@ classDiagram
   Ticket "1" --&gt; "1" TicketStatus
   Ticket "1" --&gt; "0..1" TicketAnalysisDoc : admin/analysis
   TicketAnalysisDoc "1" --&gt; "0..10" TicketAnalysis
+  Ticket "1" --&gt; "0..20" TicketLaunch : admin/launches
+  TicketLaunch "1" --&gt; "0..1" TicketLaunchAction
+  TicketLaunch "1" --&gt; "0..1" TicketLaunchOutcome
+  TicketLaunch ..&gt; AdminTicketDecisions : en cours, relance
   Ticket ..&gt; AdminTicketDecisions : calcule
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
@@ -776,8 +819,15 @@ classDiagram
         coupée à 20 000 caractères (<code>truncated</code>). Écrit par le serveur seul, lu par
         l'administrateur seul. <b>AdminTicketDecisions</b> n'est pas stocké : il dit quels
         boutons la fiche admin montre (« Valider » pour un ticket Analysé hors Question,
-        « Refuser » pour un ticket Reçu, Analysé, Validé ou En cours) ; le serveur refait le même
-        contrôle.
+        « Refuser » pour un ticket Reçu, Analysé, Validé ou En cours, « Lancer l'analyse » pour
+        un ticket Reçu, « Lancer le développement » pour un ticket Validé hors Question) ; le
+        serveur refait le même contrôle. <b>TicketLaunch</b>
+        (<code>tickets/{id}/admin/launches</code>, vingt au plus) trace chaque session Claude
+        Code lancée sur le ticket ; la dernière entrée d'un type, <code>launched</code> ou
+        <code>unknown</code>, partie du statut actuel et avant <code>retryAfter</code>, masque
+        le bouton (lancement en cours) ; échéance passée, il devient « Relancer ».
+        <b>TicketsStatus</b> (<code>app_config/tickets_status</code>) porte les jetons refusés
+        (GitHub, routines) et les compteurs de lancements du jour et du mois.
       </figcaption>
     </figure>
 

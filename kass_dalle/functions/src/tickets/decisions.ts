@@ -17,6 +17,11 @@
  *
  * Après chaque décision, les analyses du ticket sont réécrites (au mieux :
  * un échec est journalisé, la décision reste faite).
+ *
+ * Le bail (`claimDecision`, `releaseDecision`) et la traduction des échecs
+ * GitHub (`githubFailure`, `tokenMissing`) servent aussi aux lancements de
+ * sessions (`tickets/launch.ts`) : un lancement ne part pas pendant qu'une
+ * décision tourne, et inversement.
  */
 
 import { HttpsError } from "firebase-functions/v2/https";
@@ -85,7 +90,7 @@ function readIssueNumber(data: FirebaseFirestore.DocumentData): number | null {
  * Traduit un échec GitHub en `HttpsError`, après `logError`. Un jeton refusé
  * pose aussi `token_invalid_since`.
  */
-async function githubFailure(
+export async function githubFailure(
   err: unknown,
   ticketId: string,
   step: string,
@@ -129,7 +134,7 @@ async function refreshAnalysesAfterDecision(
   }
 }
 
-async function tokenMissing(ticketId: string, scope: LogScope): Promise<HttpsError> {
+export async function tokenMissing(ticketId: string, scope: LogScope): Promise<HttpsError> {
   return githubFailure(
     new GithubError("token", null, "Jeton GitHub absent (secret GITHUB_TICKETS_TOKEN vide)."),
     ticketId,
@@ -141,7 +146,7 @@ async function tokenMissing(ticketId: string, scope: LogScope): Promise<HttpsErr
 // ── Bail de décision ────────────────────────────────────────────────────────
 
 /** Ce qu'une décision vérifie sur le ticket lu dans la transaction du bail. */
-type DecisionCheck = (args: {
+export type DecisionCheck = (args: {
   status: TicketStatus;
   type: TicketType;
   issueNumber: number | null;
@@ -149,12 +154,15 @@ type DecisionCheck = (args: {
 
 /**
  * Prend le bail de décision (`decision_lease_until`, deux minutes) en
- * transaction, après `check`. Valider et Refuser partagent ce bail : l'un ne
- * part pas pendant que l'autre tourne. Rend `null` quand `check` dit qu'il n'y
+ * transaction, après `check`. Valider, Refuser et les deux lancements
+ * partagent ce bail : l'un ne part pas pendant que l'autre tourne. Rend `null` quand `check` dit qu'il n'y
  * a rien à faire (aucun bail pris), sinon le numéro d'Issue. Lève
  * `failed-precondition` si la décision n'est pas permise ou si le bail est pris.
  */
-async function claimDecision(ticketId: string, check: DecisionCheck): Promise<number | null> {
+export async function claimDecision(
+  ticketId: string,
+  check: DecisionCheck,
+): Promise<number | null> {
   const ref = ticketRef(ticketId);
   return getFirestore().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -275,7 +283,7 @@ export async function validateTicketDecision(
 // ── Refuser ─────────────────────────────────────────────────────────────────
 
 /** Libère le bail. Au mieux : un échec est journalisé, le bail expire seul. */
-async function releaseDecision(ticketId: string, scope: LogScope): Promise<void> {
+export async function releaseDecision(ticketId: string, scope: LogScope): Promise<void> {
   try {
     await ticketRef(ticketId).update({ decision_lease_until: FieldValue.delete() });
   } catch (err) {

@@ -688,6 +688,21 @@ class GeminiService {
     return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
   }
 
+  /// Lance la routine Claude Code d'analyse sur un ticket Reçu
+  /// (administrateur). Sortie `{outcome: "launched" | "unknown",
+  /// session_url}`. Aucun appel de modèle facturé au projet.
+  Future<Map<String, dynamic>> launchTicketAnalysis(String ticketId) async {
+    final data = await _call('launchTicketAnalysis', {'ticketId': ticketId});
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Lance la routine Claude Code de développement sur un ticket Validé
+  /// (administrateur). Même sortie que [launchTicketAnalysis].
+  Future<Map<String, dynamic>> launchTicketDevelopment(String ticketId) async {
+    final data = await _call('launchTicketDevelopment', {'ticketId': ticketId});
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par
   /// Google pour [query], tous rôles.
   ///

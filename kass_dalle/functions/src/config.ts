@@ -57,6 +57,7 @@ export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
  * requests en lecture.
  *
  * Attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
+ * `launchTicketAnalysis`, `launchTicketDevelopment` (relecture de l'Issue avant lancement),
  * `backfillTicketAnalysesFn`, `ticketsSyncSchedule` et `githubTicketWebhook`
  * (qui relit les commentaires d'une Issue pour les analyses), et lu
  * par `process.env.GITHUB_TICKETS_TOKEN` comme `ANTHROPIC_API_KEY` : une valeur
@@ -75,6 +76,25 @@ export const GITHUB_TICKETS_TOKEN = defineSecret("GITHUB_TICKETS_TOKEN");
  * Même condition d'existence que `GITHUB_TICKETS_TOKEN`.
  */
 export const GITHUB_WEBHOOK_SECRET = defineSecret("GITHUB_WEBHOOK_SECRET");
+
+/**
+ * Routines Claude Code des tickets (Secret Manager) : identifiant (`trig_…`)
+ * et jeton (`sk-ant-oat01-…`) de la routine d'analyse et de celle de
+ * développement, créées à la main sur claude.ai/code (TechnicalRequirements,
+ * « Routines des tickets »).
+ *
+ * Attachés à `launchTicketAnalysis` (analyse) et `launchTicketDevelopment`
+ * (développement) seules, et lus par `process.env` (`tickets/routine.ts`) :
+ * une valeur vide n'est pas une erreur de déploiement, le lancement répond
+ * « Lancement non configuré » et rien n'est compté. Le jeton n'apparaît dans
+ * aucun message ni aucun journal. Même condition d'existence que
+ * `GITHUB_TICKETS_TOKEN` : chaque secret doit EXISTER dans Secret Manager
+ * avant le premier déploiement qui le déclare (une valeur vide suffit).
+ */
+export const TICKETS_ROUTINE_ANALYSIS_ID = defineSecret("TICKETS_ROUTINE_ANALYSIS_ID");
+export const TICKETS_ROUTINE_ANALYSIS_TOKEN = defineSecret("TICKETS_ROUTINE_ANALYSIS_TOKEN");
+export const TICKETS_ROUTINE_DEV_ID = defineSecret("TICKETS_ROUTINE_DEV_ID");
+export const TICKETS_ROUTINE_DEV_TOKEN = defineSecret("TICKETS_ROUTINE_DEV_TOKEN");
 
 // ── Région ───────────────────────────────────────────────────────────────────
 
@@ -322,16 +342,22 @@ export const COLL_TICKETS = "tickets";
 
 /**
  * Compteurs du plafond quotidien des tickets — `{uid}_{AAAAMMJJ}` et
- * `_global_{AAAAMMJJ}` (jour calendaire Europe/Paris). Écrits par
- * `submitTicket` seule, dans la transaction qui crée le ticket ; aucun accès
- * client. Supprimés par la politique TTL sur `expires_at`.
+ * `_global_{AAAAMMJJ}` (jour calendaire Europe/Paris), écrits par
+ * `submitTicket` dans la transaction qui crée le ticket ; et
+ * `launch_{AAAAMMJJ}`, les lancements de sessions du jour, écrits par
+ * `launchTicketAnalysis` et `launchTicketDevelopment`. Aucun accès client.
+ * Supprimés par la politique TTL sur `expires_at`.
  */
 export const COLL_TICKET_QUOTAS = "ticket_quotas";
 
 /** Plafonds des tickets — `app_config/tickets` (`per_member_per_day`, `global_per_day`). */
 export const TICKETS_CONFIG_DOC_ID = "tickets";
 
-/** État du jeton GitHub — `app_config/tickets_status` (`token_invalid_since`). Admin seul. */
+/**
+ * État des tickets — `app_config/tickets_status` : jeton GitHub
+ * (`token_invalid_since`), jetons des routines (`routine_invalid_since`) et
+ * compteurs des lancements (`launches_today`, `launches_month`). Admin seul.
+ */
 export const TICKETS_STATUS_DOC_ID = "tickets_status";
 
 /**
@@ -345,6 +371,13 @@ export const TICKET_ADMIN_SUBCOLLECTION = "admin";
  * (`analyses`, `checked_at`). Réécrit en entier à chaque relevé.
  */
 export const TICKET_ANALYSIS_DOC_ID = "analysis";
+
+/**
+ * Lancements de sessions Claude Code d'un ticket — `tickets/{id}/admin/launches`
+ * (`launches`, vingt entrées au plus, plus récente en tête). Écrit par
+ * `launchTicketAnalysis` et `launchTicketDevelopment` seules.
+ */
+export const TICKET_LAUNCHES_DOC_ID = "launches";
 
 /** Dépôt PUBLIC qui reçoit les Issues des tickets. */
 export const GITHUB_TICKETS_OWNER = "ChinaFred";

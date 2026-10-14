@@ -8,6 +8,7 @@ import '../data/ticket_repository.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
 import '../domain/ticket_form.dart';
+import '../domain/ticket_launch.dart';
 
 final ticketRepositoryProvider = Provider<TicketRepository>((ref) {
   return TicketRepository(callables: ref.watch(geminiServiceProvider));
@@ -156,10 +157,28 @@ final ticketAnalysisProvider = StreamProvider.autoDispose
       return ref.watch(ticketRepositoryProvider).watchAnalysis(ticketId);
     });
 
-/// Depuis quand le jeton GitHub est refusé, ou `null`.
-final ticketsTokenInvalidSinceProvider = StreamProvider<DateTime?>((ref) {
+/// L'historique des lancements de sessions d'un ticket
+/// (`tickets/{id}/admin/launches`), en flux ; `null` hors administrateur.
+final ticketLaunchesProvider = StreamProvider.autoDispose
+    .family<List<TicketLaunch>?, String>((ref, ticketId) {
+      if (!ref.watch(isAdminProvider)) return Stream.value(null);
+      return ref.watch(ticketRepositoryProvider).watchLaunches(ticketId);
+    });
+
+/// `app_config/tickets_status` : jeton GitHub et jetons des routines
+/// refusés, compteurs des lancements. `null` hors administrateur.
+final ticketsStatusProvider = StreamProvider<TicketsStatus?>((ref) {
   if (!ref.watch(isAdminProvider)) return Stream.value(null);
-  return ref.watch(ticketRepositoryProvider).watchTokenInvalidSince();
+  return ref.watch(ticketRepositoryProvider).watchStatus();
+});
+
+/// Plafond quotidien des lancements (`app_config/tickets.launches_per_day`,
+/// 10 par défaut) ; `null` s'il ne se lit pas, ou hors administrateur.
+final ticketLaunchesPerDayProvider = FutureProvider.autoDispose<int?>((
+  ref,
+) async {
+  if (!ref.watch(isAdminProvider)) return null;
+  return ref.watch(ticketRepositoryProvider).fetchLaunchesPerDay();
 });
 
 /// Filtre de statut de l'écran d'administration, voir

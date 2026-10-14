@@ -62,4 +62,9 @@ class PlatformUtils {
   /// Largeur à partir de laquelle une vignette de recette a la place d'afficher
   /// le raccourci galerie en plus du reste.
   static const double galleryShortcutBreakpoint = 900.0;
+
+  /// Hauteur disponible sous laquelle une barre d'actions n'est plus fixée
+  /// en bas d'une fiche : elle suit le contenu en fin de défilement
+  /// (paysage, texte agrandi, bandeaux), plutôt que de masquer la fiche.
+  static const double pinnedActionBarMinHeight = 420.0;
 }
