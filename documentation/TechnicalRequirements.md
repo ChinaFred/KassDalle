@@ -5995,15 +5995,49 @@ mesures :
 - la seconde lecture ne télécharge que le manifeste. L'APK en ligne n'est téléchargé que s'il
   faut le conserver.
 
-**Les secrets de signature** (même page que ci-dessous) viennent de `kass_dalle/android/key.properties`
+**Les secrets de signature** (environnement `production`, voir ci-dessous) viennent de `kass_dalle/android/key.properties`
 et du `.jks` qu'il désigne, sur le PC : `ANDROID_KEYSTORE_BASE64` (le `.jks` encodé en base64,
 sur une ligne : `[Convert]::ToBase64String([IO.File]::ReadAllBytes("<chemin>.jks"))` en
 PowerShell ; pas `certutil -encode`, dont les lignes `-----BEGIN` font échouer le décodage),
 `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. C'est la même clé que
 celle de `deploy.ps1` : un APK signé par une autre clé serait refusé comme mise à jour.
 
-**Le secret `FIREBASE_SERVICE_ACCOUNT`** (Settings › Secrets and variables › Actions du dépôt
-GitHub) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
+**L'environnement GitHub `production`.** Le job `deploy` déclare `environment: production`.
+Les cinq secrets du déploiement (`FIREBASE_SERVICE_ACCOUNT` et les quatre secrets de signature
+ci-dessus) vivent dans cet environnement, et non au niveau du dépôt. Sa règle de branches de
+déploiement n'admet que `master`. Un workflow ajouté sur une autre branche, par exemple une
+branche `claude/…` poussée par une session lancée depuis Admin › Tickets, tourne sans ces
+secrets : il ne peut ni déployer, ni signer un APK, ni lire la clé du compte de service.
+Procédure, une fois, dans Settings › Environments du dépôt :
+
+1. créer l'environnement `production` à la main, avant de fusionner le commit qui le
+   déclare : un environnement créé par un premier déploiement n'a aucune règle de branches ;
+2. « Deployment branches and tags » : « Selected branches and tags », une règle de type
+   « Branch » (pas « Tag ») sur `master` ;
+3. « Environment secrets » : recréer les cinq secrets avec les mêmes valeurs ;
+4. Settings › Secrets and variables › Actions : supprimer les cinq secrets du dépôt. Tant
+   qu'ils y restent, toute branche les lit encore ;
+5. relancer le workflow « Déploiement » à la main sur `master` et vérifier qu'il passe.
+
+`ci.yml` ne lit aucun secret : il n'a pas besoin de l'environnement.
+
+Deux réglages du dépôt complètent l'environnement. Sans eux, un workflow poussé sur une
+branche peut demander `contents: write`, pousser sur `master` puis lancer le déploiement à la
+main, que l'environnement accepte :
+
+- Settings › Rules › Rulesets : une règle sur `master` qui exige une pull request et bloque le
+  push forcé et la suppression ; seul le rôle « Repository admin » y déroge (le PC pousse sur
+  `master`), jamais « GitHub Actions » ;
+- Settings › Actions › General : « Workflow permissions » sur « Read repository contents », et
+  « Allow GitHub Actions to create and approve pull requests » décochée.
+
+**Risque accepté.** Une session de routine écrit sur GitHub avec l'accès du compte mainteneur,
+qui peut fusionner une pull request ; une fusion sur `master` déploie. Seul le prompt de la
+routine l'interdit. Le déploiement reste automatique, sans relecteur requis sur
+l'environnement `production` (décision du 14 octobre 2026). Ajouter un relecteur requis à
+l'environnement fermerait ce chemin, au prix d'une approbation manuelle à chaque déploiement.
+
+**Le secret `FIREBASE_SERVICE_ACCOUNT`** (environnement `production`, voir ci-dessus) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
 
 - `Firebase Admin` ;
 - `Cloud Functions Admin` ;
