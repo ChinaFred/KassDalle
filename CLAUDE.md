@@ -378,6 +378,14 @@ ligne, à corriger comme ci-dessus.
   `<pre class="mermaid">`), rendus nativement par les Artifacts claude.ai et via le CDN Mermaid
   quand le fichier est ouvert localement.
 
+**Un lien vers un fichier HTML du dépôt pointe sur sa page rendue.** GitHub affiche le code
+d'un `.html`, pas la page. Dans un fichier Markdown, le lien principal vers un
+`documentation/*.html` passe donc par raw.githack.com, sur `master` :
+`https://raw.githack.com/ChinaFred/KassDalle/master/documentation/<fichier>.html`. Le chemin
+relatif reste à côté, sous le libellé « source ». Un fichier HTML ajouté, renommé ou retiré
+met à jour ces liens dans `README.md` et `documentation/README.md`, dans le même commit.
+Les noms de fichier cités entre accents graves, sans lien, ne sont pas concernés.
+
 **Chaque changement met à jour ses documents, dans le même commit.** Le tableau dit lesquels :
 
 | Ce qui change | Documents à mettre à jour |

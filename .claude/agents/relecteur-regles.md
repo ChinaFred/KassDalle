@@ -62,7 +62,9 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
     sans changement de parcours n'appelle aucun document. Le bac à sable n'entre ni dans
     `FunctionalRequirements.md` ni dans les cas d'utilisation : seul le §13.3 de
     `TechnicalRequirements.md` le décrit. Pour un diagramme Mermaid, vérifie les noms (fonctions, collections,
-    classes) contre le code.
+    classes) contre le code. Un lien Markdown vers un `documentation/*.html` qui ne passe pas
+    par `https://raw.githack.com/ChinaFred/KassDalle/master/documentation/` est une anomalie
+    (voir « Documentation à tenir à jour » de `CLAUDE.md`).
 11. **Changelog.** Si `version:` change dans `kass_dalle/pubspec.yaml`, le même diff ajoute
     en tête de `documentation/CHANGELOG.md` une entrée `### v<version> — fonctionnel` ou
     `— technique`, ou les deux ajoutés dans le même commit, sans le numéro de build. Une version sans entrée, ou une entrée qui ne

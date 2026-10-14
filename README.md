@@ -59,10 +59,10 @@ Tout est dans [`documentation/`](documentation/) — sommaire :
 | [Exigences fonctionnelles](documentation/FunctionalRequirements.md) | Intention, parcours, modules, rôles |
 | [Exigences techniques](documentation/TechnicalRequirements.md) | Architecture, schéma Firestore, Security Rules, prompts Gemini |
 | [Historique des versions](documentation/CHANGELOG.md) | Ce qui a changé d'une version à l'autre |
-| [Architecture](documentation/architecture.html) | Composants, pipeline d'import, Cloud Functions, collections |
-| [Diagramme de classes](documentation/diagramme-de-classes.html) | Modèle de domaine et couche d'accès |
-| [Cas d'utilisation](documentation/cas-d-utilisation.html) | Cas par rôle et vérification des droits |
-| [Diagrammes de séquence](documentation/diagrammes-de-sequence.html) | Vingt-trois opérations détaillées |
+| [Architecture](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/architecture.html) ([source](documentation/architecture.html)) | Composants, pipeline d'import, Cloud Functions, collections |
+| [Diagramme de classes](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagramme-de-classes.html) ([source](documentation/diagramme-de-classes.html)) | Modèle de domaine et couche d'accès |
+| [Cas d'utilisation](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/cas-d-utilisation.html) ([source](documentation/cas-d-utilisation.html)) | Cas par rôle et vérification des droits |
+| [Diagrammes de séquence](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagrammes-de-sequence.html) ([source](documentation/diagrammes-de-sequence.html)) | Vingt-trois opérations détaillées |
 
 ## Déploiement
 
