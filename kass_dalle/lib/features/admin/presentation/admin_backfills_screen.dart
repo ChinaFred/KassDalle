@@ -167,6 +167,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.ticketAnalyses:
+        return 'Relit sur GitHub les commentaires de l\'Issue de chaque ticket '
+            'et range ses analyses (« ## Analyse… » publiées par le '
+            'mainteneur) à côté du ticket, lisibles par l\'administrateur '
+            'seul. Un ticket déjà relevé est sauté ; on peut relancer.\n\n'
+            'Aucun appel d\'IA. Un appel GitHub par ticket, deux cents tickets '
+            'par passage.';
       default:
         return '';
     }
@@ -318,6 +325,19 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.ticketAnalyses:
+        final r = await _repo.backfillTicketAnalyses();
+        return _fromCounts(
+          r,
+          'Tickets : examinés=${r['examines']}, relevés=${r['ecrits']} '
+          '(analyses=${r['analyses']}), déjà relevés=${r['dejaAJour']}, '
+          'sans Issue=${r['sansIssue']}, échecs=${r['echoues']}, '
+          'restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       default:
@@ -976,6 +996,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.systemBooks: Icons.library_books_outlined,
     BackfillKeys.groupPlanningReach: Icons.groups_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
+    BackfillKeys.ticketAnalyses: Icons.manage_search,
   };
 
   bool get _done => widget.state?.isDone ?? false;

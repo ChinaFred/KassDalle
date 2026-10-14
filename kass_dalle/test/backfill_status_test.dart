@@ -404,13 +404,14 @@ void main() {
         'refresh_sodium',
         'group_planning_reach',
         'move_meals_to_group',
+        'ticket_analyses',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(4));
+      expect(sections.ponctuelsALancer, hasLength(5));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
@@ -440,6 +441,17 @@ void main() {
       expect(sections.ponctuelsTermines, isEmpty);
       expect(backfillDefinition('estimated_times'), isNull);
       expect(backfillReportSummary('recipe_protein', {'traitees': 3}), '');
+    });
+
+    test('analyses des tickets : résumé de la tuile', () {
+      expect(
+        backfillReportSummary('ticket_analyses', {
+          'ecrits': 12,
+          'analyses': 9,
+          'restants': 0,
+        }),
+        '12 tickets relevés, 9 analyses, 0 ticket restant',
+      );
     });
 
     test('portée des groupes : repas restants inconnus, reste inconnu', () {

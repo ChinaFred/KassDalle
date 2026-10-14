@@ -1377,6 +1377,14 @@ service cloud.firestore {
              .hasOnly(['seen_by_author_at'])
         && request.resource.data.seen_by_author_at == request.time;
       allow create, delete: if false;
+
+      // Sous-documents privés d'un ticket (`admin/analysis` : analyses du
+      // mainteneur relevées sur l'Issue). Écrits par les Functions seules ;
+      // lus par l'administrateur seul, jamais par l'auteur du ticket.
+      match /admin/{doc} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
 
     // Compteurs du plafond quotidien des tickets : `submitTicket` les lit et

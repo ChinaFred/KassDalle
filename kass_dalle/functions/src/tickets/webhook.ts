@@ -11,15 +11,22 @@
  * instance au plus, avec leur nombre (`SignatureRejectionLog`).
  *
  * Événements traités : `issues` (étiquettes, fermeture, réouverture),
- * `issue_comment` (réponse de l'administrateur), `pull_request` (PR ouverte
+ * `issue_comment` (réponse de l'administrateur ; et pour tout commentaire du
+ * mainteneur créé, modifié ou supprimé, relecture des commentaires de l'Issue
+ * et réécriture des analyses `tickets/{id}/admin/analysis`), `pull_request` (PR ouverte
  * qui ferme l'Issue → « En cours », si son auteur est le mainteneur ou un
  * `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt), `ping`. Tout autre événement, une Issue
  * d'un autre dépôt ou une Issue qui ne vient pas de l'application (aucun
  * ticket sous ce numéro) : 200, ignoré.
  *
  * Aucun texte venu de GitHub n'est écrit dans Firestore, hormis `reply_text`
- * filtré (`replyFromComment`). Les statuts sont dérivés des étiquettes et de
- * l'état, jamais d'un texte libre.
+ * filtré (`replyFromComment`) et les analyses du mainteneur
+ * (`analysesFromComments`), lisibles par l'administrateur seul. Les statuts
+ * sont dérivés des étiquettes et de l'état, jamais d'un texte libre.
+ *
+ * Relire les commentaires demande le jeton `GITHUB_TICKETS_TOKEN`, monté ici
+ * pour cela seul. Jeton absent ou refusé : `token_invalid_since` est posé, la
+ * livraison rend 500, et la tâche horaire réécrit les analyses à sa passe.
  *
  * Une panne Firestore rend 500 : GitHub affiche la livraison en échec, et la
  * tâche horaire `ticketsSyncSchedule` rattrape l'état.
@@ -27,9 +34,14 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 
-import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_WEBHOOK_SECRET, REGION } from "../config";
+import {
+  GITHUB_TICKETS_MAINTAINER_ID,
+  GITHUB_TICKETS_TOKEN,
+  GITHUB_WEBHOOK_SECRET,
+  REGION,
+} from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
-import { GITHUB_REPO_FULL_NAME, readRemoteIssue } from "./github";
+import { GITHUB_REPO_FULL_NAME, GithubError, githubToken, readRemoteIssue } from "./github";
 import {
   closingIssueNumbers,
   isTrustedPrAuthor,
@@ -37,10 +49,16 @@ import {
   statusFromIssue,
   verifyGithubSignature,
 } from "./rules";
-import { applyGithubUpdate, ticketIdsForIssue, type GithubUpdate } from "./service";
+import {
+  applyGithubUpdate,
+  markTokenInvalid,
+  refreshTicketAnalyses,
+  ticketIdsForIssue,
+  type GithubUpdate,
+} from "./service";
 
 const ISSUE_ACTIONS = new Set(["opened", "edited", "labeled", "unlabeled", "closed", "reopened"]);
-const COMMENT_ACTIONS = new Set(["created", "edited"]);
+const COMMENT_ACTIONS = new Set(["created", "edited", "deleted"]);
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "ready_for_review"]);
 
 type Payload = Record<string, unknown>;
@@ -107,6 +125,8 @@ export function updatesFromEvent(
     if (!issue || typeof issue.number !== "number" || issue.pull_request != null || !comment) {
       return [];
     }
+    // Un commentaire supprimé ne devient pas la réponse montrée au membre.
+    if (action === "deleted") return [];
     const user = comment.user as { id?: unknown } | undefined;
     const reply = replyFromComment(
       {
@@ -141,13 +161,37 @@ export function updatesFromEvent(
   return [];
 }
 
+/**
+ * Le numéro de l'Issue dont il faut relire les analyses, ou `null`. Pure.
+ *
+ * Tout commentaire du mainteneur créé, modifié ou supprimé sur une Issue du
+ * dépôt (pas une PR) : une modification peut retirer le titre `## Analyse`,
+ * une suppression retire une analyse. Un autre auteur ne déclenche rien.
+ */
+export function analysisRefreshFromEvent(event: string, payload: Payload): number | null {
+  if (event !== "issue_comment") return null;
+  const repo = (payload.repository as { full_name?: unknown } | undefined)?.full_name;
+  if (typeof repo !== "string" || repo.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()) {
+    return null;
+  }
+  const action = typeof payload.action === "string" ? payload.action : "";
+  if (!COMMENT_ACTIONS.has(action)) return null;
+  const issue = payload.issue as Payload | undefined;
+  const comment = payload.comment as Payload | undefined;
+  if (!issue || typeof issue.number !== "number" || issue.pull_request != null || !comment) {
+    return null;
+  }
+  const user = comment.user as { id?: unknown } | undefined;
+  return user?.id === GITHUB_TICKETS_MAINTAINER_ID ? issue.number : null;
+}
+
 export const githubTicketWebhook = onRequest(
   {
     region: REGION,
     invoker: "public",
     maxInstances: 5,
     timeoutSeconds: 60,
-    secrets: [GITHUB_WEBHOOK_SECRET],
+    secrets: [GITHUB_WEBHOOK_SECRET, GITHUB_TICKETS_TOKEN],
   },
   async (req, res) => {
     const correlationId = newCorrelationId("ticket_webhook");
@@ -254,6 +298,49 @@ export const githubTicketWebhook = onRequest(
       });
       res.status(500).send("Erreur interne.");
       return;
+    }
+
+    const refreshIssue = analysisRefreshFromEvent(event, payload);
+    if (refreshIssue !== null) {
+      const scope = { correlationId };
+      try {
+        const ticketIds = await ticketIdsForIssue(refreshIssue);
+        if (ticketIds.length > 0) {
+          const token = githubToken();
+          if (token === null) {
+            throw new GithubError(
+              "token",
+              null,
+              "Jeton GitHub absent (secret GITHUB_TICKETS_TOKEN vide).",
+            );
+          }
+          for (const ticketId of ticketIds) {
+            const count = await refreshTicketAnalyses(token, ticketId, refreshIssue);
+            changed++;
+            await logInfo({
+              message: `githubTicketWebhook : analyses du ticket ${ticketId} réécrites (${count}, Issue #${refreshIssue})`,
+              correlationId,
+              firestoreDocId: ticketId,
+              feature: "tickets",
+              extra: { delivery },
+            });
+          }
+        }
+      } catch (err) {
+        const kind = err instanceof GithubError ? err.kind : "other";
+        await logError({
+          message: `githubTicketWebhook : analyses de l'Issue #${refreshIssue} non réécrites`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          correlationId,
+          feature: "tickets",
+          extra: { delivery, kind },
+        });
+        if (kind === "token") {
+          await markTokenInvalid(scope, err instanceof Error ? err.message : String(err));
+        }
+        res.status(500).send("Erreur interne.");
+        return;
+      }
     }
     res.status(200).send(changed > 0 ? `ok (${changed})` : "ignoré");
   },

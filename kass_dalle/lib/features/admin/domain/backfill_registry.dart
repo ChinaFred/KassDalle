@@ -29,6 +29,7 @@ abstract final class BackfillKeys {
   static const systemBooks = 'system_books';
   static const groupPlanningReach = 'group_planning_reach';
   static const moveMealsToGroup = 'move_meals_to_group';
+  static const ticketAnalyses = 'ticket_analyses';
 }
 
 class BackfillDefinition {
@@ -184,6 +185,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
     reusable: true,
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.ticketAnalyses,
+    kind: BackfillKind.ponctuel,
+    title: 'Analyses des tickets',
+    description:
+        'Relève sur GitHub les analyses déjà publiées des tickets, pour les '
+        'lire dans Admin › Tickets des membres.',
+    usesAi: false,
+    passLimit: 'Chaque passage relève au plus 200 tickets.',
   ),
 ];
 

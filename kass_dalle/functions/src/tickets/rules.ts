@@ -12,7 +12,10 @@
  *    qui comptent pour « En cours » ;
  *  - la signature des octets d'une capture ;
  *  - la vérification de la signature HMAC d'un webhook ;
- *  - le jour calendaire Europe/Paris du plafond, et la lecture des plafonds.
+ *  - le jour calendaire Europe/Paris du plafond, et la lecture des plafonds ;
+ *  - les analyses du mainteneur relevées sur l'Issue (`## Analyse…`) ;
+ *  - les décisions de l'administrateur : conditions de « Valider » et
+ *    « Refuser », lecture du motif de refus, message d'une erreur GitHub.
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -410,6 +413,284 @@ export function replyFromComment(
   if (!REPLY_PREFIX.test(body)) return null;
   const text = body.replace(REPLY_PREFIX, "").trim();
   return text.length > 0 ? text : null;
+}
+
+// ── Analyses du mainteneur ──────────────────────────────────────────────────
+
+const ANALYSIS_PREFIX = "## Analyse";
+
+/** Analyses gardées par ticket : les plus récentes. */
+export const ANALYSIS_MAX_COUNT = 10;
+
+/** Longueur maximale d'une analyse stockée, en caractères. */
+export const ANALYSIS_MAX_CHARS = 20_000;
+
+/** Texte d'un commentaire, NFC, fins de ligne Unix. */
+function normalizedBody(body: string): string {
+  return body.normalize("NFC").replace(/\r\n?/g, "\n");
+}
+
+/**
+ * Vrai si ce commentaire est une analyse : son auteur est le compte
+ * `maintainerId` (identifiant numérique) et son texte, espaces de tête
+ * retirées, commence par `## Analyse` (« ## Analyse — compléments » compte).
+ * Tout autre auteur est ignoré, même avec le bon titre.
+ */
+export function isAnalysisComment(
+  comment: { authorId: number | null | undefined; body: string | null | undefined },
+  maintainerId: number,
+): boolean {
+  if (typeof comment.authorId !== "number" || comment.authorId !== maintainerId) return false;
+  if (typeof comment.body !== "string") return false;
+  return normalizedBody(comment.body).trimStart().startsWith(ANALYSIS_PREFIX);
+}
+
+/**
+ * Coupe une analyse trop longue à la dernière ligne vide avant
+ * `ANALYSIS_MAX_CHARS` : un paragraphe, un tableau ou un bloc de code n'est
+ * pas tranché au milieu. Sans ligne vide avant la limite, coupe à la limite
+ * (sans séparer une paire de substitution UTF-16).
+ */
+export function truncateAnalysis(
+  body: string,
+  max: number = ANALYSIS_MAX_CHARS,
+): { body: string; truncated: boolean } {
+  if (body.length <= max) return { body, truncated: false };
+  const head = body.slice(0, max);
+  let cut = -1;
+  for (const match of head.matchAll(/\n[ \t]*\n/g)) {
+    if (match.index !== undefined && match.index > 0) cut = match.index;
+  }
+  if (cut <= 0) {
+    cut = max;
+    const code = body.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  }
+  return { body: body.slice(0, cut).trimEnd(), truncated: true };
+}
+
+/** Un commentaire d'Issue tel que les analyses le lisent. */
+export interface AnalysisSourceComment {
+  id: number | null;
+  authorId: number | null;
+  body: string | null;
+  /** Horodatage ISO de GitHub, ou `null`. */
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/** Une analyse stockée dans `tickets/{id}/admin/analysis.analyses`. */
+export interface TicketAnalysis {
+  comment_id: number | null;
+  body: string;
+  /** Horodatage ISO ; le service l'écrit en `Timestamp`. */
+  created_at: string | null;
+  updated_at: string | null;
+  truncated: boolean;
+}
+
+function isoMillis(iso: string | null): number {
+  if (iso === null) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+/**
+ * Les analyses d'une Issue, dans l'ordre chronologique : seulement celles du
+ * mainteneur (`isAnalysisComment`), les `ANALYSIS_MAX_COUNT` plus récentes,
+ * chacune tronquée (`truncateAnalysis`). Le texte garde sa ligne de titre :
+ * le client la retire à l'affichage.
+ */
+export function analysesFromComments(
+  comments: readonly AnalysisSourceComment[],
+  maintainerId: number,
+): TicketAnalysis[] {
+  const kept = comments
+    .map((c, index) => ({ c, index }))
+    .filter(({ c }) => isAnalysisComment(c, maintainerId))
+    .sort((a, b) => isoMillis(a.c.createdAt) - isoMillis(b.c.createdAt) || a.index - b.index)
+    .slice(-ANALYSIS_MAX_COUNT);
+  return kept.map(({ c }) => {
+    const { body, truncated } = truncateAnalysis(normalizedBody(c.body ?? "").trim());
+    return {
+      comment_id: c.id,
+      body,
+      created_at: c.createdAt,
+      updated_at: c.updatedAt,
+      truncated,
+    };
+  });
+}
+
+// ── Décisions de l'administrateur ───────────────────────────────────────────
+
+export const REFUSAL_REASON_MIN = 5;
+export const REFUSAL_REASON_MAX = 2000;
+
+/** Préfixe du commentaire publié : celui que `replyFromComment` reconnaît. */
+export const REPLY_COMMENT_PREFIX = "Réponse : ";
+
+/**
+ * Lit le motif d'un refus. Lève `TicketInputError` (champ `reason`).
+ *
+ * Caractères de contrôle retirés (retours à la ligne gardés), espaces de
+ * tête et de fin retirées, NFC, 5 à 2 000 caractères. Le motif part sur un
+ * dépôt PUBLIC : mentions `@` et renvois `#N` neutralisés après le contrôle
+ * de longueur.
+ */
+export function readRefusalReason(raw: unknown): string {
+  if (typeof raw !== "string") {
+    throw new TicketInputError("reason", "Le motif du refus est requis.");
+  }
+  const reason = cleanMultiline(raw).normalize("NFC").trim();
+  if (reason.length < REFUSAL_REASON_MIN) {
+    throw new TicketInputError("reason", "Le motif doit faire au moins 5 caractères.");
+  }
+  if (reason.length > REFUSAL_REASON_MAX) {
+    throw new TicketInputError("reason", "Le motif ne doit pas dépasser 2 000 caractères.");
+  }
+  return publicText(reason);
+}
+
+/** Corps du commentaire qui publie le motif. */
+export function refusalCommentBody(reason: string): string {
+  return `${REPLY_COMMENT_PREFIX}${reason}`;
+}
+
+/**
+ * Vrai si la dernière réponse du mainteneur porte déjà ce motif : un refus
+ * repris après un échec partiel (motif publié, Issue restée ouverte) ne
+ * publie pas le motif une seconde fois.
+ */
+export function sameReply(lastReply: string | null | undefined, reason: string): boolean {
+  if (typeof lastReply !== "string") return false;
+  const norm = (t: string) => normalizedBody(t).trim();
+  return norm(lastReply) === norm(reason);
+}
+
+/** Statuts depuis lesquels un ticket peut être refusé. */
+export const REFUSABLE_STATUSES: readonly TicketStatus[] = [
+  "received",
+  "analyzed",
+  "validated",
+  "in_progress",
+];
+
+/**
+ * Ce que décide « Valider » avant tout appel à GitHub :
+ * - `already` : déjà validé, succès sans rien changer ;
+ * - `ok` : ticket analysé, d'un autre type que Question, avec une Issue ;
+ * - sinon le message du refus.
+ */
+export function validatePrecondition(args: {
+  status: TicketStatus;
+  type: TicketType;
+  hasIssue: boolean;
+}): { kind: "ok" } | { kind: "already" } | { kind: "refused"; message: string } {
+  if (args.status === "validated") return { kind: "already" };
+  if (!args.hasIssue) {
+    return { kind: "refused", message: "Ce ticket n'a pas encore d'Issue GitHub." };
+  }
+  if (args.type === "question") {
+    return {
+      kind: "refused",
+      message: "Une question reçoit une réponse sur GitHub, pas une validation.",
+    };
+  }
+  if (args.status !== "analyzed") {
+    return { kind: "refused", message: "Seul un ticket analysé peut être validé." };
+  }
+  return { kind: "ok" };
+}
+
+/**
+ * Ce que décide « Refuser » avant tout appel à GitHub : `null` si le refus
+ * est permis (statut Reçu, Analysé, Validé ou En cours, avec une Issue), sinon
+ * le message du refus.
+ */
+export function refusePrecondition(args: {
+  status: TicketStatus;
+  hasIssue: boolean;
+}): string | null {
+  if (!args.hasIssue) return "Ce ticket n'a pas encore d'Issue GitHub.";
+  if (!REFUSABLE_STATUSES.includes(args.status)) return "Ce ticket ne peut plus être refusé.";
+  return null;
+}
+
+/**
+ * Statut lu sur un document : une valeur inconnue de cette version se lit
+ * `sending`, qui n'offre aucune décision.
+ */
+export function storedTicketStatus(raw: unknown): TicketStatus {
+  return isTicketStatus(raw) ? raw : "sending";
+}
+
+/**
+ * Les deux décisions permises sur un ticket stocké, telles que le client les
+ * affiche (`adminTicketDecisions`, fixture `ticket_decisions.json`). Pure.
+ */
+export function ticketDecisions(args: {
+  rawStatus: unknown;
+  type: TicketType;
+  hasIssue: boolean;
+}): { canValidate: boolean; canRefuse: boolean } {
+  const status = storedTicketStatus(args.rawStatus);
+  return {
+    canValidate:
+      validatePrecondition({ status, type: args.type, hasIssue: args.hasIssue }).kind === "ok",
+    canRefuse: refusePrecondition({ status, hasIssue: args.hasIssue }) === null,
+  };
+}
+
+/**
+ * Vrai si la validation peut écrire `validated` sur un ticket relu à
+ * l'écriture : seulement s'il est encore `analyzed`. Un ticket refusé, livré
+ * ou déjà validé entre-temps n'est pas réécrit.
+ */
+export function shouldWriteValidated(current: TicketStatus): boolean {
+  return current === "analyzed";
+}
+
+/** Échec partiel d'un refus : le motif est publié, l'Issue n'est pas fermée. */
+export const REFUSAL_PARTIAL_REASON = "reply_published_close_failed";
+
+/**
+ * Code et message rendus au client pour un échec GitHub d'une décision,
+ * selon le genre d'erreur (`GithubErrorKind`). Rien n'a été modifié sur
+ * GitHub quand cette erreur est rendue : l'échec partiel d'un refus a son
+ * propre message.
+ */
+export function decisionGithubFailure(kind: string): {
+  code: "failed-precondition" | "not-found" | "unavailable";
+  message: string;
+  reason: string;
+} {
+  switch (kind) {
+    case "token":
+      return {
+        code: "failed-precondition",
+        message: "GitHub refuse le jeton. Rien n'a été modifié.",
+        reason: "github_token",
+      };
+    case "not_found":
+      return {
+        code: "not-found",
+        message: "L'Issue n'existe plus sur GitHub.",
+        reason: "issue_not_found",
+      };
+    case "rate_limit":
+      return {
+        code: "unavailable",
+        message: "GitHub limite les appels. Réessayez dans quelques minutes. Rien n'a été modifié.",
+        reason: "github_rate_limit",
+      };
+    default:
+      return {
+        code: "unavailable",
+        message: "GitHub ne répond pas. Réessayez. Rien n'a été modifié.",
+        reason: "github_unavailable",
+      };
+  }
 }
 
 // ── Signature du webhook ────────────────────────────────────────────────────

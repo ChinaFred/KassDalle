@@ -27,6 +27,8 @@ import {
   COLL_APP_CONFIG,
   COLL_TICKETS,
   GITHUB_TICKETS_MAINTAINER_ID,
+  TICKET_ADMIN_SUBCOLLECTION,
+  TICKET_ANALYSIS_DOC_ID,
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
@@ -40,8 +42,10 @@ import {
   listIssueComments,
   openPullRequestBodiesReferencing,
   type CreatedIssue,
+  type RemoteComment,
 } from "./github";
 import {
+  analysesFromComments,
   buildIssueBody,
   buildIssueTitle,
   closingIssueNumbers,
@@ -66,6 +70,11 @@ export interface LogScope {
 
 function ticketRef(ticketId: string) {
   return getFirestore().collection(COLL_TICKETS).doc(ticketId);
+}
+
+/** `tickets/{id}/admin/analysis` : analyses du mainteneur, lecture admin seule. */
+export function analysisRef(ticketId: string) {
+  return ticketRef(ticketId).collection(TICKET_ADMIN_SUBCOLLECTION).doc(TICKET_ANALYSIS_DOC_ID);
 }
 
 function statusRef() {
@@ -380,9 +389,52 @@ export function lastReply(
   return reply;
 }
 
+function timestampOrNull(iso: string | null): Timestamp | null {
+  if (iso === null) return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : Timestamp.fromMillis(ms);
+}
+
+/**
+ * Réécrit en entier `tickets/{id}/admin/analysis` depuis les commentaires
+ * de l'Issue : les analyses du mainteneur (`analysesFromComments`, au plus
+ * dix, chacune tronquée à 20 000 caractères) et `checked_at`. Rend le nombre
+ * d'analyses écrites. Lève sur une panne Firestore ; l'appelant journalise.
+ */
+export async function writeTicketAnalyses(
+  ticketId: string,
+  comments: readonly RemoteComment[],
+): Promise<number> {
+  const analyses = analysesFromComments(comments, GITHUB_TICKETS_MAINTAINER_ID);
+  await analysisRef(ticketId).set({
+    analyses: analyses.map((a) => ({
+      comment_id: a.comment_id,
+      body: a.body,
+      created_at: timestampOrNull(a.created_at),
+      updated_at: timestampOrNull(a.updated_at),
+      truncated: a.truncated,
+    })),
+    checked_at: FieldValue.serverTimestamp(),
+  });
+  return analyses.length;
+}
+
+/**
+ * Relit les commentaires d'une Issue et réécrit les analyses du ticket.
+ * Lève une `GithubError` ou une erreur Firestore ; l'appelant journalise.
+ */
+export async function refreshTicketAnalyses(
+  token: string,
+  ticketId: string,
+  issueNumber: number,
+): Promise<number> {
+  return writeTicketAnalyses(ticketId, await listIssueComments(token, issueNumber));
+}
+
 /**
  * Relit une Issue et applique son état au ticket (tâche horaire, webhook
- * perdu). Lève une `GithubError` ; l'appelant journalise.
+ * perdu), puis réécrit ses analyses depuis les commentaires déjà lus — aucun
+ * appel de plus. Lève une `GithubError` ; l'appelant journalise.
  */
 export async function resyncTicket(
   token: string,
@@ -398,10 +450,13 @@ export async function resyncTicket(
       closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
     );
   }
-  const reply = lastReply(await listIssueComments(token, issueNumber));
-  return applyGithubUpdate(ticketId, {
+  const comments = await listIssueComments(token, issueNumber);
+  const reply = lastReply(comments);
+  const changed = await applyGithubUpdate(ticketId, {
     statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
     openClosingPr,
     reply,
   });
+  await writeTicketAnalyses(ticketId, comments);
+  return changed;
 }

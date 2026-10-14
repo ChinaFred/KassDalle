@@ -279,8 +279,26 @@ String formatTicketDateTime(DateTime date) {
 }
 
 /// Filtre de statut de l'écran d'administration : `null` pour « Tous »,
-/// [kAdminTicketAnomalyFilter] pour « En anomalie », sinon un statut.
+/// [kAdminTicketTodoFilter] pour « À traiter », [kAdminTicketAnomalyFilter]
+/// pour « En anomalie », sinon un statut.
 const kAdminTicketAnomalyFilter = 'anomaly';
+
+/// Filtre « À traiter » : tickets Reçus ou Analysés, qui attendent une
+/// décision de l'administrateur. Même ensemble que le compteur de la pastille
+/// ([kAdminTicketToProcessStatuses]).
+const kAdminTicketTodoFilter = 'todo';
+
+/// Statuts comptés « à traiter » : la requête du compteur et le filtre.
+const kAdminTicketToProcessStatuses = [
+  TicketStatus.received,
+  TicketStatus.analyzed,
+];
+
+/// Vrai pour un ticket qui attend une décision : Reçu ou Analysé, statut
+/// connu de cette version (un statut inconnu s'affiche « Reçu » sans l'être).
+bool isTicketToProcess(Ticket t) =>
+    t.rawStatus == t.status.value &&
+    kAdminTicketToProcessStatuses.contains(t.status);
 
 /// Applique les deux filtres de l'écran d'administration.
 List<Ticket> filterAdminTickets(
@@ -292,6 +310,116 @@ List<Ticket> filterAdminTickets(
     if (type != null && t.type != type) return false;
     if (status == null) return true;
     if (status == kAdminTicketAnomalyFilter) return t.isInAnomaly;
+    if (status == kAdminTicketTodoFilter) return isTicketToProcess(t);
     return t.status.value == status;
   }).toList();
+}
+
+/// Les décisions offertes à l'administrateur sur la fiche d'un ticket.
+///
+/// Le serveur refait le même contrôle (`validatePrecondition` et
+/// `refusePrecondition`, `functions/src/tickets/rules.ts`) : un bouton
+/// masqué ici n'est qu'un confort, jamais la protection. Logique dupliquée,
+/// verrouillée par `test-fixtures/ticket_decisions.json`.
+class AdminTicketDecisions {
+  /// « Valider » : ticket Analysé, d'un autre type que Question, avec Issue.
+  final bool canValidate;
+
+  /// « Refuser » : ticket Reçu, Analysé, Validé ou En cours, avec Issue.
+  final bool canRefuse;
+
+  /// Ligne d'explication quand « Valider » est masqué pour une raison que
+  /// l'administrateur doit connaître, ou `null`.
+  final String? validateHint;
+
+  const AdminTicketDecisions({
+    required this.canValidate,
+    required this.canRefuse,
+    required this.validateHint,
+  });
+
+  bool get hasAction => canValidate || canRefuse;
+}
+
+const kTicketValidateAfterAnalysisHint =
+    'Valider sera possible une fois le ticket analysé.';
+const kTicketQuestionNoValidationHint =
+    'Une question reçoit une réponse sur GitHub, pas une validation.';
+const kTicketUnknownStatusHint =
+    'Statut inconnu de cette version : mettez l\'application à jour pour '
+    'décider.';
+
+/// Les boutons de décision de [t]. Un statut inconnu de cette version (lu
+/// « Reçu ») n'offre aucune décision.
+AdminTicketDecisions adminTicketDecisions(Ticket t) {
+  final known = t.rawStatus == t.status.value;
+  final hasIssue = t.githubIssueNumber != null;
+  final status = t.status;
+  final canRefuse =
+      known &&
+      hasIssue &&
+      (status == TicketStatus.received ||
+          status == TicketStatus.analyzed ||
+          status == TicketStatus.validated ||
+          status == TicketStatus.inProgress);
+  final canValidate =
+      known &&
+      hasIssue &&
+      status == TicketStatus.analyzed &&
+      t.type != TicketType.question;
+  String? hint;
+  if (!known && hasIssue) {
+    hint = kTicketUnknownStatusHint;
+  } else if (known && hasIssue) {
+    final waiting =
+        status == TicketStatus.received || status == TicketStatus.analyzed;
+    if (t.type == TicketType.question && waiting) {
+      hint = kTicketQuestionNoValidationHint;
+    } else if (status == TicketStatus.received) {
+      hint = kTicketValidateAfterAnalysisHint;
+    }
+  }
+  return AdminTicketDecisions(
+    canValidate: canValidate,
+    canRefuse: canRefuse,
+    validateHint: hint,
+  );
+}
+
+/// Refus attendu de `validateTicket` ou `refuseTicket` : le message du
+/// serveur s'affiche tel quel.
+class TicketDecisionError implements Exception {
+  final String message;
+
+  /// Échec partiel d'un refus : le motif est publié sur GitHub, l'Issue n'est
+  /// pas fermée. Le motif ne doit plus changer avant de réessayer.
+  final bool partial;
+
+  const TicketDecisionError(this.message, {this.partial = false});
+
+  @override
+  String toString() => message;
+}
+
+/// Raison serveur d'un échec partiel de refus (`REFUSAL_PARTIAL_REASON`),
+/// verrouillée par `test-fixtures/ticket_decisions.json`.
+const kTicketRefusalPartialReason = 'reply_published_close_failed';
+
+/// L'erreur à montrer pour un refus de callable, ou `null` quand la réponse
+/// ne vient pas des contrôles du serveur (pas de `details.reason` ni de
+/// `details.field`) : l'écran affiche alors son message générique.
+TicketDecisionError? ticketDecisionErrorFrom({
+  required String message,
+  required Object? details,
+}) {
+  if (details is! Map) return null;
+  final reason = details['reason'];
+  final field = details['field'];
+  if (reason is! String && field is! String) return null;
+  final text = message.trim();
+  if (text.isEmpty) return null;
+  return TicketDecisionError(
+    text,
+    partial: reason == kTicketRefusalPartialReason,
+  );
 }

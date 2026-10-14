@@ -126,10 +126,18 @@ export { manageInvitationFn } from "./callable/invitationsCallable";
 export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
 // ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
-// Création par un membre approuvé, capture jointe par l'auteur, relance par
-// l'administrateur. Seules fonctions qui montent GITHUB_TICKETS_TOKEN (avec la
-// tâche horaire) ; le webhook seul monte GITHUB_WEBHOOK_SECRET. Aucun appel d'IA.
-export { submitTicket, attachTicketScreenshot, retryTicketSend } from "./callable/ticketsCallable";
+// Création par un membre approuvé, capture jointe par l'auteur, relance,
+// validation et refus par l'administrateur. GITHUB_TICKETS_TOKEN est monté par
+// ces callables (sauf la capture), la tâche horaire, le webhook (relecture des
+// analyses) et le backfill des analyses ; le webhook seul monte
+// GITHUB_WEBHOOK_SECRET. Aucun appel d'IA.
+export {
+  submitTicket,
+  attachTicketScreenshot,
+  retryTicketSend,
+  validateTicket,
+  refuseTicket,
+} from "./callable/ticketsCallable";
 export { githubTicketWebhook } from "./tickets/webhook";
 export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";
 
@@ -148,6 +156,7 @@ export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
 export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillCallable";
+export { backfillTicketAnalysesFn } from "./callable/ticketAnalysesBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.

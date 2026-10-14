@@ -56,7 +56,9 @@ export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
  * dépôt `ChinaFred/KassDalle`, Issues en lecture-écriture, Metadata et Pull
  * requests en lecture.
  *
- * Attaché à `submitTicket`, `retryTicketSend` et `ticketsSyncSchedule`, et lu
+ * Attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
+ * `backfillTicketAnalysesFn`, `ticketsSyncSchedule` et `githubTicketWebhook`
+ * (qui relit les commentaires d'une Issue pour les analyses), et lu
  * par `process.env.GITHUB_TICKETS_TOKEN` comme `ANTHROPIC_API_KEY` : une valeur
  * vide n'est pas une erreur, le ticket reste « Envoi en cours » et
  * `app_config/tickets_status.token_invalid_since` le signale à l'administrateur.
@@ -331,6 +333,18 @@ export const TICKETS_CONFIG_DOC_ID = "tickets";
 
 /** État du jeton GitHub — `app_config/tickets_status` (`token_invalid_since`). Admin seul. */
 export const TICKETS_STATUS_DOC_ID = "tickets_status";
+
+/**
+ * Sous-collection privée d'un ticket — `tickets/{ticketId}/admin/{doc}`.
+ * Lecture administrateur seul, écriture serveur seul (règles Firestore).
+ */
+export const TICKET_ADMIN_SUBCOLLECTION = "admin";
+
+/**
+ * Analyses du mainteneur relevées sur l'Issue — `tickets/{id}/admin/analysis`
+ * (`analyses`, `checked_at`). Réécrit en entier à chaque relevé.
+ */
+export const TICKET_ANALYSIS_DOC_ID = "analysis";
 
 /** Dépôt PUBLIC qui reçoit les Issues des tickets. */
 export const GITHUB_TICKETS_OWNER = "ChinaFred";

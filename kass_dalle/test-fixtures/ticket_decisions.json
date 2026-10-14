@@ -1,0 +1,510 @@
+{
+  "_comment": "Décisions de l'administrateur sur un ticket : « Valider » et « Refuser ». Le serveur décide (validatePrecondition, refusePrecondition, functions/src/tickets/rules.ts, appelées par validateTicket et refuseTicket) ; le client affiche (adminTicketDecisions, lib/features/tickets/domain/ticket.dart : boutons de la barre de décision, masqués quand la décision n'est pas permise). can_validate : ticket 'analyzed', d'un autre type que 'question', avec un numéro d'Issue. Un ticket déjà 'validated' n'offre pas le bouton (le serveur répond succès sans rien changer). can_refuse : 'received', 'analyzed', 'validated' ou 'in_progress', tout type, avec un numéro d'Issue. Un statut stocké inconnu ('archived' ici) n'offre aucune décision : le client l'affiche « Reçu », le serveur le lit 'sending'. Les types inconnus ne figurent pas ici : le client les lit 'bug', le serveur 'question'. refusal_partial_reason : valeur de details.reason quand le motif est publié mais l'Issue pas fermée (REFUSAL_PARTIAL_REASON, kTicketRefusalPartialReason). Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts.",
+  "refusal_partial_reason": "reply_published_close_failed",
+  "cases": [
+    {
+      "status": "sending",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "sending",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "received",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "received",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "received",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "received",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "received",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "received",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "received",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "received",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "analyzed",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": true,
+      "can_refuse": true
+    },
+    {
+      "status": "analyzed",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "analyzed",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": true,
+      "can_refuse": true
+    },
+    {
+      "status": "analyzed",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "analyzed",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": true,
+      "can_refuse": true
+    },
+    {
+      "status": "analyzed",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "analyzed",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "analyzed",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "validated",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "validated",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "validated",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "validated",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "validated",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "validated",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "validated",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "validated",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "in_progress",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "in_progress",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "in_progress",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "in_progress",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "in_progress",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "in_progress",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "in_progress",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": true
+    },
+    {
+      "status": "in_progress",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "delivered",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "refused",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "answered",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "bug",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "bug",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "evolution",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "evolution",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "feature",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "feature",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "question",
+      "has_issue": true,
+      "can_validate": false,
+      "can_refuse": false
+    },
+    {
+      "status": "archived",
+      "type": "question",
+      "has_issue": false,
+      "can_validate": false,
+      "can_refuse": false
+    }
+  ]
+}

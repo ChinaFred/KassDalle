@@ -15,6 +15,9 @@ abstract final class BackfillFailureKind {
 
   /// Un repas planifié (`planned_meals`) : affiché sans lien.
   static const meal = 'meal';
+
+  /// Un ticket de membre : ouvert dans Admin › Tickets des membres.
+  static const ticket = 'ticket';
 }
 
 /// Un élément à revoir : un ingrédient, une unité, une recette, un compte.

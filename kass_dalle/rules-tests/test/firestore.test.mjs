@@ -3959,6 +3959,48 @@ describe("tickets — lecture et écriture", () => {
   });
 });
 
+describe("tickets/{id}/admin — analyses, lecture administrateur seule", () => {
+  const ANALYSIS = "tickets/t-reader/admin/analysis";
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "tickets/t-reader": {
+        type: "bug",
+        title: "Liste vide",
+        author_uid: READER,
+        status: "analyzed",
+        github_issue_number: 12,
+      },
+      [ANALYSIS]: {
+        analyses: [{ comment_id: 1, body: "## Analyse\n\nCause.", truncated: false }],
+      },
+    });
+  });
+
+  it("l'administrateur lit les analyses", async () => {
+    await assertSucceeds(db("admin").doc(ANALYSIS).get());
+    await assertSucceeds(db("admin").collection("tickets/t-reader/admin").get());
+  });
+
+  it("l'auteur du ticket, un éditeur et un autre lecteur ne lisent pas les analyses", async () => {
+    await assertFails(db("reader").doc(ANALYSIS).get());
+    await assertFails(db("editor").doc(ANALYSIS).get());
+    await assertFails(db("otherReader").doc(ANALYSIS).get());
+    await assertFails(db("pending").doc(ANALYSIS).get());
+    await assertFails(db("anonymous").doc(ANALYSIS).get());
+    await assertFails(db("reader").collection("tickets/t-reader/admin").get());
+  });
+
+  for (const persona of ["admin", "editor", "reader", "anonymous"]) {
+    it(`${persona} n'écrit pas les analyses`, async () => {
+      await assertFails(db(persona).doc(ANALYSIS).set({ analyses: [] }));
+      await assertFails(db(persona).doc(ANALYSIS).update({ analyses: [] }));
+      await assertFails(db(persona).doc(ANALYSIS).delete());
+      await assertFails(db(persona).doc("tickets/t-reader/admin/autre").set({ x: 1 }));
+    });
+  }
+});
+
 describe("ticket_quotas — compteur serveur seul", () => {
   const DOC = `ticket_quotas/${READER}_20261013`;
 

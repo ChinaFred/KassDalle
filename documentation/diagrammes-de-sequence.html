@@ -183,6 +183,8 @@
       <li><a href="#ticket-creation">Envoyer un ticket</a></li>
       <li><a href="#ticket-statut">Retour de statut d'un ticket</a></li>
       <li><a href="#suggestions-repas">Suggérer un plat, planifier une suggestion</a></li>
+      <li><a href="#ticket-valider">Valider un ticket depuis l'application</a></li>
+      <li><a href="#ticket-refuser">Refuser un ticket depuis l'application</a></li>
     </ol>
   </nav>
 
@@ -3965,8 +3967,9 @@ sequenceDiagram
       L'administrateur traite l'Issue sur GitHub ; le statut revient dans l'application par un
       webhook signé, doublé d'une relecture horaire.
       <span class="path">GitHub → tickets/webhook.ts (githubTicketWebhook) → tickets/rules.ts
-      (verifyGithubSignature, statusFromIssue, nextTicketStatus, replyFromComment) →
-      tickets/service.ts (applyGithubUpdate) ; scheduled/ticketsSyncSchedule.ts</span>
+      (verifyGithubSignature, statusFromIssue, nextTicketStatus, replyFromComment,
+      analysesFromComments) → tickets/service.ts (applyGithubUpdate, refreshTicketAnalyses,
+      writeTicketAnalyses) ; scheduled/ticketsSyncSchedule.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -4001,19 +4004,25 @@ sequenceDiagram
       W->>T: reply_text (préfixe retiré)
     end
     W->>T: status_changed_at si le statut change, ou si une réponse arrive sur un ticket clos
-    W-->>G: 200
+    opt issue_comment créé, modifié ou supprimé par le compte 16348852
+      W->>G: GET /issues/N/comments (jeton GITHUB_TICKETS_TOKEN)
+      W->>T: tickets/{id}/admin/analysis réécrit : « ## Analyse… » du mainteneur,<br/>dix au plus, 20 000 caractères chacune
+    end
+    W-->>G: 200 (500 si Firestore ou la relecture des commentaires échoue)
   end
   loop toutes les heures
     S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance), commentaires — tickets non finaux
     S->>T: même transaction de mise à jour
+    S->>T: admin/analysis réécrit depuis les commentaires déjà lus
   end
   M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)
   Note over M,T: point sur la puce du compte tant que status ∈ {answered, refused, delivered}<br/>et seen_by_author_at absent ou antérieur à status_changed_at
 </pre>
       </div>
       <figcaption>
-        Aucun texte de GitHub n'entre dans Firestore, hormis la réponse filtrée : le statut se
-        déduit des étiquettes et de l'état de l'Issue, jamais d'un texte libre. Une panne
+        Aucun texte de GitHub n'entre dans Firestore, hormis la réponse filtrée et les analyses
+        du mainteneur, lues par l'administrateur seul : le statut se déduit des étiquettes et de
+        l'état de l'Issue, jamais d'un texte libre. Une panne
         Firestore rend 500, GitHub montre la livraison en échec, et la relecture horaire
         rattrape l'état. Les tickets clos ne sont pas relus : une réouverture dont le webhook
         est perdu n'est pas rattrapée.
@@ -4086,6 +4095,131 @@ sequenceDiagram
         imposé se termine par <code>_0</code> à <code>_4</code>, et le jour est borné de la
         veille à soixante jours. Le titre d'une recette privée suggérée est visible du propriétaire, la
         fiche reste fermée (« Recette non partagée »).
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-valider"><span class="n">42</span>Valider un ticket depuis l'application</h2>
+    <p class="sec-note">
+      L'administrateur valide un ticket Analysé qui n'est pas une Question, depuis la barre de
+      décision de la fiche. Aucun appel d'IA.
+      <span class="path">admin_tickets_screen.dart (_validate) → TicketRepository.validate →
+      GeminiService.validateTicket → callable/ticketsCallable.ts (validateTicket) →
+      tickets/decisions.ts (validateTicketDecision) → tickets/github.ts →
+      tickets/service.ts (applyGithubUpdate, writeTicketAnalyses)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as validateTicket
+  participant T as tickets
+  participant G as GitHub
+
+  AD->>C: « Valider » (Analysé, hors Question)
+  C-->>AD: « Valider ce ticket ? » — « Il sera traité à votre prochaine demande. »
+  AD->>C: Valider
+  C->>F: { ticketId }
+  F->>F: requireAdmin (rôle relu dans Firestore, App Check)
+  F->>T: transaction claimDecision : statut, type, Issue (validatePrecondition) et bail decision_lease_until
+  alt déjà validated
+    F-->>C: { status: validated, changed: false } (sans bail)
+  else pas Analysé, Question ou sans Issue
+    F-->>C: failed-precondition (message affiché tel quel)
+  else bail en cours (refus ou validation simultanés)
+    F-->>C: failed-precondition « Une décision est déjà en cours sur ce ticket. »
+  end
+  F->>G: GET /issues/N
+  alt Issue fermée
+    F->>T: état relu appliqué (applyGithubUpdate)
+    F-->>C: failed-precondition « Ce ticket a déjà été clos sur GitHub. »
+  end
+  F->>G: POST /issues/N/labels { validé } (sauf déjà posée)
+  alt jeton refusé
+    F->>T: app_config/tickets_status.token_invalid_since
+    F-->>C: « GitHub refuse le jeton. Rien n'a été modifié. »
+  else Issue disparue
+    F-->>C: « L'Issue n'existe plus sur GitHub. »
+  end
+  F->>T: transaction writeValidatedIfAnalyzed : status = validated seulement si encore analyzed (shouldWriteValidated), sinon statut gardé et logWarn
+  F->>G: GET /issues/N/comments
+  F->>T: admin/analysis réécrit (au mieux, journalisé)
+  F->>T: finally : releaseDecision (bail retiré ; à défaut il expire en 2 min)
+  F-->>C: { status: validated, changed: true }
+  C-->>AD: « Ticket validé. »
+  G--)F: webhook issues labeled (plus tard) : même statut, rien ne change
+</pre>
+      </div>
+      <figcaption>
+        Le bouton n'apparaît que si la décision est possible (<code>adminTicketDecisions</code>) ;
+        le serveur refait le contrôle. Le webhook qui suit la pose de l'étiquette n'apporte
+        rien de nouveau : le statut ne recule jamais. Un échec Firestore ou réseau inattendu
+        s'affiche « Ticket non validé : … » et part dans les rapports d'erreurs.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-refuser"><span class="n">43</span>Refuser un ticket depuis l'application</h2>
+    <p class="sec-note">
+      L'administrateur refuse un ticket Reçu, Analysé, Validé ou En cours, de tout type. Le motif
+      part sur le dépôt public, en « Réponse : … », lu par le membre dans l'application. Aucun
+      appel d'IA.
+      <span class="path">admin_tickets_screen.dart (_refuse, _RefuseTicketDialog) →
+      TicketRepository.refuse → GeminiService.refuseTicket → callable/ticketsCallable.ts
+      (refuseTicket, readRefusalArg) → tickets/decisions.ts (refuseTicketDecision) →
+      tickets/github.ts → tickets/service.ts (applyGithubUpdate, writeTicketAnalyses)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as refuseTicket
+  participant T as tickets
+  participant G as GitHub
+  actor M as Membre
+
+  AD->>C: « Refuser », motif (5 à 2 000 caractères)
+  C->>F: { ticketId, reason }
+  F->>F: requireAdmin ; readRefusalReason (nettoyage, NFC, mentions et #N neutralisés)
+  F->>T: transaction : statut permis (refusePrecondition), bail decision_lease_until (2 min)
+  alt bail déjà pris
+    F-->>C: « Une décision est déjà en cours sur ce ticket. »
+  end
+  F->>G: GET /issues/N, GET /issues/N/comments
+  alt Issue déjà fermée
+    F->>T: état relu appliqué
+    F-->>C: succès si fermée non prévue avec ce motif, sinon « Ce ticket a déjà été clos sur GitHub. »
+  end
+  opt dernière « Réponse : » du mainteneur différente du motif (sameReply)
+    F->>G: POST /issues/N/comments « Réponse : motif »
+  end
+  F->>G: PATCH /issues/N { state: closed, state_reason: not_planned }
+  alt fermeture en échec après publication
+    F-->>C: aborted « Motif publié, mais l'Issue n'a pas été fermée. Réessayez. »<br/>(reply_published_close_failed)
+    C-->>AD: boîte ouverte, motif en lecture seule ; réessayer ne republie pas
+  end
+  F->>T: status = refused, reply_text = motif, status_changed_at
+  F->>T: admin/analysis réécrit depuis les commentaires déjà lus (au mieux)
+  F->>T: bail retiré (finally)
+  F-->>C: { status: refused }
+  C-->>AD: « Ticket refusé. Le motif est publié sur GitHub. »
+  M->>T: « Mes tickets » : Refusé, encadré « Motif du refus », point sur la puce du compte
+</pre>
+      </div>
+      <figcaption>
+        Le motif est public : la boîte le rappelle avant l'envoi. Une pull request ouverte n'est
+        pas fermée par le refus ; la boîte le dit pour un ticket En cours. Un jeton refusé avant
+        la publication rend « GitHub refuse le jeton. Rien n'a été modifié. » et pose
+        <code>token_invalid_since</code>. Le bail est retiré même en échec ; s'il ne peut pas
+        l'être, il expire seul au bout de deux minutes.
       </figcaption>
     </figure>
   </section>

@@ -22,6 +22,10 @@ abstract final class AppIcons {
   /// « Mes tickets » et « Tickets des membres ».
   static const tickets = Icons.confirmation_number_outlined;
 
+  /// « Tickets à traiter » (menu du compte, administrateur) et l'état vide
+  /// du filtre « À traiter ».
+  static const ticketsToProcess = Icons.inbox_outlined;
+
   static const ticketTypeBug = Icons.bug_report_outlined;
   static const ticketTypeEvolution = Icons.trending_up;
   static const ticketTypeFeature = Icons.lightbulb_outline;
