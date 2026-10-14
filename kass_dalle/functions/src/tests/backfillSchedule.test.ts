@@ -456,15 +456,17 @@ describe("auteur de la programmation", () => {
 });
 
 describe("verrou commun", () => {
-  test("enrichissement et réparation du sel se bloquent l'un l'autre", () => {
+  test("deux paires se bloquent : sel et enrichissement, portée et déplacement de repas", () => {
     assert.deepEqual(lockSiblings("enrich_referentials"), ["refresh_sodium"]);
     assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials"]);
+    assert.deepEqual(lockSiblings("group_planning_reach"), ["move_meals_to_group"]);
+    assert.deepEqual(lockSiblings("move_meals_to_group"), ["group_planning_reach"]);
     assert.deepEqual(lockSiblings("recipe_roles"), []);
   });
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, trois ponctuels, clés uniques", () => {
+  test("cinq récurrents, quatre ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -472,7 +474,7 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 3);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 4);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
     // Ponctuels retirés en v0.23.52 : leur clé n'est plus connue.

@@ -8,10 +8,12 @@ import 'admin_providers.dart';
 import 'backfill_failures_sheet.dart';
 import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
+import 'move_meals_to_group_dialog.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_failures.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
+import '../domain/move_meals_request.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
@@ -158,6 +160,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'plannings partagés le retrouvent. Ce qui est déjà à jour n\'est '
             'pas réécrit ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.moveMealsToGroup:
+        return 'Vos repas de « Mon planning » sur cette période passent dans '
+            'le planning du groupe : ses membres les voient, et ils quittent '
+            'votre planning personnel. La recette, la date, les parts et les '
+            'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
+            'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
+            'Aucun appel d\'IA.';
       default:
         return '';
     }
@@ -191,9 +200,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   /// Lance le passage de [def] et met en forme son compte rendu.
   /// [retryExcluded] : la case « Réessayer aussi les éléments exclus après 3 échecs ».
+  /// [move] porte les paramètres de « Déplacer mes repas vers un groupe ».
   Future<_PassOutcome> _runPass(
     BackfillDefinition def, {
     bool retryExcluded = false,
+    MoveMealsRequest? move,
   }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
@@ -294,6 +305,21 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'échecs=${r['repasEchoues']}, restants=${r['repasRestants'] ?? '?'}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
         );
+      case BackfillKeys.moveMealsToGroup:
+        if (move == null) throw StateError('Paramètres manquants : ${def.key}');
+        final r = await _repo.backfillMoveMealsToGroup(move);
+        return _fromCounts(
+          r,
+          'Repas : examinés=${r['examines']}, déplacés=${r['deplaces']}, '
+          'ignorés (déjà dans un groupe)=${r['ignores']}, '
+          'en erreur=${r['echoues']}, restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'groupeIndisponible', ' (groupe supprimé ou cédé pendant le passage : arrêté, rien de plus n\'a été déplacé)')}'
+          '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
     }
@@ -371,11 +397,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
     if (_launching.contains(def.key)) return;
+    MoveMealsRequest? move;
+    if (def.key == BackfillKeys.moveMealsToGroup) {
+      // Paramétré : le groupe et la période d'abord, puis le récapitulatif.
+      move = await showMoveMealsToGroupDialog(context);
+      if (move == null || !mounted) return;
+    }
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
     var retryExcluded = false;
     final bool ok;
-    if (done) {
+    if (move != null) {
+      ok = await _confirm(
+        title: move.confirmQuestion,
+        content: _confirmText(def),
+        confirmLabel: 'Déplacer',
+      );
+    } else if (done) {
       ok = await _confirm(
         title: 'Relancer « ${def.title} » ?',
         content:
@@ -400,7 +438,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(def, retryExcluded: retryExcluded);
+      final outcome = await _runPass(
+        def,
+        retryExcluded: retryExcluded,
+        move: move,
+      );
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {
@@ -601,9 +643,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       onSchedule: def.isRecurrent
           ? () => _editSchedule(def, schedules.scheduleFor(def.key))
           : null,
-      onSetDone: def.isRecurrent
-          ? null
-          : (done) => _setDone(def, states[def.key], done),
+      onSetDone: backfillOffersDoneMenu(def, states[def.key])
+          ? (done) => _setDone(def, states[def.key], done)
+          : null,
       onShowFailures: (failures) => showBackfillFailuresSheet(
         context,
         title: def.title,
@@ -933,6 +975,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.systemBooks: Icons.library_books_outlined,
     BackfillKeys.groupPlanningReach: Icons.groups_outlined,
+    BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

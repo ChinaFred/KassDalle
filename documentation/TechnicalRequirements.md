@@ -1431,7 +1431,11 @@ antérieurs jusqu'au passage du backfill `group_planning_reach`, qui le pose), o
 d'un groupe familial (`group_id` =
 identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
 propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
-request.auth.uid` à la création et à la modification). `group_id` est figé à la modification.
+request.auth.uid` à la création et à la modification). `group_id` est figé à la modification
+côté client. Seul le backfill paramétré « Déplacer mes repas vers un groupe »
+(`backfillMoveMealsToGroupFn`, §7.10) le change, par l'Admin SDK : il fait passer les repas
+personnels d'un administrateur, sur une période, dans un groupe dont il est propriétaire, sans
+toucher `uid` ni les parts.
 Les membres du groupe le lisent par `planning_reach/{lecteur}.group_ids` (§3.8 quater) ; le
 client ouvre **un flux par groupe affiché** (`group_id == groupe` et `uid == propriétaire du
 groupe`, `planned_at` sur 90 jours, `PlanningRepository.watchGroupMeals`, index composite
@@ -1482,7 +1486,7 @@ attendant une décision.
 | Champ | Type | Description |
 |---|---|---|
 | `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
-| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Absent sur un repas antérieur jusqu'au passage du backfill `group_planning_reach`, qui le pose à `null`. Figé |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Absent sur un repas antérieur jusqu'au passage du backfill `group_planning_reach`, qui le pose à `null`. Figé côté client ; seul le backfill `move_meals_to_group` le change, de `null` (ou absent) vers un groupe de l'appelant |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -2029,7 +2033,11 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach` — ponctuels). Les ponctuels `recipe_protein`,
+récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group` —
+ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
+il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
+`planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52 : leur `backfill_run_<clé>`
 reste en base, et l'écran ignore une clé absente du registre. Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
@@ -4968,7 +4976,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Quatre tâches planifiées (Cloud Scheduler), six reprises manuelles et deux réglages. Aucune
+Quatre tâches planifiées (Cloud Scheduler), huit reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -4987,6 +4995,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillSystemBooksFn` | `admin` | parcourt `users` et crée, pour chaque compte `reader`, `editor` ou `admin` non révoqué, ceux des quatre livres système qui lui manquent, reconnus à leur tag (`missingSystemBooks`) : `__kassdale_ia`, `__libres`, `__secretes` par `books.add` avec les champs de `BookRepository.findOrCreate…Book`, `__web` par `findOrCreateWebBook`. Couverture vide. Comptes en attente ou révoqués sautés. 500 comptes complétés par appel au plus, arrêt sur trois échecs de suite. Sans appel de modèle, sans curseur : réentrant parce qu'un compte complet est sauté |
 | `backfillGroupPlanningReachFn` | `admin` | ponctuel `group_planning_reach`. Lit tous les `groups` une fois, et recalcule pour chacun de leurs membres et de leurs invités `group_reach` (`syncReachFor`) et `planning_reach` (`syncPlanningReachFor`, dont `group_ids`, `masked_group_ids` et `masked_invitation_ids`), les fonctions des déclencheurs ; un document déjà juste n'est pas réécrit. Puis, si la première phase n'a pas été arrêtée, parcourt `planned_meals` par identifiant depuis le point de reprise `app_config/group_planning_reach_backfill_checkpoint` (pages de 400, projection `group_id`) et pose `group_id: null` sur chaque repas qui n'a pas le champ, par lots ; un lot en échec est repris repas par repas. À lancer une fois après le déploiement du planning de groupe : sans lui, un membre d'un groupe que personne n'a touché depuis ne lit pas le planning du groupe, un groupe dont le propriétaire est déjà lecteur reste ouvert, et un planning personnel partagé ne montre aucun repas antérieur. 500 comptes réécrits et 4 000 repas marqués par appel au plus, arrêt sur trois échecs de suite dans chaque phase. Sans appel de modèle. Réentrant : un compte à jour est sauté, un repas qui porte le champ n'est pas réécrit |
+| `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Verrou commun avec `group_planning_reach`. Sans appel de modèle |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
@@ -5016,7 +5025,8 @@ où il s'est arrêté, et l'appel suivant repart de là.
   différents tournent ensemble, sauf ceux d'un même `LOCK_GROUPS` (`backfills/registry.ts`) :
   `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients, et
   l'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
-  des deux). Un verrou dont l'échéance est passée est repris ;
+  des deux) ; de même `group_planning_reach` et `move_meals_to_group`, qui écrivent tous deux
+  `planned_meals.group_id`. Un verrou dont l'échéance est passée est repris ;
 - enregistre l'issue : statut, origine, date, compte rendu complet (`last_report`), ou le
   message de l'erreur, puis relève l'erreur ;
 - pour un **ponctuel**, pose `termine_*` (`termine_par: "auto"`) quand le passage finit sans
@@ -5130,8 +5140,8 @@ Journaux : la tâche écrit sous `backfill_programme`, chaque passage programmé
 
 **Liste « à revoir ».** Chaque reprise manuelle renvoie, en plus de ses compteurs, le champ
 `aRevoir: { items, total }` : les éléments que le passage n'a pas pu traiter, nommés. Une
-entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `recipe` ou
-`account` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
+entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `recipe`,
+`account` ou `meal` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
 `reason` la raison en français simple. Le collecteur commun, `callable/_backfillReview.ts`
 (`BackfillReview`), garde les cent premières entrées dans l'ordre de traitement ; `total`
 compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée que dans le
@@ -5146,6 +5156,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
 | `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
+| `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du

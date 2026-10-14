@@ -31,6 +31,7 @@ export const BACKFILL_KEYS = [
   "refresh_sodium",
   "system_books",
   "group_planning_reach",
+  "move_meals_to_group",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -116,6 +117,15 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: false,
     defaultSchedule: null,
   },
+  // Paramétré (groupe, période) et réutilisable : jamais marqué terminé
+  // tout seul (`summarizeMoveMealsToGroup` rend un reste inconnu).
+  {
+    key: "move_meals_to_group",
+    kind: "ponctuel",
+    title: "Déplacer mes repas vers un groupe",
+    usesAi: false,
+    defaultSchedule: null,
+  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -133,10 +143,13 @@ export function recurrentKeys(): BackfillKey[] {
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
  * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
- * refusé pendant que l'autre tient son verrou.
+ * refusé pendant que l'autre tient son verrou. De même, la portée des
+ * groupes et le déplacement de repas vers un groupe écrivent tous deux
+ * `planned_meals.group_id`.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
+  ["group_planning_reach", "move_meals_to_group"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key]. */

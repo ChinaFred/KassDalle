@@ -20,6 +20,37 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-13
 
+### v0.23.61 — fonctionnel
+
+Admin › Backfills propose « Déplacer mes repas vers un groupe ». La tuile demande d'abord le
+groupe, parmi les groupes actifs dont l'administrateur est propriétaire, et une période de
+62 jours au plus, puis confirme (« Déplacer vos repas du … au … vers « … » ? »). Les repas
+de « Mon planning » de la période passent dans le planning du groupe et quittent le planning
+personnel. La recette, la date, les parts et les événements d'agenda déjà exportés ne
+changent pas. Un repas déjà dans un groupe est laissé tel quel, et relancer ne refait rien.
+La reprise sert pour d'autres périodes : elle reste parmi les ponctuels à lancer, sans
+« Marquer comme terminé » dans son menu. Avec un seul groupe possible, il est déjà choisi.
+
+### v0.23.61 — technique
+
+Nouveau callable `backfillMoveMealsToGroupFn` (`requireAdmin`, `runBackfillFromCallable`),
+backfill ponctuel `move_meals_to_group` inscrit aux deux registres et à la fixture
+`backfill_schedule.json` (`uses_ai: false`, sans programmation). L'entrée
+`{ groupId, fromDay, toDay, startAt, endAt }` est validée : identifiant sûr, jours
+`AAAA-MM-JJ`, 62 jours au plus, bornes calculées dans le fuseau de l'appareil et à moins de
+quatorze heures des jours annoncés. Le serveur vérifie que l'appelant est `owner_id` du
+groupe, sélectionne ses repas (`uid ==` appelant, `planned_at` dans la période, `group_id` nul
+ou absent) et pose `group_id`, un repas à la fois, dans une transaction qui relit le groupe
+(présent, `owner_id` = appelant) et le repas (toujours personnel) ; un groupe supprimé ou
+cédé pendant le passage l'arrête (`groupeIndisponible`). Il n'écrit ni `uid`, ni les parts,
+ni les recettes. Le compte rendu, lisible par tout administrateur dans
+`app_config/backfill_run_move_meals_to_group`, ne porte que des identifiants et des jours :
+ni nom de groupe, ni titre de recette. La passe rend un reste inconnu (`remaining: null`) :
+un outil réutilisable n'est jamais marqué terminé tout seul, et le menu ⋮ de sa tuile ne le
+propose pas (`reusable`). `group_planning_reach` et `move_meals_to_group` partagent leur
+verrou (`LOCK_GROUPS`) : tous deux écrivent `planned_meals.group_id`. Aucune
+règle Firestore ne change : `group_id` reste figé côté client, l'Admin SDK passe outre.
+
 ### v0.23.60 — fonctionnel
 
 #### Les messages en bas d'écran se ferment de nouveau (ticket #69)
@@ -32,6 +63,9 @@ actif (TalkBack, VoiceOver), il reste jusqu'à ce qu'on agisse ou qu'on le ferme
 du bouton prend la couleur du texte, plus lisible sur les fonds de succès et d'erreur. Seize
 messages sont concernés : ticket envoyé, planning, liste de courses, fiche recette,
 brouillons, import par URL, recette générée.
+
+### v0.23.59 — fonctionnel
+
 Admin › Backfills dit mieux ce qui reste à faire dans les backfills récurrents.
 
 « Reprendre la nutrition » n'affiche plus « Terminé » quand des recettes reprises restent
