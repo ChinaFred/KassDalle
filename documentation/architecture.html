@@ -650,6 +650,9 @@ flowchart TB
         <code>master</code>, ou à la main depuis l'onglet Actions, sur <code>master</code> seulement.
         Un seul déploiement tourne à la fois. Un commit signé <code>Deploy-Source: deploy.ps1</code>
         n'est pas redéployé : le script de secours vient de tout mettre en ligne depuis le PC.
+        Le job de déploiement tourne dans l'environnement GitHub <code>production</code>, réservé
+        à <code>master</code> : seuls ses secrets donnent accès au compte de service et à la clé
+        de signature, et un workflow poussé sur une autre branche ne les lit pas.
         Les deux workflows lisent le dépôt sans y écrire (<code>ci.yml</code> lit aussi les PR
         et les exécutions Actions), et leurs actions sont épinglées par SHA de commit, version en
         commentaire. Sur le push d'une PR fusionnée à jour de <code>master</code>, la CI ne

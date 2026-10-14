@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-14
 
+### v0.23.65 — technique
+
+Le job de déploiement de `deploy.yml` tourne dans l'environnement GitHub `production`,
+réservé à `master`. Les cinq secrets du déploiement (compte de service Firebase et clé de
+signature de l'APK) doivent y être déplacés depuis les secrets du dépôt. Une session lancée
+depuis Admin › Tickets pousse sur des branches `claude/…` à partir du texte d'un ticket
+public : un workflow ajouté sur une telle branche ne lit plus ces secrets. Seul le prompt de la
+routine l'interdisait jusqu'ici. La procédure est dans `TechnicalRequirements.md`,
+« Déploiement automatique », avec deux réglages du dépôt qui la complètent (ruleset sur
+`master`, jeton des workflows en lecture seule) et le risque accepté : une session de routine
+qui fusionnerait une pull request par l'API déclencherait le déploiement.
+
 ### v0.23.64 — fonctionnel
 
 Admin › Tickets des membres lance une session Claude Code sur un ticket (ticket #73, lot B).
