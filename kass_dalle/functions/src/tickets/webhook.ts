@@ -82,10 +82,10 @@ import {
 const ISSUE_ACTIONS = new Set(["opened", "edited", "labeled", "unlabeled", "closed", "reopened"]);
 const COMMENT_ACTIONS = new Set(["created", "edited", "deleted"]);
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "ready_for_review"]);
-/** Actions d'une PR qui changent son état « PR prête » (corps, brouillon, tête, fermeture). */
 /** Actions d'un `workflow_run` qui relisent la livraison : départ, exécution, fin. */
 const DELIVERY_RUN_ACTIONS = new Set(["requested", "in_progress", "completed"]);
 
+/** Actions d'une PR qui changent son état « PR prête » (corps, brouillon, tête, fermeture). */
 const DELIVERY_PR_ACTIONS = new Set([
   "opened",
   "reopened",
