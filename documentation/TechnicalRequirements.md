@@ -5999,7 +5999,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
-| Droits et actions | jeton GitHub limité à `contents: read` ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et le compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
+| Droits et actions | jeton GitHub limité à `contents: read`, plus `id-token: write` sur le job `deploy` pour le jeton OIDC échangé auprès de Google Cloud (voir « Accès à Google Cloud, sans clé ») ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et l'accès au compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
 
 **Vérification.** `.github/scripts/firebase-deploy.sh` exige un code 0, la ligne
 `Deploy complete`, et aucune ligne `Functions deploy had errors`. Les Functions ont droit à une
@@ -6099,19 +6099,20 @@ PowerShell ; pas `certutil -encode`, dont les lignes `-----BEGIN` font échouer 
 celle de `deploy.ps1` : un APK signé par une autre clé serait refusé comme mise à jour.
 
 **L'environnement GitHub `production`.** Le job `deploy` déclare `environment: production`.
-Les cinq secrets du déploiement (`FIREBASE_SERVICE_ACCOUNT` et les quatre secrets de signature
-ci-dessus) vivent dans cet environnement, et non au niveau du dépôt. Sa règle de branches de
+Les quatre secrets de signature ci-dessus vivent dans cet environnement, et non au niveau du
+dépôt. Sa règle de branches de
 déploiement n'admet que `master`. Un workflow ajouté sur une autre branche, par exemple une
 branche `claude/…` poussée par une session lancée depuis Admin › Tickets, tourne sans ces
-secrets : il ne peut ni déployer, ni signer un APK, ni lire la clé du compte de service.
+secrets : il ne peut pas signer un APK. Il ne peut pas non plus déployer : Google Cloud refuse
+son jeton OIDC, qui ne porte pas l'environnement `production` (voir « Accès à Google Cloud »).
 Procédure, une fois, dans Settings › Environments du dépôt :
 
 1. créer l'environnement `production` à la main, avant de fusionner le commit qui le
    déclare : un environnement créé par un premier déploiement n'a aucune règle de branches ;
 2. « Deployment branches and tags » : « Selected branches and tags », une règle de type
    « Branch » (pas « Tag ») sur `master` ;
-3. « Environment secrets » : recréer les cinq secrets avec les mêmes valeurs ;
-4. Settings › Secrets and variables › Actions : supprimer les cinq secrets du dépôt. Tant
+3. « Environment secrets » : recréer les quatre secrets avec les mêmes valeurs ;
+4. Settings › Secrets and variables › Actions : supprimer les quatre secrets du dépôt. Tant
    qu'ils y restent, toute branche les lit encore ;
 5. relancer le workflow « Déploiement » à la main sur `master` et vérifier qu'il passe.
 
@@ -6133,12 +6134,29 @@ routine l'interdit. Le déploiement reste automatique, sans relecteur requis sur
 l'environnement `production` (décision du 14 octobre 2026). Ajouter un relecteur requis à
 l'environnement fermerait ce chemin, au prix d'une approbation manuelle à chaque déploiement.
 
-**Le secret `FIREBASE_SERVICE_ACCOUNT`** (environnement `production`, voir ci-dessus) contient la clé JSON d'un compte de service du projet `kassdale-6d948`. Rôles IAM :
+**Accès à Google Cloud, sans clé.** Le job `deploy` s'authentifie par Workload Identity
+Federation (mis en place le 15 octobre 2026, en remplacement d'une clé JSON sans expiration
+stockée dans le secret `FIREBASE_SERVICE_ACCOUNT` ; la clé et le secret sont supprimés une
+fois le premier déploiement par fédération réussi). Le job demande à GitHub un
+jeton OIDC (`permissions: id-token: write`) et l'échange auprès de Google contre un accès d'une
+heure au compte de service `github-deploy@kassdale-6d948.iam.gserviceaccount.com`. Aucune clé
+n'est stockée, ni dans GitHub ni sur le runner.
+
+- Pool `github`, fournisseur OIDC `kassdalle-deploy`, émetteur
+  `https://token.actions.githubusercontent.com` ;
+- condition du fournisseur : `assertion.repository_id == '1221863629'` (identifiant numérique
+  du dépôt : un dépôt recréé sous le même nom ne passe pas), `assertion.ref ==
+  'refs/heads/master'` et `assertion.environment == 'production'` ;
+- `Workload Identity User` sur `github-deploy`, accordé à
+  `principalSet://…/workloadIdentityPools/github/attribute.repository_id/1221863629`.
+
+Rôles IAM de `github-deploy` :
 
 - `Firebase Admin` ;
 - `Cloud Functions Admin` ;
 - `Cloud Run Admin` (Functions de 2e génération) ;
-- `Service Account User`, sur le compte d'exécution des fonctions ;
+- `Service Account User`, sur le compte d'exécution des fonctions
+  (`867114764221-compute@developer`) seulement, pas sur le projet ;
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`, et la CLI accorde au compte d'exécution l'accès à ces
@@ -6188,6 +6206,12 @@ gcloud firestore backups schedules list --project=kassdale-6d948 --database="(de
 
 La première sauvegarde apparaît dans les 24 heures :
 `gcloud firestore backups list --project=kassdale-6d948`.
+
+**Protection contre la suppression.** La base `(default)` refuse d'être supprimée
+(`deleteProtectionState: DELETE_PROTECTION_ENABLED`, depuis le 15 octobre 2026). Le compte
+de service du déploiement a `Firebase Admin`, qui suffirait sinon à supprimer la base entière.
+Lever la protection demande une commande explicite, réservée au propriétaire :
+`gcloud firestore databases update --database="(default)" --no-delete-protection`.
 
 **Restaurer.** Une sauvegarde ne se restaure jamais par-dessus `(default)` : elle crée une
 **nouvelle base**, que l'application ne lit pas. On y vérifie les données, puis on reporte

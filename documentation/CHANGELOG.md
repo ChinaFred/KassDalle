@@ -20,6 +20,20 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.69 — technique
+
+Le déploiement automatique n'utilise plus de clé de compte de service. La clé JSON de
+`github-deploy`, sans expiration et stockée dans le secret GitHub `FIREBASE_SERVICE_ACCOUNT`,
+ouvrait les secrets de Secret Manager et la base à quiconque l'aurait récupérée. `deploy.yml`
+s'authentifie désormais par Workload Identity Federation : le job échange son jeton OIDC
+contre un accès d'une heure, que Google n'accorde qu'au dépôt `ChinaFred/KassDalle`
+(identifiant numérique), sur `master`, dans l'environnement `production`. La clé et le secret
+sont supprimés après un premier déploiement réussi par la nouvelle voie.
+
+Deux réglages de Google Cloud accompagnent ce changement : `Service Account User` n'est plus
+accordé à `github-deploy` sur tout le projet, seulement sur le compte d'exécution des
+fonctions ; la base Firestore `(default)` refuse désormais d'être supprimée.
+
 ### v0.23.68 — fonctionnel
 
 Admin › Tickets : un ticket validé dont la dernière analyse pose des questions est « bloqué ».

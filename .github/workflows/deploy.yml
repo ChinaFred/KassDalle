@@ -9,10 +9,10 @@ name: Déploiement
 # que celle de l'APK en ligne. Sinon le site garde l'APK et le manifeste déjà
 # en ligne (étape « Conserver l'APK en ligne »).
 #
-# Secrets requis (environnement production) : FIREBASE_SERVICE_ACCOUNT, la clé JSON d'un compte de service
-# du projet kassdale-6d948 ; ANDROID_KEYSTORE_BASE64, ANDROID_STORE_PASSWORD,
-# ANDROID_KEY_ALIAS et ANDROID_KEY_PASSWORD, la clé de signature du PC. Voir
-# documentation/TechnicalRequirements.md, section « Déploiement automatique ».
+# Secrets requis (environnement production) : ANDROID_KEYSTORE_BASE64,
+# ANDROID_STORE_PASSWORD, ANDROID_KEY_ALIAS et ANDROID_KEY_PASSWORD, la clé de
+# signature du PC. Google Cloud s'authentifie sans secret, par Workload Identity
+# Federation. Voir documentation/TechnicalRequirements.md, « Déploiement automatique ».
 
 on:
   workflow_run:
@@ -29,12 +29,13 @@ concurrency:
   cancel-in-progress: false
 
 # Le jeton GitHub du workflow ne lit que le dépôt : le déploiement passe par le
-# compte de service Firebase, pas par GitHub.
+# compte de service Firebase, pas par GitHub. Le job deploy demande en plus
+# id-token: write, pour le jeton OIDC échangé auprès de Google Cloud.
 permissions:
   contents: read
 
 # Actions tierces épinglées par SHA de commit, version en commentaire : ce job
-# reçoit la clé de signature Android et le compte de service Firebase. Une
+# reçoit la clé de signature Android et l'accès au compte de service Firebase. Une
 # étiquette (`@v4`) se déplace ; un SHA ne change pas de contenu. Monter de
 # version : remplacer le SHA par celui de la nouvelle étiquette
 # (`git ls-remote --tags https://github.com/<action>.git`).
@@ -84,10 +85,16 @@ jobs:
     name: Functions, web, APK, règles
     needs: gate
     if: needs.gate.outputs.sha != ''
-    # Les secrets de signature et FIREBASE_SERVICE_ACCOUNT vivent dans l'environnement
-    # « production », réservé à master : un workflow poussé sur une autre branche ne les
-    # lit pas. Voir TechnicalRequirements.md, « Déploiement automatique ».
+    # Les secrets de signature vivent dans l'environnement « production », réservé à
+    # master : un workflow poussé sur une autre branche ne les lit pas. Google Cloud
+    # n'accepte le jeton OIDC que de ce dépôt, sur master, dans cet environnement.
+    # Voir TechnicalRequirements.md, « Déploiement automatique ».
     environment: production
+    # id-token : le jeton OIDC que Google Cloud échange contre un accès temporaire au
+    # compte de service. Sans clé stockée, il n'y a pas de clé à voler.
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
@@ -184,8 +191,12 @@ jobs:
 
       - name: Authentification Google Cloud
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        # Workload Identity Federation : pool `github`, fournisseur `kassdalle-deploy`, dont
+        # la condition n'admet que le dépôt 1221863629, refs/heads/master et l'environnement
+        # production. Aucune clé JSON.
         with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/867114764221/locations/global/workloadIdentityPools/github/providers/kassdalle-deploy
+          service_account: github-deploy@kassdale-6d948.iam.gserviceaccount.com
 
       - name: Firebase CLI
         run: npm install -g firebase-tools@15.32.1

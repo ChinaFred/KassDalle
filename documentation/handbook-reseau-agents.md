@@ -569,6 +569,9 @@ jobs:
     needs: gate
     if: needs.gate.outputs.sha != ''
     environment: production
+    permissions:
+      contents: read
+      id-token: write   # jeton OIDC échangé contre l'accès cloud, sans clé stockée
     # 1. revérifier que le commit est la tête de master
     # 2. checkout du SHA, persist-credentials: false
     # 3. build, puis authentification au fournisseur cloud, puis déploiement vérifié
@@ -609,21 +612,37 @@ done
 gcloud iam service-accounts add-iam-policy-binding \
   <NUMERO_PROJET>-compute@developer.gserviceaccount.com \
   --member "serviceAccount:$SA" --role roles/iam.serviceAccountUser
-gcloud iam service-accounts keys create key.json --iam-account "$SA"
+
+# Workload Identity Federation : GitHub échange son jeton OIDC contre un accès d'une heure.
+# Aucune clé JSON n'est créée.
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com
+REPO_ID=$(gh api repos/<OWNER>/<REPO> --jq .id)   # identifiant numérique, stable
+gcloud iam workload-identity-pools create github --location=global
+gcloud iam workload-identity-pools providers create-oidc <REPO>-deploy \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref,attribute.environment=assertion.environment" \
+  --attribute-condition="assertion.repository_id=='$REPO_ID' && assertion.ref=='refs/heads/master' && assertion.environment=='production'"
+gcloud iam service-accounts add-iam-policy-binding "$SA" --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/<NUMERO_PROJET>/locations/global/workloadIdentityPools/github/attribute.repository_id/$REPO_ID"
+
+# La base Firestore refuse d'être supprimée, même par Firebase Admin :
+gcloud firestore databases update --database="(default)" --delete-protection
 ```
 
-Coller le contenu de `key.json` dans le secret d'environnement `FIREBASE_SERVICE_ACCOUNT`
-(GitHub › Settings › Environments › production), puis **supprimer `key.json`** du poste.
+Dans `deploy.yml`, le job `deploy` déclare `permissions: id-token: write`, et l'étape
+`google-github-actions/auth` reçoit `workload_identity_provider` (le nom complet du
+fournisseur) et `service_account`, au lieu d'une clé.
 
-Amélioration possible, non faite chez Kass'Dalle : remplacer la clé JSON par la fédération
-d'identité (Workload Identity Federation), sans clé longue durée. C'est le modèle de la
+Kass'Dalle a d'abord déployé avec une clé JSON sans expiration, stockée dans un secret GitHub.
+Une fuite de cette clé ouvrait les secrets et la base à n'importe qui, sans limite de temps.
+Elle a été remplacée par la fédération le 15 octobre 2026. C'est aussi le modèle de la
 section 13.4 pour AWS.
 
 ### 11.3 Secrets GitHub de l'environnement `production`
 
 | Secret | Contenu |
 |---|---|
-| `FIREBASE_SERVICE_ACCOUNT` | clé JSON du compte de service |
 | `ANDROID_KEYSTORE_BASE64` | le `.jks` en base64 sur une ligne : `[Convert]::ToBase64String([IO.File]::ReadAllBytes("<chemin>.jks"))` (pas `certutil -encode`) |
 | `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | valeurs de `android/key.properties` |
 
@@ -806,7 +825,7 @@ Hypothèses de travail, à confirmer pour le projet cible :
 | Firebase Hosting | S3 + CloudFront (front statique) |
 | Firestore | à décider (DynamoDB, RDS PostgreSQL…) — hors de ce handbook |
 | Cloud Logging | CloudWatch Logs (Fluent Bit) ou la pile existante |
-| compte de service + clé JSON | rôle IAM assumé par OIDC |
+| compte de service assumé par OIDC (Workload Identity Federation) | rôle IAM assumé par OIDC |
 | webhook `githubTicketWebhook` | service `tickets-webhook` exposé par l'Ingress |
 | Gemini / Claude par clé d'API | Claude par clé d'API Anthropic, ou par Amazon Bedrock (rôle IAM, pas de clé) |
 

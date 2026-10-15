@@ -652,15 +652,17 @@ flowchart TB
         Un seul déploiement tourne à la fois. Un commit signé <code>Deploy-Source: deploy.ps1</code>
         n'est pas redéployé : le script de secours vient de tout mettre en ligne depuis le PC.
         Le job de déploiement tourne dans l'environnement GitHub <code>production</code>, réservé
-        à <code>master</code> : seuls ses secrets donnent accès au compte de service et à la clé
-        de signature, et un workflow poussé sur une autre branche ne les lit pas.
+        à <code>master</code> : seuls ses secrets donnent accès à la clé de signature, et un
+        workflow poussé sur une autre branche ne les lit pas. Google Cloud n'est joint par aucune
+        clé : le job échange son jeton OIDC (Workload Identity Federation), que Google n'accepte
+        que de ce dépôt, sur <code>master</code>, dans l'environnement <code>production</code>.
         Les deux workflows lisent le dépôt sans y écrire (<code>ci.yml</code> lit aussi les PR
         et les exécutions Actions), et leurs actions sont épinglées par SHA de commit, version en
         commentaire. Sur le push d'une PR fusionnée à jour de <code>master</code>, la CI ne
         rejoue que le contrôle de version : la CI de la PR a déjà testé le même arbre.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
         hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
-        ou supprimées. Les deux se règlent dans Google Cloud, et non par ce workflow :
+        ou supprimées. La base refuse d'être supprimée (protection activée). Ces réglages se font dans Google Cloud, et non par ce workflow :
         <span class="path">TechnicalRequirements.md</span>, « Sauvegardes de Firestore » et
         « Versions des fichiers de Storage ».
       </figcaption>
