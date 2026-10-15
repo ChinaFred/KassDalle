@@ -2027,8 +2027,16 @@ par `ticket_decisions.json`.
 | fermée `completed` | `delivered`, ou `answered` pour une Question |
 | fermée `not_planned` (ou `duplicate`) | `refused` |
 
-Un statut ne recule jamais : une étiquette retirée ou une PR refermée ne le font pas
-redescendre. Une fin suit l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes.
+Un statut ne recule jamais : une étiquette retirée ne le fait pas redescendre. Une fin suit
+l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes. Seul `in_progress` recule
+sans réouverture : quand la tâche horaire relit les PR de l'Issue et n'en trouve plus aucune
+ouverte qui la ferme (PR fermée sans fusion, mot-clé retiré du corps), le ticket revient au
+statut de ses étiquettes (`nextTicketStatus` avec `noOpenClosingPr`, `openClosingPr: false`
+dans `applyGithubUpdate`). Une chronologie qui dépasse cinq pages de 100 événements est
+tronquée : `openPullRequestBodiesReferencing` rend `complete: false`, `openClosingPr` reste
+indéfini et le ticket ne recule pas, car des tiers peuvent remplir la chronologie de
+commentaires et de renvois. Une PR dont le dépôt est absent de l'événement est écartée. Un
+événement d'Issue du webhook ne voit pas les PR et ne fait pas reculer `in_progress`.
 
 **Plafonds.** `ticket_quotas/{uid}_{AAAAMMJJ}` (`uid` `String`, `day` `String`, `count` `int`,
 `expires_at` `Timestamp`) et `ticket_quotas/_global_{AAAAMMJJ}` (mêmes champs sans `uid`),

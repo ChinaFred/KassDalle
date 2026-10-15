@@ -20,6 +20,22 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.74 — fonctionnel
+
+Admin › Tickets : un ticket En cours dont la pull request est fermée sans être fusionnée
+revient au statut de ses étiquettes, Validé en général, dans l'heure qui suit. Il restait
+auparavant En cours sans limite, avec « Refuser » pour seule action.
+
+### v0.23.74 — technique
+
+`nextTicketStatus` (`tickets/rules.ts`) prend un troisième paramètre `noOpenClosingPr`. Vrai,
+il ramène un ticket `in_progress` au statut tiré des étiquettes. `applyGithubUpdate` le passe
+quand `openClosingPr` vaut `false`, ce que seul `resyncTicket` (tâche horaire, PR relues dans
+la chronologie de l'Issue) écrit. Une chronologie tronquée (plus de cinq pages) laisse
+`openClosingPr` indéfini : pas de recul, puisque des tiers peuvent la remplir. Une PR dont le
+dépôt manque dans l'événement de chronologie est écartée. Les événements d'Issue du webhook ne
+connaissent pas les PR et ne font toujours pas reculer `in_progress`.
+
 ### v0.23.73 — fonctionnel
 
 Les plannings affichés se retrouvent sur tous les appareils (ticket #79). La sélection du

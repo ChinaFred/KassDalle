@@ -286,19 +286,37 @@ export async function closeIssueNotPlanned(
  *
  * Seules les PR d'un auteur de confiance sont rendues (`isTrustedPrAuthor`) :
  * une PR ouverte depuis un fork par un autre compte ne fait pas passer un
- * ticket « En cours ».
+ * ticket « En cours ». Une PR dont le dépôt n'est pas lisible est écartée.
+ *
+ * `complete` est faux quand la chronologie dépasse `MAX_PAGES` pages : des
+ * tiers peuvent la remplir de commentaires et de renvois, et la PR peut se
+ * trouver après la coupure. L'appelant ne conclut alors à aucune absence.
  */
 export async function openPullRequestBodiesReferencing(
   token: string,
   issueNumber: number,
-): Promise<string[]> {
-  const bodies: string[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const batch = await request<Array<Record<string, unknown>>>(
+): Promise<{ bodies: string[]; complete: boolean }> {
+  return collectOpenPrBodies((page) =>
+    request<Array<Record<string, unknown>>>(
       token,
       "GET",
       `${REPO_PATH}/issues/${issueNumber}/timeline?per_page=100&page=${page}`,
-    );
+    ),
+  );
+}
+
+/**
+ * Parcourt les pages de chronologie rendues par `fetchPage` (1 à `MAX_PAGES`)
+ * et garde le corps des PR ouvertes de ce dépôt, d'un auteur de confiance.
+ * `complete` ne vaut vrai que si une page de moins de 100 événements a été lue.
+ */
+export async function collectOpenPrBodies(
+  fetchPage: (page: number) => Promise<Array<Record<string, unknown>>>,
+): Promise<{ bodies: string[]; complete: boolean }> {
+  const bodies: string[] = [];
+  let complete = false;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await fetchPage(page);
     for (const event of batch) {
       if (event.event !== "cross-referenced") continue;
       const source = event.source as { issue?: Record<string, unknown> } | undefined;
@@ -306,7 +324,7 @@ export async function openPullRequestBodiesReferencing(
       if (!issue || issue.pull_request == null || issue.state !== "open") continue;
       const repo = issue.repository as { full_name?: unknown } | undefined;
       if (
-        typeof repo?.full_name === "string" &&
+        typeof repo?.full_name !== "string" ||
         repo.full_name.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()
       ) {
         continue;
@@ -322,9 +340,12 @@ export async function openPullRequestBodiesReferencing(
       );
       if (trusted && typeof issue.body === "string") bodies.push(issue.body);
     }
-    if (batch.length < 100) break;
+    if (batch.length < 100) {
+      complete = true;
+      break;
+    }
   }
-  return bodies;
+  return { bodies, complete };
 }
 
 /**

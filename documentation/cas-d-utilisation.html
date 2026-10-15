@@ -1126,7 +1126,8 @@ flowchart LR
         étiquette <code>statut:analysé</code> : Analysé ; étiquette <code>validé</code> : Validé ;
         pull request « Closes #N » : En cours ; Issue fermée comme terminée : Livré, ou Répondu
         pour une Question ; fermée comme non prévue : Refusé. Un statut ne recule jamais, sauf
-        à la réouverture de l'Issue et après « Répondre », qui ramène un ticket Analysé ou
+        quand la pull request d'un ticket En cours est fermée sans fusion (retour au statut des
+        étiquettes dans l'heure), à la réouverture de l'Issue et après « Répondre », qui ramène un ticket Analysé ou
         Validé à Reçu. GitHub prévient l'application à chaque changement ; une
         vérification horaire rattrape un avis perdu.
         <b>L'administrateur décide aussi depuis l'application</b> (Admin › Tickets des membres,
