@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.78 — fonctionnel
+
+Admin › Tickets (ticket #92) : la liste montre les états intermédiaires. Après « Lancer
+l'analyse », « Lancer le développement » ou « Livrer », la ligne du ticket porte une puce
+« Analyse en cours », « Développement en cours » ou « Livraison en cours », puis « Relance
+possible » quand l'échéance passe sans changement de statut. La règle est celle de la fiche
+(`adminTicketDecisions`) : une écoute de l'historique des lancements par ligne Reçu, Validé ou
+En cours, côté administrateur seulement. Aucun changement de schéma, de règle ni de Function.
+
 ### v0.23.77 — fonctionnel
 
 Admin › Tickets : le bloc « Réponse de l'administrateur » (et « Motif du refus ») était illisible, texte clair sur fond bleu clair. Il prend maintenant un fond neutre, une bordure fine et le texte `onSurface`, avec un contraste d'au moins 4,5:1 en mode clair et en mode sombre. Dans le bloc « Votre réponse » et les analyses, le gras, l'italique, le code, les liens, les titres de niveau 4 à 6 et les tableaux suivent la couleur du reste du texte. Un test de widget vérifie le contraste dans les deux modes.

@@ -1190,7 +1190,8 @@ flowchart LR
         seule pull request éligible ferme l'Issue (ouverte, pas brouillon, par l'administrateur,
         branche <code>claude/…</code> du dépôt) et que sa CI est verte ; un conflit signalé par
         GitHub ne l'empêche pas : la session le résout ou publie un blocage. C'est un sous-état visible de l'administrateur seul : puce « PR prête » dans
-        la liste, ligne d'état dans la barre de décision. « Livrer » lance la session de
+        la liste (comme « Analyse en cours », « Développement en cours » et « Livraison en cours »
+        pour un lancement qui court), ligne d'état dans la barre de décision. « Livrer » lance la session de
         développement avec <code>livraison #N</code> : elle met la pull request à jour avec
         <code>master</code>, attend la CI, fusionne et suit le déploiement, puis publie
         « ## Livraison — terminée » ou « ## Livraison — blocage », repris dans la section
