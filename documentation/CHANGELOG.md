@@ -20,6 +20,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.70 — fonctionnel
+
+Un écran de démarrage affiche « Bonjour {prénom} » à chaque lancement de l'application, pendant 5 secondes ou jusqu'à un appui (ticket #78). Le prénom est le nom préféré du compte, sinon le prénom Google. Sans profil lu au bout de 10 secondes, ou pour un compte non connecté, l'écran affiche « Bonjour » seul. L'écran est un calque au-dessus du routeur (`SplashGreeting`, `lib/core/presentation/`) : aucune route ajoutée, aucune donnée écrite.
+
 ### v0.23.69 — technique
 
 Le déploiement automatique n'utilise plus de clé de compte de service. La clé JSON de
