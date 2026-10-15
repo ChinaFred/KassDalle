@@ -190,7 +190,7 @@ Côté Cloud Functions (Node 22, TypeScript) :
 firestore/
 ├── users/{uid}/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
-│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals
+│   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals, planning_visibility
 │   ├── planning_runs/{runId}                      ← générations de planning, serveur seul
 │   └── shopping/current                           ← panier de courses personnel, titulaire seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
@@ -1626,11 +1626,19 @@ voit dans Admin › Journaux.
 **Qui le lit :** son titulaire (`PlanningRepository.watchPlanningReach`, d'où le client tire
 le sélecteur « Plannings affichés ») et un administrateur.
 
-**Ce que l'appareil garde.** Les plannings affichés ne sont pas stockés dans Firestore. Le
-défaut dépend du rôle — l'éditeur voit son planning seul, le lecteur tous les plannings
-partagés avec lui et pas le sien — et l'appareil mémorise l'**écart** à ce défaut, par compte
-et par rôle (`SharedPreferences`, clé `planning_toggled.<editor|reader>.<uid>`,
-`planning_visibility_store.dart`).
+**Ce que le compte garde.** Les plannings affichés vivent sous le compte du membre :
+`users/{uid}/preferences/planning_visibility`, `{ editor: [string], reader: [string],
+updated_at }`, cent entrées au plus par liste (règle `isPlanningVisibility`). Le défaut dépend
+du rôle — l'éditeur voit son planning seul, le lecteur tous les plannings partagés avec lui et
+pas le sien — et le document mémorise l'**écart** à ce défaut, une liste par rôle : un lecteur
+promu éditeur ne relit pas des bascules qui disaient l'inverse. Le client
+(`FirestorePlanningVisibilityStore`, `planning_visibility_store.dart`) lit le document à
+l'ouverture et écrit la seule liste du rôle (`merge`) à chaque bascule. Une copie locale
+(`SharedPreferences`, clé `planning_toggled.<editor|reader>.<uid>`) sert hors ligne. Sans liste
+distante pour le rôle, la copie locale est reprise puis envoyée, pour que la sélection d'avant
+la v0.23.70 ne soit pas perdue. Le dernier écrit gagne. Un échec Firestore est rapporté
+(`planning_visibility_remote_load`, `planning_visibility_remote_save`) et l'écran reste
+utilisable.
 
 ---
 
@@ -2019,8 +2027,16 @@ par `ticket_decisions.json`.
 | fermée `completed` | `delivered`, ou `answered` pour une Question |
 | fermée `not_planned` (ou `duplicate`) | `refused` |
 
-Un statut ne recule jamais : une étiquette retirée ou une PR refermée ne le font pas
-redescendre. Une fin suit l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes.
+Un statut ne recule jamais : une étiquette retirée ne le fait pas redescendre. Une fin suit
+l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes. Seul `in_progress` recule
+sans réouverture : quand la tâche horaire relit les PR de l'Issue et n'en trouve plus aucune
+ouverte qui la ferme (PR fermée sans fusion, mot-clé retiré du corps), le ticket revient au
+statut de ses étiquettes (`nextTicketStatus` avec `noOpenClosingPr`, `openClosingPr: false`
+dans `applyGithubUpdate`). Une chronologie qui dépasse cinq pages de 100 événements est
+tronquée : `openPullRequestBodiesReferencing` rend `complete: false`, `openClosingPr` reste
+indéfini et le ticket ne recule pas, car des tiers peuvent remplir la chronologie de
+commentaires et de renvois. Une PR dont le dépôt est absent de l'événement est écartée. Un
+événement d'Issue du webhook ne voit pas les PR et ne fait pas reculer `in_progress`.
 
 **Plafonds.** `ticket_quotas/{uid}_{AAAAMMJJ}` (`uid` `String`, `day` `String`, `count` `int`,
 `expires_at` `Timestamp`) et `ticket_quotas/_global_{AAAAMMJJ}` (mêmes champs sans `uid`),
@@ -2260,6 +2276,9 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
   main comme les autres. Une recette sans `book_id` n'est jamais écartée par ce filtre : il ne
   peut pas se prononcer sur elle. Document absent = comportement d'avant ce réglage, recettes
   validées, tous les livres du moment.
+- `users/{uid}/preferences/planning_visibility` : plannings affichés par rapport au défaut du
+  rôle, une liste de clés de planning par rôle (voir §3.8). Champs `editor` (`list<string>`,
+  100 au plus), `reader` (`list<string>`, 100 au plus), `updated_at` (`timestamp`).
 - `users/{uid}/preferences/explore_filters` : sources, filtres et tri de l'écran Explorer
   (`/search`), relus à l'ouverture et réécrits une demi-seconde après chaque changement
   (`ExplorePreferencesRepository`, `ExplorePreferences.toMap`). Le texte du champ de recherche
@@ -2422,6 +2441,15 @@ service cloud.firestore {
         && (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
+    /// Forme de `users/{uid}/preferences/planning_visibility` (plannings
+    /// affichés) : `{ editor: list, reader: list, updated_at }`, cent au plus.
+    function isPlanningVisibility(data) {
+      return data.keys().hasOnly(['editor', 'reader', 'updated_at'])
+        && (!('editor' in data) || (data.editor is list && data.editor.size() <= 100))
+        && (!('reader' in data) || (data.reader is list && data.reader.size() <= 100))
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     /// Forme de `users/{uid}/preferences/explore_filters` (écran Explorer).
     function isExploreFilters(data) {
       return data.keys().hasOnly(['sources', 'sort', 'filters', 'updated_at'])
@@ -2532,6 +2560,8 @@ service cloud.firestore {
         allow create, update: if (isOwner(uid) || isAdmin())
           && (prefId != 'planning_refusals'
               || isPlanningRefusals(request.resource.data))
+          && (prefId != 'planning_visibility'
+              || isPlanningVisibility(request.resource.data))
           && (prefId != 'explore_filters'
               || isExploreFilters(request.resource.data));
       }
@@ -2729,7 +2759,7 @@ service cloud.firestore {
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
-| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
+| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `planning_visibility`, la forme `isPlanningVisibility` (clés `editor`, `reader`, `updated_at` seulement ; listes de 100 entrées au plus). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
 | `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |

@@ -828,8 +828,9 @@ classDiagram
         <b>Ticket</b> (<code>tickets/{id}</code>) est un bug, une évolution, une nouvelle
         fonctionnalité ou une question d'un membre, publié en Issue GitHub sans son nom, son uid
         ni sa capture. Écrit par les Cloud Functions ; l'auteur ne pose que
-        <code>seenByAuthorAt</code>. <code>status</code> ne recule jamais ; il revient de GitHub
-        (webhook et relecture horaire). Un ticket est « en anomalie » quand
+        <code>seenByAuthorAt</code>. <code>status</code> revient de GitHub (webhook et relecture
+        horaire) et ne recule pas, sauf <code>in_progress</code> : la relecture horaire le ramène au
+        statut des étiquettes quand plus aucune PR ouverte ne ferme l'Issue. Un ticket est « en anomalie » quand
         <code>sendAttempts</code> atteint 10 sans <code>githubIssueNumber</code>. Les noms Dart
         sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
         <span class="path">TechnicalRequirements.md</span>).
@@ -1454,8 +1455,10 @@ classDiagram
           le serveur seul et relu par les règles Firestore. Le client le lit par
           <code>PlanningRepository.watchPlanningReach</code> et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
-          décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          décochées ou cochées par rapport au défaut du rôle vivent sous le compte
+          (<code>PlanningVisibilityStore</code>, document
+          <code>users/{uid}/preferences/planning_visibility</code>, une liste par rôle), jamais
+          dans un document partagé. Le champ
           <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
           pause) n'entre pas dans <code>PlanningReach</code> :
           <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces

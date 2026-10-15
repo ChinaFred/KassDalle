@@ -57,6 +57,7 @@ import {
   isStaleIssueSnapshot,
   LABEL_VALIDATED,
   nextTicketStatus,
+  openClosingPrFromTimeline,
   nextValidatedAt,
   readAnswerCommentIds,
   replyFromComment,
@@ -329,7 +330,12 @@ async function safeRecordFailure(
 export interface GithubUpdate {
   /** Statut dérivé de l'Issue, selon le type du ticket. */
   statusFor?: (type: TicketType) => TicketStatus;
-  /** Une PR ouverte référence l'Issue : avance à `in_progress`, jamais depuis une fin. */
+  /**
+   * `true` : une PR ouverte référence l'Issue, le ticket avance à `in_progress`,
+   * jamais depuis une fin. `false` : les PR ont été relues (`resyncTicket`) et
+   * aucune ne ferme plus l'Issue, un ticket `in_progress` revient au statut de
+   * ses étiquettes. Absent : les PR ne sont pas connues, rien ne recule.
+   */
   openClosingPr?: boolean;
   /** Réponse de l'administrateur, déjà filtrée. */
   reply?: string;
@@ -372,7 +378,9 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
       resetAt instanceof Timestamp ? resetAt.toMillis() : null,
     );
     let next = current;
-    if (update.statusFor && !stale) next = nextTicketStatus(next, update.statusFor(type));
+    if (update.statusFor && !stale) {
+      next = nextTicketStatus(next, update.statusFor(type), update.openClosingPr === false);
+    }
     if (update.openClosingPr && !isFinalStatus(next)) next = nextTicketStatus(next, "in_progress");
 
     const changes: Record<string, unknown> = {};
@@ -534,19 +542,22 @@ export async function resyncTicket(
 ): Promise<boolean> {
   const issue = await getIssue(token, issueNumber);
   if (issue.isPullRequest) return false;
-  let openClosingPr = false;
+  // `undefined` : chronologie tronquée, l'absence de PR n'est pas établie.
+  let openClosingPr: boolean | undefined = false;
   let validatedAtIso: string | null | undefined;
   if (issue.state === "open") {
-    const bodies = await openPullRequestBodiesReferencing(token, issueNumber);
-    openClosingPr = bodies.some((b) =>
+    const { bodies, complete } = await openPullRequestBodiesReferencing(token, issueNumber);
+    const found = bodies.some((b) =>
       closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
     );
+    openClosingPr = openClosingPrFromTimeline(found, complete);
     validatedAtIso = await lastValidatedLabelAt(token, issueNumber);
   }
   const comments = await listIssueComments(token, issueNumber);
   const reply = lastReply(comments);
   const changed = await applyGithubUpdate(ticketId, {
-    statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
+    statusFor: (type) =>
+      statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr === true }, type),
     openClosingPr,
     reply,
     issueUpdatedAt: issue.updatedAt,

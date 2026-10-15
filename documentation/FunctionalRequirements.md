@@ -833,7 +833,7 @@ déjà transmise continue de fonctionner.
 - **Un planning personnel partagé ne montre que les repas personnels** de son propriétaire : ses repas de groupe ne se lisent que par les membres de ces groupes, règles Firestore comprises.
 - **Une recette privée planifiée pour un groupe** : son titre est visible des membres du groupe, sur le repas ; la recette reste fermée (« Recette non partagée »), comme pour un planning personnel partagé. Rien n'est ouvert de plus.
 - **Un groupe supprimé puis recréé sous le même identifiant** par un autre compte n'ouvre pas aux nouveaux membres les repas de l'ancien propriétaire : les règles vérifient que le repas est celui du propriétaire actuel du groupe.
-- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom), puis une case par planning de groupe lisible : le nom du groupe, et le sous-titre « Planning du groupe · organisé par Marie » (« organisé par vous » pour son propriétaire). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Les plannings de groupe sont cochés par défaut pour tous les membres, propriétaire compris. La puce du téléphone nomme aussi le groupe (« Plannings : Moi, Famille Dupont »). Le choix est retenu sur l'appareil. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
+- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom), puis une case par planning de groupe lisible : le nom du groupe, et le sous-titre « Planning du groupe · organisé par Marie » (« organisé par vous » pour son propriétaire). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Les plannings de groupe sont cochés par défaut pour tous les membres, propriétaire compris. La puce du téléphone nomme aussi le groupe (« Plannings : Moi, Famille Dupont »). Le choix est retenu sur le compte (v0.23.70) : un membre retrouve la même sélection sur tous ses appareils, une liste par rôle. Hors ligne, l'appareil garde la dernière sélection connue. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
 - **Une seule liste par jour.** Mes repas d'abord, puis ceux des groupes par ordre alphabétique de leur nom, puis ceux des plannings personnels des autres par ordre alphabétique du prénom, par heure pour chacun. Dès qu'un autre planning est affiché, chaque repas porte en première ligne le prénom de son propriétaire, lu « Repas de Marie » par le lecteur d'écran ; un repas de groupe porte l'icône du groupe et son nom, lu « Repas du groupe Famille Dupont ». Sur un repas de son groupe, le propriétaire a toutes les actions ; un membre le lit seulement. Les pastilles du calendrier comptent les repas de tous les plannings affichés (« 3 repas, 2 personnes »).
 - **Un repas d'autrui se lit, il ne se modifie pas.** Ni menu, ni heure modifiable, ni retrait d'un composant, ni export vers Google Calendar ; ni justification du choix, ni origine du plat. Seule action : l'icône « Ajouter aux courses », qui met ses produits dans **mon** panier. Un appui ouvre la fiche recette pour les parts du repas, sans rien écrire. Une recette que je ne peux pas lire — privée, brouillon, livre non partagé, auteur hors de mes groupes, supprimée — s'affiche par son titre, avec un cadenas et « Recette non partagée » (infobulle « Son auteur ne l'a pas partagée avec vous ») ; elle ne s'ouvre pas. L'entrée, le dessert et un accompagnement qui est une recette suivent la même règle. Ouverte par un lien, la fiche d'une telle recette dit « Recette non partagée » — « Son auteur ne l'a pas partagée avec vous. » Le partage d'un planning n'ouvre aucune recette en plus.
 - **« Exporter le planning » ne porte que sur mes repas.** Il est masqué au Reader, et quand aucun de mes repas n'est affiché. **Les courses portent sur tous les plannings affichés**, pour tous les rôles (voir 5.10). Un jour libre dit « Rien de prévu pour vous » avec « Choisir une recette », placé avant les repas des autres ; pour un Reader, « Rien de prévu », sans bouton. Le propriétaire d'un groupe dont le planning est affiché voit une ligne par planning où il planifie et qui est vide ce jour-là : « Rien de prévu pour vous », « Rien de prévu pour Famille Dupont », chacune avec « Choisir une recette ». Avec un seul planning où il planifie, l'écran reste celui d'avant.
@@ -1222,10 +1222,14 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Issue fermée comme terminée | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
-- Un statut peut sauter une étape ; il ne recule jamais, sauf dans un cas : quand l'Admin
+- Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
-  à Reçu. Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
+  à Reçu ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
+  au statut de ses étiquettes (point suivant). Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
   revient alors à celui que donnent ses étiquettes.
+- Un ticket En cours dont la pull request est fermée sans être fusionnée revient au statut
+  que donnent ses étiquettes (Validé en général), dans l'heure qui suit : la vérification
+  horaire ne trouve plus de pull request ouverte qui ferme l'Issue.
 - Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
   change aucun statut, même si elle dit « Closes #N ».
 - **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
@@ -1476,7 +1480,7 @@ automatiques.
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
 | Allergènes : prudence et indication | Les quatorze allergènes majeurs de l'UE sont estimés par l'IA, ingrédient par ingrédient, dans le référentiel nutritionnel. En cas de doute, l'allergène est signalé ; un produit composé est jugé dans sa forme du commerce habituelle. Les traces ne sont pas signalées. La recette porte l'union de ses ingrédients, calculée par le serveur à l'écriture, jamais saisie à la main. L'écran dit quand l'analyse est incomplète et rappelle toujours que la liste est indicative et ne remplace pas la lecture des emballages. Seul un Admin corrige un ingrédient ; la correction atteint les recettes au prochain passage du backfill « Allergènes ». |
-| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub et ne recule jamais ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
+| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -1736,8 +1740,10 @@ sequenceDiagram
 ### 8.5 États d'un ticket (`status`)
 
 Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
-sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée et quand
-l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu.
+sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée, quand
+l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu, et
+quand plus aucune PR ouverte ne ferme l'Issue : un ticket En cours revient au statut de ses
+étiquettes.
 
 ```mermaid
 stateDiagram-v2
@@ -1748,6 +1754,7 @@ stateDiagram-v2
     analyzed --> validated : Étiquette validé
     validated --> in_progress : PR ouverte qui référence l'Issue
     in_progress --> delivered : Issue fermée, terminée
+    in_progress --> validated : PR fermée sans fusion\n(vérification horaire,\nstatut repris des étiquettes)
 
     received --> answered : Issue fermée, terminée\n(type Question)
     analyzed --> answered : Issue fermée, terminée\n(type Question)
