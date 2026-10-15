@@ -33,8 +33,8 @@ l'Issue. Le texte de la Routine d'analyse (hors dépôt) est à mettre à jour d
 
 `answerPrecondition` et `ticketCanReply` (TypeScript et Dart) acceptent le statut `received`
 sans exiger d'analyse. `answerTicketDecision` ne remet pas le ticket à Reçu dans ce cas
-(`answerReset` seulement pour Analysé et Validé). `analysisAnswerState` cherche une réponse
-identique dans toute l'Issue quand il n'y a pas d'analyse. Le refus pendant un lancement
+(`answerReset` seulement pour Analysé et Validé). Sur un ticket Reçu, les étiquettes de
+l'Issue ne changent pas. Le refus pendant un lancement
 porte aussi sur l'analyse d'un ticket Reçu. Fixture `ticket_decisions.json` (`reply_cases`)
 étendue. Aucune règle Firestore ni Storage ne change.
 

@@ -643,16 +643,9 @@ export function analysisAnswerState(
   ordered.forEach((e, i) => {
     if (e.kind === "analysis") lastAnalysis = i;
   });
+  if (lastAnalysis < 0) return { hasAnalysis: false, lastAnalysisAt: null, samePublished: false };
   const norm = (t: string) => normalizedBody(t).trim();
   const expected = norm(expectedBody);
-  // Sans analyse (réponse sur un ticket Reçu), la comparaison porte sur toute l'Issue.
-  if (lastAnalysis < 0) {
-    return {
-      hasAnalysis: false,
-      lastAnalysisAt: null,
-      samePublished: ordered.some((e) => e.kind === "reply" && norm(e.c.body ?? "") === expected),
-    };
-  }
   return {
     hasAnalysis: true,
     lastAnalysisAt: ordered[lastAnalysis].c.createdAt,

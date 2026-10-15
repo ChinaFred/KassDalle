@@ -178,7 +178,8 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Répondre'), findsNothing);
+      // Un ticket Reçu se répond encore : les précisions s'ajoutent.
+      expect(find.widgetWithText(OutlinedButton, 'Répondre'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('Votre réponse du 14/10/26 à 10:15'),
         200,

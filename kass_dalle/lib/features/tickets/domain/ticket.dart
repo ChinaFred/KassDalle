@@ -578,13 +578,19 @@ AdminTicketDecisions adminTicketDecisions(
   }
   final offered =
       action != null && !launchesLoading && !run.running && !awaiting;
-  final canReply = ticketCanReply(
-    rawStatus: t.rawStatus,
-    type: t.type,
-    hasIssue: hasIssue,
-    hasAnalysis: analysis?.hasAnalysis ?? false,
-    developmentRunning: run.running,
-  );
+  // Reçu : un lancement d'analyse en cours se lit dans `launches`; avant sa
+  // lecture, « Répondre » reste masqué comme « Lancer l'analyse ».
+  final replyReady =
+      status != TicketStatus.received || (launches != null && !launchesLoading);
+  final canReply =
+      replyReady &&
+      ticketCanReply(
+        rawStatus: t.rawStatus,
+        type: t.type,
+        hasIssue: hasIssue,
+        hasAnalysis: analysis?.hasAnalysis ?? false,
+        developmentRunning: run.running,
+      );
   return AdminTicketDecisions(
     canValidate: canValidate,
     canRefuse: canRefuse,

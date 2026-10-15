@@ -553,9 +553,10 @@ async function developmentRunning(
 /**
  * Publie la réponse de l'administrateur à la dernière analyse et ramène le
  * ticket à Reçu. Sur un ticket déjà Reçu, sans analyse, elle publie les
- * précisions et ne change ni le statut ni les étiquettes. Idempotente : une reprise après un échec partiel ne
- * republie pas le commentaire si la réponse déjà publiée depuis
- * l'application (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
+ * précisions seulement : ni statut ni étiquettes ne changent. Idempotente
+ * après une analyse : une reprise après un échec partiel ne republie pas le
+ * commentaire si la réponse déjà publiée depuis l'application
+ * (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
  */
 export async function answerTicketDecision(
   ticketId: string,
@@ -641,13 +642,14 @@ export async function answerTicketDecision(
     // Ordre choisi pour qu'aucun état intermédiaire ne dépasse le statut de
     // départ : à-analyser posée d'abord, puis analysé et validé retirées.
     try {
-      if (!issue.labels.includes(LABEL_TO_ANALYZE)) {
+      // Ticket Reçu : les étiquettes de l'Issue restent telles quelles.
+      if (!beforeAnalysis && !issue.labels.includes(LABEL_TO_ANALYZE)) {
         await addIssueLabels(token, issueNumber, [LABEL_TO_ANALYZE]);
       }
-      if (issue.labels.includes(LABEL_ANALYZED)) {
+      if (!beforeAnalysis && issue.labels.includes(LABEL_ANALYZED)) {
         await removeLabelLogged(token, issueNumber, LABEL_ANALYZED, ticketId, scope);
       }
-      if (issue.labels.includes(LABEL_VALIDATED)) {
+      if (!beforeAnalysis && issue.labels.includes(LABEL_VALIDATED)) {
         await removeLabelLogged(token, issueNumber, LABEL_VALIDATED, ticketId, scope);
       }
     } catch (err) {
@@ -690,7 +692,7 @@ export async function answerTicketDecision(
     }
     await refreshAnalysesAfterDecision(ticketId, null, token, issueNumber, scope);
     await logInfo({
-      message: `Tickets : réponse à l'analyse du ticket ${ticketId} publiée (Issue #${issueNumber}), ticket repassé à Reçu`,
+      message: `Tickets : réponse à l'analyse du ticket ${ticketId} publiée (Issue #${issueNumber}), ticket ${beforeAnalysis ? "resté" : "repassé"} à Reçu`,
       correlationId: scope.correlationId,
       userId: scope.userId,
       firestoreDocId: ticketId,

@@ -823,25 +823,9 @@ describe("analysisAnswerState", () => {
     comment({ id, body: `## Précisions de l'administrateur\n\n${text}`, createdAt: at });
   const body = answerCommentBody("Y");
 
-  test("aucune analyse : la même réponse publiée depuis l'application compte", () => {
+  test("aucune analyse", () => {
     assert.deepEqual(
       analysisAnswerState([answer(1, "2026-10-10T00:00:00Z")], MAINTAINER_ID, new Set([1]), body),
-      { hasAnalysis: false, lastAnalysisAt: null, samePublished: true },
-    );
-  });
-
-  test("aucune analyse : un autre texte ou une réponse non vérifiée ne compte pas", () => {
-    assert.deepEqual(
-      analysisAnswerState(
-        [answer(1, "2026-10-10T00:00:00Z", "Autre")],
-        MAINTAINER_ID,
-        new Set([1]),
-        body,
-      ),
-      { hasAnalysis: false, lastAnalysisAt: null, samePublished: false },
-    );
-    assert.deepEqual(
-      analysisAnswerState([answer(1, "2026-10-10T00:00:00Z")], MAINTAINER_ID, new Set(), body),
       { hasAnalysis: false, lastAnalysisAt: null, samePublished: false },
     );
   });
