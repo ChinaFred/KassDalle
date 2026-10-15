@@ -4017,7 +4017,7 @@ sequenceDiagram
   end
   loop toutes les heures
     S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance),<br/>événements (dernier « labeled validé » du mainteneur), commentaires — tickets non finaux
-    S->>T: même transaction de mise à jour
+    S->>T: même transaction de mise à jour ; en plus, in_progress sans PR ouverte qui ferme l'Issue<br/>(chronologie lue en entier) → statut des étiquettes ; chronologie tronquée : pas de recul
     S->>T: admin/analysis réécrit depuis les commentaires déjà lus ;<br/>validated_at écrit sans recul tant que validé est posé
   end
   M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)

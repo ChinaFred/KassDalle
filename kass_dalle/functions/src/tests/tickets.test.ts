@@ -27,6 +27,7 @@ import {
   neutralizeIssueReferences,
   neutralizeMentions,
   nextTicketStatus,
+  openClosingPrFromTimeline,
   parisDay,
   quotaMessage,
   quotaRefusal,
@@ -41,7 +42,12 @@ import {
   type IssueState,
   type TicketStatus,
 } from "../tickets/rules";
-import { classifyGithubFailure, labelNames, readRemoteIssue } from "../tickets/github";
+import {
+  classifyGithubFailure,
+  collectOpenPrBodies,
+  labelNames,
+  readRemoteIssue,
+} from "../tickets/github";
 import { SignatureRejectionLog, updatesFromEvent } from "../tickets/webhook";
 import { GITHUB_TICKETS_MAINTAINER_ID } from "../config";
 
@@ -281,6 +287,63 @@ describe("nextTicketStatus — PR relues, aucune ne ferme l'Issue", () => {
       assert.equal(nextTicketStatus(current, github, true), expected);
     });
   }
+});
+
+describe("collectOpenPrBodies", () => {
+  const prEvent = (repo: string | undefined, body: string) => ({
+    event: "cross-referenced",
+    source: {
+      issue: {
+        pull_request: {},
+        state: "open",
+        body,
+        user: { id: GITHUB_TICKETS_MAINTAINER_ID },
+        author_association: "OWNER",
+        ...(repo === undefined ? {} : { repository: { full_name: repo } }),
+      },
+    },
+  });
+  const filler = { event: "commented" };
+
+  test("garde la PR de ce dépôt, écarte un autre dépôt ou un dépôt absent", async () => {
+    const page = [
+      prEvent(REPO, "Closes #1"),
+      prEvent("x/y", "Closes #2"),
+      prEvent(undefined, "Closes #3"),
+    ];
+    const result = await collectOpenPrBodies(async () => page);
+    assert.deepEqual(result, { bodies: ["Closes #1"], complete: true });
+  });
+
+  test("cinq pages pleines : chronologie tronquée", async () => {
+    const full = Array.from({ length: 100 }, () => filler);
+    const pages: number[] = [];
+    const result = await collectOpenPrBodies(async (page) => {
+      pages.push(page);
+      return full;
+    });
+    assert.deepEqual(result, { bodies: [], complete: false });
+    assert.deepEqual(pages, [1, 2, 3, 4, 5]);
+  });
+
+  test("dernière page incomplète : chronologie lue en entier", async () => {
+    const full = Array.from({ length: 100 }, () => filler);
+    const result = await collectOpenPrBodies(async (page) => (page < 3 ? full : [filler]));
+    assert.deepEqual(result, { bodies: [], complete: true });
+  });
+});
+
+describe("openClosingPrFromTimeline", () => {
+  test("PR trouvée : true, même chronologie tronquée", () => {
+    assert.equal(openClosingPrFromTimeline(true, true), true);
+    assert.equal(openClosingPrFromTimeline(true, false), true);
+  });
+  test("aucune PR, chronologie lue en entier : false", () => {
+    assert.equal(openClosingPrFromTimeline(false, true), false);
+  });
+  test("aucune PR, chronologie tronquée : indéfini, pas de recul", () => {
+    assert.equal(openClosingPrFromTimeline(false, false), undefined);
+  });
 });
 
 describe("closingIssueNumbers", () => {

@@ -31,8 +31,10 @@ auparavant En cours sans limite, avec « Refuser » pour seule action.
 `nextTicketStatus` (`tickets/rules.ts`) prend un troisième paramètre `noOpenClosingPr`. Vrai,
 il ramène un ticket `in_progress` au statut tiré des étiquettes. `applyGithubUpdate` le passe
 quand `openClosingPr` vaut `false`, ce que seul `resyncTicket` (tâche horaire, PR relues dans
-la chronologie de l'Issue) écrit. Les événements d'Issue du webhook ne connaissent pas les PR
-et ne font toujours pas reculer `in_progress`.
+la chronologie de l'Issue) écrit. Une chronologie tronquée (plus de cinq pages) laisse
+`openClosingPr` indéfini : pas de recul, puisque des tiers peuvent la remplir. Une PR dont le
+dépôt manque dans l'événement de chronologie est écartée. Les événements d'Issue du webhook ne
+connaissent pas les PR et ne font toujours pas reculer `in_progress`.
 
 ### v0.23.71 — fonctionnel
 

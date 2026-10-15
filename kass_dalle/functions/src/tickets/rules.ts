@@ -370,6 +370,17 @@ export function nextTicketStatus(
 }
 
 /**
+ * Ce que la relecture des PR établit pour `openClosingPr` : `true` si une PR
+ * ouverte ferme l'Issue, `false` si la chronologie a été lue en entier sans
+ * en trouver, `undefined` si elle a été tronquée (l'absence n'est pas
+ * établie, le ticket ne recule pas).
+ */
+export function openClosingPrFromTimeline(found: boolean, complete: boolean): boolean | undefined {
+  if (found) return true;
+  return complete ? false : undefined;
+}
+
+/**
  * Numéros d'Issue fermés par une PR : `Closes #12`, `fixes ChinaFred/KassDalle#12`…
  *
  * Mots-clés reconnus par GitHub : close(s|d), fix(es|ed), resolve(s|d). Une

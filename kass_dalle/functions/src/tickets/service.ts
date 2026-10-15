@@ -57,6 +57,7 @@ import {
   isStaleIssueSnapshot,
   LABEL_VALIDATED,
   nextTicketStatus,
+  openClosingPrFromTimeline,
   nextValidatedAt,
   readAnswerCommentIds,
   replyFromComment,
@@ -541,19 +542,22 @@ export async function resyncTicket(
 ): Promise<boolean> {
   const issue = await getIssue(token, issueNumber);
   if (issue.isPullRequest) return false;
-  let openClosingPr = false;
+  // `undefined` : chronologie tronquée, l'absence de PR n'est pas établie.
+  let openClosingPr: boolean | undefined = false;
   let validatedAtIso: string | null | undefined;
   if (issue.state === "open") {
-    const bodies = await openPullRequestBodiesReferencing(token, issueNumber);
-    openClosingPr = bodies.some((b) =>
+    const { bodies, complete } = await openPullRequestBodiesReferencing(token, issueNumber);
+    const found = bodies.some((b) =>
       closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
     );
+    openClosingPr = openClosingPrFromTimeline(found, complete);
     validatedAtIso = await lastValidatedLabelAt(token, issueNumber);
   }
   const comments = await listIssueComments(token, issueNumber);
   const reply = lastReply(comments);
   const changed = await applyGithubUpdate(ticketId, {
-    statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
+    statusFor: (type) =>
+      statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr === true }, type),
     openClosingPr,
     reply,
     issueUpdatedAt: issue.updatedAt,

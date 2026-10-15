@@ -1221,9 +1221,10 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Issue fermée comme terminée | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
-- Un statut peut sauter une étape ; il ne recule jamais, sauf dans un cas : quand l'Admin
+- Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
-  à Reçu. Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
+  à Reçu ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
+  au statut de ses étiquettes (point suivant). Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
   revient alors à celui que donnent ses étiquettes.
 - Un ticket En cours dont la pull request est fermée sans être fusionnée revient au statut
   que donnent ses étiquettes (Validé en général), dans l'heure qui suit : la vérification
