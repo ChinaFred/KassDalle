@@ -4022,7 +4022,7 @@ sequenceDiagram
     S->>T: admin/analysis réécrit depuis les commentaires déjà lus ;<br/>validated_at écrit sans recul tant que validé est posé
   end
   M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)
-  Note over M,T: point sur la puce du compte tant que status ∈ {answered, refused, delivered}<br/>et seen_by_author_at absent ou antérieur à status_changed_at
+  Note over M,T: pastille sur la puce du compte tant que status ≠ sending<br/>et seen_by_author_at absent ou antérieur à status_changed_at
 </pre>
       </div>
       <figcaption>

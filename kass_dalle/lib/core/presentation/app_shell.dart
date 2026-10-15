@@ -530,9 +530,9 @@ class _AdminIcon extends ConsumerWidget {
   }
 }
 
-/// Point sur le compte = invitation(s) de groupe en attente, ticket arrivé à
-/// Répondu, Refusé ou Livré que son auteur n'a pas encore ouvert, ou, pour
-/// l'administrateur, ticket de membre à traiter (Reçu, Analysé ou Validé).
+/// Pastille chiffrée sur le compte : invitations de groupe en attente, plus
+/// les tickets distincts avec un suivi non lu ou, pour l'administrateur, à
+/// traiter (Reçu, Analysé ou Validé). `99+` au-delà de 99, rien à zéro.
 ///
 /// Les Groupes et « Mes tickets » ne s'ouvrent que par le menu du compte :
 /// sans ce signal, un invité ne trouverait pas son invitation, et un membre
@@ -544,16 +544,14 @@ class _AccountDot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final invitations = ref.watch(pendingInvitationsCountProvider);
-    final tickets = ref.watch(unseenTicketsCountProvider);
-    final toProcess = ref.watch(adminTicketsToProcessCountProvider).value ?? 0;
-    if (invitations == 0 && tickets == 0 && toProcess == 0) return child;
+    final tickets = ref.watch(accountTicketsBadgeCountProvider);
+    final total = invitations + tickets;
+    if (total == 0) return child;
     return Semantics(
-      label: [
-        if (invitations > 0) 'Invitation(s) de groupe en attente',
-        if (tickets > 0) 'Ticket(s) avec un nouveau suivi',
-        if (toProcess > 0) 'Ticket(s) de membres à traiter',
-      ].join(', '),
-      child: Badge(child: child),
+      label:
+          '$total élément(s) en attente : '
+          '${[if (invitations > 0) '$invitations invitation(s)', if (tickets > 0) '$tickets ticket(s)'].join(', ')}',
+      child: Badge(label: Text(total > 99 ? '99+' : '$total'), child: child),
     );
   }
 }
@@ -577,14 +575,14 @@ class _AdminTicketsIcon extends ConsumerWidget {
   }
 }
 
-/// « Tickets à traiter (N) » du menu compte (administrateur).
-class _AdminTicketsLabel extends ConsumerWidget {
+/// « Tickets à traiter » du menu compte (administrateur) ; le nombre est sur
+/// la pastille de l'icône.
+class _AdminTicketsLabel extends StatelessWidget {
   const _AdminTicketsLabel();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(adminTicketsToProcessCountProvider).value ?? 0;
-    return Text('Tickets à traiter ($count)');
+  Widget build(BuildContext context) {
+    return const Text('Tickets à traiter');
   }
 }
 

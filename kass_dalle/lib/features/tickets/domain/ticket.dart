@@ -112,13 +112,15 @@ class Ticket {
   /// Fin du parcours : Livré, Refusé ou Répondu.
   bool get isFinal => status.isFinal;
 
-  /// Le ticket a atteint une fin que son auteur n'a pas encore vue : source
-  /// du point de notification sur la puce du compte.
+  /// Le statut du ticket a changé depuis la dernière ouverture par son
+  /// auteur, ou l'auteur ne l'a jamais ouvert : source de la pastille de
+  /// « Mes tickets » et de la puce du compte. « Envoi en cours » est exclu :
+  /// il n'a pas de suivi à lire.
   ///
   /// Sans `status_changed_at`, une lecture déjà enregistrée suffit : rien ne
   /// dit que le statut a bougé depuis.
   bool get hasUnseenUpdate {
-    if (!isFinal) return false;
+    if (status == TicketStatus.sending) return false;
     final seen = seenByAuthorAt;
     if (seen == null) return true;
     final changed = statusChangedAt;

@@ -126,20 +126,33 @@ void main() {
       );
     });
 
-    test('statut non final : pas de point', () {
-      for (final s in [
-        'sending',
-        'received',
-        'analyzed',
-        'validated',
-        'in_progress',
-      ]) {
+    test('statut en cours jamais ouvert : suivi non lu', () {
+      for (final s in ['received', 'analyzed', 'validated', 'in_progress']) {
         expect(
           _ticket(status: s, changed: changed).hasUnseenUpdate,
-          isFalse,
+          isTrue,
           reason: s,
         );
       }
+    });
+
+    test('statut en cours ouvert avant le changement : suivi non lu', () {
+      final seen = Timestamp.fromDate(DateTime.utc(2026, 10, 13, 9));
+      expect(
+        _ticket(
+          status: 'validated',
+          changed: changed,
+          seen: seen,
+        ).hasUnseenUpdate,
+        isTrue,
+      );
+    });
+
+    test('envoi en cours : jamais de suivi', () {
+      expect(
+        _ticket(status: 'sending', changed: changed).hasUnseenUpdate,
+        isFalse,
+      );
     });
 
     test('déjà lu, sans date de changement : pas de point', () {

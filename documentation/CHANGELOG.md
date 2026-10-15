@@ -20,6 +20,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.78 — fonctionnel
+
+Les pastilles de tickets affichent un nombre. La puce du compte (barre du haut) porte une pastille chiffrée à la place du point : invitations de groupe en attente plus tickets distincts à lire ou, pour l'administrateur, à traiter (`99+` au-delà de 99). « Mes tickets » reçoit une pastille pour tout ticket dont le statut a changé depuis sa dernière ouverture, y compris Analysé, Validé et En cours, et plus seulement pour Répondu, Refusé ou Livré ; « Envoi en cours » est exclu. L'entrée du menu s'écrit « Tickets à traiter », sans le nombre entre parenthèses : il reste sur la pastille de l'icône. Ticket #90.
+
 ### v0.23.77 — fonctionnel
 
 Admin › Tickets : le bloc « Réponse de l'administrateur » (et « Motif du refus ») était illisible, texte clair sur fond bleu clair. Il prend maintenant un fond neutre, une bordure fine et le texte `onSurface`, avec un contraste d'au moins 4,5:1 en mode clair et en mode sombre. Dans le bloc « Votre réponse » et les analyses, le gras, l'italique, le code, les liens, les titres de niveau 4 à 6 et les tableaux suivent la couleur du reste du texte. Un test de widget vérifie le contraste dans les deux modes.

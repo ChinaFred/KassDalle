@@ -3761,10 +3761,11 @@ fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente
 `reply_published_close_failed`), rejouée par `test/ticket_decisions_test.dart` et
 `functions/src/tests/ticketDecisions.test.ts`. Un statut stocké inconnu de cette version
 n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
-l'application à jour pour décider. ». Le compteur « à traiter »
-(`adminTicketsToProcessCountProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
-aucune requête hors administrateur) alimente le point de la puce du compte, l'entrée « Tickets à
-traiter (N) » et la puce « À traiter (N) ». Le filtre de statut
+l'application à jour pour décider. ». Les identifiants « à traiter »
+(`adminTicketsToProcessIdsProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
+aucune requête hors administrateur) donnent `adminTicketsToProcessCountProvider` (entrée « Tickets à
+traiter » et puce « À traiter (N) ») et, avec `Ticket.hasUnseenUpdate` (tout statut sauf `sending`),
+`accountTicketsBadgeCountProvider` : tickets distincts de la pastille chiffrée de la puce du compte. Le filtre de statut
 (`adminTicketStatusFilterProvider`) est global, sans `autoDispose`, et l'écran ne le remet
 jamais à zéro : `enterToProcess` le pose à l'entrée, `settleEntry` le bascule une fois sur
 « Tous » si le premier compteur reçu vaut zéro. Les analyses se lisent en flux
@@ -6915,7 +6916,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
-| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, le compteur « Lancements de sessions », et les bandeaux du jeton GitHub et des jetons des routines (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter (N) » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
+| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, le compteur « Lancements de sessions », et les bandeaux du jeton GitHub et des jetons des routines (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
 | `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`), « Refuser » (`refuseTicket`), « Répondre » (`answerTicketAnalysis`), « Lancer l'analyse » (`launchTicketAnalysis`) et « Lancer le développement » (`launchTicketDevelopment`), section « Lancements » (`tickets/{id}/admin/launches`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
