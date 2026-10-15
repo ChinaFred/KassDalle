@@ -2252,9 +2252,12 @@ class _AnalysisCard extends StatelessWidget {
                 fontStyle: FontStyle.italic,
                 color: fg,
               ),
-              code: theme.textTheme.bodyMedium?.copyWith(
-                fontFamily: 'monospace',
-                color: fg,
+              code: MarkdownStyleSheet.fromTheme(
+                theme,
+              ).code?.copyWith(color: fg),
+              blockquoteDecoration: BoxDecoration(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(4),
               ),
               a: theme.textTheme.bodyMedium?.copyWith(
                 decoration: TextDecoration.underline,
@@ -2282,7 +2285,7 @@ class _AnalysisCard extends StatelessWidget {
               ticketAnalysisImagePlaceholder(alt),
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant,
+                color: fg,
               ),
             ),
           ),
