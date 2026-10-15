@@ -3737,7 +3737,7 @@ traités (`updatesFromEvent`) :
   `MEMBER` ou `COLLABORATOR` (`isTrustedPrAuthor`). Une PR ouverte depuis un fork par un autre
   compte ne change aucun ticket ;
 - `pull_request` (`opened`, `reopened`, `edited`, `ready_for_review`, `converted_to_draft`,
-  `synchronize`, `closed`) et `workflow_run` `completed` du workflow « CI » (v0.23.75,
+  `synchronize`, `closed`) et `workflow_run` `requested`, `in_progress` ou `completed` du workflow « CI » (v0.23.75, élargi en v0.23.83,
   `deliveryRefreshFromEvent`) : l'état « PR prête » (`tickets/{id}/admin/delivery`) des
   tickets dont l'Issue est citée par un mot-clé de fermeture est relu (`refreshTicketDelivery`
   : `GET /pulls?state=open`, lu une fois par événement et partagé entre tickets,

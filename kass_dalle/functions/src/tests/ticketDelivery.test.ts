@@ -527,7 +527,18 @@ describe("deliveryRefreshFromEvent", () => {
     );
   });
 
-  test("workflow_run terminé du workflow CI : ses PR", () => {
+  test("workflow_run du workflow CI (départ, exécution, fin) : ses PR", () => {
+    for (const action of ["requested", "in_progress"]) {
+      assert.deepEqual(
+        deliveryRefreshFromEvent("workflow_run", {
+          action,
+          repository,
+          workflow_run: { name: "CI", pull_requests: [{ number: 57 }] },
+        }),
+        { issueNumbers: [], prNumbers: [57] },
+        action,
+      );
+    }
     assert.deepEqual(
       deliveryRefreshFromEvent("workflow_run", {
         action: "completed",
@@ -537,7 +548,10 @@ describe("deliveryRefreshFromEvent", () => {
       { issueNumbers: [], prNumbers: [57, 58] },
     );
     for (const payload of [
-      { action: "requested", workflow_run: { name: "CI", pull_requests: [{ number: 57 }] } },
+      {
+        action: "requested",
+        workflow_run: { name: "Déploiement", pull_requests: [{ number: 57 }] },
+      },
       {
         action: "completed",
         workflow_run: { name: "Déploiement", pull_requests: [{ number: 57 }] },

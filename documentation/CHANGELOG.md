@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.84 — fonctionnel
+
+Tickets (ticket #105) : un ticket En cours dont la pull request vient d'être ouverte affiche
+« CI en cours » dans la liste d'Admin › Tickets, puis « PR prête » quand la CI est verte. Avant,
+l'état n'apparaissait qu'après le passage de la tâche horaire.
+
+### v0.23.84 — technique
+
+Le webhook GitHub relit aussi la livraison sur les événements `workflow_run` `requested` et
+`in_progress` du workflow « CI », plus seulement `completed`. `ci_status` est écrit dès le
+départ du run (`deliveryRefreshFromEvent`). Le coût est une relecture GitHub de plus par run.
+
 ### v0.23.83 — fonctionnel
 
 Ticket #101 : « Répondre » est disponible sur un ticket Reçu, avant « Lancer l'analyse ».

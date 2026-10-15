@@ -3198,7 +3198,7 @@ sequenceDiagram
   and
     CI->>CI: Règles (sauté si déjà testé en PR) — npm ci, npm test (émulateurs firestore + storage, demo-kassdalle)
   end
-  CI-->>G: workflow_run completed
+  CI-->>G: workflow_run requested, in_progress, completed
 
   alt CI en échec, CI de PR, ou commit signé Deploy-Source: deploy.ps1
     G-->>D: rien à déployer
@@ -4436,7 +4436,7 @@ sequenceDiagram
   participant R as API Routines (Anthropic)
   participant S as Session Claude Code
 
-  G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » terminé
+  G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » (départ, exécution, fin)
   W->>G: GET /pulls?state=open, GET /pulls/M, GET /actions/runs?head_sha=
   W->>T: admin/delivery : PR éligible, dernier run CI, ready
   T-->>C: flux admin/delivery et tickets_status.delivery_running
