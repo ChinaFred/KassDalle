@@ -2063,7 +2063,7 @@ reçu un lancement (v0.23.64) : document absent, la section « Lancements » est
 backfill ponctuel `ticket_analyses` (Admin › Backfills › « Analyses des tickets », §7.10).
 Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
 
-**Index.** Le compteur « à traiter » (`status in ['received', 'analyzed']`,
+**Index.** Le compteur « à traiter » (`status in ['received', 'analyzed', 'validated']`,
 `watchToProcessCount`) se sert de l'index simple sur `status`.
 
 ---
@@ -3705,7 +3705,7 @@ fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente
 `functions/src/tests/ticketDecisions.test.ts`. Un statut stocké inconnu de cette version
 n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
 l'application à jour pour décider. ». Le compteur « à traiter »
-(`adminTicketsToProcessCountProvider`, requête `status in ['received', 'analyzed']` en flux,
+(`adminTicketsToProcessCountProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
 aucune requête hors administrateur) alimente le point de la puce du compte, l'entrée « Tickets à
 traiter (N) » et la puce « À traiter (N) ». Le filtre de statut
 (`adminTicketStatusFilterProvider`) est global, sans `autoDispose`, et l'écran ne le remet
