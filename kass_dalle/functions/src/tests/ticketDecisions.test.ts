@@ -737,14 +737,14 @@ describe("readAnswerText", () => {
 });
 
 describe("answerPrecondition", () => {
-  test("Analysé ou Validé, hors Question, avec Issue : permis", () => {
-    for (const status of ["analyzed", "validated"] as TicketStatus[]) {
+  test("Reçu, Analysé ou Validé, hors Question, avec Issue : permis", () => {
+    for (const status of ["received", "analyzed", "validated"] as TicketStatus[]) {
       assert.equal(answerPrecondition({ status, type: "bug", hasIssue: true }), null, status);
     }
   });
 
-  test("Reçu, Question, sans Issue : refusé", () => {
-    assert.notEqual(answerPrecondition({ status: "received", type: "bug", hasIssue: true }), null);
+  test("Envoi, Question, sans Issue : refusé", () => {
+    assert.notEqual(answerPrecondition({ status: "sending", type: "bug", hasIssue: true }), null);
     assert.notEqual(
       answerPrecondition({ status: "analyzed", type: "question", hasIssue: true }),
       null,
