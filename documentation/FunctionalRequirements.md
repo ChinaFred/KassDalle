@@ -1879,9 +1879,9 @@ stateDiagram-v2
 
 Le diagramme ne trace que les passages courants. Toute fermeture donne Livré (Répondu pour
 une Question) ou Refusé, quel que soit le statut de départ. Une réouverture ramène au statut
-que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Les trois états finaux
-allument la pastille de notification sur la puce du compte de l'auteur, jusqu'à ce qu'il ouvre
-le ticket.
+que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Tout changement de statut
+hors « Envoi en cours » allume la pastille de notification sur la puce du compte de l'auteur,
+jusqu'à ce qu'il ouvre le ticket.
 
 ---
 

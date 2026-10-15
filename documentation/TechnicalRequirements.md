@@ -1954,7 +1954,7 @@ ne partent jamais sur GitHub.
 | `created_at` | `Timestamp` | Heure serveur de création |
 | `updated_at` | `Timestamp` | Heure serveur de la dernière écriture serveur |
 | `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
-| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume le point de notification du compte quand `status` ∈ {`answered`, `refused`, `delivered`} et que `seen_by_author_at` est absent ou antérieur |
+| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume la pastille de notification du compte quand `status` ≠ `sending` et que `seen_by_author_at` est absent ou antérieur |
 | `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
 | `github_issue_number` | `int?` | Numéro de l'Issue, `null` tant que l'envoi n'a pas abouti |
 | `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
@@ -2095,7 +2095,7 @@ backfill ponctuel `ticket_analyses` (Admin › Backfills › « Analyses des tic
 Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
 
 **Index.** Le compteur « à traiter » (`status in ['received', 'analyzed', 'validated']`,
-`watchToProcessCount`) se sert de l'index simple sur `status`.
+`watchToProcessIds`) se sert de l'index simple sur `status`.
 
 ---
 
