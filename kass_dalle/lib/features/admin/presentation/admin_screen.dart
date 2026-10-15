@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../domain/email_invitation.dart';
 import 'admin_providers.dart';
 import 'invitations_tab.dart';
 import '../../../core/router/app_router.dart';
@@ -72,15 +73,22 @@ class _AdminScreenState extends ConsumerState<AdminScreen>
       ),
       body: TabBarView(
         controller: _tabs,
-        children: const [_AccountsTab(), InvitationsTab()],
+        children: [
+          _AccountsTab(onOpenInvitations: () => _tabs.animateTo(1)),
+          const InvitationsTab(),
+        ],
       ),
     );
   }
 }
 
 /// Onglet « Comptes » : tous les comptes, ceux qui attendent un rôle d'abord.
+///
+/// Les invitations par e-mail en attente suivent les comptes, une ligne par
+/// adresse : l'administrateur y cherche les personnes, invitées ou non.
 class _AccountsTab extends ConsumerWidget {
-  const _AccountsTab();
+  final VoidCallback onOpenInvitations;
+  const _AccountsTab({required this.onOpenInvitations});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -94,7 +102,12 @@ class _AccountsTab extends ConsumerWidget {
         onRetry: () => ref.invalidate(allUsersProvider),
       ),
       data: (users) {
-        if (users.isEmpty) {
+        final invited = _invitedNotYetConnected(
+          ref.watch(emailInvitationsProvider).value ?? const [],
+          users,
+          DateTime.now(),
+        );
+        if (users.isEmpty && invited.isEmpty) {
           return const Center(child: Text('Aucun utilisateur.'));
         }
         final pending = users.where((u) => u.isPending).length;
@@ -105,17 +118,87 @@ class _AccountsTab extends ConsumerWidget {
               child: ListView.separated(
                 // Le bouton flottant ne couvre pas la dernière ligne.
                 padding: const EdgeInsets.only(bottom: 88),
-                itemCount: users.length,
+                itemCount:
+                    users.length + (invited.isEmpty ? 0 : invited.length + 1),
                 separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, i) => _UserTile(
-                  user: users[i],
-                  isSelf: users[i].uid == currentUser?.uid,
-                ),
+                itemBuilder: (context, i) {
+                  if (i < users.length) {
+                    return _UserTile(
+                      user: users[i],
+                      isSelf: users[i].uid == currentUser?.uid,
+                    );
+                  }
+                  if (i == users.length) {
+                    return _InvitedHeader(count: invited.length);
+                  }
+                  return _InvitedTile(
+                    invitation: invited[i - users.length - 1],
+                    onTap: onOpenInvitations,
+                  );
+                },
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+/// Invitations en attente (`statusAt`) dont l'adresse n'a pas encore de compte.
+/// Les adresses se comparent sans casse ; une adresse qui a un compte n'y
+/// figure pas, seul le compte s'affiche.
+List<EmailInvitation> _invitedNotYetConnected(
+  List<EmailInvitation> invitations,
+  List<AppUser> users,
+  DateTime now,
+) {
+  final accounts = {for (final u in users) u.email.trim().toLowerCase()};
+  return [
+    for (final i in invitations)
+      if (i.statusAt(now).isPending &&
+          !accounts.contains(i.email.trim().toLowerCase()))
+        i,
+  ];
+}
+
+class _InvitedHeader extends StatelessWidget {
+  final int count;
+  const _InvitedHeader({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Text(
+        'Invités, pas encore connectés ($count)',
+        style: theme.textTheme.titleSmall,
+      ),
+    );
+  }
+}
+
+/// Invitation en attente : l'adresse seule. Les actions (renvoyer, annuler)
+/// restent dans l'onglet « Invitations », que la ligne ouvre.
+class _InvitedTile extends StatelessWidget {
+  final EmailInvitation invitation;
+  final VoidCallback onTap;
+  const _InvitedTile({required this.invitation, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final failed =
+        invitation.statusAt(DateTime.now()) == EmailInvitationStatus.sendFailed;
+    return ListTile(
+      leading: const Icon(Icons.mail_outline),
+      title: Text(invitation.email),
+      subtitle: Text(
+        failed ? 'Envoi échoué' : 'Invité, pas encore connecté',
+        style: failed ? TextStyle(color: theme.colorScheme.error) : null,
+      ),
+      onTap: onTap,
     );
   }
 }
