@@ -562,7 +562,7 @@ class AdminTicketLaunchChipState extends ConsumerState<AdminTicketLaunchChip> {
   }
 }
 
-/// Puce « PR prête » d'un ticket En cours dont la pull request peut être
+/// Puce « CI en cours » ou « PR prête » d'un ticket En cours dont la pull request peut être
 /// livrée (`tickets/{id}/admin/delivery.ready`). Rien tant que l'état n'est
 /// pas lu, ni s'il ne se lit pas : la fiche le dit.
 class _DeliveryReadyChip extends ConsumerWidget {
@@ -571,8 +571,15 @@ class _DeliveryReadyChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ready = ref.watch(ticketDeliveryProvider(ticketId)).value?.ready;
-    if (ready != true) return const SizedBox.shrink();
+    final delivery = ref.watch(ticketDeliveryProvider(ticketId)).value;
+    if (delivery == null) return const SizedBox.shrink();
+    if (delivery.prNumber != null &&
+        delivery.eligiblePrCount == 1 &&
+        delivery.ciStatus != null &&
+        delivery.ciStatus != 'completed') {
+      return const TicketLaunchStateChip(label: 'CI en cours');
+    }
+    if (!delivery.ready) return const SizedBox.shrink();
     return Semantics(
       label: 'Pull request prête à livrer',
       excludeSemantics: true,

@@ -83,6 +83,9 @@ const ISSUE_ACTIONS = new Set(["opened", "edited", "labeled", "unlabeled", "clos
 const COMMENT_ACTIONS = new Set(["created", "edited", "deleted"]);
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "ready_for_review"]);
 /** Actions d'une PR qui changent son état « PR prête » (corps, brouillon, tête, fermeture). */
+/** Actions d'un `workflow_run` qui relisent la livraison : départ, exécution, fin. */
+const DELIVERY_RUN_ACTIONS = new Set(["requested", "in_progress", "completed"]);
+
 const DELIVERY_PR_ACTIONS = new Set([
   "opened",
   "reopened",
@@ -287,7 +290,8 @@ export function isDeliveryCandidatePr(pr: PullRequestView | null): boolean {
  *   (`isDeliveryCandidatePr`) : les Issues citées par un mot-clé de fermeture
  *   dans le corps, et dans l'ancien corps d'un `edited` (un renvoi retiré rend
  *   la PR inéligible pour cette Issue). `DELIVERY_EVENT_MAX` au plus.
- * - `workflow_run` `completed` du workflow « CI » : les PR du dépôt qu'il
+ * - `workflow_run` `requested`, `in_progress` ou `completed` du workflow « CI » (le départ
+ *   du run écrit `ci_status` sans attendre la tâche horaire) : les PR du dépôt qu'il
  *   porte (`workflow_run.pull_requests`, vide pour une copie du dépôt),
  *   `DELIVERY_EVENT_MAX` au plus, dont l'appelant relit le corps et l'auteur.
  */
@@ -316,7 +320,7 @@ export function deliveryRefreshFromEvent(
           prNumbers: [],
         };
   }
-  if (event === "workflow_run" && action === "completed") {
+  if (event === "workflow_run" && DELIVERY_RUN_ACTIONS.has(action)) {
     const run = payload.workflow_run as Payload | undefined;
     if (!run || run.name !== CI_WORKFLOW_NAME || !Array.isArray(run.pull_requests)) return null;
     const prs = new Set<number>();

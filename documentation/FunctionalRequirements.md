@@ -1283,7 +1283,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
   « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
   sans Issue, pas de numéro), statut, la puce « PR prête » juste après le statut (icône de
-  fusion ; lecteur d'écran : « Pull request prête à livrer »), la puce d'un lancement
+  fusion ; lecteur d'écran : « Pull request prête à livrer »), remplacée par « CI en cours » tant que
+  la CI de l'unique PR éligible n'est pas finie, la puce d'un lancement
   (« Analyse en cours », « Développement en cours » ou « Livraison en cours » tant que le
   lancement court, puis « Relance possible » à l'échéance sans changement de statut ; même règle
   que la ligne de la fiche, aucune puce pour un ticket sans Issue, de type question, final, dont
