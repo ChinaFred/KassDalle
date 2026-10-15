@@ -19,9 +19,12 @@
 
 import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
 import {
+  closingCommitFromEvents,
   isTrustedPrAuthor,
   lastMaintainerValidatedAt,
+  pickDeliveredPr,
   type CiRunView,
+  type MergedPrCandidate,
   type PullRequestFileView,
   type PullRequestView,
 } from "./rules";
@@ -392,6 +395,55 @@ export async function lastValidatedLabelAt(
     if (batch.length < 100) break;
   }
   return lastMaintainerValidatedAt(events, GITHUB_TICKETS_MAINTAINER_ID);
+}
+
+/**
+ * La PR fusionnée qui a fermé l'Issue, ou `null` (fermée à la main, sans PR).
+ * Lit les événements de l'Issue pour le commit de fermeture, puis les PR de
+ * ce commit (`GET /commits/{sha}/pulls`). Deux appels GitHub au plus.
+ */
+export async function findDeliveredPullRequest(
+  token: string,
+  issueNumber: number,
+): Promise<{ number: number; url: string } | null> {
+  const events: unknown[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await request<unknown[]>(
+      token,
+      "GET",
+      `${REPO_PATH}/issues/${issueNumber}/events?per_page=100&page=${page}`,
+    );
+    events.push(...batch);
+    if (batch.length < 100) break;
+  }
+  const sha = closingCommitFromEvents(events);
+  if (sha === null) return null;
+  const raw = await request<Array<Record<string, unknown>>>(
+    token,
+    "GET",
+    `${REPO_PATH}/commits/${sha}/pulls?per_page=30`,
+  );
+  const candidates: MergedPrCandidate[] = [];
+  for (const pr of raw) {
+    if (typeof pr.number !== "number" || !Number.isSafeInteger(pr.number)) continue;
+    const user = pr.user as { id?: unknown } | null | undefined;
+    const base = pr.base as { repo?: { full_name?: unknown } | null } | null | undefined;
+    candidates.push({
+      number: pr.number,
+      mergedAt: str(pr.merged_at),
+      body: str(pr.body),
+      htmlUrl: str(pr.html_url),
+      baseRepoFullName: str(base?.repo?.full_name),
+      authorId: typeof user?.id === "number" ? user.id : null,
+      authorAssociation: str(pr.author_association),
+    });
+  }
+  return pickDeliveredPr(
+    candidates,
+    issueNumber,
+    GITHUB_TICKETS_MAINTAINER_ID,
+    GITHUB_REPO_FULL_NAME,
+  );
 }
 
 /**

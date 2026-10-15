@@ -32,7 +32,7 @@ import {
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
-import { writeDeliveryReports } from "./delivery";
+import { recordDeliveredPr, writeDeliveryReports } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
   GithubError,
@@ -393,6 +393,14 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
       changes.status = next;
       changes.status_changed_at = FieldValue.serverTimestamp();
     }
+    // Ticket rouvert ou refermé autrement : la PR de livraison est périmée.
+    if (
+      next !== "delivered" &&
+      (data.delivered_pr_number != null || data.delivered_pr_url != null)
+    ) {
+      changes.delivered_pr_number = FieldValue.delete();
+      changes.delivered_pr_url = FieldValue.delete();
+    }
     if (update.reply !== undefined && update.reply !== data.reply_text) {
       changes.reply_text = update.reply;
       if (isFinalStatus(next)) changes.status_changed_at = FieldValue.serverTimestamp();
@@ -594,5 +602,7 @@ export async function resyncTicket(
       issue.labels.includes(LABEL_VALIDATED),
     );
   }
+  // En dernier : une panne GitHub ici ne perd ni les analyses ni la date de validation.
+  if (issue.state === "closed") await recordDeliveredPr(token, ticketId, issueNumber);
   return changed;
 }

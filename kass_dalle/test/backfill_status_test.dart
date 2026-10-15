@@ -405,13 +405,14 @@ void main() {
         'group_planning_reach',
         'move_meals_to_group',
         'ticket_analyses',
+        'ticket_delivered_pr',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(5));
+      expect(sections.ponctuelsALancer, hasLength(6));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
@@ -451,6 +452,17 @@ void main() {
           'restants': 0,
         }),
         '12 tickets relevés, 9 analyses, 0 ticket restant',
+      );
+    });
+
+    test('PR des tickets livrés : résumé de la tuile', () {
+      expect(
+        backfillReportSummary('ticket_delivered_pr', {
+          'ecrits': 7,
+          'sansPr': 2,
+          'restants': 0,
+        }),
+        '7 tickets repris, 2 sans PR, 0 ticket restant',
       );
     });
 

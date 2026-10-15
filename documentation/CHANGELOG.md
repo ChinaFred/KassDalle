@@ -20,6 +20,25 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.78 — fonctionnel
+
+Un ticket livré indique la PR qui l'a livré : « Livré par la PR #N », avec un lien vers GitHub,
+dans la fiche du membre (Mes tickets) et dans Admin › Tickets, où le bouton « Ouvrir la PR #N »
+reste disponible après la fusion. Un ticket fermé à la main, sans PR, n'affiche rien de plus.
+Les tickets déjà livrés se reprennent par Admin › Backfills, « PR des tickets livrés » (ticket #91).
+
+### v0.23.78 — technique
+
+Deux champs sur `tickets/{id}` : `delivered_pr_number` et `delivered_pr_url`, écrits par les
+Functions seules (les règles Firestore ne changent pas ; un test de `rules-tests/` vérifie que
+l'auteur ne peut pas les écrire). `recordDeliveredPr` lit le commit de fermeture de l'Issue
+(`/issues/{n}/events`) puis les PR de ce commit (`/commits/{sha}/pulls`) et retient la dernière PR
+fusionnée de confiance qui ferme l'Issue. Appelé par le webhook (`issues` `closed`), par
+`resyncTicket` et par `ticketsSyncSchedule` (tickets livrés depuis moins de trois jours sans
+numéro). Les champs sont effacés quand le ticket quitte `delivered`. Nouveau backfill ponctuel
+`ticket_delivered_pr` (`backfillTicketDeliveredPrFn`), ajouté aux deux registres et à la fixture
+`backfill_schedule.json`. Aucun poste d'IA.
+
 ### v0.23.77 — fonctionnel
 
 Admin › Tickets : le bloc « Réponse de l'administrateur » (et « Motif du refus ») était illisible, texte clair sur fond bleu clair. Il prend maintenant un fond neutre, une bordure fine et le texte `onSurface`, avec un contraste d'au moins 4,5:1 en mode clair et en mode sombre. Dans le bloc « Votre réponse » et les analyses, le gras, l'italique, le code, les liens, les titres de niveau 4 à 6 et les tableaux suivent la couleur du reste du texte. Un test de widget vérifie le contraste dans les deux modes.
