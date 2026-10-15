@@ -104,6 +104,16 @@ service cloud.firestore {
         && (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
+    /// Forme de `users/{uid}/preferences/planning_visibility` (plannings
+    /// affichés) : `{ editor: list, reader: list, updated_at }`, une liste de
+    /// clés de planning par rôle, cent au plus.
+    function isPlanningVisibility(data) {
+      return data.keys().hasOnly(['editor', 'reader', 'updated_at'])
+        && (!('editor' in data) || (data.editor is list && data.editor.size() <= 100))
+        && (!('reader' in data) || (data.reader is list && data.reader.size() <= 100))
+        && (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     /// Forme de `users/{uid}/preferences/explore_filters` (écran Explorer) :
     /// `{ sources: list, sort: string, filters: map, updated_at }`. Bornée pour
     /// qu'une préférence de lecteur ne serve pas de stockage libre.
@@ -273,7 +283,9 @@ service cloud.firestore {
           && (prefId != 'planning_refusals'
               || isPlanningRefusals(request.resource.data))
           && (prefId != 'explore_filters'
-              || isExploreFilters(request.resource.data));
+              || isExploreFilters(request.resource.data))
+          && (prefId != 'planning_visibility'
+              || isPlanningVisibility(request.resource.data));
       }
 
       // Générations de planning : journal des propositions, compteur des

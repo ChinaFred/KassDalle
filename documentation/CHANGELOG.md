@@ -20,6 +20,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.70 — fonctionnel
+
+Les plannings affichés se retrouvent sur tous les appareils (ticket #79). La sélection du
+sélecteur « Plannings affichés » n'était mémorisée que sur l'appareil : un autre téléphone, le
+web ou une réinstallation repartaient du défaut du rôle. Elle est maintenant enregistrée sous
+le compte du membre. Une sélection déjà faite sur un appareil est reprise et envoyée à la
+première ouverture.
+
+### v0.23.70 — technique
+
+Nouveau document `users/{uid}/preferences/planning_visibility` (`editor`, `reader`,
+`updated_at`), avec la règle `isPlanningVisibility` (100 entrées au plus par liste) et ses
+tests dans `rules-tests`. `FirestorePlanningVisibilityStore` remplace
+`SharedPreferencesPlanningVisibilityStore` comme implémentation par défaut de
+`PlanningVisibilityStore` ; les `SharedPreferences` restent en copie locale hors ligne et pour
+la reprise de l'ancienne sélection. Aucune Cloud Function ni logique dupliquée touchée.
+
 ### v0.23.69 — technique
 
 Le déploiement automatique n'utilise plus de clé de compte de service. La clé JSON de
