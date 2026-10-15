@@ -25,7 +25,7 @@ export function parseApkManifest(text: string): ApkRelease | null {
   }
   if (typeof json !== "object" || json === null) return null;
   const { version, build_number: build } = json as Record<string, unknown>;
-  if (typeof version !== "string" || version.trim() === "") return null;
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version.trim())) return null;
   const buildText =
     typeof build === "string" ? build.trim() : typeof build === "number" ? String(build) : "";
   return { version: version.trim(), build: buildText };

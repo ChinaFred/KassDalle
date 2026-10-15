@@ -291,7 +291,9 @@ service cloud.firestore {
       // Appareils Android d'un administrateur, destinataires de la notification
       // de nouvelle version (`releaseNotificationSchedule`). Un jeton FCM est
       // écrit par son titulaire, et seulement tant qu'il est administrateur ;
-      // il le supprime à la déconnexion. Jamais lu par le client : le serveur
+      // il peut le supprimer tant qu'il est connecté. Un jeton resté après une
+      // déconnexion ne sert à rien : le serveur ne lit que ceux des comptes
+      // administrateurs au moment de l'envoi. Jamais lu par le client : le serveur
       // (SDK Admin) relit le rôle de chaque compte à l'envoi.
       match /devices/{token} {
         allow read: if false;

@@ -28,6 +28,7 @@ describe("parseApkManifest", () => {
     assert.equal(parseApkManifest("<!doctype html><html></html>"), null);
     assert.equal(parseApkManifest('{"build_number":"1"}'), null);
     assert.equal(parseApkManifest('{"version":""}'), null);
+    assert.equal(parseApkManifest('{"version":"<b>x</b>"}'), null);
     assert.equal(parseApkManifest("[1]"), null);
     assert.equal(parseApkManifest("null"), null);
   });
