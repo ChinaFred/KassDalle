@@ -1249,8 +1249,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
   questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
   (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
-- **À traiter.** Un ticket Reçu, Analysé ou Validé attend une action de l'Admin (une décision, une réponse ou le lancement du développement). Leur nombre allume
-  le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
+- **À traiter.** Un ticket Reçu, Analysé ou Validé attend une action de l'Admin (une décision, une réponse ou le lancement du
+  développement). Leur nombre allume le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
   s'affiche dans l'entrée « Tickets à traiter (N) » du menu du compte, avec un badge quand N
   dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni le point n'existent pour
   un Editor ou un Reader.

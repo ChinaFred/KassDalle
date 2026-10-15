@@ -287,7 +287,7 @@ String formatTicketDateTime(DateTime date) {
 const kAdminTicketAnomalyFilter = 'anomaly';
 
 /// Filtre « À traiter » : tickets Reçus, Analysés ou Validés, qui
-/// attendent une décision de l'administrateur. Même ensemble que le compteur de la pastille
+/// attendent une action de l'administrateur. Même ensemble que le compteur de la pastille
 /// ([kAdminTicketToProcessStatuses]).
 const kAdminTicketTodoFilter = 'todo';
 
@@ -298,7 +298,7 @@ const kAdminTicketToProcessStatuses = [
   TicketStatus.validated,
 ];
 
-/// Vrai pour un ticket qui attend une décision : Reçu, Analysé ou Validé,
+/// Vrai pour un ticket qui attend une action : Reçu, Analysé ou Validé,
 /// statut connu de cette version (un statut inconnu s'affiche « Reçu » sans l'être).
 bool isTicketToProcess(Ticket t) =>
     t.rawStatus == t.status.value &&
