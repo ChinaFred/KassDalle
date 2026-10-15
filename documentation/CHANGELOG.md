@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.71 — fonctionnel
+
+Admin › Gestion des utilisateurs › Comptes : les invitations par e-mail en attente
+apparaissent après les comptes, sous « Invités, pas encore connectés (N) ». Chaque ligne
+montre l'adresse seule et « Invité, pas encore connecté », ou « Envoi échoué ». Une adresse
+qui a déjà un compte n'y figure pas. Appuyer sur la ligne ouvre l'onglet Invitations, qui
+garde les actions (renvoyer, annuler). Le compteur « Comptes (N) » ne compte que les comptes.
+Ticket #68.
+
 ### v0.23.70 — fonctionnel
 
 Admin › Tickets : le compte fondateur peut lancer 50 sessions Claude Code par jour (analyse
