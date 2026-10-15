@@ -493,11 +493,13 @@ servent de modèle complet.
 
 Plusieurs sessions livrent en parallèle. Deux livraisons qui passent toutes deux de 1.2.3 à
 1.2.4 fusionnent sans conflit, et la seconde n'est pas reconnue comme nouvelle. Avant chaque
-push sur `master` ou chaque fusion :
+push sur `master` ou chaque fusion, y compris un commit de documentation seule, la session
+synchronise d'elle-même, sans attendre qu'on le lui demande (règle « Git » de `CLAUDE.md`) :
 
 ```bash
 git fetch origin
 git pull --no-rebase            # ou git merge origin/master dans la branche de la PR
+# relancer les contrôles de la CI touchés par la fusion (analyse, tests, build)
 bash .github/scripts/check-version.sh origin/master HEAD
 ```
 

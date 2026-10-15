@@ -264,7 +264,8 @@ GitHub. Le même workflow se lance à la main depuis l'onglet Actions, sur `mast
 Détails : `TechnicalRequirements.md`, « Déploiement automatique ».
 
 - **Sur le PC** : commiter sur `master` et pousser. Faire `git pull` avant de commencer un
-  travail : une fusion depuis une session cloud a pu avancer `master`.
+  travail, et de nouveau juste avant chaque push (voir « Git ») : une fusion depuis une
+  session cloud a pu avancer `master`.
 - **Depuis une session cloud** : fusionner la PR sur `master`.
 
 **`deploy.ps1` est un outil de secours**, pour le jour où GitHub Actions est indisponible.
@@ -740,9 +741,17 @@ Une analyse qui cite une donnée de production la décrit sans la recopier.
 ## Git
 
 Faire un commit qui résume les ajouts, puis `git push`. Sur `master`, ce push déploie (voir
-« Déploiement »). Seule exception : quand `deploy.ps1` sert de secours, ne pas pousser à la
-main pendant qu'il tourne. Il commite et pousse lui-même, et un push à la main lancerait le
-workflow en parallèle.
+« Déploiement »). Seule exception au push : quand `deploy.ps1` sert de secours, ne pas
+pousser à la main pendant qu'il tourne. Il commite et pousse lui-même, et un push à la main
+lancerait le workflow en parallèle.
+
+**Chaque push sur `master` est précédé d'une synchronisation**, sans attendre qu'on la
+demande : `git fetch origin`, puis `git pull --no-rebase`, puis les contrôles touchés par la
+fusion et `check-version.sh` (voir « Un numéro de version par livraison »). La règle vaut
+pour tout push, y compris un commit de documentation seule ou un correctif sans changement
+de version : des sessions cloud fusionnent des PR sur `master` à tout moment. Un push en
+retard est refusé, et une fusion poussée sans contrôle met en ligne un état que personne
+n'a vérifié.
 Ne jamais utiliser `mcp_gitkraken_gitlens_commit_composer`.
 
 **Aucun artefact de build ne doit être versionné.** `Release/` est intégralement ignoré
