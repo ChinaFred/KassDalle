@@ -130,15 +130,15 @@ class TicketAnalysisDoc {
   }
 
   /// Date de la réponse de l'administrateur publiée après la dernière
-  /// analyse, ou `null` : la prochaine analyse la lira.
+  /// analyse (sans analyse : la dernière réponse de l'Issue), ou `null` : la
+  /// prochaine analyse la lira.
   DateTime? get pendingAnswerAt {
     final last = lastAnalysisAt;
-    if (last == null) return null;
     DateTime? best;
     for (final a in analyses) {
       final at = a.createdAt;
       if (a.kind != TicketAnalysisKind.reply || at == null) continue;
-      if (!at.isAfter(last)) continue;
+      if (last != null && !at.isAfter(last)) continue;
       if (best == null || at.isAfter(best)) best = at;
     }
     return best;

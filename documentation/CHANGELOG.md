@@ -20,17 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.83 — fonctionnel
+### v0.23.84 — fonctionnel
 
 Tickets (ticket #105) : un ticket En cours dont la pull request vient d'être ouverte affiche
 « CI en cours » dans la liste d'Admin › Tickets, puis « PR prête » quand la CI est verte. Avant,
 l'état n'apparaissait qu'après le passage de la tâche horaire.
 
-### v0.23.83 — technique
+### v0.23.84 — technique
 
 Le webhook GitHub relit aussi la livraison sur les événements `workflow_run` `requested` et
 `in_progress` du workflow « CI », plus seulement `completed`. `ci_status` est écrit dès le
 départ du run (`deliveryRefreshFromEvent`). Le coût est une relecture GitHub de plus par run.
+
+### v0.23.83 — fonctionnel
+
+Ticket #101 : « Répondre » est disponible sur un ticket Reçu, avant « Lancer l'analyse ».
+L'administrateur ajoute une précision, publiée sur l'Issue en « ## Précisions de
+l'administrateur ». Le ticket reste Reçu, l'étiquette `statut:à-analyser` aussi, et rien n'est
+lancé. Plusieurs réponses se suivent. « Répondre » est masqué pendant une analyse en cours.
+La session d'analyse lit ces précisions : sans analyse précédente, elle lit toutes celles de
+l'Issue. Le texte de la Routine d'analyse (hors dépôt) est à mettre à jour de la même façon.
+
+### v0.23.83 — technique
+
+`answerPrecondition` et `ticketCanReply` (TypeScript et Dart) acceptent le statut `received`
+sans exiger d'analyse. `answerTicketDecision` ne remet pas le ticket à Reçu dans ce cas
+(`answerReset` seulement pour Analysé et Validé). Sur un ticket Reçu, les étiquettes de
+l'Issue ne changent pas. Le refus pendant un lancement
+porte aussi sur l'analyse d'un ticket Reçu. Fixture `ticket_decisions.json` (`reply_cases`)
+étendue. Aucune règle Firestore ni Storage ne change.
 
 ### v0.23.82 — fonctionnel
 
