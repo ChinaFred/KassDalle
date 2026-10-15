@@ -20,6 +20,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.77 — fonctionnel
+
+Admin › Tickets : le bloc « Réponse de l'administrateur » (et « Motif du refus ») était illisible, texte clair sur fond bleu clair. Il prend maintenant un fond neutre, une bordure fine et le texte `onSurface`, avec un contraste d'au moins 4,5:1 en mode clair et en mode sombre. Dans le bloc « Votre réponse » et les analyses, le gras, l'italique, le code, les liens, les titres de niveau 4 à 6 et les tableaux suivent la couleur du reste du texte. Un test de widget vérifie le contraste dans les deux modes.
+
 ### v0.23.76 — fonctionnel
 
 Admin › Tickets : le filtre « À traiter » et la pastille du menu comptent aussi les tickets

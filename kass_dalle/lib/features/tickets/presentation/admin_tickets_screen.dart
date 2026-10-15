@@ -2546,7 +2546,7 @@ class _AnalysisCard extends StatelessWidget {
     final isReply = analysis.kind == TicketAnalysisKind.reply;
     // Une réponse de l'administrateur se distingue d'une analyse par sa
     // couleur et son icône ; son texte suit la couleur de son fond.
-    final fg = isReply ? cs.onSecondaryContainer : null;
+    final fg = isReply ? cs.onSecondaryContainer : cs.onSurface;
     final Widget header;
     if (isReply) {
       header = Row(
@@ -2613,6 +2613,33 @@ class _AnalysisCard extends StatelessWidget {
               h1: theme.textTheme.titleLarge?.copyWith(color: fg),
               h2: theme.textTheme.titleMedium?.copyWith(color: fg),
               h3: theme.textTheme.titleSmall?.copyWith(color: fg),
+              h4: theme.textTheme.titleSmall?.copyWith(color: fg),
+              h5: theme.textTheme.bodyMedium?.copyWith(color: fg),
+              h6: theme.textTheme.bodyMedium?.copyWith(color: fg),
+              strong: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: fg,
+              ),
+              em: theme.textTheme.bodyMedium?.copyWith(
+                fontStyle: FontStyle.italic,
+                color: fg,
+              ),
+              code: MarkdownStyleSheet.fromTheme(
+                theme,
+              ).code?.copyWith(color: fg),
+              blockquoteDecoration: BoxDecoration(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              a: theme.textTheme.bodyMedium?.copyWith(
+                decoration: TextDecoration.underline,
+                color: fg,
+              ),
+              tableHead: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: fg,
+              ),
+              tableBody: theme.textTheme.bodyMedium?.copyWith(color: fg),
               p: theme.textTheme.bodyMedium?.copyWith(height: 1.5, color: fg),
               listBullet: theme.textTheme.bodyMedium?.copyWith(
                 height: 1.5,
@@ -2620,7 +2647,7 @@ class _AnalysisCard extends StatelessWidget {
               ),
               blockquote: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
-                color: fg ?? cs.onSurfaceVariant,
+                color: fg,
               ),
             ),
             onTapLink: (_, href, _) => _openLink(context, href),
@@ -2630,7 +2657,7 @@ class _AnalysisCard extends StatelessWidget {
               ticketAnalysisImagePlaceholder(alt),
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant,
+                color: fg,
               ),
             ),
           ),
