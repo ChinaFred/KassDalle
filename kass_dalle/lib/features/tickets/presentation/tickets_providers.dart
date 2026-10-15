@@ -172,13 +172,20 @@ final ticketsStatusProvider = StreamProvider<TicketsStatus?>((ref) {
   return ref.watch(ticketRepositoryProvider).watchStatus();
 });
 
-/// Plafond quotidien des lancements (`app_config/tickets.launches_per_day`,
-/// 10 par défaut) ; `null` s'il ne se lit pas, ou hors administrateur.
+/// Plafond quotidien des lancements du compte connecté
+/// (`app_config/tickets.launches_per_day`, 10 par défaut ; 50 pour le
+/// fondateur, [ticketLaunchLimitFor]) ; `null` s'il ne se lit pas, ou hors
+/// administrateur.
 final ticketLaunchesPerDayProvider = FutureProvider.autoDispose<int?>((
   ref,
 ) async {
   if (!ref.watch(isAdminProvider)) return null;
-  return ref.watch(ticketRepositoryProvider).fetchLaunchesPerDay();
+  final isFounder = ref.watch(appUserProvider).value?.isFounder ?? false;
+  final configured = await ref
+      .watch(ticketRepositoryProvider)
+      .fetchLaunchesPerDay();
+  if (configured == null) return null;
+  return ticketLaunchLimitFor(configured, isFounder: isFounder);
 });
 
 /// Filtre de statut de l'écran d'administration, voir

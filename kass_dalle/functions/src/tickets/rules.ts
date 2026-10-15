@@ -1046,6 +1046,19 @@ export const DEFAULT_LAUNCHES_PER_DAY = 10;
  */
 export const MAX_LAUNCHES_PER_DAY = 50;
 
+/**
+ * Plafond quotidien du compte fondateur, quel que soit `launches_per_day`.
+ * Même logique que `FOUNDER_DAILY_BUDGET_MULTIPLIER` pour le budget d'IA :
+ * le propriétaire lance plus que les autres administrateurs, et reste plafonné.
+ * Ses lancements comptent dans le même compteur du jour.
+ */
+export const FOUNDER_LAUNCHES_PER_DAY = 50;
+
+/** Plafond effectif d'un lancement, d'après le réglage lu et le compte qui lance. */
+export function launchLimitFor(configured: number, isFounder: boolean): number {
+  return isFounder ? Math.max(configured, FOUNDER_LAUNCHES_PER_DAY) : configured;
+}
+
 /** Entrées gardées dans `tickets/{id}/admin/launches`, plus récente en tête. */
 export const LAUNCH_HISTORY_MAX = 20;
 

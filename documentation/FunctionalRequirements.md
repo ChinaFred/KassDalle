@@ -66,7 +66,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
-> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille). Un compte en attente ou révoqué n'envoie rien.
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille, 50 pour le fondateur). Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -1391,7 +1391,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     réponse ; il voit seulement son ticket revenir à Reçu.
   - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse et
     développement confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
-    plus). Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
+    plus). Le compte fondateur a droit à 50 lancements par jour, quel que soit ce réglage ;
+    ses lancements comptent dans le même compteur. Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
     reçoit une erreur du serveur de Claude, compte et bloque comme un lancement réussi :
     la session a pu partir. La boîte se ferme alors sur « Claude ne répond pas. Vérifiez sur
     claude.ai/code avant de relancer. ».

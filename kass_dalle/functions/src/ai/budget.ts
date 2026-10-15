@@ -348,9 +348,15 @@ export async function founderUid(): Promise<string | null> {
     const value = isFounderAccount(user) ? user.uid : null;
     cachedFounderUid = { value, readAt: Date.now() };
     return value;
-  } catch {
-    // Compte absent — projet neuf, ou adresse jamais connectée. Sans identifiant,
-    // personne n'obtient le multiplicateur : c'est le sens qui protège.
+  } catch (err) {
+    // Compte absent — projet neuf, ou adresse jamais connectée — ou panne
+    // d'Auth. Sans identifiant, personne n'obtient le multiplicateur ni le
+    // plafond des lancements du fondateur : c'est le sens qui protège.
+    await logError({
+      message:
+        "founderUid: compte fondateur introuvable, multiplicateur et plafond des lancements retirés pour une heure",
+      errorDescription: err instanceof Error ? err.message : String(err),
+    });
     cachedFounderUid = { value: null, readAt: Date.now() };
     return null;
   }

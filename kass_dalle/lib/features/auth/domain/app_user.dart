@@ -8,6 +8,10 @@ import 'user_profile.dart';
 /// toute la bibliothèque de la famille.
 enum UserRole { admin, editor, reader, pending }
 
+/// Adresse du compte fondateur, en dur côté serveur (`FOUNDER_EMAIL`) et dans
+/// `firestore.rules`.
+const kFounderEmail = 'china.fred.75@gmail.com';
+
 class AppUser {
   final String uid;
   final String email;
@@ -43,6 +47,11 @@ class AppUser {
   bool get canEdit =>
       !isRevoked && (role == UserRole.editor || role == UserRole.admin);
   bool get isAdmin => !isRevoked && role == UserRole.admin;
+
+  /// Le compte fondateur (`FOUNDER_EMAIL` de `triggers/founderRole.ts`), pour
+  /// l'affichage seul : le serveur le reconnaît à son adresse vérifiée et à
+  /// sa connexion Google, et décide.
+  bool get isFounder => email.trim().toLowerCase() == kFounderEmail;
 
   /// Le compte attend d'être nommé par un administrateur.
   bool get isPending => role == UserRole.pending;

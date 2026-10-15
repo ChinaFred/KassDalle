@@ -16,7 +16,8 @@
  *     quand elle manque ;
  *  3 bis. aucun lancement du même type en cours (`launchRunState` ; un
  *     lancement antérieur au dernier changement de statut ne compte pas) ;
- *  4. plafond du jour (`app_config/tickets.launches_per_day`, 10 par défaut) :
+ *  4. plafond du jour (`app_config/tickets.launches_per_day`, 10 par défaut ;
+ *     50 pour le compte fondateur, `launchLimitFor`) :
  *     le lancement est compté en transaction (`ticket_quotas/launch_<jour>`,
  *     compteurs de `app_config/tickets_status`) ;
  *  5. Issue relue sur GitHub : fermée, ou étiquettes qui donnent un autre
@@ -48,6 +49,7 @@ import {
   TICKETS_CONFIG_DOC_ID,
   TICKETS_STATUS_DOC_ID,
 } from "../config";
+import { founderUid } from "../ai/budget";
 import { logError, logInfo, logWarn } from "../logging";
 import { claimDecision, githubFailure, releaseDecision, tokenMissing } from "./decisions";
 import { getIssue, githubToken, lastValidatedLabelAt } from "./github";
@@ -56,6 +58,7 @@ import {
   LAUNCH_HISTORY_MAX,
   LAUNCH_NEEDS_ANSWER_MESSAGE,
   launchCommandText,
+  launchLimitFor,
   launchPrecondition,
   launchQuotaDocId,
   launchQuotaMessage,
@@ -451,8 +454,8 @@ export async function launchTicketSession(
       .collection(COLL_APP_CONFIG)
       .doc(TICKETS_CONFIG_DOC_ID)
       .get();
-    const limit = readLaunchesPerDay(configSnap.exists ? configSnap.data() : undefined);
-    if (limit === null) {
+    const configured = readLaunchesPerDay(configSnap.exists ? configSnap.data() : undefined);
+    if (configured === null) {
       await logError({
         message: "Tickets : app_config/tickets.launches_per_day illisible, lancement refusé",
         correlationId: scope.correlationId,
@@ -467,6 +470,7 @@ export async function launchTicketSession(
         { reason: "launch_config_unreadable" },
       );
     }
+    const limit = launchLimitFor(configured, (await founderUid()) === scope.userId);
     const day = parisDay(new Date());
     await reserveLaunch(day, limit);
     reservedDay = day;

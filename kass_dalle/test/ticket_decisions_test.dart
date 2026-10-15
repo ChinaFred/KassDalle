@@ -238,7 +238,22 @@ void main() {
     test('plafond quotidien des lancements par défaut', () {
       expect(kTicketDefaultLaunchesPerDay, fixture['default_launches_per_day']);
       expect(kTicketMaxLaunchesPerDay, fixture['max_launches_per_day']);
+      expect(kTicketFounderLaunchesPerDay, fixture['founder_launches_per_day']);
     });
+
+    for (final l in fixture['launch_limits'] as List) {
+      final m = l as Map<String, dynamic>;
+      test('plafond effectif : réglage ${m['configured']}, '
+          'fondateur ${m['is_founder']}', () {
+        expect(
+          ticketLaunchLimitFor(
+            m['configured'] as int,
+            isFounder: m['is_founder'] as bool,
+          ),
+          m['expected'],
+        );
+      });
+    }
 
     DateTime? iso(Object? v) => v is String ? DateTime.parse(v) : null;
 

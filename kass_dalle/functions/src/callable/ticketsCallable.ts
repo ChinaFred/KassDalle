@@ -37,7 +37,8 @@
  *   quand la dernière analyse attend une réponse
  *   (`details.reason = "launch_needs_answer"`).
  *   Les deux suivent `tickets/launch.ts` : bail partagé avec les décisions,
- *   plafond quotidien (`launches_per_day`, 10 par défaut), Issue relue, appel
+ *   plafond quotidien (`launches_per_day`, 10 par défaut, 50 pour le fondateur),
+ *   Issue relue, appel
  *   unique sans relance. Deux callables plutôt qu'un seul avec `action` :
  *   chacune ne monte que les secrets de sa routine.
  *
