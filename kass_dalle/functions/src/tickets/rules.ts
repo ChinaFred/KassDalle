@@ -1367,8 +1367,6 @@ export interface PullRequestView {
   headRef: string | null;
   headSha: string | null;
   htmlUrl: string | null;
-  /** `mergeable` du détail : `null` tant que GitHub ne l'a pas calculé, ou lu sur la liste. */
-  mergeable: boolean | null;
 }
 
 /**
@@ -1449,8 +1447,6 @@ export interface DeliveryState {
   /** Son adresse, seulement si elle vise une PR de ce dépôt sur github.com. */
   pr_url: string | null;
   head_sha: string | null;
-  /** `false` : conflit avec `master` ; `null` : pas encore calculé par GitHub. */
-  mergeable: boolean | null;
   /** État du dernier run « CI » sur la tête ; `null` : aucun run trouvé. */
   ci_status: string | null;
   ci_conclusion: string | null;
@@ -1470,9 +1466,10 @@ export function safePullRequestUrl(url: string | null, repoFullName: string): st
 
 /**
  * L'état « PR prête » d'un ticket. Prête : ticket `in_progress`, une seule PR
- * éligible, dernier run « CI » sur sa tête fini et vert, et `mergeable` qui
- * n'est pas `false`. Ne sont pas exigés : une branche à jour de `master`, ni
- * un numéro de version libre — la session de livraison s'en charge. Les
+ * éligible, dernier run « CI » sur sa tête fini et vert. Ne sont pas exigés :
+ * une branche à jour de `master`, l'absence de conflit signalé par GitHub
+ * (`mergeable`), ni un numéro de version libre — la session de livraison
+ * résout `version:` et le CHANGELOG, ou publie un blocage. Les
  * fichiers sensibles ne comptent pas ici : ils se contrôlent au lancement.
  * Une liste de PR tronquée (`prListComplete` faux) ne rend jamais prête : une
  * seconde PR éligible a pu échapper à la lecture. Pure.
@@ -1482,7 +1479,7 @@ export function deliveryState(args: {
   /** La liste des PR ouvertes a été lue en entier. Absent : vrai. */
   prListComplete?: boolean;
   eligible: readonly PullRequestView[];
-  /** Détail de la PR éligible quand elle est seule (`mergeable`, tête relue), sinon `null`. */
+  /** Détail de la PR éligible quand elle est seule (tête relue), sinon `null`. */
   pr: PullRequestView | null;
   ciRun: CiRunView | null;
   repoFullName: string;
@@ -1495,7 +1492,6 @@ export function deliveryState(args: {
     pr_number: single?.number ?? null,
     pr_url: single === null ? null : safePullRequestUrl(single.htmlUrl, args.repoFullName),
     head_sha: single?.headSha ?? null,
-    mergeable: single?.mergeable ?? null,
     ci_status: run?.status ?? null,
     ci_conclusion: run?.conclusion ?? null,
     ci_completed_at: completed ? (run?.updatedAt ?? null) : null,
@@ -1503,7 +1499,6 @@ export function deliveryState(args: {
       storedTicketStatus(args.ticketStatus) === "in_progress" &&
       args.prListComplete !== false &&
       single !== null &&
-      single.mergeable !== false &&
       isGreenCiRun(run),
   };
 }

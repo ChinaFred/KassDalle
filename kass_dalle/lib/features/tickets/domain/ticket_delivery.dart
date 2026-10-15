@@ -79,9 +79,6 @@ class TicketDelivery {
   final int? prNumber;
   final String? prUrl;
 
-  /// `false` : conflit avec `master` ; `null` : pas encore calculé.
-  final bool? mergeable;
-
   /// État du dernier run « CI » sur la tête (`queued`, `in_progress`,
   /// `completed`…), `null` sans run.
   final String? ciStatus;
@@ -98,7 +95,6 @@ class TicketDelivery {
     this.eligiblePrCount = 0,
     this.prNumber,
     this.prUrl,
-    this.mergeable,
     this.ciStatus,
     this.ciConclusion,
     this.ciCompletedAt,
@@ -110,12 +106,10 @@ class TicketDelivery {
     int? optInt(Object? v) => v is num ? v.toInt() : null;
     String? optStr(Object? v) => v is String && v.isNotEmpty ? v : null;
     final raw = data['reports'];
-    final mergeable = data['mergeable'];
     return TicketDelivery(
       eligiblePrCount: optInt(data['eligible_pr_count']) ?? 0,
       prNumber: optInt(data['pr_number']),
       prUrl: optStr(data['pr_url']),
-      mergeable: mergeable is bool ? mergeable : null,
       ciStatus: optStr(data['ci_status']),
       ciConclusion: optStr(data['ci_conclusion']),
       ciCompletedAt: parseTicketDate(data['ci_completed_at']),
@@ -214,7 +208,6 @@ enum TicketDeliveryLineKind {
   loading,
   unreadable,
   multiplePrs,
-  conflict,
   ciFailed,
   ciRunning,
   noPr,
@@ -260,7 +253,7 @@ String _sinceText(DateTime since, DateTime now) {
 
 /// La ligne et l'action de la barre d'un ticket En cours, une seule, dans cet
 /// ordre de priorité : livraison en cours ici, chargement, état illisible,
-/// plusieurs PR, conflit, CI en échec, CI en cours, aucune PR prête,
+/// plusieurs PR, CI en échec, CI en cours, aucune PR prête,
 /// livraison ailleurs, blocage relevé, échéance passée, PR prête.
 ///
 /// [run] : la règle « en cours » de la livraison sur ce ticket.
@@ -306,12 +299,6 @@ TicketDeliveryBar ticketDeliveryBar({
     );
   }
   if (pr != null && d.eligiblePrCount == 1) {
-    if (d.mergeable == false) {
-      return TicketDeliveryBar(
-        kind: TicketDeliveryLineKind.conflict,
-        text: 'Conflit sur la PR #$pr',
-      );
-    }
     if (d.ciStatus == 'completed' && d.ciConclusion != 'success') {
       return TicketDeliveryBar(
         kind: TicketDeliveryLineKind.ciFailed,

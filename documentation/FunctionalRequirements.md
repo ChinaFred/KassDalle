@@ -1393,9 +1393,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
       dit « Closes #N », est ouverte par le compte de l'administrateur, depuis le dépôt
       lui-même et une branche `claude/…`. Le ticket a une « PR prête » quand il est En cours,
       qu'une seule pull request éligible ferme l'Issue, que le dernier passage du workflow
-      « CI » sur sa dernière version est terminé et vert, et que GitHub ne signale pas de
-      conflit. Être à jour de `master` et avoir un numéro de version libre ne sont pas exigés :
-      la livraison s'en charge. Le serveur recalcule cet état à la fin de chaque CI, à chaque
+      « CI » sur sa dernière version est terminé et vert. Être à jour de `master`, ne pas avoir
+      de conflit signalé par GitHub et avoir un numéro de version libre ne sont pas exigés : la
+      livraison résout le conflit de version et de CHANGELOG, ou publie un blocage. Le serveur recalcule cet état à la fin de chaque CI, à chaque
       changement de la pull request, à la vérification horaire, et le relit au lancement.
     - **Ligne d'état**, au-dessus des boutons (annoncée par le lecteur d'écran à chaque
       changement). Une seule s'affiche, dans cet ordre de priorité :
@@ -1405,17 +1405,16 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
       3. « État de la pull request illisible. », avec un bouton Réessayer ;
       4. plusieurs pull requests éligibles : « 3 pull requests ferment l'Issue #42 : fermez
          celles à abandonner sur GitHub. » ;
-      5. « Conflit sur la PR #57 » ;
-      6. « CI de la PR #57 en échec » ;
-      7. « CI de la PR #57 en cours » ;
-      8. « Aucune PR prête » ;
-      9. PR prête ici mais livraison d'un autre ticket en cours : « Livraison du ticket #31 en
+      5. « CI de la PR #57 en échec » ;
+      6. « CI de la PR #57 en cours » ;
+      7. « Aucune PR prête » ;
+      8. PR prête ici mais livraison d'un autre ticket en cours : « Livraison du ticket #31 en
          cours depuis hh:mm », avec « Ouvrir le ticket #31 » ;
-      10. blocage relevé, PR prête : « La livraison du jj/mm/aa à hh:mm s'est arrêtée : lisez
-          « Livraison — blocage » ci-dessous. », avec « Relancer la livraison » ;
-      11. échéance passée, PR prête : la ligne du cas 12, avec « Relancer la livraison » ;
-      12. PR prête : « PR #57 prête — CI verte le jj/mm/aa à hh:mm », avec « Livrer ».
-      Dans les cas 1 à 9, « Livrer » est masqué. Quand l'historique des lancements ou le verrou
+      9. blocage relevé, PR prête : « La livraison du jj/mm/aa à hh:mm s'est arrêtée : lisez
+         « Livraison — blocage » ci-dessous. », avec « Relancer la livraison » ;
+      10. échéance passée, PR prête : la ligne du cas 11, avec « Relancer la livraison » ;
+      11. PR prête : « PR #57 prête — CI verte le jj/mm/aa à hh:mm », avec « Livrer ».
+      Dans les cas 1 à 8, « Livrer » est masqué. Quand l'historique des lancements ou le verrou
       ne se lit pas, « Livrer » reste offert : le serveur décide.
     - **Confirmation** « Livrer ce ticket ? » — « Une session Claude Code va mettre la PR #57 à
       jour avec master, la fusionner, puis suivre le déploiement. » et « La fusion met

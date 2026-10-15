@@ -2032,11 +2032,10 @@ l'administrateur seul (règle existante `tickets/{id}/admin/{doc}`). Ce n'est pa
 | `pr_number` | `int?` | La PR éligible quand elle est seule, sinon `null` |
 | `pr_url` | `String?` | Son adresse, seulement de la forme `https://github.com/ChinaFred/KassDalle/pull/<n>` (`safePullRequestUrl`) ; le client ne l'ouvre qu'en `https` sur `github.com` |
 | `head_sha` | `String?` | Tête de la PR relue dans son détail (`GET /pulls/{n}`) |
-| `mergeable` | `bool?` | `mergeable` de GitHub : `false` = conflit avec `master`, `null` = pas encore calculé |
 | `ci_status` | `String?` | État du dernier run du workflow « CI » sur `head_sha` (`latestCiRun` : plus grand `created_at`) — `queued`, `in_progress`, `completed`… ; `null` sans run |
 | `ci_conclusion` | `String?` | `success`, `failure`, `cancelled`… ; `null` tant que le run n'est pas fini |
 | `ci_completed_at` | `Timestamp?` | `updated_at` du run quand il est `completed` |
-| `ready` | `bool` | « PR prête » (`deliveryState`) : ticket `in_progress`, liste des PR ouvertes lue en entier, une seule PR éligible, dernier run « CI » `completed`/`success` sur sa tête, `mergeable` différent de `false`. Ne sont pas exigés : branche à jour de `master`, numéro de version libre (la session de livraison s'en charge). Les fichiers sensibles ne comptent pas ici : ils se contrôlent au lancement |
+| `ready` | `bool` | « PR prête » (`deliveryState`) : ticket `in_progress`, liste des PR ouvertes lue en entier, une seule PR éligible, dernier run « CI » `completed`/`success` sur sa tête. Ne sont pas exigés : branche à jour de `master`, absence de conflit signalé par GitHub (`mergeable` n'est ni lu ni stocké), numéro de version libre — la session de livraison résout `version:` et le `CHANGELOG.md`, ou publie un blocage. Les fichiers sensibles ne comptent pas ici : ils se contrôlent au lancement |
 | `updated_at` | `Timestamp` | Dernière écriture de l'état |
 | `reports` | `List<Map>` | Comptes rendus du mainteneur relevés sur l'Issue (`deliveryReportsFromComments`) : commentaires du compte 16348852 qui commencent par `## Livraison — blocage` (`kind: "blocked"`) ou `## Livraison — terminée` (`kind: "done"`), dix au plus, ordre chronologique, chacun avec `comment_id`, `body` (20 000 caractères au plus, `truncated`), `created_at`, `updated_at` |
 | `reports_checked_at` | `Timestamp` | Dernier relevé des comptes rendus |
@@ -3888,15 +3887,16 @@ décompté. ») :
 
 Le verrou est rendu quand rien n'est parti (refus, panne avant l'appel, réponse d'erreur de
 l'API), gardé sur un lancement abouti ou au résultat inconnu, et effacé quand un compte rendu
-« blocage » postérieur au lancement est relevé. `mergeable` n'est pas relu au lancement : la
-session traite elle-même un conflit de version et s'arrête sur tout autre conflit. Le ticket
+« blocage » postérieur au lancement est relevé. Un conflit signalé par GitHub n'empêche ni
+« PR prête » ni le lancement : la session résout un conflit de version et de `CHANGELOG.md`,
+et s'arrête sur tout autre conflit par un blocage. Le ticket
 passe Livré à la fusion (« Closes #N » ferme l'Issue), par la transition existante.
 
 Côté client (`features/tickets/domain/ticket_delivery.dart`), `ticketDeliveryProvider` lit
 `admin/delivery` en flux, `TicketsStatus.deliveryRunning` lit le verrou, et
 `ticketDeliveryBar` choisit une seule ligne d'état au-dessus de « Refuser » et de l'action
 principale, par priorité : livraison en cours ici (« Livraison en cours depuis 14:05 », aucune
-action), chargement, état illisible (bouton « Réessayer »), plusieurs PR, conflit, CI en échec,
+action), chargement, état illisible (bouton « Réessayer »), plusieurs PR, CI en échec,
 CI en cours, aucune PR prête, livraison d'un autre ticket (« Livraison du ticket #31 en cours
 depuis 14:05 », « Ouvrir le ticket #31 », seulement si la PR est prête ici), blocage relevé
 (« Relancer la livraison »), échéance passée (« Relancer la livraison »), PR prête (« PR #57

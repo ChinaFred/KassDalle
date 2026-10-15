@@ -4438,9 +4438,9 @@ sequenceDiagram
 
   G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » terminé
   W->>G: GET /pulls?state=open, GET /pulls/M, GET /actions/runs?head_sha=
-  W->>T: admin/delivery : PR éligible, mergeable, dernier run CI, ready
+  W->>T: admin/delivery : PR éligible, dernier run CI, ready
   T-->>C: flux admin/delivery et tickets_status.delivery_running
-  C-->>AD: « PR #57 prête — CI verte le … » et « Livrer »<br/>(sinon : plusieurs PR, conflit, CI en échec ou en cours, livraison d'un autre ticket)
+  C-->>AD: « PR #57 prête — CI verte le … » et « Livrer »<br/>(sinon : plusieurs PR, CI en échec ou en cours, livraison d'un autre ticket)
   AD->>C: « Livrer »
   C-->>AD: « Livrer ce ticket ? » : fusion = mise en ligne, type, lancements restants (focus sur « Annuler »)
   AD->>C: « Livrer »

@@ -4,7 +4,7 @@
  *
  * - `refreshTicketDelivery` relit sur GitHub les PR ouvertes, garde celles
  *   qui peuvent être livrées pour l'Issue (`isEligibleDeliveryPr`), relit le
- *   détail de la PR quand elle est seule (`mergeable`, tête), puis le dernier
+ *   détail de la PR quand elle est seule (tête, corps), puis le dernier
  *   run « CI » de sa tête, et écrit `tickets/{id}/admin/delivery`
  *   (`deliveryState`). Appelé par le webhook (`pull_request`, `workflow_run`),
  *   la tâche horaire et le lancement.

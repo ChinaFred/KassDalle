@@ -1188,8 +1188,8 @@ flowchart LR
         de coût de l'application, et l'écran Tickets n'en affiche que le nombre.
         <b>Livrer un ticket.</b> Un ticket En cours, hors Question, a une « PR prête » quand une
         seule pull request éligible ferme l'Issue (ouverte, pas brouillon, par l'administrateur,
-        branche <code>claude/…</code> du dépôt), que sa CI est verte et que GitHub ne signale pas
-        de conflit. C'est un sous-état visible de l'administrateur seul : puce « PR prête » dans
+        branche <code>claude/…</code> du dépôt) et que sa CI est verte ; un conflit signalé par
+        GitHub ne l'empêche pas : la session le résout ou publie un blocage. C'est un sous-état visible de l'administrateur seul : puce « PR prête » dans
         la liste, ligne d'état dans la barre de décision. « Livrer » lance la session de
         développement avec <code>livraison #N</code> : elle met la pull request à jour avec
         <code>master</code>, attend la CI, fusionne et suit le déploiement, puis publie

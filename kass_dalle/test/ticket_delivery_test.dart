@@ -13,7 +13,6 @@ void main() {
 
   TicketDelivery ready({
     int count = 1,
-    bool? mergeable = true,
     String? ciStatus = 'completed',
     String? ciConclusion = 'success',
     bool isReady = true,
@@ -21,7 +20,6 @@ void main() {
     eligiblePrCount: count,
     prNumber: count == 1 ? 57 : null,
     prUrl: 'https://github.com/ChinaFred/KassDalle/pull/57',
-    mergeable: mergeable,
     ciStatus: ciStatus,
     ciConclusion: ciConclusion,
     ciCompletedAt: ci,
@@ -67,15 +65,11 @@ void main() {
       expect(bar(error: true).text, 'État de la pull request illisible.');
     });
 
-    test('plusieurs PR, conflit, CI en échec, CI en cours, aucune', () {
+    test('plusieurs PR, CI en échec, CI en cours, aucune', () {
       expect(
         bar(delivery: ready(count: 3, isReady: false)).text,
         '3 pull requests ferment l\'Issue #42 : fermez celles à abandonner '
         'sur GitHub.',
-      );
-      expect(
-        bar(delivery: ready(mergeable: false, isReady: false)).text,
-        'Conflit sur la PR #57',
       );
       expect(
         bar(delivery: ready(ciConclusion: 'failure', isReady: false)).text,
@@ -118,8 +112,11 @@ void main() {
       expect(b.elsewhereTicketId, 't31');
       expect(b.action, isNull);
       expect(
-        bar(delivery: ready(mergeable: false, isReady: false), lock: lock).kind,
-        TicketDeliveryLineKind.conflict,
+        bar(
+          delivery: ready(ciConclusion: 'failure', isReady: false),
+          lock: lock,
+        ).kind,
+        TicketDeliveryLineKind.ciFailed,
       );
     });
 
@@ -164,7 +161,8 @@ void main() {
         'eligible_pr_count': 1,
         'pr_number': 57,
         'pr_url': 'https://github.com/ChinaFred/KassDalle/pull/57',
-        'mergeable': null,
+        // Un ancien document peut porter `mergeable` : il est ignoré.
+        'mergeable': false,
         'ci_status': 'completed',
         'ci_conclusion': 'success',
         'ci_completed_at': ci,
@@ -186,7 +184,6 @@ void main() {
         ],
       });
       expect(d.ready, isTrue);
-      expect(d.mergeable, isNull);
       expect(d.reports.length, 2);
       expect(d.lastBlockedAt, DateTime(2026, 10, 15, 13));
       expect(d.openablePrLink.toString(), d.prUrl);

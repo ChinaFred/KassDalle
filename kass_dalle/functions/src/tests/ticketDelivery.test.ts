@@ -63,7 +63,6 @@ function pr(over: Partial<PullRequestView> = {}): PullRequestView {
     headRef: "claude/ticket-42-liste",
     headSha: SHA,
     htmlUrl: `https://github.com/${REPO}/pull/57`,
-    mergeable: true,
     ...over,
   };
 }
@@ -171,10 +170,8 @@ describe("PR éligible", () => {
       html_url: `https://github.com/${REPO}/pull/57`,
       mergeable: false,
     });
-    assert.deepEqual(read, {
-      ...pr({ body: "Closes #42", headRef: "claude/x" }),
-      mergeable: false,
-    });
+    // `mergeable` n'est pas lu : un conflit signalé par GitHub n'empêche pas la livraison.
+    assert.deepEqual(read, pr({ body: "Closes #42", headRef: "claude/x" }));
     assert.equal(readPullRequest({ number: "57" }), null);
     assert.equal(readPullRequest({ number: 3, head: { repo: null } })?.headRepoFullName, null);
   });
@@ -222,14 +219,13 @@ describe("dernier run de la CI", () => {
 describe("état « PR prête »", () => {
   const base = { ticketStatus: "in_progress", repoFullName: REPO };
 
-  test("prête : En cours, une PR, CI verte, pas de conflit", () => {
+  test("prête : En cours, une PR, CI verte", () => {
     const state = deliveryState({ ...base, eligible: [pr()], pr: pr(), ciRun: run() });
     assert.deepEqual(state, {
       eligible_pr_count: 1,
       pr_number: 57,
       pr_url: `https://github.com/${REPO}/pull/57`,
       head_sha: SHA,
-      mergeable: true,
       ci_status: "completed",
       ci_conclusion: "success",
       ci_completed_at: "2026-10-15T12:05:00Z",
@@ -237,17 +233,7 @@ describe("état « PR prête »", () => {
     });
   });
 
-  test("mergeable encore inconnu : prête quand même", () => {
-    const p = pr({ mergeable: null });
-    assert.equal(deliveryState({ ...base, eligible: [p], pr: p, ciRun: run() }).ready, true);
-  });
-
-  test("conflit, CI rouge ou en cours, ticket ailleurs : pas prête", () => {
-    const conflict = pr({ mergeable: false });
-    assert.equal(
-      deliveryState({ ...base, eligible: [conflict], pr: conflict, ciRun: run() }).ready,
-      false,
-    );
+  test("CI rouge ou en cours, ticket ailleurs : pas prête", () => {
     const failed = deliveryState({
       ...base,
       eligible: [pr()],

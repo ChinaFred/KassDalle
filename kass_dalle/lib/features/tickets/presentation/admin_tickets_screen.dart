@@ -1346,7 +1346,6 @@ IconData _deliveryLineIcon(TicketDeliveryLineKind kind) => switch (kind) {
   TicketDeliveryLineKind.unreadable ||
   TicketDeliveryLineKind.blocked => Icons.error_outline,
   TicketDeliveryLineKind.multiplePrs ||
-  TicketDeliveryLineKind.conflict ||
   TicketDeliveryLineKind.ciFailed => Icons.warning_amber_outlined,
   TicketDeliveryLineKind.noPr => Icons.info_outline,
   TicketDeliveryLineKind.expired ||

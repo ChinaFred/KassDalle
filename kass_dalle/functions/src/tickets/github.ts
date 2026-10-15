@@ -445,7 +445,6 @@ export function readPullRequest(raw: Record<string, unknown>): PullRequestView |
     headRef: str(head?.ref),
     headSha: str(head?.sha),
     htmlUrl: str(raw.html_url),
-    mergeable: typeof raw.mergeable === "boolean" ? raw.mergeable : null,
   };
 }
 
@@ -472,7 +471,7 @@ export async function listOpenPullRequests(
   return { prs, complete: false };
 }
 
-/** Le détail d'une PR : `mergeable` et la tête du moment. */
+/** Le détail d'une PR : sa tête du moment et son corps relus. */
 export async function getPullRequest(token: string, prNumber: number): Promise<PullRequestView> {
   const raw = await request<Record<string, unknown>>(
     token,

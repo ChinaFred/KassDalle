@@ -23,10 +23,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 ### v0.23.75 — fonctionnel
 
 Admin › Tickets : un ticket En cours offre « Livrer ». Quand sa pull request est prête (une
-seule PR de la session, CI verte, pas de conflit), la fiche affiche « PR #57 prête — CI verte
+seule PR de la session, CI verte), la fiche affiche « PR #57 prête — CI verte
 le … » et le bouton « Livrer ». Une session Claude Code met alors la PR à jour avec `master`,
 la fusionne et suit le déploiement ; appuyer sur « Livrer » vaut accord de fusion. Sinon, une
-seule ligne dit ce qui manque : plusieurs PR, conflit, CI en échec ou en cours, aucune PR
+seule ligne dit ce qui manque : plusieurs PR, CI en échec ou en cours, aucune PR
 prête, ou livraison d'un autre ticket en cours (une seule à la fois, avec « Ouvrir le ticket
 #K »). Une PR qui modifie `.github/`, `.claude/`, `deploy.ps1`, `firebase.json`, ou un fichier
 nommé `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit, est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
@@ -57,7 +57,9 @@ seulement si son corps ne ferme que l'Issue du ticket ; le webhook ne relit la l
 pour une PR du mainteneur dont la tête est dans le dépôt, cinq Issues au plus par événement,
 liste des PR lue une fois ; un 403 de limite secondaire n'est plus classé « jeton refusé » ;
 prompt de livraison avec un point L0 (entrées non fiables), une fusion au sha poussé après un
-second contrôle des fichiers, et une durée bornée à 2 h 30.
+second contrôle des fichiers, et une durée bornée à 2 h 30. Un conflit signalé par GitHub
+(`mergeable`) n'éteint plus « PR prête » : le champ n'est plus lu ni stocké, et la session
+résout `version:` et le CHANGELOG ou publie un blocage.
 
 ### v0.23.74 — fonctionnel
 
