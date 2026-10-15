@@ -512,6 +512,11 @@ Fusion, jamais rebase : un rebase sur une hausse identique vide le changement de
    - « Block force pushes », « Restrict deletions » ;
    - Bypass list : « Repository admin » seulement (le PC pousse sur `master`), jamais
      « GitHub Actions ».
+
+   Chez Kass'Dalle, au 15 octobre 2026, la règle ne bloque que le push forcé et la
+   suppression, sans dérogation : « Require a pull request » n'est pas cochée. Sans elle, un
+   workflow poussé sur une branche peut déclarer `contents: write` et `actions: write`,
+   pousser sur `master` et lancer le déploiement à la main (voir `TechnicalRequirements.md`, « Déploiement automatique »).
 2. **Settings › Actions › General** :
    - « Workflow permissions » : « Read repository contents and packages permissions » ;
    - « Allow GitHub Actions to create and approve pull requests » : décoché.
