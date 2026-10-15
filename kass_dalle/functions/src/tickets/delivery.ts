@@ -35,10 +35,12 @@ import {
 import { logError, logInfo } from "../logging";
 import {
   GITHUB_REPO_FULL_NAME,
+  GithubError,
   findDeliveredPullRequest,
   getPullRequest,
   listOpenPullRequests,
   listRunsForCommit,
+  pubspecVersionAtCommit,
   type RemoteComment,
 } from "./github";
 import {
@@ -167,8 +169,9 @@ export async function refreshTicketDelivery(
 // ── PR de livraison d'un ticket livré ───────────────────────────────────────
 
 /**
- * Range sur `tickets/{id}` (`delivered_pr_number`, `delivered_pr_url`) la PR
- * fusionnée qui a fermé l'Issue. Les deux champs vivent sur le ticket, lisible
+ * Range sur `tickets/{id}` (`delivered_pr_number`, `delivered_pr_url`,
+ * `delivered_version`) la PR fusionnée qui a fermé l'Issue et la version de
+ * l'application à son commit de fusion. Les champs vivent sur le ticket, lisible
  * par son auteur : une PR d'un dépôt public ne contient aucune donnée privée.
  * Rend `not_delivered` si le ticket n'est pas (ou plus) livré, `no_pr` si
  * aucune PR ne l'a fermé (Issue fermée à la main) : les champs ne sont alors
@@ -184,9 +187,31 @@ export async function recordDeliveredPr(
   if (!snap.exists || snap.data()?.status !== "delivered") return "not_delivered";
   const pr = await findDeliveredPullRequest(token, issueNumber);
   if (pr === null) return "no_pr";
+  // La version est complémentaire : une lecture en échec n'empêche pas d'écrire la PR.
+  // Fichier absent ou sans version lisible : `""` est écrit, pour que la reprise ne relise
+  // pas le ticket à chaque passe. Panne passagère : le champ reste absent, la reprise réessaie.
+  // Jeton refusé ou limite de débit : l'erreur remonte, l'appelant arrête sa boucle.
+  let version: string | null = null;
+  let unreadable = false;
+  try {
+    version = await pubspecVersionAtCommit(token, pr.commitSha);
+    unreadable = version === null;
+  } catch (err) {
+    if (err instanceof GithubError && (err.kind === "token" || err.kind === "rate_limit")) {
+      throw err;
+    }
+    unreadable = err instanceof GithubError && err.kind === "not_found";
+    await logError({
+      message: `Tickets : version livrée du ticket ${ticketId} (Issue #${issueNumber}) non lue`,
+      errorDescription: describe(err),
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+  }
   await ticketRef(ticketId).update({
     delivered_pr_number: pr.number,
     delivered_pr_url: pr.url,
+    delivered_version: version ?? (unreadable ? "" : FieldValue.delete()),
     updated_at: FieldValue.serverTimestamp(),
   });
   return "written";

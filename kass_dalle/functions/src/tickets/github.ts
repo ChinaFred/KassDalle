@@ -23,6 +23,7 @@ import {
   isTrustedPrAuthor,
   lastMaintainerValidatedAt,
   pickDeliveredPr,
+  pubspecVersionName,
   type CiRunView,
   type MergedPrCandidate,
   type PullRequestFileView,
@@ -405,7 +406,7 @@ export async function lastValidatedLabelAt(
 export async function findDeliveredPullRequest(
   token: string,
   issueNumber: number,
-): Promise<{ number: number; url: string } | null> {
+): Promise<{ number: number; url: string; commitSha: string } | null> {
   const events: unknown[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
     const batch = await request<unknown[]>(
@@ -438,12 +439,28 @@ export async function findDeliveredPullRequest(
       authorAssociation: str(pr.author_association),
     });
   }
-  return pickDeliveredPr(
+  const picked = pickDeliveredPr(
     candidates,
     issueNumber,
     GITHUB_TICKETS_MAINTAINER_ID,
     GITHUB_REPO_FULL_NAME,
   );
+  return picked === null ? null : { ...picked, commitSha: sha };
+}
+
+/**
+ * La version (`x.y.z`) de `kass_dalle/pubspec.yaml` au commit `sha`, ou `null`
+ * quand le fichier ne la porte pas lisiblement. Un appel GitHub.
+ */
+export async function pubspecVersionAtCommit(token: string, sha: string): Promise<string | null> {
+  if (!/^[0-9a-f]{7,64}$/i.test(sha)) return null;
+  const file = await request<{ content?: unknown; encoding?: unknown }>(
+    token,
+    "GET",
+    `${REPO_PATH}/contents/kass_dalle/pubspec.yaml?ref=${sha}`,
+  );
+  if (typeof file.content !== "string" || file.encoding !== "base64") return null;
+  return pubspecVersionName(Buffer.from(file.content, "base64").toString("utf8"));
 }
 
 /**
