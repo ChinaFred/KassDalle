@@ -93,8 +93,8 @@ void main() {
               tickets ?? [_ticket(status, withIssue: withIssue)],
             ),
           ),
-          adminTicketsToProcessCountProvider.overrideWith(
-            (ref) => Stream.value(1),
+          adminTicketsToProcessIdsProvider.overrideWith(
+            (ref) => Stream.value({'t1'}),
           ),
           ticketAnalysisProvider.overrideWith(
             (ref, id) => Stream<TicketAnalysisDoc?>.value(null),

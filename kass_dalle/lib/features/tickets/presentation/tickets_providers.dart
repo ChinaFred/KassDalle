@@ -39,8 +39,9 @@ final myTicketProvider = Provider.family<AsyncValue<Ticket?>, String>((
   });
 });
 
-/// Tickets arrivés à Répondu, Refusé ou Livré que leur auteur n'a pas
-/// encore ouverts : le point sur la puce du compte.
+/// Tickets de l'utilisateur dont le statut a changé depuis sa dernière
+/// ouverture (ou jamais ouverts), hors « Envoi en cours » : la pastille de
+/// « Mes tickets ».
 final unseenTicketsCountProvider = Provider<int>((ref) {
   final tickets = ref.watch(myTicketsProvider).value ?? const <Ticket>[];
   return tickets.where((t) => t.hasUnseenUpdate).length;
@@ -142,12 +143,31 @@ final ticketAnomalyCountProvider = StreamProvider<int>((ref) {
   return ref.watch(ticketRepositoryProvider).watchAnomalyCount();
 });
 
-/// Nombre de tickets à traiter (Reçus, Analysés ou Validés) : pastille du compte,
-/// entrée « Tickets à traiter » du menu et puce « À traiter ». Zéro, sans
+/// Identifiants des tickets à traiter (Reçus, Analysés ou Validés). Vide, sans
 /// requête, hors administrateur.
-final adminTicketsToProcessCountProvider = StreamProvider<int>((ref) {
-  if (!ref.watch(isAdminProvider)) return Stream.value(0);
-  return ref.watch(ticketRepositoryProvider).watchToProcessCount();
+final adminTicketsToProcessIdsProvider = StreamProvider<Set<String>>((ref) {
+  if (!ref.watch(isAdminProvider)) return Stream.value(const <String>{});
+  return ref.watch(ticketRepositoryProvider).watchToProcessIds();
+});
+
+/// Nombre de tickets à traiter : entrée « Tickets à traiter » du menu et
+/// puce « À traiter ».
+final adminTicketsToProcessCountProvider = Provider<AsyncValue<int>>((ref) {
+  return ref.watch(adminTicketsToProcessIdsProvider).whenData((s) => s.length);
+});
+
+/// Tickets à signaler sur la puce du compte : ceux de l'utilisateur avec un
+/// suivi non lu, plus ceux à traiter (administrateur), chaque ticket une seule
+/// fois.
+final accountTicketsBadgeCountProvider = Provider<int>((ref) {
+  final mine = ref.watch(myTicketsProvider).value ?? const <Ticket>[];
+  final toProcess =
+      ref.watch(adminTicketsToProcessIdsProvider).value ?? const <String>{};
+  return {
+    for (final t in mine)
+      if (t.hasUnseenUpdate) t.id,
+    ...toProcess,
+  }.length;
 });
 
 /// Les analyses d'un ticket (`tickets/{id}/admin/analysis`), en flux ;

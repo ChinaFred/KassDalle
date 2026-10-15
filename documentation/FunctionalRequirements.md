@@ -1111,7 +1111,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   le texte publié sur GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
   proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
-  a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter (N) », juste après
+  a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter », juste après
   « Mes tickets » (voir « Tickets des membres »).
 - **Quatre types** : « Bug », « Évolution », « Nouvelle fonctionnalité », « Question ».
 
@@ -1200,9 +1200,12 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
     s'il existe ;
   - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable.
-- **Notification.** Un point s'affiche sur la puce du compte quand un ticket du membre passe à
-  Répondu, Refusé ou Livré et qu'il ne l'a pas encore ouvert. Ouvrir le détail du ticket
-  l'efface. Pas de notification push ni d'e-mail.
+- **Notification.** Une pastille chiffrée s'affiche sur la puce du compte (`99+` au-delà de 99)
+  et sur l'icône de « Mes tickets » quand le statut d'un ticket du membre a changé depuis sa
+  dernière ouverture, ou qu'il ne l'a jamais ouvert, quel que soit le statut sauf « Envoi en
+  cours ». Ouvrir le détail du ticket l'efface. Le nombre de la puce additionne les invitations
+  de groupe et les tickets distincts à lire ou, pour l'Admin, à traiter : un ticket compte une
+  fois. Pas de notification push ni d'e-mail.
 - États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
   l'instant » — « Un bug, une idée, une question ? Envoyez-les à l'administrateur. », avec
   « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;
@@ -1256,10 +1259,10 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
   (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
 - **À traiter.** Un ticket Reçu, Analysé ou Validé attend une action de l'Admin (une décision, une réponse ou le lancement du
-  développement). Leur nombre allume le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
-  s'affiche dans l'entrée « Tickets à traiter (N) » du menu du compte, avec un badge quand N
-  dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni le point n'existent pour
-  un Editor ou un Reader.
+  développement). Leur nombre entre dans la pastille de la puce du compte (lecteur d'écran : « N élément(s) en
+  attente : … ») et s'affiche sur l'icône de l'entrée « Tickets à traiter » du menu du compte,
+  quand il dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni cette part de la
+  pastille n'existent pour un Editor ou un Reader.
 - La tuile et l'entrée du menu ouvrent l'écran sur le filtre « À traiter ». S'il n'y a rien à
   traiter, l'écran passe une fois sur « Tous ». Le filtre choisi ensuite est gardé.
 - **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
@@ -1878,9 +1881,9 @@ stateDiagram-v2
 
 Le diagramme ne trace que les passages courants. Toute fermeture donne Livré (Répondu pour
 une Question) ou Refusé, quel que soit le statut de départ. Une réouverture ramène au statut
-que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Les trois états finaux
-allument le point de notification sur la puce du compte de l'auteur, jusqu'à ce qu'il ouvre
-le ticket.
+que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Tout changement de statut
+hors « Envoi en cours » allume la pastille de notification sur la puce du compte de l'auteur,
+jusqu'à ce qu'il ouvre le ticket.
 
 ---
 

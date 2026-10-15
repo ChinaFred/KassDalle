@@ -1067,7 +1067,7 @@ flowchart LR
     f2(["Créer l'Issue&lt;br/&gt;sans nom, sans capture, mentions neutralisées"])
     f3(["Mettre à jour le statut&lt;br/&gt;d'après l'Issue"])
     f4(["Reprendre chaque heure&lt;br/&gt;envois en attente et Issues ouvertes"])
-    f5(["Allumer le point sur la puce du compte&lt;br/&gt;Répondu, Refusé ou Livré"])
+    f5(["Allumer la pastille sur la puce du compte&lt;br/&gt;statut changé, ticket non ouvert"])
   end
 
   MEM --- t1
@@ -1143,8 +1143,8 @@ flowchart LR
         pour un ticket Reçu, Analysé, Validé ou En cours, Question comprise : le motif, 5 à
         2 000 caractères, est publié sur GitHub en « Réponse : … », puis l'Issue est fermée comme
         non prévue ; le membre voit Refusé et le motif. Un bouton qui ne s'applique pas est
-        masqué. La tuile d'administration et l'entrée « Tickets à traiter (N) » du menu du compte
-        ouvrent l'écran sur les tickets Reçus, Analysés ou Validés ; leur nombre allume le point de la
+        masqué. La tuile d'administration et l'entrée « Tickets à traiter » du menu du compte
+        ouvrent l'écran sur les tickets Reçus, Analysés ou Validés ; leur nombre entre dans la pastille de la
         puce du compte de l'administrateur.
         <b>Répondre à une analyse.</b> Quand une analyse pose des questions, l'administrateur y
         répond depuis la fiche (« Répondre », ticket Analysé ou Validé, hors Question, au moins
