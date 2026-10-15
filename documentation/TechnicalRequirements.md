@@ -6121,15 +6121,22 @@ Procédure, une fois, dans Settings › Environments du dépôt :
 
 `ci.yml` ne lit aucun secret : il n'a pas besoin de l'environnement.
 
-Deux réglages du dépôt complètent l'environnement. Sans eux, un workflow poussé sur une
-branche peut demander `contents: write`, pousser sur `master` puis lancer le déploiement à la
-main, que l'environnement accepte :
+Deux réglages du dépôt complètent l'environnement. État relevé le 15 octobre 2026 :
 
-- Settings › Rules › Rulesets : une règle sur `master` qui exige une pull request et bloque le
-  push forcé et la suppression ; seul le rôle « Repository admin » y déroge (le PC pousse sur
-  `master`), jamais « GitHub Actions » ;
 - Settings › Actions › General : « Workflow permissions » sur « Read repository contents », et
-  « Allow GitHub Actions to create and approve pull requests » décochée.
+  « Allow GitHub Actions to create and approve pull requests » décochée. **En place.**
+- Settings › Rules › Rulesets : la règle `master` (cible : branche par défaut, aucune
+  dérogation) bloque le push forcé et la suppression. **Elle n'exige pas de pull request.**
+
+Le premier réglage fixe seulement les droits par défaut du jeton : un workflow
+peut encore déclarer `permissions: contents: write` et `actions: write`. Poussé sur une
+branche, par exemple une branche `claude/…` d'une session lancée depuis Admin › Tickets, il
+peut alors pousser sur `master`, puis lancer le déploiement à la main, que l'environnement
+accepte. Une règle qui exige une pull request sur `master` ferme ce chemin. Pour que le PC
+continue de pousser directement, seul le rôle « Repository admin » doit y déroger, jamais
+« GitHub Actions ».
+
+Seul `ChinaFred` a un droit d'écriture sur le dépôt depuis le 15 octobre 2026.
 
 **Risque accepté.** Une session de routine écrit sur GitHub avec l'accès du compte mainteneur,
 qui peut fusionner une pull request ; une fusion sur `master` déploie. Seul le prompt de la
@@ -6179,6 +6186,19 @@ le 8 octobre 2026.
 
 Un déploiement dit s'il manque un rôle : le message d'erreur de la CLI nomme la permission
 refusée, et le workflow le reprend dans ses avertissements.
+
+**Limites connues** (audit du 15 octobre 2026) :
+
+- le job `deploy` construit le web, l'APK et les Functions (`flutter pub get`, `npm ci`,
+  Gradle) avant de s'authentifier, et `id-token: write` vaut pour tout le job. Une dépendance
+  compromise peut donc demander un jeton OIDC et obtenir une heure d'accès au compte de
+  service. Séparer le build et le déploiement en deux jobs, dont seul le second a
+  `id-token: write`, fermerait ce chemin ;
+- `github-deploy` a `Secret Manager Admin`, et le compte d'exécution des fonctions a le rôle
+  `editor` sur le projet, avec accès aux onze secrets du projet dans Secret Manager, y compris
+ceux qu'aucune fonction ne déclare. Une heure d'accès au compte de
+  déploiement suffit à lire tous les secrets. Réduire ces rôles demande un compte d'exécution
+  dédié et un rôle de déploiement sur mesure, à éprouver par un déploiement.
 
 ### Sauvegardes de Firestore
 
