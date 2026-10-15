@@ -1251,9 +1251,11 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   pas un statut : le membre continue de voir « Envoi en cours ».
 - Filtres : statut (« À traiter (N) », « Tous », « En anomalie », puis les huit statuts) et type (« Tous les
   types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
-  qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, auteur (son nom dans l'application),
-  statut, date, et la puce « En anomalie ».
-- Détail, dans l'ordre : type, titre, statut ; « Ouvrir sur GitHub » et « Copier le lien » ;
+  qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
+  « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
+  sans Issue, pas de numéro), statut, et la puce « En anomalie ».
+- Détail, dans l'ordre : type, titre, statut et « Issue #N » (texte sélectionnable ; absent
+  tant que l'Issue n'existe pas, pour un ticket en Envoi en cours ou en anomalie) ; « Ouvrir sur GitHub » et « Copier le lien » ;
   pour un ticket en anomalie, « Essais d'envoi : N », « Dernière erreur : … » et « Relancer
   l'envoi » ; la réponse ou le motif du refus ; auteur, date, version, plateforme, écran ;
   description et capture en grand ; la section « Lancements (N) » ; enfin la section
@@ -1277,7 +1279,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   lancée » ou « Développement lancé », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
   « Session créée », « Échec : <message> » ou « Résultat inconnu : vérifiez sur
   claude.ai/code ». Pour une session créée : « Ouvrir la session », « Copier le lien », et
-  « Visible seulement depuis le compte Claude de l'administrateur. ». Le lien ne s'ouvre que
+  « Visible seulement depuis le compte Claude de l'administrateur. ». Une session créée porte
+  aussi « Pour l'arrêter, ouvrez-la sur claude.ai/code. » : l'application ne sait pas arrêter
+  une session. Le lien ne s'ouvre que
   s'il mène à `https://claude.ai`. États : « Chargement des lancements… » ; « Aucune session
   lancée pour ce ticket. » ; « Impossible de charger les lancements. » avec Réessayer.
   L'auteur du ticket ne voit ni cette section, ni le lien, ni le nom de l'administrateur.
@@ -1311,17 +1315,21 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     Issue. « Lancer le développement » : pour un ticket Validé (jamais une Question). Une
     confirmation s'ouvre. Analyse : « Lancer l'analyse de ce ticket ? » — « Une session Claude
     Code va lire l'Issue #N et publier son analyse sur GitHub. ». Développement : « Lancer le
-    développement de ce ticket ? » — « Une session Claude Code va écrire le code et ouvrir une
-    pull request. Elle ne fusionne rien. ». Les deux ajoutent « Lancements restants
+    développement de ce ticket ? » — « Une session Claude Code va écrire le code de l'Issue #N et
+    ouvrir une pull request. Elle ne fusionne rien. ». Les deux ajoutent « Lancements restants
     aujourd'hui : R sur 10. » (« … : inconnu. » quand le compteur ne se lit pas ; à zéro,
     « Vous avez lancé 10 sessions aujourd'hui. Réessayez demain. » et « Lancer » grisé) et
     l'encadré « Facturé sur l'abonnement Claude de l'administrateur. Ce coût n'apparaît pas
-    dans le suivi des coûts de l'application. ». Boutons « Annuler » et « Lancer ». Pendant
-    l'envoi : « Lancement en cours. Cela peut prendre jusqu'à 30 secondes. », « Annuler »
-    grisé. Session créée : « Session lancée. Le lien est dans la section Lancements. ».
+    dans le suivi des coûts de l'application. ». Boutons « Annuler » et « Lancer ». « Annuler »
+    ferme la boîte sans rien lancer. Pendant l'envoi : « Lancement en cours. Vous pouvez fermer :
+    le résultat s'affichera dans la section Lancements. », et « Annuler » devient « Fermer »,
+    actif (le retour fait de même). Fermer n'arrête pas le lancement : son résultat s'affiche
+    par le même message qu'avec la boîte ouverte, et la section Lancements se met à jour seule.
+    Session créée : « Session lancée. Le lien est dans la section Lancements. ».
     Aucune réponse de Claude : « Résultat inconnu : vérifiez sur claude.ai/code avant de
     relancer. ». Réponse perdue en route : « Réponse perdue. Regardez la section Lancements
-    avant de relancer. ». Un refus laisse la boîte ouverte avec son message.
+    avant de relancer. ». Un refus laisse la boîte ouverte avec son message ; arrivé après « Fermer », il
+    s'affiche en message d'erreur.
   - **Un lancement à la fois.** Tant qu'un lancement du même type n'a rien changé au statut du
     ticket, depuis moins d'une heure (analyse) ou de trois heures (développement), le bouton
     est masqué et la barre affiche « Analyse en cours depuis hh:mm » (« … depuis le jj/mm/aa à

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,7 +38,12 @@ class _FakeTicketRepository extends TicketRepository {
   }
 }
 
-Ticket _ticket(String status) => Ticket.fromMap('t1', {
+Ticket _ticket(
+  String status, {
+  bool withIssue = true,
+  String id = 't1',
+  int issue = 73,
+}) => Ticket.fromMap(id, {
   'type': 'bug',
   'title': 'La liste de courses se vide toute seule au retour',
   'description': 'Une description',
@@ -45,18 +52,29 @@ Ticket _ticket(String status) => Ticket.fromMap('t1', {
   'platform': 'android',
   'author_uid': 'u1',
   'status': status,
-  'github_issue_number': 73,
-  'github_url': 'https://github.com/ChinaFred/KassDalle/issues/73',
+  if (withIssue) ...{
+    'github_issue_number': issue,
+    'github_url': 'https://github.com/ChinaFred/KassDalle/issues/$issue',
+  },
 });
+
+/// La liste seule, au téléphone : sous les bandeaux et les filtres à 200 %,
+/// 640 px de haut ne laissent pas de place aux tuiles.
+const _listSize = Size(360, 1200);
 
 void main() {
   Future<_FakeTicketRepository> pump(
     WidgetTester tester, {
     required String status,
+    bool withIssue = true,
+    String? selectedTicketId = 't1',
+    Size size = const Size(320, 640),
     List<TicketLaunch> launches = const [],
     Future<TicketLaunchResult> Function()? onLaunch,
+    List<Ticket>? tickets,
+    ValueNotifier<String?>? selection,
   }) async {
-    tester.view.physicalSize = const Size(320, 640);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final repo = _FakeTicketRepository(
@@ -71,7 +89,9 @@ void main() {
         overrides: [
           ticketRepositoryProvider.overrideWithValue(repo),
           adminTicketsProvider.overrideWith(
-            (ref) => Stream.value([_ticket(status)]),
+            (ref) => Stream.value(
+              tickets ?? [_ticket(status, withIssue: withIssue)],
+            ),
           ),
           adminTicketsToProcessCountProvider.overrideWith(
             (ref) => Stream.value(1),
@@ -101,7 +121,15 @@ void main() {
             ).copyWith(textScaler: const TextScaler.linear(2.0)),
             child: child!,
           ),
-          home: const AdminTicketsScreen(selectedTicketId: 't1'),
+          // Une sélection qui change sans routeur : l'écran large garde le
+          // même `State` de fiche d'un ticket à l'autre.
+          home: selection == null
+              ? AdminTicketsScreen(selectedTicketId: selectedTicketId)
+              : ValueListenableBuilder<String?>(
+                  valueListenable: selection,
+                  builder: (_, id, _) =>
+                      AdminTicketsScreen(selectedTicketId: id),
+                ),
         ),
       ),
     );
@@ -272,5 +300,222 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('liste : numéro d\'Issue avant l\'auteur', (tester) async {
+    await pump(
+      tester,
+      status: 'received',
+      selectedTicketId: null,
+      size: _listSize,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('#73 · Marie · …'), findsOneWidget);
+  });
+
+  testWidgets('liste et fiche : sans Issue, aucun numéro', (tester) async {
+    await pump(
+      tester,
+      status: 'received',
+      withIssue: false,
+      selectedTicketId: null,
+      size: _listSize,
+    );
+    expect(find.text('Marie · …'), findsOneWidget);
+    expect(find.textContaining('#'), findsNothing);
+  });
+
+  testWidgets('fiche : « Issue #73 », absent sans Issue', (tester) async {
+    await pump(tester, status: 'received');
+    expect(find.text('Issue #73'), findsOneWidget);
+  });
+
+  testWidgets('fiche sans Issue : pas de « Issue # »', (tester) async {
+    await pump(tester, status: 'received', withIssue: false);
+    expect(find.textContaining('Issue #'), findsNothing);
+  });
+
+  testWidgets('la boîte du développement cite l\'Issue', (tester) async {
+    await pump(tester, status: 'validated');
+    await tester.ensureVisible(find.text('Lancer le développement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lancer le développement'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lancer le développement de ce ticket ?'), findsOneWidget);
+    expect(
+      find.text(
+        'Une session Claude Code va écrire le code de l\'Issue #73 et ouvrir '
+        'une pull request. Elle ne fusionne rien.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  Future<void> openAndLaunch(WidgetTester tester, String button) async {
+    await tester.ensureVisible(find.text(button));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(button));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Lancer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lancer'));
+    // L'indicateur tourne pendant l'envoi : pas de pumpAndSettle.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  testWidgets('« Annuler » avant l\'envoi : rien n\'est appelé', (
+    tester,
+  ) async {
+    final repo = await pump(tester, status: 'received');
+    await tester.ensureVisible(find.text('Lancer l\'analyse'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lancer l\'analyse'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lancer l\'analyse de ce ticket ?'), findsNothing);
+    expect(repo.launches, 0);
+  });
+
+  testWidgets('« Fermer » pendant l\'envoi, puis message de réussite', (
+    tester,
+  ) async {
+    final reply = Completer<TicketLaunchResult>();
+    final repo = await pump(
+      tester,
+      status: 'received',
+      onLaunch: () => reply.future,
+    );
+    await openAndLaunch(tester, 'Lancer l\'analyse');
+    expect(repo.launches, 1);
+    expect(find.text('Annuler'), findsNothing);
+    expect(
+      find.text(
+        'Lancement en cours. Vous pouvez fermer : le résultat s\'affichera '
+        'dans la section Lancements.',
+      ),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Fermer'));
+    await tester.pump();
+    await tester.tap(find.text('Fermer'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Lancer l\'analyse de ce ticket ?'), findsNothing);
+    // La fiche reste ouverte : un seul `pop`.
+    expect(find.text('Lancements (0)'), findsOneWidget);
+    reply.complete(
+      const TicketLaunchResult(
+        outcome: TicketLaunchOutcome.launched,
+        sessionUrl: 'https://claude.ai/code/s1',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text('Session lancée. Le lien est dans la section Lancements.'),
+      findsOneWidget,
+    );
+    expect(repo.launches, 1);
+  });
+
+  testWidgets('« Fermer » pendant l\'envoi, puis refus en message', (
+    tester,
+  ) async {
+    final reply = Completer<TicketLaunchResult>();
+    await pump(tester, status: 'validated', onLaunch: () => reply.future);
+    await openAndLaunch(tester, 'Lancer le développement');
+    await tester.ensureVisible(find.text('Fermer'));
+    await tester.pump();
+    await tester.tap(find.text('Fermer'));
+    await tester.pumpAndSettle();
+    reply.completeError(
+      const TicketLaunchError('Un développement a été lancé.'),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Un développement a été lancé.'), findsOneWidget);
+  });
+
+  testWidgets('session lancée : comment l\'arrêter', (tester) async {
+    final at = DateTime.now().subtract(const Duration(hours: 2));
+    await pump(
+      tester,
+      status: 'received',
+      launches: [
+        TicketLaunch.fromMap({
+          'id': 'l1',
+          'action': 'analyse',
+          'outcome': 'launched',
+          'from_status': 'received',
+          'launched_at': at,
+          'retry_after': at.add(const Duration(hours: 1)),
+          'launched_by_name': 'Fred',
+          'session_url': 'https://claude.ai/code/s1',
+        })!,
+      ],
+    );
+    expect(
+      find.text('Pour l\'arrêter, ouvrez-la sur claude.ai/code.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('écran large : « Fermer » sur A ne bloque pas le ticket B', (
+    tester,
+  ) async {
+    final reply = Completer<TicketLaunchResult>();
+    final selection = ValueNotifier<String?>('t1');
+    addTearDown(selection.dispose);
+    await pump(
+      tester,
+      status: 'received',
+      // À 200 %, les filtres sur 460 px de large prennent la hauteur de la
+      // liste : 1000 px de haut la font déborder.
+      size: const Size(1400, 1800),
+      tickets: [
+        _ticket('received'),
+        _ticket('analyzed', id: 't2', issue: 74),
+      ],
+      selection: selection,
+      onLaunch: () => reply.future,
+    );
+    ButtonStyleButton button(String label) => tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+
+    await openAndLaunch(tester, 'Lancer l\'analyse');
+    await tester.ensureVisible(find.text('Fermer'));
+    await tester.pump();
+    await tester.tap(find.text('Fermer'));
+    await tester.pumpAndSettle();
+    expect(button('Lancer l\'analyse').enabled, isFalse);
+
+    selection.value = 't2';
+    await tester.pumpAndSettle();
+    expect(find.text('Issue #74'), findsOneWidget);
+    expect(button('Valider').enabled, isTrue);
+    expect(button('Refuser').enabled, isTrue);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // A reste bloqué jusqu'à la réponse, puis se libère.
+    selection.value = 't1';
+    await tester.pumpAndSettle();
+    expect(button('Lancer l\'analyse').enabled, isFalse);
+    reply.complete(
+      const TicketLaunchResult(
+        outcome: TicketLaunchOutcome.launched,
+        sessionUrl: 'https://claude.ai/code/s1',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(button('Lancer l\'analyse').enabled, isTrue);
+    expect(tester.takeException(), isNull);
   });
 }

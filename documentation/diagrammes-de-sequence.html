@@ -4283,7 +4283,11 @@ sequenceDiagram
   else réponse d'erreur (3xx non suivie, 400, 401/403, 404, 429)
     F->>T: entrée failed + message ; 401/403 : routine_invalid_since ; compteur rendu
     F-->>C: message (« La routine est en pause sur claude.ai… », « Trop de lancements… »)
-    C-->>AD: la boîte reste ouverte avec le message
+    alt boîte encore ouverte
+      C-->>AD: la boîte reste ouverte avec le message
+    else boîte fermée pendant l'envoi (« Fermer »)
+      C-->>AD: message d'erreur (« Lancement refusé. » par défaut)
+    end
   else aucune réponse (délai, réseau), ou 500 / 503 / tout 5xx
     F->>T: entrée laissée unknown, comptée (5xx : error_reason)
     F-->>C: { outcome: unknown, message (5xx seulement) }
@@ -4300,7 +4304,8 @@ sequenceDiagram
         est masqué et la fiche dit « Analyse en cours depuis hh:mm » ; ensuite il devient
         « Relancer… », et la confirmation rappelle de vérifier qu'aucune session ne tourne encore.
         Une réponse perdue côté client ferme la boîte sur « Réponse perdue. Regardez la section
-        Lancements avant de relancer. ».
+        Lancements avant de relancer. ». Pendant l'envoi, « Annuler » devient « Fermer » : fermer
+        la boîte ne coupe pas l'appel, et le résultat s'affiche ensuite en message (refus compris).
       </figcaption>
     </figure>
   </section>

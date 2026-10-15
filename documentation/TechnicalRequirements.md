@@ -3730,7 +3730,7 @@ verrouillés par `ticket_decisions.json` (cases `can_launch_*`, section `launch_
 `TicketLaunchError` : la boîte de confirmation reste ouverte et affiche le message. Toute autre
 erreur est remontée (`ErrorReportService`, feature `tickets`, étape `launch_<action>`) et lue
 comme une réponse perdue : la boîte se ferme sur « Réponse perdue. Regardez la section
-Lancements avant de relancer. ». `adminTicketDecisions` reçoit l'historique
+Lancements avant de relancer. ». Pendant l'appel, « Annuler » devient « Fermer » et reste actif : fermer la boîte ne coupe pas l'appel. `_launch` attend alors le même `Future` et affiche le résultat (succès, inconnu, refus en message d'erreur) par le `ScaffoldMessenger` et le `ColorScheme` lus avant l'appel (`showSuccessMessage` / `showErrorMessage` de `context_extensions.dart`). L'état occupé de la fiche porte l'id du ticket lancé (`_busyTicketId`) : sur grand écran, un autre ticket reste utilisable. `adminTicketDecisions` reçoit l'historique
 (`ticketLaunchesProvider`, flux de `tickets/{id}/admin/launches`, `autoDispose`, `null` hors
 administrateur) : historique en chargement → bouton masqué ; en erreur → bouton affiché (le
 serveur refait le contrôle). `ticketsStatusProvider` lit `app_config/tickets_status` (bandeaux

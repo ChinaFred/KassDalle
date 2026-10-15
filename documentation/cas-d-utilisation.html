@@ -1144,9 +1144,10 @@ flowchart LR
         fusionne rien. Chaque lancement demande une confirmation qui annonce les lancements
         restants du jour (10 pour toute la famille) ; il est refusé si un lancement du même type
         est en cours (1 h pour l'analyse, 3 h pour le développement, tant que le statut n'a pas
-        changé) ; passé ce délai, le bouton devient « Relancer ». La section « Lancements » de la
-        fiche donne le résultat et le lien de la session, visible depuis le compte Claude de
-        l'administrateur seul ; l'auteur du ticket ne voit rien de nouveau. Ces sessions sont
+        changé) ; passé ce délai, le bouton devient « Relancer ». Pendant l'envoi, « Fermer » ferme la
+        confirmation sans couper le lancement, dont le résultat s'affiche ensuite. La section
+        « Lancements » de la fiche donne le résultat et le lien de la session, visible depuis le
+        compte Claude de l'administrateur seul, qui seul peut l'arrêter sur claude.ai/code ; l'auteur du ticket ne voit rien de nouveau. Ces sessions sont
         facturées sur l'abonnement Claude de l'administrateur : elles n'entrent dans aucun poste
         de coût de l'application, et l'écran Tickets n'en affiche que le nombre.
       </figcaption>

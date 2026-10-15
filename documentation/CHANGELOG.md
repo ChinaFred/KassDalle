@@ -18,6 +18,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-15
+
+### v0.23.66 — fonctionnel
+
+Admin › Tickets affiche le numéro de l'Issue GitHub : « #N · auteur · date » dans la liste,
+« Issue #N » sur la fiche, et dans la boîte « Lancer le développement ». Il fait le lien avec
+les sessions de claude.ai/code, qui citent ce numéro.
+
+Pendant l'envoi d'un lancement, « Annuler » devient « Fermer » et reste actif. Fermer ne coupe
+pas l'appel : le résultat s'affiche ensuite en message, refus compris. Aucune session lancée ne
+peut être arrêtée depuis l'application ; la section Lancements renvoie à claude.ai/code. Un
+lancement en cours ne grise plus les boutons d'un autre ticket sur grand écran.
+
 ## 2026-10-14
 
 ### v0.23.65 — technique

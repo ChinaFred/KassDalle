@@ -51,27 +51,67 @@ extension AppSnackBar on BuildContext {
   /// Affiche un SnackBar de succès : fond secondaire, coche, durée courte
   /// (deux secondes ; huit avec une [action]).
   void showSuccessSnackBar(String message, {SnackBarAction? action}) {
-    final scheme = Theme.of(this).colorScheme;
-    _showTinted(
-      message: message,
-      icon: Icons.check_circle_outline,
-      background: scheme.secondaryContainer,
-      foreground: scheme.onSecondaryContainer,
-      duration: action == null ? const Duration(seconds: 2) : _actionDuration,
+    ScaffoldMessenger.of(this).showSuccessMessage(
+      message,
+      scheme: Theme.of(this).colorScheme,
       action: action,
+      persist: _persists(action),
     );
   }
 
   /// Affiche un SnackBar d'erreur : fond d'erreur, icône, durée longue.
   void showErrorSnackBar(String message, {SnackBarAction? action}) {
-    final scheme = Theme.of(this).colorScheme;
+    ScaffoldMessenger.of(this).showErrorMessage(
+      message,
+      scheme: Theme.of(this).colorScheme,
+      action: action,
+      persist: _persists(action),
+    );
+  }
+}
+
+/// Les mêmes messages de succès et d'erreur, posés sur un
+/// [ScaffoldMessengerState] capturé avant une attente : ils s'affichent
+/// encore quand l'écran qui les demande a été quitté. [scheme] est lu sur le
+/// même contexte, au même moment.
+extension AppMessenger on ScaffoldMessengerState {
+  /// Variante de [AppSnackBar.showSuccessSnackBar].
+  void showSuccessMessage(
+    String message, {
+    required ColorScheme scheme,
+    SnackBarAction? action,
+    bool persist = false,
+  }) {
+    _showTinted(
+      message: message,
+      icon: Icons.check_circle_outline,
+      background: scheme.secondaryContainer,
+      foreground: scheme.onSecondaryContainer,
+      duration: action == null
+          ? const Duration(seconds: 2)
+          : AppSnackBar._actionDuration,
+      action: action,
+      persist: persist,
+    );
+  }
+
+  /// Variante de [AppSnackBar.showErrorSnackBar].
+  void showErrorMessage(
+    String message, {
+    required ColorScheme scheme,
+    SnackBarAction? action,
+    bool persist = false,
+  }) {
     _showTinted(
       message: message,
       icon: Icons.error_outline,
       background: scheme.errorContainer,
       foreground: scheme.onErrorContainer,
-      duration: action == null ? const Duration(seconds: 4) : _actionDuration,
+      duration: action == null
+          ? const Duration(seconds: 4)
+          : AppSnackBar._actionDuration,
       action: action,
+      persist: persist,
     );
   }
 
@@ -81,9 +121,10 @@ extension AppSnackBar on BuildContext {
     required Color background,
     required Color foreground,
     required Duration duration,
-    SnackBarAction? action,
+    required SnackBarAction? action,
+    required bool persist,
   }) {
-    ScaffoldMessenger.of(this).showSnackBar(
+    showSnackBar(
       SnackBar(
         backgroundColor: background,
         duration: duration,
@@ -96,7 +137,7 @@ extension AppSnackBar on BuildContext {
                 onPressed: action.onPressed,
                 textColor: foreground,
               ),
-        persist: _persists(action),
+        persist: persist,
         showCloseIcon: action != null,
         closeIconColor: foreground,
         content: Row(

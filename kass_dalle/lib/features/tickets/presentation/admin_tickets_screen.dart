@@ -425,6 +425,7 @@ class _AdminTicketTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final author = ref.watch(memberNameProvider(ticket.authorUid)) ?? '…';
     final created = ticket.createdAt;
+    final issue = ticket.githubIssueNumber;
     return ListTile(
       selected: selected,
       leading: TicketTypeIcon(type: ticket.type),
@@ -436,8 +437,13 @@ class _AdminTicketTile extends ConsumerWidget {
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            // Sans Issue (envoi en cours, en anomalie), pas de numéro.
             Text(
-              '$author · ${created == null ? '…' : formatTicketDate(created)}',
+              [
+                if (issue != null) '#$issue',
+                author,
+                created == null ? '…' : formatTicketDate(created),
+              ].join(' · '),
             ),
             TicketStatusChip(status: ticket.status),
             if (ticket.isInAnomaly) const TicketAnomalyChip(),
@@ -494,8 +500,20 @@ class _AdminTicketDetail extends ConsumerStatefulWidget {
 class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   bool _retrying = false;
 
-  /// Une validation ou un lancement en cours : un seul à la fois.
-  bool _busy = false;
+  /// Le ticket dont une validation ou un lancement est en cours : un seul à
+  /// la fois. Le même `State` sert à tous les tickets (écran large) : un
+  /// lancement laissé en route sur le ticket A ne bloque pas le ticket B.
+  String? _busyTicketId;
+
+  bool get _busy => _busyTicketId == widget.ticket.id;
+
+  void _setBusy(String ticketId) => setState(() => _busyTicketId = ticketId);
+
+  /// Libère [ticketId], sauf si un autre ticket a pris la place entre-temps.
+  void _clearBusy(String ticketId) {
+    if (!mounted || _busyTicketId != ticketId) return;
+    setState(() => _busyTicketId = null);
+  }
 
   /// Redessine la fiche à l'échéance du lancement en cours, pour que
   /// « … en cours depuis » laisse place à « Relancer… » sans geste.
@@ -598,9 +616,10 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _busy = true);
+    final ticketId = widget.ticket.id;
+    _setBusy(ticketId);
     try {
-      await ref.read(ticketRepositoryProvider).validate(widget.ticket.id);
+      await ref.read(ticketRepositoryProvider).validate(ticketId);
       if (mounted) context.showSuccessSnackBar('Ticket validé.');
     } on TicketDecisionError catch (e) {
       // Déjà remontée par `TicketRepository` (feature `tickets`).
@@ -613,7 +632,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _clearBusy(ticketId);
     }
   }
 
@@ -653,9 +672,14 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         : (limit - todayStatus.launchesTodayAt(DateTime.now()))
               .clamp(0, limit)
               .toInt();
-    setState(() => _busy = true);
+    // Capturés avant l'appel : la boîte peut être fermée pendant l'envoi, et
+    // la fiche quittée, avant que le résultat n'arrive.
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    Future<TicketLaunchResult>? pending;
+    _setBusy(ticket.id);
     try {
-      final result = await showDialog<_LaunchDialogOutcome>(
+      var outcome = await showDialog<_LaunchDialogOutcome>(
         context: context,
         barrierDismissible: false,
         builder: (_) => _LaunchTicketDialog(
@@ -664,32 +688,58 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           relaunchOf: relaunchOf,
           remaining: remaining,
           limit: limit,
-          submit: () =>
-              ref.read(ticketRepositoryProvider).launch(ticket.id, action),
+          submit: () => pending = ref
+              .read(ticketRepositoryProvider)
+              .launch(ticket.id, action),
         ),
       );
-      if (!mounted || result == null) return;
-      switch (result.kind) {
-        case _LaunchDialogResult.launched:
-          context.showSuccessSnackBar(
-            'Session lancée. Le lien est dans la section Lancements.',
-          );
-        case _LaunchDialogResult.unknown:
-          // Un 5xx de Claude a son message ; sans réponse, le message
-          // générique du résultat inconnu.
-          context.showErrorSnackBar(
-            result.message ??
-                'Résultat inconnu : vérifiez sur claude.ai/code avant de '
-                    'relancer.',
-          );
-        case _LaunchDialogResult.lost:
-          context.showErrorSnackBar(
-            'Réponse perdue. Regardez la section Lancements avant de '
-            'relancer.',
-          );
+      if (outcome?.kind == _LaunchDialogResult.detached) {
+        // « Fermer » pendant l'envoi : l'appel continue, son résultat
+        // s'affiche ici. La section Lancements se met à jour seule.
+        final inFlight = pending;
+        if (inFlight == null) return;
+        outcome = await _settleLaunch(inFlight);
+      }
+      if (outcome == null) return;
+      final (String text, bool isError) = switch (outcome.kind) {
+        _LaunchDialogResult.launched => (
+          'Session lancée. Le lien est dans la section Lancements.',
+          false,
+        ),
+        // Un 5xx de Claude a son message ; sans réponse, le message
+        // générique du résultat inconnu.
+        _LaunchDialogResult.unknown => (
+          outcome.message ??
+              'Résultat inconnu : vérifiez sur claude.ai/code avant de '
+                  'relancer.',
+          true,
+        ),
+        _LaunchDialogResult.lost => (
+          'Réponse perdue. Regardez la section Lancements avant de '
+              'relancer.',
+          true,
+        ),
+        // Un refus arrivé après « Fermer » : rien n'a été lancé.
+        _LaunchDialogResult.refused => (
+          outcome.message ?? 'Lancement refusé.',
+          true,
+        ),
+        // Jamais rendu par `_settleLaunch` : la réponse est tenue pour perdue.
+        _LaunchDialogResult.detached => (
+          'Réponse perdue. Regardez la section Lancements avant de '
+              'relancer.',
+          true,
+        ),
+      };
+      // Le messenger capturé sert aussi quand la fiche a été quittée.
+      if (!messenger.mounted) return;
+      if (isError) {
+        messenger.showErrorMessage(text, scheme: scheme);
+      } else {
+        messenger.showSuccessMessage(text, scheme: scheme);
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _clearBusy(ticket.id);
     }
   }
 
@@ -758,6 +808,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     final author = ref.watch(memberNameProvider(ticket.authorUid)) ?? '…';
     final created = ticket.createdAt;
     final url = ticket.githubUrl;
+    final issue = ticket.githubIssueNumber;
     final screenshot = ticket.screenshotPath;
     final reply = ticket.replyText;
     final launchesAsync = ref.watch(ticketLaunchesProvider(ticket.id));
@@ -799,9 +850,15 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         Wrap(
           spacing: 8,
           runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TicketStatusChip(status: ticket.status),
             if (ticket.isInAnomaly) const TicketAnomalyChip(),
+            if (issue != null)
+              SelectableText(
+                'Issue #$issue',
+                style: theme.textTheme.labelLarge,
+              ),
           ],
         ),
         if (url != null) ...[
@@ -1027,18 +1084,53 @@ class _LaunchButton extends StatelessWidget {
   }
 }
 
-/// Ce que la boîte de lancement rend en se fermant.
-enum _LaunchDialogResult { launched, unknown, lost }
+/// Ce que la boîte de lancement rend en se fermant, ou ce qu'un appel rend
+/// une fois la boîte fermée.
+enum _LaunchDialogResult {
+  launched,
+  unknown,
+  lost,
 
-/// Ce que la boîte rend, avec le message du serveur pour un résultat inconnu.
+  /// Refus du serveur : rien n'a été lancé.
+  refused,
+
+  /// Boîte fermée par « Fermer » pendant l'envoi : l'appel continue, et
+  /// l'appelant en attend le résultat.
+  detached,
+}
+
+/// Ce que la boîte rend, avec le message du serveur pour un résultat inconnu
+/// ou un refus.
 typedef _LaunchDialogOutcome = ({_LaunchDialogResult kind, String? message});
+
+/// Attend la réponse d'un lancement et la range dans un des résultats. Les
+/// erreurs sont déjà remontées par `TicketRepository.launch` (feature
+/// `tickets`).
+Future<_LaunchDialogOutcome> _settleLaunch(
+  Future<TicketLaunchResult> pending,
+) async {
+  try {
+    final result = await pending;
+    return result.outcome == TicketLaunchOutcome.launched
+        ? (kind: _LaunchDialogResult.launched, message: null)
+        : (kind: _LaunchDialogResult.unknown, message: result.message);
+  } on TicketLaunchError catch (e) {
+    // Déjà remontée par `TicketRepository` (feature `tickets`).
+    return (kind: _LaunchDialogResult.refused, message: e.message);
+  } catch (_) {
+    // Déjà remontée par `TicketRepository` (feature `tickets`) : la réponse
+    // s'est perdue, la session a pu partir.
+    return (kind: _LaunchDialogResult.lost, message: null);
+  }
+}
 
 /// Boîte « Lancer l'analyse de ce ticket ? » / « Lancer le développement de
 /// ce ticket ? ».
 ///
 /// Reste ouverte sur un refus du serveur, avec son message : rien n'a été
 /// lancé. Se ferme sur un succès, un résultat inconnu, ou une réponse perdue
-/// (l'appelant le dit par un message).
+/// (l'appelant le dit par un message). Pendant l'envoi, « Fermer » (ou le
+/// retour) la ferme sans couper l'appel : l'appelant en affiche le résultat.
 class _LaunchTicketDialog extends StatefulWidget {
   final TicketLaunchAction action;
   final int issueNumber;
@@ -1066,35 +1158,34 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
   bool _sending = false;
   String? _error;
 
+  /// La boîte a déjà demandé sa fermeture : un second `pop` fermerait la
+  /// fiche (« Fermer » et la réponse arrivés dans la même image).
+  bool _closing = false;
+
+  void _close(_LaunchDialogOutcome? outcome) {
+    if (_closing || !mounted) return;
+    _closing = true;
+    Navigator.of(context).pop(outcome);
+  }
+
+  /// « Fermer » pendant l'envoi : l'appel continue, l'appelant l'attend.
+  void _detach() => _close((kind: _LaunchDialogResult.detached, message: null));
+
   Future<void> _submit() async {
     setState(() {
       _error = null;
       _sending = true;
     });
-    try {
-      final result = await widget.submit();
-      if (!mounted) return;
-      final _LaunchDialogOutcome outcome =
-          result.outcome == TicketLaunchOutcome.launched
-          ? (kind: _LaunchDialogResult.launched, message: null)
-          : (kind: _LaunchDialogResult.unknown, message: result.message);
-      Navigator.of(context).pop(outcome);
-    } on TicketLaunchError catch (e) {
-      // Déjà remontée par `TicketRepository` (feature `tickets`).
-      if (mounted) setState(() => _error = e.message);
-    } catch (_) {
-      // Déjà remontée par `TicketRepository` (feature `tickets`) : la
-      // réponse s'est perdue, la session a pu partir.
-      if (mounted) {
-        final _LaunchDialogOutcome lost = (
-          kind: _LaunchDialogResult.lost,
-          message: null,
-        );
-        Navigator.of(context).pop(lost);
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+    final outcome = await _settleLaunch(widget.submit());
+    if (!mounted || _closing) return;
+    if (outcome.kind == _LaunchDialogResult.refused) {
+      setState(() {
+        _error = outcome.message;
+        _sending = false;
+      });
+      return;
     }
+    _close(outcome);
   }
 
   @override
@@ -1136,6 +1227,10 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
 
     return PopScope(
       canPop: !_sending,
+      // Le retour pendant l'envoi vaut « Fermer ».
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _sending) _detach();
+      },
       child: AlertDialog(
         scrollable: true,
         title: Text(
@@ -1152,8 +1247,9 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
                   ? 'Une session Claude Code va lire l\'Issue '
                         '#${widget.issueNumber} et publier son analyse sur '
                         'GitHub.'
-                  : 'Une session Claude Code va écrire le code et ouvrir une '
-                        'pull request. Elle ne fusionne rien.',
+                  : 'Une session Claude Code va écrire le code de l\'Issue '
+                        '#${widget.issueNumber} et ouvrir une pull request. '
+                        'Elle ne fusionne rien.',
             ),
             const SizedBox(height: 12),
             Text(quotaLine),
@@ -1177,8 +1273,8 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
               Semantics(
                 liveRegion: true,
                 child: Text(
-                  'Lancement en cours. Cela peut prendre jusqu\'à 30 '
-                  'secondes.',
+                  'Lancement en cours. Vous pouvez fermer : le résultat '
+                  's\'affichera dans la section Lancements.',
                   style: muted,
                 ),
               ),
@@ -1193,9 +1289,11 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
           ],
         ),
         actions: [
+          // Avant l'appui sur « Lancer », rien n'est appelé. Pendant l'envoi,
+          // « Fermer » laisse l'appel aller à son terme.
           TextButton(
-            onPressed: _sending ? null : () => Navigator.of(context).pop(),
-            child: const Text('Annuler'),
+            onPressed: _sending ? _detach : () => _close(null),
+            child: Text(_sending ? 'Fermer' : 'Annuler'),
           ),
           FilledButton(
             onPressed: _sending || exhausted ? null : _submit,
@@ -1367,6 +1465,12 @@ class _LaunchCard extends StatelessWidget {
               'l\'administrateur.',
             ),
           ],
+          // L'application ne sait pas arrêter une session : la routine
+          // n'offre que le lancement.
+          if (launch.outcome == TicketLaunchOutcome.launched)
+            const TicketInfoLine(
+              'Pour l\'arrêter, ouvrez-la sur claude.ai/code.',
+            ),
         ],
       ),
     );
