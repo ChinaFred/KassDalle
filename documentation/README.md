@@ -9,6 +9,7 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 |---|---|---|
 | [FunctionalRequirements.md](FunctionalRequirements.md) | Intention, parcours, modules, rôles et règles d'accès, couverture mobile / web / desktop | Markdown |
 | [TechnicalRequirements.md](TechnicalRequirements.md) | Architecture détaillée, schéma Firestore complet (champs + types), Security Rules, routage multi-fournisseur et traitement des réponses JSON | Markdown |
+| [handbook-reseau-agents.md](handbook-reseau-agents.md) | Mise en place pas à pas du réseau d'agents dans un autre projet : Claude Code, `CLAUDE.md`, agents, skills, hooks, sessions cloud, GitHub, Google Cloud, tickets et Routines, variante AWS EKS | Markdown |
 | [CHANGELOG.md](CHANGELOG.md) | Historique des versions, de la plus récente à la plus ancienne : une entrée par version depuis la v0.22.104, et avant elle les 175 sections « Mise à jour release » sorties des deux specs | Markdown |
 | [architecture.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/architecture.html) ([source](architecture.html)) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
 | [diagramme-de-classes.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagramme-de-classes.html) ([source](diagramme-de-classes.html)) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |

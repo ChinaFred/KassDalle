@@ -377,6 +377,10 @@ ligne, à corriger comme ci-dessus.
   d'utilisation, diagrammes de séquence. Diagrammes en **Mermaid** (` ```mermaid ` dans un
   `<pre class="mermaid">`), rendus nativement par les Artifacts claude.ai et via le CDN Mermaid
   quand le fichier est ouvert localement.
+- `documentation/handbook-reseau-agents.md` — comment reproduire ailleurs le réseau d'agents :
+  configuration de Claude Code, `CLAUDE.md`, agents, skills, hooks, sessions cloud, GitHub
+  (CI, environnement `production`, tickets, Routines), Google Cloud, et la variante EKS. Il
+  décrit aussi les réglages faits à la main hors du dépôt, que rien d'autre ne garde.
 
 **Un lien vers un fichier HTML du dépôt pointe sur sa page rendue.** GitHub affiche le code
 d'un `.html`, pas la page. Dans un fichier Markdown, le lien principal vers un
@@ -398,7 +402,8 @@ Les noms de fichier cités entre accents graves, sans lien, ne sont pas concern�
 | Règles Firestore ou Storage | `TechnicalRequirements.md` (§4) |
 | Prompt, poste d'IA, routage | `TechnicalRequirements.md` |
 | Logique dupliquée Dart ↔ TypeScript | le tableau de ce fichier, section « Logique dupliquée » de `architecture.html` |
-| Déploiement, CI, outillage | `TechnicalRequirements.md`, `architecture.html` |
+| Déploiement, CI, outillage | `TechnicalRequirements.md`, `architecture.html`, `handbook-reseau-agents.md` |
+| Agent, skill, hook, `CLAUDE.md`, Routine, réglage manuel de GitHub, Google Cloud ou claude.ai | `handbook-reseau-agents.md` |
 | Version | `CHANGELOG.md` |
 
 Un libellé modifié sans changement de parcours ne demande rien de plus. Le bac à sable

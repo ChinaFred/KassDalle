@@ -20,6 +20,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.67 — technique
+
+Nouveau document `documentation/handbook-reseau-agents.md`. Il décrit pas à pas comment
+reproduire dans un autre projet le réseau d'agents de Kass'Dalle : installation de Claude Code,
+squelette de `CLAUDE.md`, format des agents et des skills, hooks, sessions cloud, chaîne de
+travail, réglages GitHub (CI, ruleset, environnement `production`), compte de service Google
+Cloud, tickets et Routines. Une section décrit la variante d'exploitation sur AWS EKS : rôle
+de déploiement par OIDC, ECR, chart Helm, External Secrets, workflow de déploiement.
+
+`CLAUDE.md` ajoute une ligne au tableau « Chaque changement met à jour ses documents » : un
+agent, un skill, un hook, `CLAUDE.md`, une Routine ou un réglage manuel de GitHub, Google Cloud
+ou claude.ai met à jour le handbook dans le même commit. Aucun code de l'application ne change.
+
 ### v0.23.66 — fonctionnel
 
 Admin › Tickets affiche le numéro de l'Issue GitHub : « #N · auteur · date » dans la liste,

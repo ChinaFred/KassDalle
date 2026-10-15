@@ -59,6 +59,7 @@ Tout est dans [`documentation/`](documentation/) — sommaire :
 | [Exigences fonctionnelles](documentation/FunctionalRequirements.md) | Intention, parcours, modules, rôles |
 | [Exigences techniques](documentation/TechnicalRequirements.md) | Architecture, schéma Firestore, Security Rules, prompts Gemini |
 | [Historique des versions](documentation/CHANGELOG.md) | Ce qui a changé d'une version à l'autre |
+| [Handbook du réseau d'agents](documentation/handbook-reseau-agents.md) | Reproduire ailleurs la configuration Claude Code, GitHub, Google Cloud, et la variante EKS |
 | [Architecture](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/architecture.html) ([source](documentation/architecture.html)) | Composants, pipeline d'import, Cloud Functions, collections |
 | [Diagramme de classes](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagramme-de-classes.html) ([source](documentation/diagramme-de-classes.html)) | Modèle de domaine et couche d'accès |
 | [Cas d'utilisation](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/cas-d-utilisation.html) ([source](documentation/cas-d-utilisation.html)) | Cas par rôle et vérification des droits |
