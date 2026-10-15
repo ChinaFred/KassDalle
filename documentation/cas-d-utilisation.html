@@ -1061,7 +1061,7 @@ flowchart LR
     t13(["Lancer le développement&lt;br/&gt;ticket Validé, hors Question, non bloqué"])
     t15(["Livrer un ticket&lt;br/&gt;En cours, PR prête, hors Question"])
     f9(["Contrôler la livraison&lt;br/&gt;une PR éligible, CI verte, aucun fichier sensible,&lt;br/&gt;une livraison à la fois"])
-    t14(["Répondre à une analyse&lt;br/&gt;Analysé ou Validé, hors Question,&lt;br/&gt;sans adresse e-mail"])
+    t14(["Répondre à une analyse&lt;br/&gt;Reçu, Analysé ou Validé, hors Question,&lt;br/&gt;sans adresse e-mail"])
     f8(["Voir le ticket bloqué&lt;br/&gt;dernière analyse postérieure au « validé »"])
     f7(["Contrôler le lancement&lt;br/&gt;aucun en cours, 10 par jour, Issue relue"])
     f6(["Relever les analyses&lt;br/&gt;commentaire du mainteneur, chaque heure, après une décision"])
@@ -1150,7 +1150,8 @@ flowchart LR
         puce du compte de l'administrateur.
         <b>Répondre à une analyse.</b> Quand une analyse pose des questions, l'administrateur y
         répond depuis la fiche (« Répondre », ticket Analysé ou Validé, hors Question, au moins
-        une analyse relevée). La réponse, 5 à 4 000 caractères et sans adresse e-mail, part sur
+        une analyse relevée ; un ticket Reçu se répond aussi, sans analyse, et reste Reçu : ses
+        précisions sont lues par la première analyse). La réponse, 5 à 4 000 caractères et sans adresse e-mail, part sur
         GitHub en « ## Précisions de l'administrateur » ; l'étiquette <code>validé</code> est
         retirée, l'Issue repasse à <code>statut:à-analyser</code> et le ticket à Reçu. Rien
         n'est lancé : l'administrateur lance ensuite l'analyse, qui lit ses précisions. La fiche

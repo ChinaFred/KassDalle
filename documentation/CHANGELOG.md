@@ -20,6 +20,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.82 — fonctionnel
+
+Ticket #101 : « Répondre » est disponible sur un ticket Reçu, avant « Lancer l'analyse ».
+L'administrateur ajoute une précision, publiée sur l'Issue en « ## Précisions de
+l'administrateur ». Le ticket reste Reçu, l'étiquette `statut:à-analyser` aussi, et rien n'est
+lancé. Plusieurs réponses se suivent. « Répondre » est masqué pendant une analyse en cours.
+La session d'analyse lit ces précisions : sans analyse précédente, elle lit toutes celles de
+l'Issue. Le texte de la Routine d'analyse (hors dépôt) est à mettre à jour de la même façon.
+
+### v0.23.82 — technique
+
+`answerPrecondition` et `ticketCanReply` (TypeScript et Dart) acceptent le statut `received`
+sans exiger d'analyse. `answerTicketDecision` ne remet pas le ticket à Reçu dans ce cas
+(`answerReset` seulement pour Analysé et Validé). `analysisAnswerState` cherche une réponse
+identique dans toute l'Issue quand il n'y a pas d'analyse. Le refus pendant un lancement
+porte aussi sur l'analyse d'un ticket Reçu. Fixture `ticket_decisions.json` (`reply_cases`)
+étendue. Aucune règle Firestore ni Storage ne change.
+
 ### v0.23.81 — fonctionnel
 
 Ticket #96 : les administrateurs reçoivent une notification Android « Nouvelle version

@@ -449,8 +449,9 @@ class AdminTicketDecisions {
 /// `test-fixtures/ticket_decisions.json` (section `reply_cases`). Un statut
 /// inconnu de cette version n'offre rien.
 ///
-/// [developmentRunning] : un développement est en cours sur un ticket non
-/// bloqué ; le serveur refuse alors (`launch_running`).
+/// [developmentRunning] : un lancement est en cours (analyse sur un ticket
+/// Reçu, développement sur un ticket Validé non bloqué) ; le serveur refuse
+/// alors (`launch_running`). Un ticket Reçu se répond sans analyse.
 bool ticketCanReply({
   required String rawStatus,
   required TicketType type,
@@ -460,10 +461,12 @@ bool ticketCanReply({
 }) {
   final status = TicketStatus.fromValue(rawStatus);
   return hasIssue &&
-      hasAnalysis &&
+      (hasAnalysis || status == TicketStatus.received) &&
       !developmentRunning &&
       type != TicketType.question &&
-      (status == TicketStatus.analyzed || status == TicketStatus.validated);
+      (status == TicketStatus.received ||
+          status == TicketStatus.analyzed ||
+          status == TicketStatus.validated);
 }
 
 /// Ticket bloqué : la même règle que le serveur (`ticketAwaitingReply`),

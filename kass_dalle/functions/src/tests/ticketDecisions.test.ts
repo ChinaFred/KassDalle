@@ -737,14 +737,14 @@ describe("readAnswerText", () => {
 });
 
 describe("answerPrecondition", () => {
-  test("Analysé ou Validé, hors Question, avec Issue : permis", () => {
-    for (const status of ["analyzed", "validated"] as TicketStatus[]) {
+  test("Reçu, Analysé ou Validé, hors Question, avec Issue : permis", () => {
+    for (const status of ["received", "analyzed", "validated"] as TicketStatus[]) {
       assert.equal(answerPrecondition({ status, type: "bug", hasIssue: true }), null, status);
     }
   });
 
-  test("Reçu, Question, sans Issue : refusé", () => {
-    assert.notEqual(answerPrecondition({ status: "received", type: "bug", hasIssue: true }), null);
+  test("Envoi, Question, sans Issue : refusé", () => {
+    assert.notEqual(answerPrecondition({ status: "sending", type: "bug", hasIssue: true }), null);
     assert.notEqual(
       answerPrecondition({ status: "analyzed", type: "question", hasIssue: true }),
       null,
@@ -823,9 +823,25 @@ describe("analysisAnswerState", () => {
     comment({ id, body: `## Précisions de l'administrateur\n\n${text}`, createdAt: at });
   const body = answerCommentBody("Y");
 
-  test("aucune analyse", () => {
+  test("aucune analyse : la même réponse publiée depuis l'application compte", () => {
     assert.deepEqual(
       analysisAnswerState([answer(1, "2026-10-10T00:00:00Z")], MAINTAINER_ID, new Set([1]), body),
+      { hasAnalysis: false, lastAnalysisAt: null, samePublished: true },
+    );
+  });
+
+  test("aucune analyse : un autre texte ou une réponse non vérifiée ne compte pas", () => {
+    assert.deepEqual(
+      analysisAnswerState(
+        [answer(1, "2026-10-10T00:00:00Z", "Autre")],
+        MAINTAINER_ID,
+        new Set([1]),
+        body,
+      ),
+      { hasAnalysis: false, lastAnalysisAt: null, samePublished: false },
+    );
+    assert.deepEqual(
+      analysisAnswerState([answer(1, "2026-10-10T00:00:00Z")], MAINTAINER_ID, new Set(), body),
       { hasAnalysis: false, lastAnalysisAt: null, samePublished: false },
     );
   });

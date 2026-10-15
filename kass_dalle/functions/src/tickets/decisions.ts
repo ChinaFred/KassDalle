@@ -516,8 +516,8 @@ async function removeLabelLogged(
 }
 
 /**
- * Vrai si un développement est en cours sur un ticket Validé non bloqué :
- * « Répondre » est alors refusé. Un ticket bloqué (dernière analyse
+ * Vrai si un lancement est en cours : une analyse sur un ticket Reçu, un
+ * développement sur un ticket Validé non bloqué. « Répondre » est alors refusé. Un ticket bloqué (dernière analyse
  * postérieure au dernier « validé ») accepte une réponse même si son dernier
  * lancement n'a pas atteint son échéance : la session s'est arrêtée sur cette
  * analyse.
@@ -529,7 +529,7 @@ async function developmentRunning(
   statusChangedAtMs: number | null,
   analysisData: FirebaseFirestore.DocumentData | undefined,
 ): Promise<boolean> {
-  if (status !== "validated") return false;
+  if (status !== "validated" && status !== "received") return false;
   const awaiting = ticketAwaitingReply({
     rawStatus: status,
     type,
@@ -543,7 +543,7 @@ async function developmentRunning(
     .get();
   return launchRunState({
     entries: launchEntryViews(launches.data()),
-    action: "developpement",
+    action: status === "received" ? "analyse" : "developpement",
     rawStatus: status,
     nowMs: Date.now(),
     statusChangedAtMs,
@@ -552,7 +552,8 @@ async function developmentRunning(
 
 /**
  * Publie la réponse de l'administrateur à la dernière analyse et ramène le
- * ticket à Reçu. Idempotente : une reprise après un échec partiel ne
+ * ticket à Reçu. Sur un ticket déjà Reçu, sans analyse, elle publie les
+ * précisions et ne change ni le statut ni les étiquettes. Idempotente : une reprise après un échec partiel ne
  * republie pas le commentaire si la réponse déjà publiée depuis
  * l'application (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
  */
@@ -621,7 +622,8 @@ export async function answerTicketDecision(
     }
 
     const state = analysisAnswerState(comments, GITHUB_TICKETS_MAINTAINER_ID, answerIds, body);
-    if (!state.hasAnalysis) {
+    const beforeAnalysis = seen.status === "received";
+    if (!state.hasAnalysis && !beforeAnalysis) {
       throw new HttpsError("failed-precondition", "Aucune analyse à laquelle répondre.", {
         reason: "no_analysis",
       });
@@ -670,7 +672,7 @@ export async function answerTicketDecision(
     }
 
     try {
-      await applyGithubUpdate(ticketId, { answerReset: true });
+      if (!beforeAnalysis) await applyGithubUpdate(ticketId, { answerReset: true });
     } catch (err) {
       await logError({
         message: `Tickets : réponse publiée sur l'Issue #${issueNumber} mais ticket ${ticketId} non ramené à Reçu`,

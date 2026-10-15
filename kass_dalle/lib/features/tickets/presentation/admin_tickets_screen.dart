@@ -2265,7 +2265,9 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
       },
       child: AlertDialog(
         scrollable: true,
-        title: const Text('Répondre à l\'analyse'),
+        title: Text(
+          analysisAt == null ? 'Répondre au ticket' : 'Répondre à l\'analyse',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2301,8 +2303,12 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Le ticket repassera à « Reçu ». Relancez ensuite '
-                          'l\'analyse pour qu\'elle lise votre réponse.',
+                          analysisAt == null
+                              ? 'Ajoutez une précision avant l\'analyse. Elle '
+                                    'sera lue par la session d\'analyse.'
+                              : 'Le ticket repassera à « Reçu ». Relancez '
+                                    'ensuite l\'analyse pour qu\'elle lise '
+                                    'votre réponse.',
                           style: muted,
                         ),
                         if (widget.validated) ...[
@@ -2328,7 +2334,9 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
                 labelText: 'Votre réponse',
-                helperText: 'Répondez aux questions de l\'analyse.',
+                helperText: analysisAt == null
+                    ? 'Précisez votre demande.'
+                    : 'Répondez aux questions de l\'analyse.',
                 helperMaxLines: 3,
                 errorText: _fieldError,
                 errorMaxLines: 3,
@@ -2337,8 +2345,10 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
             if (_locked && error == null) ...[
               const SizedBox(height: 8),
               Text(
-                'Cette réponse est déjà publiée sur GitHub. Publier remet le '
-                'ticket à Reçu.',
+                analysisAt == null
+                    ? 'Cette réponse est déjà publiée sur GitHub.'
+                    : 'Cette réponse est déjà publiée sur GitHub. Publier '
+                          'remet le ticket à Reçu.',
                 style: muted,
               ),
             ],
