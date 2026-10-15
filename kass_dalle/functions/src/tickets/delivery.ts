@@ -35,6 +35,7 @@ import {
 import { logError, logInfo } from "../logging";
 import {
   GITHUB_REPO_FULL_NAME,
+  GithubError,
   findDeliveredPullRequest,
   getPullRequest,
   listOpenPullRequests,
@@ -187,11 +188,19 @@ export async function recordDeliveredPr(
   const pr = await findDeliveredPullRequest(token, issueNumber);
   if (pr === null) return "no_pr";
   // La version est complémentaire : une lecture en échec n'empêche pas d'écrire la PR.
-  // La reprise suivante complète le champ absent.
+  // Fichier absent ou sans version lisible : `""` est écrit, pour que la reprise ne relise
+  // pas le ticket à chaque passe. Panne passagère : le champ reste absent, la reprise réessaie.
+  // Jeton refusé ou limite de débit : l'erreur remonte, l'appelant arrête sa boucle.
   let version: string | null = null;
+  let unreadable = false;
   try {
     version = await pubspecVersionAtCommit(token, pr.commitSha);
+    unreadable = version === null;
   } catch (err) {
+    if (err instanceof GithubError && (err.kind === "token" || err.kind === "rate_limit")) {
+      throw err;
+    }
+    unreadable = err instanceof GithubError && err.kind === "not_found";
     await logError({
       message: `Tickets : version livrée du ticket ${ticketId} (Issue #${issueNumber}) non lue`,
       errorDescription: describe(err),
@@ -202,7 +211,7 @@ export async function recordDeliveredPr(
   await ticketRef(ticketId).update({
     delivered_pr_number: pr.number,
     delivered_pr_url: pr.url,
-    delivered_version: version ?? FieldValue.delete(),
+    delivered_version: version ?? (unreadable ? "" : FieldValue.delete()),
     updated_at: FieldValue.serverTimestamp(),
   });
   return "written";
