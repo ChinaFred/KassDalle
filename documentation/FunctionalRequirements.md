@@ -1427,8 +1427,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
       qu'aucune session ne tourne encore. ». Boutons
       « Annuler » (focus initial) et « Livrer », ou « Relancer » pour une relance. L'envoi, la
       fermeture pendant l'envoi et les messages de résultat sont ceux des autres lancements.
-    - **Fichiers sensibles.** Une pull request qui modifie `.github/`, `.claude/`, `CLAUDE.md`,
-      `deploy.ps1` ou `kass_dalle/firebase.json` ne se livre pas depuis l'application. Le
+    - **Fichiers sensibles.** Une pull request qui modifie `.github/`, `.claude/`, `deploy.ps1`,
+      `kass_dalle/firebase.json`, ou un fichier `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json`
+      où qu'il soit, ne se livre pas depuis l'application. Le
       serveur le vérifie au lancement et refuse sans rien décompter : « La PR #M modifie
       <chemin> : fusionnez-la vous-même après relecture. Rien n'a été lancé ni décompté. ».
       « Livrer » reste visible dans la barre ; après ce refus, il est grisé dans la boîte.
