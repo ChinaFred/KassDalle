@@ -20,9 +20,109 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.71 — fonctionnel
+### v0.23.77 — fonctionnel
 
 Admin › Tickets : le bloc « Réponse de l'administrateur » (et « Motif du refus ») était illisible, texte clair sur fond bleu clair. Il prend maintenant un fond neutre, une bordure fine et le texte `onSurface`, avec un contraste d'au moins 4,5:1 en mode clair et en mode sombre. Dans le bloc « Votre réponse » et les analyses, le gras, l'italique, le code, les liens, les titres de niveau 4 à 6 et les tableaux suivent la couleur du reste du texte. Un test de widget vérifie le contraste dans les deux modes.
+
+### v0.23.76 — fonctionnel
+
+Admin › Tickets : le filtre « À traiter » et la pastille du menu comptent aussi les tickets
+Validés. Un ticket validé attend une réponse à une question de l'analyse ou le lancement du
+développement : il restait hors du filtre. Il en sort au passage En cours, Terminé ou Refusé
+(ticket #80).
+
+### v0.23.76 — technique
+
+`kAdminTicketToProcessStatuses` (`ticket.dart`) passe de deux à trois statuts. Le compteur
+reste un `whereIn` sur le champ `status` : pas de nouvel index, pas de backfill, pas de
+changement de règles.
+
+### v0.23.75 — fonctionnel
+
+Admin › Tickets : un ticket En cours offre « Livrer ». Quand sa pull request est prête (une
+seule PR de la session, CI verte), la fiche affiche « PR #57 prête — CI verte
+le … » et le bouton « Livrer ». Une session Claude Code met alors la PR à jour avec `master`,
+la fusionne et suit le déploiement ; appuyer sur « Livrer » vaut accord de fusion. Sinon, une
+seule ligne dit ce qui manque : plusieurs PR, CI en échec ou en cours, aucune PR
+prête, ou livraison d'un autre ticket en cours (une seule à la fois, avec « Ouvrir le ticket
+#K »). Une PR qui modifie `.github/`, `.claude/`, `deploy.ps1`, `firebase.json`, ou un fichier
+nommé `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit, est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
+une section « Livraison (N) » avec les comptes rendus de la session (« Blocage du … »,
+« Livraison terminée le … ») ; après un blocage ou trois heures sans fusion, « Relancer la
+livraison ». La liste porte une puce « PR prête ». Une livraison compte comme un lancement
+dans le plafond du jour. Rien ne change pour les membres.
+
+### v0.23.75 — technique
+
+Nouvelle callable `launchTicketDelivery` (routine de développement, texte `livraison #N`,
+mêmes secrets, aucun nouveau jeton). Contrôles avant tout comptage : PR éligible unique,
+fichiers sensibles (`GET /pulls/{n}/files`, `delivery_sensitive_files`), dernier run « CI »
+vert relu, verrou global `app_config/tickets_status.delivery_running`. Nouveau sous-document
+`tickets/{id}/admin/delivery` (état « PR prête » et comptes rendus `## Livraison — …`), écrit
+par le webhook (`pull_request` élargi, nouvel événement `workflow_run`), la tâche horaire et
+le lancement ; aucune règle Firestore nouvelle (joker `admin/{doc}`), sept tests de règles
+ajoutés. Logique dupliquée : `ticket_decisions.json` gagne `can_deliver`, les cas
+`livraison` de `launch_runs` (fin par blocage), les sections `launch_actions` et
+`delivery_lock`, et `delivery_sensitive_reason` ; corrigée des deux côtés (`rules.ts`,
+`ticket.dart`, `ticket_launch.dart`, `ticket_delivery.dart`). Réglages GitHub faits à la main :
+permission « Actions : Read-only » sur le jeton « KassDalle ticket », événement « Workflow
+runs » du webhook. Reste à faire après le déploiement : recoller le prompt de la routine de
+développement (aiguillage `developpement` / `livraison`). `CLAUDE.md` : règles de
+`livraison #N`, et l'appui sur « Livrer » vaut « fusionne ». Après la relecture `securite` :
+fichiers sensibles élargis à tout `CLAUDE.md`, `CLAUDE.local.md` et `.mcp.json` ; PR éligible
+seulement si son corps ne ferme que l'Issue du ticket ; le webhook ne relit la livraison que
+pour une PR du mainteneur dont la tête est dans le dépôt, cinq Issues au plus par événement,
+liste des PR lue une fois ; un 403 de limite secondaire n'est plus classé « jeton refusé » ;
+prompt de livraison avec un point L0 (entrées non fiables), une fusion au sha poussé après un
+second contrôle des fichiers, et une durée bornée à 2 h 30. Un conflit signalé par GitHub
+(`mergeable`) n'éteint plus « PR prête » : le champ n'est plus lu ni stocké, et la session
+résout `version:` et le CHANGELOG ou publie un blocage.
+
+### v0.23.74 — fonctionnel
+
+Admin › Tickets : un ticket En cours dont la pull request est fermée sans être fusionnée
+revient au statut de ses étiquettes, Validé en général, dans l'heure qui suit. Il restait
+auparavant En cours sans limite, avec « Refuser » pour seule action.
+
+### v0.23.74 — technique
+
+`nextTicketStatus` (`tickets/rules.ts`) prend un troisième paramètre `noOpenClosingPr`. Vrai,
+il ramène un ticket `in_progress` au statut tiré des étiquettes. `applyGithubUpdate` le passe
+quand `openClosingPr` vaut `false`, ce que seul `resyncTicket` (tâche horaire, PR relues dans
+la chronologie de l'Issue) écrit. Une chronologie tronquée (plus de cinq pages) laisse
+`openClosingPr` indéfini : pas de recul, puisque des tiers peuvent la remplir. Une PR dont le
+dépôt manque dans l'événement de chronologie est écartée. Les événements d'Issue du webhook ne
+connaissent pas les PR et ne font toujours pas reculer `in_progress`.
+
+### v0.23.73 — fonctionnel
+
+Les plannings affichés se retrouvent sur tous les appareils (ticket #79). La sélection du
+sélecteur « Plannings affichés » n'était mémorisée que sur l'appareil : un autre téléphone, le
+web ou une réinstallation repartaient du défaut du rôle. Elle est maintenant enregistrée sous
+le compte du membre. Une sélection déjà faite sur un appareil est reprise et envoyée à la
+première ouverture.
+
+### v0.23.73 — technique
+
+Nouveau document `users/{uid}/preferences/planning_visibility` (`editor`, `reader`,
+`updated_at`), avec la règle `isPlanningVisibility` (100 entrées au plus par liste) et ses
+tests dans `rules-tests`. `FirestorePlanningVisibilityStore` remplace
+`SharedPreferencesPlanningVisibilityStore` comme implémentation par défaut de
+`PlanningVisibilityStore` ; les `SharedPreferences` restent en copie locale hors ligne et pour
+la reprise de l'ancienne sélection. Aucune Cloud Function ni logique dupliquée touchée.
+
+### v0.23.72 — fonctionnel
+
+Un écran de démarrage affiche « Bonjour {prénom} » à chaque lancement de l'application, pendant 5 secondes ou jusqu'à un appui (ticket #78). Le prénom est le nom préféré du compte, sinon le prénom Google. Sans profil lu au bout de 10 secondes, ou pour un compte non connecté, l'écran affiche « Bonjour » seul. L'écran est un calque au-dessus du routeur (`SplashGreeting`, `lib/core/presentation/`) : aucune route ajoutée, aucune donnée écrite.
+
+### v0.23.71 — fonctionnel
+
+Admin › Gestion des utilisateurs › Comptes : les invitations par e-mail en attente
+apparaissent après les comptes, sous « Invités, pas encore connectés (N) ». Chaque ligne
+montre l'adresse seule et « Invité, pas encore connecté », ou « Envoi échoué ». Une adresse
+qui a déjà un compte n'y figure pas. Appuyer sur la ligne ouvre l'onglet Invitations, qui
+garde les actions (renvoyer, annuler). Le compteur « Comptes (N) » ne compte que les comptes.
+Ticket #68.
 
 ### v0.23.70 — fonctionnel
 

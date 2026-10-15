@@ -8,7 +8,10 @@
  *    et attend « Relancer l'envoi » dans Admin › Tickets.
  * 2. Resynchronisation : chaque ticket non final publié est relu sur GitHub
  *    (état, étiquettes, PR ouvertes qui le ferment, réponse de
- *    l'administrateur) — rattrape un webhook perdu.
+ *    l'administrateur, analyses et comptes rendus de livraison) — rattrape
+ *    un webhook perdu. Un ticket En cours relit aussi son état « PR prête »
+ *    (`refreshTicketDelivery` : PR éligible, dernier run de la CI), sur une
+ *    liste des PR ouvertes lue une fois par passe.
  *
  * Un jeton absent ou refusé arrête la passe : `token_invalid_since` est posé,
  * les tickets suivants ne sont pas essayés et n'usent pas leurs essais.
@@ -21,7 +24,8 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_TICKETS, GITHUB_TICKETS_TOKEN, REGION, TICKET_MAX_SEND_ATTEMPTS } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { GithubError, githubToken } from "../tickets/github";
+import { GithubError, githubToken, listOpenPullRequests } from "../tickets/github";
+import { refreshTicketDelivery, type OpenPullRequests } from "../tickets/delivery";
 import {
   clearTokenInvalid,
   markTokenInvalid,
@@ -69,17 +73,45 @@ async function resyncOpenTickets(
   let changed = 0;
   let failed = 0;
   let reachedGithub = false;
+  // Lue au premier ticket En cours, puis partagée par la passe.
+  let openPrs: OpenPullRequests | null = null;
   for (const doc of snap.docs) {
     const issueNumber = doc.data().github_issue_number;
     if (typeof issueNumber !== "number") continue;
     try {
-      if (await resyncTicket(token, doc.id, issueNumber)) changed++;
+      if (await resyncTicket(token, doc.id, issueNumber, scope)) changed++;
       reachedGithub = true;
     } catch (err) {
       failed++;
       const kind = err instanceof GithubError ? err.kind : "other";
       await logError({
         message: `ticketsSyncSchedule : ticket ${doc.id} (Issue #${issueNumber}) non resynchronisé`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: scope.correlationId,
+        firestoreDocId: doc.id,
+        feature: "tickets",
+        extra: { kind },
+      });
+      if (kind === "token") {
+        await markTokenInvalid(scope, err instanceof Error ? err.message : String(err));
+        break;
+      }
+      if (kind === "rate_limit") break;
+      continue;
+    }
+    // Statut relu après la resynchronisation : seul un ticket encore En
+    // cours a une livraison à préparer.
+    try {
+      const status = (await doc.ref.get()).data()?.status;
+      if (status === "in_progress") {
+        openPrs ??= await listOpenPullRequests(token);
+        await refreshTicketDelivery(token, doc.id, issueNumber, openPrs);
+      }
+    } catch (err) {
+      failed++;
+      const kind = err instanceof GithubError ? err.kind : "other";
+      await logError({
+        message: `ticketsSyncSchedule : état « PR prête » du ticket ${doc.id} (Issue #${issueNumber}) non relu`,
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId: scope.correlationId,
         firestoreDocId: doc.id,

@@ -2,8 +2,10 @@
  * Client minimal de l'API des Routines Claude Code, par `fetch` — aucun SDK.
  *
  * Un seul appel : `POST /v1/claude_code/routines/{id}/fire`, corps
- * `{"text": "analyse #N"}` ou `{"text": "developpement #N"}`. L'API n'est pas
- * idempotente : un appel n'est jamais rejoué, ni ici ni par l'appelant.
+ * `{"text": "analyse #N"}`, `{"text": "developpement #N"}` ou
+ * `{"text": "livraison #N"}` — la livraison part par la routine de
+ * développement (`LAUNCH_ROUTINE`). L'API n'est pas idempotente : un appel
+ * n'est jamais rejoué, ni ici ni par l'appelant.
  *
  * L'identifiant et le jeton de chaque routine viennent de Secret Manager
  * (`TICKETS_ROUTINE_ANALYSIS_ID` / `_TOKEN`, `TICKETS_ROUTINE_DEV_ID` /
@@ -15,7 +17,7 @@
  * `ctx.feature`.
  */
 
-import { LAUNCH_TEXT_PATTERN, type LaunchAction } from "./rules";
+import { LAUNCH_ROUTINE, LAUNCH_TEXT_PATTERN, type LaunchAction, type RoutineName } from "./rules";
 
 const API = "https://api.anthropic.com/v1/claude_code/routines";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -27,7 +29,7 @@ export const ROUTINE_TIMEOUT_MS = 30_000;
 const SESSION_FIELD_MAX = 500;
 
 /** Variables d'environnement des secrets, par routine. */
-export const ROUTINE_ENV: Record<LaunchAction, { id: string; token: string }> = {
+export const ROUTINE_ENV: Record<RoutineName, { id: string; token: string }> = {
   analyse: { id: "TICKETS_ROUTINE_ANALYSIS_ID", token: "TICKETS_ROUTINE_ANALYSIS_TOKEN" },
   developpement: { id: "TICKETS_ROUTINE_DEV_ID", token: "TICKETS_ROUTINE_DEV_TOKEN" },
 };
@@ -38,15 +40,18 @@ export interface RoutineConfig {
 }
 
 /**
- * L'identifiant et le jeton d'une routine, ou `null` si l'un manque, est vide,
- * ou si l'identifiant n'a pas la forme d'un segment d'URL sûr.
+ * L'identifiant et le jeton de la routine qui reçoit `action`
+ * (`LAUNCH_ROUTINE` : la livraison prend ceux du développement), ou `null` si
+ * l'un manque, est vide, ou si l'identifiant n'a pas la forme d'un segment
+ * d'URL sûr.
  */
 export function routineConfig(
   action: LaunchAction,
   env: Record<string, string | undefined> = process.env,
 ): RoutineConfig | null {
-  const id = (env[ROUTINE_ENV[action].id] ?? "").trim();
-  const token = (env[ROUTINE_ENV[action].token] ?? "").trim();
+  const names = ROUTINE_ENV[LAUNCH_ROUTINE[action]];
+  const id = (env[names.id] ?? "").trim();
+  const token = (env[names.token] ?? "").trim();
   if (id.length === 0 || token.length === 0) return null;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return null;
   return { id, token };

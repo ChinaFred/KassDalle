@@ -1,12 +1,14 @@
 /**
  * Client REST GitHub minimal des tickets, par `fetch` — aucun SDK.
  *
- * Dix appels : créer une Issue, lire une Issue, lire ses commentaires, lire
- * sa chronologie (PR qui la référencent), lire ses événements (dernier
+ * Quatorze appels : créer une Issue, lire une Issue, lire ses commentaires,
+ * lire sa chronologie (PR qui la référencent), lire ses événements (dernier
  * « validé » du mainteneur), chercher
  * une Issue par la référence d'un ticket, et pour les décisions de
  * l'administrateur : poser une étiquette, retirer une étiquette, publier un
- * commentaire, fermer une Issue « not planned ». Le jeton vient de
+ * commentaire, fermer une Issue « not planned ». Pour « Livrer » : lister les
+ * PR ouvertes, lire une PR, lister ses fichiers, lister les runs GitHub
+ * Actions d'un commit (permission « Actions : lecture »). Le jeton vient de
  * `process.env.GITHUB_TICKETS_TOKEN`, peuplé par le secret du même nom une
  * fois attaché ; absent, `githubToken()` rend `null`.
  *
@@ -16,7 +18,13 @@
  */
 
 import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
-import { isTrustedPrAuthor, lastMaintainerValidatedAt } from "./rules";
+import {
+  isTrustedPrAuthor,
+  lastMaintainerValidatedAt,
+  type CiRunView,
+  type PullRequestFileView,
+  type PullRequestView,
+} from "./rules";
 
 const API = "https://api.github.com";
 const TIMEOUT_MS = 15_000;
@@ -50,15 +58,29 @@ export function githubToken(): string | null {
   return token.length > 0 ? token : null;
 }
 
-/** Classe une réponse en échec. Pure, testée. */
+/**
+ * Classe une réponse en échec. Pure, testée.
+ *
+ * Un 403 est une limite de débit, et non un jeton refusé, quand le quota est
+ * épuisé (`x-ratelimit-remaining: 0`), quand GitHub annonce un délai
+ * (`retry-after`, limite secondaire) ou quand son message parle de
+ * « secondary rate limit » : déclarer le jeton invalide arrêterait la tâche
+ * horaire et afficherait un faux bandeau.
+ */
 export function classifyGithubFailure(
   status: number,
   rateLimitRemaining: string | null,
   repoLevel: boolean,
+  extra: { retryAfter?: string | null; message?: string | null } = {},
 ): GithubErrorKind {
   if (status === 401) return "token";
   if (status === 429) return "rate_limit";
-  if (status === 403) return rateLimitRemaining === "0" ? "rate_limit" : "token";
+  if (status === 403) {
+    const secondary =
+      (typeof extra.retryAfter === "string" && extra.retryAfter.trim().length > 0) ||
+      /secondary rate limit/i.test(extra.message ?? "");
+    return rateLimitRemaining === "0" || secondary ? "rate_limit" : "token";
+  }
   if (status === 404) return repoLevel ? "token" : "not_found";
   return "other";
 }
@@ -102,6 +124,7 @@ async function request<T>(
       response.status,
       response.headers.get("x-ratelimit-remaining"),
       opts.repoLevel === true,
+      { retryAfter: response.headers.get("retry-after"), message: detail },
     );
     throw new GithubError(
       kind,
@@ -286,19 +309,37 @@ export async function closeIssueNotPlanned(
  *
  * Seules les PR d'un auteur de confiance sont rendues (`isTrustedPrAuthor`) :
  * une PR ouverte depuis un fork par un autre compte ne fait pas passer un
- * ticket « En cours ».
+ * ticket « En cours ». Une PR dont le dépôt n'est pas lisible est écartée.
+ *
+ * `complete` est faux quand la chronologie dépasse `MAX_PAGES` pages : des
+ * tiers peuvent la remplir de commentaires et de renvois, et la PR peut se
+ * trouver après la coupure. L'appelant ne conclut alors à aucune absence.
  */
 export async function openPullRequestBodiesReferencing(
   token: string,
   issueNumber: number,
-): Promise<string[]> {
-  const bodies: string[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const batch = await request<Array<Record<string, unknown>>>(
+): Promise<{ bodies: string[]; complete: boolean }> {
+  return collectOpenPrBodies((page) =>
+    request<Array<Record<string, unknown>>>(
       token,
       "GET",
       `${REPO_PATH}/issues/${issueNumber}/timeline?per_page=100&page=${page}`,
-    );
+    ),
+  );
+}
+
+/**
+ * Parcourt les pages de chronologie rendues par `fetchPage` (1 à `MAX_PAGES`)
+ * et garde le corps des PR ouvertes de ce dépôt, d'un auteur de confiance.
+ * `complete` ne vaut vrai que si une page de moins de 100 événements a été lue.
+ */
+export async function collectOpenPrBodies(
+  fetchPage: (page: number) => Promise<Array<Record<string, unknown>>>,
+): Promise<{ bodies: string[]; complete: boolean }> {
+  const bodies: string[] = [];
+  let complete = false;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await fetchPage(page);
     for (const event of batch) {
       if (event.event !== "cross-referenced") continue;
       const source = event.source as { issue?: Record<string, unknown> } | undefined;
@@ -306,7 +347,7 @@ export async function openPullRequestBodiesReferencing(
       if (!issue || issue.pull_request == null || issue.state !== "open") continue;
       const repo = issue.repository as { full_name?: unknown } | undefined;
       if (
-        typeof repo?.full_name === "string" &&
+        typeof repo?.full_name !== "string" ||
         repo.full_name.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()
       ) {
         continue;
@@ -322,9 +363,12 @@ export async function openPullRequestBodiesReferencing(
       );
       if (trusted && typeof issue.body === "string") bodies.push(issue.body);
     }
-    if (batch.length < 100) break;
+    if (batch.length < 100) {
+      complete = true;
+      break;
+    }
   }
-  return bodies;
+  return { bodies, complete };
 }
 
 /**
@@ -377,4 +421,138 @@ export async function findIssueByTicketReference(
     }
   }
   return null;
+}
+
+// ── Livraison : pull requests et runs de la CI ──────────────────────────────
+
+function str(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** Lit une PR de la forme rendue par l'API (liste ou détail) ou par un webhook. Pure. */
+export function readPullRequest(raw: Record<string, unknown>): PullRequestView | null {
+  if (typeof raw.number !== "number" || !Number.isSafeInteger(raw.number)) return null;
+  const user = raw.user as { id?: unknown } | null | undefined;
+  const head = raw.head as
+    { ref?: unknown; sha?: unknown; repo?: { full_name?: unknown } | null } | null | undefined;
+  return {
+    number: raw.number,
+    state: str(raw.state),
+    draft: raw.draft === true,
+    body: str(raw.body),
+    authorId: typeof user?.id === "number" ? user.id : null,
+    headRepoFullName: str(head?.repo?.full_name),
+    headRef: str(head?.ref),
+    headSha: str(head?.sha),
+    htmlUrl: str(raw.html_url),
+  };
+}
+
+/**
+ * Les PR ouvertes du dépôt (500 au plus). `complete` est faux quand la
+ * dernière page lue était pleine : une PR peut manquer.
+ */
+export async function listOpenPullRequests(
+  token: string,
+): Promise<{ prs: PullRequestView[]; complete: boolean }> {
+  const prs: PullRequestView[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await request<Array<Record<string, unknown>>>(
+      token,
+      "GET",
+      `${REPO_PATH}/pulls?state=open&per_page=100&page=${page}`,
+    );
+    for (const raw of batch) {
+      const pr = readPullRequest(raw);
+      if (pr !== null) prs.push(pr);
+    }
+    if (batch.length < 100) return { prs, complete: true };
+  }
+  return { prs, complete: false };
+}
+
+/** Le détail d'une PR : sa tête du moment et son corps relus. */
+export async function getPullRequest(token: string, prNumber: number): Promise<PullRequestView> {
+  const raw = await request<Record<string, unknown>>(
+    token,
+    "GET",
+    `${REPO_PATH}/pulls/${prNumber}`,
+  );
+  const pr = readPullRequest(raw);
+  if (pr === null) throw new GithubError("other", null, `PR #${prNumber} illisible`);
+  return pr;
+}
+
+/** Pages de fichiers lues au plus pour une PR (100 par page). */
+const MAX_FILE_PAGES = 10;
+
+/**
+ * Les fichiers modifiés par une PR (1 000 au plus). `complete` est faux quand
+ * la dernière page lue était pleine : la liste n'est pas vérifiable.
+ */
+export async function listPullRequestFiles(
+  token: string,
+  prNumber: number,
+): Promise<{ files: PullRequestFileView[]; complete: boolean }> {
+  const files: PullRequestFileView[] = [];
+  for (let page = 1; page <= MAX_FILE_PAGES; page++) {
+    const batch = await request<Array<Record<string, unknown>>>(
+      token,
+      "GET",
+      `${REPO_PATH}/pulls/${prNumber}/files?per_page=100&page=${page}`,
+    );
+    for (const f of batch) {
+      files.push({ filename: str(f.filename), previousFilename: str(f.previous_filename) });
+    }
+    if (batch.length < 100) return { files, complete: true };
+  }
+  return { files, complete: false };
+}
+
+/** Lit un run de workflow de la forme rendue par l'API ou par un webhook. Pure. */
+export function readCiRun(raw: Record<string, unknown>): CiRunView {
+  return {
+    id: typeof raw.id === "number" ? raw.id : null,
+    name: str(raw.name),
+    headSha: str(raw.head_sha),
+    status: str(raw.status),
+    conclusion: str(raw.conclusion),
+    createdAt: str(raw.created_at),
+    updatedAt: str(raw.updated_at),
+  };
+}
+
+/**
+ * Les runs GitHub Actions d'un commit (`GET /actions/runs?head_sha=`, 100 au
+ * plus : un commit n'en a que quelques-uns). Demande la permission
+ * « Actions : lecture » du jeton.
+ */
+export async function listRunsForCommit(token: string, headSha: string): Promise<CiRunView[]> {
+  if (!/^[0-9a-f]{40}$/i.test(headSha)) {
+    throw new GithubError("other", null, `SHA de commit illisible : ${headSha.slice(0, 64)}`);
+  }
+  let raw: { workflow_runs?: unknown };
+  try {
+    raw = await request<{ workflow_runs?: unknown }>(
+      token,
+      "GET",
+      `${REPO_PATH}/actions/runs?head_sha=${headSha}&per_page=100`,
+    );
+  } catch (err) {
+    // Un 403 ici dit le plus souvent que la permission « Actions » manque au
+    // jeton, qui sert par ailleurs : il n'est pas déclaré invalide pour autant.
+    if (err instanceof GithubError && err.kind === "token" && err.status === 403) {
+      throw new GithubError(
+        "other",
+        403,
+        "GitHub refuse la lecture des runs de la CI : ajoutez la permission " +
+          "« Actions : lecture » au jeton GITHUB_TICKETS_TOKEN.",
+      );
+    }
+    throw err;
+  }
+  const runs = Array.isArray(raw.workflow_runs) ? raw.workflow_runs : [];
+  return runs
+    .filter((r): r is Record<string, unknown> => r !== null && typeof r === "object")
+    .map(readCiRun);
 }

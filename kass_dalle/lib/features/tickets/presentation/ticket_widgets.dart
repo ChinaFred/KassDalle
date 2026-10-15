@@ -83,6 +83,23 @@ class TicketAnomalyChip extends StatelessWidget {
   }
 }
 
+/// Puce « PR prête » de la liste d'administration : la pull request d'un
+/// ticket En cours peut être livrée.
+class TicketDeliveryReadyChip extends StatelessWidget {
+  const TicketDeliveryReadyChip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return _Pill(
+      icon: AppIcons.ticketDeliver,
+      label: 'PR prête',
+      background: cs.tertiaryContainer,
+      foreground: cs.onTertiaryContainer,
+    );
+  }
+}
+
 class _Pill extends StatelessWidget {
   final IconData icon;
   final String label;

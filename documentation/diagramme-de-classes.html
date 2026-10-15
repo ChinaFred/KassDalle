@@ -545,6 +545,7 @@ classDiagram
     &lt;&lt;enumeration&gt;&gt;
     analyse
     developpement
+    livraison
   }
 
   class TicketLaunchOutcome {
@@ -561,6 +562,42 @@ classDiagram
     +DateTime? developmentRoutineInvalidSince
     +launchesToday
     +launchesMonth
+    +TicketDeliveryLock? deliveryRunning
+  }
+
+  class TicketDelivery {
+    &lt;&lt;tickets/{id}/admin/delivery, écrit par le serveur, lu par l'admin&gt;&gt;
+    +int eligiblePrCount
+    +int? prNumber
+    +String? prUrl
+    +String? ciStatus
+    +String? ciConclusion
+    +DateTime? ciCompletedAt
+    +bool ready
+    +DateTime? lastBlockedAt
+  }
+
+  class TicketDeliveryReport {
+    &lt;&lt;## Livraison — blocage / — terminée, relevé sur l'Issue&gt;&gt;
+    +int? commentId
+    +TicketDeliveryReportKind kind
+    +String body
+    +DateTime? createdAt
+    +bool truncated
+  }
+
+  class TicketDeliveryReportKind {
+    &lt;&lt;enumeration&gt;&gt;
+    blocked
+    done
+  }
+
+  class TicketDeliveryLock {
+    &lt;&lt;tickets_status.delivery_running, une livraison à la fois&gt;&gt;
+    +String? ticketId
+    +int? issueNumber
+    +DateTime? launchedAt
+    +DateTime? retryAfter
   }
 
   class AdminTicketDecisions {
@@ -573,6 +610,8 @@ classDiagram
     +DateTime? pendingAnswerAt
     +bool canLaunchAnalysis
     +bool canLaunchDevelopment
+    +bool canDeliver
+    +bool relaunchAfterBlock
     +DateTime? relaunchOf
     +DateTime? runningSince
     +String? validateHint
@@ -780,6 +819,11 @@ classDiagram
   TicketLaunch "1" --&gt; "0..1" TicketLaunchAction
   TicketLaunch "1" --&gt; "0..1" TicketLaunchOutcome
   TicketLaunch ..&gt; AdminTicketDecisions : en cours, relance
+  Ticket "1" --&gt; "0..1" TicketDelivery : admin/delivery
+  TicketDelivery "1" --&gt; "0..10" TicketDeliveryReport
+  TicketDeliveryReport --&gt; TicketDeliveryReportKind
+  TicketDelivery ..&gt; AdminTicketDecisions : blocage, PR prête
+  TicketsStatus "1" --&gt; "0..1" TicketDeliveryLock : delivery_running
   Ticket ..&gt; AdminTicketDecisions : calcule
   AppUser "1" --&gt; "0..*" Book : createdBy
   AppUser "1" --&gt; "0..*" Recipe : createdBy
@@ -828,8 +872,9 @@ classDiagram
         <b>Ticket</b> (<code>tickets/{id}</code>) est un bug, une évolution, une nouvelle
         fonctionnalité ou une question d'un membre, publié en Issue GitHub sans son nom, son uid
         ni sa capture. Écrit par les Cloud Functions ; l'auteur ne pose que
-        <code>seenByAuthorAt</code>. <code>status</code> ne recule jamais ; il revient de GitHub
-        (webhook et relecture horaire). Un ticket est « en anomalie » quand
+        <code>seenByAuthorAt</code>. <code>status</code> revient de GitHub (webhook et relecture
+        horaire) et ne recule pas, sauf <code>in_progress</code> : la relecture horaire le ramène au
+        statut des étiquettes quand plus aucune PR ouverte ne ferme l'Issue. Un ticket est « en anomalie » quand
         <code>sendAttempts</code> atteint 10 sans <code>githubIssueNumber</code>. Les noms Dart
         sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
         <span class="path">TechnicalRequirements.md</span>).
@@ -853,7 +898,12 @@ classDiagram
         <code>unknown</code>, partie du statut actuel et avant <code>retryAfter</code>, masque
         le bouton (lancement en cours) ; échéance passée, il devient « Relancer ».
         <b>TicketsStatus</b> (<code>app_config/tickets_status</code>) porte les jetons refusés
-        (GitHub, routines) et les compteurs de lancements du jour et du mois.
+        (GitHub, routines), les compteurs de lancements du jour et du mois et le verrou des
+        livraisons (<b>TicketDeliveryLock</b>). <b>TicketDelivery</b>
+        (<code>tickets/{id}/admin/delivery</code>) dit si la pull request d'un ticket En cours
+        est prête à livrer — état calculé par le serveur, que le client affiche sans le
+        recalculer — et garde les comptes rendus de la session de livraison ; un « blocage »
+        postérieur au lancement termine la livraison et propose « Relancer la livraison ».
       </figcaption>
     </figure>
 
@@ -1454,8 +1504,10 @@ classDiagram
           le serveur seul et relu par les règles Firestore. Le client le lit par
           <code>PlanningRepository.watchPlanningReach</code> et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
-          décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          décochées ou cochées par rapport au défaut du rôle vivent sous le compte
+          (<code>PlanningVisibilityStore</code>, document
+          <code>users/{uid}/preferences/planning_visibility</code>, une liste par rôle), jamais
+          dans un document partagé. Le champ
           <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
           pause) n'entre pas dans <code>PlanningReach</code> :
           <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces

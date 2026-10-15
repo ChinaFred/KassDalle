@@ -720,7 +720,7 @@ final ownedPlanningGroupsProvider =
 // ── Plannings affichés ────────────────────────────────────────────────────────
 
 final planningVisibilityStoreProvider = Provider<PlanningVisibilityStore>(
-  (_) => const SharedPreferencesPlanningVisibilityStore(),
+  (_) => FirestorePlanningVisibilityStore(),
 );
 
 /// Le rapporteur d'erreurs de la mémoire des bascules, remplaçable dans les
@@ -729,7 +729,7 @@ final planningVisibilityErrorReportProvider = Provider<ErrorReportService>(
   (_) => ErrorReportService(),
 );
 
-/// Les plannings basculés par rapport au défaut du rôle, lus sur l'appareil.
+/// Les plannings basculés par rapport au défaut du rôle, lus sur le compte.
 /// Vide tant que rien n'est lu, et quand rien ne peut l'être.
 final planningVisibilityProvider =
     AsyncNotifierProvider.autoDispose<PlanningVisibilityNotifier, Set<String>>(

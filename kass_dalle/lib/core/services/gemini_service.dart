@@ -714,6 +714,14 @@ class GeminiService {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  /// « Livrer » un ticket En cours (administrateur) : la routine de
+  /// développement reçoit `livraison #N`. Même sortie que
+  /// [launchTicketAnalysis].
+  Future<Map<String, dynamic>> launchTicketDelivery(String ticketId) async {
+    final data = await _call('launchTicketDelivery', {'ticketId': ticketId});
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   /// « Chercher sur le web » : jusqu'à huit pages de recettes trouvées par
   /// Google pour [query], tous rôles.
   ///

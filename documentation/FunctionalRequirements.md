@@ -42,6 +42,7 @@ Les plateformes construites partagent le même backend Firebase et la même code
 L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Auth). Aucune création de compte par email/mot de passe n'est prévue.
 
 - À la première ouverture, l'utilisateur est invité à se connecter avec son compte Google.
+- **Écran de démarrage.** À chaque lancement à froid, sur toutes les plateformes, un écran affiche le logo et « Bonjour {prénom} » (le nom préféré du compte, sinon le prénom Google), sans variante selon l'heure. Il reste 5 secondes, ou jusqu'à un appui. Si le profil n'est pas lu au bout de 5 secondes, l'écran attend, avec un plafond de 10 secondes, puis affiche « Bonjour » seul. Un compte non connecté ou en attente voit « Bonjour » seul. L'écran est un calque au-dessus du routeur : la route demandée (lien profond compris) s'ouvre derrière lui. Il suit le thème clair ou sombre et n'a pas de fondu quand le système demande de réduire les animations.
 - **Une adresse ouverte sans session est retenue.** La page de connexion la reçoit dans `?next=` et l'ouvre une fois la connexion faite ; c'est ce qui ramène sur la recette le lien d'un événement Google Calendar. Seule une route interne de l'application est acceptée : une adresse vers un autre site, `/login` ou `/pending` est ignorée, et l'utilisateur arrive sur l'accueil. L'accueil seul ne produit pas de `?next=`. Un compte en attente va dans la salle d'attente, quelle que soit l'adresse demandée.
 - **Un compte neuf naît en attente (`pending`) et n'accède à rien.** Il voit une salle d'attente qui affiche son adresse et l'invite à la communiquer ; l'écran se referme de lui-même dès qu'un rôle lui est attribué.
 - **Le rôle n'est jamais choisi par l'application.** Les règles Firestore imposent `pending` à la création, et seul un Admin le change ensuite.
@@ -684,6 +685,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
 **Gestion**
 
 - **Gestion des utilisateurs** : deux onglets, « Comptes (n) » et « Invitations (n) » (n invitations en attente), et un bouton flottant « Inviter par e-mail » sur les deux.
+  - **Invités dans l'onglet Comptes** (v0.23.71) : après les comptes, la section « Invités, pas encore connectés (n) » liste les invitations en attente (`sent` et `send_failed` non expirées), une ligne par adresse : l'adresse, puis « Invité, pas encore connecté » ou « Envoi échoué » (couleur d'erreur). Une adresse qui a déjà un compte (comparaison sans casse) n'y figure pas. Le compteur « Comptes (n) » ne compte que les comptes. Appuyer sur la ligne ouvre l'onglet Invitations ; aucune action n'existe dans Comptes. Section absente sans invitation en attente.
   - **Comptes** : liste, attribution de rôle, révocation, nom préféré. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation. Elle crée les quatre livres système du compte, Reader compris.
   - **Inviter par e-mail** (`/admin/users/invite`) : adresse (« L'adresse du compte Google qu'il utilisera pour se connecter. »), rôle Lecteur / Éditeur avec une ligne d'aide (Lecteur : « Consulte, note, planifie. Ne crée pas de recette. » ; Éditeur : « Crée et importe ses propres recettes. »), groupe obligatoire (présélectionné s'il n'y en a qu'un ; pendant le chargement, champ désactivé « Chargement des groupes… » ; lecture en échec, « Groupes illisibles » avec Réessayer ; sans groupe, « Vous n'appartenez à aucun groupe. Créez-en un dans Groupes familiaux. », le bouton « Ouvrir Groupes familiaux », et l'envoi est impossible), message prérempli de 500 caractères au plus, dont le nom du groupe suit le choix tant qu'il n'a pas été retouché ; vidé, l'e-mail part sans message personnel. Le bouton « Envoyer l'invitation » est actif dès qu'un groupe existe ; au clic, une adresse vide (« Saisissez une adresse e-mail. »), mal formée (« Adresse e-mail invalide. ») ou un groupe non choisi (« Choisissez un groupe. ») s'affichent sous leur champ. Entrée dans l'adresse et Ctrl/Cmd+S envoient aussi. Un aperçu de l'e-mail se replie sous le formulaire sur téléphone et occupe une colonne à droite sur grand écran ; il suit chaque frappe. Pendant l'envoi le bouton affiche « Envoi… » et les champs sont désactivés. Quitter l'écran avec une saisie demande confirmation. Quand l'adresse saisie est celle d'un compte révoqué, l'aide sous l'adresse devient « Ce compte est révoqué. Son accès sera rétabli à sa prochaine connexion avec cette adresse. », celle du groupe « Il devra accepter l'invitation au groupe dans Groupes familiaux. », et l'aperçu montre le pied du compte révoqué (la comparaison se fait sans casse ; une autre écriture d'une adresse Gmail n'est reconnue qu'après l'envoi). Succès : « Invitation envoyée à …. », ou « Invitation envoyée à … — accès rétabli à sa prochaine connexion. » pour un compte révoqué, retour sur l'onglet Invitations. E-mail non parti : « E-mail non envoyé. L'invitation est enregistrée : renvoyez-la depuis la liste, ou copiez le lien. » Les refus du serveur s'affichent sous l'adresse ; un doublon propose « Renvoyer l'invitation », dont le succès affiche « Invitation renvoyée à …. » (ou « … — accès rétabli à sa prochaine connexion. » pour un compte révoqué). L'e-mail porte l'objet « {Admin} t'invite dans « {Groupe} » sur Kass'Dalle », le message, un bouton « Ouvrir Kass'Dalle », le lien de l'APK Android, l'adresse Google à utiliser, la date d'expiration et la signature de l'Admin.
   - **Invitations** : « En attente (n) » puis « Historique », les plus récentes d'abord. Chaque ligne : l'adresse, puis une puce de statut — En attente, Acceptée, Expirée, Annulée, Envoi échoué — suivie de « Lecteur · {groupe} · envoyée le jj/mm, expire le jj/mm » (acceptée : « Lecteur · {groupe} · par {nom}, le jj/mm », suivi de « · accès rétabli » pour un compte révoqué revenu, de « · pas invité au groupe, complet (50 invitations en attente) : invitez-le depuis Groupes familiaux quand une place se libère » si le groupe avait déjà 50 invitations en attente, et de « · pas invité au groupe (l'invitant n'en fait plus partie) : invitez-le depuis Groupes familiaux » si l'Admin de l'invitation n'en était plus membre ; en attente, expirée ou en échec pour un compte révoqué, la ligne finit par « · compte révoqué » ; annulée : « Lecteur · {groupe} »), la raison de l'échec sous un envoi échoué ou sous une invitation annulée par le serveur (adresse refusée par Gmail, ou, pour un compte révoqué rétabli autrement, « Accès rétabli à la main : invitation sans objet. » ou « Accès rétabli par une autre invitation : invitation sans objet. »), et, quand une action est possible, un menu « Actions » : Renvoyer (en attente, expirée, échec ; succès « Invitation renvoyée à …. », ou « … — accès rétabli à sa prochaine connexion. » pour un compte révoqué), Annuler l'invitation (en attente, échec ; confirmation « Annuler l'invitation de … ? » — « Le lien ne donnera plus de rôle. L'e-mail déjà reçu ne peut pas être repris. »), Copier le lien (l'adresse de l'application ; seulement quand l'invitation peut être renvoyée). Sans invitation : « Aucune invitation envoyée ». Lecture en échec : « Invitations illisibles », avec Réessayer.
@@ -831,7 +833,7 @@ déjà transmise continue de fonctionner.
 - **Un planning personnel partagé ne montre que les repas personnels** de son propriétaire : ses repas de groupe ne se lisent que par les membres de ces groupes, règles Firestore comprises.
 - **Une recette privée planifiée pour un groupe** : son titre est visible des membres du groupe, sur le repas ; la recette reste fermée (« Recette non partagée »), comme pour un planning personnel partagé. Rien n'est ouvert de plus.
 - **Un groupe supprimé puis recréé sous le même identifiant** par un autre compte n'ouvre pas aux nouveaux membres les repas de l'ancien propriétaire : les règles vérifient que le repas est celui du propriétaire actuel du groupe.
-- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom), puis une case par planning de groupe lisible : le nom du groupe, et le sous-titre « Planning du groupe · organisé par Marie » (« organisé par vous » pour son propriétaire). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Les plannings de groupe sont cochés par défaut pour tous les membres, propriétaire compris. La puce du téléphone nomme aussi le groupe (« Plannings : Moi, Famille Dupont »). Le choix est retenu sur l'appareil. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
+- **Plannings affichés.** Un sélecteur liste « Mon planning », puis « Planning de <prénom> » pour chaque planning partagé avec moi (« Membre » faute de nom), puis une case par planning de groupe lisible : le nom du groupe, et le sous-titre « Planning du groupe · organisé par Marie » (« organisé par vous » pour son propriétaire). Par défaut, l'Editor et l'Admin voient leur planning seul : les plannings partagés avec eux sont décochés, y compris ceux reçus plus tard. Le Reader voit par défaut tous les plannings partagés avec lui. Les plannings de groupe sont cochés par défaut pour tous les membres, propriétaire compris. La puce du téléphone nomme aussi le groupe (« Plannings : Moi, Famille Dupont »). Le choix est retenu sur le compte (v0.23.70) : un membre retrouve la même sélection sur tous ses appareils, une liste par rôle. Hors ligne, l'appareil garde la dernière sélection connue. Sur un **téléphone**, une puce sous la barre de titre (« Plannings : Moi, Marie », « Plannings : Moi, Marie, +2 ») ouvre une feuille de cases avec « Fermer » ; elle n'apparaît pas pour un Editor à qui personne ne partage de planning. Sur **grand écran**, une carte « Plannings affichés » se place au-dessus du calendrier, cases visibles.
 - **Une seule liste par jour.** Mes repas d'abord, puis ceux des groupes par ordre alphabétique de leur nom, puis ceux des plannings personnels des autres par ordre alphabétique du prénom, par heure pour chacun. Dès qu'un autre planning est affiché, chaque repas porte en première ligne le prénom de son propriétaire, lu « Repas de Marie » par le lecteur d'écran ; un repas de groupe porte l'icône du groupe et son nom, lu « Repas du groupe Famille Dupont ». Sur un repas de son groupe, le propriétaire a toutes les actions ; un membre le lit seulement. Les pastilles du calendrier comptent les repas de tous les plannings affichés (« 3 repas, 2 personnes »).
 - **Un repas d'autrui se lit, il ne se modifie pas.** Ni menu, ni heure modifiable, ni retrait d'un composant, ni export vers Google Calendar ; ni justification du choix, ni origine du plat. Seule action : l'icône « Ajouter aux courses », qui met ses produits dans **mon** panier. Un appui ouvre la fiche recette pour les parts du repas, sans rien écrire. Une recette que je ne peux pas lire — privée, brouillon, livre non partagé, auteur hors de mes groupes, supprimée — s'affiche par son titre, avec un cadenas et « Recette non partagée » (infobulle « Son auteur ne l'a pas partagée avec vous ») ; elle ne s'ouvre pas. L'entrée, le dessert et un accompagnement qui est une recette suivent la même règle. Ouverte par un lien, la fiche d'une telle recette dit « Recette non partagée » — « Son auteur ne l'a pas partagée avec vous. » Le partage d'un planning n'ouvre aucune recette en plus.
 - **« Exporter le planning » ne porte que sur mes repas.** Il est masqué au Reader, et quand aucun de mes repas n'est affiché. **Les courses portent sur tous les plannings affichés**, pour tous les rôles (voir 5.10). Un jour libre dit « Rien de prévu pour vous » avec « Choisir une recette », placé avant les repas des autres ; pour un Reader, « Rien de prévu », sans bouton. Le propriétaire d'un groupe dont le planning est affiché voit une ligne par planning où il planifie et qui est vide ce jour-là : « Rien de prévu pour vous », « Rien de prévu pour Famille Dupont », chacune avec « Choisir une recette ». Avec un seul planning où il planifie, l'écran reste celui d'avant.
@@ -1102,9 +1104,9 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   révoqué n'envoie rien et ne lit rien. Un membre ne lit que ses propres tickets ; l'Admin les
   lit tous.
 - **Aucun appel d'IA facturé à l'application.** Créer, envoyer, suivre un ticket n'appelle
-  aucun modèle. L'analyse et le développement d'un ticket sont faits par une session Claude
-  Code de l'administrateur, à sa demande : depuis sa propre session, ou lancée depuis la fiche
-  admin (« Lancements de sessions » ci-dessous). Ces sessions sont facturées sur l'abonnement
+  aucun modèle. L'analyse, le développement et la livraison d'un ticket sont faits par une
+  session Claude Code de l'administrateur, à sa demande : depuis sa propre session, ou lancée
+  depuis la fiche admin (« Lancements de sessions » ci-dessous). Ces sessions sont facturées sur l'abonnement
   Claude de l'administrateur, hors du suivi des coûts de l'application. L'application affiche
   le texte publié sur GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
@@ -1217,13 +1219,20 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Étiquette `statut:analysé` | Analysé |
 | Étiquette `validé` | Validé |
 | Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
-| Issue fermée comme terminée | Livré — Répondu pour une Question |
+| Issue fermée comme terminée (fusion de la pull request « Closes #N », par « Livrer » ou à la main) | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
-- Un statut peut sauter une étape ; il ne recule jamais, sauf dans un cas : quand l'Admin
+- **« PR prête » n'est pas un statut.** C'est un sous-état d'un ticket En cours, calculé par le
+  serveur et visible de l'Admin seul (puce de la liste, barre de décision). Le membre voit
+  toujours En cours, puis Livré à la fusion.
+- Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
-  à Reçu. Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
+  à Reçu ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
+  au statut de ses étiquettes (point suivant). Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
   revient alors à celui que donnent ses étiquettes.
+- Un ticket En cours dont la pull request est fermée sans être fusionnée revient au statut
+  que donnent ses étiquettes (Validé en général), dans l'heure qui suit : la vérification
+  horaire ne trouve plus de pull request ouverte qui ferme l'Issue.
 - Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
   change aucun statut, même si elle dit « Closes #N ».
 - **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
@@ -1234,7 +1243,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
 - Valider et refuser se font depuis Admin › Tickets des membres, ou sur GitHub par les mêmes
   gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue comme
-  non prévue. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
+  non prévue. Livrer un ticket En cours se fait depuis l'application (« Livrer »), ou en
+  fusionnant la pull request sur GitHub. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
   analyse se fait dans l'application : elle publie un commentaire « ## Précisions de
   l'administrateur », retire `validé` et remet `statut:à-analyser`.
 
@@ -1243,8 +1253,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
   questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
   (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
-- **À traiter.** Un ticket Reçu ou Analysé attend une décision de l'Admin. Leur nombre allume
-  le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
+- **À traiter.** Un ticket Reçu, Analysé ou Validé attend une action de l'Admin (une décision, une réponse ou le lancement du
+  développement). Leur nombre allume le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
   s'affiche dans l'entrée « Tickets à traiter (N) » du menu du compte, avec un badge quand N
   dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni le point n'existent pour
   un Editor ou un Reader.
@@ -1256,13 +1266,17 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
   « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
-  sans Issue, pas de numéro), statut, et la puce « En anomalie ».
+  sans Issue, pas de numéro), statut, la puce « PR prête » juste après le statut (icône de
+  fusion ; lecteur d'écran : « Pull request prête à livrer ») et la puce « En anomalie ». Aucun
+  filtre ne porte sur « PR prête ».
 - Détail, dans l'ordre : type, titre, statut et « Issue #N » (texte sélectionnable ; absent
-  tant que l'Issue n'existe pas, pour un ticket en Envoi en cours ou en anomalie) ; « Ouvrir sur GitHub » et « Copier le lien » ;
+  tant que l'Issue n'existe pas, pour un ticket en Envoi en cours ou en anomalie) ; « Ouvrir sur GitHub » et « Copier le lien »,
+  et « Ouvrir la PR #M » à côté quand une seule pull request éligible (définie sous « Livrer »)
+  ferme l'Issue ;
   pour un ticket en anomalie, « Essais d'envoi : N », « Dernière erreur : … » et « Relancer
   l'envoi » ; la réponse ou le motif du refus ; auteur, date, version, plateforme, écran ;
-  description et capture en grand ; la section « Lancements (N) » ; enfin la section
-  « Analyses (N) ». Une relance qui échoue
+  description et capture en grand ; la section « Livraison (N) » ; la section
+  « Lancements (N) » ; enfin la section « Analyses (N) ». Une relance qui échoue
   encore affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une
   relance réussie, « Envoi relancé : <statut>. ».
 - **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
@@ -1286,7 +1300,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   l'auteur du ticket.
 - **Lancements.** Section « Lancements (N) », avant « Analyses », toujours affichée : les
   sessions lancées sur ce ticket, plus récente en haut, vingt au plus. Chaque carte : « Analyse
-  lancée » ou « Développement lancé », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
+  lancée », « Développement lancé » ou « Livraison lancée », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
   « Session créée », « Échec : <message> » ou « Résultat inconnu : vérifiez sur
   claude.ai/code ». Pour une session créée : « Ouvrir la session », « Copier le lien », et
   « Visible seulement depuis le compte Claude de l'administrateur. ». Une session créée porte
@@ -1295,11 +1309,21 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   s'il mène à `https://claude.ai`. États : « Chargement des lancements… » ; « Aucune session
   lancée pour ce ticket. » ; « Impossible de charger les lancements. » avec Réessayer.
   L'auteur du ticket ne voit ni cette section, ni le lien, ni le nom de l'administrateur.
+- **Livraison.** Section « Livraison (N) », entre la capture et « Lancements », affichée pour
+  un ticket En cours ou Livré, ou dès qu'un compte rendu de livraison existe. Elle reprend les
+  commentaires du compte GitHub de l'administrateur (identifiant numérique) qui commencent par
+  « ## Livraison — blocage » ou « ## Livraison — terminée », relevés comme les analyses (à
+  chaque commentaire et à la vérification horaire), dans l'ordre chronologique, avec la même
+  présentation qu'une analyse. Un blocage s'affiche sur une carte de couleur d'erreur, sous
+  « Blocage du jj/mm/aa à hh:mm » ; une fin, sous « Livraison terminée le jj/mm/aa à hh:mm ». N
+  compte les comptes rendus. États : chargement ; « Aucun compte rendu de livraison. » ; erreur
+  avec Réessayer. Admin seul, comme les analyses.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
   décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
   Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
   « Valider » ; Validé : « Refuser », « Répondre » et « Lancer le développement » ; Validé
-  bloqué (ci-dessous) : « Refuser » et « Répondre ». Les actions secondaires (contour) sont à
+  bloqué (ci-dessous) : « Refuser » et « Répondre » ; En cours : « Refuser » et « Livrer »
+  (« Relancer la livraison » après un blocage ou une échéance), hors Question. Les actions secondaires (contour) sont à
   gauche, une seule action principale (pleine) à droite. « Valider » et un lancement ne
   s'affichent jamais ensemble. Quand la largeur manque, l'action principale passe sous les
   autres, à droite. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche
@@ -1360,6 +1384,67 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     développement », « Relancer le développement » et la ligne « … en cours », et propose
     « Répondre » en action principale. Le serveur refuse aussi un développement sur ce
     ticket : « La dernière analyse attend votre réponse. Rien n'a été lancé ni décompté. ».
+  - « Livrer » : pour un ticket En cours qui n'est pas une Question, Admin seul. Il lance la
+    session de développement avec la consigne `livraison #N` : elle met la pull request à jour
+    avec `master` par une fusion, attend une CI verte, fusionne la pull request, puis suit le
+    déploiement. Elle publie sur l'Issue « ## Livraison — terminée » ou, si elle s'arrête,
+    « ## Livraison — blocage ». La fusion ferme l'Issue et le ticket passe à Livré.
+    - **PR prête.** Une pull request est éligible si elle est ouverte, n'est pas un brouillon,
+      dit « Closes #N », est ouverte par le compte de l'administrateur, depuis le dépôt
+      lui-même et une branche `claude/…`. Le ticket a une « PR prête » quand il est En cours,
+      qu'une seule pull request éligible ferme l'Issue, que le dernier passage du workflow
+      « CI » sur sa dernière version est terminé et vert. Être à jour de `master`, ne pas avoir
+      de conflit signalé par GitHub et avoir un numéro de version libre ne sont pas exigés : la
+      livraison résout le conflit de version et de CHANGELOG, ou publie un blocage. Le serveur recalcule cet état à la fin de chaque CI, à chaque
+      changement de la pull request, à la vérification horaire, et le relit au lancement.
+    - **Ligne d'état**, au-dessus des boutons (annoncée par le lecteur d'écran à chaque
+      changement). Une seule s'affiche, dans cet ordre de priorité :
+      1. livraison en cours sur ce ticket : « Livraison en cours depuis hh:mm » (« … depuis le
+         jj/mm/aa à hh:mm » un autre jour), sans action principale ;
+      2. « Vérification de la pull request… » pendant le chargement ;
+      3. « État de la pull request illisible. », avec un bouton Réessayer ;
+      4. plusieurs pull requests éligibles : « 3 pull requests ferment l'Issue #42 : fermez
+         celles à abandonner sur GitHub. » ;
+      5. « CI de la PR #57 en échec » ;
+      6. « CI de la PR #57 en cours » ;
+      7. « Aucune PR prête » ;
+      8. PR prête ici mais livraison d'un autre ticket en cours : « Livraison du ticket #31 en
+         cours depuis hh:mm », avec « Ouvrir le ticket #31 » ;
+      9. blocage relevé, PR prête : « La livraison du jj/mm/aa à hh:mm s'est arrêtée : lisez
+         « Livraison — blocage » ci-dessous. », avec « Relancer la livraison » ;
+      10. échéance passée, PR prête : la ligne du cas 11, avec « Relancer la livraison » ;
+      11. PR prête : « PR #57 prête — CI verte le jj/mm/aa à hh:mm », avec « Livrer ».
+      Dans les cas 1 à 8, « Livrer » est masqué. Quand l'historique des lancements ou le verrou
+      ne se lit pas, « Livrer » reste offert : le serveur décide.
+    - **Confirmation** « Livrer ce ticket ? » — « Une session Claude Code va mettre la PR #57 à
+      jour avec master, la fusionner, puis suivre le déploiement. » et « La fusion met
+      l'application en ligne pour toute la famille. Appuyer sur « Livrer » vaut accord de
+      fusion. », puis « Type du ticket : <type>. », les lancements restants du jour et
+      l'encadré de facturation, comme les autres lancements. Pour une relance après un
+      blocage, un encadré ajoute « La livraison du jj/mm/aa à hh:mm s'est arrêtée. Lisez
+      « Livraison — blocage » avant de relancer. » ; après l'échéance, « La livraison du
+      jj/mm/aa à hh:mm n'a rien fusionné en trois heures. Vérifiez sur claude.ai/code
+      qu'aucune session ne tourne encore. ». Boutons
+      « Annuler » (focus initial) et « Livrer », ou « Relancer » pour une relance. L'envoi, la
+      fermeture pendant l'envoi et les messages de résultat sont ceux des autres lancements.
+    - **Fichiers sensibles.** Une pull request qui modifie `.github/`, `.claude/`, `deploy.ps1`,
+      `kass_dalle/firebase.json`, ou un fichier `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json`
+      où qu'il soit, ne se livre pas depuis l'application. Le
+      serveur le vérifie au lancement et refuse sans rien décompter : « La PR #M modifie
+      <chemin> : fusionnez-la vous-même après relecture. Rien n'a été lancé ni décompté. ».
+      « Livrer » reste visible dans la barre ; après ce refus, il est grisé dans la boîte.
+    - **Une livraison à la fois pour toute la famille.** Tant qu'une livraison est en cours sur
+      un ticket, aucune autre ne part, sur aucun ticket. Le verrou se libère quand le ticket
+      passe à Livré, quand un « ## Livraison — blocage » postérieur au lancement est relevé, ou
+      à l'échéance de trois heures.
+    - **Une livraison en cours** se termine quand le ticket change de statut, quand un
+      « ## Livraison — blocage » postérieur au lancement est relevé, ou après trois heures.
+      Après un blocage ou l'échéance, et si la PR est toujours prête, le bouton devient
+      « Relancer la livraison ».
+    - Le serveur refuse sans rien décompter, dans cet ordre : une autre décision en cours sur le
+      ticket, un statut autre qu'En cours, une Question, pas exactement une pull request
+      éligible, un fichier sensible, une CI qui n'est pas verte sur la dernière version, une
+      livraison déjà en cours, le plafond du jour, puis une Issue qui a changé sur GitHub.
   - « Répondre » : pour un ticket Analysé ou Validé, d'un autre type que Question, qui a au
     moins une analyse relevée ; masqué pendant un lancement en cours ou une autre décision.
     Le serveur refuse aussi pendant un développement en cours (hors ticket bloqué) : « Un
@@ -1389,8 +1474,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     Reçu. » ; réessayer ne republie pas la réponse ; Issue
     fermée « Ce ticket a déjà été clos sur GitHub. ». L'auteur du ticket ne voit pas la
     réponse ; il voit seulement son ticket revenir à Reçu.
-  - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse et
-    développement confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
+  - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse,
+    développement et livraison confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
     plus). Le compte fondateur a droit à 50 lancements par jour, quel que soit ce réglage ;
     ses lancements comptent dans le même compteur. Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
     reçoit une erreur du serveur de Claude, compte et bloque comme un lancement réussi :
@@ -1418,16 +1503,16 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   sessions : compteur indisponible. » avec « Réessayer ».
 - États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
   signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
-  tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu
-  ou analysé a une décision. », avec « Afficher tous les tickets » ; « Impossible de charger
+  tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu,
+  analysé ou validé a une suite. », avec « Afficher tous les tickets » ; « Impossible de charger
   les tickets. » ; capture illisible « Capture illisible. ».
 
 #### Hors de cette version
 
 Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
 envoyé ; notification push ou e-mail ; version exacte de la livraison ; répondre à une
-Question depuis l'application ; fusionner ou déployer depuis l'application, ou laisser une
-session lancée le faire ; montant facturé d'une session dans le suivi des coûts ;
+Question depuis l'application ; livrer depuis l'application une pull request qui modifie un
+fichier sensible ; déployer sans fusionner ; filtrer la liste sur « PR prête » ; montant facturé d'une session dans le suivi des coûts ;
 détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
 automatiques.
 
@@ -1474,7 +1559,7 @@ automatiques.
 | Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense, et les appels en cours comptent déjà : une rafale d'appels simultanés ne dépasse plus la limite d'appels. Un compte a au plus dix appels d'IA lancés depuis l'écran en cours à la fois ; au-delà, l'appel attend jusqu'à vingt secondes, puis est refusé avec « Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant ». Un import de livre et les calculs qu'il déclenche ne sont pas soumis à cette limite, mais comptent dans les plafonds du jour. Un import coupé par le plafond part directement en dead letter, sans réessayer. |
 | Traduire sans écraser l'original | Une recette importée dans une autre langue est enregistrée en français, mesures en métrique. Son texte d'avant traduction est gardé à côté, en lecture seule : personne ne le modifie depuis l'application, et il disparaît avec la recette. Seul le serveur traduit, à l'import ; on ne retraduit pas une recette existante, et on ne choisit pas une autre langue cible que le français. Une page qui n'est pas une recette (technique, note d'ingrédient) n'est pas traduite. |
 | Allergènes : prudence et indication | Les quatorze allergènes majeurs de l'UE sont estimés par l'IA, ingrédient par ingrédient, dans le référentiel nutritionnel. En cas de doute, l'allergène est signalé ; un produit composé est jugé dans sa forme du commerce habituelle. Les traces ne sont pas signalées. La recette porte l'union de ses ingrédients, calculée par le serveur à l'écriture, jamais saisie à la main. L'écran dit quand l'analyse est incomplète et rappelle toujours que la liste est indicative et ne remplace pas la lecture des emballages. Seul un Admin corrige un ingrédient ; la correction atteint les recettes au prochain passage du backfill « Allergènes ». |
-| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub et ne recule jamais ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
+| Un ticket est publié, son auteur ne l'est pas | Le titre et la description d'un ticket partent sur un dépôt GitHub public ; le formulaire le dit avant l'envoi. Le nom, l'adresse et l'identifiant du membre, le contenu d'une recette et la capture n'y partent jamais : seul l'Admin les voit, dans l'application. L'écran est publié sous la forme de son modèle de route, sans identifiant. Le statut du ticket ne se décide que sur GitHub ; seul un commentaire de l'administrateur commençant par « Réponse : » revient dans l'application. |
 | Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
@@ -1734,8 +1819,10 @@ sequenceDiagram
 ### 8.5 États d'un ticket (`status`)
 
 Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
-sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée et quand
-l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu.
+sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée, quand
+l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu, et
+quand plus aucune PR ouverte ne ferme l'Issue : un ticket En cours revient au statut de ses
+étiquettes.
 
 ```mermaid
 stateDiagram-v2
@@ -1745,7 +1832,8 @@ stateDiagram-v2
     received --> analyzed : Étiquette statut:analysé
     analyzed --> validated : Étiquette validé
     validated --> in_progress : PR ouverte qui référence l'Issue
-    in_progress --> delivered : Issue fermée, terminée
+    in_progress --> delivered : Issue fermée, terminée\n(fusion par « Livrer » ou à la main)
+    in_progress --> validated : PR fermée sans fusion\n(vérification horaire,\nstatut repris des étiquettes)
 
     received --> answered : Issue fermée, terminée\n(type Question)
     analyzed --> answered : Issue fermée, terminée\n(type Question)
@@ -1770,6 +1858,12 @@ stateDiagram-v2
         sans Issue : « en anomalie »
         dans Admin › Tickets des membres.
         Le membre voit toujours « Envoi en cours ».
+    end note
+
+    note right of in_progress
+        PR prête : sous-état Admin,
+        pas un statut. Le membre
+        voit « En cours ».
     end note
 
     note right of answered

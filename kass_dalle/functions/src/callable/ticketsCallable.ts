@@ -36,11 +36,17 @@
  *   développement sur un ticket Validé (`developpement #N`). Même réponse. Refusé avant tout comptage
  *   quand la dernière analyse attend une réponse
  *   (`details.reason = "launch_needs_answer"`).
- *   Les deux suivent `tickets/launch.ts` : bail partagé avec les décisions,
+ * - `launchTicketDelivery` — administrateur. « Livrer » : lance la routine de
+ *   développement sur un ticket En cours (`livraison #N`). Même réponse.
+ *   Refusé avant tout comptage sans PR éligible unique, si elle modifie un
+ *   fichier sensible (`details.reason = "delivery_sensitive_files"`), si sa
+ *   CI n'est pas verte, ou si une autre livraison tient le verrou global
+ *   (`delivery_running_elsewhere`).
+ *   Les trois suivent `tickets/launch.ts` : bail partagé avec les décisions,
  *   plafond quotidien (`launches_per_day`, 10 par défaut, 50 pour le fondateur),
  *   Issue relue, appel
- *   unique sans relance. Deux callables plutôt qu'un seul avec `action` :
- *   chacune ne monte que les secrets de sa routine.
+ *   unique sans relance. Une callable par lancement plutôt qu'une seule avec
+ *   `action` : chacune ne monte que les secrets de sa routine.
  *
  * Plafonds : `app_config/tickets` (`per_member_per_day`, `global_per_day`,
  * 5 et 30 si le document manque), jour calendaire Europe/Paris, compteurs
@@ -563,4 +569,18 @@ export const launchTicketDevelopment = onCall(
     secrets: [GITHUB_TICKETS_TOKEN, TICKETS_ROUTINE_DEV_ID, TICKETS_ROUTINE_DEV_TOKEN],
   },
   async (req): Promise<LaunchResult> => launch(req, "developpement"),
+);
+
+/**
+ * « Livrer » : la routine de développement reçoit `livraison #N`. Délai plus
+ * long que les deux autres : PR, fichiers et runs de la CI sont relus avant
+ * l'appel de la routine.
+ */
+export const launchTicketDelivery = onCall(
+  {
+    ...launchOpts,
+    timeoutSeconds: 180,
+    secrets: [GITHUB_TICKETS_TOKEN, TICKETS_ROUTINE_DEV_ID, TICKETS_ROUTINE_DEV_TOKEN],
+  },
+  async (req): Promise<LaunchResult> => launch(req, "livraison"),
 );

@@ -63,9 +63,10 @@ Map<String, dynamic> _doc({
   String status = 'sent',
   DateTime? expiresAt,
   Object? role = 'reader',
+  String email = 'marie@gmail.com',
 }) => {
-  'email': 'marie@gmail.com',
-  'email_key': 'marie@gmail.com',
+  'email': email,
+  'email_key': email.toLowerCase(),
   'role': role,
   'group_id': 'g1',
   'group_name': 'Les Kassbi',
@@ -734,5 +735,82 @@ void main() {
     expect(find.text('Invitations (12)'), findsOneWidget);
     expect(find.textContaining('en attente)'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('onglet Comptes : invités en attente après les comptes', (
+    tester,
+  ) async {
+    final soon = DateTime.now().add(const Duration(days: 3));
+    final users = [
+      AppUser(
+        uid: 'u0',
+        email: 'admin@gmail.com',
+        displayName: 'Admin',
+        role: UserRole.admin,
+        createdAt: DateTime(2026),
+        lastSeenAt: DateTime(2026),
+      ),
+      AppUser(
+        uid: 'u1',
+        email: 'Deja@gmail.com',
+        displayName: 'Déjà',
+        role: UserRole.reader,
+        createdAt: DateTime(2026),
+        lastSeenAt: DateTime(2026),
+      ),
+    ];
+    final repo = _FakeRepo(
+      const InvitationOutcome(kind: InvitationOutcomeKind.sent),
+      invitations: [
+        EmailInvitation.fromFirestore(
+          'i1',
+          _doc(email: 'marie@gmail.com', expiresAt: soon),
+        ),
+        EmailInvitation.fromFirestore(
+          'i2',
+          _doc(email: 'paul@gmail.com', status: 'send_failed', expiresAt: soon),
+        ),
+        EmailInvitation.fromFirestore(
+          'i3',
+          _doc(email: 'deja@gmail.com', expiresAt: soon),
+        ),
+        EmailInvitation.fromFirestore(
+          'i4',
+          _doc(email: 'annule@gmail.com', status: 'cancelled'),
+        ),
+        EmailInvitation.fromFirestore(
+          'i5',
+          _doc(email: 'expire@gmail.com', expiresAt: DateTime(2026, 1, 1)),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appUserProvider.overrideWith((ref) => Stream.value(users.first)),
+          allUsersProvider.overrideWith((ref) => Stream.value(users)),
+          adminRepositoryProvider.overrideWithValue(
+            AdminRepository(firestore: FakeFirebaseFirestore()),
+          ),
+          invitationsRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: AdminScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Comptes (2)'), findsOneWidget);
+    expect(find.text('Invités, pas encore connectés (2)'), findsOneWidget);
+    expect(find.text('marie@gmail.com'), findsOneWidget);
+    expect(find.text('paul@gmail.com'), findsOneWidget);
+    expect(find.text('Invité, pas encore connecté'), findsOneWidget);
+    expect(find.text('Envoi échoué'), findsOneWidget);
+    expect(find.text('deja@gmail.com'), findsNothing);
+    expect(find.text('annule@gmail.com'), findsNothing);
+    expect(find.text('expire@gmail.com'), findsNothing);
+
+    await tester.tap(find.text('marie@gmail.com'));
+    await tester.pumpAndSettle();
+    expect(find.text('Historique'), findsOneWidget);
+    expect(find.text('En attente (3)'), findsOneWidget);
   });
 }

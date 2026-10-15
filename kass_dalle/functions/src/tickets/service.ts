@@ -32,6 +32,7 @@ import {
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
+import { writeDeliveryReports } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
   GithubError,
@@ -57,6 +58,7 @@ import {
   isStaleIssueSnapshot,
   LABEL_VALIDATED,
   nextTicketStatus,
+  openClosingPrFromTimeline,
   nextValidatedAt,
   readAnswerCommentIds,
   replyFromComment,
@@ -329,7 +331,12 @@ async function safeRecordFailure(
 export interface GithubUpdate {
   /** Statut dérivé de l'Issue, selon le type du ticket. */
   statusFor?: (type: TicketType) => TicketStatus;
-  /** Une PR ouverte référence l'Issue : avance à `in_progress`, jamais depuis une fin. */
+  /**
+   * `true` : une PR ouverte référence l'Issue, le ticket avance à `in_progress`,
+   * jamais depuis une fin. `false` : les PR ont été relues (`resyncTicket`) et
+   * aucune ne ferme plus l'Issue, un ticket `in_progress` revient au statut de
+   * ses étiquettes. Absent : les PR ne sont pas connues, rien ne recule.
+   */
   openClosingPr?: boolean;
   /** Réponse de l'administrateur, déjà filtrée. */
   reply?: string;
@@ -372,7 +379,9 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
       resetAt instanceof Timestamp ? resetAt.toMillis() : null,
     );
     let next = current;
-    if (update.statusFor && !stale) next = nextTicketStatus(next, update.statusFor(type));
+    if (update.statusFor && !stale) {
+      next = nextTicketStatus(next, update.statusFor(type), update.openClosingPr === false);
+    }
     if (update.openClosingPr && !isFinalStatus(next)) next = nextTicketStatus(next, "in_progress");
 
     const changes: Record<string, unknown> = {};
@@ -521,8 +530,28 @@ export async function refreshTicketAnalyses(
 }
 
 /**
+ * Relit les commentaires d'une Issue et réécrit, depuis la même lecture, les
+ * analyses (`admin/analysis`) et les comptes rendus de livraison
+ * (`admin/delivery.reports`, qui peuvent libérer le verrou des livraisons).
+ * Rend le nombre d'analyses. Lève une `GithubError` ou une erreur Firestore ;
+ * l'appelant journalise.
+ */
+export async function refreshTicketComments(
+  token: string,
+  ticketId: string,
+  issueNumber: number,
+  scope: LogScope,
+): Promise<number> {
+  const comments = await listIssueComments(token, issueNumber);
+  const count = await writeTicketAnalyses(ticketId, comments);
+  await writeDeliveryReports(ticketId, comments, scope);
+  return count;
+}
+
+/**
  * Relit une Issue et applique son état au ticket (tâche horaire, webhook
- * perdu), puis réécrit ses analyses depuis les commentaires déjà lus. Issue
+ * perdu), puis réécrit ses analyses et ses comptes rendus de livraison depuis
+ * les commentaires déjà lus. Issue
  * ouverte : la date du dernier « validé » du mainteneur est lue dans ses
  * événements (`GET /issues/{n}/events`) et écrite par `updateValidatedAt`. Lève une `GithubError` ;
  * l'appelant journalise.
@@ -531,27 +560,32 @@ export async function resyncTicket(
   token: string,
   ticketId: string,
   issueNumber: number,
+  scope: LogScope,
 ): Promise<boolean> {
   const issue = await getIssue(token, issueNumber);
   if (issue.isPullRequest) return false;
-  let openClosingPr = false;
+  // `undefined` : chronologie tronquée, l'absence de PR n'est pas établie.
+  let openClosingPr: boolean | undefined = false;
   let validatedAtIso: string | null | undefined;
   if (issue.state === "open") {
-    const bodies = await openPullRequestBodiesReferencing(token, issueNumber);
-    openClosingPr = bodies.some((b) =>
+    const { bodies, complete } = await openPullRequestBodiesReferencing(token, issueNumber);
+    const found = bodies.some((b) =>
       closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
     );
+    openClosingPr = openClosingPrFromTimeline(found, complete);
     validatedAtIso = await lastValidatedLabelAt(token, issueNumber);
   }
   const comments = await listIssueComments(token, issueNumber);
   const reply = lastReply(comments);
   const changed = await applyGithubUpdate(ticketId, {
-    statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
+    statusFor: (type) =>
+      statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr === true }, type),
     openClosingPr,
     reply,
     issueUpdatedAt: issue.updatedAt,
   });
   await writeTicketAnalyses(ticketId, comments);
+  await writeDeliveryReports(ticketId, comments, scope);
   if (validatedAtIso !== undefined) {
     const ms = validatedAtIso === null ? null : Date.parse(validatedAtIso);
     await updateValidatedAt(

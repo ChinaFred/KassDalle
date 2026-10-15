@@ -19,6 +19,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
 import '../domain/ticket_answer.dart';
+import '../domain/ticket_delivery.dart';
 import '../domain/ticket_launch.dart';
 import '../domain/ticket_screens.dart';
 import 'ticket_widgets.dart';
@@ -31,10 +32,11 @@ import 'tickets_providers.dart';
 /// les décisions de l'administrateur : « Valider » (étiquette `validé` sur
 /// l'Issue), « Refuser » (motif publié sur GitHub, Issue fermée), « Répondre »
 /// (précisions publiées sous la dernière analyse, ticket ramené à Reçu),
-/// « Lancer l'analyse » et « Lancer le développement » (session Claude Code
-/// lancée par une Routine). Elles passent par les callables `validateTicket`,
-/// `refuseTicket`, `answerTicketAnalysis`, `launchTicketAnalysis` et
-/// `launchTicketDevelopment`.
+/// « Lancer l'analyse », « Lancer le développement » et « Livrer » (session
+/// Claude Code lancée par une Routine ; la livraison fusionne la PR prête
+/// d'un ticket En cours). Elles passent par les callables `validateTicket`,
+/// `refuseTicket`, `answerTicketAnalysis`, `launchTicketAnalysis`,
+/// `launchTicketDevelopment` et `launchTicketDelivery`.
 ///
 /// Le filtre « À traiter » est posé par les points d'entrée
 /// ([AdminTicketStatusFilterNotifier.enterToProcess]) ; l'écran ne le remet
@@ -449,11 +451,33 @@ class _AdminTicketTile extends ConsumerWidget {
               ].join(' · '),
             ),
             TicketStatusChip(status: ticket.status),
+            if (ticket.status == TicketStatus.inProgress &&
+                ticket.rawStatus == ticket.status.value)
+              _DeliveryReadyChip(ticketId: ticket.id),
             if (ticket.isInAnomaly) const TicketAnomalyChip(),
           ],
         ),
       ),
       onTap: onTap,
+    );
+  }
+}
+
+/// Puce « PR prête » d'un ticket En cours dont la pull request peut être
+/// livrée (`tickets/{id}/admin/delivery.ready`). Rien tant que l'état n'est
+/// pas lu, ni s'il ne se lit pas : la fiche le dit.
+class _DeliveryReadyChip extends ConsumerWidget {
+  final String ticketId;
+  const _DeliveryReadyChip({required this.ticketId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ready = ref.watch(ticketDeliveryProvider(ticketId)).value?.ready;
+    if (ready != true) return const SizedBox.shrink();
+    return Semantics(
+      label: 'Pull request prête à livrer',
+      excludeSemantics: true,
+      child: const TicketDeliveryReadyChip(),
     );
   }
 }
@@ -755,7 +779,12 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     }
   }
 
-  Future<void> _launch(TicketLaunchAction action, DateTime? relaunchOf) async {
+  Future<void> _launch(
+    TicketLaunchAction action,
+    DateTime? relaunchOf, {
+    int? prNumber,
+    bool relaunchAfterBlock = false,
+  }) async {
     final ticket = widget.ticket;
     final issue = ticket.githubIssueNumber;
     if (issue == null) return;
@@ -781,6 +810,9 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           action: action,
           issueNumber: issue,
           relaunchOf: relaunchOf,
+          relaunchAfterBlock: relaunchAfterBlock,
+          prNumber: prNumber,
+          ticketType: ticket.type,
           remaining: remaining,
           limit: limit,
           submit: () => pending = ref
@@ -896,6 +928,36 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     }
   }
 
+  /// Le verrou des livraisons quand il est actif et tenu par un autre
+  /// ticket, sinon `null` (absent, échu, illisible : « Livrer » reste
+  /// offert, le serveur tranche).
+  TicketDeliveryLock? _lockElsewhere(String ticketId, DateTime now) {
+    final status = ref.watch(ticketsStatusProvider);
+    final lock = status.hasError ? null : status.value?.deliveryRunning;
+    if (lock == null || lock.ticketId == null || lock.ticketId == ticketId) {
+      return null;
+    }
+    String? lockedStatus;
+    for (final t in ref.watch(adminTicketsProvider).value ?? const <Ticket>[]) {
+      if (t.id == lock.ticketId) lockedStatus = t.rawStatus;
+    }
+    final active = ticketDeliveryLockActive(
+      lock: lock,
+      lockedTicketRawStatus: lockedStatus,
+      now: now,
+    );
+    return active ? lock : null;
+  }
+
+  void _openOtherTicket(String ticketId) {
+    final location = AppRoutes.adminTicketDetail(ticketId);
+    if (MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint) {
+      context.go(location);
+    } else {
+      context.push(location);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ticket = widget.ticket;
@@ -908,6 +970,8 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     final reply = ticket.replyText;
     final launchesAsync = ref.watch(ticketLaunchesProvider(ticket.id));
     final analysisAsync = ref.watch(ticketAnalysisProvider(ticket.id));
+    final deliveryAsync = ref.watch(ticketDeliveryProvider(ticket.id));
+    final delivery = deliveryAsync.hasError ? null : deliveryAsync.value;
     // Lus par la boîte de lancement (lancements restants) : surveillés ici
     // pour être chargés avant l'appui, sur la fiche seule au téléphone.
     ref.watch(ticketsStatusProvider);
@@ -919,9 +983,32 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       launchesLoading: launchesAsync.isLoading && !launchesAsync.hasValue,
       now: now,
       analysis: analysisAsync.hasError ? null : analysisAsync.value,
+      delivery: delivery,
     );
     final hint = decisions.validateHint;
-    _armRunTimer(decisions.runningUntil);
+    final lockElsewhere = _lockElsewhere(ticket.id, now);
+    final deliveryBar =
+        decisions.launchAction == TicketLaunchAction.delivery && issue != null
+        ? ticketDeliveryBar(
+            run: TicketLaunchRunState(
+              runningSince: decisions.runningSince,
+              relaunchOf: decisions.relaunchOf,
+              blocked: decisions.relaunchAfterBlock,
+            ),
+            deliveryLoading:
+                (deliveryAsync.isLoading && !deliveryAsync.hasValue) ||
+                (launchesAsync.isLoading && !launchesAsync.hasValue),
+            deliveryError: deliveryAsync.hasError,
+            delivery: delivery,
+            issueNumber: issue,
+            lockElsewhere: lockElsewhere,
+            now: now,
+          )
+        : null;
+    final prLink = delivery?.openablePrLink;
+    // À l'échéance du lancement en cours, ou du verrou tenu par un autre
+    // ticket, la fiche se redessine.
+    _armRunTimer(decisions.runningUntil ?? lockElsewhere?.retryAfter);
     final launchAction = decisions.canLaunchAnalysis
         ? TicketLaunchAction.analysis
         : decisions.canLaunchDevelopment
@@ -970,6 +1057,14 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                 icon: const Icon(Icons.open_in_new),
                 label: const Text('Ouvrir sur GitHub'),
               ),
+              if (prLink != null &&
+                  (ticket.status == TicketStatus.inProgress ||
+                      ticket.status == TicketStatus.delivered))
+                OutlinedButton.icon(
+                  onPressed: () => _openGithub(prLink.toString()),
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text('Ouvrir la PR #${delivery?.prNumber}'),
+                ),
               IconButton(
                 onPressed: () => _copyLink(url),
                 icon: const Icon(Icons.link),
@@ -1021,6 +1116,12 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           const SizedBox(height: 16),
           TicketScreenshotView(path: screenshot, height: 360),
         ],
+        if (ticket.status == TicketStatus.inProgress ||
+            ticket.status == TicketStatus.delivered ||
+            (delivery?.reports.isNotEmpty ?? false)) ...[
+          const SizedBox(height: 24),
+          _DeliverySection(ticket: ticket, onOpenGithub: _openGithub),
+        ],
         const SizedBox(height: 24),
         _LaunchesSection(
           ticketId: ticket.id,
@@ -1043,7 +1144,9 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     // un lancement en cours, ou une réponse que la prochaine analyse lira.
     final lastAnalysisAt = decisions.lastAnalysisAt;
     final pendingAnswerAt = decisions.pendingAnswerAt;
-    final (IconData, String)? info = decisions.awaitingReply
+    final (IconData, String)? info = deliveryBar != null
+        ? (_deliveryLineIcon(deliveryBar.kind), deliveryBar.text)
+        : decisions.awaitingReply
         ? (
             Icons.mark_chat_unread_outlined,
             lastAnalysisAt == null
@@ -1110,6 +1213,20 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
             ? null
             : () => _launch(launchAction, decisions.relaunchOf),
       );
+    } else if (decisions.canDeliver && deliveryBar?.action != null) {
+      final relaunch = deliveryBar!.action == TicketDeliveryAction.relaunch;
+      primary = _LaunchButton(
+        action: TicketLaunchAction.delivery,
+        relaunch: relaunch,
+        onPressed: _busy
+            ? null
+            : () => _launch(
+                TicketLaunchAction.delivery,
+                relaunch ? decisions.relaunchOf : null,
+                prNumber: delivery?.prNumber,
+                relaunchAfterBlock: relaunch && decisions.relaunchAfterBlock,
+              ),
+      );
     } else {
       primary = null;
     }
@@ -1130,13 +1247,41 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                     child: Icon(
                       info.$1,
                       size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color:
+                          deliveryBar?.kind == TicketDeliveryLineKind.ready ||
+                              deliveryBar?.kind ==
+                                  TicketDeliveryLineKind.expired
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(child: TicketInfoLine(info.$2)),
+                  Expanded(
+                    child: Semantics(
+                      container: true,
+                      liveRegion: deliveryBar != null,
+                      child: TicketInfoLine(info.$2),
+                    ),
+                  ),
+                  if (deliveryBar?.kind == TicketDeliveryLineKind.unreadable)
+                    IconButton(
+                      onPressed: () =>
+                          ref.invalidate(ticketDeliveryProvider(ticket.id)),
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Réessayer',
+                    ),
                 ],
               ),
+              if (deliveryBar?.elsewhereTicketId case final otherId?)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    onPressed: () => _openOtherTicket(otherId),
+                    child: Text(
+                      'Ouvrir le ticket #${deliveryBar?.elsewhereIssueNumber}',
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
             ],
             // Secondaires à gauche, une seule action principale à droite. Trop
@@ -1192,8 +1337,24 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   }
 }
 
-/// « Lancer l'analyse » / « Lancer le développement », ou leur variante
-/// « Relancer… » quand le lancement précédent n'a rien changé au ticket.
+/// Icône de la ligne d'état d'un ticket En cours.
+IconData _deliveryLineIcon(TicketDeliveryLineKind kind) => switch (kind) {
+  TicketDeliveryLineKind.running ||
+  TicketDeliveryLineKind.elsewhere => Icons.hourglass_top,
+  TicketDeliveryLineKind.loading ||
+  TicketDeliveryLineKind.ciRunning => Icons.pending_outlined,
+  TicketDeliveryLineKind.unreadable ||
+  TicketDeliveryLineKind.blocked => Icons.error_outline,
+  TicketDeliveryLineKind.multiplePrs ||
+  TicketDeliveryLineKind.ciFailed => Icons.warning_amber_outlined,
+  TicketDeliveryLineKind.noPr => Icons.info_outline,
+  TicketDeliveryLineKind.expired ||
+  TicketDeliveryLineKind.ready => Icons.check_circle_outline,
+};
+
+/// « Lancer l'analyse » / « Lancer le développement » / « Livrer », ou leur
+/// variante « Relancer… » quand le lancement précédent n'a rien changé au
+/// ticket (ou, pour une livraison, s'est arrêté sur un blocage).
 class _LaunchButton extends StatelessWidget {
   final TicketLaunchAction action;
   final bool relaunch;
@@ -1212,6 +1373,8 @@ class _LaunchButton extends StatelessWidget {
       (TicketLaunchAction.analysis, true) => 'Relancer l\'analyse',
       (TicketLaunchAction.development, false) => 'Lancer le développement',
       (TicketLaunchAction.development, true) => 'Relancer le développement',
+      (TicketLaunchAction.delivery, false) => 'Livrer',
+      (TicketLaunchAction.delivery, true) => 'Relancer la livraison',
     };
     if (relaunch) {
       return FilledButton.tonalIcon(
@@ -1222,11 +1385,11 @@ class _LaunchButton extends StatelessWidget {
     }
     return FilledButton.icon(
       onPressed: onPressed,
-      icon: Icon(
-        action == TicketLaunchAction.analysis
-            ? AppIcons.ticketLaunchAnalysis
-            : AppIcons.ticketLaunchDevelopment,
-      ),
+      icon: Icon(switch (action) {
+        TicketLaunchAction.analysis => AppIcons.ticketLaunchAnalysis,
+        TicketLaunchAction.development => AppIcons.ticketLaunchDevelopment,
+        TicketLaunchAction.delivery => AppIcons.ticketDeliver,
+      }),
       label: Text(label),
     );
   }
@@ -1249,7 +1412,11 @@ enum _LaunchDialogResult {
 
 /// Ce que la boîte rend, avec le message du serveur pour un résultat inconnu
 /// ou un refus.
-typedef _LaunchDialogOutcome = ({_LaunchDialogResult kind, String? message});
+typedef _LaunchDialogOutcome = ({
+  _LaunchDialogResult kind,
+  String? message,
+  String? reason,
+});
 
 /// Attend la réponse d'un lancement et la range dans un des résultats. Les
 /// erreurs sont déjà remontées par `TicketRepository.launch` (feature
@@ -1260,15 +1427,23 @@ Future<_LaunchDialogOutcome> _settleLaunch(
   try {
     final result = await pending;
     return result.outcome == TicketLaunchOutcome.launched
-        ? (kind: _LaunchDialogResult.launched, message: null)
-        : (kind: _LaunchDialogResult.unknown, message: result.message);
+        ? (kind: _LaunchDialogResult.launched, message: null, reason: null)
+        : (
+            kind: _LaunchDialogResult.unknown,
+            message: result.message,
+            reason: null,
+          );
   } on TicketLaunchError catch (e) {
     // Déjà remontée par `TicketRepository` (feature `tickets`).
-    return (kind: _LaunchDialogResult.refused, message: e.message);
+    return (
+      kind: _LaunchDialogResult.refused,
+      message: e.message,
+      reason: e.reason,
+    );
   } catch (_) {
     // Déjà remontée par `TicketRepository` (feature `tickets`) : la réponse
     // s'est perdue, la session a pu partir.
-    return (kind: _LaunchDialogResult.lost, message: null);
+    return (kind: _LaunchDialogResult.lost, message: null, reason: null);
   }
 }
 
@@ -1284,6 +1459,13 @@ class _LaunchTicketDialog extends StatefulWidget {
   final int issueNumber;
   final DateTime? relaunchOf;
 
+  /// Livraison : la relance suit un blocage relevé, pas l'échéance.
+  final bool relaunchAfterBlock;
+
+  /// Livraison : la PR prête, et le type du ticket rappelé dans la boîte.
+  final int? prNumber;
+  final TicketType ticketType;
+
   /// Lancements restants aujourd'hui, ou `null` s'ils ne se lisent pas.
   final int? remaining;
   final int? limit;
@@ -1293,6 +1475,9 @@ class _LaunchTicketDialog extends StatefulWidget {
     required this.action,
     required this.issueNumber,
     required this.relaunchOf,
+    this.relaunchAfterBlock = false,
+    this.prNumber,
+    required this.ticketType,
     required this.remaining,
     required this.limit,
     required this.submit,
@@ -1306,6 +1491,10 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
   bool _sending = false;
   String? _error;
 
+  /// La PR modifie un fichier sensible : « Livrer » reste grisé, rien ne
+  /// partira tant qu'elle n'est pas fusionnée à la main.
+  bool _sensitive = false;
+
   /// La boîte a déjà demandé sa fermeture : un second `pop` fermerait la
   /// fiche (« Fermer » et la réponse arrivés dans la même image).
   bool _closing = false;
@@ -1317,7 +1506,8 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
   }
 
   /// « Fermer » pendant l'envoi : l'appel continue, l'appelant l'attend.
-  void _detach() => _close((kind: _LaunchDialogResult.detached, message: null));
+  void _detach() =>
+      _close((kind: _LaunchDialogResult.detached, message: null, reason: null));
 
   Future<void> _submit() async {
     setState(() {
@@ -1330,6 +1520,7 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
       setState(() {
         _error = outcome.message;
         _sending = false;
+        if (outcome.reason == kTicketDeliverySensitiveReason) _sensitive = true;
       });
       return;
     }
@@ -1346,7 +1537,8 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
     final limit = widget.limit;
     final exhausted = remaining != null && remaining <= 0;
     final relaunchOf = widget.relaunchOf;
-    final isAnalysis = widget.action == TicketLaunchAction.analysis;
+    final isDelivery = widget.action == TicketLaunchAction.delivery;
+    final pr = widget.prNumber == null ? 'la PR' : 'la PR #${widget.prNumber}';
     final String quotaLine;
     if (remaining == null || limit == null) {
       quotaLine = 'Lancements restants aujourd\'hui : inconnu.';
@@ -1381,33 +1573,55 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
       },
       child: AlertDialog(
         scrollable: true,
-        title: Text(
-          isAnalysis
-              ? 'Lancer l\'analyse de ce ticket ?'
-              : 'Lancer le développement de ce ticket ?',
-        ),
+        title: Text(switch (widget.action) {
+          TicketLaunchAction.analysis => 'Lancer l\'analyse de ce ticket ?',
+          TicketLaunchAction.development =>
+            'Lancer le développement de ce ticket ?',
+          TicketLaunchAction.delivery => 'Livrer ce ticket ?',
+        }),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              isAnalysis
-                  ? 'Une session Claude Code va lire l\'Issue '
-                        '#${widget.issueNumber} et publier son analyse sur '
-                        'GitHub.'
-                  : 'Une session Claude Code va écrire le code de l\'Issue '
-                        '#${widget.issueNumber} et ouvrir une pull request. '
-                        'Elle ne fusionne rien.',
-            ),
+            Text(switch (widget.action) {
+              TicketLaunchAction.analysis =>
+                'Une session Claude Code va lire l\'Issue '
+                    '#${widget.issueNumber} et publier son analyse sur '
+                    'GitHub.',
+              TicketLaunchAction.development =>
+                'Une session Claude Code va écrire le code de l\'Issue '
+                    '#${widget.issueNumber} et ouvrir une pull request. '
+                    'Elle ne fusionne rien.',
+              TicketLaunchAction.delivery =>
+                'Une session Claude Code va mettre $pr à jour avec master, '
+                    'la fusionner, puis suivre le déploiement.',
+            }),
+            if (isDelivery) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'La fusion met l\'application en ligne pour toute la '
+                'famille. Appuyer sur « Livrer » vaut accord de fusion.',
+              ),
+              const SizedBox(height: 12),
+              Text('Type du ticket : ${widget.ticketType.label}.'),
+            ],
             const SizedBox(height: 12),
             Text(quotaLine),
             if (relaunchOf != null) ...[
               const SizedBox(height: 12),
               box(
                 Icons.warning_amber_outlined,
-                'Le lancement du ${formatTicketDateTime(relaunchOf)} n\'a '
-                'rien changé au ticket. Vérifiez sur claude.ai/code qu\'aucune '
-                'session ne tourne encore.',
+                !isDelivery
+                    ? 'Le lancement du ${formatTicketDateTime(relaunchOf)} '
+                          'n\'a rien changé au ticket. Vérifiez sur '
+                          'claude.ai/code qu\'aucune session ne tourne encore.'
+                    : widget.relaunchAfterBlock
+                    ? 'La livraison du ${formatTicketDateTime(relaunchOf)} '
+                          's\'est arrêtée. Lisez « Livraison — '
+                          'blocage » avant de relancer.'
+                    : 'La livraison du ${formatTicketDateTime(relaunchOf)} '
+                          'n\'a rien fusionné en trois heures. Vérifiez sur '
+                          'claude.ai/code qu\'aucune session ne tourne encore.',
               ),
             ],
             const SizedBox(height: 12),
@@ -1439,19 +1653,28 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
         actions: [
           // Avant l'appui sur « Lancer », rien n'est appelé. Pendant l'envoi,
           // « Fermer » laisse l'appel aller à son terme.
+          // Une livraison fusionne et déploie : le focus part sur
+          // « Annuler », pas sur l'action.
           TextButton(
+            autofocus: isDelivery,
             onPressed: _sending ? _detach : () => _close(null),
             child: Text(_sending ? 'Fermer' : 'Annuler'),
           ),
           FilledButton(
-            onPressed: _sending || exhausted ? null : _submit,
+            onPressed: _sending || exhausted || _sensitive ? null : _submit,
             child: _sending
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(relaunchOf != null ? 'Relancer' : 'Lancer'),
+                : Text(
+                    relaunchOf != null
+                        ? 'Relancer'
+                        : isDelivery
+                        ? 'Livrer'
+                        : 'Lancer',
+                  ),
           ),
         ],
       ),
@@ -2045,6 +2268,155 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
                   )
                 : const Text('Publier'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Section « Livraison (N) » de la fiche : les comptes rendus
+/// « ## Livraison — blocage » et « ## Livraison — terminée » publiés par la
+/// session de livraison, dans l'ordre chronologique.
+class _DeliverySection extends ConsumerWidget {
+  final Ticket ticket;
+  final Future<void> Function(String url) onOpenGithub;
+
+  const _DeliverySection({required this.ticket, required this.onOpenGithub});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return ref
+        .watch(ticketDeliveryProvider(ticket.id))
+        .when(
+          skipLoadingOnRefresh: false,
+          loading: () => ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 120),
+            child: const AppLoadingState(label: 'Chargement de la livraison…'),
+          ),
+          error: (error, _) => AppErrorState(
+            error: error,
+            compact: true,
+            title: 'Impossible de charger la livraison.',
+            onRetry: () => ref.invalidate(ticketDeliveryProvider(ticket.id)),
+          ),
+          data: (delivery) {
+            final reports = delivery?.reports ?? const <TicketDeliveryReport>[];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Livraison (${reports.length})',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                if (reports.isEmpty)
+                  const TicketInfoLine('Aucun compte rendu de livraison.')
+                else
+                  for (final (i, r) in reports.indexed) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    _DeliveryReportCard(
+                      report: r,
+                      githubUrl: ticket.githubUrl,
+                      onOpenGithub: onOpenGithub,
+                    ),
+                  ],
+              ],
+            );
+          },
+        );
+  }
+}
+
+class _DeliveryReportCard extends StatelessWidget {
+  final TicketDeliveryReport report;
+  final String? githubUrl;
+  final Future<void> Function(String url) onOpenGithub;
+
+  const _DeliveryReportCard({
+    required this.report,
+    required this.githubUrl,
+    required this.onOpenGithub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final blocked = report.kind == TicketDeliveryReportKind.blocked;
+    final fg = blocked ? cs.onErrorContainer : null;
+    final at = report.createdAt;
+    final title = blocked
+        ? (at == null ? 'Blocage' : 'Blocage du ${formatTicketDateTime(at)}')
+        : (at == null
+              ? 'Livraison terminée'
+              : 'Livraison terminée le ${formatTicketDateTime(at)}');
+    final url = githubUrl;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: blocked ? cs.errorContainer : cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ExcludeSemantics(
+                child: Icon(
+                  blocked ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 20,
+                  color: fg ?? cs.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    title,
+                    style: theme.textTheme.labelLarge?.copyWith(color: fg),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          MarkdownBody(
+            data: ticketDeliveryReportDisplayBody(report.body),
+            selectable: true,
+            extensionSet: md.ExtensionSet.gitHubFlavored,
+            styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+              p: theme.textTheme.bodyMedium?.copyWith(height: 1.5, color: fg),
+              listBullet: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.5,
+                color: fg,
+              ),
+            ),
+            onTapLink: (_, href, _) {
+              final uri = openableAnalysisLink(href);
+              if (uri != null) onOpenGithub(uri.toString());
+            },
+            // Aucune image n'est chargée, comme dans les analyses.
+            imageBuilder: (_, _, alt) => Text(
+              ticketAnalysisImagePlaceholder(alt),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontStyle: FontStyle.italic,
+                color: fg ?? cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (report.truncated) ...[
+            const SizedBox(height: 8),
+            const TicketInfoLine('Compte rendu tronqué, voir GitHub.'),
+            if (url != null)
+              TextButton(
+                onPressed: () => onOpenGithub(url),
+                child: const Text('Ouvrir sur GitHub'),
+              ),
+          ],
         ],
       ),
     );
