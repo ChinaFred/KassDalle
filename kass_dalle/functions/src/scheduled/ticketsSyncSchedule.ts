@@ -13,6 +13,10 @@
  *    (`refreshTicketDelivery` : PR éligible, dernier run de la CI), sur une
  *    liste des PR ouvertes lue une fois par passe.
  *
+ * 3. PR de livraison : un ticket livré depuis moins de trois jours sans
+ *    `delivered_pr_number` est relu (`recordDeliveredPr`), si le webhook de
+ *    fermeture a été perdu.
+ *
  * Un jeton absent ou refusé arrête la passe : `token_invalid_since` est posé,
  * les tickets suivants ne sont pas essayés et n'usent pas leurs essais.
  * Chaque ticket est traité seul : une erreur est journalisée et la passe
@@ -20,12 +24,16 @@
  */
 
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
 import { COLL_TICKETS, GITHUB_TICKETS_TOKEN, REGION, TICKET_MAX_SEND_ATTEMPTS } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { GithubError, githubToken, listOpenPullRequests } from "../tickets/github";
-import { refreshTicketDelivery, type OpenPullRequests } from "../tickets/delivery";
+import {
+  recordDeliveredPr,
+  refreshTicketDelivery,
+  type OpenPullRequests,
+} from "../tickets/delivery";
 import {
   clearTokenInvalid,
   markTokenInvalid,
@@ -36,6 +44,13 @@ import {
 
 /** Statuts relus sur GitHub. Les fins ne le sont pas (spécification V1). */
 const RESYNC_STATUSES = ["received", "analyzed", "validated", "in_progress"];
+
+/**
+ * Un ticket livré depuis moins de trois jours sans PR de livraison est relu :
+ * rattrape un webhook perdu. Au-delà, le backfill « PR des tickets livrés »
+ * reprend le fonds, et une Issue fermée à la main n'est pas relue chaque heure.
+ */
+const DELIVERED_PR_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Plafond de tickets traités par passe, pour tenir dans le délai. */
 const MAX_PER_PASS = 200;
@@ -129,6 +144,47 @@ async function resyncOpenTickets(
   return { changed, failed };
 }
 
+async function catchUpDeliveredPrs(
+  token: string,
+  scope: LogScope,
+): Promise<{ written: number; failed: number }> {
+  const snap = await getFirestore()
+    .collection(COLL_TICKETS)
+    .where("status", "==", "delivered")
+    .limit(MAX_PER_PASS)
+    .get();
+  const since = Date.now() - DELIVERED_PR_WINDOW_MS;
+  let written = 0;
+  let failed = 0;
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const issueNumber = data.github_issue_number;
+    if (typeof issueNumber !== "number" || data.delivered_pr_number != null) continue;
+    const changedAt = data.status_changed_at;
+    if (!(changedAt instanceof Timestamp) || changedAt.toMillis() < since) continue;
+    try {
+      if ((await recordDeliveredPr(token, doc.id, issueNumber)) === "written") written++;
+    } catch (err) {
+      failed++;
+      const kind = err instanceof GithubError ? err.kind : "other";
+      await logError({
+        message: `ticketsSyncSchedule : PR de livraison du ticket ${doc.id} (Issue #${issueNumber}) non relevée`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: scope.correlationId,
+        firestoreDocId: doc.id,
+        feature: "tickets",
+        extra: { kind },
+      });
+      if (kind === "token") {
+        await markTokenInvalid(scope, err instanceof Error ? err.message : String(err));
+        break;
+      }
+      if (kind === "rate_limit") break;
+    }
+  }
+  return { written, failed };
+}
+
 export const ticketsSyncSchedule = onSchedule(
   {
     schedule: "every 60 minutes",
@@ -149,10 +205,12 @@ export const ticketsSyncSchedule = onSchedule(
       }
       const resend = await retryPendingSends(scope);
       const resync = await resyncOpenTickets(token, scope);
+      const deliveredPrs = await catchUpDeliveredPrs(token, scope);
       await logInfo({
         message:
           `ticketsSyncSchedule : ${resend.sent} ticket(s) envoyé(s), ${resend.failed} échec(s) ; ` +
-          `${resync.changed} ticket(s) mis à jour, ${resync.failed} échec(s) de relecture`,
+          `${resync.changed} ticket(s) mis à jour, ${resync.failed} échec(s) de relecture ; ` +
+          `${deliveredPrs.written} PR de livraison relevée(s), ${deliveredPrs.failed} échec(s)`,
         correlationId: scope.correlationId,
         feature: "tickets",
       });

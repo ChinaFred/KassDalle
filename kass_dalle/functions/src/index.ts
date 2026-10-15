@@ -164,6 +164,7 @@ export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
 export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillCallable";
 export { backfillTicketAnalysesFn } from "./callable/ticketAnalysesBackfillCallable";
+export { backfillTicketDeliveredPrFn } from "./callable/ticketDeliveredPrBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.

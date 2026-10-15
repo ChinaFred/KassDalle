@@ -491,6 +491,19 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Retrouve la PR de chaque ticket livré (`delivered_pr_number` et
+  /// `delivered_pr_url` sur le ticket). Sans appel de modèle. Les drapeaux
+  /// valent 1 ou 0 ; les tickets sans PR sont dans `failures`.
+  Future<BackfillCounts> backfillTicketDeliveredPr() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillTicketDeliveredPrFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Déplace les repas du planning personnel de l'appelant, sur la période de
   /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
   /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.

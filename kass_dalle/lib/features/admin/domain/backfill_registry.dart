@@ -30,6 +30,7 @@ abstract final class BackfillKeys {
   static const groupPlanningReach = 'group_planning_reach';
   static const moveMealsToGroup = 'move_meals_to_group';
   static const ticketAnalyses = 'ticket_analyses';
+  static const ticketDeliveredPr = 'ticket_delivered_pr';
 }
 
 class BackfillDefinition {
@@ -195,6 +196,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'lire dans Admin › Tickets des membres.',
     usesAi: false,
     passLimit: 'Chaque passage relève au plus 200 tickets.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.ticketDeliveredPr,
+    kind: BackfillKind.ponctuel,
+    title: 'PR des tickets livrés',
+    description:
+        'Retrouve sur GitHub la PR qui a livré chaque ticket déjà livré, pour '
+        'l\'afficher aux membres et dans Admin › Tickets.',
+    usesAi: false,
+    passLimit: 'Chaque passage reprend au plus 100 tickets.',
   ),
 ];
 

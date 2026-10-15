@@ -17,6 +17,9 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  closingCommitFromEvents,
+  pickDeliveredPr,
+  type MergedPrCandidate,
   DELIVERY_BLOCKED_TITLE,
   DELIVERY_DONE_TITLE,
   DELIVERY_REPORT_MAX_COUNT,
@@ -41,6 +44,7 @@ import {
   type PullRequestView,
 } from "../tickets/rules";
 import { routineConfig } from "../tickets/routine";
+import { closedIssueFromEvent } from "../tickets/webhook";
 import { classifyGithubFailure, readCiRun, readPullRequest } from "../tickets/github";
 import {
   DELIVERY_EVENT_MAX,
@@ -570,5 +574,99 @@ describe("403 de GitHub : limite secondaire ou jeton", () => {
       "token",
     );
     assert.equal(classifyGithubFailure(403, null, false), "token");
+  });
+});
+
+describe("PR de livraison d'un ticket livré", () => {
+  const REPO = "ChinaFred/KassDalle";
+  const MAINTAINER = 16348852;
+  const pr = (over: Partial<MergedPrCandidate>): MergedPrCandidate => ({
+    number: 57,
+    mergedAt: "2026-10-15T20:00:00Z",
+    body: "Closes #91",
+    htmlUrl: `https://github.com/${REPO}/pull/57`,
+    baseRepoFullName: REPO,
+    authorId: MAINTAINER,
+    authorAssociation: "OWNER",
+    ...over,
+  });
+
+  test("commit de fermeture : dernier événement closed avec commit_id", () => {
+    assert.equal(
+      closingCommitFromEvents([
+        { event: "closed", commit_id: "aaaaaaa", created_at: "2026-10-01T00:00:00Z" },
+        { event: "reopened", created_at: "2026-10-02T00:00:00Z" },
+        { event: "closed", commit_id: "bbbbbbb", created_at: "2026-10-03T00:00:00Z" },
+      ]),
+      "bbbbbbb",
+    );
+  });
+
+  test("commit de fermeture : fermée à la main ou valeur illisible, pas de commit", () => {
+    assert.equal(closingCommitFromEvents([{ event: "closed", commit_id: null }]), null);
+    assert.equal(closingCommitFromEvents([{ event: "closed", commit_id: "../x" }]), null);
+    assert.equal(closingCommitFromEvents([null, "x", { event: "labeled" }]), null);
+    assert.equal(closingCommitFromEvents([]), null);
+  });
+
+  test("la PR fusionnée qui ferme l'Issue est retenue", () => {
+    assert.deepEqual(pickDeliveredPr([pr({})], 91, MAINTAINER, REPO), {
+      number: 57,
+      url: `https://github.com/${REPO}/pull/57`,
+    });
+  });
+
+  test("plusieurs PR fusionnées : la dernière", () => {
+    const picked = pickDeliveredPr(
+      [
+        pr({ number: 50, mergedAt: "2026-10-10T00:00:00Z" }),
+        pr({ number: 60, mergedAt: "2026-10-14T00:00:00Z" }),
+        pr({ number: 55, mergedAt: "2026-10-12T00:00:00Z" }),
+      ],
+      91,
+      MAINTAINER,
+      REPO,
+    );
+    assert.equal(picked?.number, 60);
+  });
+
+  test("PR non fusionnée, d'un autre dépôt, d'un tiers ou d'une autre Issue : écartée", () => {
+    assert.equal(pickDeliveredPr([pr({ mergedAt: null })], 91, MAINTAINER, REPO), null);
+    assert.equal(
+      pickDeliveredPr([pr({ baseRepoFullName: "autre/depot" })], 91, MAINTAINER, REPO),
+      null,
+    );
+    assert.equal(
+      pickDeliveredPr([pr({ authorId: 1, authorAssociation: "NONE" })], 91, MAINTAINER, REPO),
+      null,
+    );
+    assert.equal(pickDeliveredPr([pr({ body: "Closes #92" })], 91, MAINTAINER, REPO), null);
+    assert.equal(pickDeliveredPr([], 91, MAINTAINER, REPO), null);
+  });
+
+  test("adresse hors du dépôt : reconstruite depuis le numéro", () => {
+    assert.equal(
+      pickDeliveredPr([pr({ htmlUrl: "https://evil.example/pull/57" })], 91, MAINTAINER, REPO)?.url,
+      `https://github.com/${REPO}/pull/57`,
+    );
+  });
+
+  test("événement issues closed : numéro de l'Issue, sinon rien", () => {
+    const base = {
+      action: "closed",
+      repository: { full_name: REPO },
+      issue: { number: 91 },
+    };
+    assert.equal(closedIssueFromEvent("issues", base), 91);
+    assert.equal(closedIssueFromEvent("issues", { ...base, action: "opened" }), null);
+    assert.equal(closedIssueFromEvent("pull_request", base), null);
+    assert.equal(
+      closedIssueFromEvent("issues", { ...base, repository: { full_name: "autre/depot" } }),
+      null,
+    );
+    assert.equal(
+      closedIssueFromEvent("issues", { ...base, issue: { number: 91, pull_request: {} } }),
+      null,
+    );
   });
 });
