@@ -138,6 +138,8 @@ const Map<String, String> kLogTreatmentLabels = {
   'ticket_reponse': 'Réponse à l\'analyse d\'un ticket',
   'ticket_webhook': 'Retour de GitHub sur un ticket',
   'tickets_sync': 'Synchronisation horaire des tickets',
+  'release_notification':
+      'Notification de nouvelle version aux administrateurs',
 
   // ── Ce qui n'a jamais eu de nom ────────────────────────────────────────
   // Le défaut historique de toutes les fonctions appelables. Il ne devrait
