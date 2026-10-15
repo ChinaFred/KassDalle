@@ -20,7 +20,8 @@ export function parseApkManifest(text: string): ApkRelease | null {
   let json: unknown;
   try {
     json = JSON.parse(text);
-  } catch {
+  } catch (err) {
+    console.error("parseApkManifest : manifeste non JSON", err);
     return null;
   }
   if (typeof json !== "object" || json === null) return null;
