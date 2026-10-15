@@ -224,24 +224,33 @@ class TicketReplyBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.tertiaryContainer,
+        color: cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: cs.onTertiaryContainer,
-            ),
+          Row(
+            children: [
+              ExcludeSemantics(
+                child: Icon(Icons.reply, size: 18, color: cs.onSurface),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: cs.onSurface,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           SelectableText(
             text,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: cs.onTertiaryContainer,
-            ),
+            style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface),
           ),
         ],
       ),
