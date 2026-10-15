@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.82 — fonctionnel
+### v0.23.83 — fonctionnel
 
 Ticket #101 : « Répondre » est disponible sur un ticket Reçu, avant « Lancer l'analyse ».
 L'administrateur ajoute une précision, publiée sur l'Issue en « ## Précisions de
@@ -29,7 +29,7 @@ lancé. Plusieurs réponses se suivent. « Répondre » est masqué pendant une 
 La session d'analyse lit ces précisions : sans analyse précédente, elle lit toutes celles de
 l'Issue. Le texte de la Routine d'analyse (hors dépôt) est à mettre à jour de la même façon.
 
-### v0.23.82 — technique
+### v0.23.83 — technique
 
 `answerPrecondition` et `ticketCanReply` (TypeScript et Dart) acceptent le statut `received`
 sans exiger d'analyse. `answerTicketDecision` ne remet pas le ticket à Reçu dans ce cas
@@ -37,6 +37,21 @@ sans exiger d'analyse. `answerTicketDecision` ne remet pas le ticket à Reçu da
 l'Issue ne changent pas. Le refus pendant un lancement
 porte aussi sur l'analyse d'un ticket Reçu. Fixture `ticket_decisions.json` (`reply_cases`)
 étendue. Aucune règle Firestore ni Storage ne change.
+
+### v0.23.82 — fonctionnel
+
+Tickets (ticket #97) : la ligne de livraison indique la version de l'application qui livre le
+ticket, par exemple « Livré en v0.23.80 par la PR #97 ». Elle s'affiche sur la fiche Admin ›
+Tickets et sur « Mes tickets ». Sans version lisible, le texte reste « Livré par la PR #N ».
+
+### v0.23.82 — technique
+
+Nouveau champ `delivered_version` sur `tickets/{id}`, écrit par `recordDeliveredPr` avec la PR :
+la ligne `version:` de `kass_dalle/pubspec.yaml` au commit de fusion, sans numéro de build
+(`pubspecVersionName`, `pubspecVersionAtCommit`). Un échec de lecture est journalisé et
+n'empêche pas d'écrire la PR. Le champ est effacé quand le ticket quitte `delivered`. La reprise
+horaire et le backfill `ticket_delivered_pr` relisent aussi les tickets livrés sans version.
+Aucune règle Firestore ne change ; un cas de `rules-tests` vérifie que l'auteur ne l'écrit pas.
 
 ### v0.23.81 — fonctionnel
 

@@ -56,8 +56,11 @@ class Ticket {
 
   /// PR fusionnée qui a fermé l'Issue, écrite par le serveur à la livraison
   /// (`delivered_pr_number`, `delivered_pr_url`). `null` sans PR retrouvable.
+  /// `deliveredVersion` : version de l'application au commit de fusion
+  /// (`delivered_version`, sans numéro de build), `null` si illisible.
   final int? deliveredPrNumber;
   final String? deliveredPrUrl;
+  final String? deliveredVersion;
 
   const Ticket({
     required this.id,
@@ -82,6 +85,7 @@ class Ticket {
     required this.seenByAuthorAt,
     this.deliveredPrNumber,
     this.deliveredPrUrl,
+    this.deliveredVersion,
   });
 
   factory Ticket.fromMap(String id, Map<String, dynamic> data) {
@@ -115,12 +119,29 @@ class Ticket {
       seenByAuthorAt: parseTicketDate(data['seen_by_author_at']),
       deliveredPrNumber: optInt(data['delivered_pr_number']),
       deliveredPrUrl: optStr(data['delivered_pr_url']),
+      deliveredVersion: optStr(data['delivered_version']),
     );
   }
 
   /// Numéro de la PR de livraison, affiché seulement sur un ticket livré.
   int? get shownDeliveredPrNumber =>
       status == TicketStatus.delivered ? deliveredPrNumber : null;
+
+  /// Texte de la ligne de livraison : « Livré en v0.23.80 par la PR #57 », ou
+  /// « Livré par la PR #57 » sans version lisible. `null` sans PR affichée.
+  String? get deliveredLineText {
+    final number = shownDeliveredPrNumber;
+    if (number == null) return null;
+    final version = deliveredVersion?.trim();
+    final shownVersion =
+        version != null &&
+            RegExp(r'^\d{1,4}\.\d{1,5}\.\d{1,6}$').hasMatch(version)
+        ? version
+        : null;
+    return shownVersion == null
+        ? 'Livré par la PR #$number'
+        : 'Livré en v$shownVersion par la PR #$number';
+  }
 
   /// Adresse de la PR de livraison, seulement en `https` sur `github.com`,
   /// sur un ticket livré ; `null` sinon (la ligne s'affiche alors sans lien).

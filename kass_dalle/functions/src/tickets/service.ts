@@ -396,10 +396,13 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
     // Ticket rouvert ou refermé autrement : la PR de livraison est périmée.
     if (
       next !== "delivered" &&
-      (data.delivered_pr_number != null || data.delivered_pr_url != null)
+      (data.delivered_pr_number != null ||
+        data.delivered_pr_url != null ||
+        data.delivered_version != null)
     ) {
       changes.delivered_pr_number = FieldValue.delete();
       changes.delivered_pr_url = FieldValue.delete();
+      changes.delivered_version = FieldValue.delete();
     }
     if (update.reply !== undefined && update.reply !== data.reply_text) {
       changes.reply_text = update.reply;
