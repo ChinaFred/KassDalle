@@ -49,7 +49,9 @@ import {
   replyFromComment,
   sameReply,
   DEFAULT_LAUNCHES_PER_DAY,
+  FOUNDER_LAUNCHES_PER_DAY,
   MAX_LAUNCHES_PER_DAY,
+  launchLimitFor,
   launchRunState,
   shouldWriteValidated,
   ticketDecisions,
@@ -446,6 +448,8 @@ const DECISIONS_FIXTURE = JSON.parse(
   answer_partial_reason: string;
   default_launches_per_day: number;
   max_launches_per_day: number;
+  founder_launches_per_day: number;
+  launch_limits: { configured: number; is_founder: boolean; expected: number }[];
   cases: {
     status: string;
     type: TicketType;
@@ -530,7 +534,14 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
   test("plafond quotidien des lancements par défaut", () => {
     assert.equal(DEFAULT_LAUNCHES_PER_DAY, DECISIONS_FIXTURE.default_launches_per_day);
     assert.equal(MAX_LAUNCHES_PER_DAY, DECISIONS_FIXTURE.max_launches_per_day);
+    assert.equal(FOUNDER_LAUNCHES_PER_DAY, DECISIONS_FIXTURE.founder_launches_per_day);
   });
+
+  for (const l of DECISIONS_FIXTURE.launch_limits) {
+    test(`plafond effectif : réglage ${l.configured}, fondateur ${l.is_founder}`, () => {
+      assert.equal(launchLimitFor(l.configured, l.is_founder), l.expected);
+    });
+  }
 
   for (const r of DECISIONS_FIXTURE.launch_runs) {
     test(`lancements : ${r.name}`, () => {

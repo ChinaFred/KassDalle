@@ -145,6 +145,18 @@ const kTicketDefaultLaunchesPerDay = 10;
 /// Verrouillée par `test-fixtures/ticket_decisions.json`.
 const kTicketMaxLaunchesPerDay = 50;
 
+/// Plafond quotidien du compte fondateur, quel que soit le réglage
+/// (`FOUNDER_LAUNCHES_PER_DAY`). Ses lancements comptent dans le même
+/// compteur du jour. Verrouillé par `test-fixtures/ticket_decisions.json`.
+const kTicketFounderLaunchesPerDay = 50;
+
+/// Plafond effectif d'après le réglage lu et le compte qui lance
+/// (`launchLimitFor`).
+int ticketLaunchLimitFor(int configured, {required bool isFounder}) =>
+    isFounder && configured < kTicketFounderLaunchesPerDay
+    ? kTicketFounderLaunchesPerDay
+    : configured;
+
 /// L'état d'un type de lancement d'après l'historique.
 class TicketLaunchRunState {
   /// Lancement en cours depuis cet instant, ou `null`.
