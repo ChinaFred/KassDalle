@@ -50,7 +50,7 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
-import { refreshTicketDelivery, type OpenPullRequests } from "./delivery";
+import { recordDeliveredPr, refreshTicketDelivery, type OpenPullRequests } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
   GithubError,
@@ -124,6 +124,21 @@ export class SignatureRejectionLog {
 const signatureRejections = new SignatureRejectionLog();
 /** Même échantillonnage pour les livraisons refusées faute de secret. */
 const missingSecretRejections = new SignatureRejectionLog();
+
+/**
+ * Le numéro de l'Issue d'un événement `issues` `closed` de ce dépôt (hors
+ * pull request), ou `null`. Le webhook y relève la PR de livraison. Pure.
+ */
+export function closedIssueFromEvent(event: string, payload: Payload): number | null {
+  if (event !== "issues" || payload.action !== "closed") return null;
+  const repo = (payload.repository as { full_name?: unknown } | undefined)?.full_name;
+  if (typeof repo !== "string" || repo.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()) {
+    return null;
+  }
+  const issue = payload.issue as Payload | undefined;
+  if (!issue || typeof issue.number !== "number" || issue.pull_request != null) return null;
+  return issue.number;
+}
 
 /** Les mises à jour qu'un événement propose, par numéro d'Issue. Pure. */
 export function updatesFromEvent(
@@ -432,6 +447,52 @@ export const githubTicketWebhook = onRequest(
       });
       res.status(500).send("Erreur interne.");
       return;
+    }
+
+    const closedIssue = closedIssueFromEvent(event, payload);
+    if (closedIssue !== null) {
+      try {
+        const ticketIds = await ticketIdsForIssue(closedIssue);
+        if (ticketIds.length > 0) {
+          const token = githubToken();
+          if (token === null) {
+            throw new GithubError(
+              "token",
+              null,
+              "Jeton GitHub absent (secret GITHUB_TICKETS_TOKEN vide).",
+            );
+          }
+          for (const ticketId of ticketIds) {
+            if ((await recordDeliveredPr(token, ticketId, closedIssue)) === "written") {
+              changed++;
+              await logInfo({
+                message: `githubTicketWebhook : PR de livraison du ticket ${ticketId} relevée (Issue #${closedIssue})`,
+                correlationId,
+                firestoreDocId: ticketId,
+                feature: "tickets",
+                extra: { delivery: deliveryId },
+              });
+            }
+          }
+        }
+      } catch (err) {
+        const kind = err instanceof GithubError ? err.kind : "other";
+        await logError({
+          message: `githubTicketWebhook : PR de livraison de l'Issue #${closedIssue} non relevée`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          correlationId,
+          feature: "tickets",
+          extra: { delivery: deliveryId, kind },
+        });
+        if (kind === "token") {
+          await markTokenInvalid(
+            { correlationId },
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+        res.status(500).send("Erreur interne.");
+        return;
+      }
     }
 
     const validated = validatedLabelFromEvent(event, payload, new Date().toISOString());

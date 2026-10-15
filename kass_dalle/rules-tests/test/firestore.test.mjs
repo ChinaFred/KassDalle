@@ -3972,6 +3972,20 @@ describe("tickets — lecture et écriture", () => {
     await assertFails(db("reader").doc(MINE).update({ screenshot_path: "tickets/x/y.png" }));
   });
 
+  it("l'auteur n'écrit pas la PR de livraison de son ticket", async () => {
+    await assertFails(db("reader").doc(MINE).update({ delivered_pr_number: 57 }));
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ delivered_pr_url: "https://github.com/ChinaFred/KassDalle/pull/57" }),
+    );
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: serverTimestamp(), delivered_pr_number: 57 }),
+    );
+  });
+
   it("un autre membre ne pose pas seen_by_author_at", async () => {
     await assertFails(
       db("otherReader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),

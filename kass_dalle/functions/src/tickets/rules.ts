@@ -1465,6 +1465,68 @@ export function safePullRequestUrl(url: string | null, repoFullName: string): st
 }
 
 /**
+ * Le commit qui a fermé l'Issue : le dernier événement `closed` (liste
+ * d'événements de l'Issue) qui porte un `commit_id`, ou `null` quand elle a été
+ * fermée à la main. Pure.
+ */
+export function closingCommitFromEvents(events: readonly unknown[]): string | null {
+  let best: { sha: string; ms: number } | null = null;
+  for (const raw of events) {
+    if (raw === null || typeof raw !== "object") continue;
+    const e = raw as Record<string, unknown>;
+    if (e.event !== "closed" || typeof e.commit_id !== "string") continue;
+    if (!/^[0-9a-f]{7,64}$/i.test(e.commit_id)) continue;
+    const ms = typeof e.created_at === "string" ? Date.parse(e.created_at) : Number.NaN;
+    const at = Number.isNaN(ms) ? 0 : ms;
+    if (best === null || at >= best.ms) best = { sha: e.commit_id, ms: at };
+  }
+  return best?.sha ?? null;
+}
+
+/** Une PR rendue par `GET /commits/{sha}/pulls`, réduite à ce que le choix lit. */
+export interface MergedPrCandidate {
+  number: number;
+  mergedAt: string | null;
+  body: string | null;
+  htmlUrl: string | null;
+  baseRepoFullName: string | null;
+  authorId: number | null;
+  authorAssociation: string | null;
+}
+
+/**
+ * La PR de livraison de l'Issue `issueNumber` : fusionnée, de ce dépôt, d'un
+ * auteur de confiance, dont le corps ferme l'Issue. S'il y en a plusieurs, la
+ * dernière fusionnée. L'adresse passe par `safePullRequestUrl` ; une adresse
+ * refusée est reconstruite depuis le numéro. `null` sans PR. Pure.
+ */
+export function pickDeliveredPr(
+  candidates: readonly MergedPrCandidate[],
+  issueNumber: number,
+  maintainerId: number,
+  repoFullName: string,
+): { number: number; url: string } | null {
+  let best: { pr: MergedPrCandidate; ms: number } | null = null;
+  for (const pr of candidates) {
+    if (pr.mergedAt === null || pr.baseRepoFullName?.toLowerCase() !== repoFullName.toLowerCase()) {
+      continue;
+    }
+    const ms = Date.parse(pr.mergedAt);
+    if (Number.isNaN(ms)) continue;
+    if (!isTrustedPrAuthor({ id: pr.authorId, association: pr.authorAssociation }, maintainerId)) {
+      continue;
+    }
+    if (!closingIssueNumbers(pr.body, repoFullName).includes(issueNumber)) continue;
+    if (best === null || ms >= best.ms) best = { pr, ms };
+  }
+  if (best === null) return null;
+  const url =
+    safePullRequestUrl(best.pr.htmlUrl, repoFullName) ??
+    `https://github.com/${repoFullName}/pull/${best.pr.number}`;
+  return { number: best.pr.number, url };
+}
+
+/**
  * L'état « PR prête » d'un ticket. Prête : ticket `in_progress`, une seule PR
  * éligible, dernier run « CI » sur sa tête fini et vert. Ne sont pas exigés :
  * une branche à jour de `master`, l'absence de conflit signalé par GitHub

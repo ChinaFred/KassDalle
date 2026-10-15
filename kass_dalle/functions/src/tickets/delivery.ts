@@ -35,6 +35,7 @@ import {
 import { logError, logInfo } from "../logging";
 import {
   GITHUB_REPO_FULL_NAME,
+  findDeliveredPullRequest,
   getPullRequest,
   listOpenPullRequests,
   listRunsForCommit,
@@ -161,6 +162,34 @@ export async function refreshTicketDelivery(
   const reading = await readDelivery(token, issueNumber, snap.data()?.status, openPrs);
   await writeDeliveryState(ticketId, reading.state);
   return reading.state;
+}
+
+// ── PR de livraison d'un ticket livré ───────────────────────────────────────
+
+/**
+ * Range sur `tickets/{id}` (`delivered_pr_number`, `delivered_pr_url`) la PR
+ * fusionnée qui a fermé l'Issue. Les deux champs vivent sur le ticket, lisible
+ * par son auteur : une PR d'un dépôt public ne contient aucune donnée privée.
+ * Rend `not_delivered` si le ticket n'est pas (ou plus) livré, `no_pr` si
+ * aucune PR ne l'a fermé (Issue fermée à la main) : les champs ne sont alors
+ * pas touchés. Lève une `GithubError` ou une erreur Firestore ; l'appelant
+ * journalise.
+ */
+export async function recordDeliveredPr(
+  token: string,
+  ticketId: string,
+  issueNumber: number,
+): Promise<"written" | "no_pr" | "not_delivered"> {
+  const snap = await ticketRef(ticketId).get();
+  if (!snap.exists || snap.data()?.status !== "delivered") return "not_delivered";
+  const pr = await findDeliveredPullRequest(token, issueNumber);
+  if (pr === null) return "no_pr";
+  await ticketRef(ticketId).update({
+    delivered_pr_number: pr.number,
+    delivered_pr_url: pr.url,
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  return "written";
 }
 
 // ── Comptes rendus de livraison ─────────────────────────────────────────────

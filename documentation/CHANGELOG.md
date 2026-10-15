@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.78 — fonctionnel
+### v0.23.79 — fonctionnel
 
 Admin › Tickets (ticket #92) : la liste montre les états intermédiaires. Après « Lancer
 l'analyse », « Lancer le développement » ou « Livrer », la ligne du ticket porte une puce
@@ -28,6 +28,25 @@ l'analyse », « Lancer le développement » ou « Livrer », la ligne du ticket
 possible » quand l'échéance passe sans changement de statut. La règle est celle de la fiche
 (`adminTicketDecisions`) : une écoute de l'historique des lancements par ligne Reçu, Validé ou
 En cours, côté administrateur seulement. Aucun changement de schéma, de règle ni de Function.
+
+### v0.23.78 — fonctionnel
+
+Un ticket livré indique la PR qui l'a livré : « Livré par la PR #N », avec un lien vers GitHub,
+dans la fiche du membre (Mes tickets) et dans Admin › Tickets, où le bouton « Ouvrir la PR #N »
+reste disponible après la fusion. Un ticket fermé à la main, sans PR, n'affiche rien de plus.
+Les tickets déjà livrés se reprennent par Admin › Backfills, « PR des tickets livrés » (ticket #91).
+
+### v0.23.78 — technique
+
+Deux champs sur `tickets/{id}` : `delivered_pr_number` et `delivered_pr_url`, écrits par les
+Functions seules (les règles Firestore ne changent pas ; un test de `rules-tests/` vérifie que
+l'auteur ne peut pas les écrire). `recordDeliveredPr` lit le commit de fermeture de l'Issue
+(`/issues/{n}/events`) puis les PR de ce commit (`/commits/{sha}/pulls`) et retient la dernière PR
+fusionnée de confiance qui ferme l'Issue. Appelé par le webhook (`issues` `closed`), par
+`resyncTicket` et par `ticketsSyncSchedule` (tickets livrés depuis moins de trois jours sans
+numéro). Les champs sont effacés quand le ticket quitte `delivered`. Nouveau backfill ponctuel
+`ticket_delivered_pr` (`backfillTicketDeliveredPrFn`), ajouté aux deux registres et à la fixture
+`backfill_schedule.json`. Aucun poste d'IA.
 
 ### v0.23.77 — fonctionnel
 

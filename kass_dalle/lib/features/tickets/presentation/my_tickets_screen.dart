@@ -242,6 +242,7 @@ class _MemberTicketDetail extends StatelessWidget {
             TicketInfoLine('Envoyé le ${formatTicketDateTime(created)}'),
           const SizedBox(height: 8),
           if (sentence != null) Text(sentence),
+          TicketDeliveredPrLine(ticket: ticket, withLink: true),
           if (ticket.isLate(DateTime.now())) ...[
             const SizedBox(height: 4),
             const Text(kTicketLateSentence),

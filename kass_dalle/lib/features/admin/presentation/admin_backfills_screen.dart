@@ -174,6 +174,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'seul. Un ticket déjà relevé est sauté ; on peut relancer.\n\n'
             'Aucun appel d\'IA. Un appel GitHub par ticket, deux cents tickets '
             'par passage.';
+      case BackfillKeys.ticketDeliveredPr:
+        return 'Pour chaque ticket livré sans PR connue, relit sur GitHub la '
+            'PR fusionnée qui a fermé l\'Issue et range son numéro et son '
+            'adresse sur le ticket : le membre et l\'administrateur lisent '
+            '« Livré par la PR #N ». Un ticket fermé à la main, sans PR, est '
+            'listé dans « À revoir ». On peut relancer.\n\n'
+            'Aucun appel d\'IA. Un à deux appels GitHub par ticket, cent '
+            'tickets par passage.';
       default:
         return '';
     }
@@ -335,6 +343,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '(analyses=${r['analyses']}), déjà relevés=${r['dejaAJour']}, '
           'sans Issue=${r['sansIssue']}, échecs=${r['echoues']}, '
           'restants=${r['restants']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.ticketDeliveredPr:
+        final r = await _repo.backfillTicketDeliveredPr();
+        return _fromCounts(
+          r,
+          'Tickets livrés : examinés=${r['examines']}, repris=${r['ecrits']}, '
+          'déjà à jour=${r['dejaAJour']}, sans PR=${r['sansPr']}, '
+          'échecs=${r['echoues']}, restants=${r['restants']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
@@ -997,6 +1017,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.groupPlanningReach: Icons.groups_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
     BackfillKeys.ticketAnalyses: Icons.manage_search,
+    BackfillKeys.ticketDeliveredPr: Icons.merge_type,
   };
 
   bool get _done => widget.state?.isDone ?? false;
