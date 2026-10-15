@@ -1253,8 +1253,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - Tuile « Tickets des membres » dans la section Gestion de l'administration : « Bugs, idées et
   questions de la famille, et leur suivi sur GitHub. » Un badge compte les tickets en anomalie
   (« N ticket(s) en anomalie »). L'icône Admin du menu principal ne porte pas de badge.
-- **À traiter.** Un ticket Reçu ou Analysé attend une décision de l'Admin. Leur nombre allume
-  le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
+- **À traiter.** Un ticket Reçu, Analysé ou Validé attend une action de l'Admin (une décision, une réponse ou le lancement du
+  développement). Leur nombre allume le point de la puce du compte (lecteur d'écran : « Ticket(s) de membres à traiter ») et
   s'affiche dans l'entrée « Tickets à traiter (N) » du menu du compte, avec un badge quand N
   dépasse zéro (« N ticket(s) de membres à traiter »). Ni l'entrée ni le point n'existent pour
   un Editor ou un Reader.
@@ -1503,8 +1503,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   sessions : compteur indisponible. » avec « Réessayer ».
 - États : « Chargement des tickets… » ; « Aucun ticket » — « Les membres n'ont encore rien
   signalé. » ; filtre sans résultat « Aucun ticket ne correspond à ce filtre. » avec « Afficher
-  tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu
-  ou analysé a une décision. », avec « Afficher tous les tickets » ; « Impossible de charger
+  tous les tickets » ; filtre « À traiter » vide, sans filtre de type, « Rien à traiter. » — « Chaque ticket reçu,
+  analysé ou validé a une suite. », avec « Afficher tous les tickets » ; « Impossible de charger
   les tickets. » ; capture illisible « Capture illisible. ».
 
 #### Hors de cette version

@@ -142,7 +142,7 @@ final ticketAnomalyCountProvider = StreamProvider<int>((ref) {
   return ref.watch(ticketRepositoryProvider).watchAnomalyCount();
 });
 
-/// Nombre de tickets à traiter (Reçus ou Analysés) : pastille du compte,
+/// Nombre de tickets à traiter (Reçus, Analysés ou Validés) : pastille du compte,
 /// entrée « Tickets à traiter » du menu et puce « À traiter ». Zéro, sans
 /// requête, hors administrateur.
 final adminTicketsToProcessCountProvider = StreamProvider<int>((ref) {

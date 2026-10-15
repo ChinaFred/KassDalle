@@ -95,7 +95,7 @@ class TicketRepository {
     );
   }
 
-  /// Nombre de tickets à traiter (Reçus ou Analysés) : pastille du compte,
+  /// Nombre de tickets à traiter (Reçus, Analysés ou Validés) : pastille du compte,
   /// entrée « Tickets à traiter » et puce « À traiter » (administrateur).
   Stream<int> watchToProcessCount() {
     return _reported(

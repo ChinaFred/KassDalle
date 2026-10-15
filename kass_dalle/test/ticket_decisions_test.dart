@@ -44,7 +44,7 @@ void main() {
 
     List<String> ids(List<Ticket> l) => l.map((t) => t.id).toList();
 
-    test('Reçus et Analysés seulement', () {
+    test('Reçus, Analysés et Validés seulement', () {
       expect(
         ids(
           filterAdminTickets(
@@ -53,7 +53,7 @@ void main() {
             type: null,
           ),
         ),
-        ['recu', 'analyse'],
+        ['recu', 'analyse', 'valide'],
       );
     });
 
@@ -66,7 +66,7 @@ void main() {
             type: TicketType.bug,
           ),
         ),
-        ['recu'],
+        ['recu', 'valide'],
       );
     });
 
@@ -74,6 +74,7 @@ void main() {
       expect(kAdminTicketToProcessStatuses.map((s) => s.value), [
         'received',
         'analyzed',
+        'validated',
       ]);
     });
   });

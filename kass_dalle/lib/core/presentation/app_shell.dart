@@ -532,7 +532,7 @@ class _AdminIcon extends ConsumerWidget {
 
 /// Point sur le compte = invitation(s) de groupe en attente, ticket arrivé à
 /// Répondu, Refusé ou Livré que son auteur n'a pas encore ouvert, ou, pour
-/// l'administrateur, ticket de membre à traiter (Reçu ou Analysé).
+/// l'administrateur, ticket de membre à traiter (Reçu, Analysé ou Validé).
 ///
 /// Les Groupes et « Mes tickets » ne s'ouvrent que par le menu du compte :
 /// sans ce signal, un invité ne trouverait pas son invitation, et un membre
@@ -559,7 +559,7 @@ class _AccountDot extends ConsumerWidget {
 }
 
 /// Icône « Tickets à traiter » du menu compte (administrateur) — badge =
-/// tickets Reçus ou Analysés.
+/// tickets Reçus, Analysés ou Validés.
 class _AdminTicketsIcon extends ConsumerWidget {
   const _AdminTicketsIcon();
 

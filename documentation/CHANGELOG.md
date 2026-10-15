@@ -20,6 +20,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.76 — fonctionnel
+
+Admin › Tickets : le filtre « À traiter » et la pastille du menu comptent aussi les tickets
+Validés. Un ticket validé attend une réponse à une question de l'analyse ou le lancement du
+développement : il restait hors du filtre. Il en sort au passage En cours, Terminé ou Refusé
+(ticket #80).
+
+### v0.23.76 — technique
+
+`kAdminTicketToProcessStatuses` (`ticket.dart`) passe de deux à trois statuts. Le compteur
+reste un `whereIn` sur le champ `status` : pas de nouvel index, pas de backfill, pas de
+changement de règles.
+
 ### v0.23.75 — fonctionnel
 
 Admin › Tickets : un ticket En cours offre « Livrer ». Quand sa pull request est prête (une
