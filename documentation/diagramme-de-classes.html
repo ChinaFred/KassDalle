@@ -1454,8 +1454,10 @@ classDiagram
           le serveur seul et relu par les règles Firestore. Le client le lit par
           <code>PlanningRepository.watchPlanningReach</code> et en tire les
           <code>PlanningOwnerOption</code> du sélecteur « Plannings affichés » ; les cases
-          décochées ou cochées par rapport au défaut du rôle vivent sur l'appareil
-          (<code>PlanningVisibilityStore</code>), jamais dans Firestore. Le champ
+          décochées ou cochées par rapport au défaut du rôle vivent sous le compte
+          (<code>PlanningVisibilityStore</code>, document
+          <code>users/{uid}/preferences/planning_visibility</code>, une liste par rôle), jamais
+          dans un document partagé. Le champ
           <code>masked_invitation_ids</code> du même document (invitations vers un groupe en
           pause) n'entre pas dans <code>PlanningReach</code> :
           <code>GroupRepository.watchMyInvitations</code> le lit directement pour masquer ces

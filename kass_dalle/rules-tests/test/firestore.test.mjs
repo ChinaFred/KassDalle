@@ -3827,6 +3827,52 @@ describe("users/{uid}/preferences/explore_filters — bornes", () => {
   });
 });
 
+// ── users/{uid}/preferences/planning_visibility ──────────────────────────
+//
+// Plannings affichés : l'écart au défaut du rôle, une liste par rôle, écrite
+// et relue par son seul titulaire.
+describe("users/{uid}/preferences/planning_visibility", () => {
+  const path = `users/${READER}/preferences/planning_visibility`;
+
+  it("un lecteur enregistre et relit sa sélection", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(path)
+        .set({ reader: ["uid1", "group"], updated_at: serverTimestamp() }),
+    );
+    await assertSucceeds(db("reader").doc(path).get());
+  });
+
+  it("la liste d'un seul rôle est acceptée", async () => {
+    await assertSucceeds(db("reader").doc(path).set({ editor: [] }, { merge: true }));
+  });
+
+  it("personne d'autre ne lit ni n'écrit la sélection d'un compte", async () => {
+    const other = `users/${OTHER}/preferences/planning_visibility`;
+    await assertFails(db("reader").doc(other).set({ reader: [] }));
+    await assertFails(db("reader").doc(other).get());
+  });
+
+  it("une clé inconnue est refusée", async () => {
+    await assertFails(db("reader").doc(path).set({ reader: [], notes: "texte libre" }));
+  });
+
+  it("une liste de 101 entrées est refusée", async () => {
+    const list = Array.from({ length: 101 }, (_, i) => `u${i}`);
+    await assertFails(db("reader").doc(path).set({ editor: list }));
+    await assertFails(db("reader").doc(path).set({ reader: list }));
+  });
+
+  it("une liste de 100 entrées est acceptée", async () => {
+    const list = Array.from({ length: 100 }, (_, i) => `u${i}`);
+    await assertSucceeds(db("reader").doc(path).set({ reader: list }));
+  });
+
+  it("une valeur qui n'est pas une liste est refusée", async () => {
+    await assertFails(db("reader").doc(path).set({ reader: "uid1" }));
+  });
+});
+
 // ── tickets ──────────────────────────────────────────────────────────────
 
 describe("tickets — lecture et écriture", () => {
