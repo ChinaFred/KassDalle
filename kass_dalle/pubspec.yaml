@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.23.80+427
+version: 0.23.81+428
 
 environment:
   sdk: ^3.11.4
@@ -92,6 +92,7 @@ dependencies:
   # page interdit les scripts par CSP, et une navigation est défaite à son
   # signalement. Sans WebView2 Runtime sur le poste, repli en puces.
   webview_windows: ^0.4.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   flutter_test:

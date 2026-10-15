@@ -557,6 +557,21 @@ classDiagram
     unknown
   }
 
+  class UserDevice {
+    &lt;&lt;users/{uid}/devices/{token}, v0.23.81&gt;&gt;
+    +String token
+    +String platform
+    +DateTime updatedAt
+  }
+
+  class ApkNotification {
+    &lt;&lt;app_config/apk_notification, écrit par le serveur&gt;&gt;
+    +String key
+    +String version
+    +String build
+    +DateTime reservedAt
+  }
+
   class TicketsStatus {
     &lt;&lt;app_config/tickets_status, écrit par le serveur, lu par l'admin&gt;&gt;
     +DateTime? githubTokenInvalidSince

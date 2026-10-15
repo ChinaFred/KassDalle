@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.81 — fonctionnel
+
+Ticket #96 : les administrateurs reçoivent une notification Android « Nouvelle version
+disponible » quand un nouvel APK est publié, au plus 10 minutes après. Un toucher sur la
+notification ouvre la fenêtre de mise à jour. Les éditeurs et les lecteurs ne reçoivent rien.
+Android 13 et plus demande l'autorisation une seule fois, après la connexion d'un
+administrateur. Aucun réglage dans l'application : les notifications se coupent dans Android.
+Un administrateur reçoit la première notification après avoir installé cette version.
+
+### v0.23.81 — technique
+
+Nouvelle tâche planifiée `releaseNotificationSchedule` (toutes les 10 minutes) : lit
+`apk_release.json`, réserve le couple version + build dans `app_config/apk_notification`
+(écriture serveur seule) par une transaction, puis envoie par FCM aux appareils
+`users/{uid}/devices/{token}` des comptes `admin` non révoqués, rôle relu à l'envoi. Les jetons
+périmés sont supprimés. Règle Firestore `devices` : écriture par le titulaire administrateur,
+forme bornée, aucune lecture client ; 13 tests ajoutés dans `rules-tests/`. Client :
+dépendance `firebase_messaging`, permission `POST_NOTIFICATIONS`, `PushRegistrationService`.
+`deploy.yml` et `.github/` ne changent pas.
+
 ### v0.23.80 — fonctionnel
 
 Admin › Tickets (ticket #92) : la liste montre les états intermédiaires. Après « Lancer

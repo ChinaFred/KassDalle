@@ -288,6 +288,24 @@ service cloud.firestore {
               || isPlanningVisibility(request.resource.data));
       }
 
+      // Appareils Android d'un administrateur, destinataires de la notification
+      // de nouvelle version (`releaseNotificationSchedule`). Un jeton FCM est
+      // écrit par son titulaire, et seulement tant qu'il est administrateur ;
+      // il peut le supprimer tant qu'il est connecté. Un jeton resté après une
+      // déconnexion ne sert à rien : le serveur ne lit que ceux des comptes
+      // administrateurs au moment de l'envoi. Jamais lu par le client : le serveur
+      // (SDK Admin) relit le rôle de chaque compte à l'envoi.
+      match /devices/{token} {
+        allow read: if false;
+        allow create, update: if isOwner(uid) && isAdmin()
+          && request.resource.data.keys().hasOnly(['token', 'platform', 'updated_at'])
+          && request.resource.data.token == token
+          && token.size() <= 500
+          && request.resource.data.platform == 'android'
+          && request.resource.data.updated_at is timestamp;
+        allow delete: if isOwner(uid);
+      }
+
       // Générations de planning : journal des propositions, compteur des
       // conceptions et coût cumulé d'une génération. Écrites par le serveur
       // seul (`suggestMealPlanFn`, `generateRecipeConceptFn`) : le compteur
@@ -841,7 +859,7 @@ service cloud.firestore {
     // passage imputé au plafond d'un autre compte, ou lever un verrou.
     function isServerOnlyConfig(docId) {
       return docId == 'backfill_schedules' || docId.matches('backfill_run_.*')
-        || docId == 'tickets_status';
+        || docId == 'tickets_status' || docId == 'apk_notification';
     }
 
     match /app_config/{docId} {

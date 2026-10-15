@@ -760,6 +760,17 @@ téléphones : ils continuent de voir la dernière version réellement télécha
 Ce parcours n'existe que sur l'application Android native. Le web se met à jour au
 rechargement. iOS n'autorise aucune installation hors App Store.
 
+**Notification de nouvelle version (administrateurs, Android).** Quand un nouvel APK est
+publié — le couple version et numéro de build du manifeste change —, chaque administrateur
+reçoit une notification « Nouvelle version disponible » au plus 10 minutes plus tard. Un
+toucher sur la notification rouvre l'application et affiche la fenêtre de mise à jour
+ci-dessus. Les éditeurs et les lecteurs ne la reçoivent jamais : le serveur relit le rôle de
+chaque compte à l'envoi, et un compte qui perd le rôle administrateur ne reçoit plus rien dès
+l'envoi suivant. Android 13 et plus demande l'autorisation d'afficher des notifications une
+seule fois, après la connexion d'un administrateur ; refusée, rien ne s'affiche et la fenêtre
+du lancement reste en place. Aucun réglage dans l'application : les notifications se coupent
+dans les réglages d'Android. Une version déjà notifiée ne l'est pas deux fois.
+
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
 - Un Editor ou un Admin peut créer un ou plusieurs groupes familiaux (avec un nom de 60 caractères au plus). Un groupe compte 50 invitations en attente au plus.
