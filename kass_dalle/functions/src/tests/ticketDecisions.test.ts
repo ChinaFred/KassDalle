@@ -49,7 +49,12 @@ import {
   replyFromComment,
   sameReply,
   DEFAULT_LAUNCHES_PER_DAY,
+  DELIVERY_SENSITIVE_REASON,
   FOUNDER_LAUNCHES_PER_DAY,
+  LAUNCH_ACTIONS,
+  LAUNCH_FROM_STATUS,
+  LAUNCH_RETRY_MS,
+  deliveryLockActive,
   MAX_LAUNCHES_PER_DAY,
   launchLimitFor,
   launchRunState,
@@ -449,6 +454,8 @@ const DECISIONS_FIXTURE = JSON.parse(
   default_launches_per_day: number;
   max_launches_per_day: number;
   founder_launches_per_day: number;
+  delivery_sensitive_reason: string;
+  launch_actions: { action: string; from_status: string; retry_hours: number }[];
   launch_limits: { configured: number; is_founder: boolean; expected: number }[];
   cases: {
     status: string;
@@ -458,13 +465,15 @@ const DECISIONS_FIXTURE = JSON.parse(
     can_refuse: boolean;
     can_launch_analysis: boolean;
     can_launch_development: boolean;
+    can_deliver: boolean;
   }[];
   launch_runs: {
     name: string;
-    action: "analyse" | "developpement";
+    action: "analyse" | "developpement" | "livraison";
     raw_status: string;
     now: string;
     status_changed_at?: string | null;
+    delivery_blocked_at?: string | null;
     launches: {
       action: string;
       outcome: string;
@@ -475,6 +484,19 @@ const DECISIONS_FIXTURE = JSON.parse(
     running: boolean;
     running_since: string | null;
     relaunch_of: string | null;
+    blocked?: boolean;
+  }[];
+  delivery_lock: {
+    name: string;
+    lock: {
+      ticket_id: string | null;
+      issue_number: number | null;
+      launched_at: string | null;
+      retry_after: string | null;
+    } | null;
+    locked_ticket_status: string | null;
+    now: string;
+    active: boolean;
   }[];
   reply_cases: {
     status: string;
@@ -526,6 +548,7 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
           canRefuse: c.can_refuse,
           canLaunchAnalysis: c.can_launch_analysis,
           canLaunchDevelopment: c.can_launch_development,
+          canDeliver: c.can_deliver,
         },
       );
     });
@@ -557,12 +580,51 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
         rawStatus: r.raw_status,
         nowMs: Date.parse(r.now),
         statusChangedAtMs: isoMs(r.status_changed_at ?? null),
+        deliveryBlockedAtMs: isoMs(r.delivery_blocked_at ?? null),
       });
       assert.deepEqual(state, {
         running: r.running,
         runningSinceMs: isoMs(r.running_since),
         relaunchOfMs: isoMs(r.relaunch_of),
+        blocked: r.blocked ?? false,
       });
+    });
+  }
+
+  test("les trois lancements, leur statut de départ et leur échéance", () => {
+    assert.deepEqual(
+      [...LAUNCH_ACTIONS],
+      DECISIONS_FIXTURE.launch_actions.map((a) => a.action),
+    );
+    for (const a of DECISIONS_FIXTURE.launch_actions) {
+      const action = a.action as (typeof LAUNCH_ACTIONS)[number];
+      assert.equal(LAUNCH_FROM_STATUS[action], a.from_status);
+      assert.equal(LAUNCH_RETRY_MS[action], a.retry_hours * 3_600_000);
+    }
+  });
+
+  test("raison du refus d'une PR qui modifie un fichier sensible", () => {
+    assert.equal(DELIVERY_SENSITIVE_REASON, DECISIONS_FIXTURE.delivery_sensitive_reason);
+  });
+
+  for (const c of DECISIONS_FIXTURE.delivery_lock) {
+    test(`verrou des livraisons : ${c.name}`, () => {
+      assert.equal(
+        deliveryLockActive({
+          lock:
+            c.lock === null
+              ? null
+              : {
+                  ticketId: c.lock.ticket_id,
+                  issueNumber: c.lock.issue_number,
+                  launchedAtMs: isoMs(c.lock.launched_at),
+                  retryAfterMs: isoMs(c.lock.retry_after),
+                },
+          lockedTicketRawStatus: c.locked_ticket_status,
+          nowMs: Date.parse(c.now),
+        }),
+        c.active,
+      );
     });
   }
 });

@@ -1,12 +1,15 @@
 import 'ticket.dart';
+import 'ticket_delivery.dart';
 import 'ticket_form.dart' show parisDayKey;
 
-/// Les deux routines Claude Code qu'un administrateur lance depuis la fiche
-/// d'un ticket. [value] est la valeur stockée (`action`) et le premier mot du
-/// texte que le serveur envoie à la routine.
+/// Les trois lancements de session Claude Code qu'un administrateur fait
+/// depuis la fiche d'un ticket. [value] est la valeur stockée (`action`) et
+/// le premier mot du texte que le serveur envoie à la routine. La livraison
+/// (« Livrer ») part par la routine de développement.
 enum TicketLaunchAction {
   analysis('analyse', TicketStatus.received),
-  development('developpement', TicketStatus.validated);
+  development('developpement', TicketStatus.validated),
+  delivery('livraison', TicketStatus.inProgress);
 
   const TicketLaunchAction(this.value, this.fromStatus);
 
@@ -23,16 +26,19 @@ enum TicketLaunchAction {
     return null;
   }
 
-  /// « Analyse lancée » / « Développement lancé ».
+  /// « Analyse lancée » / « Développement lancé » / « Livraison lancée ».
   String get historyTitle => switch (this) {
     TicketLaunchAction.analysis => 'Analyse lancée',
     TicketLaunchAction.development => 'Développement lancé',
+    TicketLaunchAction.delivery => 'Livraison lancée',
   };
 
-  /// « Analyse » / « Développement », en tête de la ligne « … en cours ».
+  /// « Analyse » / « Développement » / « Livraison », en tête de la ligne
+  /// « … en cours ».
   String get noun => switch (this) {
     TicketLaunchAction.analysis => 'Analyse',
     TicketLaunchAction.development => 'Développement',
+    TicketLaunchAction.delivery => 'Livraison',
   };
 }
 
@@ -55,7 +61,8 @@ enum TicketLaunchOutcome {
 }
 
 /// Une entrée de `tickets/{ticketId}/admin/launches.launches`, écrite par
-/// `launchTicketAnalysis` et `launchTicketDevelopment` seules, lisible par
+/// `launchTicketAnalysis`, `launchTicketDevelopment` et
+/// `launchTicketDelivery` seules, lisible par
 /// l'administrateur seul.
 class TicketLaunch {
   final String id;
@@ -78,7 +85,8 @@ class TicketLaunch {
   /// Statut du ticket au lancement (valeur stockée).
   final String? fromStatus;
 
-  /// Échéance calculée par le serveur : 1 h (analyse), 3 h (développement).
+  /// Échéance calculée par le serveur : 1 h (analyse), 3 h (développement,
+  /// livraison).
   final DateTime? retryAfter;
 
   const TicketLaunch({
@@ -171,10 +179,15 @@ class TicketLaunchRunState {
   /// cours.
   final DateTime? runningUntil;
 
+  /// Livraison seulement : la relance suit un compte rendu
+  /// « ## Livraison — blocage » postérieur au lancement, et non l'échéance.
+  final bool blocked;
+
   const TicketLaunchRunState({
     this.runningSince,
     this.relaunchOf,
     this.runningUntil,
+    this.blocked = false,
   });
 
   bool get running => runningSince != null;
@@ -193,12 +206,17 @@ class TicketLaunchRunState {
 /// entrée antérieure au dernier changement de statut du ticket
 /// ([statusChangedAt] : une réponse de l'administrateur ramène le ticket à
 /// Reçu) ne bloque rien et ne propose pas de relance.
+///
+/// Livraison seulement : un compte rendu « ## Livraison — blocage »
+/// ([deliveryBlockedAt]) strictement postérieur au lancement la termine avant
+/// son échéance — relance proposée, [TicketLaunchRunState.blocked] vrai.
 TicketLaunchRunState ticketLaunchRunState({
   required List<TicketLaunch> launches,
   required TicketLaunchAction action,
   required String rawStatus,
   required DateTime now,
   DateTime? statusChangedAt,
+  DateTime? deliveryBlockedAt,
 }) {
   TicketLaunch? last;
   for (final e in launches) {
@@ -216,6 +234,12 @@ TicketLaunchRunState ticketLaunchRunState({
   if (last.fromStatus != rawStatus) return TicketLaunchRunState.none;
   final retryAfter = last.retryAfter;
   if (retryAfter == null) return TicketLaunchRunState.none;
+  final blockedAt = action == TicketLaunchAction.delivery
+      ? deliveryBlockedAt
+      : null;
+  if (blockedAt != null && blockedAt.isAfter(last.launchedAt!)) {
+    return TicketLaunchRunState(relaunchOf: last.launchedAt, blocked: true);
+  }
   if (now.isBefore(retryAfter)) {
     return TicketLaunchRunState(
       runningSince: last.launchedAt,
@@ -270,12 +294,17 @@ class TicketsStatus {
   final TicketLaunchCounter? launchesToday;
   final TicketLaunchCounter? launchesMonth;
 
+  /// Verrou global des livraisons (`delivery_running`), ou `null` s'il est
+  /// absent. Son activité se lit par [ticketDeliveryLockActive].
+  final TicketDeliveryLock? deliveryRunning;
+
   const TicketsStatus({
     this.githubTokenInvalidSince,
     this.analysisRoutineInvalidSince,
     this.developmentRoutineInvalidSince,
     this.launchesToday,
     this.launchesMonth,
+    this.deliveryRunning,
   });
 
   factory TicketsStatus.fromMap(Map<String, dynamic>? data) {
@@ -298,6 +327,11 @@ class TicketsStatus {
           : null,
       launchesToday: counter(data?['launches_today'], 'day'),
       launchesMonth: counter(data?['launches_month'], 'month'),
+      deliveryRunning: data?['delivery_running'] is Map
+          ? TicketDeliveryLock.fromMap(
+              Map<String, dynamic>.from(data!['delivery_running'] as Map),
+            )
+          : null,
     );
   }
 
@@ -356,7 +390,12 @@ class TicketLaunchResult {
 /// s'affiche tel quel dans la boîte de confirmation.
 class TicketLaunchError implements Exception {
   final String message;
-  const TicketLaunchError(this.message);
+
+  /// `details.reason` du serveur, ou `null`. [kTicketDeliverySensitiveReason]
+  /// grise « Livrer » dans la boîte.
+  final String? reason;
+
+  const TicketLaunchError(this.message, {this.reason});
 
   @override
   String toString() => message;

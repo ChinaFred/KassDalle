@@ -1104,9 +1104,9 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   révoqué n'envoie rien et ne lit rien. Un membre ne lit que ses propres tickets ; l'Admin les
   lit tous.
 - **Aucun appel d'IA facturé à l'application.** Créer, envoyer, suivre un ticket n'appelle
-  aucun modèle. L'analyse et le développement d'un ticket sont faits par une session Claude
-  Code de l'administrateur, à sa demande : depuis sa propre session, ou lancée depuis la fiche
-  admin (« Lancements de sessions » ci-dessous). Ces sessions sont facturées sur l'abonnement
+  aucun modèle. L'analyse, le développement et la livraison d'un ticket sont faits par une
+  session Claude Code de l'administrateur, à sa demande : depuis sa propre session, ou lancée
+  depuis la fiche admin (« Lancements de sessions » ci-dessous). Ces sessions sont facturées sur l'abonnement
   Claude de l'administrateur, hors du suivi des coûts de l'application. L'application affiche
   le texte publié sur GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
@@ -1219,9 +1219,12 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Étiquette `statut:analysé` | Analysé |
 | Étiquette `validé` | Validé |
 | Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
-| Issue fermée comme terminée | Livré — Répondu pour une Question |
+| Issue fermée comme terminée (fusion de la pull request « Closes #N », par « Livrer » ou à la main) | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
+- **« PR prête » n'est pas un statut.** C'est un sous-état d'un ticket En cours, calculé par le
+  serveur et visible de l'Admin seul (puce de la liste, barre de décision). Le membre voit
+  toujours En cours, puis Livré à la fusion.
 - Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
   à Reçu ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
@@ -1240,7 +1243,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
 - Valider et refuser se font depuis Admin › Tickets des membres, ou sur GitHub par les mêmes
   gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue comme
-  non prévue. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
+  non prévue. Livrer un ticket En cours se fait depuis l'application (« Livrer »), ou en
+  fusionnant la pull request sur GitHub. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
   analyse se fait dans l'application : elle publie un commentaire « ## Précisions de
   l'administrateur », retire `validé` et remet `statut:à-analyser`.
 
@@ -1262,13 +1266,17 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
   « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
-  sans Issue, pas de numéro), statut, et la puce « En anomalie ».
+  sans Issue, pas de numéro), statut, la puce « PR prête » juste après le statut (icône de
+  fusion ; lecteur d'écran : « Pull request prête à livrer ») et la puce « En anomalie ». Aucun
+  filtre ne porte sur « PR prête ».
 - Détail, dans l'ordre : type, titre, statut et « Issue #N » (texte sélectionnable ; absent
-  tant que l'Issue n'existe pas, pour un ticket en Envoi en cours ou en anomalie) ; « Ouvrir sur GitHub » et « Copier le lien » ;
+  tant que l'Issue n'existe pas, pour un ticket en Envoi en cours ou en anomalie) ; « Ouvrir sur GitHub » et « Copier le lien »,
+  et « Ouvrir la PR #M » à côté quand une seule pull request éligible (définie sous « Livrer »)
+  ferme l'Issue ;
   pour un ticket en anomalie, « Essais d'envoi : N », « Dernière erreur : … » et « Relancer
   l'envoi » ; la réponse ou le motif du refus ; auteur, date, version, plateforme, écran ;
-  description et capture en grand ; la section « Lancements (N) » ; enfin la section
-  « Analyses (N) ». Une relance qui échoue
+  description et capture en grand ; la section « Livraison (N) » ; la section
+  « Lancements (N) » ; enfin la section « Analyses (N) ». Une relance qui échoue
   encore affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une
   relance réussie, « Envoi relancé : <statut>. ».
 - **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
@@ -1292,7 +1300,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   l'auteur du ticket.
 - **Lancements.** Section « Lancements (N) », avant « Analyses », toujours affichée : les
   sessions lancées sur ce ticket, plus récente en haut, vingt au plus. Chaque carte : « Analyse
-  lancée » ou « Développement lancé », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
+  lancée », « Développement lancé » ou « Livraison lancée », « le jj/mm/aa à hh:mm par <nom> », puis le résultat :
   « Session créée », « Échec : <message> » ou « Résultat inconnu : vérifiez sur
   claude.ai/code ». Pour une session créée : « Ouvrir la session », « Copier le lien », et
   « Visible seulement depuis le compte Claude de l'administrateur. ». Une session créée porte
@@ -1301,11 +1309,21 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   s'il mène à `https://claude.ai`. États : « Chargement des lancements… » ; « Aucune session
   lancée pour ce ticket. » ; « Impossible de charger les lancements. » avec Réessayer.
   L'auteur du ticket ne voit ni cette section, ni le lien, ni le nom de l'administrateur.
+- **Livraison.** Section « Livraison (N) », entre la capture et « Lancements », affichée pour
+  un ticket En cours ou Livré, ou dès qu'un compte rendu de livraison existe. Elle reprend les
+  commentaires du compte GitHub de l'administrateur (identifiant numérique) qui commencent par
+  « ## Livraison — blocage » ou « ## Livraison — terminée », relevés comme les analyses (à
+  chaque commentaire et à la vérification horaire), dans l'ordre chronologique, avec la même
+  présentation qu'une analyse. Un blocage s'affiche sur une carte de couleur d'erreur, sous
+  « Blocage du jj/mm/aa à hh:mm » ; une fin, sous « Livraison terminée le jj/mm/aa à hh:mm ». N
+  compte les comptes rendus. États : chargement ; « Aucun compte rendu de livraison. » ; erreur
+  avec Réessayer. Admin seul, comme les analyses.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
   décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
   Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
   « Valider » ; Validé : « Refuser », « Répondre » et « Lancer le développement » ; Validé
-  bloqué (ci-dessous) : « Refuser » et « Répondre ». Les actions secondaires (contour) sont à
+  bloqué (ci-dessous) : « Refuser » et « Répondre » ; En cours : « Refuser » et « Livrer »
+  (« Relancer la livraison » après un blocage ou une échéance), hors Question. Les actions secondaires (contour) sont à
   gauche, une seule action principale (pleine) à droite. « Valider » et un lancement ne
   s'affichent jamais ensemble. Quand la largeur manque, l'action principale passe sous les
   autres, à droite. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche
@@ -1366,6 +1384,67 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     développement », « Relancer le développement » et la ligne « … en cours », et propose
     « Répondre » en action principale. Le serveur refuse aussi un développement sur ce
     ticket : « La dernière analyse attend votre réponse. Rien n'a été lancé ni décompté. ».
+  - « Livrer » : pour un ticket En cours qui n'est pas une Question, Admin seul. Il lance la
+    session de développement avec la consigne `livraison #N` : elle met la pull request à jour
+    avec `master` par une fusion, attend une CI verte, fusionne la pull request, puis suit le
+    déploiement. Elle publie sur l'Issue « ## Livraison — terminée » ou, si elle s'arrête,
+    « ## Livraison — blocage ». La fusion ferme l'Issue et le ticket passe à Livré.
+    - **PR prête.** Une pull request est éligible si elle est ouverte, n'est pas un brouillon,
+      dit « Closes #N », est ouverte par le compte de l'administrateur, depuis le dépôt
+      lui-même et une branche `claude/…`. Le ticket a une « PR prête » quand il est En cours,
+      qu'une seule pull request éligible ferme l'Issue, que le dernier passage du workflow
+      « CI » sur sa dernière version est terminé et vert. Être à jour de `master`, ne pas avoir
+      de conflit signalé par GitHub et avoir un numéro de version libre ne sont pas exigés : la
+      livraison résout le conflit de version et de CHANGELOG, ou publie un blocage. Le serveur recalcule cet état à la fin de chaque CI, à chaque
+      changement de la pull request, à la vérification horaire, et le relit au lancement.
+    - **Ligne d'état**, au-dessus des boutons (annoncée par le lecteur d'écran à chaque
+      changement). Une seule s'affiche, dans cet ordre de priorité :
+      1. livraison en cours sur ce ticket : « Livraison en cours depuis hh:mm » (« … depuis le
+         jj/mm/aa à hh:mm » un autre jour), sans action principale ;
+      2. « Vérification de la pull request… » pendant le chargement ;
+      3. « État de la pull request illisible. », avec un bouton Réessayer ;
+      4. plusieurs pull requests éligibles : « 3 pull requests ferment l'Issue #42 : fermez
+         celles à abandonner sur GitHub. » ;
+      5. « CI de la PR #57 en échec » ;
+      6. « CI de la PR #57 en cours » ;
+      7. « Aucune PR prête » ;
+      8. PR prête ici mais livraison d'un autre ticket en cours : « Livraison du ticket #31 en
+         cours depuis hh:mm », avec « Ouvrir le ticket #31 » ;
+      9. blocage relevé, PR prête : « La livraison du jj/mm/aa à hh:mm s'est arrêtée : lisez
+         « Livraison — blocage » ci-dessous. », avec « Relancer la livraison » ;
+      10. échéance passée, PR prête : la ligne du cas 11, avec « Relancer la livraison » ;
+      11. PR prête : « PR #57 prête — CI verte le jj/mm/aa à hh:mm », avec « Livrer ».
+      Dans les cas 1 à 8, « Livrer » est masqué. Quand l'historique des lancements ou le verrou
+      ne se lit pas, « Livrer » reste offert : le serveur décide.
+    - **Confirmation** « Livrer ce ticket ? » — « Une session Claude Code va mettre la PR #57 à
+      jour avec master, la fusionner, puis suivre le déploiement. » et « La fusion met
+      l'application en ligne pour toute la famille. Appuyer sur « Livrer » vaut accord de
+      fusion. », puis « Type du ticket : <type>. », les lancements restants du jour et
+      l'encadré de facturation, comme les autres lancements. Pour une relance après un
+      blocage, un encadré ajoute « La livraison du jj/mm/aa à hh:mm s'est arrêtée. Lisez
+      « Livraison — blocage » avant de relancer. » ; après l'échéance, « La livraison du
+      jj/mm/aa à hh:mm n'a rien fusionné en trois heures. Vérifiez sur claude.ai/code
+      qu'aucune session ne tourne encore. ». Boutons
+      « Annuler » (focus initial) et « Livrer », ou « Relancer » pour une relance. L'envoi, la
+      fermeture pendant l'envoi et les messages de résultat sont ceux des autres lancements.
+    - **Fichiers sensibles.** Une pull request qui modifie `.github/`, `.claude/`, `deploy.ps1`,
+      `kass_dalle/firebase.json`, ou un fichier `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json`
+      où qu'il soit, ne se livre pas depuis l'application. Le
+      serveur le vérifie au lancement et refuse sans rien décompter : « La PR #M modifie
+      <chemin> : fusionnez-la vous-même après relecture. Rien n'a été lancé ni décompté. ».
+      « Livrer » reste visible dans la barre ; après ce refus, il est grisé dans la boîte.
+    - **Une livraison à la fois pour toute la famille.** Tant qu'une livraison est en cours sur
+      un ticket, aucune autre ne part, sur aucun ticket. Le verrou se libère quand le ticket
+      passe à Livré, quand un « ## Livraison — blocage » postérieur au lancement est relevé, ou
+      à l'échéance de trois heures.
+    - **Une livraison en cours** se termine quand le ticket change de statut, quand un
+      « ## Livraison — blocage » postérieur au lancement est relevé, ou après trois heures.
+      Après un blocage ou l'échéance, et si la PR est toujours prête, le bouton devient
+      « Relancer la livraison ».
+    - Le serveur refuse sans rien décompter, dans cet ordre : une autre décision en cours sur le
+      ticket, un statut autre qu'En cours, une Question, pas exactement une pull request
+      éligible, un fichier sensible, une CI qui n'est pas verte sur la dernière version, une
+      livraison déjà en cours, le plafond du jour, puis une Issue qui a changé sur GitHub.
   - « Répondre » : pour un ticket Analysé ou Validé, d'un autre type que Question, qui a au
     moins une analyse relevée ; masqué pendant un lancement en cours ou une autre décision.
     Le serveur refuse aussi pendant un développement en cours (hors ticket bloqué) : « Un
@@ -1395,8 +1474,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     Reçu. » ; réessayer ne republie pas la réponse ; Issue
     fermée « Ce ticket a déjà été clos sur GitHub. ». L'auteur du ticket ne voit pas la
     réponse ; il voit seulement son ticket revenir à Reçu.
-  - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse et
-    développement confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
+  - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse,
+    développement et livraison confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
     plus). Le compte fondateur a droit à 50 lancements par jour, quel que soit ce réglage ;
     ses lancements comptent dans le même compteur. Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
     reçoit une erreur du serveur de Claude, compte et bloque comme un lancement réussi :
@@ -1432,8 +1511,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 
 Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
 envoyé ; notification push ou e-mail ; version exacte de la livraison ; répondre à une
-Question depuis l'application ; fusionner ou déployer depuis l'application, ou laisser une
-session lancée le faire ; montant facturé d'une session dans le suivi des coûts ;
+Question depuis l'application ; livrer depuis l'application une pull request qui modifie un
+fichier sensible ; déployer sans fusionner ; filtrer la liste sur « PR prête » ; montant facturé d'une session dans le suivi des coûts ;
 détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
 automatiques.
 
@@ -1753,7 +1832,7 @@ stateDiagram-v2
     received --> analyzed : Étiquette statut:analysé
     analyzed --> validated : Étiquette validé
     validated --> in_progress : PR ouverte qui référence l'Issue
-    in_progress --> delivered : Issue fermée, terminée
+    in_progress --> delivered : Issue fermée, terminée\n(fusion par « Livrer » ou à la main)
     in_progress --> validated : PR fermée sans fusion\n(vérification horaire,\nstatut repris des étiquettes)
 
     received --> answered : Issue fermée, terminée\n(type Question)
@@ -1779,6 +1858,12 @@ stateDiagram-v2
         sans Issue : « en anomalie »
         dans Admin › Tickets des membres.
         Le membre voit toujours « Envoi en cours ».
+    end note
+
+    note right of in_progress
+        PR prête : sous-état Admin,
+        pas un statut. Le membre
+        voit « En cours ».
     end note
 
     note right of answered

@@ -53,11 +53,13 @@ export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
 
 /**
  * Jeton GitHub des tickets (Secret Manager) : jeton « fine-grained » limité au
- * dépôt `ChinaFred/KassDalle`, Issues en lecture-écriture, Metadata et Pull
- * requests en lecture.
+ * dépôt `ChinaFred/KassDalle`, Issues en lecture-écriture, Metadata, Pull
+ * requests et Actions en lecture (Actions : runs de la CI d'une PR, pour
+ * « Livrer »).
  *
  * Attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
  * `launchTicketAnalysis`, `launchTicketDevelopment` (relecture de l'Issue avant lancement),
+ * `launchTicketDelivery` (PR, fichiers, CI et Issue relus avant lancement),
  * `backfillTicketAnalysesFn`, `ticketsSyncSchedule` et `githubTicketWebhook`
  * (qui relit les commentaires d'une Issue pour les analyses), et lu
  * par `process.env.GITHUB_TICKETS_TOKEN` comme `ANTHROPIC_API_KEY` : une valeur
@@ -83,8 +85,9 @@ export const GITHUB_WEBHOOK_SECRET = defineSecret("GITHUB_WEBHOOK_SECRET");
  * développement, créées à la main sur claude.ai/code (TechnicalRequirements,
  * « Routines des tickets »).
  *
- * Attachés à `launchTicketAnalysis` (analyse) et `launchTicketDevelopment`
- * (développement) seules, et lus par `process.env` (`tickets/routine.ts`) :
+ * Attachés à `launchTicketAnalysis` (analyse), `launchTicketDevelopment` et
+ * `launchTicketDelivery` (développement : la livraison passe par la même
+ * routine, texte `livraison #N`) seules, et lus par `process.env` (`tickets/routine.ts`) :
  * une valeur vide n'est pas une erreur de déploiement, le lancement répond
  * « Lancement non configuré » et rien n'est compté. Le jeton n'apparaît dans
  * aucun message ni aucun journal. Même condition d'existence que
@@ -345,7 +348,8 @@ export const COLL_TICKETS = "tickets";
  * `_global_{AAAAMMJJ}` (jour calendaire Europe/Paris), écrits par
  * `submitTicket` dans la transaction qui crée le ticket ; et
  * `launch_{AAAAMMJJ}`, les lancements de sessions du jour, écrits par
- * `launchTicketAnalysis` et `launchTicketDevelopment`. Aucun accès client.
+ * `launchTicketAnalysis`, `launchTicketDevelopment` et `launchTicketDelivery`.
+ * Aucun accès client.
  * Supprimés par la politique TTL sur `expires_at`.
  */
 export const COLL_TICKET_QUOTAS = "ticket_quotas";
@@ -355,8 +359,9 @@ export const TICKETS_CONFIG_DOC_ID = "tickets";
 
 /**
  * État des tickets — `app_config/tickets_status` : jeton GitHub
- * (`token_invalid_since`), jetons des routines (`routine_invalid_since`) et
- * compteurs des lancements (`launches_today`, `launches_month`). Admin seul.
+ * (`token_invalid_since`), jetons des routines (`routine_invalid_since`),
+ * compteurs des lancements (`launches_today`, `launches_month`) et verrou
+ * global des livraisons (`delivery_running`). Admin seul.
  */
 export const TICKETS_STATUS_DOC_ID = "tickets_status";
 
@@ -375,9 +380,18 @@ export const TICKET_ANALYSIS_DOC_ID = "analysis";
 /**
  * Lancements de sessions Claude Code d'un ticket — `tickets/{id}/admin/launches`
  * (`launches`, vingt entrées au plus, plus récente en tête). Écrit par
- * `launchTicketAnalysis` et `launchTicketDevelopment` seules.
+ * `launchTicketAnalysis`, `launchTicketDevelopment` et `launchTicketDelivery`
+ * seules.
  */
 export const TICKET_LAUNCHES_DOC_ID = "launches";
+
+/**
+ * Livraison d'un ticket — `tickets/{id}/admin/delivery` : état « PR prête »
+ * (`ready`, PR éligible, dernier run de la CI) et comptes rendus
+ * `## Livraison — …` du mainteneur (`reports`). Écrit par le webhook, la tâche
+ * horaire et `launchTicketDelivery` seuls.
+ */
+export const TICKET_DELIVERY_DOC_ID = "delivery";
 
 /** Dépôt PUBLIC qui reçoit les Issues des tickets. */
 export const GITHUB_TICKETS_OWNER = "ChinaFred";

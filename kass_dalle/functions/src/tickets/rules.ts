@@ -21,7 +21,11 @@
  *    (`tests/ticketLaunches.test.ts`, fixture `ticket_decisions.json`) ;
  *  - la réponse de l'administrateur à une analyse : lecture du texte (adresse
  *    e-mail refusée, fixture `ticket_answer_text.json`), condition, état de
- *    la dernière analyse, ticket bloqué (`ticketAwaitingReply`).
+ *    la dernière analyse, ticket bloqué (`ticketAwaitingReply`) ;
+ *  - la livraison (« Livrer ») : PR éligible, état « PR prête », dernier run
+ *    de la CI, fichiers sensibles, comptes rendus « ## Livraison — … » du
+ *    mainteneur, verrou global (`deliveryLockActive`, fixture
+ *    `ticket_decisions.json`).
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -943,6 +947,7 @@ export function ticketDecisions(args: {
   canRefuse: boolean;
   canLaunchAnalysis: boolean;
   canLaunchDevelopment: boolean;
+  canDeliver: boolean;
 } {
   const status = storedTicketStatus(args.rawStatus);
   const launchArgs = { status, type: args.type, hasIssue: args.hasIssue };
@@ -952,6 +957,7 @@ export function ticketDecisions(args: {
     canRefuse: refusePrecondition({ status, hasIssue: args.hasIssue }) === null,
     canLaunchAnalysis: launchPrecondition(launchArgs, "analyse") === null,
     canLaunchDevelopment: launchPrecondition(launchArgs, "developpement") === null,
+    canDeliver: launchPrecondition(launchArgs, "livraison") === null,
   };
 }
 
@@ -1033,11 +1039,23 @@ export function decisionGithubFailure(kind: string): {
 // ── Lancements de sessions Claude Code (Routines) ──────────────────────────
 
 /**
- * Les deux routines : `analyse` (ticket Reçu) et `developpement` (ticket
- * Validé). La valeur est aussi le premier mot du texte envoyé à la routine.
+ * Les trois lancements : `analyse` (ticket Reçu), `developpement` (ticket
+ * Validé) et `livraison` (ticket En cours, « Livrer »). La valeur est aussi le
+ * premier mot du texte envoyé à la routine. La livraison passe par la routine
+ * de développement (mêmes secrets), qui s'aiguille sur ce premier mot.
  */
-export const LAUNCH_ACTIONS = ["analyse", "developpement"] as const;
+export const LAUNCH_ACTIONS = ["analyse", "developpement", "livraison"] as const;
 export type LaunchAction = (typeof LAUNCH_ACTIONS)[number];
+
+/** Les deux routines Claude Code : celle d'analyse, celle de développement. */
+export type RoutineName = "analyse" | "developpement";
+
+/** La routine qui reçoit un lancement : la livraison part par celle de développement. */
+export const LAUNCH_ROUTINE: Record<LaunchAction, RoutineName> = {
+  analyse: "analyse",
+  developpement: "developpement",
+  livraison: "developpement",
+};
 
 export function isLaunchAction(value: unknown): value is LaunchAction {
   return typeof value === "string" && (LAUNCH_ACTIONS as readonly string[]).includes(value);
@@ -1047,15 +1065,18 @@ export function isLaunchAction(value: unknown): value is LaunchAction {
 export const LAUNCH_FROM_STATUS: Record<LaunchAction, TicketStatus> = {
   analyse: "received",
   developpement: "validated",
+  livraison: "in_progress",
 };
 
 /**
  * Délai après lequel un lancement resté sans effet sur le statut du ticket
- * peut être relancé : 1 h pour une analyse, 3 h pour un développement.
+ * peut être relancé : 1 h pour une analyse, 3 h pour un développement ou une
+ * livraison.
  */
 export const LAUNCH_RETRY_MS: Record<LaunchAction, number> = {
   analyse: 60 * 60 * 1000,
   developpement: 3 * 60 * 60 * 1000,
+  livraison: 3 * 60 * 60 * 1000,
 };
 
 /** Plafond par défaut, analyse et développement confondus, pour toute la famille. */
@@ -1084,10 +1105,11 @@ export function launchLimitFor(configured: number, isFounder: boolean): number {
 export const LAUNCH_HISTORY_MAX = 20;
 
 /** Seule forme de texte envoyée à une routine. */
-export const LAUNCH_TEXT_PATTERN = /^(analyse|developpement) #[1-9][0-9]{0,6}$/;
+export const LAUNCH_TEXT_PATTERN = /^(analyse|developpement|livraison) #[1-9][0-9]{0,6}$/;
 
 /**
- * Le texte envoyé à la routine : `analyse #N` ou `developpement #N`. Lève si
+ * Le texte envoyé à la routine : `analyse #N`, `developpement #N` ou
+ * `livraison #N`. Lève si
  * le résultat ne suit pas [LAUNCH_TEXT_PATTERN] : rien d'autre ne part.
  */
 export function launchCommandText(action: LaunchAction, issueNumber: number): string {
@@ -1113,7 +1135,8 @@ export const LAUNCH_NOT_ALLOWED_MESSAGE = "Ce lancement n'est pas possible pour 
 /**
  * Ce que décide un lancement avant tout appel : `null` s'il est permis, sinon
  * le message du refus. Analyse : ticket Reçu, tout type. Développement :
- * ticket Validé, d'un autre type que Question. Une Issue est requise.
+ * ticket Validé, d'un autre type que Question. Livraison : ticket En cours,
+ * d'un autre type que Question. Une Issue est requise.
  */
 export function launchPrecondition(
   args: { status: TicketStatus; type: TicketType; hasIssue: boolean },
@@ -1121,7 +1144,7 @@ export function launchPrecondition(
 ): string | null {
   if (!args.hasIssue) return "Ce ticket n'a pas encore d'Issue GitHub.";
   if (args.status !== LAUNCH_FROM_STATUS[action]) return LAUNCH_NOT_ALLOWED_MESSAGE;
-  if (action === "developpement" && args.type === "question") return LAUNCH_NOT_ALLOWED_MESSAGE;
+  if (action !== "analyse" && args.type === "question") return LAUNCH_NOT_ALLOWED_MESSAGE;
   return null;
 }
 
@@ -1150,8 +1173,12 @@ export interface LaunchEntryView {
  * en échec, sans date, sans échéance, ou partie d'un autre statut ne bloque
  * rien. Une entrée antérieure au dernier changement de statut du ticket
  * (`statusChangedAtMs` : une réponse de l'administrateur ramène le ticket à
- * Reçu) ne bloque rien non plus et ne propose pas de relance. Pure ; fixture
- * `ticket_decisions.json`, section `launch_runs`.
+ * Reçu) ne bloque rien non plus et ne propose pas de relance.
+ *
+ * Livraison seulement : un compte rendu « ## Livraison — blocage » du
+ * mainteneur strictement postérieur au lancement (`deliveryBlockedAtMs`) la
+ * termine avant son échéance — relance proposée, `blocked` vrai. Pure ;
+ * fixture `ticket_decisions.json`, section `launch_runs`.
  */
 export function launchRunState(args: {
   entries: readonly LaunchEntryView[];
@@ -1159,8 +1186,14 @@ export function launchRunState(args: {
   rawStatus: unknown;
   nowMs: number;
   statusChangedAtMs?: number | null;
-}): { running: boolean; runningSinceMs: number | null; relaunchOfMs: number | null } {
-  const none = { running: false, runningSinceMs: null, relaunchOfMs: null };
+  deliveryBlockedAtMs?: number | null;
+}): {
+  running: boolean;
+  runningSinceMs: number | null;
+  relaunchOfMs: number | null;
+  blocked: boolean;
+} {
+  const none = { running: false, runningSinceMs: null, relaunchOfMs: null, blocked: false };
   let last: LaunchEntryView | null = null;
   for (const e of args.entries) {
     if (e.action !== args.action || e.launched_at_ms === null) continue;
@@ -1172,10 +1205,29 @@ export function launchRunState(args: {
   if (last.outcome !== "launched" && last.outcome !== "unknown") return none;
   if (typeof args.rawStatus !== "string" || last.from_status !== args.rawStatus) return none;
   if (last.retry_after_ms === null) return none;
-  if (args.nowMs < last.retry_after_ms) {
-    return { running: true, runningSinceMs: last.launched_at_ms, relaunchOfMs: null };
+  const blockedAt = args.action === "livraison" ? (args.deliveryBlockedAtMs ?? null) : null;
+  if (blockedAt !== null && blockedAt > last.launched_at_ms) {
+    return {
+      running: false,
+      runningSinceMs: null,
+      relaunchOfMs: last.launched_at_ms,
+      blocked: true,
+    };
   }
-  return { running: false, runningSinceMs: null, relaunchOfMs: last.launched_at_ms };
+  if (args.nowMs < last.retry_after_ms) {
+    return {
+      running: true,
+      runningSinceMs: last.launched_at_ms,
+      relaunchOfMs: null,
+      blocked: false,
+    };
+  }
+  return {
+    running: false,
+    runningSinceMs: null,
+    relaunchOfMs: last.launched_at_ms,
+    blocked: false,
+  };
 }
 
 const PARIS_DATE_TIME = new Intl.DateTimeFormat("fr-FR", {
@@ -1212,7 +1264,12 @@ export function launchRunningMessage(
   launchedAtMs: number,
   retryAfterMs: number,
 ): string {
-  const what = action === "analyse" ? "Une analyse a été lancée" : "Un développement a été lancé";
+  const what =
+    action === "analyse"
+      ? "Une analyse a été lancée"
+      : action === "developpement"
+        ? "Un développement a été lancé"
+        : "Une livraison a été lancée";
   return (
     `${what} le ${parisShortDate(launchedAtMs)} à ${parisHourMinute(launchedAtMs)}. ` +
     `Attendez son résultat ou relancez après ${parisHourMinute(retryAfterMs)}.`
@@ -1281,6 +1338,384 @@ export function nextLaunchCounters(
     today: today === null ? null : { day, count: Math.max(0, today - 1) },
     month: monthly === null ? null : { month, count: Math.max(0, monthly - 1) },
   };
+}
+
+// ── Livraison (« Livrer ») ──────────────────────────────────────────────────
+
+/**
+ * Raison d'un refus de livraison : la PR modifie un fichier sensible. Le
+ * client grise alors « Livrer » dans la boîte. Fixture `ticket_decisions.json`.
+ */
+export const DELIVERY_SENSITIVE_REASON = "delivery_sensitive_files";
+
+/** Préfixe des branches des sessions Claude Code : seules leurs PR se livrent. */
+export const DELIVERY_BRANCH_PREFIX = "claude/";
+
+/** Nom du workflow dont le dernier run sur la tête de la PR doit être vert. */
+export const CI_WORKFLOW_NAME = "CI";
+
+/** Une pull request telle que la livraison la lit (liste ou détail). */
+export interface PullRequestView {
+  number: number;
+  /** `open` ou `closed`, `null` si illisible. */
+  state: string | null;
+  draft: boolean;
+  body: string | null;
+  authorId: number | null;
+  /** `head.repo.full_name`, `null` pour un dépôt supprimé. */
+  headRepoFullName: string | null;
+  headRef: string | null;
+  headSha: string | null;
+  htmlUrl: string | null;
+}
+
+/**
+ * Vrai si cette PR peut être livrée pour l'Issue `issueNumber` : ouverte, pas
+ * brouillon, écrite par le mainteneur (identifiant numérique), branche
+ * `claude/…` de ce dépôt (une copie du dépôt ne compte pas), et « Closes #N »
+ * (ou un autre mot-clé de fermeture) dans son corps, pour cette Issue seule :
+ * les Issues fermées par le corps valent exactement `[N]`. Pure.
+ */
+export function isEligibleDeliveryPr(
+  pr: PullRequestView,
+  issueNumber: number,
+  maintainerId: number,
+  repoFullName: string,
+): boolean {
+  if (pr.state !== "open" || pr.draft) return false;
+  if (pr.authorId !== maintainerId) return false;
+  if (
+    typeof pr.headRepoFullName !== "string" ||
+    pr.headRepoFullName.toLowerCase() !== repoFullName.toLowerCase()
+  ) {
+    return false;
+  }
+  if (typeof pr.headRef !== "string" || !pr.headRef.startsWith(DELIVERY_BRANCH_PREFIX)) {
+    return false;
+  }
+  // Une PR qui ferme aussi d'autres Issues ne se livre pas pour celle-ci.
+  const closes = closingIssueNumbers(pr.body, repoFullName);
+  return closes.length === 1 && closes[0] === issueNumber;
+}
+
+/** Un run de workflow GitHub Actions, tel que la livraison le lit. */
+export interface CiRunView {
+  id: number | null;
+  name: string | null;
+  headSha: string | null;
+  /** `queued`, `in_progress`, `completed`… */
+  status: string | null;
+  /** `success`, `failure`, `cancelled`… ; `null` tant que le run n'est pas fini. */
+  conclusion: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Le dernier run du workflow « CI » sur `headSha` (plus grand `createdAt`, à
+ * égalité le plus grand identifiant), ou `null`. Pure.
+ */
+export function latestCiRun(runs: readonly CiRunView[], headSha: string): CiRunView | null {
+  let best: CiRunView | null = null;
+  let bestMs = Number.NEGATIVE_INFINITY;
+  for (const run of runs) {
+    if (run.name !== CI_WORKFLOW_NAME || run.headSha !== headSha) continue;
+    const parsed = run.createdAt === null ? Number.NaN : Date.parse(run.createdAt);
+    const ms = Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+    if (best === null || ms > bestMs || (ms === bestMs && (run.id ?? 0) > (best.id ?? 0))) {
+      best = run;
+      bestMs = ms;
+    }
+  }
+  return best;
+}
+
+/** Vrai si le run est fini et vert. */
+export function isGreenCiRun(run: CiRunView | null): boolean {
+  return run !== null && run.status === "completed" && run.conclusion === "success";
+}
+
+/**
+ * Ce que `tickets/{id}/admin/delivery` retient d'une relecture (dates ISO ;
+ * le service les écrit en `Timestamp`).
+ */
+export interface DeliveryState {
+  /** PR éligibles qui ferment l'Issue (`isEligibleDeliveryPr`). */
+  eligible_pr_count: number;
+  /** La PR éligible quand elle est seule, sinon `null`. */
+  pr_number: number | null;
+  /** Son adresse, seulement si elle vise une PR de ce dépôt sur github.com. */
+  pr_url: string | null;
+  head_sha: string | null;
+  /** État du dernier run « CI » sur la tête ; `null` : aucun run trouvé. */
+  ci_status: string | null;
+  ci_conclusion: string | null;
+  /** Fin du run (`updated_at` d'un run `completed`), ou `null`. */
+  ci_completed_at: string | null;
+  /** « PR prête » : voir `deliveryState`. */
+  ready: boolean;
+}
+
+/** L'adresse d'une PR de ce dépôt sur github.com, ou `null`. Pure. */
+export function safePullRequestUrl(url: string | null, repoFullName: string): string | null {
+  if (typeof url !== "string") return null;
+  const prefix = `https://github.com/${repoFullName}/pull/`;
+  if (!url.startsWith(prefix)) return null;
+  return /^[1-9][0-9]{0,6}$/.test(url.slice(prefix.length)) ? url : null;
+}
+
+/**
+ * L'état « PR prête » d'un ticket. Prête : ticket `in_progress`, une seule PR
+ * éligible, dernier run « CI » sur sa tête fini et vert. Ne sont pas exigés :
+ * une branche à jour de `master`, l'absence de conflit signalé par GitHub
+ * (`mergeable`), ni un numéro de version libre — la session de livraison
+ * résout `version:` et le CHANGELOG, ou publie un blocage. Les
+ * fichiers sensibles ne comptent pas ici : ils se contrôlent au lancement.
+ * Une liste de PR tronquée (`prListComplete` faux) ne rend jamais prête : une
+ * seconde PR éligible a pu échapper à la lecture. Pure.
+ */
+export function deliveryState(args: {
+  ticketStatus: unknown;
+  /** La liste des PR ouvertes a été lue en entier. Absent : vrai. */
+  prListComplete?: boolean;
+  eligible: readonly PullRequestView[];
+  /** Détail de la PR éligible quand elle est seule (tête relue), sinon `null`. */
+  pr: PullRequestView | null;
+  ciRun: CiRunView | null;
+  repoFullName: string;
+}): DeliveryState {
+  const single = args.eligible.length === 1 ? (args.pr ?? args.eligible[0]) : null;
+  const run = single === null ? null : args.ciRun;
+  const completed = run?.status === "completed";
+  return {
+    eligible_pr_count: args.eligible.length,
+    pr_number: single?.number ?? null,
+    pr_url: single === null ? null : safePullRequestUrl(single.htmlUrl, args.repoFullName),
+    head_sha: single?.headSha ?? null,
+    ci_status: run?.status ?? null,
+    ci_conclusion: run?.conclusion ?? null,
+    ci_completed_at: completed ? (run?.updatedAt ?? null) : null,
+    ready:
+      storedTicketStatus(args.ticketStatus) === "in_progress" &&
+      args.prListComplete !== false &&
+      single !== null &&
+      isGreenCiRun(run),
+  };
+}
+
+/** Un fichier d'une PR (`GET /pulls/{n}/files`). */
+export interface PullRequestFileView {
+  filename: string | null;
+  /** Ancien chemin d'un fichier renommé, sinon `null`. */
+  previousFilename: string | null;
+}
+
+/** Dossiers sensibles, à la racine du dépôt. */
+const SENSITIVE_PREFIXES = [".github/", ".claude/"];
+/** Chemins sensibles exacts, depuis la racine. */
+const SENSITIVE_FILES = ["deploy.ps1", "kass_dalle/firebase.json"];
+/**
+ * Noms de fichier sensibles où qu'ils soient : un `CLAUDE.md` ou un
+ * `CLAUDE.local.md` d'un sous-dossier est lu par Claude Code comme des
+ * instructions, et `.mcp.json` déclare des serveurs MCP.
+ */
+const SENSITIVE_BASENAMES = ["claude.md", "claude.local.md", ".mcp.json"];
+
+/** Vrai si ce chemin est un fichier qu'une livraison ne fusionne jamais. Pure. */
+export function isSensitiveDeliveryPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  const basename = lower.slice(lower.lastIndexOf("/") + 1);
+  return (
+    SENSITIVE_PREFIXES.some((p) => lower.startsWith(p)) ||
+    SENSITIVE_FILES.includes(lower) ||
+    SENSITIVE_BASENAMES.includes(basename)
+  );
+}
+
+/**
+ * Le premier fichier sensible que touche la PR (`.github/`, `.claude/`,
+ * `deploy.ps1`, `kass_dalle/firebase.json`, et tout fichier nommé
+ * `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit — casse
+ * ignorée —, ancien chemin d'un renommage compris), ou `null`. Pure.
+ */
+export function sensitiveDeliveryPath(files: readonly PullRequestFileView[]): string | null {
+  for (const f of files) {
+    for (const path of [f.filename, f.previousFilename]) {
+      if (typeof path === "string" && isSensitiveDeliveryPath(path)) return path;
+    }
+  }
+  return null;
+}
+
+export function deliverySensitiveMessage(prNumber: number, path: string): string {
+  return (
+    `La PR #${prNumber} modifie ${path} : fusionnez-la vous-même après relecture. ` +
+    "Rien n'a été lancé ni décompté."
+  );
+}
+
+export function deliveryFilesUnreadableMessage(prNumber: number): string {
+  return (
+    `La liste des fichiers de la PR #${prNumber} est trop longue pour être vérifiée : ` +
+    "fusionnez-la vous-même après relecture. Rien n'a été lancé ni décompté."
+  );
+}
+
+export const DELIVERY_NO_PR_MESSAGE =
+  "Aucune pull request prête ne ferme cette Issue. Rien n'a été lancé ni décompté.";
+
+export function deliveryMultiplePrMessage(count: number, issueNumber: number): string {
+  return (
+    `${count} pull requests ferment l'Issue #${issueNumber} : fermez celles à abandonner ` +
+    "sur GitHub. Rien n'a été lancé ni décompté."
+  );
+}
+
+export function deliveryCiNotGreenMessage(prNumber: number): string {
+  return `La CI de la PR #${prNumber} n'est pas verte. Rien n'a été lancé ni décompté.`;
+}
+
+export function deliveryRunningElsewhereMessage(issueNumber: number, launchedAtMs: number): string {
+  return (
+    `Une livraison est en cours sur le ticket #${issueNumber} depuis le ` +
+    `${parisShortDate(launchedAtMs)} à ${parisHourMinute(launchedAtMs)}. Une seule livraison ` +
+    "à la fois. Rien n'a été lancé ni décompté."
+  );
+}
+
+// ── Comptes rendus de livraison du mainteneur ──────────────────────────────
+
+/** Titres des comptes rendus publiés par la session de livraison. */
+export const DELIVERY_BLOCKED_TITLE = "## Livraison — blocage";
+export const DELIVERY_DONE_TITLE = "## Livraison — terminée";
+
+/** Comptes rendus gardés par ticket : les plus récents. */
+export const DELIVERY_REPORT_MAX_COUNT = 10;
+
+export type DeliveryReportKind = "blocked" | "done";
+
+/**
+ * Nature d'un compte rendu de livraison : auteur `maintainerId` (identifiant
+ * numérique) et texte qui commence, espaces de tête retirées et NFC, par
+ * `## Livraison — blocage` ou `## Livraison — terminée`. Sinon `null`. Pure.
+ */
+export function deliveryReportKind(
+  comment: { authorId: number | null | undefined; body: string | null | undefined },
+  maintainerId: number,
+): DeliveryReportKind | null {
+  if (typeof comment.authorId !== "number" || comment.authorId !== maintainerId) return null;
+  if (typeof comment.body !== "string") return null;
+  const text = normalizedBody(comment.body).trimStart();
+  if (text.startsWith(DELIVERY_BLOCKED_TITLE)) return "blocked";
+  if (text.startsWith(DELIVERY_DONE_TITLE)) return "done";
+  return null;
+}
+
+/** Un compte rendu stocké dans `tickets/{id}/admin/delivery.reports`. */
+export interface DeliveryReport {
+  comment_id: number | null;
+  kind: DeliveryReportKind;
+  body: string;
+  created_at: string | null;
+  updated_at: string | null;
+  truncated: boolean;
+}
+
+/**
+ * Les comptes rendus de livraison d'une Issue, dans l'ordre chronologique :
+ * les `DELIVERY_REPORT_MAX_COUNT` plus récents, chacun tronqué comme une
+ * analyse (`truncateAnalysis`). Pure.
+ */
+export function deliveryReportsFromComments(
+  comments: readonly AnalysisSourceComment[],
+  maintainerId: number,
+): DeliveryReport[] {
+  return comments
+    .map((c, index) => ({ c, index, kind: deliveryReportKind(c, maintainerId) }))
+    .filter(
+      (e): e is { c: AnalysisSourceComment; index: number; kind: DeliveryReportKind } =>
+        e.kind !== null,
+    )
+    .sort((a, b) => isoMillis(a.c.createdAt) - isoMillis(b.c.createdAt) || a.index - b.index)
+    .slice(-DELIVERY_REPORT_MAX_COUNT)
+    .map(({ c, kind }) => {
+      const { body, truncated } = truncateAnalysis(normalizedBody(c.body ?? "").trim());
+      return {
+        comment_id: c.id,
+        kind,
+        body,
+        created_at: c.createdAt,
+        updated_at: c.updatedAt,
+        truncated,
+      };
+    });
+}
+
+/** Date du dernier compte rendu « blocage », en millisecondes, ou `null`. Pure. */
+export function lastDeliveryBlockedAtMs(
+  reports: ReadonlyArray<{ kind: unknown; created_at_ms: number | null }>,
+): number | null {
+  let best: number | null = null;
+  for (const r of reports) {
+    if (r.kind !== "blocked" || r.created_at_ms === null) continue;
+    if (best === null || r.created_at_ms > best) best = r.created_at_ms;
+  }
+  return best;
+}
+
+// ── Verrou global des livraisons ────────────────────────────────────────────
+
+/**
+ * `app_config/tickets_status.delivery_running`, lu sans supposer sa forme
+ * (dates en millisecondes).
+ */
+export interface DeliveryLockView {
+  ticketId: unknown;
+  issueNumber: unknown;
+  launchedAtMs: number | null;
+  retryAfterMs: number | null;
+}
+
+/**
+ * Vrai si le verrou des livraisons tient : ses quatre champs se lisent,
+ * l'instant précède son échéance, et le ticket verrouillé est toujours
+ * `in_progress` (`null` : ticket introuvable). Un verrou inactif est écrasé
+ * par la livraison suivante. Pure ; fixture `ticket_decisions.json`, section
+ * `delivery_lock`.
+ */
+export function deliveryLockActive(args: {
+  lock: DeliveryLockView | null;
+  lockedTicketRawStatus: unknown;
+  nowMs: number;
+}): boolean {
+  const lock = args.lock;
+  if (lock === null) return false;
+  if (typeof lock.ticketId !== "string" || lock.ticketId.length === 0) return false;
+  if (
+    typeof lock.issueNumber !== "number" ||
+    !Number.isSafeInteger(lock.issueNumber) ||
+    lock.issueNumber <= 0
+  ) {
+    return false;
+  }
+  if (lock.launchedAtMs === null || lock.retryAfterMs === null) return false;
+  if (args.nowMs >= lock.retryAfterMs) return false;
+  return args.lockedTicketRawStatus === "in_progress";
+}
+
+/**
+ * Vrai si un blocage relevé sur le ticket `ticketId` libère le verrou : le
+ * verrou porte ce ticket et le blocage est strictement postérieur à son
+ * lancement. Pure.
+ */
+export function blockageReleasesLock(
+  lock: DeliveryLockView | null,
+  ticketId: string,
+  blockedAtMs: number | null,
+): boolean {
+  if (lock === null || lock.ticketId !== ticketId) return false;
+  if (blockedAtMs === null || lock.launchedAtMs === null) return false;
+  return blockedAtMs > lock.launchedAtMs;
 }
 
 // ── Signature du webhook ────────────────────────────────────────────────────
