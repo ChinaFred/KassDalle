@@ -20,9 +20,33 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.70 — fonctionnel
+### v0.23.72 — fonctionnel
 
 Un écran de démarrage affiche « Bonjour {prénom} » à chaque lancement de l'application, pendant 5 secondes ou jusqu'à un appui (ticket #78). Le prénom est le nom préféré du compte, sinon le prénom Google. Sans profil lu au bout de 10 secondes, ou pour un compte non connecté, l'écran affiche « Bonjour » seul. L'écran est un calque au-dessus du routeur (`SplashGreeting`, `lib/core/presentation/`) : aucune route ajoutée, aucune donnée écrite.
+
+### v0.23.71 — fonctionnel
+
+Admin › Gestion des utilisateurs › Comptes : les invitations par e-mail en attente
+apparaissent après les comptes, sous « Invités, pas encore connectés (N) ». Chaque ligne
+montre l'adresse seule et « Invité, pas encore connecté », ou « Envoi échoué ». Une adresse
+qui a déjà un compte n'y figure pas. Appuyer sur la ligne ouvre l'onglet Invitations, qui
+garde les actions (renvoyer, annuler). Le compteur « Comptes (N) » ne compte que les comptes.
+Ticket #68.
+
+### v0.23.70 — fonctionnel
+
+Admin › Tickets : le compte fondateur peut lancer 50 sessions Claude Code par jour (analyse
+et développement confondus), au lieu de 10. Les autres administrateurs gardent le plafond
+réglé dans `app_config/tickets.launches_per_day`. Les lancements du fondateur comptent dans
+le même compteur du jour. Le compteur et la boîte de lancement affichent « sur 50 » pour lui.
+
+### v0.23.70 — technique
+
+`launchLimitFor` (`tickets/rules.ts`) relève le plafond à `FOUNDER_LAUNCHES_PER_DAY` (50)
+quand le compte qui lance est le fondateur, reconnu par `founderUid()` comme pour le
+multiplicateur du budget d'IA. Jumeau Dart `ticketLaunchLimitFor`, appliqué par
+`ticketLaunchesPerDayProvider` avec `AppUser.isFounder` (affichage seul). Les deux sont
+verrouillés par la section `launch_limits` de `ticket_decisions.json`.
 
 ### v0.23.69 — technique
 
@@ -32,11 +56,12 @@ ouvrait les secrets de Secret Manager et la base à quiconque l'aurait récupér
 s'authentifie désormais par Workload Identity Federation : le job échange son jeton OIDC
 contre un accès d'une heure, que Google n'accorde qu'au dépôt `ChinaFred/KassDalle`
 (identifiant numérique), sur `master`, dans l'environnement `production`. La clé et le secret
-sont supprimés après un premier déploiement réussi par la nouvelle voie.
+ont été supprimés après le premier déploiement réussi par la nouvelle voie.
 
 Deux réglages de Google Cloud accompagnent ce changement : `Service Account User` n'est plus
 accordé à `github-deploy` sur tout le projet, seulement sur le compte d'exécution des
-fonctions ; la base Firestore `(default)` refuse désormais d'être supprimée.
+fonctions et sur le compte App Engine par défaut, que la CLI Firebase exige ; la base
+Firestore `(default)` refuse désormais d'être supprimée.
 
 ### v0.23.68 — fonctionnel
 

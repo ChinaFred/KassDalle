@@ -2065,7 +2065,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 | `image_moderation` | Seuils, labels culinaires, moteur retenu |
 | `planning_policy` | Présélection du planning : `plats_per_slot` (5, de 3 à 10), `starters_per_slot` et `desserts_per_slot` (3, de 1 à 10), `ranked_depth` (15, de `plats_per_slot` à 30 — profondeur de la liste gardée pour « Autre suggestion »), `concepts_per_generation` (2, de 0 à 7), `cost_cap_eur_per_generation` (0,50, de 0,05 à 5). Lu par `getPlanningPolicy` (cache 60 s), borné par `readPlanningPolicy` ; absent ou illisible : valeurs par défaut du code — ce sont des réglages, pas des prix. Aucun écran ne l'édite encore : il s'écrit depuis la console par un admin |
 | Politique nutrition | Seuils d'affichage, repli, priorité des sources |
-| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut) ; plafond quotidien des lancements de sessions Claude Code, famille entière : `launches_per_day` (`int` de 1 à 50, 10 par défaut, `DEFAULT_LAUNCHES_PER_DAY` / `kTicketDefaultLaunchesPerDay`, verrouillé par `ticket_decisions.json` ; présent mais pas un entier de 1 à 50 (`MAX_LAUNCHES_PER_DAY` / `kTicketMaxLaunchesPerDay`) : tout lancement est refusé, et la boîte de lancement affiche « Lancements restants aujourd'hui : inconnu. »). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Le client lit `per_member_per_day` sans recopier le réglage par défaut du serveur (`fetchPerMemberDailyLimit`, `ticket_repository.dart`) : document ou champ absent → plafond inconnu, sans rapport, et le formulaire attend `remaining_today` du premier envoi ; valeur qui n'est pas un entier strictement positif → plafond inconnu et rapport d'erreur `tickets`. Ainsi la valeur 5 n'existe que côté serveur. Aucun semis : l'absence est un état lu et documenté |
+| `tickets` | Plafonds des tickets : `per_member_per_day` (`int`, 5 par défaut) et `global_per_day` (`int`, 30 par défaut) ; plafond quotidien des lancements de sessions Claude Code, famille entière : `launches_per_day` (`int` de 1 à 50, 10 par défaut, `DEFAULT_LAUNCHES_PER_DAY` / `kTicketDefaultLaunchesPerDay`, verrouillé par `ticket_decisions.json` ; le compte fondateur a 50 quel que soit le réglage, `FOUNDER_LAUNCHES_PER_DAY` / `kTicketFounderLaunchesPerDay`, `launchLimitFor` / `ticketLaunchLimitFor`, même compteur du jour ; présent mais pas un entier de 1 à 50 (`MAX_LAUNCHES_PER_DAY` / `kTicketMaxLaunchesPerDay`) : tout lancement est refusé, et la boîte de lancement affiche « Lancements restants aujourd'hui : inconnu. »). Document absent : `submitTicket` applique 5 et 30, réglage par défaut du produit. Champ présent mais pas un entier positif : l'envoi est refusé (`failed-precondition`) plutôt qu'un plafond inventé. Lisible par tout compte approuvé (le formulaire annonce les envois restants), écrit par un administrateur. Le client lit `per_member_per_day` sans recopier le réglage par défaut du serveur (`fetchPerMemberDailyLimit`, `ticket_repository.dart`) : document ou champ absent → plafond inconnu, sans rapport, et le formulaire attend `remaining_today` du premier envoi ; valeur qui n'est pas un entier strictement positif → plafond inconnu et rapport d'erreur `tickets`. Ainsi la valeur 5 n'existe que côté serveur. Aucun semis : l'absence est un état lu et documenté |
 | `tickets_status` | État des tickets. `token_invalid_since` (`Timestamp?`) : jeton GitHub, posé au premier refus du jeton (401, 403 hors limite de débit, 404 sur le dépôt) ou quand le secret est vide, effacé au premier appel GitHub réussi. `routine_invalid_since` (`Map` : `analyse`, `developpement` → `Timestamp?`) : jeton d'une routine Claude Code refusé (401 ou 403 de l'API), effacé au premier lancement réussi de cette routine. `launches_today` (`{day: String AAAAMMJJ, count: int}`) et `launches_month` (`{month: String AAAAMM, count: int}`) : sessions comptées le jour et le mois de Paris, tenus dans les transactions du compteur `ticket_quotas/launch_{AAAAMMJJ}` ; le client lit 0 quand la période stockée n'est pas la période courante. Lu par l'administrateur seul (bandeaux et compteur d'Admin › Tickets), écrit par le serveur seul — les règles refusent l'écriture client, administrateur compris |
 
 `ai_routing_policy` porte un champ de plus, `presets_seeded_at` : la marque du
@@ -3712,7 +3712,8 @@ pas de poste d'IA, pas de `ctx.feature`, rien dans `token_usage` ni dans la réc
    hh:mm. » ou « Un développement a été lancé… » (`launch_running`, heure de Paris) ;
 4. plafond : `app_config/tickets.launches_per_day` (10 si absent ; entier de 1 à 50,
    `MAX_LAUNCHES_PER_DAY` ; illisible ou supérieur à 50 → refus `launch_config_unreadable`
-   et `logError`), compteur `ticket_quotas/launch_{AAAAMMJJ}` lu et
+   et `logError`) ; 50 pour le compte fondateur (`launchLimitFor`, reconnu par
+   `founderUid()` comme pour le budget d'IA), compteur `ticket_quotas/launch_{AAAAMMJJ}` lu et
    incrémenté en transaction avec `app_config/tickets_status.launches_today` et
    `launches_month` ; plafond atteint → `resource-exhausted` « Vous avez lancé 10 sessions
    aujourd'hui. Réessayez demain. » (nombre réel du réglage, `launch_daily_limit`) ;
@@ -3756,8 +3757,9 @@ Une entrée `failed`, sans échéance ou partie d'un autre statut ne bloque rien
 antérieure au `status_changed_at` du ticket ne bloque rien et ne propose pas de relance : après
 une réponse de l'administrateur, le ticket revient à Reçu, et l'analyse lancée avant n'est pas
 proposée en « Relancer l'analyse ». Cette règle, les
-conditions de statut des deux lancements et le plafond par défaut (10) sont dupliqués et
-verrouillés par `ticket_decisions.json` (cases `can_launch_*`, section `launch_runs`).
+conditions de statut des deux lancements, le plafond par défaut (10) et celui du fondateur (50)
+sont dupliqués et verrouillés par `ticket_decisions.json` (cases `can_launch_*`, sections
+`launch_runs` et `launch_limits`).
 
 **Répondre à une analyse, ticket bloqué.** La session de développement exige un « validé » du
 compte 16348852 postérieur à la dernière analyse. Quand une analyse (souvent
@@ -3816,7 +3818,8 @@ Lancements avant de relancer. ». Pendant l'appel, « Annuler » devient « Ferm
 administrateur) : historique en chargement → bouton masqué ; en erreur → bouton affiché (le
 serveur refait le contrôle). `ticketsStatusProvider` lit `app_config/tickets_status` (bandeaux
 du jeton GitHub et des deux routines, compteurs) ; `ticketLaunchesPerDayProvider` lit `launches_per_day`
-(`fetchLaunchesPerDay` : absent → 10, illisible → `null` et rapport d'erreur). Le lien d'une
+(`fetchLaunchesPerDay` : absent → 10, illisible → `null` et rapport d'erreur), puis applique
+`ticketLaunchLimitFor` : 50 pour le fondateur (`AppUser.isFounder`, affichage seul). Le lien d'une
 session ne s'ouvre que s'il est en `https` sur `claude.ai` (`openableSessionLink`).
 
 **Secrets.** `GITHUB_TICKETS_TOKEN` : jeton « fine-grained » limité au dépôt
@@ -6136,8 +6139,8 @@ l'environnement fermerait ce chemin, au prix d'une approbation manuelle à chaqu
 
 **Accès à Google Cloud, sans clé.** Le job `deploy` s'authentifie par Workload Identity
 Federation (mis en place le 15 octobre 2026, en remplacement d'une clé JSON sans expiration
-stockée dans le secret `FIREBASE_SERVICE_ACCOUNT` ; la clé et le secret sont supprimés une
-fois le premier déploiement par fédération réussi). Le job demande à GitHub un
+stockée dans le secret `FIREBASE_SERVICE_ACCOUNT` ; la clé et le secret ont été supprimés
+le même jour, après le premier déploiement réussi par fédération). Le job demande à GitHub un
 jeton OIDC (`permissions: id-token: write`) et l'échange auprès de Google contre un accès d'une
 heure au compte de service `github-deploy@kassdale-6d948.iam.gserviceaccount.com`. Aucune clé
 n'est stockée, ni dans GitHub ni sur le runner.
@@ -6155,8 +6158,11 @@ Rôles IAM de `github-deploy` :
 - `Firebase Admin` ;
 - `Cloud Functions Admin` ;
 - `Cloud Run Admin` (Functions de 2e génération) ;
-- `Service Account User`, sur le compte d'exécution des fonctions
-  (`867114764221-compute@developer`) seulement, pas sur le projet ;
+- `Service Account User`, sur deux comptes seulement, pas sur le projet : le compte
+  d'exécution des fonctions (`867114764221-compute@developer`) et le compte App Engine par
+  défaut (`kassdale-6d948@appspot`). Aucune fonction ne tourne sous ce dernier, mais la CLI
+  Firebase vérifie `iam.serviceAccounts.actAs` sur lui avant de déployer les Functions, et
+  refuse de partir sans ;
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`, et la CLI accorde au compte d'exécution l'accès à ces
