@@ -28,11 +28,12 @@ ouvrait les secrets de Secret Manager et la base à quiconque l'aurait récupér
 s'authentifie désormais par Workload Identity Federation : le job échange son jeton OIDC
 contre un accès d'une heure, que Google n'accorde qu'au dépôt `ChinaFred/KassDalle`
 (identifiant numérique), sur `master`, dans l'environnement `production`. La clé et le secret
-sont supprimés après un premier déploiement réussi par la nouvelle voie.
+ont été supprimés après le premier déploiement réussi par la nouvelle voie.
 
 Deux réglages de Google Cloud accompagnent ce changement : `Service Account User` n'est plus
 accordé à `github-deploy` sur tout le projet, seulement sur le compte d'exécution des
-fonctions ; la base Firestore `(default)` refuse désormais d'être supprimée.
+fonctions et sur le compte App Engine par défaut, que la CLI Firebase exige ; la base
+Firestore `(default)` refuse désormais d'être supprimée.
 
 ### v0.23.68 — fonctionnel
 

@@ -6136,8 +6136,8 @@ l'environnement fermerait ce chemin, au prix d'une approbation manuelle à chaqu
 
 **Accès à Google Cloud, sans clé.** Le job `deploy` s'authentifie par Workload Identity
 Federation (mis en place le 15 octobre 2026, en remplacement d'une clé JSON sans expiration
-stockée dans le secret `FIREBASE_SERVICE_ACCOUNT` ; la clé et le secret sont supprimés une
-fois le premier déploiement par fédération réussi). Le job demande à GitHub un
+stockée dans le secret `FIREBASE_SERVICE_ACCOUNT` ; la clé et le secret ont été supprimés
+le même jour, après le premier déploiement réussi par fédération). Le job demande à GitHub un
 jeton OIDC (`permissions: id-token: write`) et l'échange auprès de Google contre un accès d'une
 heure au compte de service `github-deploy@kassdale-6d948.iam.gserviceaccount.com`. Aucune clé
 n'est stockée, ni dans GitHub ni sur le runner.
@@ -6155,8 +6155,11 @@ Rôles IAM de `github-deploy` :
 - `Firebase Admin` ;
 - `Cloud Functions Admin` ;
 - `Cloud Run Admin` (Functions de 2e génération) ;
-- `Service Account User`, sur le compte d'exécution des fonctions
-  (`867114764221-compute@developer`) seulement, pas sur le projet ;
+- `Service Account User`, sur deux comptes seulement, pas sur le projet : le compte
+  d'exécution des fonctions (`867114764221-compute@developer`) et le compte App Engine par
+  défaut (`kassdale-6d948@appspot`). Aucune fonction ne tourne sous ce dernier, mais la CLI
+  Firebase vérifie `iam.serviceAccounts.actAs` sur lui avant de déployer les Functions, et
+  refuse de partir sans ;
 - `Artifact Registry Administrator` ;
 - `Secret Manager Admin` : les fonctions référencent `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GMAIL_SENDER`, `GMAIL_APP_PASSWORD`, `GITHUB_TICKETS_TOKEN` et `GITHUB_WEBHOOK_SECRET`, et la CLI accorde au compte d'exécution l'accès à ces

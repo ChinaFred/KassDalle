@@ -608,10 +608,13 @@ for role in roles/firebase.admin roles/cloudfunctions.admin roles/run.admin \
             roles/cloudscheduler.admin roles/cloudtasks.admin; do
   gcloud projects add-iam-policy-binding <PROJET_GCP> --member "serviceAccount:$SA" --role "$role"
 done
-# « Service Account User » sur le compte d'exécution des fonctions :
-gcloud iam service-accounts add-iam-policy-binding \
-  <NUMERO_PROJET>-compute@developer.gserviceaccount.com \
-  --member "serviceAccount:$SA" --role roles/iam.serviceAccountUser
+# « Service Account User » sur le compte d'exécution des fonctions, et sur le compte
+# App Engine par défaut : la CLI Firebase vérifie actAs sur lui avant de déployer.
+for target in <NUMERO_PROJET>-compute@developer.gserviceaccount.com \
+              <PROJET_GCP>@appspot.gserviceaccount.com; do
+  gcloud iam service-accounts add-iam-policy-binding "$target" \
+    --member "serviceAccount:$SA" --role roles/iam.serviceAccountUser
+done
 
 # Workload Identity Federation : GitHub échange son jeton OIDC contre un accès d'une heure.
 # Aucune clé JSON n'est créée.
