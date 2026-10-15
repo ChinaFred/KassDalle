@@ -46,6 +46,10 @@ abstract final class AppIcons {
   /// « Lancer le développement » : session Claude Code sur un ticket Validé.
   static const ticketLaunchDevelopment = Icons.construction_outlined;
 
+  /// « Livrer » : session Claude Code qui fusionne la PR prête d'un ticket
+  /// En cours ; aussi la puce « PR prête » de la liste.
+  static const ticketDeliver = Icons.call_merge;
+
   /// Ticket que le serveur n'arrive plus à transmettre à GitHub.
   static const ticketAnomaly = Icons.error_outline;
 }

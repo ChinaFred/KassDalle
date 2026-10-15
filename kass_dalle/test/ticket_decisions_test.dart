@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_analysis.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_answer.dart';
+import 'package:kass_dalle/features/tickets/domain/ticket_delivery.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_launch.dart';
 import 'package:kass_dalle/features/tickets/presentation/tickets_providers.dart';
 
@@ -224,12 +225,14 @@ void main() {
             'can_refuse': d.canRefuse,
             'can_launch_analysis': d.canLaunchAnalysis,
             'can_launch_development': d.canLaunchDevelopment,
+            'can_deliver': d.canDeliver,
           },
           {
             'can_validate': c['can_validate'],
             'can_refuse': c['can_refuse'],
             'can_launch_analysis': c['can_launch_analysis'],
             'can_launch_development': c['can_launch_development'],
+            'can_deliver': c['can_deliver'],
           },
         );
       });
@@ -276,10 +279,54 @@ void main() {
           rawStatus: r['raw_status'] as String,
           now: DateTime.parse(r['now'] as String),
           statusChangedAt: iso(r['status_changed_at']),
+          deliveryBlockedAt: iso(r['delivery_blocked_at']),
         );
         expect(state.running, r['running']);
         expect(state.runningSince, iso(r['running_since']));
         expect(state.relaunchOf, iso(r['relaunch_of']));
+        expect(state.blocked, r['blocked'] ?? false);
+      });
+    }
+
+    test('les trois lancements et leur statut de départ', () {
+      final actions = (fixture['launch_actions'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(TicketLaunchAction.values.map((a) => a.value).toList(), [
+        for (final a in actions) a['action'],
+      ]);
+      for (final a in actions) {
+        expect(
+          TicketLaunchAction.fromValue(a['action'])!.fromStatus.value,
+          a['from_status'],
+        );
+      }
+    });
+
+    test('raison du refus d\'une PR qui modifie un fichier sensible', () {
+      expect(
+        kTicketDeliverySensitiveReason,
+        fixture['delivery_sensitive_reason'],
+      );
+    });
+
+    for (final c
+        in (fixture['delivery_lock'] as List).cast<Map<String, dynamic>>()) {
+      test('verrou des livraisons : ${c['name']}', () {
+        final raw = c['lock'] as Map<String, dynamic>?;
+        expect(
+          ticketDeliveryLockActive(
+            lock: raw == null
+                ? null
+                : TicketDeliveryLock.fromMap({
+                    ...raw,
+                    'launched_at': iso(raw['launched_at']),
+                    'retry_after': iso(raw['retry_after']),
+                  }),
+            lockedTicketRawStatus: c['locked_ticket_status'] as String?,
+            now: DateTime.parse(c['now'] as String),
+          ),
+          c['active'],
+        );
       });
     }
   });

@@ -20,6 +20,39 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.75 — fonctionnel
+
+Admin › Tickets : un ticket En cours offre « Livrer ». Quand sa pull request est prête (une
+seule PR de la session, CI verte, pas de conflit), la fiche affiche « PR #57 prête — CI verte
+le … » et le bouton « Livrer ». Une session Claude Code met alors la PR à jour avec `master`,
+la fusionne et suit le déploiement ; appuyer sur « Livrer » vaut accord de fusion. Sinon, une
+seule ligne dit ce qui manque : plusieurs PR, conflit, CI en échec ou en cours, aucune PR
+prête, ou livraison d'un autre ticket en cours (une seule à la fois, avec « Ouvrir le ticket
+#K »). Une PR qui modifie `.github/`, `.claude/`, `CLAUDE.md`, `deploy.ps1` ou `firebase.json`
+est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
+une section « Livraison (N) » avec les comptes rendus de la session (« Blocage du … »,
+« Livraison terminée le … ») ; après un blocage ou trois heures sans fusion, « Relancer la
+livraison ». La liste porte une puce « PR prête ». Une livraison compte comme un lancement
+dans le plafond du jour. Rien ne change pour les membres.
+
+### v0.23.75 — technique
+
+Nouvelle callable `launchTicketDelivery` (routine de développement, texte `livraison #N`,
+mêmes secrets, aucun nouveau jeton). Contrôles avant tout comptage : PR éligible unique,
+fichiers sensibles (`GET /pulls/{n}/files`, `delivery_sensitive_files`), dernier run « CI »
+vert relu, verrou global `app_config/tickets_status.delivery_running`. Nouveau sous-document
+`tickets/{id}/admin/delivery` (état « PR prête » et comptes rendus `## Livraison — …`), écrit
+par le webhook (`pull_request` élargi, nouvel événement `workflow_run`), la tâche horaire et
+le lancement ; aucune règle Firestore nouvelle (joker `admin/{doc}`), sept tests de règles
+ajoutés. Logique dupliquée : `ticket_decisions.json` gagne `can_deliver`, les cas
+`livraison` de `launch_runs` (fin par blocage), les sections `launch_actions` et
+`delivery_lock`, et `delivery_sensitive_reason` ; corrigée des deux côtés (`rules.ts`,
+`ticket.dart`, `ticket_launch.dart`, `ticket_delivery.dart`). Réglages GitHub faits à la main :
+permission « Actions : Read-only » sur le jeton « KassDalle ticket », événement « Workflow
+runs » du webhook. Reste à faire après le déploiement : recoller le prompt de la routine de
+développement (aiguillage `developpement` / `livraison`). `CLAUDE.md` : règles de
+`livraison #N`, et l'appui sur « Livrer » vaut « fusionne ».
+
 ### v0.23.74 — fonctionnel
 
 Admin › Tickets : un ticket En cours dont la pull request est fermée sans être fusionnée

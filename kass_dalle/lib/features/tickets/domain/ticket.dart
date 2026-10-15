@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'ticket_analysis.dart';
+import 'ticket_delivery.dart';
 import 'ticket_launch.dart';
 
 /// Un ticket envoyé par un membre : bug, évolution, nouvelle fonctionnalité
@@ -322,6 +323,7 @@ List<Ticket> filterAdminTickets(
 ///
 /// Le serveur refait le même contrôle (`validatePrecondition`,
 /// `refusePrecondition`, `launchPrecondition`, `launchRunState`,
+/// `deliveryLockActive`,
 /// `answerPrecondition` et `ticketAwaitingReply`,
 /// `functions/src/tickets/rules.ts`) : un bouton masqué ici n'est qu'un
 /// confort, jamais la protection. Logique dupliquée, verrouillée par
@@ -341,9 +343,19 @@ class AdminTicketDecisions {
   /// aucun développement en cours, historique lu ou en erreur.
   final bool canLaunchDevelopment;
 
+  /// « Livrer » : ticket En cours, hors Question, avec Issue, aucune
+  /// livraison en cours, historique lu ou en erreur. La PR prête et le
+  /// verrou global se lisent ensuite par [ticketDeliveryBar].
+  final bool canDeliver;
+
   /// Le bouton de lancement devient « Relancer… » : le lancement de cet
-  /// instant n'a rien changé au ticket avant son échéance.
+  /// instant n'a rien changé au ticket avant son échéance, ou (livraison) un
+  /// blocage l'a suivi ([relaunchAfterBlock]).
   final DateTime? relaunchOf;
+
+  /// La relance d'une livraison suit un compte rendu « ## Livraison —
+  /// blocage » postérieur au lancement.
+  final bool relaunchAfterBlock;
 
   /// Un lancement est en cours depuis cet instant : le bouton est masqué et
   /// la ligne « … en cours depuis … » le remplace.
@@ -375,7 +387,9 @@ class AdminTicketDecisions {
     required this.validateHint,
     this.canLaunchAnalysis = false,
     this.canLaunchDevelopment = false,
+    this.canDeliver = false,
     this.relaunchOf,
+    this.relaunchAfterBlock = false,
     this.runningSince,
     this.runningUntil,
     this.launchAction,
@@ -398,6 +412,7 @@ class AdminTicketDecisions {
       canReply ||
       canLaunchAnalysis ||
       canLaunchDevelopment ||
+      canDeliver ||
       runningSince != null;
 }
 
@@ -459,12 +474,15 @@ const kTicketUnknownStatusHint =
 /// [launchesLoading] : historique en cours de lecture, bouton masqué.
 /// [analysis] : le sous-document des analyses, `null` tant qu'il n'est pas
 /// lu (ou s'il n'existe pas) ; « Répondre » et le blocage en dépendent.
+/// [delivery] : le sous-document de livraison ; ses comptes rendus
+/// « blocage » terminent une livraison avant son échéance.
 AdminTicketDecisions adminTicketDecisions(
   Ticket t, {
   List<TicketLaunch>? launches,
   bool launchesLoading = false,
   DateTime? now,
   TicketAnalysisDoc? analysis,
+  TicketDelivery? delivery,
 }) {
   final known = t.rawStatus == t.status.value;
   final hasIssue = t.githubIssueNumber != null;
@@ -501,6 +519,9 @@ AdminTicketDecisions adminTicketDecisions(
     } else if (status == TicketStatus.validated &&
         t.type != TicketType.question) {
       action = TicketLaunchAction.development;
+    } else if (status == TicketStatus.inProgress &&
+        t.type != TicketType.question) {
+      action = TicketLaunchAction.delivery;
     }
   }
   final lastAnalysisAt = analysis?.lastAnalysisAt;
@@ -521,6 +542,7 @@ AdminTicketDecisions adminTicketDecisions(
       rawStatus: t.rawStatus,
       now: now ?? DateTime.now(),
       statusChangedAt: t.statusChangedAt,
+      deliveryBlockedAt: delivery?.lastBlockedAt,
     );
   }
   final offered =
@@ -538,7 +560,9 @@ AdminTicketDecisions adminTicketDecisions(
     validateHint: hint,
     canLaunchAnalysis: offered && action == TicketLaunchAction.analysis,
     canLaunchDevelopment: offered && action == TicketLaunchAction.development,
+    canDeliver: offered && action == TicketLaunchAction.delivery,
     relaunchOf: offered ? run.relaunchOf : null,
+    relaunchAfterBlock: offered && run.blocked,
     runningSince: run.runningSince,
     runningUntil: run.runningUntil,
     launchAction: action,

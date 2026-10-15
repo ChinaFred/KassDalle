@@ -1,12 +1,14 @@
 /**
  * Client REST GitHub minimal des tickets, par `fetch` — aucun SDK.
  *
- * Dix appels : créer une Issue, lire une Issue, lire ses commentaires, lire
- * sa chronologie (PR qui la référencent), lire ses événements (dernier
+ * Quatorze appels : créer une Issue, lire une Issue, lire ses commentaires,
+ * lire sa chronologie (PR qui la référencent), lire ses événements (dernier
  * « validé » du mainteneur), chercher
  * une Issue par la référence d'un ticket, et pour les décisions de
  * l'administrateur : poser une étiquette, retirer une étiquette, publier un
- * commentaire, fermer une Issue « not planned ». Le jeton vient de
+ * commentaire, fermer une Issue « not planned ». Pour « Livrer » : lister les
+ * PR ouvertes, lire une PR, lister ses fichiers, lister les runs GitHub
+ * Actions d'un commit (permission « Actions : lecture »). Le jeton vient de
  * `process.env.GITHUB_TICKETS_TOKEN`, peuplé par le secret du même nom une
  * fois attaché ; absent, `githubToken()` rend `null`.
  *
@@ -16,7 +18,13 @@
  */
 
 import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
-import { isTrustedPrAuthor, lastMaintainerValidatedAt } from "./rules";
+import {
+  isTrustedPrAuthor,
+  lastMaintainerValidatedAt,
+  type CiRunView,
+  type PullRequestFileView,
+  type PullRequestView,
+} from "./rules";
 
 const API = "https://api.github.com";
 const TIMEOUT_MS = 15_000;
@@ -398,4 +406,139 @@ export async function findIssueByTicketReference(
     }
   }
   return null;
+}
+
+// ── Livraison : pull requests et runs de la CI ──────────────────────────────
+
+function str(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** Lit une PR de la forme rendue par l'API (liste ou détail) ou par un webhook. Pure. */
+export function readPullRequest(raw: Record<string, unknown>): PullRequestView | null {
+  if (typeof raw.number !== "number" || !Number.isSafeInteger(raw.number)) return null;
+  const user = raw.user as { id?: unknown } | null | undefined;
+  const head = raw.head as
+    { ref?: unknown; sha?: unknown; repo?: { full_name?: unknown } | null } | null | undefined;
+  return {
+    number: raw.number,
+    state: str(raw.state),
+    draft: raw.draft === true,
+    body: str(raw.body),
+    authorId: typeof user?.id === "number" ? user.id : null,
+    headRepoFullName: str(head?.repo?.full_name),
+    headRef: str(head?.ref),
+    headSha: str(head?.sha),
+    htmlUrl: str(raw.html_url),
+    mergeable: typeof raw.mergeable === "boolean" ? raw.mergeable : null,
+  };
+}
+
+/**
+ * Les PR ouvertes du dépôt (500 au plus). `complete` est faux quand la
+ * dernière page lue était pleine : une PR peut manquer.
+ */
+export async function listOpenPullRequests(
+  token: string,
+): Promise<{ prs: PullRequestView[]; complete: boolean }> {
+  const prs: PullRequestView[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await request<Array<Record<string, unknown>>>(
+      token,
+      "GET",
+      `${REPO_PATH}/pulls?state=open&per_page=100&page=${page}`,
+    );
+    for (const raw of batch) {
+      const pr = readPullRequest(raw);
+      if (pr !== null) prs.push(pr);
+    }
+    if (batch.length < 100) return { prs, complete: true };
+  }
+  return { prs, complete: false };
+}
+
+/** Le détail d'une PR : `mergeable` et la tête du moment. */
+export async function getPullRequest(token: string, prNumber: number): Promise<PullRequestView> {
+  const raw = await request<Record<string, unknown>>(
+    token,
+    "GET",
+    `${REPO_PATH}/pulls/${prNumber}`,
+  );
+  const pr = readPullRequest(raw);
+  if (pr === null) throw new GithubError("other", null, `PR #${prNumber} illisible`);
+  return pr;
+}
+
+/** Pages de fichiers lues au plus pour une PR (100 par page). */
+const MAX_FILE_PAGES = 10;
+
+/**
+ * Les fichiers modifiés par une PR (1 000 au plus). `complete` est faux quand
+ * la dernière page lue était pleine : la liste n'est pas vérifiable.
+ */
+export async function listPullRequestFiles(
+  token: string,
+  prNumber: number,
+): Promise<{ files: PullRequestFileView[]; complete: boolean }> {
+  const files: PullRequestFileView[] = [];
+  for (let page = 1; page <= MAX_FILE_PAGES; page++) {
+    const batch = await request<Array<Record<string, unknown>>>(
+      token,
+      "GET",
+      `${REPO_PATH}/pulls/${prNumber}/files?per_page=100&page=${page}`,
+    );
+    for (const f of batch) {
+      files.push({ filename: str(f.filename), previousFilename: str(f.previous_filename) });
+    }
+    if (batch.length < 100) return { files, complete: true };
+  }
+  return { files, complete: false };
+}
+
+/** Lit un run de workflow de la forme rendue par l'API ou par un webhook. Pure. */
+export function readCiRun(raw: Record<string, unknown>): CiRunView {
+  return {
+    id: typeof raw.id === "number" ? raw.id : null,
+    name: str(raw.name),
+    headSha: str(raw.head_sha),
+    status: str(raw.status),
+    conclusion: str(raw.conclusion),
+    createdAt: str(raw.created_at),
+    updatedAt: str(raw.updated_at),
+  };
+}
+
+/**
+ * Les runs GitHub Actions d'un commit (`GET /actions/runs?head_sha=`, 100 au
+ * plus : un commit n'en a que quelques-uns). Demande la permission
+ * « Actions : lecture » du jeton.
+ */
+export async function listRunsForCommit(token: string, headSha: string): Promise<CiRunView[]> {
+  if (!/^[0-9a-f]{40}$/i.test(headSha)) {
+    throw new GithubError("other", null, `SHA de commit illisible : ${headSha.slice(0, 64)}`);
+  }
+  let raw: { workflow_runs?: unknown };
+  try {
+    raw = await request<{ workflow_runs?: unknown }>(
+      token,
+      "GET",
+      `${REPO_PATH}/actions/runs?head_sha=${headSha}&per_page=100`,
+    );
+  } catch (err) {
+    // Un 403 ici dit le plus souvent que la permission « Actions » manque au
+    // jeton, qui sert par ailleurs : il n'est pas déclaré invalide pour autant.
+    if (err instanceof GithubError && err.kind === "token" && err.status === 403) {
+      throw new GithubError(
+        "other",
+        403,
+        "GitHub refuse la lecture des runs de la CI : ajoutez la permission " +
+          "« Actions : lecture » au jeton GITHUB_TICKETS_TOKEN.",
+      );
+    }
+    throw err;
+  }
+  const runs = Array.isArray(raw.workflow_runs) ? raw.workflow_runs : [];
+  return runs
+    .filter((r): r is Record<string, unknown> => r !== null && typeof r === "object")
+    .map(readCiRun);
 }

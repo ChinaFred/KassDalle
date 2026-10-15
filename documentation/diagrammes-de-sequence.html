@@ -187,6 +187,7 @@
       <li><a href="#ticket-refuser">Refuser un ticket depuis l'application</a></li>
       <li><a href="#ticket-lancer">Lancer une analyse ou un développement depuis l'application</a></li>
       <li><a href="#ticket-repondre">Répondre à une analyse depuis l'application</a></li>
+      <li><a href="#ticket-livrer">Livrer un ticket En cours depuis l'application</a></li>
     </ol>
   </nav>
 
@@ -4311,7 +4312,7 @@ sequenceDiagram
 </pre>
       </div>
       <figcaption>
-        Le texte envoyé est contrôlé par <code>^(analyse|developpement) #[1-9][0-9]{0,6}$</code>
+        Le texte envoyé est contrôlé par <code>^(analyse|developpement|livraison) #[1-9][0-9]{0,6}$</code>
         avant l'appel ; la routine refuse tout autre contenu. L'entrée <code>unknown</code> écrite
         avant l'appel garde une trace même si la fonction s'arrête pendant l'appel. Tant que le
         ticket garde son statut de départ et que l'échéance n'est pas passée (1 h, 3 h), le bouton
@@ -4403,6 +4404,87 @@ sequenceDiagram
         « Précisions prises en compte » ; la session de développement ne lit que l'analyse
         validée. Aucune session ne commence un commentaire par « ## Précisions », ni ne modifie
         ou supprime un commentaire.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-livrer"><span class="n">46</span>Livrer un ticket En cours depuis l'application</h2>
+    <p class="sec-note">
+      Sur un ticket En cours dont la pull request est prête, « Livrer » lance la routine de
+      développement avec <code>livraison #N</code> : la session met la PR à jour avec
+      <code>master</code>, la fusionne et suit le déploiement. L'état « PR prête » est calculé par
+      le serveur à chaque événement GitHub et à chaque passe horaire.
+      <span class="path">githubTicketWebhook / ticketsSyncSchedule → tickets/delivery.ts
+      (refreshTicketDelivery, writeDeliveryReports) ; admin_tickets_screen.dart
+      (ticketDeliveryBar, _launch, _LaunchTicketDialog) → TicketRepository.launch →
+      GeminiService.launchTicketDelivery → callable/ticketsCallable.ts → tickets/launch.ts
+      (launchTicketSession, checkDeliveryLaunch) → tickets/delivery.ts (claimDeliveryLock) →
+      tickets/routine.ts (fireRoutine)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as launchTicketDelivery
+  participant W as Webhook / tâche horaire
+  participant T as Firestore
+  participant G as GitHub
+  participant R as API Routines (Anthropic)
+  participant S as Session Claude Code
+
+  G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » terminé
+  W->>G: GET /pulls?state=open, GET /pulls/M, GET /actions/runs?head_sha=
+  W->>T: admin/delivery : PR éligible, mergeable, dernier run CI, ready
+  T-->>C: flux admin/delivery et tickets_status.delivery_running
+  C-->>AD: « PR #57 prête — CI verte le … » et « Livrer »<br/>(sinon : plusieurs PR, conflit, CI en échec ou en cours, livraison d'un autre ticket)
+  AD->>C: « Livrer »
+  C-->>AD: « Livrer ce ticket ? » : fusion = mise en ligne, type, lancements restants (focus sur « Annuler »)
+  AD->>C: « Livrer »
+  C->>F: { ticketId }
+  F->>T: transaction : statut in_progress, hors Question, bail decision_lease_until
+  F->>T: lit admin/launches et admin/delivery.reports : livraison en cours ? (blocage postérieur : finie)
+  F->>G: PR ouvertes, détail de la PR éligible, runs de sa tête
+  alt aucune ou plusieurs PR éligibles
+    F-->>C: refus sans décompte (delivery_no_pr / delivery_multiple_prs)
+  end
+  F->>G: GET /pulls/M/files
+  alt .github/, .claude/, CLAUDE.md, deploy.ps1, kass_dalle/firebase.json
+    F-->>C: « La PR #M modifie … : fusionnez-la vous-même après relecture. »<br/>(delivery_sensitive_files ; la boîte grise « Livrer »)
+  end
+  alt dernier run « CI » pas vert
+    F-->>C: refus sans décompte (delivery_ci_not_green)
+  end
+  F->>T: transaction : tickets_status.delivery_running (une livraison à la fois)
+  alt autre livraison active
+    F-->>C: « Une livraison est en cours sur le ticket #K … » (delivery_running_elsewhere)
+  end
+  F->>T: transaction : ticket_quotas/launch_jour (même plafond)
+  F->>G: GET /issues/N (ouverte : En cours)
+  F->>T: admin/launches : entrée livraison, from_status in_progress, retry_after +3 h
+  F->>R: POST /routines/{dev}/fire { "text": "livraison #N" }
+  R-->>F: session créée
+  F-->>C: { outcome: launched, session_url }
+  R->>S: session sur ChinaFred/KassDalle
+  S->>G: fusion de origin/master dans la branche (version et CHANGELOG seulement), push
+  S->>G: CI verte, puis gh pr merge --merge --match-head-commit
+  G->>G: « Closes #N » ferme l'Issue ; workflow « Déploiement »
+  G->>W: issues closed : ticket Livré (verrou inactif)
+  S->>G: commentaire « ## Livraison — terminée » (ou « ## Livraison — blocage »)
+  G->>W: issue_comment du mainteneur
+  W->>T: admin/delivery.reports ; blocage postérieur : delivery_running effacé
+</pre>
+      </div>
+      <figcaption>
+        Tous les refus de <code>launchTicketDelivery</code> ont lieu avant le comptage : « Rien
+        n'a été lancé ni décompté. ». Le verrou global est rendu si la routine n'est pas appelée
+        ou répond par une erreur ; il reste tenu sur un lancement abouti ou au résultat inconnu,
+        jusqu'à la livraison du ticket, un blocage relevé ou l'échéance de 3 h. Un blocage
+        relevé fait proposer « Relancer la livraison » ; une échéance passée sans fusion aussi,
+        avec le rappel de vérifier sur claude.ai/code qu'aucune session ne tourne encore.
       </figcaption>
     </figure>
   </section>

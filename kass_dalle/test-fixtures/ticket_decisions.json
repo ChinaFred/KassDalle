@@ -1,7 +1,13 @@
 {
-  "_comment": "Décisions de l'administrateur sur un ticket : « Valider », « Refuser », « Lancer l'analyse » et « Lancer le développement ». Le serveur décide (validatePrecondition, refusePrecondition, launchPrecondition et launchRunState, functions/src/tickets/rules.ts, appelées par validateTicket, refuseTicket, launchTicketAnalysis et launchTicketDevelopment) ; le client affiche (lib/features/tickets/domain/ticket.dart (adminTicketDecisions, kTicketRefusalPartialReason) et lib/features/tickets/domain/ticket_launch.dart (ticketLaunchRunState, kTicketDefaultLaunchesPerDay) : boutons de la barre de décision, masqués quand la décision n'est pas permise, ligne « en cours »). can_validate : ticket 'analyzed', d'un autre type que 'question', avec un numéro d'Issue. Un ticket déjà 'validated' n'offre pas le bouton (le serveur répond succès sans rien changer). can_refuse : 'received', 'analyzed', 'validated' ou 'in_progress', tout type, avec un numéro d'Issue. can_launch_analysis : 'received', tout type (question comprise), avec un numéro d'Issue. can_launch_development : 'validated', d'un autre type que 'question', avec un numéro d'Issue. Ces deux valeurs supposent un historique vide : launch_runs dit ce que l'historique y change. Un statut stocké inconnu ('archived' ici) n'offre aucune décision : le client l'affiche « Reçu », le serveur le lit 'sending'. Les types inconnus ne figurent pas ici : le client les lit 'bug', le serveur 'question'. refusal_partial_reason : valeur de details.reason quand le motif est publié mais l'Issue pas fermée (REFUSAL_PARTIAL_REASON, kTicketRefusalPartialReason). default_launches_per_day : plafond quotidien des lancements quand app_config/tickets.launches_per_day manque (DEFAULT_LAUNCHES_PER_DAY, kTicketDefaultLaunchesPerDay). max_launches_per_day : borne haute de ce réglage ; au-delà, le serveur refuse tout lancement et le client affiche « inconnu » (MAX_LAUNCHES_PER_DAY, kTicketMaxLaunchesPerDay). founder_launches_per_day : plafond du compte fondateur, quel que soit le réglage (FOUNDER_LAUNCHES_PER_DAY, kTicketFounderLaunchesPerDay) ; ses lancements comptent dans le même compteur du jour que ceux des autres administrateurs. launch_limits : plafond effectif (launchLimitFor, ticketLaunchLimitFor) d'après le réglage lu et le compte qui lance. launch_runs : état d'un type de lancement d'après l'historique tickets/{id}/admin/launches. Seule la dernière entrée du type compte (plus grand launched_at) ; elle est en cours si outcome vaut 'launched' ou 'unknown', si from_status égale le statut stocké du ticket et si now < retry_after (échéance écrite par le serveur : 1 h analyse, 3 h développement). Échéance atteinte ou passée, mêmes conditions : relance proposée (relaunch_of = son launched_at). Entrée 'failed', sans retry_after, ou partie d'un autre statut : rien. Dates ISO 8601 UTC, null = champ absent. Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts. reply_cases : « Répondre » (can_reply) — ticket 'analyzed' ou 'validated', d'un autre type que 'question', avec un numéro d'Issue et au moins une analyse relevée (has_analysis : une entrée de tickets/{id}/admin/analysis de nature 'analysis'). development_running : un développement est en cours (launchRunState, hors ticket bloqué) — « Répondre » est alors refusé des deux côtés (serveur : launch_running, « Un développement est en cours. Attendez sa fin avant de répondre. »). Le serveur (answerPrecondition, answerTicketAnalysis) relit en plus les commentaires de l'Issue. awaiting_reply : ticket bloqué (ticketAwaitingReply) — statut 'validated', hors 'question', une analyse relevée (last_analysis_at) strictement postérieure au dernier « validé » posé par le mainteneur (validated_at, tickets/{id}/admin/analysis). validated_known = false : champ absent, date inconnue → pas bloqué côté client ; le serveur lit alors les événements de l'Issue. validated_known = true et validated_at null : aucun « validé » du mainteneur relevé → bloqué dès qu'une analyse existe. Bloqué l'emporte sur la relance et sur la ligne « en cours » du développement, et launchTicketDevelopment refuse (launch_needs_answer) avant tout comptage. launch_runs.status_changed_at (absent = null) : un lancement antérieur au dernier changement de statut du ticket (une réponse de l'administrateur ramène le ticket à 'received') est ignoré ; un lancement au même instant compte. answer_partial_reason : valeur de details.reason quand la réponse est publiée mais les étiquettes inchangées (ANSWER_PARTIAL_REASON, kTicketAnswerPartialReason) ; le client verrouille alors le texte.",
+  "_comment": "Décisions de l'administrateur sur un ticket : « Valider », « Refuser », « Lancer l'analyse » et « Lancer le développement ». Le serveur décide (validatePrecondition, refusePrecondition, launchPrecondition et launchRunState, functions/src/tickets/rules.ts, appelées par validateTicket, refuseTicket, launchTicketAnalysis et launchTicketDevelopment) ; le client affiche (lib/features/tickets/domain/ticket.dart (adminTicketDecisions, kTicketRefusalPartialReason) et lib/features/tickets/domain/ticket_launch.dart (ticketLaunchRunState, kTicketDefaultLaunchesPerDay) : boutons de la barre de décision, masqués quand la décision n'est pas permise, ligne « en cours »). can_validate : ticket 'analyzed', d'un autre type que 'question', avec un numéro d'Issue. Un ticket déjà 'validated' n'offre pas le bouton (le serveur répond succès sans rien changer). can_refuse : 'received', 'analyzed', 'validated' ou 'in_progress', tout type, avec un numéro d'Issue. can_launch_analysis : 'received', tout type (question comprise), avec un numéro d'Issue. can_launch_development : 'validated', d'un autre type que 'question', avec un numéro d'Issue. Ces deux valeurs supposent un historique vide : launch_runs dit ce que l'historique y change. Un statut stocké inconnu ('archived' ici) n'offre aucune décision : le client l'affiche « Reçu », le serveur le lit 'sending'. Les types inconnus ne figurent pas ici : le client les lit 'bug', le serveur 'question'. refusal_partial_reason : valeur de details.reason quand le motif est publié mais l'Issue pas fermée (REFUSAL_PARTIAL_REASON, kTicketRefusalPartialReason). default_launches_per_day : plafond quotidien des lancements quand app_config/tickets.launches_per_day manque (DEFAULT_LAUNCHES_PER_DAY, kTicketDefaultLaunchesPerDay). max_launches_per_day : borne haute de ce réglage ; au-delà, le serveur refuse tout lancement et le client affiche « inconnu » (MAX_LAUNCHES_PER_DAY, kTicketMaxLaunchesPerDay). founder_launches_per_day : plafond du compte fondateur, quel que soit le réglage (FOUNDER_LAUNCHES_PER_DAY, kTicketFounderLaunchesPerDay) ; ses lancements comptent dans le même compteur du jour que ceux des autres administrateurs. launch_limits : plafond effectif (launchLimitFor, ticketLaunchLimitFor) d'après le réglage lu et le compte qui lance. launch_runs : état d'un type de lancement d'après l'historique tickets/{id}/admin/launches. Seule la dernière entrée du type compte (plus grand launched_at) ; elle est en cours si outcome vaut 'launched' ou 'unknown', si from_status égale le statut stocké du ticket et si now < retry_after (échéance écrite par le serveur : 1 h analyse, 3 h développement). Échéance atteinte ou passée, mêmes conditions : relance proposée (relaunch_of = son launched_at). Entrée 'failed', sans retry_after, ou partie d'un autre statut : rien. Dates ISO 8601 UTC, null = champ absent. Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts. reply_cases : « Répondre » (can_reply) — ticket 'analyzed' ou 'validated', d'un autre type que 'question', avec un numéro d'Issue et au moins une analyse relevée (has_analysis : une entrée de tickets/{id}/admin/analysis de nature 'analysis'). development_running : un développement est en cours (launchRunState, hors ticket bloqué) — « Répondre » est alors refusé des deux côtés (serveur : launch_running, « Un développement est en cours. Attendez sa fin avant de répondre. »). Le serveur (answerPrecondition, answerTicketAnalysis) relit en plus les commentaires de l'Issue. awaiting_reply : ticket bloqué (ticketAwaitingReply) — statut 'validated', hors 'question', une analyse relevée (last_analysis_at) strictement postérieure au dernier « validé » posé par le mainteneur (validated_at, tickets/{id}/admin/analysis). validated_known = false : champ absent, date inconnue → pas bloqué côté client ; le serveur lit alors les événements de l'Issue. validated_known = true et validated_at null : aucun « validé » du mainteneur relevé → bloqué dès qu'une analyse existe. Bloqué l'emporte sur la relance et sur la ligne « en cours » du développement, et launchTicketDevelopment refuse (launch_needs_answer) avant tout comptage. launch_runs.status_changed_at (absent = null) : un lancement antérieur au dernier changement de statut du ticket (une réponse de l'administrateur ramène le ticket à 'received') est ignoré ; un lancement au même instant compte. answer_partial_reason : valeur de details.reason quand la réponse est publiée mais les étiquettes inchangées (ANSWER_PARTIAL_REASON, kTicketAnswerPartialReason) ; le client verrouille alors le texte. can_deliver : « Livrer » (launchTicketDelivery, routine de développement avec le texte « livraison #N ») — ticket 'in_progress', d'un autre type que 'question', avec un numéro d'Issue ; historique vide supposé, comme les lancements. La PR prête (tickets/{id}/admin/delivery.ready) est calculée par le serveur seul et lue telle quelle par le client : elle n'est pas dans cette fixture. launch_actions : les trois lancements, leur statut de départ (LAUNCH_FROM_STATUS, TicketLaunchAction.fromStatus) et l'échéance écrite par le serveur en heures (LAUNCH_RETRY_MS, serveur seul). launch_runs.delivery_blocked_at (absent = null) : date du dernier commentaire « ## Livraison — blocage » du mainteneur relevé sur l'Issue ; une livraison dont ce blocage est strictement postérieur au lancement est finie (blocked = true, relance proposée, même avant l'échéance) ; un blocage antérieur ou au même instant ne compte pas ; il ne touche que l'action 'livraison'. blocked absent = false. delivery_lock : le verrou global des livraisons (app_config/tickets_status.delivery_running : ticket_id, issue_number, launched_at, retry_after ; une livraison à la fois pour tout le dépôt). Actif si ses quatre champs se lisent, si now < retry_after et si le ticket verrouillé est toujours 'in_progress' (locked_ticket_status null = ticket introuvable). Inactif sinon : le serveur l'écrase au lancement suivant. Le serveur l'efface aussi quand il relève un blocage postérieur au lancement. deliveryLockActive (serveur), ticketDeliveryLockActive (client). delivery_sensitive_reason : valeur de details.reason quand la PR modifie un fichier sensible (.github/, .claude/, CLAUDE.md, deploy.ps1, kass_dalle/firebase.json) : refus sans décompte, le client grise « Livrer » dans la boîte (DELIVERY_SENSITIVE_REASON, kTicketDeliverySensitiveReason).",
   "refusal_partial_reason": "reply_published_close_failed",
   "answer_partial_reason": "answer_published_labels_failed",
+  "launch_actions": [
+    { "action": "analyse", "from_status": "received", "retry_hours": 1 },
+    { "action": "developpement", "from_status": "validated", "retry_hours": 3 },
+    { "action": "livraison", "from_status": "in_progress", "retry_hours": 3 }
+  ],
+  "delivery_sensitive_reason": "delivery_sensitive_files",
   "default_launches_per_day": 10,
   "max_launches_per_day": 50,
   "founder_launches_per_day": 50,
@@ -20,7 +26,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -29,7 +36,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -38,7 +46,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -47,7 +56,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -56,7 +66,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -65,7 +76,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -74,7 +86,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "sending",
@@ -83,7 +96,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -92,7 +106,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": true,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -101,7 +116,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -110,7 +126,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": true,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -119,7 +136,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -128,7 +146,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": true,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -137,7 +156,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -146,7 +166,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": true,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "received",
@@ -155,7 +176,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -164,7 +186,8 @@
       "can_validate": true,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -173,7 +196,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -182,7 +206,8 @@
       "can_validate": true,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -191,7 +216,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -200,7 +226,8 @@
       "can_validate": true,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -209,7 +236,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -218,7 +246,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "analyzed",
@@ -227,7 +256,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -236,7 +266,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": true
+      "can_launch_development": true,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -245,7 +276,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -254,7 +286,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": true
+      "can_launch_development": true,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -263,7 +296,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -272,7 +306,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": true
+      "can_launch_development": true,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -281,7 +316,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -290,7 +326,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "validated",
@@ -299,7 +336,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "in_progress",
@@ -308,7 +346,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": true
     },
     {
       "status": "in_progress",
@@ -317,7 +356,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "in_progress",
@@ -326,7 +366,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": true
     },
     {
       "status": "in_progress",
@@ -335,7 +376,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "in_progress",
@@ -344,7 +386,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": true
     },
     {
       "status": "in_progress",
@@ -353,7 +396,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "in_progress",
@@ -362,7 +406,8 @@
       "can_validate": false,
       "can_refuse": true,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "in_progress",
@@ -371,7 +416,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -380,7 +426,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -389,7 +436,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -398,7 +446,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -407,7 +456,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -416,7 +466,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -425,7 +476,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -434,7 +486,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "delivered",
@@ -443,7 +496,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -452,7 +506,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -461,7 +516,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -470,7 +526,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -479,7 +536,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -488,7 +546,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -497,7 +556,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -506,7 +566,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "refused",
@@ -515,7 +576,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -524,7 +586,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -533,7 +596,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -542,7 +606,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -551,7 +616,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -560,7 +626,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -569,7 +636,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -578,7 +646,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "answered",
@@ -587,7 +656,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -596,7 +666,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -605,7 +676,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -614,7 +686,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -623,7 +696,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -632,7 +706,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -641,7 +716,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -650,7 +726,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     },
     {
       "status": "archived",
@@ -659,7 +736,8 @@
       "can_validate": false,
       "can_refuse": false,
       "can_launch_analysis": false,
-      "can_launch_development": false
+      "can_launch_development": false,
+      "can_deliver": false
     }
   ],
   "launch_runs": [
@@ -996,6 +1074,202 @@
       "running": false,
       "running_since": null,
       "relaunch_of": "2026-10-14T12:00:00Z"
+    },
+    {
+      "name": "livraison lancée il y a 1 h, ticket toujours En cours : en cours",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-15T12:00:00Z",
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "livraison après 3 h sans fusion : relance, pas de blocage",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T15:00:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "unknown",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": "2026-10-15T12:00:00Z",
+      "blocked": false
+    },
+    {
+      "name": "blocage relevé après le lancement : finie, relance proposée",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "delivery_blocked_at": "2026-10-15T12:40:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": "2026-10-15T12:00:00Z",
+      "blocked": true
+    },
+    {
+      "name": "blocage relevé après le lancement, échéance passée : relance après blocage",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T16:00:00Z",
+      "delivery_blocked_at": "2026-10-15T12:40:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": "2026-10-15T12:00:00Z",
+      "blocked": true
+    },
+    {
+      "name": "blocage antérieur au lancement (livraison précédente) : en cours",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "delivery_blocked_at": "2026-10-15T11:00:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-15T12:00:00Z",
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "blocage au même instant que le lancement : pas postérieur, en cours",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "delivery_blocked_at": "2026-10-15T12:00:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-15T12:00:00Z",
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "blocage sur une livraison en échec : rien",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "delivery_blocked_at": "2026-10-15T12:40:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "failed",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "ticket passé Livré : rien",
+      "action": "livraison",
+      "raw_status": "delivered",
+      "now": "2026-10-15T13:00:00Z",
+      "launches": [
+        {
+          "action": "livraison",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "un blocage de livraison ne touche pas un développement",
+      "action": "developpement",
+      "raw_status": "validated",
+      "now": "2026-10-15T13:00:00Z",
+      "delivery_blocked_at": "2026-10-15T12:40:00Z",
+      "launches": [
+        {
+          "action": "developpement",
+          "outcome": "launched",
+          "from_status": "validated",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": true,
+      "running_since": "2026-10-15T12:00:00Z",
+      "relaunch_of": null,
+      "blocked": false
+    },
+    {
+      "name": "un développement n'est pas une livraison",
+      "action": "livraison",
+      "raw_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "launches": [
+        {
+          "action": "developpement",
+          "outcome": "launched",
+          "from_status": "in_progress",
+          "launched_at": "2026-10-15T12:00:00Z",
+          "retry_after": "2026-10-15T15:00:00Z"
+        }
+      ],
+      "running": false,
+      "running_since": null,
+      "relaunch_of": null,
+      "blocked": false
     }
   ],
   "reply_cases": [
@@ -1418,6 +1692,135 @@
       "validated_known": true,
       "validated_at": null,
       "awaiting_reply": false
+    }
+  ],
+  "delivery_lock": [
+    {
+      "name": "aucun verrou",
+      "lock": null,
+      "locked_ticket_status": null,
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "livraison en cours sur un ticket toujours En cours",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "active": true
+    },
+    {
+      "name": "échéance atteinte : libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T15:05:00Z",
+      "active": false
+    },
+    {
+      "name": "ticket passé Livré : libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "delivered",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "ticket refusé : libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "refused",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "ticket introuvable : libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": null,
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "statut inconnu de cette version : libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "archived",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "verrou sans échéance : illisible, libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": null
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "verrou sans date de lancement : illisible, libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": 31,
+        "launched_at": null,
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "verrou sans ticket : illisible, libéré",
+      "lock": {
+        "ticket_id": null,
+        "issue_number": 31,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
+    },
+    {
+      "name": "verrou sans numéro d'Issue : illisible, libéré",
+      "lock": {
+        "ticket_id": "t31",
+        "issue_number": null,
+        "launched_at": "2026-10-15T12:05:00Z",
+        "retry_after": "2026-10-15T15:05:00Z"
+      },
+      "locked_ticket_status": "in_progress",
+      "now": "2026-10-15T13:00:00Z",
+      "active": false
     }
   ]
 }

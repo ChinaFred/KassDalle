@@ -1,7 +1,9 @@
 /**
  * Lancement d'une session Claude Code sur un ticket, par une Routine :
- * « Lancer l'analyse » (ticket Reçu) et « Lancer le développement » (ticket
- * Validé), appelés par `launchTicketAnalysis` et `launchTicketDevelopment`
+ * « Lancer l'analyse » (ticket Reçu), « Lancer le développement » (ticket
+ * Validé) et « Livrer » (ticket En cours, routine de développement, texte
+ * `livraison #N`), appelés par `launchTicketAnalysis`,
+ * `launchTicketDevelopment` et `launchTicketDelivery`
  * (`callable/ticketsCallable.ts`) après `requireAdmin`.
  *
  * Dans l'ordre :
@@ -15,20 +17,28 @@
  *     vient de `admin/analysis.validated_at`, ou des événements de l'Issue
  *     quand elle manque ;
  *  3 bis. aucun lancement du même type en cours (`launchRunState` ; un
- *     lancement antérieur au dernier changement de statut ne compte pas) ;
+ *     lancement antérieur au dernier changement de statut ne compte pas ;
+ *     une livraison suivie d'un blocage relevé est finie) ;
+ *  3 ter. livraison seulement, rien compté en cas de refus : une seule PR
+ *     éligible, aucun fichier sensible, dernier run « CI » vert sur sa tête
+ *     (relus sur GitHub, état écrit dans `admin/delivery`), puis verrou
+ *     global des livraisons (`delivery_running`) ;
  *  4. plafond du jour (`app_config/tickets.launches_per_day`, 10 par défaut ;
  *     50 pour le compte fondateur, `launchLimitFor`) :
  *     le lancement est compté en transaction (`ticket_quotas/launch_<jour>`,
  *     compteurs de `app_config/tickets_status`) ;
  *  5. Issue relue sur GitHub : fermée, ou étiquettes qui donnent un autre
- *     statut → l'état relu est appliqué, rien n'est lancé ;
+ *     statut → l'état relu est appliqué, rien n'est lancé (une livraison
+ *     vient de relire sa PR : l'Issue ouverte dit « En cours ») ;
  *  6. entrée d'historique écrite `unknown` AVANT l'appel : une fonction
  *     coupée pendant l'appel laisse une trace qui bloque comme un succès ;
  *  7. appel unique de l'API (`fireRoutine`, 30 s, aucune relance) ;
  *  8. entrée mise à jour : `launched` (compté), `failed` (compte rendu),
  *     ou laissée `unknown` (compté, bloque) sans réponse (délai, réseau) ou sur
  *     une réponse 5xx : la session a pu partir.
- * Le bail est libéré à la fin, réussite ou échec.
+ * Le bail est libéré à la fin, réussite ou échec. Le verrou des livraisons
+ * est rendu quand rien n'est parti (refus, panne avant l'appel, refus de
+ * l'API) ; il reste tenu sur un lancement abouti ou au résultat inconnu.
  *
  * Rien n'est écrit dans `tickets/{id}`, que l'auteur lit : ni lien de
  * session, ni nom d'administrateur.
@@ -52,9 +62,19 @@ import {
 import { founderUid } from "../ai/budget";
 import { logError, logInfo, logWarn } from "../logging";
 import { claimDecision, githubFailure, releaseDecision, tokenMissing } from "./decisions";
-import { getIssue, githubToken, lastValidatedLabelAt } from "./github";
 import {
+  claimDeliveryLock,
+  deliveryRef,
+  readDelivery,
+  releaseDeliveryLock,
+  writeDeliveryState,
+} from "./delivery";
+import { getIssue, githubToken, lastValidatedLabelAt, listPullRequestFiles } from "./github";
+import {
+  DELIVERY_NO_PR_MESSAGE,
+  DELIVERY_SENSITIVE_REASON,
   LAUNCH_FROM_STATUS,
+  LAUNCH_ROUTINE,
   LAUNCH_HISTORY_MAX,
   LAUNCH_NEEDS_ANSWER_MESSAGE,
   launchCommandText,
@@ -68,8 +88,14 @@ import {
   nextLaunchCounters,
   parisDay,
   readLaunchesPerDay,
+  sensitiveDeliveryPath,
   statusFromIssue,
   ticketAwaitingReply,
+  deliveryCiNotGreenMessage,
+  deliveryFilesUnreadableMessage,
+  deliveryMultiplePrMessage,
+  deliverySensitiveMessage,
+  isGreenCiRun,
   type LaunchAction,
   type TicketType,
 } from "./rules";
@@ -82,6 +108,7 @@ import {
   type RoutineFailureKind,
 } from "./routine";
 import {
+  deliveryBlockedAtMs,
   lastAnalysisMillis,
   launchEntryViews,
   readLaunchEntries,
@@ -268,8 +295,12 @@ async function updateLaunch(
 
 // ── Jeton de la routine refusé ──────────────────────────────────────────────
 
-/** Pose `routine_invalid_since.<action>` s'il ne l'est pas. Au mieux, journalisé. */
-async function markRoutineInvalid(action: LaunchAction, scope: LogScope): Promise<void> {
+/**
+ * Pose `routine_invalid_since.<routine>` s'il ne l'est pas (la livraison
+ * marque la routine de développement). Au mieux, journalisé.
+ */
+async function markRoutineInvalid(launch: LaunchAction, scope: LogScope): Promise<void> {
+  const action = LAUNCH_ROUTINE[launch];
   try {
     await getFirestore().runTransaction(async (tx) => {
       const snap = await tx.get(statusRef());
@@ -294,8 +325,9 @@ async function markRoutineInvalid(action: LaunchAction, scope: LogScope): Promis
   }
 }
 
-/** Efface `routine_invalid_since.<action>` après un lancement réussi. Au mieux. */
-async function clearRoutineInvalid(action: LaunchAction, scope: LogScope): Promise<void> {
+/** Efface `routine_invalid_since.<routine>` après un lancement réussi. Au mieux. */
+async function clearRoutineInvalid(launch: LaunchAction, scope: LogScope): Promise<void> {
+  const action = LAUNCH_ROUTINE[launch];
   try {
     const snap = await statusRef().get();
     const current = snap.data()?.routine_invalid_since;
@@ -422,6 +454,9 @@ export async function launchTicketSession(
 
   let reservedDay: string | null = null;
   let keepCount = false;
+  // Livraison : instant du lancement, fixé à la prise du verrou.
+  let plannedLaunchedAtMs: number | null = null;
+  let lockedAtMs: number | null = null;
   try {
     // 3. Ticket bloqué : la dernière analyse attend une réponse.
     if (action === "developpement") {
@@ -436,6 +471,10 @@ export async function launchTicketSession(
       rawStatus: fromStatus,
       nowMs: Date.now(),
       statusChangedAtMs: seen.statusChangedAtMs,
+      deliveryBlockedAtMs:
+        action === "livraison"
+          ? deliveryBlockedAtMs((await deliveryRef(ticketId).get()).data())
+          : null,
     });
     if (run.running && run.runningSinceMs !== null) {
       throw new HttpsError(
@@ -447,6 +486,14 @@ export async function launchTicketSession(
         ),
         { reason: "launch_running" },
       );
+    }
+
+    // 3 ter. Livraison : PR, fichiers et CI relus, puis verrou global.
+    if (action === "livraison") {
+      await checkDeliveryLaunch(ticketId, issueNumber, scope);
+      plannedLaunchedAtMs = Date.now();
+      await claimDeliveryLock(ticketId, issueNumber, plannedLaunchedAtMs);
+      lockedAtMs = plannedLaunchedAtMs;
     }
 
     // 4. Plafond du jour.
@@ -484,10 +531,12 @@ export async function launchTicketSession(
     } catch (err) {
       throw await githubFailure(err, ticketId, "lecture de l'Issue avant lancement", scope);
     }
-    const remote = statusFromIssue({ ...issue, hasOpenClosingPr: false }, seen.type);
+    // Une livraison vient de relire sa PR ouverte : l'Issue ouverte dit « En cours ».
+    const hasOpenClosingPr = action === "livraison";
+    const remote = statusFromIssue({ ...issue, hasOpenClosingPr }, seen.type);
     if (issue.state === "closed" || remote !== fromStatus) {
       await applyGithubUpdate(ticketId, {
-        statusFor: (t) => statusFromIssue({ ...issue, hasOpenClosingPr: false }, t),
+        statusFor: (t) => statusFromIssue({ ...issue, hasOpenClosingPr }, t),
       });
       await logWarn({
         message: `Tickets : lancement ${action} du ticket ${ticketId} annulé, l'Issue #${issueNumber} dit ${remote}`,
@@ -503,7 +552,7 @@ export async function launchTicketSession(
 
     // 6. Trace écrite avant l'appel.
     const text = launchCommandText(action, issueNumber);
-    const launchedAtMs = Date.now();
+    const launchedAtMs = plannedLaunchedAtMs ?? Date.now();
     const id = randomUUID();
     try {
       await recordLaunch(ticketId, {
@@ -545,7 +594,77 @@ export async function launchTicketSession(
     });
   } finally {
     if (reservedDay !== null && !keepCount) await releaseLaunch(reservedDay, ticketId, scope);
+    if (lockedAtMs !== null && !keepCount) await releaseDeliveryLock(ticketId, lockedAtMs, scope);
     await releaseDecision(ticketId, scope);
+  }
+}
+
+// ── Livraison ───────────────────────────────────────────────────────────────
+
+/**
+ * Contrôles d'une livraison avant tout comptage, relus sur GitHub : une seule
+ * PR éligible, aucun fichier sensible (`sensitiveDeliveryPath`), dernier run
+ * « CI » vert sur sa tête. L'état relu est écrit dans `admin/delivery` (au
+ * mieux). Lève `failed-precondition` avec sa raison ; un échec GitHub suit
+ * `decisionGithubFailure`.
+ */
+async function checkDeliveryLaunch(
+  ticketId: string,
+  issueNumber: number,
+  scope: LogScope,
+): Promise<void> {
+  const token = githubToken();
+  if (token === null) throw await tokenMissing(ticketId, scope);
+  let reading: Awaited<ReturnType<typeof readDelivery>>;
+  try {
+    reading = await readDelivery(token, issueNumber, LAUNCH_FROM_STATUS.livraison);
+  } catch (err) {
+    throw await githubFailure(err, ticketId, "lecture de la pull request avant livraison", scope);
+  }
+  try {
+    await writeDeliveryState(ticketId, reading.state);
+  } catch (err) {
+    await logError({
+      message: `Tickets : état « PR prête » du ticket ${ticketId} relu au lancement mais non écrit`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+  }
+  const refuse = async (message: string, reason: string): Promise<never> => {
+    await logInfo({
+      message: `Tickets : livraison du ticket ${ticketId} refusée (${reason})`,
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { reason, pr_number: reading.state.pr_number },
+    });
+    throw new HttpsError("failed-precondition", message, { reason });
+  };
+  const count = reading.state.eligible_pr_count;
+  if (count > 1)
+    await refuse(deliveryMultiplePrMessage(count, issueNumber), "delivery_multiple_prs");
+  const pr = reading.pr;
+  if (pr === null) return refuse(DELIVERY_NO_PR_MESSAGE, "delivery_no_pr");
+
+  let files: Awaited<ReturnType<typeof listPullRequestFiles>>;
+  try {
+    files = await listPullRequestFiles(token, pr.number);
+  } catch (err) {
+    throw await githubFailure(err, ticketId, "lecture des fichiers de la pull request", scope);
+  }
+  if (!files.complete) {
+    await refuse(deliveryFilesUnreadableMessage(pr.number), "delivery_files_unreadable");
+  }
+  const sensitive = sensitiveDeliveryPath(files.files);
+  if (sensitive !== null) {
+    await refuse(deliverySensitiveMessage(pr.number, sensitive), DELIVERY_SENSITIVE_REASON);
+  }
+  if (!isGreenCiRun(reading.ciRun)) {
+    await refuse(deliveryCiNotGreenMessage(pr.number), "delivery_ci_not_green");
   }
 }
 
