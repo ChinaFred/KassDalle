@@ -505,14 +505,27 @@ classDiagram
     &lt;&lt;tickets/{id}/admin/analysis, écrit par le serveur, lu par l'admin&gt;&gt;
     +List~TicketAnalysis~ analyses
     +DateTime? checkedAt
+    +bool validatedAtKnown
+    +DateTime? validatedAt
+    +int analysisCount
+    +DateTime? lastAnalysisAt
+    +DateTime? pendingAnswerAt
   }
 
   class TicketAnalysis {
     +int? commentId
+    +TicketAnalysisKind kind
     +String body
     +DateTime? createdAt
     +DateTime? updatedAt
     +bool truncated
+  }
+
+  class TicketAnalysisKind {
+    &lt;&lt;enumeration&gt;&gt;
+    analysis
+    reply
+    unverifiedReply
   }
 
   class TicketLaunch {
@@ -551,9 +564,13 @@ classDiagram
   }
 
   class AdminTicketDecisions {
-    &lt;&lt;calculé, adminTicketDecisions(Ticket, launches)&gt;&gt;
+    &lt;&lt;calculé, adminTicketDecisions(Ticket, launches, analysis)&gt;&gt;
     +bool canValidate
     +bool canRefuse
+    +bool canReply
+    +bool awaitingReply
+    +DateTime? lastAnalysisAt
+    +DateTime? pendingAnswerAt
     +bool canLaunchAnalysis
     +bool canLaunchDevelopment
     +DateTime? relaunchOf
@@ -757,6 +774,8 @@ classDiagram
   Ticket "1" --&gt; "1" TicketStatus
   Ticket "1" --&gt; "0..1" TicketAnalysisDoc : admin/analysis
   TicketAnalysisDoc "1" --&gt; "0..10" TicketAnalysis
+  TicketAnalysis --&gt; TicketAnalysisKind
+  TicketAnalysisDoc ..&gt; AdminTicketDecisions : Répondre, ticket bloqué
   Ticket "1" --&gt; "0..20" TicketLaunch : admin/launches
   TicketLaunch "1" --&gt; "0..1" TicketLaunchAction
   TicketLaunch "1" --&gt; "0..1" TicketLaunchOutcome
@@ -815,13 +834,20 @@ classDiagram
         sont ceux du schéma Firestore en <code>lowerCamelCase</code> (§3.12 bis de
         <span class="path">TechnicalRequirements.md</span>).
         <b>TicketAnalysisDoc</b> (<code>tickets/{id}/admin/analysis</code>) porte les analyses de
-        l'administrateur relevées sur l'Issue : dix au plus, dans l'ordre chronologique, chacune
-        coupée à 20 000 caractères (<code>truncated</code>). Écrit par le serveur seul, lu par
-        l'administrateur seul. <b>AdminTicketDecisions</b> n'est pas stocké : il dit quels
+        l'administrateur relevées sur l'Issue et ses réponses (<code>kind</code> :
+        <code>analysis</code> ; <code>reply</code>, « ## Précisions de l'administrateur » dont
+        l'identifiant est dans <code>answer_comment_ids</code>, écrit par le serveur ;
+        <code>unverifiedReply</code>, même titre publié hors de l'application) :
+        dix au plus, dans l'ordre chronologique, chacune coupée à 20 000 caractères
+        (<code>truncated</code>), et la date du dernier « validé » du mainteneur
+        (<code>validatedAt</code> ; champ absent, <code>validatedAtKnown</code> faux : date
+        inconnue). Écrit par le serveur seul, lu par l'administrateur seul. <b>AdminTicketDecisions</b> n'est pas stocké : il dit quels
         boutons la fiche admin montre (« Valider » pour un ticket Analysé hors Question,
         « Refuser » pour un ticket Reçu, Analysé, Validé ou En cours, « Lancer l'analyse » pour
-        un ticket Reçu, « Lancer le développement » pour un ticket Validé hors Question) ; le
-        serveur refait le même contrôle. <b>TicketLaunch</b>
+        un ticket Reçu, « Lancer le développement » pour un ticket Validé hors Question et non
+        bloqué, « Répondre » pour un ticket Analysé ou Validé hors Question qui a une analyse) ;
+        <code>awaitingReply</code> dit le ticket bloqué : Validé, dernière analyse postérieure
+        à <code>validatedAt</code>. Le serveur refait le même contrôle. <b>TicketLaunch</b>
         (<code>tickets/{id}/admin/launches</code>, vingt au plus) trace chaque session Claude
         Code lancée sur le ticket ; la dernière entrée d'un type, <code>launched</code> ou
         <code>unknown</code>, partie du statut actuel et avant <code>retryAfter</code>, masque

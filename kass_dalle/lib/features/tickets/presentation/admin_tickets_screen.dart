@@ -18,6 +18,7 @@ import '../../../core/widgets/error_message.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
+import '../domain/ticket_answer.dart';
 import '../domain/ticket_launch.dart';
 import '../domain/ticket_screens.dart';
 import 'ticket_widgets.dart';
@@ -28,10 +29,12 @@ import 'tickets_providers.dart';
 ///
 /// L'écran montre les tickets et leurs analyses, relance un envoi, et porte
 /// les décisions de l'administrateur : « Valider » (étiquette `validé` sur
-/// l'Issue), « Refuser » (motif publié sur GitHub, Issue fermée), « Lancer
-/// l'analyse » et « Lancer le développement » (session Claude Code lancée
-/// par une Routine). Elles passent par les callables `validateTicket`,
-/// `refuseTicket`, `launchTicketAnalysis` et `launchTicketDevelopment`.
+/// l'Issue), « Refuser » (motif publié sur GitHub, Issue fermée), « Répondre »
+/// (précisions publiées sous la dernière analyse, ticket ramené à Reçu),
+/// « Lancer l'analyse » et « Lancer le développement » (session Claude Code
+/// lancée par une Routine). Elles passent par les callables `validateTicket`,
+/// `refuseTicket`, `answerTicketAnalysis`, `launchTicketAnalysis` et
+/// `launchTicketDevelopment`.
 ///
 /// Le filtre « À traiter » est posé par les points d'entrée
 /// ([AdminTicketStatusFilterNotifier.enterToProcess]) ; l'écran ne le remet
@@ -507,6 +510,10 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
 
   bool get _busy => _busyTicketId == widget.ticket.id;
 
+  /// La décision en cours est une validation : seul « Valider » montre alors
+  /// l'indicateur, pas pendant une réponse ou un lancement.
+  bool _validating = false;
+
   void _setBusy(String ticketId) => setState(() => _busyTicketId = ticketId);
 
   /// Libère [ticketId], sauf si un autre ticket a pris la place entre-temps.
@@ -549,6 +556,14 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   /// Le motif a été publié sans que l'Issue soit fermée : il ne change plus.
   bool _reasonLocked = false;
 
+  /// Brouillon de la réponse à l'analyse : gardé si l'administrateur ferme
+  /// puis rouvre la boîte, vidé après un succès ou un changement de ticket.
+  final _answerController = TextEditingController();
+
+  /// La réponse a été publiée sans que les étiquettes changent : elle ne
+  /// change plus, et « Publier » finit le passage à Reçu.
+  bool _answerLocked = false;
+
   @override
   void didUpdateWidget(covariant _AdminTicketDetail oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -556,6 +571,8 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       _cancelRunTimer();
       _reasonController.clear();
       _reasonLocked = false;
+      _answerController.clear();
+      _answerLocked = false;
     }
   }
 
@@ -563,6 +580,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   void dispose() {
     _cancelRunTimer();
     _reasonController.dispose();
+    _answerController.dispose();
     super.dispose();
   }
 
@@ -602,7 +620,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Valider ce ticket ?'),
-        content: const Text('Il sera traité à votre prochaine demande.'),
+        content: const Text('Vous pourrez ensuite lancer le développement.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -617,6 +635,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     );
     if (confirmed != true || !mounted) return;
     final ticketId = widget.ticket.id;
+    _validating = true;
     _setBusy(ticketId);
     try {
       await ref.read(ticketRepositoryProvider).validate(ticketId);
@@ -632,6 +651,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         );
       }
     } finally {
+      _validating = false;
       _clearBusy(ticketId);
     }
   }
@@ -658,6 +678,81 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     context.showSuccessSnackBar(
       'Ticket refusé. Le motif est publié sur GitHub.',
     );
+  }
+
+  /// « Répondre » : publie les précisions de l'administrateur sous la
+  /// dernière analyse. Pendant l'envoi, la boîte peut être fermée : le
+  /// résultat s'affiche ensuite par le messenger capturé.
+  Future<void> _answer() async {
+    final ticket = widget.ticket;
+    final analysisAt = ref
+        .read(ticketAnalysisProvider(ticket.id))
+        .value
+        ?.lastAnalysisAt;
+    // Capturés avant l'appel : la boîte peut être fermée pendant l'envoi, et
+    // la fiche quittée, avant que le résultat n'arrive.
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    Future<String>? pending;
+    _setBusy(ticket.id);
+    try {
+      final result = await showDialog<_AnswerDialogResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _AnswerTicketDialog(
+          controller: _answerController,
+          locked: _answerLocked,
+          onLocked: () {
+            if (mounted && widget.ticket.id == ticket.id) {
+              setState(() => _answerLocked = true);
+            }
+          },
+          analysisAt: analysisAt,
+          validated: ticket.status == TicketStatus.validated,
+          submit: (text) => pending = ref
+              .read(ticketRepositoryProvider)
+              .answer(ticket.id, text),
+        ),
+      );
+      String? failure;
+      var published = result == _AnswerDialogResult.answered;
+      if (result == _AnswerDialogResult.detached) {
+        // « Fermer » pendant l'envoi : l'appel continue, son résultat
+        // s'affiche ici.
+        final inFlight = pending;
+        if (inFlight == null) return;
+        try {
+          await inFlight;
+          published = true;
+        } on TicketDecisionError catch (e) {
+          // Déjà remontée par `TicketRepository` (feature `tickets`).
+          failure = e.message;
+          if (e.partial && mounted && widget.ticket.id == ticket.id) {
+            setState(() => _answerLocked = true);
+          }
+        } catch (e) {
+          // Déjà remontée par `TicketRepository` (feature `tickets`).
+          failure =
+              'Réponse non publiée : ${shortErrorMessage(e)} Votre texte '
+              'est gardé.';
+        }
+      }
+      if (published && mounted && widget.ticket.id == ticket.id) {
+        _answerController.clear();
+        setState(() => _answerLocked = false);
+      }
+      if (!messenger.mounted) return;
+      if (published) {
+        messenger.showSuccessMessage(
+          'Réponse publiée. Le ticket repasse à Reçu : lancez l\'analyse.',
+          scheme: scheme,
+        );
+      } else if (failure != null) {
+        messenger.showErrorMessage(failure, scheme: scheme);
+      }
+    } finally {
+      _clearBusy(ticket.id);
+    }
   }
 
   Future<void> _launch(TicketLaunchAction action, DateTime? relaunchOf) async {
@@ -812,6 +907,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     final screenshot = ticket.screenshotPath;
     final reply = ticket.replyText;
     final launchesAsync = ref.watch(ticketLaunchesProvider(ticket.id));
+    final analysisAsync = ref.watch(ticketAnalysisProvider(ticket.id));
     // Lus par la boîte de lancement (lancements restants) : surveillés ici
     // pour être chargés avant l'appui, sur la fiche seule au téléphone.
     ref.watch(ticketsStatusProvider);
@@ -822,6 +918,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       launches: launchesAsync.hasError ? null : launchesAsync.value,
       launchesLoading: launchesAsync.isLoading && !launchesAsync.hasValue,
       now: now,
+      analysis: analysisAsync.hasError ? null : analysisAsync.value,
     );
     final hint = decisions.validateHint;
     _armRunTimer(decisions.runningUntil);
@@ -942,6 +1039,81 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       );
     }
 
+    // Une ligne d'information au plus au-dessus des boutons : le blocage,
+    // un lancement en cours, ou une réponse que la prochaine analyse lira.
+    final lastAnalysisAt = decisions.lastAnalysisAt;
+    final pendingAnswerAt = decisions.pendingAnswerAt;
+    final (IconData, String)? info = decisions.awaitingReply
+        ? (
+            Icons.mark_chat_unread_outlined,
+            lastAnalysisAt == null
+                ? 'La dernière analyse attend votre réponse.'
+                : 'La dernière analyse, du '
+                      '${formatTicketDateTime(lastAnalysisAt)}, attend votre '
+                      'réponse.',
+          )
+        : runningSince != null && runningAction != null
+        ? (
+            Icons.hourglass_top,
+            ticketLaunchRunningLine(runningAction, runningSince, now),
+          )
+        : pendingAnswerAt != null
+        ? (
+            Icons.mark_chat_unread_outlined,
+            'Vos précisions du ${formatTicketDateTime(pendingAnswerAt)} '
+                'seront lues par la prochaine analyse.',
+          )
+        : null;
+
+    // « Répondre » est masqué pendant une décision ou un lancement de la
+    // fiche : la boîte ne s'ouvre pas sur un ticket qui change.
+    final showReply = decisions.canReply && !_busy;
+    final replyIsPrimary = showReply && decisions.awaitingReply;
+    final secondary = <Widget>[
+      if (decisions.canRefuse)
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _refuse,
+          icon: const Icon(AppIcons.ticketStatusRefused),
+          label: const Text('Refuser'),
+        ),
+      if (showReply && !replyIsPrimary)
+        OutlinedButton.icon(
+          onPressed: _answer,
+          icon: const Icon(Icons.reply),
+          label: const Text('Répondre'),
+        ),
+    ];
+    final Widget? primary;
+    if (replyIsPrimary) {
+      primary = FilledButton.icon(
+        onPressed: _answer,
+        icon: const Icon(Icons.reply),
+        label: const Text('Répondre'),
+      );
+    } else if (decisions.canValidate) {
+      primary = FilledButton.icon(
+        onPressed: _busy ? null : _validate,
+        icon: _busy && _validating
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(AppIcons.ticketStatusValidated),
+        label: const Text('Valider'),
+      );
+    } else if (launchAction != null) {
+      primary = _LaunchButton(
+        action: launchAction,
+        relaunch: decisions.relaunchOf != null,
+        onPressed: _busy
+            ? null
+            : () => _launch(launchAction, decisions.relaunchOf),
+      );
+    } else {
+      primary = null;
+    }
+
     final bar = SafeArea(
       top: false,
       child: Padding(
@@ -950,58 +1122,34 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (runningSince != null && runningAction != null) ...[
+            if (info != null) ...[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ExcludeSemantics(
                     child: Icon(
-                      Icons.hourglass_top,
+                      info.$1,
                       size: 20,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: TicketInfoLine(
-                      ticketLaunchRunningLine(runningAction, runningSince, now),
-                    ),
-                  ),
+                  Expanded(child: TicketInfoLine(info.$2)),
                 ],
               ),
               const SizedBox(height: 8),
             ],
-            Wrap(
-              alignment: WrapAlignment.end,
+            // Secondaires à gauche, une seule action principale à droite. Trop
+            // large (texte agrandi, téléphone), la barre passe sur deux lignes,
+            // l'action principale en bas à droite.
+            OverflowBar(
+              alignment: MainAxisAlignment.spaceBetween,
+              overflowAlignment: OverflowBarAlignment.end,
               spacing: 8,
-              runSpacing: 8,
+              overflowSpacing: 8,
               children: [
-                if (decisions.canRefuse)
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _refuse,
-                    icon: const Icon(AppIcons.ticketStatusRefused),
-                    label: const Text('Refuser'),
-                  ),
-                if (decisions.canValidate)
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _validate,
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(AppIcons.ticketStatusValidated),
-                    label: const Text('Valider'),
-                  ),
-                if (launchAction != null)
-                  _LaunchButton(
-                    action: launchAction,
-                    relaunch: decisions.relaunchOf != null,
-                    onPressed: _busy
-                        ? null
-                        : () => _launch(launchAction, decisions.relaunchOf),
-                  ),
+                Wrap(spacing: 8, runSpacing: 8, children: secondary),
+                ?primary,
               ],
             ),
           ],
@@ -1648,8 +1796,265 @@ class _RefuseTicketDialogState extends State<_RefuseTicketDialog> {
   }
 }
 
+/// Ce que la boîte « Répondre à l'analyse » rend en se fermant (`null` :
+/// annulée avant l'envoi).
+enum _AnswerDialogResult {
+  answered,
+
+  /// Fermée par « Fermer » pendant l'envoi : l'appel continue, et l'appelant
+  /// en attend le résultat.
+  detached,
+}
+
+/// Boîte « Répondre à l'analyse » : la réponse part sur GitHub, dépôt public,
+/// sous la dernière analyse, et le ticket repasse à Reçu.
+///
+/// Reste ouverte sur un refus du serveur ou une panne, texte gardé. Pendant
+/// l'envoi, « Fermer » (ou le retour, ou Échap) la ferme sans couper l'appel :
+/// l'appelant en affiche le résultat.
+class _AnswerTicketDialog extends StatefulWidget {
+  final TextEditingController controller;
+
+  /// Réponse déjà publiée lors d'un échec partiel : le texte ne change plus.
+  final bool locked;
+  final VoidCallback onLocked;
+
+  /// Date de la dernière analyse, pour le sous-titre, ou `null`.
+  final DateTime? analysisAt;
+
+  /// Ticket Validé : la réponse retire la validation.
+  final bool validated;
+  final Future<String> Function(String text) submit;
+
+  const _AnswerTicketDialog({
+    required this.controller,
+    required this.locked,
+    required this.onLocked,
+    required this.analysisAt,
+    required this.validated,
+    required this.submit,
+  });
+
+  @override
+  State<_AnswerTicketDialog> createState() => _AnswerTicketDialogState();
+}
+
+class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
+  final _focus = FocusNode();
+  bool _sending = false;
+  String? _fieldError;
+  String? _error;
+  late bool _locked = widget.locked;
+
+  /// La boîte a déjà demandé sa fermeture : un second `pop` fermerait la
+  /// fiche (« Fermer » et la réponse arrivés dans la même image).
+  bool _closing = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _close(_AnswerDialogResult? result) {
+    if (_closing || !mounted) return;
+    _closing = true;
+    Navigator.of(context).pop(result);
+  }
+
+  void _detach() => _close(_AnswerDialogResult.detached);
+
+  void _showFieldError(String message) {
+    setState(() {
+      _fieldError = message;
+      _sending = false;
+    });
+    // Le champ est encore désactivé tant que l'image suivante n'est pas
+    // construite : le focus se pose après elle.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  Future<void> _submit() async {
+    final text = widget.controller.text;
+    final fieldError = ticketAnswerFieldError(text);
+    if (fieldError != null) {
+      _showFieldError(fieldError);
+      return;
+    }
+    setState(() {
+      _fieldError = null;
+      _error = null;
+      _sending = true;
+    });
+    try {
+      await widget.submit(text.trim());
+      _close(_AnswerDialogResult.answered);
+    } on TicketDecisionError catch (e) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`).
+      if (!mounted || _closing) return;
+      if (e.field == 'answer') {
+        _showFieldError(e.message);
+      } else {
+        setState(() {
+          _error = e.message;
+          _sending = false;
+          if (e.partial) _locked = true;
+        });
+        if (e.partial) widget.onLocked();
+      }
+    } catch (e) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`).
+      if (!mounted || _closing) return;
+      setState(() {
+        _error =
+            'Réponse non publiée : ${shortErrorMessage(e)} Votre texte est '
+            'gardé.';
+        _sending = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant);
+    final error = _error;
+    final analysisAt = widget.analysisAt;
+    return PopScope(
+      canPop: !_sending,
+      // Le retour (ou Échap) pendant l'envoi vaut « Fermer ».
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _sending) _detach();
+      },
+      child: AlertDialog(
+        scrollable: true,
+        title: const Text('Répondre à l\'analyse'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (analysisAt != null) ...[
+              Text(
+                'Analyse du ${formatTicketDateTime(analysisAt)}',
+                style: muted,
+              ),
+              const SizedBox(height: 12),
+            ],
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(
+                    child: Icon(Icons.public, color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Publié sur GitHub, dépôt public. N\'y mettez ni '
+                          'nom, ni e-mail, ni donnée privée.',
+                          style: muted,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Le ticket repassera à « Reçu ». Relancez ensuite '
+                          'l\'analyse pour qu\'elle lise votre réponse.',
+                          style: muted,
+                        ),
+                        if (widget.validated) ...[
+                          const SizedBox(height: 8),
+                          Text('La validation sera retirée.', style: muted),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: widget.controller,
+              focusNode: _focus,
+              enabled: !_sending,
+              readOnly: _locked,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 10,
+              maxLength: kTicketAnswerMaxChars,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: 'Votre réponse',
+                helperText: 'Répondez aux questions de l\'analyse.',
+                helperMaxLines: 3,
+                errorText: _fieldError,
+                errorMaxLines: 3,
+              ),
+            ),
+            if (_locked && error == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Cette réponse est déjà publiée sur GitHub. Publier remet le '
+                'ticket à Reçu.',
+                style: muted,
+              ),
+            ],
+            if (_sending) ...[
+              const SizedBox(height: 12),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  'Publication en cours. Vous pouvez fermer : le résultat '
+                  's\'affichera dans un message.',
+                  style: muted,
+                ),
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              Semantics(
+                liveRegion: true,
+                child: Text(error, style: TextStyle(color: cs.error)),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          // Avant l'appui sur « Publier », rien n'est appelé. Pendant
+          // l'envoi, « Fermer » laisse l'appel aller à son terme.
+          TextButton(
+            onPressed: _sending ? _detach : () => _close(null),
+            child: Text(_sending ? 'Fermer' : 'Annuler'),
+          ),
+          FilledButton(
+            onPressed: _sending ? null : _submit,
+            child: _sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Publier'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Section « Analyses (N) » de la fiche : les analyses du mainteneur
-/// relevées sur l'Issue, en Markdown, dans l'ordre chronologique.
+/// relevées sur l'Issue, en Markdown, dans l'ordre chronologique, et les
+/// réponses de l'administrateur intercalées à leur date. N compte les
+/// analyses seules.
 class _AnalysesSection extends ConsumerWidget {
   final Ticket ticket;
   final Future<void> Function(String url) onOpenGithub;
@@ -1683,7 +2088,7 @@ class _AnalysesSection extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Analyses (${analyses.length})',
+                  'Analyses (${doc?.analysisCount ?? 0})',
                   style: theme.textTheme.titleSmall,
                 ),
                 const SizedBox(height: 8),
@@ -1766,35 +2171,84 @@ class _AnalysisCard extends StatelessWidget {
     final cs = theme.colorScheme;
     final created = analysis.createdAt;
     final url = githubUrl;
+    final isReply = analysis.kind == TicketAnalysisKind.reply;
+    // Une réponse de l'administrateur se distingue d'une analyse par sa
+    // couleur et son icône ; son texte suit la couleur de son fond.
+    final fg = isReply ? cs.onSecondaryContainer : null;
+    final Widget header;
+    if (isReply) {
+      header = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ExcludeSemantics(child: Icon(Icons.reply, size: 20, color: fg)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(
+                created == null
+                    ? 'Votre réponse'
+                    : 'Votre réponse du ${formatTicketDateTime(created)}',
+                style: theme.textTheme.labelLarge?.copyWith(color: fg),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      final unverified = analysis.kind == TicketAnalysisKind.unverifiedReply;
+      final title = Semantics(
+        header: true,
+        child: Text(
+          unverified
+              ? (created == null
+                    ? 'Précisions'
+                    : 'Précisions du ${formatTicketDateTime(created)}')
+              : (created == null
+                    ? 'Analyse'
+                    : 'Analyse du ${formatTicketDateTime(created)}'),
+          style: theme.textTheme.labelLarge,
+        ),
+      );
+      // Une `## Précisions…` que l'application n'a pas publiée (une session
+      // signe comme le même compte) ne se présente pas comme votre réponse.
+      header = unverified
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                title,
+                const TicketInfoLine('Non publiée depuis l\'application.'),
+              ],
+            )
+          : title;
+    }
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
+        color: isReply ? cs.secondaryContainer : cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            created == null
-                ? 'Analyse'
-                : 'Analyse du ${formatTicketDateTime(created)}',
-            style: theme.textTheme.labelLarge,
-          ),
+          header,
           const SizedBox(height: 8),
           MarkdownBody(
             data: ticketAnalysisDisplayBody(analysis.body),
             selectable: true,
             extensionSet: md.ExtensionSet.gitHubFlavored,
             styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-              h1: theme.textTheme.titleLarge,
-              h2: theme.textTheme.titleMedium,
-              h3: theme.textTheme.titleSmall,
-              p: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-              listBullet: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+              h1: theme.textTheme.titleLarge?.copyWith(color: fg),
+              h2: theme.textTheme.titleMedium?.copyWith(color: fg),
+              h3: theme.textTheme.titleSmall?.copyWith(color: fg),
+              p: theme.textTheme.bodyMedium?.copyWith(height: 1.5, color: fg),
+              listBullet: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.5,
+                color: fg,
+              ),
               blockquote: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant,
+                color: fg ?? cs.onSurfaceVariant,
               ),
             ),
             onTapLink: (_, href, _) => _openLink(context, href),
@@ -1810,7 +2264,11 @@ class _AnalysisCard extends StatelessWidget {
           ),
           if (analysis.truncated) ...[
             const SizedBox(height: 8),
-            const TicketInfoLine('Analyse tronquée, voir GitHub.'),
+            TicketInfoLine(
+              isReply
+                  ? 'Réponse tronquée, voir GitHub.'
+                  : 'Analyse tronquée, voir GitHub.',
+            ),
             if (url != null)
               TextButton(
                 onPressed: () => onOpenGithub(url),

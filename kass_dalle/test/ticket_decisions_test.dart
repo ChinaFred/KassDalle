@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_analysis.dart';
+import 'package:kass_dalle/features/tickets/domain/ticket_answer.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket_launch.dart';
 import 'package:kass_dalle/features/tickets/presentation/tickets_providers.dart';
 
@@ -14,7 +15,9 @@ Ticket _ticket({
   String status = 'analyzed',
   String type = 'bug',
   int? issue = 12,
+  DateTime? statusChangedAt,
 }) => Ticket.fromMap(id, {
+  'status_changed_at': ?statusChangedAt,
   'type': type,
   'title': 'Un titre',
   'description': 'Une description',
@@ -200,6 +203,10 @@ void main() {
       expect(kTicketRefusalPartialReason, fixture['refusal_partial_reason']);
     });
 
+    test('raison de l\'échec partiel d\'une réponse', () {
+      expect(kTicketAnswerPartialReason, fixture['answer_partial_reason']);
+    });
+
     for (final c in (fixture['cases'] as List).cast<Map<String, dynamic>>()) {
       final hasIssue = c['has_issue'] as bool;
       test('${c['status']} · ${c['type']} · '
@@ -253,12 +260,300 @@ void main() {
           action: TicketLaunchAction.fromValue(r['action'])!,
           rawStatus: r['raw_status'] as String,
           now: DateTime.parse(r['now'] as String),
+          statusChangedAt: iso(r['status_changed_at']),
         );
         expect(state.running, r['running']);
         expect(state.runningSince, iso(r['running_since']));
         expect(state.relaunchOf, iso(r['relaunch_of']));
       });
     }
+  });
+
+  group('fixture ticket_decisions.json : réponse et ticket bloqué', () {
+    final fixture =
+        jsonDecode(
+              File('test-fixtures/ticket_decisions.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    DateTime? iso(Object? v) => v is String ? DateTime.parse(v) : null;
+
+    for (final c
+        in (fixture['reply_cases'] as List).cast<Map<String, dynamic>>()) {
+      final hasIssue = c['has_issue'] as bool;
+      final hasAnalysis = c['has_analysis'] as bool;
+      final running = c['development_running'] as bool;
+      test('Répondre : ${c['status']} · ${c['type']} · '
+          '${hasIssue ? 'avec' : 'sans'} Issue · '
+          '${hasAnalysis ? 'avec' : 'sans'} analyse'
+          '${running ? ' · développement en cours' : ''}', () {
+        expect(
+          ticketCanReply(
+            rawStatus: c['status'] as String,
+            type: TicketType.fromValue(c['type'])!,
+            hasIssue: hasIssue,
+            hasAnalysis: hasAnalysis,
+            developmentRunning: running,
+          ),
+          c['can_reply'],
+        );
+      });
+    }
+
+    test('Répondre suit la règle partagée dans adminTicketDecisions', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launches: const [],
+        now: DateTime.utc(2026, 10, 14, 12),
+        analysis: TicketAnalysisDoc.fromMap({
+          'analyses': [
+            {
+              'body': '## Analyse\n\nA',
+              'created_at': DateTime.utc(2026, 10, 14, 10),
+            },
+          ],
+        }),
+      );
+      expect(d.canReply, isTrue);
+    });
+
+    for (final c
+        in (fixture['awaiting_reply'] as List).cast<Map<String, dynamic>>()) {
+      test('bloqué : ${c['name']}', () {
+        expect(
+          ticketAwaitingReply(
+            rawStatus: c['status'] as String,
+            type: TicketType.fromValue(c['type'])!,
+            lastAnalysisAt: iso(c['last_analysis_at']),
+            validatedAtKnown: c['validated_known'] as bool,
+            validatedAt: iso(c['validated_at']),
+          ),
+          c['awaiting_reply'],
+        );
+      });
+    }
+  });
+
+  group('fixture ticket_answer_text.json (partagée avec le serveur)', () {
+    final fixture =
+        jsonDecode(
+              File('test-fixtures/ticket_answer_text.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+
+    test('bornes du texte', () {
+      expect(kTicketAnswerMinChars, fixture['min_chars']);
+      expect(kTicketAnswerMaxChars, fixture['max_chars']);
+    });
+
+    for (final c
+        in (fixture['email_cases'] as List).cast<Map<String, dynamic>>()) {
+      test('adresse e-mail : "${c['text']}"', () {
+        expect(
+          ticketTextContainsEmail(c['text'] as String),
+          c['contains_email'],
+        );
+      });
+    }
+
+    test('message sous le champ', () {
+      expect(ticketAnswerFieldError('  abcd '), kTicketAnswerTooShortMessage);
+      expect(
+        ticketAnswerFieldError('Écrivez à moi@exemple.fr'),
+        kTicketAnswerEmailMessage,
+      );
+      expect(ticketAnswerFieldError('Oui, garder le bouton.'), isNull);
+      expect(ticketAnswerFieldError('Merci @ChinaFred'), isNull);
+    });
+  });
+
+  group('Répondre et ticket bloqué', () {
+    final now = DateTime.utc(2026, 10, 14, 13);
+    TicketAnalysisDoc doc({
+      required List<Map<String, Object?>> entries,
+      Object? validatedAt = const _Absent(),
+    }) => TicketAnalysisDoc.fromMap({
+      'analyses': entries,
+      if (validatedAt is! _Absent) 'validated_at': validatedAt,
+    });
+    Map<String, Object?> analysis(DateTime at) => {
+      'body': '## Analyse\n\nA',
+      'created_at': at,
+    };
+    Map<String, Object?> reply(DateTime at) => {
+      'kind': 'reply',
+      'body': '## Précisions de l\'administrateur\n\nR',
+      'created_at': at,
+    };
+    TicketLaunch devLaunch(DateTime at) => TicketLaunch.fromMap({
+      'id': 'l1',
+      'action': 'developpement',
+      'outcome': 'launched',
+      'from_status': 'validated',
+      'launched_at': at,
+      'retry_after': at.add(const Duration(hours: 3)),
+    })!;
+
+    test('bloqué : Répondre offert, développement, relance et « en cours » '
+        'retirés', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launches: [devLaunch(DateTime.utc(2026, 10, 14, 12))],
+        now: now,
+        analysis: doc(
+          entries: [analysis(DateTime.utc(2026, 10, 14, 11))],
+          validatedAt: DateTime.utc(2026, 10, 14, 10),
+        ),
+      );
+      expect(d.awaitingReply, isTrue);
+      expect(d.canReply, isTrue);
+      expect(d.canLaunchDevelopment, isFalse);
+      expect(d.runningSince, isNull);
+      expect(d.relaunchOf, isNull);
+      expect(d.lastAnalysisAt, DateTime.utc(2026, 10, 14, 11));
+    });
+
+    test('date de validation inconnue : pas bloqué', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launches: const [],
+        now: now,
+        analysis: doc(entries: [analysis(DateTime.utc(2026, 10, 14, 11))]),
+      );
+      expect(d.awaitingReply, isFalse);
+      expect(d.canLaunchDevelopment, isTrue);
+      expect(d.canReply, isTrue);
+    });
+
+    test('lancement en cours : Répondre masqué', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'validated'),
+        launches: [devLaunch(DateTime.utc(2026, 10, 14, 12))],
+        now: now,
+        analysis: doc(
+          entries: [analysis(DateTime.utc(2026, 10, 14, 9))],
+          validatedAt: DateTime.utc(2026, 10, 14, 10),
+        ),
+      );
+      expect(d.runningSince, isNotNull);
+      expect(d.canReply, isFalse);
+    });
+
+    test('analyses pas encore lues : ni Répondre, ni blocage', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'analyzed'),
+        launches: const [],
+        now: now,
+      );
+      expect(d.canReply, isFalse);
+      expect(d.awaitingReply, isFalse);
+    });
+
+    test('Reçu après une réponse : précisions en attente, relance ignorée', () {
+      final d = adminTicketDecisions(
+        _ticket(
+          status: 'received',
+          statusChangedAt: DateTime.utc(2026, 10, 14, 12),
+        ),
+        launches: [
+          TicketLaunch.fromMap({
+            'id': 'a1',
+            'action': 'analyse',
+            'outcome': 'launched',
+            'from_status': 'received',
+            'launched_at': DateTime.utc(2026, 10, 14, 8),
+            'retry_after': DateTime.utc(2026, 10, 14, 9),
+          })!,
+        ],
+        now: now,
+        analysis: doc(
+          entries: [
+            analysis(DateTime.utc(2026, 10, 14, 10)),
+            reply(DateTime.utc(2026, 10, 14, 12)),
+          ],
+        ),
+      );
+      expect(d.pendingAnswerAt, DateTime.utc(2026, 10, 14, 12));
+      expect(d.canLaunchAnalysis, isTrue);
+      expect(d.relaunchOf, isNull);
+      expect(d.canReply, isFalse);
+    });
+
+    test('sous-document : nature, compte, dates', () {
+      final d = doc(
+        entries: [
+          analysis(DateTime.utc(2026, 10, 14, 8)),
+          reply(DateTime.utc(2026, 10, 14, 9)),
+          analysis(DateTime.utc(2026, 10, 14, 10)),
+          {'kind': 'inconnu', 'body': 'x'},
+        ],
+        validatedAt: null,
+      );
+      expect(d.analyses.map((a) => a.kind), [
+        TicketAnalysisKind.analysis,
+        TicketAnalysisKind.reply,
+        TicketAnalysisKind.analysis,
+      ]);
+      expect(d.analysisCount, 2);
+      expect(d.lastAnalysisAt, DateTime.utc(2026, 10, 14, 10));
+      // La réponse précède la dernière analyse : rien en attente.
+      expect(d.pendingAnswerAt, isNull);
+      expect(d.validatedAtKnown, isTrue);
+      expect(d.validatedAt, isNull);
+      expect(TicketAnalysisDoc.fromMap({}).validatedAtKnown, isFalse);
+    });
+
+    test('texte affiché d\'une réponse sans sa ligne de titre', () {
+      expect(
+        ticketAnalysisDisplayBody(
+          '## Précisions de l\'administrateur\n\nOui, garder.',
+        ),
+        'Oui, garder.',
+      );
+    });
+
+    test('précision non publiée depuis l\'application : ni réponse, ni '
+        'analyse', () {
+      final d = doc(
+        entries: [
+          analysis(DateTime.utc(2026, 10, 14, 8)),
+          {
+            'kind': 'unverified_reply',
+            'body': '## Précisions de l\'administrateur\n\nX',
+            'created_at': DateTime.utc(2026, 10, 14, 9),
+          },
+        ],
+      );
+      expect(d.analyses.last.kind, TicketAnalysisKind.unverifiedReply);
+      expect(d.analysisCount, 1);
+      expect(d.pendingAnswerAt, isNull);
+    });
+
+    test('erreur du serveur sous le champ', () {
+      final e = ticketDecisionErrorFrom(
+        message: 'Retirez l\'adresse e-mail avant de publier.',
+        details: {'field': 'answer', 'reason': 'contains_email'},
+      );
+      expect(e?.field, 'answer');
+      expect(e?.partial, isFalse);
+      expect(
+        ticketDecisionErrorFrom(
+          message:
+              'Réponse publiée, mais le statut n\'a pas changé. '
+              'Réessayez.',
+          details: {'reason': 'answer_published_labels_failed'},
+        )?.field,
+        isNull,
+      );
+      expect(
+        ticketDecisionErrorFrom(
+          message:
+              'Réponse publiée, mais le statut n\'a pas changé. '
+              'Réessayez.',
+          details: {'reason': kTicketAnswerPartialReason},
+        )?.partial,
+        isTrue,
+      );
+    });
   });
 
   group('boutons de lancement', () {
@@ -618,4 +913,9 @@ void main() {
       expect(ticketAnalysisImagePlaceholder(null), '[Image non affichée]');
     });
   });
+}
+
+/// Marque un champ absent du sous-document (distinct de `null`).
+class _Absent {
+  const _Absent();
 }

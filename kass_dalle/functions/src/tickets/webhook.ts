@@ -10,7 +10,10 @@
  * 400. Les refus de signature sont journalisés une fois par minute et par
  * instance au plus, avec leur nombre (`SignatureRejectionLog`).
  *
- * Événements traités : `issues` (étiquettes, fermeture, réouverture),
+ * Événements traités : `issues` (étiquettes, fermeture, réouverture ; un
+ * `labeled validé` du mainteneur écrit aussi `validated_at` dans
+ * `tickets/{id}/admin/analysis` ; un état d'Issue antérieur au dernier retour
+ * à « Reçu » d'une réponse de l'administrateur est ignoré),
  * `issue_comment` (réponse de l'administrateur ; et pour tout commentaire du
  * mainteneur créé, modifié ou supprimé, relecture des commentaires de l'Issue
  * et réécriture des analyses `tickets/{id}/admin/analysis`), `pull_request` (PR ouverte
@@ -43,6 +46,7 @@ import {
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
 import { GITHUB_REPO_FULL_NAME, GithubError, githubToken, readRemoteIssue } from "./github";
 import {
+  LABEL_VALIDATED,
   closingIssueNumbers,
   isTrustedPrAuthor,
   replyFromComment,
@@ -54,6 +58,7 @@ import {
   markTokenInvalid,
   refreshTicketAnalyses,
   ticketIdsForIssue,
+  updateValidatedAt,
   type GithubUpdate,
 } from "./service";
 
@@ -114,6 +119,7 @@ export function updatesFromEvent(
         issueNumber: raw.number,
         update: {
           statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: false }, type),
+          issueUpdatedAt: issue.updatedAt,
         },
       },
     ];
@@ -159,6 +165,35 @@ export function updatesFromEvent(
   }
 
   return [];
+}
+
+/**
+ * Un `validé` posé par le mainteneur : le numéro de l'Issue et l'instant
+ * (`issue.updated_at` de GitHub, à défaut `nowIso`), ou `null`. Pure.
+ *
+ * Seul l'expéditeur `GITHUB_TICKETS_MAINTAINER_ID` compte : c'est le
+ * « validé » que la session de développement exige.
+ */
+export function validatedLabelFromEvent(
+  event: string,
+  payload: Payload,
+  nowIso: string,
+): { issueNumber: number; at: string } | null {
+  if (event !== "issues" || payload.action !== "labeled") return null;
+  const repo = (payload.repository as { full_name?: unknown } | undefined)?.full_name;
+  if (typeof repo !== "string" || repo.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()) {
+    return null;
+  }
+  const label = payload.label as { name?: unknown } | undefined;
+  const sender = payload.sender as { id?: unknown } | undefined;
+  const issue = payload.issue as Payload | undefined;
+  if (label?.name !== LABEL_VALIDATED || sender?.id !== GITHUB_TICKETS_MAINTAINER_ID) return null;
+  if (!issue || typeof issue.number !== "number" || issue.pull_request != null) return null;
+  const at =
+    typeof issue.updated_at === "string" && !Number.isNaN(Date.parse(issue.updated_at))
+      ? issue.updated_at
+      : nowIso;
+  return { issueNumber: issue.number, at };
 }
 
 /**
@@ -298,6 +333,27 @@ export const githubTicketWebhook = onRequest(
       });
       res.status(500).send("Erreur interne.");
       return;
+    }
+
+    const validated = validatedLabelFromEvent(event, payload, new Date().toISOString());
+    if (validated !== null) {
+      try {
+        for (const ticketId of await ticketIdsForIssue(validated.issueNumber)) {
+          // L'étiquette vient d'être posée : la date ne recule pas.
+          await updateValidatedAt(ticketId, Date.parse(validated.at), true);
+          changed++;
+        }
+      } catch (err) {
+        await logError({
+          message: `githubTicketWebhook : date de validation de l'Issue #${validated.issueNumber} non écrite`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          correlationId,
+          feature: "tickets",
+          extra: { delivery },
+        });
+        res.status(500).send("Erreur interne.");
+        return;
+      }
     }
 
     const refreshIssue = analysisRefreshFromEvent(event, payload);

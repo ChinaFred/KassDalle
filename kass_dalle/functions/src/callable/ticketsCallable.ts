@@ -20,11 +20,22 @@
  *   la ferme `not_planned` et écrit `refused` et `reply_text`. Rend
  *   `{ status }`. Échec partiel (motif publié, Issue ouverte) : `aborted`,
  *   `details.reason = "reply_published_close_failed"`.
+ * - `answerTicketAnalysis` — administrateur. Publie la réponse de
+ *   l'administrateur à la dernière analyse (`## Précisions de
+ *   l'administrateur`) sur l'Issue d'un ticket Analysé ou Validé (hors
+ *   Question), passe ses étiquettes à `statut:à-analyser` (retire `validé`)
+ *   et ramène le ticket à Reçu (`tickets/decisions.ts`). Texte de 5 à 4 000
+ *   caractères, sans adresse e-mail (`details.reason = "contains_email"`).
+ *   Rend `{ status }`. Échec partiel (réponse publiée, étiquettes
+ *   inchangées) : `aborted`, `details.reason = "answer_published_labels_failed"` ;
+ *   une reprise ne republie pas la réponse.
  *
  * - `launchTicketAnalysis` — administrateur. Lance la routine Claude Code
  *   d'analyse sur un ticket Reçu (`analyse #N`). Rend `{ outcome, session_url }`.
  * - `launchTicketDevelopment` — administrateur. Lance la routine de
- *   développement sur un ticket Validé (`developpement #N`). Même réponse.
+ *   développement sur un ticket Validé (`developpement #N`). Même réponse. Refusé avant tout comptage
+ *   quand la dernière analyse attend une réponse
+ *   (`details.reason = "launch_needs_answer"`).
  *   Les deux suivent `tickets/launch.ts` : bail partagé avec les décisions,
  *   plafond quotidien (`launches_per_day`, 10 par défaut), Issue relue, appel
  *   unique sans relance. Deux callables plutôt qu'un seul avec `action` :
@@ -63,6 +74,7 @@ import {
   SCREENSHOT_SIGNATURE_BYTES,
   TicketInputError,
   globalQuotaDocId,
+  readAnswerText,
   readRefusalReason,
   isPlausibleDocId,
   memberQuotaDocId,
@@ -77,7 +89,11 @@ import {
   type TicketStatus,
 } from "../tickets/rules";
 import { sendTicket } from "../tickets/service";
-import { refuseTicketDecision, validateTicketDecision } from "../tickets/decisions";
+import {
+  answerTicketDecision,
+  refuseTicketDecision,
+  validateTicketDecision,
+} from "../tickets/decisions";
 import { launchTicketSession, type LaunchResult } from "../tickets/launch";
 import type { LaunchAction } from "../tickets/rules";
 
@@ -399,6 +415,26 @@ export function readRefusalArg(data: unknown): string {
   }
 }
 
+/**
+ * Réponse de l'administrateur d'une requête. Lève `invalid-argument` (champ
+ * `answer`, et `reason = "contains_email"` pour une adresse e-mail). Pure.
+ */
+export function readAnswerArg(data: unknown): string {
+  const raw = (data as Record<string, unknown> | undefined)?.answer;
+  requireBoundedText(raw, { field: "answer", max: SHORT_TEXT_MAX_CHARS });
+  try {
+    return readAnswerText(raw);
+  } catch (err) {
+    if (err instanceof TicketInputError) {
+      throw new HttpsError("invalid-argument", err.message, {
+        field: err.field,
+        ...(err.reason !== null ? { reason: err.reason } : {}),
+      });
+    }
+    throw err;
+  }
+}
+
 export const validateTicket = onCall(
   { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
   async (req): Promise<{ status: TicketStatus; changed: boolean }> => {
@@ -446,6 +482,32 @@ export const refuseTicket = onCall(
         feature: "tickets",
       });
       throw new HttpsError("internal", "Le ticket n'a pas pu être refusé. Réessayez.");
+    }
+  },
+);
+
+export const answerTicketAnalysis = onCall(
+  { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
+  async (req): Promise<{ status: TicketStatus }> => {
+    const ctx = await requireAdmin(req, "ticket_reponse");
+    const ticketId = readTicketIdArg(req.data);
+    const answer = readAnswerArg(req.data);
+    try {
+      return await answerTicketDecision(ticketId, answer, {
+        correlationId: ctx.correlationId,
+        userId: ctx.userId,
+      });
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      await logError({
+        message: `answerTicketAnalysis : réponse au ticket ${ticketId} non publiée`,
+        errorDescription: describe(err),
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError("internal", "La réponse n'a pas pu être publiée. Réessayez.");
     }
   },
 );

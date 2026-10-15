@@ -1,0 +1,103 @@
+{
+  "_comment": "Texte d'une réponse de l'administrateur à une analyse (« Répondre », callable answerTicketAnalysis). Le client valide le champ avant l'appel (lib/features/tickets/domain/ticket_answer.dart : kTicketAnswerMinChars, kTicketAnswerMaxChars, ticketTextContainsEmail) ; le serveur refait le contrôle (functions/src/tickets/rules.ts : ANSWER_MIN_CHARS, ANSWER_MAX_CHARS, containsEmailAddress, readAnswerText). min_chars et max_chars : bornes après retrait des espaces de bord. email_cases : contains_email vrai quand le texte contient une adresse e-mail — partie locale ASCII (lettres, chiffres, . _ % + -), @, domaine en étiquettes séparées par des points, suffixe d'au moins deux lettres. Une mention « @ChinaFred », un @ entouré d'espaces ou un domaine sans suffixe ne sont pas des adresses. Le texte part sur un dépôt GitHub public : une adresse y est refusée (« Retirez l'adresse e-mail avant de publier. »). Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts. Avant le contrôle, le texte perd ses caractères invisibles U+200B à U+200D et U+2060, puis passe en forme NFKC (serveur : String.normalize('NFKC')). Le client n'a pas de NFKC : il ramène les seuls caractères dont la forme NFKC tombe dans l'alphabet d'une adresse — formes pleine chasse U+FF01 à U+FF5E, petites formes U+FE52 (.), U+FE62 (+), U+FE63 (-), U+FE6A (%), U+FE6B (@), et U+2024 (.). Le serveur, plus large, reste le contrôle qui décide ; les cas ci-dessous sont couverts par les deux.",
+  "min_chars": 5,
+  "max_chars": 4000,
+  "email_cases": [
+    {
+      "text": "Écrivez-moi à jean.dupont@gmail.com, merci.",
+      "contains_email": true
+    },
+    {
+      "text": "a@b.fr",
+      "contains_email": true
+    },
+    {
+      "text": "contact@mail.sous-domaine.example.org",
+      "contains_email": true
+    },
+    {
+      "text": "prenom+courses@exemple.fr",
+      "contains_email": true
+    },
+    {
+      "text": "MAJUSCULES@EXEMPLE.COM",
+      "contains_email": true
+    },
+    {
+      "text": "En fin de phrase : toto_99@exemple.fr.",
+      "contains_email": true
+    },
+    {
+      "text": "Lien <mailto:famille@exemple.fr>",
+      "contains_email": true
+    },
+    {
+      "text": "Accent avant : nom.prénom@exemple.fr",
+      "contains_email": true
+    },
+    {
+      "text": "Rien à signaler, le planning convient.",
+      "contains_email": false
+    },
+    {
+      "text": "Merci @ChinaFred pour l'analyse.",
+      "contains_email": false
+    },
+    {
+      "text": "a @ b",
+      "contains_email": false
+    },
+    {
+      "text": "a@b",
+      "contains_email": false
+    },
+    {
+      "text": "voir user@localhost",
+      "contains_email": false
+    },
+    {
+      "text": "x@y.z",
+      "contains_email": false
+    },
+    {
+      "text": "version 1.2@3.4",
+      "contains_email": false
+    },
+    {
+      "text": "",
+      "contains_email": false
+    },
+    {
+      "text": "jean​@exemple.fr",
+      "contains_email": true
+    },
+    {
+      "text": "a@‍b.fr",
+      "contains_email": true
+    },
+    {
+      "text": "jean@exe⁠mple.fr",
+      "contains_email": true
+    },
+    {
+      "text": "jean＠exemple．fr",
+      "contains_email": true
+    },
+    {
+      "text": "ｊｅａｎ@ｅｘｅｍｐｌｅ.ｆｒ",
+      "contains_email": true
+    },
+    {
+      "text": "jean﹫exemple﹒fr",
+      "contains_email": true
+    },
+    {
+      "text": "Merci @​ChinaFred.",
+      "contains_email": false
+    },
+    {
+      "text": "＠ChinaFred",
+      "contains_email": false
+    }
+  ]
+}

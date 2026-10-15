@@ -134,6 +134,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'ticket_relance': 'Relance de l\'envoi d\'un ticket',
   'ticket_validation': 'Validation d\'un ticket',
   'ticket_refus': 'Refus d\'un ticket',
+  'ticket_reponse': 'Réponse à l\'analyse d\'un ticket',
   'ticket_webhook': 'Retour de GitHub sur un ticket',
   'tickets_sync': 'Synchronisation horaire des tickets',
 

@@ -457,7 +457,13 @@ describe("client GitHub", () => {
     assert.deepEqual(labelNames([{ name: "validé" }, "x", null, { id: 1 }]), ["validé", "x"]);
     assert.deepEqual(
       readRemoteIssue({ state: "closed", state_reason: "completed", labels: [{ name: "a" }] }),
-      { state: "closed", stateReason: "completed", labels: ["a"], isPullRequest: false },
+      {
+        state: "closed",
+        stateReason: "completed",
+        labels: ["a"],
+        isPullRequest: false,
+        updatedAt: null,
+      },
     );
   });
 });

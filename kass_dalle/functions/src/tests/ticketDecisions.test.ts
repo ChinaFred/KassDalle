@@ -6,7 +6,11 @@
  * - lecture du motif de refus et reconnaissance d'un motif déjà publié ;
  * - conditions de « Valider » et « Refuser », message d'un échec GitHub ;
  * - événement du webhook qui demande de relire les analyses ;
- * - lecture des arguments des callables.
+ * - lecture des arguments des callables ;
+ * - lot 2 : réponse de l'administrateur à une analyse (texte, adresse
+ *   e-mail, état de la dernière analyse), ticket bloqué, dernier « validé »
+ *   du mainteneur, état d'Issue périmé, lancements antérieurs à un
+ *   changement de statut.
  */
 
 import { describe, test } from "node:test";
@@ -18,6 +22,22 @@ import { HttpsError } from "firebase-functions/v2/https";
 import {
   ANALYSIS_MAX_CHARS,
   ANALYSIS_MAX_COUNT,
+  ANSWER_MAX_CHARS,
+  ANSWER_MIN_CHARS,
+  ANSWER_DEVELOPMENT_RUNNING_MESSAGE,
+  ANSWER_PARTIAL_REASON,
+  analysisAnswerState,
+  answerCommentBody,
+  nextValidatedAt,
+  readAnswerCommentIds,
+  answerPrecondition,
+  containsEmailAddress,
+  isAnswerComment,
+  isStaleIssueSnapshot,
+  lastMaintainerValidatedAt,
+  readAnswerText,
+  ticketAwaitingReply,
+  ticketCanReply,
   REFUSAL_PARTIAL_REASON,
   TicketInputError,
   analysesFromComments,
@@ -40,8 +60,14 @@ import {
   type TicketType,
 } from "../tickets/rules";
 import { readRemoteComment } from "../tickets/github";
-import { analysisRefreshFromEvent, updatesFromEvent } from "../tickets/webhook";
-import { readRefusalArg, readTicketIdArg } from "../callable/ticketsCallable";
+import {
+  analysisRefreshFromEvent,
+  updatesFromEvent,
+  validatedLabelFromEvent,
+} from "../tickets/webhook";
+import { lastAnalysisMillis } from "../tickets/stored";
+import { readAnswerArg, readRefusalArg, readTicketIdArg } from "../callable/ticketsCallable";
+import { Timestamp } from "firebase-admin/firestore";
 import { GITHUB_TICKETS_MAINTAINER_ID } from "../config";
 
 const MAINTAINER_ID = GITHUB_TICKETS_MAINTAINER_ID;
@@ -143,6 +169,10 @@ describe("analysesFromComments", () => {
     assert.deepEqual(
       out.map((a) => a.comment_id),
       [1, 3],
+    );
+    assert.deepEqual(
+      out.map((a) => a.kind),
+      ["analysis", "analysis"],
     );
     assert.equal(out[0].body, "## Analyse\n\nA");
     assert.equal(out[0].created_at, "2026-10-11T00:00:00Z");
@@ -413,6 +443,7 @@ const DECISIONS_FIXTURE = JSON.parse(
   ),
 ) as {
   refusal_partial_reason: string;
+  answer_partial_reason: string;
   default_launches_per_day: number;
   max_launches_per_day: number;
   cases: {
@@ -429,6 +460,7 @@ const DECISIONS_FIXTURE = JSON.parse(
     action: "analyse" | "developpement";
     raw_status: string;
     now: string;
+    status_changed_at?: string | null;
     launches: {
       action: string;
       outcome: string;
@@ -440,6 +472,34 @@ const DECISIONS_FIXTURE = JSON.parse(
     running_since: string | null;
     relaunch_of: string | null;
   }[];
+  reply_cases: {
+    status: string;
+    type: TicketType;
+    has_issue: boolean;
+    has_analysis: boolean;
+    development_running: boolean;
+    can_reply: boolean;
+  }[];
+  awaiting_reply: {
+    name: string;
+    status: string;
+    type: TicketType;
+    last_analysis_at: string | null;
+    validated_known: boolean;
+    validated_at: string | null;
+    awaiting_reply: boolean;
+  }[];
+};
+
+const ANSWER_FIXTURE = JSON.parse(
+  readFileSync(
+    path.join(__dirname, "..", "..", "..", "test-fixtures", "ticket_answer_text.json"),
+    "utf8",
+  ),
+) as {
+  min_chars: number;
+  max_chars: number;
+  email_cases: { text: string; contains_email: boolean }[];
 };
 
 const isoMs = (iso: string | null): number | null => (iso === null ? null : Date.parse(iso));
@@ -447,6 +507,10 @@ const isoMs = (iso: string | null): number | null => (iso === null ? null : Date
 describe("fixture ticket_decisions.json (partagée avec le client)", () => {
   test("raison de l'échec partiel d'un refus", () => {
     assert.equal(REFUSAL_PARTIAL_REASON, DECISIONS_FIXTURE.refusal_partial_reason);
+  });
+
+  test("raison de l'échec partiel d'une réponse", () => {
+    assert.equal(ANSWER_PARTIAL_REASON, DECISIONS_FIXTURE.answer_partial_reason);
   });
 
   for (const c of DECISIONS_FIXTURE.cases) {
@@ -481,6 +545,7 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
         action: r.action,
         rawStatus: r.raw_status,
         nowMs: Date.parse(r.now),
+        statusChangedAtMs: isoMs(r.status_changed_at ?? null),
       });
       assert.deepEqual(state, {
         running: r.running,
@@ -489,6 +554,400 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
       });
     });
   }
+});
+
+describe("fixture ticket_decisions.json : réponse et ticket bloqué", () => {
+  for (const c of DECISIONS_FIXTURE.reply_cases) {
+    test(`Répondre : ${c.status} · ${c.type} · ${c.has_issue ? "avec" : "sans"} Issue · ${
+      c.has_analysis ? "avec" : "sans"
+    } analyse${c.development_running ? " · développement en cours" : ""}`, () => {
+      assert.equal(
+        ticketCanReply({
+          rawStatus: c.status,
+          type: c.type,
+          hasIssue: c.has_issue,
+          hasAnalysis: c.has_analysis,
+          developmentRunning: c.development_running,
+        }),
+        c.can_reply,
+      );
+    });
+  }
+
+  for (const c of DECISIONS_FIXTURE.awaiting_reply) {
+    test(`bloqué : ${c.name}`, () => {
+      assert.equal(
+        ticketAwaitingReply({
+          rawStatus: c.status,
+          type: c.type,
+          lastAnalysisAtMs: isoMs(c.last_analysis_at),
+          validatedAtMs: c.validated_known ? isoMs(c.validated_at) : undefined,
+        }),
+        c.awaiting_reply,
+      );
+    });
+  }
+});
+
+describe("fixture ticket_answer_text.json (partagée avec le client)", () => {
+  test("bornes du texte", () => {
+    assert.equal(ANSWER_MIN_CHARS, ANSWER_FIXTURE.min_chars);
+    assert.equal(ANSWER_MAX_CHARS, ANSWER_FIXTURE.max_chars);
+  });
+
+  for (const c of ANSWER_FIXTURE.email_cases) {
+    test(`adresse e-mail : ${JSON.stringify(c.text)}`, () => {
+      assert.equal(containsEmailAddress(c.text), c.contains_email);
+    });
+  }
+});
+
+describe("readAnswerText", () => {
+  test("nettoie, garde les retours à la ligne, neutralise mentions et renvois", () => {
+    assert.equal(
+      readAnswerText("  Oui, voir @ChinaFred et #12.\r\nMerci.\u0007 "),
+      `Oui, voir @${ZWSP}ChinaFred et #${ZWSP}12.\nMerci.`,
+    );
+  });
+
+  test("refuse un texte absent, trop court, trop long ou avec une adresse", () => {
+    assert.throws(() => readAnswerText(undefined), TicketInputError);
+    assert.throws(() => readAnswerText(" abcd "), /au moins 5/);
+    assert.throws(() => readAnswerText("x".repeat(4001)), /4 000/);
+    assert.equal(readAnswerText("x".repeat(4000)).length, 4000);
+    try {
+      readAnswerText("Écrivez à moi@exemple.fr");
+      assert.fail("aurait dû lever");
+    } catch (err) {
+      assert.ok(err instanceof TicketInputError);
+      assert.equal(err.field, "answer");
+      assert.equal(err.reason, "contains_email");
+      assert.equal(err.message, "Retirez l'adresse e-mail avant de publier.");
+    }
+  });
+
+  test("le commentaire publié est reconnu comme réponse, pas comme analyse", () => {
+    const body = answerCommentBody("Oui, garder le bouton.");
+    assert.equal(body, "## Précisions de l'administrateur\n\nOui, garder le bouton.");
+    assert.equal(isAnswerComment({ authorId: MAINTAINER_ID, body }, MAINTAINER_ID), true);
+    assert.equal(isAnalysisComment({ authorId: MAINTAINER_ID, body }, MAINTAINER_ID), false);
+    assert.equal(isAnswerComment({ authorId: 99, body }, MAINTAINER_ID), false);
+    // La réponse affichée au membre (`Réponse :`) n'est pas une précision.
+    assert.equal(
+      isAnswerComment({ authorId: MAINTAINER_ID, body: "Réponse : non" }, MAINTAINER_ID),
+      false,
+    );
+  });
+
+  test("argument de la callable : champ et raison rendus au client", () => {
+    assert.equal(readAnswerArg({ answer: "  Oui, garder.  " }), "Oui, garder.");
+    assert.throws(
+      () => readAnswerArg({ answer: "Mon adresse : a@b.fr" }),
+      (err: unknown) =>
+        err instanceof HttpsError &&
+        err.code === "invalid-argument" &&
+        (err.details as { field?: string; reason?: string }).field === "answer" &&
+        (err.details as { reason?: string }).reason === "contains_email",
+    );
+    assert.throws(
+      () => readAnswerArg({ answer: "abc" }),
+      (err: unknown) =>
+        err instanceof HttpsError &&
+        (err.details as { field?: string }).field === "answer" &&
+        (err.details as { reason?: string }).reason === undefined,
+    );
+    assert.throws(
+      () => readAnswerArg({ answer: "x".repeat(10_000) }),
+      (err: unknown) => err instanceof HttpsError,
+    );
+  });
+});
+
+describe("answerPrecondition", () => {
+  test("Analysé ou Validé, hors Question, avec Issue : permis", () => {
+    for (const status of ["analyzed", "validated"] as TicketStatus[]) {
+      assert.equal(answerPrecondition({ status, type: "bug", hasIssue: true }), null, status);
+    }
+  });
+
+  test("Reçu, Question, sans Issue : refusé", () => {
+    assert.notEqual(answerPrecondition({ status: "received", type: "bug", hasIssue: true }), null);
+    assert.notEqual(
+      answerPrecondition({ status: "analyzed", type: "question", hasIssue: true }),
+      null,
+    );
+    assert.notEqual(answerPrecondition({ status: "analyzed", type: "bug", hasIssue: false }), null);
+  });
+
+  test("développement en cours : refusé avec son message", () => {
+    assert.equal(
+      answerPrecondition({
+        status: "validated",
+        type: "bug",
+        hasIssue: true,
+        developmentRunning: true,
+      }),
+      ANSWER_DEVELOPMENT_RUNNING_MESSAGE,
+    );
+  });
+});
+
+describe("analysesFromComments : réponses de l'administrateur", () => {
+  test("relevées avec leur nature, intercalées dans l'ordre", () => {
+    const out = analysesFromComments(
+      [
+        comment({ id: 1, body: "## Analyse\n\nA", createdAt: "2026-10-11T00:00:00Z" }),
+        comment({
+          id: 2,
+          body: "## Précisions de l'administrateur\n\nR",
+          createdAt: "2026-10-12T00:00:00Z",
+        }),
+        comment({
+          id: 3,
+          authorId: 99,
+          body: "## Précisions de l'administrateur\n\nIntrus",
+          createdAt: "2026-10-12T01:00:00Z",
+        }),
+        comment({
+          id: 5,
+          body: "## Précisions de l'administrateur\n\nÉcrite par une session",
+          createdAt: "2026-10-12T02:00:00Z",
+        }),
+        comment({ id: 4, body: "## Analyse — compléments", createdAt: "2026-10-13T00:00:00Z" }),
+      ],
+      MAINTAINER_ID,
+      new Set([2]),
+    );
+    assert.deepEqual(
+      out.map((a) => [a.comment_id, a.kind]),
+      [
+        [1, "analysis"],
+        [2, "reply"],
+        [5, "unverified_reply"],
+        [4, "analysis"],
+      ],
+    );
+  });
+
+  test("sans identifiants enregistrés, aucune précision n'est une réponse", () => {
+    const out = analysesFromComments(
+      [comment({ id: 2, body: "## Précisions de l'administrateur\n\nR" })],
+      MAINTAINER_ID,
+    );
+    assert.equal(out[0].kind, "unverified_reply");
+  });
+
+  test("identifiants stockés lus sans supposer leur forme", () => {
+    assert.deepEqual([...readAnswerCommentIds([3, "4", 5.5, null, 7])], [3, 7]);
+    assert.equal(readAnswerCommentIds(undefined).size, 0);
+  });
+});
+
+describe("analysisAnswerState", () => {
+  const analysis = (id: number, at: string) =>
+    comment({ id, body: "## Analyse\n\nX", createdAt: at });
+  const answer = (id: number, at: string, text = "Y") =>
+    comment({ id, body: `## Précisions de l'administrateur\n\n${text}`, createdAt: at });
+  const body = answerCommentBody("Y");
+
+  test("aucune analyse", () => {
+    assert.deepEqual(
+      analysisAnswerState([answer(1, "2026-10-10T00:00:00Z")], MAINTAINER_ID, new Set([1]), body),
+      { hasAnalysis: false, lastAnalysisAt: null, samePublished: false },
+    );
+  });
+
+  test("même réponse déjà publiée depuis l'application après l'analyse : pas de republication", () => {
+    const a = analysis(1, "2026-10-10T00:00:00Z");
+    assert.deepEqual(analysisAnswerState([a], MAINTAINER_ID, new Set(), body), {
+      hasAnalysis: true,
+      lastAnalysisAt: "2026-10-10T00:00:00Z",
+      samePublished: false,
+    });
+    assert.equal(
+      analysisAnswerState([a, answer(2, "2026-10-11T00:00:00Z")], MAINTAINER_ID, new Set([2]), body)
+        .samePublished,
+      true,
+    );
+  });
+
+  test("précision non enregistrée ou texte différent : republication", () => {
+    const a = analysis(1, "2026-10-10T00:00:00Z");
+    // Une session a publié une fausse précision : elle ne remplace pas la réponse.
+    assert.equal(
+      analysisAnswerState([a, answer(2, "2026-10-11T00:00:00Z")], MAINTAINER_ID, new Set(), body)
+        .samePublished,
+      false,
+    );
+    assert.equal(
+      analysisAnswerState(
+        [a, answer(2, "2026-10-11T00:00:00Z", "Autre texte")],
+        MAINTAINER_ID,
+        new Set([2]),
+        body,
+      ).samePublished,
+      false,
+    );
+  });
+
+  test("une réponse antérieure à la dernière analyse ne compte pas", () => {
+    const state = analysisAnswerState(
+      [
+        analysis(1, "2026-10-10T00:00:00Z"),
+        answer(2, "2026-10-11T00:00:00Z"),
+        analysis(3, "2026-10-12T00:00:00Z"),
+      ],
+      MAINTAINER_ID,
+      new Set([2]),
+      body,
+    );
+    assert.equal(state.lastAnalysisAt, "2026-10-12T00:00:00Z");
+    assert.equal(state.samePublished, false);
+  });
+});
+
+describe("nextValidatedAt", () => {
+  test("champ absent : la valeur lue est écrite, null compris", () => {
+    assert.equal(nextValidatedAt(undefined, 100, true), 100);
+    assert.equal(nextValidatedAt(undefined, null, true), null);
+  });
+
+  test("étiquette présente : jamais plus ancien, jamais null", () => {
+    assert.equal(nextValidatedAt(200, 100, true), undefined);
+    assert.equal(nextValidatedAt(200, 200, true), undefined);
+    assert.equal(nextValidatedAt(200, null, true), undefined);
+    assert.equal(nextValidatedAt(200, 300, true), 300);
+    assert.equal(nextValidatedAt(null, 300, true), 300);
+    assert.equal(nextValidatedAt(null, null, true), undefined);
+  });
+
+  test("étiquette absente : la valeur lue remplace la valeur stockée", () => {
+    assert.equal(nextValidatedAt(200, 100, false), 100);
+    assert.equal(nextValidatedAt(200, null, false), null);
+    assert.equal(nextValidatedAt(200, 200, false), undefined);
+  });
+});
+
+describe("dernier « validé » du mainteneur", () => {
+  const labeled = (name: string, actorId: number, at: string) => ({
+    event: "labeled",
+    label: { name },
+    actor: { id: actorId },
+    created_at: at,
+  });
+
+  test("le plus récent du mainteneur, autres étiquettes et acteurs ignorés", () => {
+    assert.equal(
+      lastMaintainerValidatedAt(
+        [
+          labeled("validé", MAINTAINER_ID, "2026-10-10T00:00:00Z"),
+          labeled("validé", 99, "2026-10-13T00:00:00Z"),
+          labeled("statut:analysé", MAINTAINER_ID, "2026-10-14T00:00:00Z"),
+          { event: "unlabeled", label: { name: "validé" }, actor: { id: MAINTAINER_ID } },
+          labeled("validé", MAINTAINER_ID, "2026-10-12T00:00:00Z"),
+          null,
+          "texte",
+        ],
+        MAINTAINER_ID,
+      ),
+      "2026-10-12T00:00:00Z",
+    );
+  });
+
+  test("aucun : null", () => {
+    assert.equal(lastMaintainerValidatedAt([], MAINTAINER_ID), null);
+    assert.equal(
+      lastMaintainerValidatedAt([labeled("validé", 99, "2026-10-10T00:00:00Z")], MAINTAINER_ID),
+      null,
+    );
+  });
+
+  test("webhook : `labeled validé` du mainteneur seulement", () => {
+    const payload = (name: string, senderId: number, issue: Record<string, unknown> = {}) => ({
+      action: "labeled",
+      repository: { full_name: REPO },
+      label: { name },
+      sender: { id: senderId },
+      issue: { number: 68, updated_at: "2026-10-14T09:00:00Z", ...issue },
+    });
+    const now = "2026-10-14T10:00:00.000Z";
+    assert.deepEqual(validatedLabelFromEvent("issues", payload("validé", MAINTAINER_ID), now), {
+      issueNumber: 68,
+      at: "2026-10-14T09:00:00Z",
+    });
+    assert.deepEqual(
+      validatedLabelFromEvent(
+        "issues",
+        payload("validé", MAINTAINER_ID, { updated_at: null }),
+        now,
+      ),
+      { issueNumber: 68, at: now },
+    );
+    assert.equal(validatedLabelFromEvent("issues", payload("validé", 99), now), null);
+    assert.equal(validatedLabelFromEvent("issues", payload("autre", MAINTAINER_ID), now), null);
+    assert.equal(
+      validatedLabelFromEvent(
+        "issues",
+        { ...payload("validé", MAINTAINER_ID), action: "unlabeled" },
+        now,
+      ),
+      null,
+    );
+    assert.equal(
+      validatedLabelFromEvent(
+        "issues",
+        { ...payload("validé", MAINTAINER_ID), repository: { full_name: "autre/depot" } },
+        now,
+      ),
+      null,
+    );
+  });
+});
+
+describe("état d'Issue périmé après une réponse", () => {
+  const reset = Date.parse("2026-10-14T10:00:00Z");
+
+  test("antérieur ou égal au retour à Reçu : ignoré", () => {
+    assert.equal(isStaleIssueSnapshot("2026-10-14T09:59:59Z", reset), true);
+    assert.equal(isStaleIssueSnapshot("2026-10-14T10:00:00Z", reset), true);
+  });
+
+  test("postérieur, sans date ou sans réponse : appliqué", () => {
+    assert.equal(isStaleIssueSnapshot("2026-10-14T10:00:01Z", reset), false);
+    assert.equal(isStaleIssueSnapshot(null, reset), false);
+    assert.equal(isStaleIssueSnapshot(undefined, reset), false);
+    assert.equal(isStaleIssueSnapshot("illisible", reset), false);
+    assert.equal(isStaleIssueSnapshot("2026-10-14T09:00:00Z", null), false);
+  });
+
+  test("le webhook transmet la date de l'Issue", () => {
+    const [u] = updatesFromEvent("issues", {
+      action: "labeled",
+      repository: { full_name: REPO },
+      issue: { number: 3, state: "open", labels: [], updated_at: "2026-10-14T09:00:00Z" },
+    });
+    assert.equal(u.update.issueUpdatedAt, "2026-10-14T09:00:00Z");
+  });
+});
+
+describe("date de la dernière analyse stockée", () => {
+  test("analyses seules, `kind` absent lu comme analyse", () => {
+    const at = (iso: string) => Timestamp.fromMillis(Date.parse(iso));
+    assert.equal(
+      lastAnalysisMillis({
+        analyses: [
+          { created_at: at("2026-10-10T00:00:00Z") },
+          { kind: "analysis", created_at: at("2026-10-12T00:00:00Z") },
+          { kind: "reply", created_at: at("2026-10-13T00:00:00Z") },
+          { kind: "analysis", created_at: null },
+          "texte",
+        ],
+      }),
+      Date.parse("2026-10-12T00:00:00Z"),
+    );
+    assert.equal(lastAnalysisMillis(undefined), null);
+    assert.equal(lastAnalysisMillis({ analyses: [] }), null);
+  });
 });
 
 describe("écriture de la validation", () => {

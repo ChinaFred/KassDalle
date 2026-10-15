@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.68 — fonctionnel
+
+Admin › Tickets : un ticket validé dont la dernière analyse pose des questions est « bloqué ».
+« Relancer le développement » disparaît, la fiche dit que l'analyse attend une réponse, et le
+serveur refuse ce lancement sans le décompter. Le nouveau bouton « Répondre » publie la réponse
+sur l'Issue (`## Précisions de l'administrateur`), retire la validation et remet le ticket à
+Reçu ; l'administrateur relance l'analyse, qui cite les précisions, puis revalide. Une réponse
+qui contient une adresse e-mail est refusée, dans l'application et sur le serveur.
+
+### v0.23.68 — technique
+
+Nouvelle callable `answerTicketAnalysis`. `admin/analysis` porte `validated_at` (dernier « validé »
+du mainteneur, lu sur `/issues/{n}/events`, jamais reculé tant que l'étiquette est posée),
+`answer_comment_ids` et la nature `reply` / `unverified_reply` des entrées ; `tickets/{id}` porte
+`answer_reset_at`, qui fait ignorer les webhooks en retard après une réponse. La session de
+développement ne lit plus que la dernière analyse ; la session d'analyse lit et cite les précisions.
+Logique dupliquée : sections `reply_cases`, `awaiting_reply` et coupure `status_changed_at` dans
+`ticket_decisions.json`, nouvelle fixture `ticket_answer_text.json`. Les deux prompts des routines
+sont à recopier sur claude.ai.
+
 ### v0.23.67 — technique
 
 Nouveau document `documentation/handbook-reseau-agents.md`. Il décrit pas à pas comment

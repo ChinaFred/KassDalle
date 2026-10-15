@@ -39,6 +39,7 @@ import {
   findIssueByTicketReference,
   getIssue,
   githubToken,
+  lastValidatedLabelAt,
   listIssueComments,
   openPullRequestBodiesReferencing,
   type CreatedIssue,
@@ -53,7 +54,11 @@ import {
   isFinalStatus,
   isTicketStatus,
   isTicketType,
+  isStaleIssueSnapshot,
+  LABEL_VALIDATED,
   nextTicketStatus,
+  nextValidatedAt,
+  readAnswerCommentIds,
   replyFromComment,
   statusFromIssue,
   type TicketPlatform,
@@ -328,6 +333,20 @@ export interface GithubUpdate {
   openClosingPr?: boolean;
   /** Réponse de l'administrateur, déjà filtrée. */
   reply?: string;
+  /**
+   * Dernière modification de l'Issue dont vient `statusFor` (ISO). Un état
+   * antérieur ou égal au dernier retour à « Reçu » d'une réponse
+   * (`answer_reset_at`) est ignoré : un événement d'étiquette livré en retard
+   * ne refait pas avancer le ticket.
+   */
+  issueUpdatedAt?: string | null;
+  /**
+   * Seule exception à « le statut ne recule jamais » : l'administrateur a
+   * répondu à la dernière analyse (`answerTicketAnalysis`) et les étiquettes
+   * de l'Issue sont repassées à `statut:à-analyser`. Un ticket Analysé ou
+   * Validé repasse à Reçu, et `answer_reset_at` est écrit.
+   */
+  answerReset?: boolean;
 }
 
 /**
@@ -347,11 +366,20 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
     const current = readStatus(data);
     const type: TicketType = isTicketType(data.type) ? data.type : "question";
 
+    const resetAt = data.answer_reset_at;
+    const stale = isStaleIssueSnapshot(
+      update.issueUpdatedAt,
+      resetAt instanceof Timestamp ? resetAt.toMillis() : null,
+    );
     let next = current;
-    if (update.statusFor) next = nextTicketStatus(next, update.statusFor(type));
+    if (update.statusFor && !stale) next = nextTicketStatus(next, update.statusFor(type));
     if (update.openClosingPr && !isFinalStatus(next)) next = nextTicketStatus(next, "in_progress");
 
     const changes: Record<string, unknown> = {};
+    if (update.answerReset && (current === "analyzed" || current === "validated")) {
+      next = "received";
+      changes.answer_reset_at = Timestamp.now();
+    }
     if (next !== current) {
       changes.status = next;
       changes.status_changed_at = FieldValue.serverTimestamp();
@@ -396,27 +424,88 @@ function timestampOrNull(iso: string | null): Timestamp | null {
 }
 
 /**
- * Réécrit en entier `tickets/{id}/admin/analysis` depuis les commentaires
- * de l'Issue : les analyses du mainteneur (`analysesFromComments`, au plus
- * dix, chacune tronquée à 20 000 caractères) et `checked_at`. Rend le nombre
- * d'analyses écrites. Lève sur une panne Firestore ; l'appelant journalise.
+ * Réécrit `analyses` et `checked_at` de `tickets/{id}/admin/analysis` depuis
+ * les commentaires de l'Issue : les analyses du mainteneur et ses
+ * `## Précisions…` (`analysesFromComments`, au plus dix, chacune tronquée à
+ * 20 000 caractères, avec leur nature `kind`). Une précision n'est `reply`
+ * que si son identifiant figure dans `answer_comment_ids`, lu dans la même
+ * transaction ; sinon `unverified_reply`. Écriture fusionnée :
+ * `validated_at` et `answer_comment_ids` restent tels quels. Rend le nombre
+ * d'analyses écrites (réponses exclues). Lève sur une panne Firestore ;
+ * l'appelant journalise.
  */
 export async function writeTicketAnalyses(
   ticketId: string,
   comments: readonly RemoteComment[],
 ): Promise<number> {
-  const analyses = analysesFromComments(comments, GITHUB_TICKETS_MAINTAINER_ID);
-  await analysisRef(ticketId).set({
-    analyses: analyses.map((a) => ({
-      comment_id: a.comment_id,
-      body: a.body,
-      created_at: timestampOrNull(a.created_at),
-      updated_at: timestampOrNull(a.updated_at),
-      truncated: a.truncated,
-    })),
-    checked_at: FieldValue.serverTimestamp(),
+  const ref = analysisRef(ticketId);
+  return getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const answerIds = readAnswerCommentIds(snap.data()?.answer_comment_ids);
+    const entries = analysesFromComments(comments, GITHUB_TICKETS_MAINTAINER_ID, answerIds);
+    tx.set(
+      ref,
+      {
+        analyses: entries.map((a) => ({
+          comment_id: a.comment_id,
+          kind: a.kind,
+          body: a.body,
+          created_at: timestampOrNull(a.created_at),
+          updated_at: timestampOrNull(a.updated_at),
+          truncated: a.truncated,
+        })),
+        checked_at: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    return entries.filter((a) => a.kind === "analysis").length;
   });
-  return analyses.length;
+}
+
+/**
+ * Enregistre l'identifiant d'un commentaire publié par « Répondre » dans
+ * `admin/analysis.answer_comment_ids` (écrit par le serveur seul) : seul un
+ * commentaire de cette liste s'affiche comme réponse de l'administrateur.
+ * Lève sur une panne Firestore.
+ */
+export async function recordAnswerCommentId(ticketId: string, commentId: number): Promise<void> {
+  await analysisRef(ticketId).set(
+    { answer_comment_ids: FieldValue.arrayUnion(commentId) },
+    { merge: true },
+  );
+}
+
+/**
+ * Écrit `validated_at` (dernier « validé » du mainteneur) dans
+ * `tickets/{id}/admin/analysis`, en transaction, selon `nextValidatedAt` :
+ * tant que l'Issue porte `validé`, la date ne recule pas et ne repasse pas à
+ * `null`. Rend la valeur stockée après l'écriture (`undefined` : champ
+ * absent). Lève sur une panne Firestore.
+ */
+export async function updateValidatedAt(
+  ticketId: string,
+  fetchedMs: number | null,
+  labelPresent: boolean,
+): Promise<number | null | undefined> {
+  const ref = analysisRef(ticketId);
+  return getFirestore().runTransaction(async (tx) => {
+    const data = (await tx.get(ref)).data();
+    const raw = data?.validated_at;
+    const stored =
+      data === undefined || !("validated_at" in data)
+        ? undefined
+        : raw instanceof Timestamp
+          ? raw.toMillis()
+          : null;
+    const next = nextValidatedAt(stored, fetchedMs, labelPresent);
+    if (next === undefined) return stored;
+    tx.set(
+      ref,
+      { validated_at: next === null ? null : Timestamp.fromMillis(next) },
+      { merge: true },
+    );
+    return next;
+  });
 }
 
 /**
@@ -433,8 +522,10 @@ export async function refreshTicketAnalyses(
 
 /**
  * Relit une Issue et applique son état au ticket (tâche horaire, webhook
- * perdu), puis réécrit ses analyses depuis les commentaires déjà lus — aucun
- * appel de plus. Lève une `GithubError` ; l'appelant journalise.
+ * perdu), puis réécrit ses analyses depuis les commentaires déjà lus. Issue
+ * ouverte : la date du dernier « validé » du mainteneur est lue dans ses
+ * événements (`GET /issues/{n}/events`) et écrite par `updateValidatedAt`. Lève une `GithubError` ;
+ * l'appelant journalise.
  */
 export async function resyncTicket(
   token: string,
@@ -444,11 +535,13 @@ export async function resyncTicket(
   const issue = await getIssue(token, issueNumber);
   if (issue.isPullRequest) return false;
   let openClosingPr = false;
+  let validatedAtIso: string | null | undefined;
   if (issue.state === "open") {
     const bodies = await openPullRequestBodiesReferencing(token, issueNumber);
     openClosingPr = bodies.some((b) =>
       closingIssueNumbers(b, GITHUB_REPO_FULL_NAME).includes(issueNumber),
     );
+    validatedAtIso = await lastValidatedLabelAt(token, issueNumber);
   }
   const comments = await listIssueComments(token, issueNumber);
   const reply = lastReply(comments);
@@ -456,7 +549,16 @@ export async function resyncTicket(
     statusFor: (type) => statusFromIssue({ ...issue, hasOpenClosingPr: openClosingPr }, type),
     openClosingPr,
     reply,
+    issueUpdatedAt: issue.updatedAt,
   });
   await writeTicketAnalyses(ticketId, comments);
+  if (validatedAtIso !== undefined) {
+    const ms = validatedAtIso === null ? null : Date.parse(validatedAtIso);
+    await updateValidatedAt(
+      ticketId,
+      ms === null || Number.isNaN(ms) ? null : ms,
+      issue.labels.includes(LABEL_VALIDATED),
+    );
+  }
   return changed;
 }

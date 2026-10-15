@@ -37,6 +37,7 @@ le fichier TypeScript. Les suites qui la rejouent :
 | `allergens.json` | `allergens_test.dart` | `allergens.test.ts` |
 | `email_invitation_status.json` | `email_invitation_test.dart` | `invitations.test.ts` |
 | `ticket_decisions.json` | `ticket_decisions_test.dart` | `ticketDecisions.test.ts` |
+| `ticket_answer_text.json` | `ticket_decisions_test.dart` | `ticketDecisions.test.ts` |
 | `planning_slot_rules.json` | `planning_refusals_test.dart` (constantes et prédicat d'activité de la mémoire des refus) | `planningSlotRules.test.ts` |
 | `image_moderation_rules.json` | — (serveur seul) | `moderationDecision.test.ts` |
 

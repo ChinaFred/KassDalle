@@ -18,7 +18,10 @@
  *    « Refuser », lecture du motif de refus, message d'une erreur GitHub ;
  *  - les lancements de sessions Claude Code : texte de commande, condition
  *    de statut, échéance, règle « en cours », plafond et compteurs
- *    (`tests/ticketLaunches.test.ts`, fixture `ticket_decisions.json`).
+ *    (`tests/ticketLaunches.test.ts`, fixture `ticket_decisions.json`) ;
+ *  - la réponse de l'administrateur à une analyse : lecture du texte (adresse
+ *    e-mail refusée, fixture `ticket_answer_text.json`), condition, état de
+ *    la dernière analyse, ticket bloqué (`ticketAwaitingReply`).
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -111,11 +114,15 @@ export const TICKET_SCREEN_MAX = 100;
 export const SCREEN_OTHER = "autre";
 export const SCREEN_UNKNOWN = "inconnu";
 
-/** Une entrée refusée : le champ et le message rendus au client. */
+/**
+ * Une entrée refusée : le champ, le message et, au besoin, la raison rendus
+ * au client (`details.field`, `details.reason`).
+ */
 export class TicketInputError extends Error {
   constructor(
     readonly field: string,
     message: string,
+    readonly reason: string | null = null,
   ) {
     super(message);
   }
@@ -482,9 +489,42 @@ export interface AnalysisSourceComment {
   updatedAt: string | null;
 }
 
-/** Une analyse stockée dans `tickets/{id}/admin/analysis.analyses`. */
+/**
+ * Titre du commentaire publié par « Répondre » (`answerTicketAnalysis`) :
+ * les précisions de l'administrateur à la dernière analyse. Les sessions
+ * Claude Code n'en publient jamais.
+ */
+export const ANSWER_TITLE = "## Précisions de l'administrateur";
+
+/**
+ * Vrai si ce commentaire porte les précisions de l'administrateur : auteur
+ * `maintainerId`, texte qui commence par `## Précisions` (espaces de tête
+ * retirées, NFC).
+ */
+export function isAnswerComment(
+  comment: { authorId: number | null | undefined; body: string | null | undefined },
+  maintainerId: number,
+): boolean {
+  if (typeof comment.authorId !== "number" || comment.authorId !== maintainerId) return false;
+  if (typeof comment.body !== "string") return false;
+  return normalizedBody(comment.body).trimStart().startsWith("## Précisions");
+}
+
+/**
+ * Nature d'une entrée relevée :
+ * - `analysis` : analyse du mainteneur (`## Analyse…`) ;
+ * - `reply` : réponse publiée par « Répondre », dont l'identifiant figure dans
+ *   `admin/analysis.answer_comment_ids` (écrit par le serveur seul) ;
+ * - `unverified_reply` : commentaire `## Précisions…` du même compte qui n'a
+ *   pas été publié depuis l'application (une session Claude Code signe comme
+ *   ce compte). Affiché « Non publiée depuis l'application ».
+ */
+export type TicketAnalysisKind = "analysis" | "reply" | "unverified_reply";
+
+/** Une entrée stockée dans `tickets/{id}/admin/analysis.analyses`. */
 export interface TicketAnalysis {
   comment_id: number | null;
+  kind: TicketAnalysisKind;
   body: string;
   /** Horodatage ISO ; le service l'écrit en `Timestamp`. */
   created_at: string | null;
@@ -498,31 +538,268 @@ function isoMillis(iso: string | null): number {
   return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
 }
 
+/** Nature d'un commentaire relevé, ou `null` s'il n'est ni analyse ni réponse. */
+function commentKind(
+  c: AnalysisSourceComment,
+  maintainerId: number,
+  answerIds: ReadonlySet<number>,
+): TicketAnalysisKind | null {
+  if (isAnalysisComment(c, maintainerId)) return "analysis";
+  if (isAnswerComment(c, maintainerId)) {
+    return c.id !== null && answerIds.has(c.id) ? "reply" : "unverified_reply";
+  }
+  return null;
+}
+
+/** Les identifiants de `admin/analysis.answer_comment_ids`, lus sans supposer leur forme. */
+export function readAnswerCommentIds(raw: unknown): Set<number> {
+  const ids = new Set<number>();
+  if (!Array.isArray(raw)) return ids;
+  for (const v of raw) if (typeof v === "number" && Number.isSafeInteger(v)) ids.add(v);
+  return ids;
+}
+
 /**
- * Les analyses d'une Issue, dans l'ordre chronologique : seulement celles du
- * mainteneur (`isAnalysisComment`), les `ANALYSIS_MAX_COUNT` plus récentes,
- * chacune tronquée (`truncateAnalysis`). Le texte garde sa ligne de titre :
- * le client la retire à l'affichage.
+ * Les analyses d'une Issue et les réponses de l'administrateur, dans l'ordre
+ * chronologique : seulement les commentaires du mainteneur
+ * (`isAnalysisComment`, `isAnswerComment`), les `ANALYSIS_MAX_COUNT` plus
+ * récents, chacun tronqué (`truncateAnalysis`). Une réponse n'est `reply` que
+ * si son identifiant est dans `answerIds` ; sinon `unverified_reply`. Le texte
+ * garde sa ligne de titre : le client la retire à l'affichage.
  */
 export function analysesFromComments(
   comments: readonly AnalysisSourceComment[],
   maintainerId: number,
+  answerIds: ReadonlySet<number> = new Set(),
 ): TicketAnalysis[] {
   const kept = comments
-    .map((c, index) => ({ c, index }))
-    .filter(({ c }) => isAnalysisComment(c, maintainerId))
+    .map((c, index) => ({ c, index, kind: commentKind(c, maintainerId, answerIds) }))
+    .filter(
+      (e): e is { c: AnalysisSourceComment; index: number; kind: TicketAnalysisKind } =>
+        e.kind !== null,
+    )
     .sort((a, b) => isoMillis(a.c.createdAt) - isoMillis(b.c.createdAt) || a.index - b.index)
     .slice(-ANALYSIS_MAX_COUNT);
-  return kept.map(({ c }) => {
+  return kept.map(({ c, kind }) => {
     const { body, truncated } = truncateAnalysis(normalizedBody(c.body ?? "").trim());
     return {
       comment_id: c.id,
+      kind,
       body,
       created_at: c.createdAt,
       updated_at: c.updatedAt,
       truncated,
     };
   });
+}
+
+/**
+ * Où en est la dernière analyse d'une Issue, lue dans ses commentaires
+ * (ordre chronologique, à défaut l'ordre de la liste) :
+ * - `lastAnalysisAt` : date ISO de la dernière analyse du mainteneur, ou `null` ;
+ * - `samePublished` : une réponse publiée depuis l'application
+ *   (identifiant dans `answerIds`) suit cette analyse et porte exactement
+ *   `expectedBody`. Seul ce cas — reprise après un échec partiel avec le même
+ *   texte — ne republie pas la réponse. Une autre `## Précisions…`, ou un
+ *   autre texte, ne la remplace pas.
+ */
+export function analysisAnswerState(
+  comments: readonly AnalysisSourceComment[],
+  maintainerId: number,
+  answerIds: ReadonlySet<number>,
+  expectedBody: string,
+): { hasAnalysis: boolean; lastAnalysisAt: string | null; samePublished: boolean } {
+  const ordered = comments
+    .map((c, index) => ({ c, index, kind: commentKind(c, maintainerId, answerIds) }))
+    .filter((e) => e.kind !== null)
+    .sort((a, b) => isoMillis(a.c.createdAt) - isoMillis(b.c.createdAt) || a.index - b.index);
+  let lastAnalysis = -1;
+  ordered.forEach((e, i) => {
+    if (e.kind === "analysis") lastAnalysis = i;
+  });
+  if (lastAnalysis < 0) return { hasAnalysis: false, lastAnalysisAt: null, samePublished: false };
+  const norm = (t: string) => normalizedBody(t).trim();
+  const expected = norm(expectedBody);
+  return {
+    hasAnalysis: true,
+    lastAnalysisAt: ordered[lastAnalysis].c.createdAt,
+    samePublished: ordered
+      .slice(lastAnalysis + 1)
+      .some((e) => e.kind === "reply" && norm(e.c.body ?? "") === expected),
+  };
+}
+
+// ── Ticket bloqué : la dernière analyse attend une réponse ──────────────────
+
+/**
+ * Date ISO du dernier événement `labeled` de l'étiquette `validé` posé par le
+ * mainteneur, lue dans les événements ou la chronologie d'une Issue
+ * (`{event, label: {name}, actor: {id}, created_at}`), ou `null`. Pure.
+ */
+export function lastMaintainerValidatedAt(
+  events: readonly unknown[],
+  maintainerId: number,
+): string | null {
+  let best: { iso: string; ms: number } | null = null;
+  for (const raw of events) {
+    if (raw === null || typeof raw !== "object") continue;
+    const e = raw as Record<string, unknown>;
+    if (e.event !== "labeled") continue;
+    const label = e.label as { name?: unknown } | null | undefined;
+    const actor = e.actor as { id?: unknown } | null | undefined;
+    if (label?.name !== LABEL_VALIDATED || actor?.id !== maintainerId) continue;
+    if (typeof e.created_at !== "string") continue;
+    const ms = Date.parse(e.created_at);
+    if (Number.isNaN(ms)) continue;
+    if (best === null || ms >= best.ms) best = { iso: e.created_at, ms };
+  }
+  return best?.iso ?? null;
+}
+
+/**
+ * Vrai si le ticket est bloqué : Validé, hors Question, et sa dernière
+ * analyse (`lastAnalysisAtMs`) est strictement postérieure au dernier
+ * « validé » du mainteneur. `validatedAtMs` : `undefined` = date inconnue (pas
+ * bloqué : le serveur lit alors l'Issue) ; `null` = aucun « validé » relevé.
+ * Pure ; fixture `ticket_decisions.json`, section `awaiting_reply`.
+ */
+export function ticketAwaitingReply(args: {
+  rawStatus: unknown;
+  type: TicketType;
+  lastAnalysisAtMs: number | null;
+  validatedAtMs: number | null | undefined;
+}): boolean {
+  if (storedTicketStatus(args.rawStatus) !== "validated") return false;
+  if (args.type === "question") return false;
+  if (args.lastAnalysisAtMs === null || args.validatedAtMs === undefined) return false;
+  if (args.validatedAtMs === null) return true;
+  return args.lastAnalysisAtMs > args.validatedAtMs;
+}
+
+/**
+ * La date de `validated_at` à écrire, ou `undefined` pour ne rien écrire.
+ * `stored` : valeur stockée (`undefined` = champ absent, `null` = aucun
+ * « validé » connu) ; `fetched` : dernier `labeled validé` du mainteneur lu sur
+ * GitHub (`null` : aucun) ; `labelPresent` : l'Issue porte `validé`.
+ *
+ * Tant que l'étiquette est présente, la date ne recule jamais et ne repasse
+ * pas à `null` : une lecture tronquée (événements au-delà de la pagination)
+ * ne débloque pas un ticket bloqué. Étiquette absente : la valeur lue
+ * remplace la valeur stockée. Pure.
+ */
+export function nextValidatedAt(
+  stored: number | null | undefined,
+  fetched: number | null,
+  labelPresent: boolean,
+): number | null | undefined {
+  if (!labelPresent || stored === undefined) {
+    return fetched === stored ? undefined : fetched;
+  }
+  if (fetched === null) return undefined;
+  if (stored !== null && fetched <= stored) return undefined;
+  return fetched;
+}
+
+/** Refus d'un développement sur un ticket bloqué : rien n'est lancé ni compté. */
+export const LAUNCH_NEEDS_ANSWER_MESSAGE =
+  "La dernière analyse attend votre réponse. Rien n'a été lancé ni décompté.";
+
+// ── Réponse de l'administrateur à une analyse ───────────────────────────────
+
+export const ANSWER_MIN_CHARS = 5;
+export const ANSWER_MAX_CHARS = 4000;
+
+/** Échec partiel d'une réponse : commentaire publié, étiquettes inchangées. */
+export const ANSWER_PARTIAL_REASON = "answer_published_labels_failed";
+
+export const ANSWER_EMAIL_MESSAGE = "Retirez l'adresse e-mail avant de publier.";
+
+/** Caractères invisibles retirés avant la recherche d'une adresse. */
+const INVISIBLE_CHARS = /[\u200B-\u200D\u2060]/g;
+
+const EMAIL_PATTERN =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}/;
+
+/**
+ * Vrai si le texte contient une adresse e-mail : partie locale ASCII, `@`,
+ * domaine à étiquettes, suffixe d'au moins deux lettres. Une mention
+ * (`@ChinaFred`) n'en est pas une. Le texte perd d'abord ses caractères
+ * invisibles (U+200B à U+200D, U+2060), puis passe en NFKC : `jean＠exemple．fr`
+ * ou `jean\u200b@exemple.fr` sont des adresses. Pure ; fixture
+ * `ticket_answer_text.json`.
+ */
+export function containsEmailAddress(text: string): boolean {
+  return EMAIL_PATTERN.test(text.replace(INVISIBLE_CHARS, "").normalize("NFKC"));
+}
+
+/**
+ * Lit la réponse de l'administrateur. Lève `TicketInputError` (champ
+ * `answer`). Caractères de contrôle retirés (retours à la ligne gardés),
+ * NFC, espaces de bord retirées, 5 à 4 000 caractères, aucune adresse
+ * e-mail (raison `contains_email`). Le texte part sur un dépôt PUBLIC :
+ * mentions `@` et renvois `#N` neutralisés après les contrôles.
+ */
+export function readAnswerText(raw: unknown): string {
+  if (typeof raw !== "string") {
+    throw new TicketInputError("answer", "La réponse est requise.");
+  }
+  const text = cleanMultiline(raw).normalize("NFC").trim();
+  if (text.length < ANSWER_MIN_CHARS) {
+    throw new TicketInputError("answer", "La réponse doit faire au moins 5 caractères.");
+  }
+  if (text.length > ANSWER_MAX_CHARS) {
+    throw new TicketInputError("answer", "La réponse ne doit pas dépasser 4 000 caractères.");
+  }
+  if (containsEmailAddress(text)) {
+    throw new TicketInputError("answer", ANSWER_EMAIL_MESSAGE, "contains_email");
+  }
+  return publicText(text);
+}
+
+/** Corps du commentaire publié par « Répondre ». */
+export function answerCommentBody(text: string): string {
+  return `${ANSWER_TITLE}\n\n${text}`;
+}
+
+export const ANSWER_DEVELOPMENT_RUNNING_MESSAGE =
+  "Un développement est en cours. Attendez sa fin avant de répondre.";
+
+/**
+ * Ce que décide « Répondre » avant tout appel à GitHub : `null` si la réponse
+ * est permise (ticket Analysé ou Validé, hors Question, avec une Issue, aucun
+ * développement en cours hors ticket bloqué), sinon le message du refus. La
+ * présence d'une analyse se vérifie ensuite sur les commentaires de l'Issue.
+ */
+export function answerPrecondition(args: {
+  status: TicketStatus;
+  type: TicketType;
+  hasIssue: boolean;
+  developmentRunning?: boolean;
+}): string | null {
+  if (!args.hasIssue) return "Ce ticket n'a pas encore d'Issue GitHub.";
+  if (args.type === "question") {
+    return "Une question reçoit une réponse sur GitHub, pas des précisions.";
+  }
+  if (args.status !== "analyzed" && args.status !== "validated") {
+    return "Seule la dernière analyse d'un ticket analysé ou validé peut recevoir une réponse.";
+  }
+  if (args.developmentRunning === true) return ANSWER_DEVELOPMENT_RUNNING_MESSAGE;
+  return null;
+}
+
+/**
+ * Vrai si l'état d'Issue reçu est antérieur ou égal au retour à « Reçu »
+ * écrit par une réponse (`answer_reset_at`) : un événement d'étiquette livré
+ * en retard ne refait pas avancer le ticket. Sans date de part ou d'autre :
+ * `false`. Pure.
+ */
+export function isStaleIssueSnapshot(
+  issueUpdatedAt: string | null | undefined,
+  answerResetAtMs: number | null,
+): boolean {
+  if (answerResetAtMs === null || typeof issueUpdatedAt !== "string") return false;
+  const ms = Date.parse(issueUpdatedAt);
+  return !Number.isNaN(ms) && ms <= answerResetAtMs;
 }
 
 // ── Décisions de l'administrateur ───────────────────────────────────────────
@@ -655,6 +932,30 @@ export function ticketDecisions(args: {
     canLaunchAnalysis: launchPrecondition(launchArgs, "analyse") === null,
     canLaunchDevelopment: launchPrecondition(launchArgs, "developpement") === null,
   };
+}
+
+/**
+ * « Répondre », tel que le client l'affiche (`adminTicketDecisions.canReply`,
+ * fixture `ticket_decisions.json`, section `reply_cases`) : la condition de
+ * statut (`answerPrecondition`) et au moins une analyse relevée. Pure.
+ */
+export function ticketCanReply(args: {
+  rawStatus: unknown;
+  type: TicketType;
+  hasIssue: boolean;
+  hasAnalysis: boolean;
+  developmentRunning: boolean;
+}): boolean {
+  const status = storedTicketStatus(args.rawStatus);
+  return (
+    args.hasAnalysis &&
+    answerPrecondition({
+      status,
+      type: args.type,
+      hasIssue: args.hasIssue,
+      developmentRunning: args.developmentRunning,
+    }) === null
+  );
 }
 
 /**
@@ -813,13 +1114,17 @@ export interface LaunchEntryView {
  * partie (`from_status`) et si son échéance (`retry_after`) n'est pas
  * passée. Échéance passée, mêmes conditions : relance proposée. Une entrée
  * en échec, sans date, sans échéance, ou partie d'un autre statut ne bloque
- * rien. Pure ; fixture `ticket_decisions.json`, section `launch_runs`.
+ * rien. Une entrée antérieure au dernier changement de statut du ticket
+ * (`statusChangedAtMs` : une réponse de l'administrateur ramène le ticket à
+ * Reçu) ne bloque rien non plus et ne propose pas de relance. Pure ; fixture
+ * `ticket_decisions.json`, section `launch_runs`.
  */
 export function launchRunState(args: {
   entries: readonly LaunchEntryView[];
   action: LaunchAction;
   rawStatus: unknown;
   nowMs: number;
+  statusChangedAtMs?: number | null;
 }): { running: boolean; runningSinceMs: number | null; relaunchOfMs: number | null } {
   const none = { running: false, runningSinceMs: null, relaunchOfMs: null };
   let last: LaunchEntryView | null = null;
@@ -828,6 +1133,8 @@ export function launchRunState(args: {
     if (last === null || e.launched_at_ms > (last.launched_at_ms ?? -Infinity)) last = e;
   }
   if (last === null || last.launched_at_ms === null) return none;
+  const changedAt = args.statusChangedAtMs ?? null;
+  if (changedAt !== null && last.launched_at_ms < changedAt) return none;
   if (last.outcome !== "launched" && last.outcome !== "unknown") return none;
   if (typeof args.rawStatus !== "string" || last.from_status !== args.rawStatus) return none;
   if (last.retry_after_ms === null) return none;

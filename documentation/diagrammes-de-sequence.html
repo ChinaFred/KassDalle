@@ -186,6 +186,7 @@
       <li><a href="#ticket-valider">Valider un ticket depuis l'application</a></li>
       <li><a href="#ticket-refuser">Refuser un ticket depuis l'application</a></li>
       <li><a href="#ticket-lancer">Lancer une analyse ou un développement depuis l'application</a></li>
+      <li><a href="#ticket-repondre">Répondre à une analyse depuis l'application</a></li>
     </ol>
   </nav>
 
@@ -4000,21 +4001,24 @@ sequenceDiagram
     W-->>G: 200 ignoré
   else issues · issue_comment · pull_request
     W->>T: requête github_issue_number == N
-    W->>T: transaction — statut dérivé (étiquettes, état, PR ouverte),<br/>jamais en recul, fin suivie d'une réouverture → statut des étiquettes
+    W->>T: transaction — statut dérivé (étiquettes, état, PR ouverte),<br/>jamais en recul, fin suivie d'une réouverture → statut des étiquettes,<br/>état d'Issue antérieur à answer_reset_at ignoré
+    opt issues labeled « validé » par le compte 16348852
+      W->>T: admin/analysis.validated_at = issue.updated_at
+    end
     opt commentaire du compte 16348852 (ChinaFred) commençant par « Réponse : »
       W->>T: reply_text (préfixe retiré)
     end
     W->>T: status_changed_at si le statut change, ou si une réponse arrive sur un ticket clos
     opt issue_comment créé, modifié ou supprimé par le compte 16348852
       W->>G: GET /issues/N/comments (jeton GITHUB_TICKETS_TOKEN)
-      W->>T: tickets/{id}/admin/analysis réécrit : « ## Analyse… » du mainteneur,<br/>dix au plus, 20 000 caractères chacune
+      W->>T: tickets/{id}/admin/analysis réécrit : « ## Analyse… » et « ## Précisions… »<br/>du mainteneur (kind), dix au plus, 20 000 caractères chacune
     end
     W-->>G: 200 (500 si Firestore ou la relecture des commentaires échoue)
   end
   loop toutes les heures
-    S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance), commentaires — tickets non finaux
+    S->>G: GET issue, chronologie (PR ouvertes d'un auteur de confiance),<br/>événements (dernier « labeled validé » du mainteneur), commentaires — tickets non finaux
     S->>T: même transaction de mise à jour
-    S->>T: admin/analysis réécrit depuis les commentaires déjà lus
+    S->>T: admin/analysis réécrit depuis les commentaires déjà lus ;<br/>validated_at écrit sans recul tant que validé est posé
   end
   M->>T: ouvre le détail : seen_by_author_at = request.time (seule écriture client)
   Note over M,T: point sur la puce du compte tant que status ∈ {answered, refused, delivered}<br/>et seen_by_author_at absent ou antérieur à status_changed_at
@@ -4255,8 +4259,18 @@ sequenceDiagram
   AD->>C: « Lancer »
   C->>F: { ticketId }
   F->>F: requireAdmin ; secrets de la routine (vides : « Lancement non configuré », rien compté)
-  F->>T: transaction : statut et Issue (launchPrecondition), bail decision_lease_until
-  F->>T: lit admin/launches : lancement du même type en cours ? (launchRunState)
+  F->>T: transaction : statut et Issue (launchPrecondition), bail decision_lease_until, status_changed_at
+  opt développement
+    F->>T: lit admin/analysis : dernière analyse, validated_at
+    opt validated_at absent
+      F->>G: GET /issues/N/events : dernier « labeled validé » du mainteneur
+      F->>T: admin/analysis.validated_at écrit (au mieux)
+    end
+    alt dernière analyse postérieure au dernier « validé » (ticketAwaitingReply)
+      F-->>C: « La dernière analyse attend votre réponse. Rien n'a été lancé ni décompté. »<br/>(launch_needs_answer, aucun compteur touché)
+    end
+  end
+  F->>T: lit admin/launches : lancement du même type en cours ? (launchRunState,<br/>entrées antérieures à status_changed_at ignorées)
   alt en cours
     F-->>C: « Une analyse a été lancée le … Attendez son résultat ou relancez après hh:mm. »
   end
@@ -4306,6 +4320,89 @@ sequenceDiagram
         Une réponse perdue côté client ferme la boîte sur « Réponse perdue. Regardez la section
         Lancements avant de relancer. ». Pendant l'envoi, « Annuler » devient « Fermer » : fermer
         la boîte ne coupe pas l'appel, et le résultat s'affiche ensuite en message (refus compris).
+        Un ticket Validé dont la dernière analyse est postérieure au dernier « validé » du
+        mainteneur est bloqué : la fiche ne propose pas le développement, et le serveur le refuse
+        avant tout comptage (<code>launch_needs_answer</code>).
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-repondre"><span class="n">45</span>Répondre à une analyse depuis l'application</h2>
+    <p class="sec-note">
+      L'administrateur répond aux questions de la dernière analyse d'un ticket Analysé ou Validé.
+      La réponse part sur GitHub, le ticket repasse à Reçu, et l'analyse suivante la lit. Aucun
+      appel de modèle.
+      <span class="path">admin_tickets_screen.dart (_answer, _AnswerTicketDialog) →
+      TicketRepository.answer → GeminiService.answerTicketAnalysis →
+      callable/ticketsCallable.ts (answerTicketAnalysis, readAnswerArg) →
+      tickets/decisions.ts (answerTicketDecision, claimDecision) → tickets/github.ts →
+      tickets/service.ts (applyGithubUpdate avec answerReset, writeTicketAnalyses)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as answerTicketAnalysis
+  participant T as Firestore
+  participant G as GitHub
+  participant W as githubTicketWebhook
+
+  AD->>C: « Répondre »
+  C-->>AD: boîte « Répondre à l'analyse » : Analyse du …, avertissement dépôt public,<br/>« Le ticket repassera à « Reçu ». » (+ « La validation sera retirée. »)
+  AD->>C: texte, « Publier »
+  C->>C: 5 caractères au moins, aucune adresse e-mail (ticketAnswerFieldError)
+  alt texte refusé
+    C-->>AD: message sous le champ, focus remis, rien envoyé
+  end
+  C->>F: { ticketId, answer }
+  F->>F: requireAdmin ; readAnswerText (5 à 4 000, sans adresse e-mail, mentions neutralisées)
+  F->>T: transaction : Analysé ou Validé, hors Question, Issue (answerPrecondition), bail decision_lease_until
+  F->>T: lit admin/analysis (answer_comment_ids, validated_at) et admin/launches
+  alt développement en cours, ticket non bloqué
+    F-->>C: « Un développement est en cours. Attendez sa fin avant de répondre. » (launch_running)
+  end
+  F->>G: GET /issues/N, GET /issues/N/comments
+  alt Issue fermée
+    F->>T: état relu appliqué
+    F-->>C: « Ce ticket a déjà été clos sur GitHub. »
+  else aucune analyse du mainteneur
+    F-->>C: « Aucune analyse à laquelle répondre. »
+  end
+  opt aucun commentaire de answer_comment_ids ne suit la dernière analyse avec ce texte
+    F->>G: POST commentaire « ## Précisions de l'administrateur » + texte
+    F->>T: admin/analysis.answer_comment_ids += id (au mieux)
+  end
+  F->>G: POST label statut:à-analyser, DELETE statut:analysé, DELETE validé<br/>(404 : étiquette déjà absente, journalisée)
+  alt échec des étiquettes
+    F-->>C: « Réponse publiée, mais le statut n'a pas changé. Réessayez. »<br/>(answer_published_labels_failed : texte verrouillé, réessayer ne republie pas)
+  end
+  F->>T: transaction : statut received (seul recul permis), answer_reset_at
+  F->>T: admin/analysis réécrit (analyses et réponses, kind)
+  F->>T: bail retiré (finally)
+  F-->>C: { status: received }
+  C-->>AD: « Réponse publiée. Le ticket repasse à Reçu : lancez l'analyse. »
+  G-->>W: webhooks labeled / unlabeled (états intermédiaires)
+  W->>T: état d'Issue dont updated_at ≤ answer_reset_at ignoré
+  Note over C: ligne « Vos précisions du … seront lues par la prochaine analyse. »,<br/>« Lancer l'analyse » proposé ; une analyse lancée avant la réponse ne propose pas de relance
+</pre>
+      </div>
+      <figcaption>
+        Pendant l'envoi, « Annuler » devient « Fermer » : fermer la boîte (ou retour, Échap) ne
+        coupe pas l'appel, et le résultat s'affiche en message. Une panne réseau laisse la boîte
+        ouverte : « Réponse non publiée : … Votre texte est gardé. ». Le commentaire ne porte que
+        le texte saisi. Les étiquettes changent dans un ordre où aucun état intermédiaire ne
+        dépasse le statut de départ, et le webhook ignore les états antérieurs au retour à Reçu :
+        un événement livré en retard ne refait pas avancer le ticket. Seuls les commentaires de
+        <code>answer_comment_ids</code> s'affichent comme réponses ; un autre « ## Précisions… »
+        du même compte est marqué « Non publiée depuis l'application ». La session d'analyse lit
+        les précisions publiées depuis l'analyse précédente et les cite intégralement dans
+        « Précisions prises en compte » ; la session de développement ne lit que l'analyse
+        validée. Aucune session ne commence un commentaire par « ## Précisions », ni ne modifie
+        ou supprime un commentaire.
       </figcaption>
     </figure>
   </section>

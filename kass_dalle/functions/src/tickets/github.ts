@@ -1,11 +1,14 @@
 /**
  * Client REST GitHub minimal des tickets, par `fetch` — aucun SDK.
  *
- * Huit appels : créer une Issue, lire une Issue, lire ses commentaires, lire
- * sa chronologie (PR qui la référencent), chercher une Issue par la référence
- * d'un ticket, et pour les décisions de l'administrateur : poser une
- * étiquette, publier un commentaire, fermer une Issue « not planned ». Le jeton vient de `process.env.GITHUB_TICKETS_TOKEN`, peuplé par
- * le secret du même nom une fois attaché ; absent, `githubToken()` rend `null`.
+ * Dix appels : créer une Issue, lire une Issue, lire ses commentaires, lire
+ * sa chronologie (PR qui la référencent), lire ses événements (dernier
+ * « validé » du mainteneur), chercher
+ * une Issue par la référence d'un ticket, et pour les décisions de
+ * l'administrateur : poser une étiquette, retirer une étiquette, publier un
+ * commentaire, fermer une Issue « not planned ». Le jeton vient de
+ * `process.env.GITHUB_TICKETS_TOKEN`, peuplé par le secret du même nom une
+ * fois attaché ; absent, `githubToken()` rend `null`.
  *
  * Chaque échec lève une `GithubError` classée (`kind`) : l'appelant distingue
  * un jeton refusé — signalé à l'administrateur par un bandeau — d'une panne
@@ -13,7 +16,7 @@
  */
 
 import { GITHUB_TICKETS_MAINTAINER_ID, GITHUB_TICKETS_OWNER, GITHUB_TICKETS_REPO } from "../config";
-import { isTrustedPrAuthor } from "./rules";
+import { isTrustedPrAuthor, lastMaintainerValidatedAt } from "./rules";
 
 const API = "https://api.github.com";
 const TIMEOUT_MS = 15_000;
@@ -62,7 +65,7 @@ export function classifyGithubFailure(
 
 async function request<T>(
   token: string,
-  method: "GET" | "POST" | "PATCH",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   opts: { body?: unknown; repoLevel?: boolean } = {},
 ): Promise<T> {
@@ -135,6 +138,8 @@ export interface RemoteIssue {
   stateReason: string | null;
   labels: string[];
   isPullRequest: boolean;
+  /** Dernière modification de l'Issue (horodatage ISO de GitHub), ou `null`. */
+  updatedAt: string | null;
 }
 
 /** Noms des étiquettes d'une Issue, qu'elles arrivent en objets ou en chaînes. */
@@ -152,6 +157,7 @@ export function readRemoteIssue(raw: Record<string, unknown>): RemoteIssue {
     stateReason: typeof raw.state_reason === "string" ? raw.state_reason : null,
     labels: labelNames(raw.labels),
     isPullRequest: raw.pull_request != null,
+    updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : null,
   };
 }
 
@@ -220,6 +226,29 @@ export async function addIssueLabels(
     { body: { labels } },
   );
   return labelNames(result);
+}
+
+/**
+ * Retire une étiquette d'une Issue. Rend `removed`, ou `absent` quand GitHub
+ * répond 404 (étiquette déjà retirée) : le résultat voulu est atteint, et
+ * l'appelant le journalise avec le numéro d'Issue et l'étiquette.
+ */
+export async function removeIssueLabel(
+  token: string,
+  issueNumber: number,
+  label: string,
+): Promise<"removed" | "absent"> {
+  try {
+    await request<unknown>(
+      token,
+      "DELETE",
+      `${REPO_PATH}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`,
+    );
+    return "removed";
+  } catch (err) {
+    if (err instanceof GithubError && err.kind === "not_found") return "absent";
+    throw err;
+  }
 }
 
 /** Publie un commentaire sur une Issue. Rend son identifiant. */
@@ -296,6 +325,29 @@ export async function openPullRequestBodiesReferencing(
     if (batch.length < 100) break;
   }
   return bodies;
+}
+
+/**
+ * Date du dernier `labeled validé` posé par le mainteneur, lue dans les
+ * événements de l'Issue (`GET /issues/{n}/events`, 500 au plus — étiquettes,
+ * fermetures, renvois, sans les commentaires), ou `null`. Sert à la tâche
+ * horaire et, avant un développement, quand la date stockée manque.
+ */
+export async function lastValidatedLabelAt(
+  token: string,
+  issueNumber: number,
+): Promise<string | null> {
+  const events: unknown[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await request<unknown[]>(
+      token,
+      "GET",
+      `${REPO_PATH}/issues/${issueNumber}/events?per_page=100&page=${page}`,
+    );
+    events.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return lastMaintainerValidatedAt(events, GITHUB_TICKETS_MAINTAINER_ID);
 }
 
 /**

@@ -127,7 +127,7 @@ export { findMemberByEmailFn } from "./callable/memberSearchCallable";
 
 // ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
 // Création par un membre approuvé, capture jointe par l'auteur, relance,
-// validation et refus par l'administrateur. GITHUB_TICKETS_TOKEN est monté par
+// validation, refus et réponse à une analyse par l'administrateur. GITHUB_TICKETS_TOKEN est monté par
 // ces callables (sauf la capture), la tâche horaire, le webhook (relecture des
 // analyses) et le backfill des analyses ; le webhook seul monte
 // GITHUB_WEBHOOK_SECRET. Les deux lancements de session (routines Claude Code)
@@ -139,6 +139,7 @@ export {
   retryTicketSend,
   validateTicket,
   refuseTicket,
+  answerTicketAnalysis,
   launchTicketAnalysis,
   launchTicketDevelopment,
 } from "./callable/ticketsCallable";

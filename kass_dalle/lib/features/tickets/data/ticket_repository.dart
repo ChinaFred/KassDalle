@@ -407,6 +407,18 @@ class TicketRepository {
     );
   }
 
+  /// Publie [answer] en réponse à la dernière analyse de [ticketId]
+  /// (administrateur) ; le ticket repasse à Reçu. Lève [TicketDecisionError]
+  /// pour un refus du serveur, échec partiel compris ; toute autre erreur est
+  /// relancée telle quelle.
+  Future<String> answer(String ticketId, String answer) {
+    return _decide(
+      step: 'answer',
+      ticketId: ticketId,
+      call: () => _callables.answerTicketAnalysis(ticketId, answer.trim()),
+    );
+  }
+
   /// Lance la routine [action] sur [ticketId] (administrateur).
   ///
   /// Lève [TicketLaunchError] pour un refus du serveur (rien n'a été lancé) ;

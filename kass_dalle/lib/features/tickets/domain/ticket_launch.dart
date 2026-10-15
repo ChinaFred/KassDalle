@@ -177,12 +177,16 @@ class TicketLaunchRunState {
 /// Seule compte la dernière entrée de ce type (plus grand `launched_at`).
 /// Elle est en cours si son résultat est `launched` ou `unknown`, si le
 /// ticket a toujours le statut d'où elle est partie, et si [now] précède son
-/// échéance. Échéance passée, mêmes conditions : relance proposée.
+/// échéance. Échéance passée, mêmes conditions : relance proposée. Une
+/// entrée antérieure au dernier changement de statut du ticket
+/// ([statusChangedAt] : une réponse de l'administrateur ramène le ticket à
+/// Reçu) ne bloque rien et ne propose pas de relance.
 TicketLaunchRunState ticketLaunchRunState({
   required List<TicketLaunch> launches,
   required TicketLaunchAction action,
   required String rawStatus,
   required DateTime now,
+  DateTime? statusChangedAt,
 }) {
   TicketLaunch? last;
   for (final e in launches) {
@@ -191,6 +195,9 @@ TicketLaunchRunState ticketLaunchRunState({
     if (last == null || at.isAfter(last.launchedAt!)) last = e;
   }
   if (last == null) return TicketLaunchRunState.none;
+  if (statusChangedAt != null && last.launchedAt!.isBefore(statusChangedAt)) {
+    return TicketLaunchRunState.none;
+  }
   if (last.rawOutcome != 'launched' && last.rawOutcome != 'unknown') {
     return TicketLaunchRunState.none;
   }

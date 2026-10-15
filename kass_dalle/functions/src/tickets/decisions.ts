@@ -1,19 +1,29 @@
 /**
- * Décisions de l'administrateur sur un ticket : « Valider » et « Refuser ».
+ * Décisions de l'administrateur sur un ticket : « Valider », « Refuser » et
+ * « Répondre » à la dernière analyse.
  *
- * Appelées par `validateTicket` et `refuseTicket` (`callable/ticketsCallable.ts`),
+ * Appelées par `validateTicket`, `refuseTicket` et `answerTicketAnalysis`
+ * (`callable/ticketsCallable.ts`),
  * après `requireAdmin`. Les conditions sont pures (`tickets/rules.ts`) ; ce
  * module appelle GitHub puis écrit le ticket par `applyGithubUpdate`, sans
  * attendre le webhook.
  *
  * Valider : relit l'Issue (fermée → l'état relu est appliqué et l'appel
- * échoue), pose l'étiquette `validé`, écrit `validated`. Idempotent.
+ * échoue), pose l'étiquette `validé`, écrit `validated` et la date du
+ * « validé » (`admin/analysis.validated_at`). Idempotent.
  *
  * Refuser : bail de deux minutes `decision_lease_until` pris en transaction
  * (deux refus simultanés ne publient pas deux motifs), relit l'Issue et ses
  * commentaires, publie `Réponse : <motif>` sauf si la dernière réponse du
  * mainteneur le porte déjà (reprise après échec partiel), ferme l'Issue
  * `not_planned`, écrit `refused` et `reply_text`. Le bail est libéré à la fin.
+ *
+ * Répondre : même bail, relit l'Issue et ses commentaires, publie
+ * `## Précisions de l'administrateur` sauf si une réponse suit déjà la
+ * dernière analyse (reprise après échec partiel), passe les étiquettes à
+ * `statut:à-analyser` (pose `statut:à-analyser`, puis retire `statut:analysé`
+ * et `validé`), et ramène le ticket à Reçu (`applyGithubUpdate` avec
+ * `answerReset`). Rien n'est lancé.
  *
  * Après chaque décision, les analyses du ticket sont réécrites (au mieux :
  * un échec est journalisé, la décision reste faite).
@@ -27,7 +37,13 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 
-import { COLL_TICKETS } from "../config";
+import {
+  COLL_TICKETS,
+  GITHUB_TICKETS_MAINTAINER_ID,
+  TICKET_ADMIN_SUBCOLLECTION,
+  TICKET_LAUNCHES_DOC_ID,
+} from "../config";
+import { lastAnalysisMillis, launchEntryViews, storedValidatedAt } from "./stored";
 import { logError, logInfo, logWarn } from "../logging";
 import {
   GithubError,
@@ -37,11 +53,22 @@ import {
   getIssue,
   githubToken,
   listIssueComments,
+  removeIssueLabel,
   type RemoteComment,
 } from "./github";
 import {
+  ANSWER_PARTIAL_REASON,
+  LABEL_ANALYZED,
+  LABEL_TO_ANALYZE,
   LABEL_VALIDATED,
   REFUSAL_PARTIAL_REASON,
+  ANSWER_DEVELOPMENT_RUNNING_MESSAGE,
+  analysisAnswerState,
+  answerCommentBody,
+  answerPrecondition,
+  launchRunState,
+  readAnswerCommentIds,
+  ticketAwaitingReply,
   decisionGithubFailure,
   isTicketType,
   shouldWriteValidated,
@@ -58,6 +85,9 @@ import {
   applyGithubUpdate,
   lastReply,
   markTokenInvalid,
+  analysisRef,
+  recordAnswerCommentId,
+  updateValidatedAt,
   writeTicketAnalyses,
   type LogScope,
 } from "./service";
@@ -84,6 +114,10 @@ function readType(data: FirebaseFirestore.DocumentData): TicketType {
 function readIssueNumber(data: FirebaseFirestore.DocumentData): number | null {
   const n = data.github_issue_number;
   return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function readMillis(raw: unknown): number | null {
+  return raw instanceof Timestamp ? raw.toMillis() : null;
 }
 
 /**
@@ -150,6 +184,8 @@ export type DecisionCheck = (args: {
   status: TicketStatus;
   type: TicketType;
   issueNumber: number | null;
+  /** `status_changed_at` du ticket, en millisecondes, ou `null`. */
+  statusChangedAtMs: number | null;
 }) => { kind: "go" } | { kind: "skip" } | { kind: "refused"; message: string; reason: string };
 
 /**
@@ -171,7 +207,12 @@ export async function claimDecision(
     }
     const data = snap.data() ?? {};
     const issueNumber = readIssueNumber(data);
-    const verdict = check({ status: readStatus(data), type: readType(data), issueNumber });
+    const verdict = check({
+      status: readStatus(data),
+      type: readType(data),
+      issueNumber,
+      statusChangedAtMs: readMillis(data.status_changed_at),
+    });
     if (verdict.kind === "skip") return null;
     if (verdict.kind === "refused" || issueNumber === null) {
       throw new HttpsError(
@@ -254,6 +295,7 @@ export async function validateTicketDecision(
       } catch (err) {
         throw await githubFailure(err, ticketId, "étiquette validé", scope);
       }
+      await recordValidatedAt(ticketId, scope);
     }
 
     const written = await writeValidatedIfAnalyzed(ticketId);
@@ -277,6 +319,26 @@ export async function validateTicketDecision(
     return written;
   } finally {
     await releaseDecision(ticketId, scope);
+  }
+}
+
+/**
+ * Écrit la date du « validé » qui vient d'être posé : une analyse publiée
+ * après elle bloquera le développement. Au mieux : le webhook `labeled` et la
+ * tâche horaire l'écrivent aussi.
+ */
+async function recordValidatedAt(ticketId: string, scope: LogScope): Promise<void> {
+  try {
+    await updateValidatedAt(ticketId, Date.now(), true);
+  } catch (err) {
+    await logError({
+      message: `Tickets : date de validation du ticket ${ticketId} non écrite (le webhook et la tâche horaire la reprendront)`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
   }
 }
 
@@ -400,6 +462,240 @@ export async function refuseTicketDecision(
       extra: { motif_deja_publie: alreadyPublished },
     });
     return { status: "refused" };
+  } finally {
+    await releaseDecision(ticketId, scope);
+  }
+}
+
+// ── Répondre à la dernière analyse ──────────────────────────────────────────
+
+/**
+ * Enregistre l'identifiant du commentaire publié (`answer_comment_ids`). Au
+ * mieux : un échec est journalisé ; le commentaire s'affiche alors « Non
+ * publiée depuis l'application », et une reprise le republierait.
+ */
+async function rememberAnswerComment(
+  ticketId: string,
+  issueNumber: number,
+  commentId: number | null,
+  scope: LogScope,
+): Promise<void> {
+  try {
+    if (commentId === null) throw new Error("réponse de GitHub sans identifiant de commentaire");
+    await recordAnswerCommentId(ticketId, commentId);
+  } catch (err) {
+    await logError({
+      message: `Tickets : réponse publiée sur l'Issue #${issueNumber} mais son identifiant n'est pas enregistré (ticket ${ticketId})`,
+      errorDescription: describe(err),
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { comment_id: commentId },
+    });
+  }
+}
+
+/** Journalise une étiquette déjà absente au moment de la retirer (404). */
+async function removeLabelLogged(
+  token: string,
+  issueNumber: number,
+  label: string,
+  ticketId: string,
+  scope: LogScope,
+): Promise<void> {
+  if ((await removeIssueLabel(token, issueNumber, label)) === "removed") return;
+  await logInfo({
+    message: `Tickets : étiquette « ${label} » déjà absente de l'Issue #${issueNumber} au moment de la retirer (ticket ${ticketId})`,
+    correlationId: scope.correlationId,
+    userId: scope.userId,
+    firestoreDocId: ticketId,
+    feature: "tickets",
+    extra: { issue_number: issueNumber, label },
+  });
+}
+
+/**
+ * Vrai si un développement est en cours sur un ticket Validé non bloqué :
+ * « Répondre » est alors refusé. Un ticket bloqué (dernière analyse
+ * postérieure au dernier « validé ») accepte une réponse même si son dernier
+ * lancement n'a pas atteint son échéance : la session s'est arrêtée sur cette
+ * analyse.
+ */
+async function developmentRunning(
+  ticketId: string,
+  type: TicketType,
+  status: TicketStatus,
+  statusChangedAtMs: number | null,
+  analysisData: FirebaseFirestore.DocumentData | undefined,
+): Promise<boolean> {
+  if (status !== "validated") return false;
+  const awaiting = ticketAwaitingReply({
+    rawStatus: status,
+    type,
+    lastAnalysisAtMs: lastAnalysisMillis(analysisData),
+    validatedAtMs: storedValidatedAt(analysisData),
+  });
+  if (awaiting) return false;
+  const launches = await ticketRef(ticketId)
+    .collection(TICKET_ADMIN_SUBCOLLECTION)
+    .doc(TICKET_LAUNCHES_DOC_ID)
+    .get();
+  return launchRunState({
+    entries: launchEntryViews(launches.data()),
+    action: "developpement",
+    rawStatus: status,
+    nowMs: Date.now(),
+    statusChangedAtMs,
+  }).running;
+}
+
+/**
+ * Publie la réponse de l'administrateur à la dernière analyse et ramène le
+ * ticket à Reçu. Idempotente : une reprise après un échec partiel ne
+ * republie pas le commentaire si la réponse déjà publiée depuis
+ * l'application (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
+ */
+export async function answerTicketDecision(
+  ticketId: string,
+  text: string,
+  scope: LogScope,
+): Promise<{ status: TicketStatus }> {
+  const seen: { type: TicketType; status: TicketStatus; statusChangedAtMs: number | null } = {
+    type: "question",
+    status: "sending",
+    statusChangedAtMs: null,
+  };
+  const claimed = await claimDecision(
+    ticketId,
+    ({ status, type, issueNumber: n, statusChangedAtMs }) => {
+      seen.type = type;
+      seen.status = status;
+      seen.statusChangedAtMs = statusChangedAtMs;
+      const refusal = answerPrecondition({ status, type, hasIssue: n !== null });
+      return refusal === null
+        ? { kind: "go" }
+        : { kind: "refused", message: refusal, reason: "not_answerable" };
+    },
+  );
+  // Le contrôle d'une réponse ne rend jamais « rien à faire ».
+  if (claimed === null) throw new Error(`réponse au ticket ${ticketId} : bail rendu sans Issue`);
+  const issueNumber = claimed;
+  try {
+    const analysisData = (await analysisRef(ticketId).get()).data();
+    if (
+      await developmentRunning(
+        ticketId,
+        seen.type,
+        seen.status,
+        seen.statusChangedAtMs,
+        analysisData,
+      )
+    ) {
+      throw new HttpsError("failed-precondition", ANSWER_DEVELOPMENT_RUNNING_MESSAGE, {
+        reason: "launch_running",
+      });
+    }
+    const answerIds = readAnswerCommentIds(analysisData?.answer_comment_ids);
+    const body = answerCommentBody(text);
+
+    const token = githubToken();
+    if (token === null) throw await tokenMissing(ticketId, scope);
+
+    let issue: Awaited<ReturnType<typeof getIssue>>;
+    let comments: RemoteComment[];
+    try {
+      issue = await getIssue(token, issueNumber);
+      comments = await listIssueComments(token, issueNumber);
+    } catch (err) {
+      throw await githubFailure(err, ticketId, "lecture de l'Issue", scope);
+    }
+    if (issue.state === "closed") {
+      await applyGithubUpdate(ticketId, {
+        statusFor: (t) => statusFromIssue({ ...issue, hasOpenClosingPr: false }, t),
+        issueUpdatedAt: issue.updatedAt,
+      });
+      throw new HttpsError("failed-precondition", "Ce ticket a déjà été clos sur GitHub.", {
+        reason: "issue_closed",
+      });
+    }
+
+    const state = analysisAnswerState(comments, GITHUB_TICKETS_MAINTAINER_ID, answerIds, body);
+    if (!state.hasAnalysis) {
+      throw new HttpsError("failed-precondition", "Aucune analyse à laquelle répondre.", {
+        reason: "no_analysis",
+      });
+    }
+    if (!state.samePublished) {
+      let published: RemoteComment;
+      try {
+        published = await createIssueComment(token, issueNumber, body);
+      } catch (err) {
+        throw await githubFailure(err, ticketId, "publication de la réponse", scope);
+      }
+      await rememberAnswerComment(ticketId, issueNumber, published.id, scope);
+    }
+
+    // Ordre choisi pour qu'aucun état intermédiaire ne dépasse le statut de
+    // départ : à-analyser posée d'abord, puis analysé et validé retirées.
+    try {
+      if (!issue.labels.includes(LABEL_TO_ANALYZE)) {
+        await addIssueLabels(token, issueNumber, [LABEL_TO_ANALYZE]);
+      }
+      if (issue.labels.includes(LABEL_ANALYZED)) {
+        await removeLabelLogged(token, issueNumber, LABEL_ANALYZED, ticketId, scope);
+      }
+      if (issue.labels.includes(LABEL_VALIDATED)) {
+        await removeLabelLogged(token, issueNumber, LABEL_VALIDATED, ticketId, scope);
+      }
+    } catch (err) {
+      const kind = err instanceof GithubError ? err.kind : "other";
+      await logError({
+        message: `Tickets : réponse publiée mais étiquettes de l'Issue #${issueNumber} inchangées (ticket ${ticketId})`,
+        errorDescription: describe(err),
+        correlationId: scope.correlationId,
+        userId: scope.userId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+        extra: { kind, step: "étiquettes", reponse_deja_publiee: state.samePublished },
+      });
+      if (kind === "token") await markTokenInvalid(scope, describe(err));
+      throw new HttpsError(
+        "aborted",
+        "Réponse publiée, mais le statut n'a pas changé. Réessayez.",
+        {
+          reason: ANSWER_PARTIAL_REASON,
+        },
+      );
+    }
+
+    try {
+      await applyGithubUpdate(ticketId, { answerReset: true });
+    } catch (err) {
+      await logError({
+        message: `Tickets : réponse publiée sur l'Issue #${issueNumber} mais ticket ${ticketId} non ramené à Reçu`,
+        errorDescription: describe(err),
+        correlationId: scope.correlationId,
+        userId: scope.userId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError(
+        "internal",
+        "Réponse publiée sur GitHub, mais le ticket n'a pas été mis à jour. Réessayez.",
+        { reason: "ticket_not_updated" },
+      );
+    }
+    await refreshAnalysesAfterDecision(ticketId, null, token, issueNumber, scope);
+    await logInfo({
+      message: `Tickets : réponse à l'analyse du ticket ${ticketId} publiée (Issue #${issueNumber}), ticket repassé à Reçu`,
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { reponse_deja_publiee: state.samePublished },
+    });
+    return { status: "received" };
   } finally {
     await releaseDecision(ticketId, scope);
   }

@@ -8,8 +8,14 @@
  *  1. secrets de la routine présents, sinon « Lancement non configuré »,
  *     rien compté ;
  *  2. statut et Issue (`launchPrecondition`), puis bail de décision partagé
- *     avec Valider et Refuser (`claimDecision`) ;
- *  3. aucun lancement du même type en cours (`launchRunState`) ;
+ *     avec Valider, Refuser et Répondre (`claimDecision`) ;
+ *  3. développement seulement : ticket bloqué (`ticketAwaitingReply`, la
+ *     dernière analyse est postérieure au dernier « validé » du mainteneur),
+ *     refusé avec `launch_needs_answer`, rien compté. La date du « validé »
+ *     vient de `admin/analysis.validated_at`, ou des événements de l'Issue
+ *     quand elle manque ;
+ *  3 bis. aucun lancement du même type en cours (`launchRunState` ; un
+ *     lancement antérieur au dernier changement de statut ne compte pas) ;
  *  4. plafond du jour (`app_config/tickets.launches_per_day`, 10 par défaut) :
  *     le lancement est compté en transaction (`ticket_quotas/launch_<jour>`,
  *     compteurs de `app_config/tickets_status`) ;
@@ -44,10 +50,11 @@ import {
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
 import { claimDecision, githubFailure, releaseDecision, tokenMissing } from "./decisions";
-import { getIssue, githubToken } from "./github";
+import { getIssue, githubToken, lastValidatedLabelAt } from "./github";
 import {
   LAUNCH_FROM_STATUS,
   LAUNCH_HISTORY_MAX,
+  LAUNCH_NEEDS_ANSWER_MESSAGE,
   launchCommandText,
   launchPrecondition,
   launchQuotaDocId,
@@ -59,8 +66,8 @@ import {
   parisDay,
   readLaunchesPerDay,
   statusFromIssue,
+  ticketAwaitingReply,
   type LaunchAction,
-  type LaunchEntryView,
   type TicketType,
 } from "./rules";
 import {
@@ -71,7 +78,13 @@ import {
   type FireOutcome,
   type RoutineFailureKind,
 } from "./routine";
-import { applyGithubUpdate, type LogScope } from "./service";
+import {
+  lastAnalysisMillis,
+  launchEntryViews,
+  readLaunchEntries,
+  storedValidatedAt,
+} from "./stored";
+import { analysisRef, applyGithubUpdate, updateValidatedAt, type LogScope } from "./service";
 
 /** Durée de vie d'un compteur du jour (politique TTL sur `expires_at`). */
 const QUOTA_TTL_DAYS = 7;
@@ -103,28 +116,6 @@ function launchesRef(ticketId: string) {
 
 function statusRef() {
   return getFirestore().collection(COLL_APP_CONFIG).doc(TICKETS_STATUS_DOC_ID);
-}
-
-function millis(raw: unknown): number | null {
-  return raw instanceof Timestamp ? raw.toMillis() : null;
-}
-
-/** Les entrées de `launches`, lues sans supposer leur forme. */
-export function readLaunchEntries(data: FirebaseFirestore.DocumentData | undefined): unknown[] {
-  const raw = data?.launches;
-  return Array.isArray(raw) ? raw : [];
-}
-
-function entryView(raw: unknown): LaunchEntryView | null {
-  if (raw === null || typeof raw !== "object") return null;
-  const e = raw as Record<string, unknown>;
-  return {
-    action: e.action,
-    outcome: e.outcome,
-    from_status: e.from_status,
-    launched_at_ms: millis(e.launched_at),
-    retry_after_ms: millis(e.retry_after),
-  };
 }
 
 /** Code d'erreur rendu au client pour un échec de l'API. */
@@ -319,6 +310,71 @@ async function clearRoutineInvalid(action: LaunchAction, scope: LogScope): Promi
   }
 }
 
+// ── Ticket bloqué ───────────────────────────────────────────────────────────
+
+/**
+ * Refuse un développement sur un ticket bloqué, avant tout comptage. Sans
+ * `validated_at` stocké, la date est lue dans les événements de l'Issue, puis
+ * écrite (au mieux) pour l'écran.
+ */
+async function refuseIfAwaitingReply(
+  ticketId: string,
+  issueNumber: number,
+  type: TicketType,
+  scope: LogScope,
+): Promise<void> {
+  const data = (await analysisRef(ticketId).get()).data();
+  const lastAnalysisAtMs = lastAnalysisMillis(data);
+  if (lastAnalysisAtMs === null) return;
+  let validatedAtMs: number | null;
+  const stored = storedValidatedAt(data);
+  if (stored !== undefined) {
+    validatedAtMs = stored;
+  } else {
+    const token = githubToken();
+    if (token === null) throw await tokenMissing(ticketId, scope);
+    let iso: string | null;
+    try {
+      iso = await lastValidatedLabelAt(token, issueNumber);
+    } catch (err) {
+      throw await githubFailure(err, ticketId, "lecture des événements de l'Issue", scope);
+    }
+    const fetched = iso === null ? null : Date.parse(iso);
+    validatedAtMs = fetched === null || Number.isNaN(fetched) ? null : fetched;
+    try {
+      // Ticket Validé : l'étiquette est présente, la date ne recule pas.
+      const written = await updateValidatedAt(ticketId, validatedAtMs, true);
+      if (written !== undefined) validatedAtMs = written;
+    } catch (err) {
+      await logError({
+        message: `Tickets : date de validation du ticket ${ticketId} lue sur GitHub mais non écrite`,
+        errorDescription: describe(err),
+        correlationId: scope.correlationId,
+        userId: scope.userId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+    }
+  }
+  const awaiting = ticketAwaitingReply({
+    rawStatus: LAUNCH_FROM_STATUS.developpement,
+    type,
+    lastAnalysisAtMs,
+    validatedAtMs,
+  });
+  if (!awaiting) return;
+  await logInfo({
+    message: `Tickets : développement du ticket ${ticketId} refusé, la dernière analyse attend une réponse`,
+    correlationId: scope.correlationId,
+    userId: scope.userId,
+    firestoreDocId: ticketId,
+    feature: "tickets",
+  });
+  throw new HttpsError("failed-precondition", LAUNCH_NEEDS_ANSWER_MESSAGE, {
+    reason: "launch_needs_answer",
+  });
+}
+
 // ── Lancement ───────────────────────────────────────────────────────────────
 
 export async function launchTicketSession(
@@ -342,14 +398,21 @@ export async function launchTicketSession(
   }
 
   const fromStatus = LAUNCH_FROM_STATUS[action];
-  const seen: { type: TicketType } = { type: "question" };
-  const claimed = await claimDecision(ticketId, ({ status, type, issueNumber }) => {
-    seen.type = type;
-    const refusal = launchPrecondition({ status, type, hasIssue: issueNumber !== null }, action);
-    return refusal === null
-      ? { kind: "go" }
-      : { kind: "refused", message: refusal, reason: "not_launchable" };
-  });
+  const seen: { type: TicketType; statusChangedAtMs: number | null } = {
+    type: "question",
+    statusChangedAtMs: null,
+  };
+  const claimed = await claimDecision(
+    ticketId,
+    ({ status, type, issueNumber, statusChangedAtMs }) => {
+      seen.type = type;
+      seen.statusChangedAtMs = statusChangedAtMs;
+      const refusal = launchPrecondition({ status, type, hasIssue: issueNumber !== null }, action);
+      return refusal === null
+        ? { kind: "go" }
+        : { kind: "refused", message: refusal, reason: "not_launchable" };
+    },
+  );
   // Le contrôle d'un lancement ne rend jamais « rien à faire ».
   if (claimed === null) throw new Error(`lancement du ticket ${ticketId} : bail rendu sans Issue`);
   const issueNumber = claimed;
@@ -357,14 +420,19 @@ export async function launchTicketSession(
   let reservedDay: string | null = null;
   let keepCount = false;
   try {
-    // 3. Un lancement du même type en cours.
-    const history = readLaunchEntries((await launchesRef(ticketId).get()).data());
-    const views = history.map(entryView).filter((v): v is LaunchEntryView => v !== null);
+    // 3. Ticket bloqué : la dernière analyse attend une réponse.
+    if (action === "developpement") {
+      await refuseIfAwaitingReply(ticketId, issueNumber, seen.type, scope);
+    }
+
+    // 3 bis. Un lancement du même type en cours.
+    const views = launchEntryViews((await launchesRef(ticketId).get()).data());
     const run = launchRunState({
       entries: views,
       action,
       rawStatus: fromStatus,
       nowMs: Date.now(),
+      statusChangedAtMs: seen.statusChangedAtMs,
     });
     if (run.running && run.runningSinceMs !== null) {
       throw new HttpsError(

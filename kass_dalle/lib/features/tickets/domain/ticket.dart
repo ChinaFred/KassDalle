@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'ticket_analysis.dart';
 import 'ticket_launch.dart';
 
 /// Un ticket envoyé par un membre : bug, évolution, nouvelle fonctionnalité
@@ -320,7 +321,8 @@ List<Ticket> filterAdminTickets(
 /// Les décisions offertes à l'administrateur sur la fiche d'un ticket.
 ///
 /// Le serveur refait le même contrôle (`validatePrecondition`,
-/// `refusePrecondition`, `launchPrecondition` et `launchRunState`,
+/// `refusePrecondition`, `launchPrecondition`, `launchRunState`,
+/// `answerPrecondition` et `ticketAwaitingReply`,
 /// `functions/src/tickets/rules.ts`) : un bouton masqué ici n'est qu'un
 /// confort, jamais la protection. Logique dupliquée, verrouillée par
 /// `test-fixtures/ticket_decisions.json`.
@@ -351,6 +353,22 @@ class AdminTicketDecisions {
   /// l'administrateur doit connaître, ou `null`.
   final String? validateHint;
 
+  /// « Répondre » : ticket Analysé ou Validé, hors Question, avec Issue, au
+  /// moins une analyse relevée, aucun lancement en cours.
+  final bool canReply;
+
+  /// Ticket bloqué : Validé, et sa dernière analyse est postérieure au
+  /// dernier « validé » du mainteneur. Le développement n'est pas offert,
+  /// « Répondre » devient l'action principale.
+  final bool awaitingReply;
+
+  /// Date de la dernière analyse relevée, pour la ligne du ticket bloqué.
+  final DateTime? lastAnalysisAt;
+
+  /// Réponse publiée après la dernière analyse : la prochaine analyse la
+  /// lira (ligne « Vos précisions du … »).
+  final DateTime? pendingAnswerAt;
+
   const AdminTicketDecisions({
     required this.canValidate,
     required this.canRefuse,
@@ -361,6 +379,10 @@ class AdminTicketDecisions {
     this.runningSince,
     this.runningUntil,
     this.launchAction,
+    this.canReply = false,
+    this.awaitingReply = false,
+    this.lastAnalysisAt,
+    this.pendingAnswerAt,
   });
 
   /// Échéance du lancement en cours : la fiche se redessine à cet instant.
@@ -373,9 +395,52 @@ class AdminTicketDecisions {
   bool get hasAction =>
       canValidate ||
       canRefuse ||
+      canReply ||
       canLaunchAnalysis ||
       canLaunchDevelopment ||
       runningSince != null;
+}
+
+/// « Répondre » permis par le statut et l'analyse : la même règle que le
+/// serveur (`ticketCanReply`, `answerPrecondition`), verrouillée par
+/// `test-fixtures/ticket_decisions.json` (section `reply_cases`). Un statut
+/// inconnu de cette version n'offre rien.
+///
+/// [developmentRunning] : un développement est en cours sur un ticket non
+/// bloqué ; le serveur refuse alors (`launch_running`).
+bool ticketCanReply({
+  required String rawStatus,
+  required TicketType type,
+  required bool hasIssue,
+  required bool hasAnalysis,
+  required bool developmentRunning,
+}) {
+  final status = TicketStatus.fromValue(rawStatus);
+  return hasIssue &&
+      hasAnalysis &&
+      !developmentRunning &&
+      type != TicketType.question &&
+      (status == TicketStatus.analyzed || status == TicketStatus.validated);
+}
+
+/// Ticket bloqué : la même règle que le serveur (`ticketAwaitingReply`),
+/// verrouillée par `test-fixtures/ticket_decisions.json` (section
+/// `awaiting_reply`). Validé, hors Question, et la dernière analyse est
+/// strictement postérieure au dernier « validé » du mainteneur.
+/// [validatedAtKnown] faux : date inconnue, pas bloqué ; vrai avec
+/// [validatedAt] `null` : aucun « validé » relevé, bloqué.
+bool ticketAwaitingReply({
+  required String rawStatus,
+  required TicketType type,
+  required DateTime? lastAnalysisAt,
+  required bool validatedAtKnown,
+  required DateTime? validatedAt,
+}) {
+  if (TicketStatus.fromValue(rawStatus) != TicketStatus.validated) return false;
+  if (type == TicketType.question) return false;
+  if (lastAnalysisAt == null || !validatedAtKnown) return false;
+  if (validatedAt == null) return true;
+  return lastAnalysisAt.isAfter(validatedAt);
 }
 
 const kTicketValidateAfterAnalysisHint =
@@ -392,11 +457,14 @@ const kTicketUnknownStatusHint =
 /// [launches] : l'historique des lancements, `null` s'il n'a pas pu être lu
 /// (le bouton de lancement reste offert, le serveur refera le contrôle).
 /// [launchesLoading] : historique en cours de lecture, bouton masqué.
+/// [analysis] : le sous-document des analyses, `null` tant qu'il n'est pas
+/// lu (ou s'il n'existe pas) ; « Répondre » et le blocage en dépendent.
 AdminTicketDecisions adminTicketDecisions(
   Ticket t, {
   List<TicketLaunch>? launches,
   bool launchesLoading = false,
   DateTime? now,
+  TicketAnalysisDoc? analysis,
 }) {
   final known = t.rawStatus == t.status.value;
   final hasIssue = t.githubIssueNumber != null;
@@ -435,16 +503,35 @@ AdminTicketDecisions adminTicketDecisions(
       action = TicketLaunchAction.development;
     }
   }
+  final lastAnalysisAt = analysis?.lastAnalysisAt;
+  final awaiting = ticketAwaitingReply(
+    rawStatus: t.rawStatus,
+    type: t.type,
+    lastAnalysisAt: lastAnalysisAt,
+    validatedAtKnown: analysis?.validatedAtKnown ?? false,
+    validatedAt: analysis?.validatedAt,
+  );
   var run = TicketLaunchRunState.none;
-  if (action != null && launches != null && !launchesLoading) {
+  // Bloqué : le développement ne part pas, sa ligne « en cours » et sa
+  // relance n'ont plus lieu d'être.
+  if (action != null && launches != null && !launchesLoading && !awaiting) {
     run = ticketLaunchRunState(
       launches: launches,
       action: action,
       rawStatus: t.rawStatus,
       now: now ?? DateTime.now(),
+      statusChangedAt: t.statusChangedAt,
     );
   }
-  final offered = action != null && !launchesLoading && !run.running;
+  final offered =
+      action != null && !launchesLoading && !run.running && !awaiting;
+  final canReply = ticketCanReply(
+    rawStatus: t.rawStatus,
+    type: t.type,
+    hasIssue: hasIssue,
+    hasAnalysis: analysis?.hasAnalysis ?? false,
+    developmentRunning: run.running,
+  );
   return AdminTicketDecisions(
     canValidate: canValidate,
     canRefuse: canRefuse,
@@ -455,19 +542,30 @@ AdminTicketDecisions adminTicketDecisions(
     runningSince: run.runningSince,
     runningUntil: run.runningUntil,
     launchAction: action,
+    canReply: canReply,
+    awaitingReply: awaiting,
+    lastAnalysisAt: lastAnalysisAt,
+    pendingAnswerAt: known && status == TicketStatus.received
+        ? analysis?.pendingAnswerAt
+        : null,
   );
 }
 
-/// Refus attendu de `validateTicket` ou `refuseTicket` : le message du
-/// serveur s'affiche tel quel.
+/// Refus attendu de `validateTicket`, `refuseTicket` ou
+/// `answerTicketAnalysis` : le message du serveur s'affiche tel quel.
 class TicketDecisionError implements Exception {
   final String message;
 
-  /// Échec partiel d'un refus : le motif est publié sur GitHub, l'Issue n'est
-  /// pas fermée. Le motif ne doit plus changer avant de réessayer.
+  /// Échec partiel d'un refus (motif publié, Issue non fermée) ou d'une
+  /// réponse (réponse publiée, étiquettes inchangées). Le texte ne doit plus
+  /// changer avant de réessayer : le serveur ne le republie que s'il diffère.
   final bool partial;
 
-  const TicketDecisionError(this.message, {this.partial = false});
+  /// Champ refusé par le serveur (`details.field`), ou `null` : le message
+  /// se pose alors sous ce champ.
+  final String? field;
+
+  const TicketDecisionError(this.message, {this.partial = false, this.field});
 
   @override
   String toString() => message;
@@ -476,6 +574,11 @@ class TicketDecisionError implements Exception {
 /// Raison serveur d'un échec partiel de refus (`REFUSAL_PARTIAL_REASON`),
 /// verrouillée par `test-fixtures/ticket_decisions.json`.
 const kTicketRefusalPartialReason = 'reply_published_close_failed';
+
+/// Raison serveur d'un échec partiel de réponse : la réponse est publiée,
+/// les étiquettes de l'Issue n'ont pas changé (`ANSWER_PARTIAL_REASON`).
+/// Verrouillée par `test-fixtures/ticket_decisions.json`.
+const kTicketAnswerPartialReason = 'answer_published_labels_failed';
 
 /// L'erreur à montrer pour un refus de callable, ou `null` quand la réponse
 /// ne vient pas des contrôles du serveur (pas de `details.reason` ni de
@@ -492,6 +595,9 @@ TicketDecisionError? ticketDecisionErrorFrom({
   if (text.isEmpty) return null;
   return TicketDecisionError(
     text,
-    partial: reason == kTicketRefusalPartialReason,
+    partial:
+        reason == kTicketRefusalPartialReason ||
+        reason == kTicketAnswerPartialReason,
+    field: field is String ? field : null,
   );
 }

@@ -66,7 +66,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
-> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille). Un compte en attente ou révoqué n'envoie rien.
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille). Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -701,7 +701,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
-- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé, on y refuse un ticket, et on y lance une session Claude Code d'analyse ou de développement ; répondre à une Question se fait sur GitHub (voir 5.13).
+- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé, on y refuse un ticket, on y répond aux questions d'une analyse, et on y lance une session Claude Code d'analyse ou de développement ; répondre à une Question se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -1220,9 +1220,10 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Issue fermée comme terminée | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
 
-- Un statut peut sauter une étape ; il ne recule jamais. Répondu, Refusé et Livré sont
-  finaux, sauf si l'Issue est rouverte : le statut revient alors à celui que donnent ses
-  étiquettes.
+- Un statut peut sauter une étape ; il ne recule jamais, sauf dans un cas : quand l'Admin
+  répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
+  à Reçu. Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
+  revient alors à celui que donnent ses étiquettes.
 - Une pull request ouverte par un autre compte (copie du dépôt, contributeur extérieur) ne
   change aucun statut, même si elle dit « Closes #N ».
 - **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
@@ -1233,7 +1234,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
 - Valider et refuser se font depuis Admin › Tickets des membres, ou sur GitHub par les mêmes
   gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue comme
-  non prévue. Répondre à une Question se fait sur GitHub.
+  non prévue. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
+  analyse se fait dans l'application : elle publie un commentaire « ## Précisions de
+  l'administrateur », retire `validé` et remet `statut:à-analyser`.
 
 #### Tickets des membres (Admin, `/admin/tickets`, `/admin/tickets/:ticketId`)
 
@@ -1264,8 +1267,15 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   relance réussie, « Envoi relancé : <statut>. ».
 - **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
   « ## Analyse » (« ## Analyse — compléments » compris) s'affiche dans l'ordre chronologique,
-  sous « Analyse du jj/mm/aa à hh:mm », en Markdown, texte sélectionnable. Les dix plus
-  récentes au plus. Un commentaire d'un autre compte n'est jamais repris. Les images ne sont
+  sous « Analyse du jj/mm/aa à hh:mm », en Markdown, texte sélectionnable. Les réponses de
+  l'Admin (« ## Précisions de l'administrateur ») s'intercalent à leur date, sur une carte de
+  couleur distincte avec une icône de réponse, sous « Votre réponse du jj/mm/aa à hh:mm »,
+  sans leur ligne de titre ; une réponse trop longue porte « Réponse tronquée, voir GitHub. ».
+  Seuls les commentaires publiés par « Répondre » s'affichent ainsi : un autre commentaire
+  « ## Précisions… » du même compte (une session Claude Code signe comme lui) garde le style
+  d'une analyse, sous « Précisions du jj/mm/aa à hh:mm », avec la mention « Non publiée
+  depuis l'application ». Le titre « Analyses (N) » compte les analyses seules. Les dix
+  entrées les plus récentes au plus. Un commentaire d'un autre compte n'est jamais repris. Les images ne sont
   pas chargées : « [Image non affichée : …] ». Un lien `http` ou `https` s'ouvre dans le
   navigateur (« Impossible d'ouvrir le lien. » en cas d'échec) ; tout autre lien ne s'ouvre
   pas. Une analyse de plus de 20 000 caractères est coupée à la fin d'un paragraphe :
@@ -1287,12 +1297,15 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   L'auteur du ticket ne voit ni cette section, ni le lien, ni le nom de l'administrateur.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
   décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
-  Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser » et « Valider » ; Validé :
-  « Refuser » et « Lancer le développement ». « Valider » et un lancement ne s'affichent
-  jamais ensemble. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche en
-  fin de défilement au lieu de rester fixée.
+  Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
+  « Valider » ; Validé : « Refuser », « Répondre » et « Lancer le développement » ; Validé
+  bloqué (ci-dessous) : « Refuser » et « Répondre ». Les actions secondaires (contour) sont à
+  gauche, une seule action principale (pleine) à droite. « Valider » et un lancement ne
+  s'affichent jamais ensemble. Quand la largeur manque, l'action principale passe sous les
+  autres, à droite. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche
+  en fin de défilement au lieu de rester fixée.
   - « Valider » : seulement pour un ticket Analysé qui n'est pas une Question. Confirmation
-    « Valider ce ticket ? » — « Il sera traité à votre prochaine demande. », « Annuler » ou
+    « Valider ce ticket ? » — « Vous pourrez ensuite lancer le développement. », « Annuler » ou
     « Valider ». Succès : « Ticket validé. » et le statut passe à Validé. Une Issue déjà fermée
     sur GitHub : « Ce ticket a déjà été clos sur GitHub. », et la fiche reprend l'état de
     GitHub. Pour un ticket Reçu, la fiche dit « Valider sera possible une fois le ticket
@@ -1340,6 +1353,42 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     le bouton « Relancer ». Le serveur refuse aussi : « Une analyse a été lancée le jj/mm/aa
     à hh:mm. Attendez son résultat ou relancez après hh:mm. » (ou « Un développement a été
     lancé… »).
+  - **Ticket bloqué.** Un ticket Validé dont la dernière analyse est postérieure à la dernière
+    validation (souvent « ## Analyse — compléments » avec des questions) ne peut pas être
+    développé : la session s'arrêterait au même endroit à chaque relance. La barre affiche
+    « La dernière analyse, du jj/mm/aa à hh:mm, attend votre réponse. », masque « Lancer le
+    développement », « Relancer le développement » et la ligne « … en cours », et propose
+    « Répondre » en action principale. Le serveur refuse aussi un développement sur ce
+    ticket : « La dernière analyse attend votre réponse. Rien n'a été lancé ni décompté. ».
+  - « Répondre » : pour un ticket Analysé ou Validé, d'un autre type que Question, qui a au
+    moins une analyse relevée ; masqué pendant un lancement en cours ou une autre décision.
+    Le serveur refuse aussi pendant un développement en cours (hors ticket bloqué) : « Un
+    développement est en cours. Attendez sa fin avant de répondre. ».
+    Seulement dans la barre. La boîte « Répondre à l'analyse » rappelle « Analyse du jj/mm/aa
+    à hh:mm », prévient « Publié sur GitHub, dépôt public. N'y mettez ni nom, ni e-mail, ni
+    donnée privée. » et « Le ticket repassera à « Reçu ». Relancez ensuite l'analyse pour
+    qu'elle lise votre réponse. », et, pour un ticket Validé, « La validation sera retirée. ».
+    Champ « Votre réponse » (« Répondez aux questions de l'analyse. »), 5 à 4 000 caractères :
+    « La réponse doit faire au moins 5 caractères. » ; une adresse e-mail est refusée avant
+    l'envoi : « Retirez l'adresse e-mail avant de publier. ». Le texte est gardé si l'on ferme
+    puis rouvre la boîte, vidé après un succès ou en changeant de ticket. Boutons « Annuler »
+    et « Publier ». Pendant l'envoi : « Publication en cours. Vous pouvez fermer : le résultat
+    s'affichera dans un message. », et « Annuler » devient « Fermer », actif (le retour et
+    Échap font de même). Succès : « Réponse publiée. Le ticket repasse à Reçu : lancez
+    l'analyse. ». L'application publie le commentaire « ## Précisions de l'administrateur »
+    suivi du texte saisi, rien d'autre ; le ticket repasse à Reçu, l'Issue à
+    `statut:à-analyser`, et `validé` est retiré. Rien n'est lancé : l'Admin lance l'analyse,
+    qui lit ses précisions, y répond et les cite intégralement dans une partie « Précisions
+    prises en compte » : l'Admin les relit avant de valider. La session de développement ne
+    lit que l'analyse validée. Sur le ticket Reçu, la barre affiche « Vos précisions
+    du jj/mm/aa à hh:mm seront lues par la prochaine analyse. ». Une analyse lancée avant la
+    réponse ne propose pas « Relancer l'analyse ». Échecs : réseau « Réponse non publiée : …
+    Votre texte est gardé. » ; réponse publiée mais étiquettes inchangées « Réponse publiée,
+    mais le statut n'a pas changé. Réessayez. » : le texte ne se modifie plus, et rouverte,
+    la boîte dit « Cette réponse est déjà publiée sur GitHub. Publier remet le ticket à
+    Reçu. » ; réessayer ne republie pas la réponse ; Issue
+    fermée « Ce ticket a déjà été clos sur GitHub. ». L'auteur du ticket ne voit pas la
+    réponse ; il voit seulement son ticket revenir à Reçu.
   - **Plafond** : 10 lancements par jour (heure de Paris) pour toute la famille, analyse et
     développement confondus, réglable dans `app_config/tickets` (`launches_per_day`, 50 au
     plus). Un lancement refusé par Claude ne compte pas ; un lancement sans réponse, ou qui
@@ -1684,7 +1733,8 @@ sequenceDiagram
 ### 8.5 États d'un ticket (`status`)
 
 Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
-sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée.
+sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée et quand
+l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu.
 
 ```mermaid
 stateDiagram-v2
@@ -1702,6 +1752,9 @@ stateDiagram-v2
     received --> refused : Issue fermée, non prévue
     analyzed --> refused : Issue fermée, non prévue
     validated --> refused : Issue fermée, non prévue
+
+    analyzed --> received : « Répondre » de l'Admin\n(précisions publiées,\nstatut:à-analyser)
+    validated --> received : « Répondre » de l'Admin\n(validé retiré)
 
     delivered --> received : Issue rouverte\n(statut repris des étiquettes)
     refused --> received : Issue rouverte\n(statut repris des étiquettes)
