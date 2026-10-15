@@ -1240,34 +1240,37 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (info != null) ...[
-              Semantics(
-                liveRegion: deliveryBar != null,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    ExcludeSemantics(
-                      child: Icon(
-                        info.$1,
-                        size: 20,
-                        color:
-                            deliveryBar?.kind == TicketDeliveryLineKind.ready ||
-                                deliveryBar?.kind ==
-                                    TicketDeliveryLineKind.expired
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(
+                    child: Icon(
+                      info.$1,
+                      size: 20,
+                      color:
+                          deliveryBar?.kind == TicketDeliveryLineKind.ready ||
+                              deliveryBar?.kind ==
+                                  TicketDeliveryLineKind.expired
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(child: TicketInfoLine(info.$2)),
-                    if (deliveryBar?.kind == TicketDeliveryLineKind.unreadable)
-                      IconButton(
-                        onPressed: () =>
-                            ref.invalidate(ticketDeliveryProvider(ticket.id)),
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Réessayer',
-                      ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Semantics(
+                      container: true,
+                      liveRegion: deliveryBar != null,
+                      child: TicketInfoLine(info.$2),
+                    ),
+                  ),
+                  if (deliveryBar?.kind == TicketDeliveryLineKind.unreadable)
+                    IconButton(
+                      onPressed: () =>
+                          ref.invalidate(ticketDeliveryProvider(ticket.id)),
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Réessayer',
+                    ),
+                ],
               ),
               if (deliveryBar?.elsewhereTicketId case final otherId?)
                 Align(
