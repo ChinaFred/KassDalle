@@ -454,12 +454,111 @@ class _AdminTicketTile extends ConsumerWidget {
             if (ticket.status == TicketStatus.inProgress &&
                 ticket.rawStatus == ticket.status.value)
               _DeliveryReadyChip(ticketId: ticket.id),
+            AdminTicketLaunchChip(ticket: ticket),
             if (ticket.isInAnomaly) const TicketAnomalyChip(),
           ],
         ),
       ),
       onTap: onTap,
     );
+  }
+}
+
+/// Puce « Analyse en cours », « Développement en cours » ou « Livraison en
+/// cours » d'un ticket de la liste, puis « Relance possible » à l'échéance.
+/// La règle est celle de la fiche (`adminTicketDecisions`). Rien tant que
+/// l'historique n'est pas lu, ni s'il ne se lit pas : la fiche le dit.
+class AdminTicketLaunchChip extends ConsumerStatefulWidget {
+  final Ticket ticket;
+  const AdminTicketLaunchChip({super.key, required this.ticket});
+
+  @override
+  ConsumerState<AdminTicketLaunchChip> createState() =>
+      AdminTicketLaunchChipState();
+}
+
+class AdminTicketLaunchChipState extends ConsumerState<AdminTicketLaunchChip> {
+  Timer? _timer;
+  DateTime? _timerAt;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _arm(DateTime? until) {
+    if (until == _timerAt) return;
+    _timer?.cancel();
+    _timer = null;
+    _timerAt = until;
+    if (until == null) return;
+    final delay = until.difference(DateTime.now());
+    // Une seconde de marge : à l'instant exact, la règle compare encore
+    // « avant l'échéance ».
+    _timer = Timer(
+      (delay.isNegative ? Duration.zero : delay) + const Duration(seconds: 1),
+      () {
+        _timerAt = null;
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.ticket;
+    final active =
+        t.githubIssueNumber != null &&
+        t.type != TicketType.question &&
+        t.rawStatus == t.status.value &&
+        (t.status == TicketStatus.received ||
+            t.status == TicketStatus.validated ||
+            t.status == TicketStatus.inProgress);
+    if (!active) {
+      _arm(null);
+      return const SizedBox.shrink();
+    }
+    final launches = ref.watch(ticketLaunchesProvider(t.id));
+    // La dernière analyse décide du blocage « attend une réponse », qui ne
+    // compte que pour un ticket Validé ; la livraison, pour un ticket En cours.
+    final analysis = t.status == TicketStatus.validated
+        ? ref.watch(ticketAnalysisProvider(t.id))
+        : null;
+    final delivery = t.status == TicketStatus.inProgress
+        ? ref.watch(ticketDeliveryProvider(t.id))
+        : null;
+    if (launches.hasError ||
+        !launches.hasValue ||
+        (analysis != null && !analysis.hasValue) ||
+        (delivery != null && !delivery.hasValue)) {
+      _arm(null);
+      return const SizedBox.shrink();
+    }
+    final decisions = adminTicketDecisions(
+      t,
+      launches: launches.value,
+      now: DateTime.now(),
+      analysis: analysis?.value,
+      delivery: delivery?.value,
+    );
+    _arm(decisions.runningUntil);
+    final action = decisions.launchAction;
+    final since = decisions.runningSince;
+    if (action != null && since != null) {
+      return Semantics(
+        label: ticketLaunchRunningLine(action, since, DateTime.now()),
+        excludeSemantics: true,
+        child: TicketLaunchStateChip(label: '${action.noun} en cours'),
+      );
+    }
+    if (decisions.relaunchOf != null && !decisions.relaunchAfterBlock) {
+      return const TicketLaunchStateChip(
+        label: 'Relance possible',
+        relaunch: true,
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 

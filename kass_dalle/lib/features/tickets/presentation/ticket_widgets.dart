@@ -40,8 +40,8 @@ IconData ticketStatusIcon(TicketStatus status) => switch (status) {
     foreground: cs.onSurface,
   ),
   TicketStatus.received || TicketStatus.analyzed => (
-    background: cs.secondaryContainer,
-    foreground: cs.onSecondaryContainer,
+    background: cs.primaryContainer,
+    foreground: cs.onPrimaryContainer,
   ),
   TicketStatus.validated || TicketStatus.delivered => (
     background: cs.primaryContainer,
@@ -99,6 +99,30 @@ class TicketDeliveryReadyChip extends StatelessWidget {
       label: 'PR prête',
       background: cs.tertiaryContainer,
       foreground: cs.onTertiaryContainer,
+    );
+  }
+}
+
+/// Puce d'un lancement en cours (« Analyse en cours ») ou relançable
+/// (« Relance possible ») dans la liste d'administration. Le texte porte le
+/// sens ; la couleur le distingue seulement de la puce de statut.
+class TicketLaunchStateChip extends StatelessWidget {
+  final String label;
+  final bool relaunch;
+  const TicketLaunchStateChip({
+    super.key,
+    required this.label,
+    this.relaunch = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return _Pill(
+      icon: relaunch ? Icons.replay : Icons.hourglass_top,
+      label: label,
+      background: relaunch ? cs.surfaceContainerHighest : cs.primaryContainer,
+      foreground: relaunch ? cs.onSurfaceVariant : cs.onPrimaryContainer,
     );
   }
 }
