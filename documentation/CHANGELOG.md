@@ -20,13 +20,13 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.81 — fonctionnel
+### v0.23.82 — fonctionnel
 
 Tickets (ticket #97) : la ligne de livraison indique la version de l'application qui livre le
 ticket, par exemple « Livré en v0.23.80 par la PR #97 ». Elle s'affiche sur la fiche Admin ›
 Tickets et sur « Mes tickets ». Sans version lisible, le texte reste « Livré par la PR #N ».
 
-### v0.23.81 — technique
+### v0.23.82 — technique
 
 Nouveau champ `delivered_version` sur `tickets/{id}`, écrit par `recordDeliveredPr` avec la PR :
 la ligne `version:` de `kass_dalle/pubspec.yaml` au commit de fusion, sans numéro de build
@@ -34,6 +34,26 @@ la ligne `version:` de `kass_dalle/pubspec.yaml` au commit de fusion, sans numé
 n'empêche pas d'écrire la PR. Le champ est effacé quand le ticket quitte `delivered`. La reprise
 horaire et le backfill `ticket_delivered_pr` relisent aussi les tickets livrés sans version.
 Aucune règle Firestore ne change ; un cas de `rules-tests` vérifie que l'auteur ne l'écrit pas.
+
+### v0.23.81 — fonctionnel
+
+Ticket #96 : les administrateurs reçoivent une notification Android « Nouvelle version
+disponible » quand un nouvel APK est publié, au plus 10 minutes après. Un toucher sur la
+notification ouvre la fenêtre de mise à jour. Les éditeurs et les lecteurs ne reçoivent rien.
+Android 13 et plus demande l'autorisation une seule fois, après la connexion d'un
+administrateur. Aucun réglage dans l'application : les notifications se coupent dans Android.
+Un administrateur reçoit la première notification après avoir installé cette version.
+
+### v0.23.81 — technique
+
+Nouvelle tâche planifiée `releaseNotificationSchedule` (toutes les 10 minutes) : lit
+`apk_release.json`, réserve le couple version + build dans `app_config/apk_notification`
+(écriture serveur seule) par une transaction, puis envoie par FCM aux appareils
+`users/{uid}/devices/{token}` des comptes `admin` non révoqués, rôle relu à l'envoi. Les jetons
+périmés sont supprimés. Règle Firestore `devices` : écriture par le titulaire administrateur,
+forme bornée, aucune lecture client ; 13 tests ajoutés dans `rules-tests/`. Client :
+dépendance `firebase_messaging`, permission `POST_NOTIFICATIONS`, `PushRegistrationService`.
+`deploy.yml` et `.github/` ne changent pas.
 
 ### v0.23.80 — fonctionnel
 

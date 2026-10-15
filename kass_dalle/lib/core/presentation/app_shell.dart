@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/search/presentation/search_providers.dart';
 import '../app_version.dart';
 import '../services/app_update_service.dart';
+import '../services/push_registration_service.dart';
 import 'app_update_dialog.dart';
 import 'leave_guard.dart';
 import '../../features/auth/presentation/auth_providers.dart';
@@ -34,11 +35,40 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   final AppUpdateService _appUpdateService = AppUpdateService();
+  PushRegistrationService? _push;
+  String? _registeredUid;
 
   @override
   void initState() {
     super.initState();
     _checkForUpdate();
+    _setUpReleaseNotifications();
+  }
+
+  @override
+  void dispose() {
+    _push?.dispose();
+    super.dispose();
+  }
+
+  /// Notification de nouvelle version : réservée aux administrateurs, sur
+  /// Android. L'appareil s'enregistre quand le rôle `admin` est connu ; un
+  /// toucher sur la notification rouvre la fenêtre de mise à jour.
+  void _setUpReleaseNotifications() {
+    if (!PlatformUtils.isAndroidApp) return;
+    final push = _push = PushRegistrationService();
+    push.listenForReleaseTaps(_checkForUpdate);
+    ref.listenManual(appUserProvider, (_, next) {
+      final user = next.value;
+      if (user == null) return;
+      if (user.isAdmin && _registeredUid != user.uid) {
+        _registeredUid = user.uid;
+        push.register(user.uid);
+      } else if (!user.isAdmin && _registeredUid == user.uid) {
+        _registeredUid = null;
+        push.unregister(user.uid);
+      }
+    }, fireImmediately: true);
   }
 
   Future<void> _checkForUpdate() async {

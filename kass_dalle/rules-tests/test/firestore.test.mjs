@@ -4240,3 +4240,68 @@ describe("app_config — tickets et tickets_status", () => {
     );
   });
 });
+
+describe("users/{uid}/devices — jetons de notification des administrateurs", () => {
+  const ADMIN = PERSONAS.admin.uid;
+  const TOKEN = "fcm-token-1";
+  const doc = (token = TOKEN) => ({
+    token,
+    platform: "android",
+    updated_at: firebase.firestore.Timestamp.now(),
+  });
+
+  it("un administrateur enregistre son propre appareil", async () => {
+    await assertSucceeds(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).set(doc()));
+  });
+
+  for (const persona of ["editor", "reader", "pending", "revoked", "anonymous"]) {
+    it(`${persona} n'enregistre aucun appareil`, async () => {
+      const uid = persona === "anonymous" ? "x" : PERSONAS[persona].uid;
+      await assertFails(db(persona).doc(`users/${uid}/devices/${TOKEN}`).set(doc()));
+    });
+  }
+
+  it("un administrateur n'écrit pas sur le compte d'un autre", async () => {
+    await assertFails(db("admin").doc(`users/${READER}/devices/${TOKEN}`).set(doc()));
+  });
+
+  it("la forme est bornée : jeton égal à l'identifiant, plateforme android, champs connus", async () => {
+    const path = `users/${ADMIN}/devices/${TOKEN}`;
+    await assertFails(db("admin").doc(path).set({ ...doc(), token: "autre" }));
+    await assertFails(db("admin").doc(path).set({ ...doc(), platform: "ios" }));
+    await assertFails(db("admin").doc(path).set({ ...doc(), extra: 1 }));
+    await assertFails(
+      db("admin").doc(path).set({ ...doc(), updated_at: "hier" }),
+    );
+  });
+
+  it("personne ne lit les jetons depuis le client, pas même leur titulaire", async () => {
+    await seedDocs(env, { [`users/${ADMIN}/devices/${TOKEN}`]: doc() });
+    await assertFails(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).get());
+    await assertFails(db("admin").collection(`users/${ADMIN}/devices`).get());
+    await assertFails(db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).get());
+  });
+
+  it("le titulaire supprime son jeton, un autre compte non", async () => {
+    await seedDocs(env, { [`users/${ADMIN}/devices/${TOKEN}`]: doc() });
+    await assertFails(db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).delete());
+    await assertSucceeds(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).delete());
+  });
+});
+
+describe("app_config/apk_notification — serveur seul", () => {
+  beforeEach(async () => {
+    await seedDocs(env, { "app_config/apk_notification": { key: "0.23.80+427" } });
+  });
+
+  it("l'administrateur lit mais n'écrit pas la dernière version notifiée", async () => {
+    await assertSucceeds(db("admin").doc("app_config/apk_notification").get());
+    await assertFails(db("admin").doc("app_config/apk_notification").set({ key: "x" }));
+    await assertFails(db("admin").doc("app_config/apk_notification").delete());
+  });
+
+  it("un membre non administrateur ne le lit pas", async () => {
+    await assertFails(db("reader").doc("app_config/apk_notification").get());
+    await assertFails(db("editor").doc("app_config/apk_notification").get());
+  });
+});

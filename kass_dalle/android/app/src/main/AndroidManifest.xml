@@ -18,6 +18,11 @@
          Kass'Dalle au préalable. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Android 13 et plus : afficher la notification de nouvelle version
+         envoyée aux administrateurs. Demandée à l'exécution, après la
+         connexion d'un administrateur. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application

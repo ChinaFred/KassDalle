@@ -192,6 +192,7 @@ firestore/
 │   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
 │   ├── preferences/{prefId}                       ← book_order, recipe_search_scope, explore_filters, meal_staples, planning_refusals, planning_visibility
 │   ├── planning_runs/{runId}                      ← générations de planning, serveur seul
+│   ├── devices/{token}                            ← appareils Android d'un administrateur (jeton FCM)
 │   └── shopping/current                           ← panier de courses personnel, titulaire seul
 ├── user_profiles/{uid}/                           ← nom public, écrit par le serveur seul
 ├── books/{bookId}/
@@ -2311,6 +2312,15 @@ règles (`url_retry_count`, deux au plus, §3.4). Écrit par les Functions
   livre est vu par toute la famille, chacun le range où il veut. Les identifiants disparus sont
   ignorés à la lecture, les livres créés depuis se rangent à la fin.
 - `users/{uid}/preferences/planning_refusals` : la mémoire des refus du planning, voir §3.8 ter.
+- `users/{uid}/devices/{token}` (v0.23.81) : un appareil Android d'un administrateur, destinataire
+  de la notification de nouvelle version. L'identifiant est le jeton FCM. Champs : `token`
+  (`String`, égal à l'identifiant), `platform` (`"android"`), `updated_at` (`Timestamp`).
+  Écrit par son titulaire tant qu'il est administrateur (`PushRegistrationService`), supprimé
+  par lui ; jamais lu par un client. Le serveur le lit avec le SDK Admin, pour les seuls
+  comptes dont `users/{uid}.role` vaut `admin` et non révoqués, au moment de l'envoi.
+- `app_config/apk_notification` (v0.23.81) : `key` (`String`, `version+build` du dernier APK
+  notifié), `version`, `build`, `reserved_at` (`Timestamp`). Écrit par le serveur seul
+  (`isServerOnlyConfig`), lu par l'administrateur.
 - `users/{uid}/preferences/recipe_search_scope` : `sources` (clés de `RecipeSource` — recettes
   validées, brouillons, recettes famille, conception IA) et `book_ids`, le dernier périmètre
   choisi dans « Où chercher des recettes ? » du planning par lots. Un livre absent de `book_ids`
@@ -2595,6 +2605,14 @@ service cloud.firestore {
       match /nutrition_portion_overrides/{recipeId} {
         allow read, write: if isOwner(uid) || isAdmin();
       }
+      // `devices/{token}` : jeton FCM d'un administrateur. Écrit par son
+      // titulaire administrateur (`token` égal à l'identifiant, `platform`
+      // `android`, `updated_at`), supprimé par lui, jamais lu par un client.
+      match /devices/{token} {
+        allow read: if false;
+        allow create, update: if isOwner(uid) && isAdmin() /* + forme */;
+        allow delete: if isOwner(uid);
+      }
       // `preferences/planning_refusals` : la mémoire des refus du planning,
       // lue par `suggestMealPlanFn`. Sa forme est bornée.
       match /preferences/{prefId} {
@@ -2812,7 +2830,7 @@ service cloud.firestore {
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*` et `tickets_status` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -5638,13 +5656,14 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Quatre tâches planifiées (Cloud Scheduler), neuf reprises manuelles et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), neuf reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
 | Fonction | Cadence | Ce qu'elle fait |
 |---|---|---|
 | `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
+| `releaseNotificationSchedule` | `every 10 minutes`, heure de Paris | notifie les administrateurs d'un nouvel APK (v0.23.81). Lit `https://kassdale-6d948.web.app/apk_release.json?t=<horodatage>` (contourne le cache), réserve le couple `version+build` dans `app_config/apk_notification` par une transaction (deux passes qui se chevauchent n'envoient qu'une fois), lit les jetons `users/{uid}/devices/*` des comptes `role == "admin"` non révoqués, envoie par `sendEachForMulticast` (`firebase-admin/messaging`, chargé par `await import()`), supprime les jetons `registration-token-not-registered` et libère la réservation si aucun envoi n'a abouti. Manifeste illisible ou absent : `logError`, rien d'envoyé, nouvel essai 10 minutes plus tard. Code : `release_notifications/` et `scheduled/releaseNotificationSchedule.ts`. Aucun appel d'IA |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 | `ticketsSyncSchedule` | `every 60 minutes` | renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu) ; s'arrête au premier jeton refusé (§5, « Tickets ») |
@@ -6721,6 +6740,15 @@ moment où l'APK est compilé et copié, et décrit donc toujours le fichier ser
 
 **Pas de repli sur `version.json` quand le manifeste manque** : ce serait reproduire le
 défaut qu'il corrige. Sans manifeste, aucune mise à jour n'est proposée.
+
+**Notification de nouvelle version (v0.23.81).** Côté client, `PushRegistrationService`
+(`core/services/push_registration_service.dart`, `firebase_messaging`) demande la permission
+`POST_NOTIFICATIONS` et dépose le jeton FCM sous `users/{uid}/devices/{token}`, pour un
+administrateur sur Android seulement (`app_shell.dart`). Le message porte `data.type =
+"apk_release"` ; un toucher en arrière-plan relance `AppUpdateService.check` et ouvre
+`showAppUpdateDialog`. Côté serveur : `releaseNotificationSchedule`, voir le tableau des
+tâches planifiées. Le jeton d'un compte qui se déconnecte reste stocké : le serveur ne lit que
+ceux des comptes administrateurs au moment de l'envoi.
 
 À version égale, le numéro de build départage : un APK reconstruit sans changement de
 `version:` porte le même nom de version et un build supérieur.

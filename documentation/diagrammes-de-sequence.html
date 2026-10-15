@@ -4491,6 +4491,57 @@ sequenceDiagram
     </figure>
   </section>
 
+  <section>
+    <h2 id="notification-version"><span class="n">47</span>Notifier les administrateurs d'un nouvel APK</h2>
+    <p class="sec-note">
+      Toutes les 10 minutes, une tâche planifiée compare le manifeste publié à la dernière
+      version notifiée et envoie une notification Android aux seuls administrateurs.
+      <span class="path">app_shell.dart → push_registration_service.dart (register) ;
+      scheduled/releaseNotificationSchedule.ts → release_notifications/notify.ts
+      (runReleaseNotification) ; rules.ts (parseApkManifest, releaseKey)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant A as Application Android (administrateur)
+  participant F as Firestore
+  participant S as releaseNotificationSchedule
+  participant H as Hosting
+  participant M as FCM
+
+  A->>A: permission POST_NOTIFICATIONS, jeton FCM
+  A->>F: users/{uid}/devices/{token} (règles : titulaire administrateur)
+  loop toutes les 10 minutes
+    S->>H: apk_release.json?t=horodatage
+    alt manifeste illisible
+      S->>S: logError, nouvel essai à la passe suivante
+    else lu
+      S->>F: transaction app_config/apk_notification — couple version+build déjà réservé ?
+      alt déjà réservé
+        S-->>S: rien à envoyer
+      else nouveau
+        S->>F: users où role == admin, non révoqués, puis leurs devices
+        S->>M: sendEachForMulticast (titre, version, data.type apk_release)
+        S->>F: supprime les jetons non enregistrés
+        opt aucun envoi abouti
+          S->>F: libère la réservation
+        end
+      end
+    end
+  end
+  M-->>A: notification
+  A->>A: toucher → AppUpdateService.check → fenêtre de mise à jour
+</pre>
+      </div>
+      <figcaption>
+        Le rôle est relu dans Firestore à chaque envoi : un compte qui n'est plus administrateur
+        ne reçoit plus rien, même si son jeton est resté stocké.
+      </figcaption>
+    </figure>
+  </section>
+
   <footer class="doc">
     Chaque diagramme est dérivé du code au moment de sa rédaction. Quand un flux change — une
     étape ajoutée au pipeline, un appel d'IA déplacé, une garde d'accès modifiée — le diagramme

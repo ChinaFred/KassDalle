@@ -147,6 +147,7 @@ export {
 } from "./callable/ticketsCallable";
 export { githubTicketWebhook } from "./tickets/webhook";
 export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";
+export { releaseNotificationSchedule } from "./scheduled/releaseNotificationSchedule";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
