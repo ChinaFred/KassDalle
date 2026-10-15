@@ -159,7 +159,12 @@ async function catchUpDeliveredPrs(
   for (const doc of snap.docs) {
     const data = doc.data();
     const issueNumber = data.github_issue_number;
-    if (typeof issueNumber !== "number" || data.delivered_pr_number != null) continue;
+    if (
+      typeof issueNumber !== "number" ||
+      (data.delivered_pr_number != null && data.delivered_version != null)
+    ) {
+      continue;
+    }
     const changedAt = data.status_changed_at;
     if (!(changedAt instanceof Timestamp) || changedAt.toMillis() < since) continue;
     try {

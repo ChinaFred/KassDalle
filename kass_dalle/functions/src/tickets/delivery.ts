@@ -39,6 +39,7 @@ import {
   getPullRequest,
   listOpenPullRequests,
   listRunsForCommit,
+  pubspecVersionAtCommit,
   type RemoteComment,
 } from "./github";
 import {
@@ -167,8 +168,9 @@ export async function refreshTicketDelivery(
 // ── PR de livraison d'un ticket livré ───────────────────────────────────────
 
 /**
- * Range sur `tickets/{id}` (`delivered_pr_number`, `delivered_pr_url`) la PR
- * fusionnée qui a fermé l'Issue. Les deux champs vivent sur le ticket, lisible
+ * Range sur `tickets/{id}` (`delivered_pr_number`, `delivered_pr_url`,
+ * `delivered_version`) la PR fusionnée qui a fermé l'Issue et la version de
+ * l'application à son commit de fusion. Les champs vivent sur le ticket, lisible
  * par son auteur : une PR d'un dépôt public ne contient aucune donnée privée.
  * Rend `not_delivered` si le ticket n'est pas (ou plus) livré, `no_pr` si
  * aucune PR ne l'a fermé (Issue fermée à la main) : les champs ne sont alors
@@ -184,9 +186,23 @@ export async function recordDeliveredPr(
   if (!snap.exists || snap.data()?.status !== "delivered") return "not_delivered";
   const pr = await findDeliveredPullRequest(token, issueNumber);
   if (pr === null) return "no_pr";
+  // La version est complémentaire : une lecture en échec n'empêche pas d'écrire la PR.
+  // La reprise suivante complète le champ absent.
+  let version: string | null = null;
+  try {
+    version = await pubspecVersionAtCommit(token, pr.commitSha);
+  } catch (err) {
+    await logError({
+      message: `Tickets : version livrée du ticket ${ticketId} (Issue #${issueNumber}) non lue`,
+      errorDescription: describe(err),
+      firestoreDocId: ticketId,
+      feature: "tickets",
+    });
+  }
   await ticketRef(ticketId).update({
     delivered_pr_number: pr.number,
     delivered_pr_url: pr.url,
+    delivered_version: version ?? FieldValue.delete(),
     updated_at: FieldValue.serverTimestamp(),
   });
   return "written";

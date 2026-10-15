@@ -27,14 +27,19 @@ Ticket _ticket({
   'github_issue_number': issue,
 });
 
-Ticket _delivered({String status = 'delivered', Object? number, Object? url}) =>
-    Ticket.fromMap('t1', {
-      'type': 'evolution',
-      'title': 'Un titre',
-      'status': status,
-      'delivered_pr_number': number,
-      'delivered_pr_url': url,
-    });
+Ticket _delivered({
+  String status = 'delivered',
+  Object? number,
+  Object? url,
+  Object? version,
+}) => Ticket.fromMap('t1', {
+  'type': 'evolution',
+  'title': 'Un titre',
+  'status': status,
+  'delivered_pr_number': number,
+  'delivered_pr_url': url,
+  'delivered_version': version,
+});
 
 void main() {
   group('PR de livraison', () {
@@ -49,6 +54,30 @@ void main() {
         'https://github.com/ChinaFred/KassDalle/pull/57',
       );
     });
+
+    test(
+      'texte de la ligne : avec version, sans version, version illisible',
+      () {
+        expect(
+          _delivered(number: 57, version: '0.23.80').deliveredLineText,
+          'Livré en v0.23.80 par la PR #57',
+        );
+        expect(_delivered(number: 57).deliveredLineText, 'Livré par la PR #57');
+        expect(
+          _delivered(number: 57, version: 'x; rm').deliveredLineText,
+          'Livré par la PR #57',
+        );
+        expect(_delivered(version: '0.23.80').deliveredLineText, isNull);
+        expect(
+          _delivered(
+            status: 'in_progress',
+            number: 57,
+            version: '0.23.80',
+          ).deliveredLineText,
+          isNull,
+        );
+      },
+    );
 
     test('ticket livré sans PR : rien', () {
       final t = _delivered();

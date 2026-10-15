@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import {
   closingCommitFromEvents,
   pickDeliveredPr,
+  pubspecVersionName,
   type MergedPrCandidate,
   DELIVERY_BLOCKED_TITLE,
   DELIVERY_DONE_TITLE,
@@ -668,5 +669,18 @@ describe("PR de livraison d'un ticket livré", () => {
       closedIssueFromEvent("issues", { ...base, issue: { number: 91, pull_request: {} } }),
       null,
     );
+  });
+});
+
+describe("version lue dans pubspec.yaml", () => {
+  test("version sans numéro de build", () => {
+    assert.equal(pubspecVersionName("name: x\nversion: 0.23.80+427\n"), "0.23.80");
+    assert.equal(pubspecVersionName("version: 1.2.3\r\nenv:\n"), "1.2.3");
+  });
+
+  test("version absente ou mal formée", () => {
+    assert.equal(pubspecVersionName("name: x\n"), null);
+    assert.equal(pubspecVersionName("version: latest\n"), null);
+    assert.equal(pubspecVersionName("  version: 0.1.2\n"), null);
   });
 });

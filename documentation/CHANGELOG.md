@@ -20,6 +20,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.81 — fonctionnel
+
+Tickets (ticket #97) : la ligne de livraison indique la version de l'application qui livre le
+ticket, par exemple « Livré en v0.23.80 par la PR #97 ». Elle s'affiche sur la fiche Admin ›
+Tickets et sur « Mes tickets ». Sans version lisible, le texte reste « Livré par la PR #N ».
+
+### v0.23.81 — technique
+
+Nouveau champ `delivered_version` sur `tickets/{id}`, écrit par `recordDeliveredPr` avec la PR :
+la ligne `version:` de `kass_dalle/pubspec.yaml` au commit de fusion, sans numéro de build
+(`pubspecVersionName`, `pubspecVersionAtCommit`). Un échec de lecture est journalisé et
+n'empêche pas d'écrire la PR. Le champ est effacé quand le ticket quitte `delivered`. La reprise
+horaire et le backfill `ticket_delivered_pr` relisent aussi les tickets livrés sans version.
+Aucune règle Firestore ne change ; un cas de `rules-tests` vérifie que l'auteur ne l'écrit pas.
+
 ### v0.23.80 — fonctionnel
 
 Admin › Tickets (ticket #92) : la liste montre les états intermédiaires. Après « Lancer

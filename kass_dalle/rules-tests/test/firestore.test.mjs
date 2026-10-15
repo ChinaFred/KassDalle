@@ -3984,6 +3984,12 @@ describe("tickets — lecture et écriture", () => {
         .doc(MINE)
         .update({ seen_by_author_at: serverTimestamp(), delivered_pr_number: 57 }),
     );
+    await assertFails(db("reader").doc(MINE).update({ delivered_version: "0.23.80" }));
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({ seen_by_author_at: serverTimestamp(), delivered_version: "0.23.80" }),
+    );
   });
 
   it("un autre membre ne pose pas seen_by_author_at", async () => {

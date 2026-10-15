@@ -1194,7 +1194,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   - Analysé : « Votre ticket a été lu et étudié. » ;
   - Validé : « Votre demande sera traitée. » ;
   - En cours : « Le travail a commencé. » ;
-  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. », suivi de « Livré par la PR #N »
+  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. », suivi de « Livré en vX.Y.Z par la PR #N » (« Livré par la PR #N » quand la version n'est pas lisible)
     (lien vers la PR sur GitHub) quand la PR qui a fermé l'Issue est connue ; rien de plus pour un ticket
     fermé à la main, sans PR. L'administrateur lit la même ligne dans Admin › Tickets, avec le bouton « Ouvrir la PR #N » ;
   - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »

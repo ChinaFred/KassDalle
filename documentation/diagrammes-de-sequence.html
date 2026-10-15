@@ -4474,7 +4474,7 @@ sequenceDiagram
   G->>G: « Closes #N » ferme l'Issue ; workflow « Déploiement »
   G->>W: issues closed : ticket Livré (verrou inactif)
   W->>G: événements de l'Issue (commit de fermeture), puis PR de ce commit
-  W->>T: delivered_pr_number et delivered_pr_url sur le ticket (lus par le membre et l'admin)
+  W->>T: delivered_pr_number, delivered_pr_url et delivered_version (pubspec.yaml au commit de fusion) sur le ticket (lus par le membre et l'admin)
   S->>G: commentaire « ## Livraison — terminée » (ou « ## Livraison — blocage »)
   G->>W: issue_comment du mainteneur
   W->>T: admin/delivery.reports ; blocage postérieur : delivery_running effacé

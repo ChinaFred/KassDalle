@@ -1465,6 +1465,15 @@ export function safePullRequestUrl(url: string | null, repoFullName: string): st
 }
 
 /**
+ * La version (`x.y.z`, sans le numéro de build `+N`) de la ligne `version:`
+ * d'un `pubspec.yaml`, ou `null` quand elle est absente ou mal formée. Pure.
+ */
+export function pubspecVersionName(text: string): string | null {
+  const m = /^version:[ \t]*(\d{1,4}\.\d{1,5}\.\d{1,6})(?:\+\d+)?[ \t]*$/m.exec(text);
+  return m === null ? null : m[1];
+}
+
+/**
  * Le commit qui a fermé l'Issue : le dernier événement `closed` (liste
  * d'événements de l'Issue) qui porte un `commit_id`, ou `null` quand elle a été
  * fermée à la main. Pure.
