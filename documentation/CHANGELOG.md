@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.79 — fonctionnel
+### v0.23.80 — fonctionnel
 
 Admin › Tickets (ticket #92) : la liste montre les états intermédiaires. Après « Lancer
 l'analyse », « Lancer le développement » ou « Livrer », la ligne du ticket porte une puce
@@ -28,6 +28,10 @@ l'analyse », « Lancer le développement » ou « Livrer », la ligne du ticket
 possible » quand l'échéance passe sans changement de statut. La règle est celle de la fiche
 (`adminTicketDecisions`) : une écoute de l'historique des lancements par ligne Reçu, Validé ou
 En cours, côté administrateur seulement. Aucun changement de schéma, de règle ni de Function.
+
+### v0.23.79 — fonctionnel
+
+Les pastilles de tickets affichent un nombre. La puce du compte (barre du haut) porte une pastille chiffrée à la place du point : invitations de groupe en attente plus tickets distincts à lire ou, pour l'administrateur, à traiter (`99+` au-delà de 99). « Mes tickets » reçoit une pastille pour tout ticket dont le statut a changé depuis sa dernière ouverture, y compris Analysé, Validé et En cours, et plus seulement pour Répondu, Refusé ou Livré ; « Envoi en cours » est exclu. L'entrée du menu s'écrit « Tickets à traiter », sans le nombre entre parenthèses : il reste sur la pastille de l'icône. Ticket #90.
 
 ### v0.23.78 — fonctionnel
 

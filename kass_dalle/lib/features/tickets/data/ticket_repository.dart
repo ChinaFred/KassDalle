@@ -95,9 +95,11 @@ class TicketRepository {
     );
   }
 
-  /// Nombre de tickets à traiter (Reçus, Analysés ou Validés) : pastille du compte,
-  /// entrée « Tickets à traiter » et puce « À traiter » (administrateur).
-  Stream<int> watchToProcessCount() {
+  /// Identifiants des tickets à traiter (Reçus, Analysés ou Validés) : pastille
+  /// du compte, entrée « Tickets à traiter » et puce « À traiter »
+  /// (administrateur). Les identifiants permettent de ne pas compter deux fois
+  /// un ticket aussi présent dans « Mes tickets ».
+  Stream<Set<String>> watchToProcessIds() {
     return _reported(
       _col
           .where(
@@ -105,8 +107,8 @@ class TicketRepository {
             whereIn: [for (final s in kAdminTicketToProcessStatuses) s.value],
           )
           .snapshots()
-          .map((snap) => snap.size),
-      step: 'watch_to_process_count',
+          .map((snap) => {for (final d in snap.docs) d.id}),
+      step: 'watch_to_process_ids',
     );
   }
 

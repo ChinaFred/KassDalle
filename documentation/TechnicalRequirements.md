@@ -1954,7 +1954,7 @@ ne partent jamais sur GitHub.
 | `created_at` | `Timestamp` | Heure serveur de création |
 | `updated_at` | `Timestamp` | Heure serveur de la dernière écriture serveur |
 | `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
-| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume le point de notification du compte quand `status` ∈ {`answered`, `refused`, `delivered`} et que `seen_by_author_at` est absent ou antérieur |
+| `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume la pastille de notification du compte quand `status` ≠ `sending` et que `seen_by_author_at` est absent ou antérieur |
 | `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
 | `delivered_pr_number` | `int?` | Numéro de la PR fusionnée qui a fermé l'Issue, écrit par le serveur (`recordDeliveredPr`) quand le ticket est `delivered`. Lu par l'auteur et l'admin : la PR est publique et ne contient aucune donnée privée. Effacé (`FieldValue.delete()`) quand le ticket quitte `delivered` (`applyGithubUpdate`). Absent si l'Issue a été fermée à la main, sans PR |
 | `delivered_pr_url` | `String?` | Adresse de cette PR, seulement `https://github.com/<dépôt>/pull/N` (`safePullRequestUrl`). Le client revérifie `https` et `github.com` avant d'ouvrir le lien |
@@ -2105,7 +2105,7 @@ PR fusionnée de ce dépôt, d'un auteur de confiance, dont le corps ferme l'Iss
 Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
 
 **Index.** Le compteur « à traiter » (`status in ['received', 'analyzed', 'validated']`,
-`watchToProcessCount`) se sert de l'index simple sur `status`.
+`watchToProcessIds`) se sert de l'index simple sur `status`.
 
 ---
 
@@ -3772,10 +3772,11 @@ fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente
 `reply_published_close_failed`), rejouée par `test/ticket_decisions_test.dart` et
 `functions/src/tests/ticketDecisions.test.ts`. Un statut stocké inconnu de cette version
 n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
-l'application à jour pour décider. ». Le compteur « à traiter »
-(`adminTicketsToProcessCountProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
-aucune requête hors administrateur) alimente le point de la puce du compte, l'entrée « Tickets à
-traiter (N) » et la puce « À traiter (N) ». Le filtre de statut
+l'application à jour pour décider. ». Les identifiants « à traiter »
+(`adminTicketsToProcessIdsProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
+aucune requête hors administrateur) donnent `adminTicketsToProcessCountProvider` (entrée « Tickets à
+traiter » et puce « À traiter (N) ») et, avec `Ticket.hasUnseenUpdate` (tout statut sauf `sending`),
+`accountTicketsBadgeCountProvider` : tickets distincts de la pastille chiffrée de la puce du compte. Le filtre de statut
 (`adminTicketStatusFilterProvider`) est global, sans `autoDispose`, et l'écran ne le remet
 jamais à zéro : `enterToProcess` le pose à l'entrée, `settleEntry` le bascule une fois sur
 « Tous » si le premier compteur reçu vaut zéro. Les analyses se lisent en flux
@@ -6927,7 +6928,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
-| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, le compteur « Lancements de sessions », et les bandeaux du jeton GitHub et des jetons des routines (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter (N) » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
+| `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, le compteur « Lancements de sessions », et les bandeaux du jeton GitHub et des jetons des routines (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
 | `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`), « Refuser » (`refuseTicket`), « Répondre » (`answerTicketAnalysis`), « Lancer l'analyse » (`launchTicketAnalysis`) et « Lancer le développement » (`launchTicketDevelopment`), section « Lancements » (`tickets/{id}/admin/launches`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
