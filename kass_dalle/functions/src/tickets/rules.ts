@@ -352,10 +352,20 @@ export function statusFromIssue(issue: IssueState, type: TicketType): TicketStat
  * - Un statut ne recule jamais : on garde le plus avancé des deux.
  * - Un statut de fin suit l'Issue : rouverte, elle ramène au statut dérivé de
  *   ses étiquettes ; refermée autrement, elle change de fin.
+ * - Seule exception au non-recul : `noOpenClosingPr` vrai dit que les PR de
+ *   l'Issue ont été relues et qu'aucune PR ouverte ne la ferme plus (PR
+ *   fermée sans fusion, mot-clé retiré). Un ticket En cours revient alors au
+ *   statut de ses étiquettes. Un événement d'Issue, qui ne voit pas les PR,
+ *   laisse ce paramètre faux.
  */
-export function nextTicketStatus(current: TicketStatus, fromGithub: TicketStatus): TicketStatus {
+export function nextTicketStatus(
+  current: TicketStatus,
+  fromGithub: TicketStatus,
+  noOpenClosingPr = false,
+): TicketStatus {
   if (isFinalStatus(current)) return fromGithub;
   if (isFinalStatus(fromGithub)) return fromGithub;
+  if (current === "in_progress" && noOpenClosingPr) return fromGithub;
   return STATUS_RANK[fromGithub] > STATUS_RANK[current] ? fromGithub : current;
 }
 

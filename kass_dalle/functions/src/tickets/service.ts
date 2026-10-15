@@ -329,7 +329,12 @@ async function safeRecordFailure(
 export interface GithubUpdate {
   /** Statut dérivé de l'Issue, selon le type du ticket. */
   statusFor?: (type: TicketType) => TicketStatus;
-  /** Une PR ouverte référence l'Issue : avance à `in_progress`, jamais depuis une fin. */
+  /**
+   * `true` : une PR ouverte référence l'Issue, le ticket avance à `in_progress`,
+   * jamais depuis une fin. `false` : les PR ont été relues (`resyncTicket`) et
+   * aucune ne ferme plus l'Issue, un ticket `in_progress` revient au statut de
+   * ses étiquettes. Absent : les PR ne sont pas connues, rien ne recule.
+   */
   openClosingPr?: boolean;
   /** Réponse de l'administrateur, déjà filtrée. */
   reply?: string;
@@ -372,7 +377,9 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
       resetAt instanceof Timestamp ? resetAt.toMillis() : null,
     );
     let next = current;
-    if (update.statusFor && !stale) next = nextTicketStatus(next, update.statusFor(type));
+    if (update.statusFor && !stale) {
+      next = nextTicketStatus(next, update.statusFor(type), update.openClosingPr === false);
+    }
     if (update.openClosingPr && !isFinalStatus(next)) next = nextTicketStatus(next, "in_progress");
 
     const changes: Record<string, unknown> = {};

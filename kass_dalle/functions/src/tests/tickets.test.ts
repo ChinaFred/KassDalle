@@ -267,6 +267,22 @@ describe("nextTicketStatus", () => {
   }
 });
 
+describe("nextTicketStatus — PR relues, aucune ne ferme l'Issue", () => {
+  const cases: Array<[TicketStatus, TicketStatus, TicketStatus]> = [
+    ["in_progress", "validated", "validated"], // PR fermée sans fusion
+    ["in_progress", "analyzed", "analyzed"],
+    ["in_progress", "received", "received"],
+    ["in_progress", "delivered", "delivered"],
+    ["validated", "analyzed", "validated"], // hors En cours : pas de recul
+    ["in_progress", "in_progress", "in_progress"],
+  ];
+  for (const [current, github, expected] of cases) {
+    test(`${current} + ${github} → ${expected}`, () => {
+      assert.equal(nextTicketStatus(current, github, true), expected);
+    });
+  }
+});
+
 describe("closingIssueNumbers", () => {
   test("lit les mots-clés de fermeture de GitHub", () => {
     assert.deepEqual(closingIssueNumbers("Closes #12", REPO), [12]);
