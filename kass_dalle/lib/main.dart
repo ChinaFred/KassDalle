@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/presentation/app_feedback.dart';
+import 'core/presentation/splash_greeting.dart';
 import 'core/app_version.dart';
 import 'core/services/app_check.dart';
 import 'core/services/error_report_service.dart';
@@ -116,6 +117,8 @@ class KassDalleApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: router,
+      builder: (context, child) =>
+          SplashGreeting(child: child ?? const SizedBox.shrink()),
       scaffoldMessengerKey: appScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
     );
