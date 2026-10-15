@@ -1215,8 +1215,8 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   et sur l'icône de « Mes tickets » quand le statut d'un ticket du membre a changé depuis sa
   dernière ouverture, ou qu'il ne l'a jamais ouvert, quel que soit le statut sauf « Envoi en
   cours ». Ouvrir le détail du ticket l'efface. Le nombre de la puce additionne les invitations
-  de groupe et les tickets distincts à lire ou, pour l'Admin, à traiter : un ticket compte une
-  fois. Pas de notification push ni d'e-mail.
+  de groupe et les tickets à lire. Pour l'Admin, ce sont les tickets à traiter qui comptent, et
+  ses propres tickets non lus n'y entrent pas : « Mes tickets » n'a pas de pastille pour lui. Pas de notification push ni d'e-mail.
 - États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
   l'instant » — « Un bug, une idée, une question ? Envoyez-les à l'administrateur. », avec
   « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;

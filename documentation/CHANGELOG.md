@@ -20,6 +20,12 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
+### v0.23.82 — fonctionnel
+
+Administrateur : la puce du compte compte les invitations de groupe et les tickets à traiter.
+Ses propres tickets non lus n'y entrent plus et « Mes tickets » n'a plus de pastille pour lui,
+car ce ne sont pas des actions à entreprendre. Les autres rôles ne changent pas. Ticket #100.
+
 ### v0.23.81 — fonctionnel
 
 Ticket #96 : les administrateurs reçoivent une notification Android « Nouvelle version
