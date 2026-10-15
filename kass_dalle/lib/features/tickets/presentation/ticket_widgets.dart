@@ -37,8 +37,8 @@ IconData ticketStatusIcon(TicketStatus status) => switch (status) {
     foreground: cs.onSurface,
   ),
   TicketStatus.received || TicketStatus.analyzed => (
-    background: cs.secondaryContainer,
-    foreground: cs.onSecondaryContainer,
+    background: cs.primaryContainer,
+    foreground: cs.onPrimaryContainer,
   ),
   TicketStatus.validated || TicketStatus.delivered => (
     background: cs.primaryContainer,
@@ -118,8 +118,8 @@ class TicketLaunchStateChip extends StatelessWidget {
     return _Pill(
       icon: relaunch ? Icons.replay : Icons.hourglass_top,
       label: label,
-      background: relaunch ? cs.surfaceContainerHighest : cs.secondaryContainer,
-      foreground: relaunch ? cs.onSurfaceVariant : cs.onSecondaryContainer,
+      background: relaunch ? cs.surfaceContainerHighest : cs.primaryContainer,
+      foreground: relaunch ? cs.onSurfaceVariant : cs.onPrimaryContainer,
     );
   }
 }

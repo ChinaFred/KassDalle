@@ -470,7 +470,7 @@ class _AdminTicketTile extends ConsumerWidget {
 /// l'historique n'est pas lu, ni s'il ne se lit pas : la fiche le dit.
 class AdminTicketLaunchChip extends ConsumerStatefulWidget {
   final Ticket ticket;
-  const AdminTicketLaunchChip({required this.ticket});
+  const AdminTicketLaunchChip({super.key, required this.ticket});
 
   @override
   ConsumerState<AdminTicketLaunchChip> createState() =>
